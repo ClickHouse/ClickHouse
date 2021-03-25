@@ -62,18 +62,10 @@ Block createBlockForSet(
   */
 struct ScopeStack
 {
-    class Index;
-    using IndexPtr = std::unique_ptr<Index>;
-
     struct Level
     {
         ActionsDAGPtr actions_dag;
-        IndexPtr index;
         NameSet inputs;
-
-        Level();
-        Level(Level &&);
-        ~Level();
     };
 
     using Levels = std::vector<Level>;
@@ -99,7 +91,6 @@ struct ScopeStack
     ActionsDAGPtr popLevel();
 
     const ActionsDAG & getLastActions() const;
-    const Index & getLastActionsIndex() const;
     std::string dumpNames() const;
 };
 

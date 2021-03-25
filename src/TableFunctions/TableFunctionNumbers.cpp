@@ -6,7 +6,6 @@
 #include <Common/typeid_cast.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypesNumber.h>
 #include "registerTableFunctions.h"
@@ -18,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -58,16 +56,7 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
 template <bool multithreaded>
 UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(const Context & context, ASTPtr & argument) const
 {
-    const auto & [field, type] = evaluateConstantExpression(argument, context);
-
-    if (!isNativeNumber(type))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} expression, must be numeric type", type->getName());
-
-    Field converted = convertFieldToType(field, DataTypeUInt64());
-    if (converted.isNull())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The value {} is not representable as UInt64", applyVisitor(FieldVisitorToString(), field));
-
-    return converted.safeGet<UInt64>();
+    return evaluateConstantExpressionOrIdentifierAsLiteral(argument, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
 }
 
 }

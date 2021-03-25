@@ -14,6 +14,7 @@ namespace ProfileEvents
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
@@ -41,7 +42,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
         /// Note that receive timeout is not checked here. External code should check it while polling.
         while (bytes_read < 0 && async_callback && errno == EAGAIN)
         {
-            async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), socket_description);
+            async_callback(socket);
             bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
         }
     }
@@ -73,14 +74,11 @@ bool ReadBufferFromPocoSocket::nextImpl()
 }
 
 ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size)
-    , socket(socket_)
-    , peer_address(socket.peerAddress())
-    , socket_description("socket (" + peer_address.toString() + ")")
+    : BufferWithOwnMemory<ReadBuffer>(buf_size), socket(socket_), peer_address(socket.peerAddress())
 {
 }
 
-bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds) const
+bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds)
 {
     return available() || socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
 }

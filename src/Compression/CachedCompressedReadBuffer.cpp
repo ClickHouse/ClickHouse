@@ -45,7 +45,7 @@ bool CachedCompressedReadBuffer::nextImpl()
 
         size_t size_decompressed;
         size_t size_compressed_without_checksum;
-        owned_cell->compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
+        owned_cell->compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum);
 
         if (owned_cell->compressed_size)
         {

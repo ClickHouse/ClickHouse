@@ -1,16 +1,16 @@
 #include <IO/PeekableReadBuffer.h>
 
-
 namespace DB
 {
-
 namespace ErrorCodes
 {
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
 }
 
-PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/)
-        : BufferWithOwnMemory(start_size_), sub_buf(sub_buf_)
+PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/,
+                                                              size_t unread_limit_ /* = default_limit*/)
+        : BufferWithOwnMemory(start_size_), sub_buf(sub_buf_), unread_limit(unread_limit_)
 {
     padded &= sub_buf.isPadded();
     /// Read from sub-buffer
@@ -109,29 +109,22 @@ bool PeekableReadBuffer::peekNext()
     return sub_buf.next();
 }
 
-void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
+void PeekableReadBuffer::rollbackToCheckpoint()
 {
     checkStateCorrect();
-
     if (!checkpoint)
         throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
     else if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())
         pos = *checkpoint;
     else /// Checkpoint is in own memory and pos is not. Switch to reading from own memory
         BufferBase::set(memory.data(), peeked_size, *checkpoint - memory.data());
-
-    if (drop)
-        dropCheckpoint();
-
     checkStateCorrect();
 }
 
 bool PeekableReadBuffer::nextImpl()
 {
-    /// FIXME: wrong bytes count because it can read the same data again after rollbackToCheckpoint()
-    ///        however, changing bytes count on every call of next() (even after rollback) allows to determine
-    ///        if some pointers were invalidated.
-
+    /// FIXME wrong bytes count because it can read the same data again after rollbackToCheckpoint()
+    /// However, changing bytes count on every call of next() (even after rollback) allows to determine if some pointers were invalidated.
     checkStateCorrect();
     bool res;
 
@@ -147,7 +140,7 @@ bool PeekableReadBuffer::nextImpl()
         if (useSubbufferOnly())
         {
             /// Load next data to sub_buf
-            sub_buf.position() = position();
+            sub_buf.position() = pos;
             res = sub_buf.next();
         }
         else
@@ -198,6 +191,8 @@ void PeekableReadBuffer::checkStateCorrect() const
     }
     if (currentlyReadFromOwnMemory() && !peeked_size)
         throw DB::Exception("Pos in empty own buffer", ErrorCodes::LOGICAL_ERROR);
+    if (unread_limit < memory.size())
+        throw DB::Exception("Size limit exceed", ErrorCodes::LOGICAL_ERROR);
 }
 
 void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
@@ -227,11 +222,16 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
         }
         else
         {
+            if (unread_limit < new_size)
+                throw DB::Exception("PeekableReadBuffer: Memory limit exceed", ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+
             size_t pos_offset = pos - memory.data();
 
             size_t new_size_amortized = memory.size() * 2;
             if (new_size_amortized < new_size)
                 new_size_amortized = new_size;
+            else if (unread_limit < new_size_amortized)
+                new_size_amortized = unread_limit;
             memory.resize(new_size_amortized);
 
             if (need_update_checkpoint)

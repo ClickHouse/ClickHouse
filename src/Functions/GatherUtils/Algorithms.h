@@ -342,7 +342,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1);
             else
-                slice = src.getSliceFromRight(-static_cast<UInt64>(offset));
+                slice = src.getSliceFromRight(-offset);
 
             writeSlice(slice, sink);
         }
@@ -374,7 +374,7 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
         Int64 size = has_length ? length_nested_column->getInt(row_num) : static_cast<Int64>(src.getElementSize());
 
         if (size < 0)
-            size += offset > 0 ? static_cast<Int64>(src.getElementSize()) - (offset - 1) : -UInt64(offset);
+            size += offset > 0 ? static_cast<Int64>(src.getElementSize()) - (offset - 1) : -offset;
 
         if (offset != 0 && size > 0)
         {
@@ -383,7 +383,7 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1, size);
             else
-                slice = src.getSliceFromRight(-UInt64(offset), size);
+                slice = src.getSliceFromRight(-offset, size);
 
             writeSlice(slice, sink);
         }
@@ -465,7 +465,7 @@ std::vector<size_t> buildKMPPrefixFunction(const SliceType & pattern, const Equa
     for (size_t i = 1; i < pattern.size; ++i)
     {
         result[i] = 0;
-        for (size_t length = i; length > 0;)
+        for (auto length = i; length > 0;)
         {
             length = result[length - 1];
             if (isEqualFunc(pattern, i, length))
@@ -695,7 +695,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
 
             if (size >= 0)
             {
-                size_t length = static_cast<size_t>(size);
+                auto length = static_cast<size_t>(size);
                 if (length > MAX_ARRAY_SIZE)
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                         length, MAX_ARRAY_SIZE);
@@ -711,7 +711,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             }
             else
             {
-                size_t length = -static_cast<size_t>(size);
+                auto length = static_cast<size_t>(-size);
                 if (length > MAX_ARRAY_SIZE)
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                         length, MAX_ARRAY_SIZE);
@@ -744,7 +744,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
 
         if (size >= 0)
         {
-            size_t length = static_cast<size_t>(size);
+            auto length = static_cast<size_t>(size);
             if (length > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                     length, MAX_ARRAY_SIZE);
@@ -760,7 +760,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         }
         else
         {
-            size_t length = -static_cast<size_t>(size);
+            auto length = static_cast<size_t>(-size);
             if (length > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                     length, MAX_ARRAY_SIZE);

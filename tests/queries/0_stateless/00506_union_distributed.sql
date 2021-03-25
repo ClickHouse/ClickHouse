@@ -1,6 +1,5 @@
--- https://github.com/ClickHouse/ClickHouse/issues/1059
 
-SET insert_distributed_sync = 1;
+-- https://github.com/ClickHouse/ClickHouse/issues/1059
 
 DROP TABLE IF EXISTS union1;
 DROP TABLE IF EXISTS union2;
