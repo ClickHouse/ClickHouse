@@ -1,5 +1,4 @@
 #include <Poco/Net/NetException.h>
-#include <Poco/Net/SocketAddress.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -21,7 +20,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
-#include <Core/Protocol.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
@@ -91,10 +89,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             socket = std::make_unique<Poco::Net::StreamSocket>();
         }
 
-        if (!explicitly_resolved_address)
-            current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
-        else 
-            current_resolved_address = Poco::Net::SocketAddress(explicitly_resolved_address.value());
+        current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
 
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
         socket->connect(*current_resolved_address, connection_timeout);
@@ -417,7 +412,7 @@ void Connection::sendQuery(
 {
     if (!connected)
         connect(timeouts);
-
+ 
     TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
 
     if (settings)
@@ -452,6 +447,7 @@ void Connection::sendQuery(
     /// Per query settings.
     if (settings)
     {
+        std::cout << "Settings enabled" << std::endl;
         auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                           : SettingsWriteFormat::BINARY;
         settings->write(*out, settings_format);
