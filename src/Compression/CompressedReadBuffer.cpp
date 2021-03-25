@@ -61,9 +61,9 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
 
             memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
-            pos = working_buffer.begin();
 
             decompress(working_buffer, size_decompressed, size_compressed_without_checksum);
+            pos = working_buffer.begin();
 
             bytes_read += read(to + bytes_read, n - bytes_read);
             break;
