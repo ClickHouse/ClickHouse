@@ -230,15 +230,23 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (literal && name == "negate")
                 {
                     written = applyVisitor(
-                        [&settings](const auto & value) {
+                        [&settings](const auto & value)
+                        {
                             using ValueType = std::decay_t<decltype(value)>;
-                            // We don't have decimal literals.
-                            assert(!isDecimalField<ValueType>());
-                            if constexpr (!std::is_arithmetic_v<ValueType>)
+                            if constexpr (isDecimalField<ValueType>())
                             {
-                                return false;
+                                // The parser doesn't create decimal literals, but
+                                // they can be produced by constant folding or the
+                                // fuzzer.
+                                if (value.getValue() >= 0)
+                                {
+                                    return false;
+                                }
+
+                                settings.ostr << ValueType{-value.getValue(),
+                                    value.getScale()};
                             }
-                            else
+                            else if constexpr (std::is_arithmetic_v<ValueType>)
                             {
                                 if (value >= 0)
                                 {
@@ -249,6 +257,8 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                                 settings.ostr << -value;
                                 return true;
                             }
+
+                            return false;
                         },
                         literal->value);
 
