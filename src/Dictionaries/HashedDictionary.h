@@ -95,7 +95,7 @@ public:
 
     bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::simple && dict_struct.hierarchical_attribute_index.has_value(); }
 
-    ColumnPtr getHierarchy(ColumnPtr hierarchy_attribute_column, const DataTypePtr & hierarchy_attribute_type) const override;
+    ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & hierarchy_attribute_type) const override;
 
     ColumnUInt8::Ptr isInHierarchy(
         ColumnPtr key_column,
