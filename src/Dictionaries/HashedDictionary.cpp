@@ -288,6 +288,34 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
+ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
+    ColumnPtr key_column,
+    const DataTypePtr &,
+    size_t level) const
+{
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+    {
+        PaddedPODArray<UInt64> keys_backup;
+        const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
+        size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
+
+        const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
+        const CollectionType<UInt64> & parent_keys = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
+
+        HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+
+        for (const auto & [key, value] : parent_keys)
+            parent_to_child[value].emplace_back(key);
+
+        auto result = getDescendantsArray(keys, parent_to_child, level);
+        return result;
+    }
+    else
+        return nullptr;
+}
+
+template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 {
     const auto size = dict_struct.attributes.size();
