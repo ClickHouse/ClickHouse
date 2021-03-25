@@ -30,7 +30,7 @@ Field nowSubsecond(UInt32 scale)
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throwFromErrno("Cannot clock_gettime.", ErrorCodes::CANNOT_CLOCK_GETTIME);
 
-    DecimalUtils::DecimalComponents<DateTime64::NativeType> components{spec.tv_sec, spec.tv_nsec};
+    DecimalUtils::DecimalComponents<DateTime64> components{spec.tv_sec, spec.tv_nsec};
 
     // clock_gettime produces subsecond part in nanoseconds, but decimalFromComponents fractional is scale-dependent.
     // Andjust fractional to scale, e.g. for 123456789 nanoseconds:

@@ -1,6 +1,6 @@
 ---
 toc_priority: 11
-toc_title: "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430"
+toc_title: "Установка"
 ---
 
 # Установка {#ustanovka}
@@ -173,4 +173,3 @@ SELECT 1
 
 Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.tech/tutorial.html).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/install/) <!--hide-->

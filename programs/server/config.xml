@@ -362,6 +362,27 @@
         -->
     </ldap_servers>
 
+    <!-- To enable Kerberos authentication support for HTTP requests (GSS-SPNEGO), for those users who are explicitly configured
+          to authenticate via Kerberos, define a single 'kerberos' section here.
+         Parameters:
+            principal - canonical service principal name, that will be acquired and used when accepting security contexts.
+                    This parameter is optional, if omitted, the default principal will be used.
+                    This parameter cannot be specified together with 'realm' parameter.
+            realm - a realm, that will be used to restrict authentication to only those requests whose initiator's realm matches it.
+                    This parameter is optional, if omitted, no additional filtering by realm will be applied.
+                    This parameter cannot be specified together with 'principal' parameter.
+         Example:
+            <kerberos />
+         Example:
+            <kerberos>
+                <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
+            </kerberos>
+         Example:
+            <kerberos>
+                <realm>EXAMPLE.COM</realm>
+            </kerberos>
+    -->
+
     <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
     <user_directories>
         <users_xml>
@@ -578,7 +599,7 @@
     <!-- The list of hosts allowed to use in URL-related storage engines and table functions.
         If this section is not present in configuration, all hosts are allowed.
     -->
-    <remote_url_allow_hosts>
+    <!--<remote_url_allow_hosts>-->
         <!-- Host should be specified exactly as in URL. The name is checked before DNS resolution.
             Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
                     If port is explicitly specified in URL, the host:port is checked as a whole.
@@ -592,7 +613,7 @@
             Regexps are not aligned: don't forget to add ^ and $. Also don't forget to escape dot (.) metacharacter
             (forgetting to do so is a common source of error).
         -->
-    </remote_url_allow_hosts>
+    <!--</remote_url_allow_hosts>-->
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.

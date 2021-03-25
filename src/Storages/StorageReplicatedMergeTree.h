@@ -212,6 +212,23 @@ public:
     /// is not overloaded
     bool canExecuteFetch(const ReplicatedMergeTreeLogEntry & entry, String & disable_reason) const;
 
+    /// Fetch part only when it stored on shared storage like S3
+    bool executeFetchShared(const String & source_replica, const String & new_part_name, const DiskPtr & disk, const String & path);
+
+    /// Lock part in zookeeper for use common S3 data in several nodes
+    void lockSharedData(const IMergeTreeDataPart & part) const override;
+
+    /// Unlock common S3 data part in zookeeper
+    /// Return true if data unlocked
+    /// Return false if data is still used by another node
+    bool unlockSharedData(const IMergeTreeDataPart & part) const override;
+
+    /// Fetch part only if some replica has it on shared storage like S3
+    bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
+
+    /// Get best replica having this partition on S3
+    String getSharedDataReplica(const IMergeTreeDataPart & part) const;
+
 private:
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;
@@ -288,6 +305,9 @@ private:
 
     /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
+
+    /// Limiting parallel fetches per node
+    static std::atomic_uint total_fetches;
 
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
@@ -370,8 +390,7 @@ private:
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     /// Accepts a PreComitted part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction,
-                                                               const DataPartPtr & part);
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 
@@ -514,6 +533,17 @@ private:
         bool to_detached,
         size_t quorum,
         zkutil::ZooKeeper::Ptr zookeeper_ = nullptr);
+
+    /** Download the specified part from the specified replica.
+      * Used for replace local part on the same s3-shared part in hybrid storage.
+      * Returns false if part is already fetching right now.
+      */
+    bool fetchExistsPart(
+        const String & part_name,
+        const StorageMetadataPtr & metadata_snapshot,
+        const String & replica_path,
+        DiskPtr replaced_disk,
+        String replaced_part_path);
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;

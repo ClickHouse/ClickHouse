@@ -70,6 +70,14 @@ struct ModuloByConstantImpl
         if (unlikely(static_cast<A>(b) == 0))
             throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
+        /// Division by min negative value.
+        if (std::is_signed_v<B> && b == std::numeric_limits<B>::lowest())
+            throw Exception("Division by the most negative number", ErrorCodes::ILLEGAL_DIVISION);
+
+        /// Modulo of division by negative number is the same as the positive number.
+        if (b < 0)
+            b = -b;
+
         libdivide::divider<A> divider(b);
 
         /// Here we failed to make the SSE variant from libdivide give an advantage.

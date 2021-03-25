@@ -204,8 +204,8 @@ MergeTreeData::MergeTreeData(
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
         disk->createDirectories(path);
-        disk->createDirectories(path + "detached");
-        auto current_version_file_path = path + "format_version.txt";
+        disk->createDirectories(path + MergeTreeData::DETACHED_DIR_NAME);
+        auto current_version_file_path = path + MergeTreeData::FORMAT_VERSION_FILE_NAME;
         if (disk->exists(current_version_file_path))
         {
             if (!version_file.first.empty())
@@ -219,7 +219,7 @@ MergeTreeData::MergeTreeData(
 
     /// If not choose any
     if (version_file.first.empty())
-        version_file = {relative_data_path + "format_version.txt", getStoragePolicy()->getAnyDisk()};
+        version_file = {relative_data_path + MergeTreeData::FORMAT_VERSION_FILE_NAME, getStoragePolicy()->getAnyDisk()};
 
     bool version_file_exists = version_file.second->exists(version_file.first);
 
@@ -424,13 +424,13 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 
 }
 
-ExpressionActionsPtr MergeTreeData::getMinMaxExpr(const KeyDescription & partition_key)
+ExpressionActionsPtr MergeTreeData::getMinMaxExpr(const KeyDescription & partition_key, const ExpressionActionsSettings & settings)
 {
     NamesAndTypesList partition_key_columns;
     if (!partition_key.column_names.empty())
         partition_key_columns = partition_key.expression->getRequiredColumnsWithTypes();
 
-    return std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(partition_key_columns));
+    return std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>(partition_key_columns), settings);
 }
 
 Names MergeTreeData::getMinMaxColumnsNames(const KeyDescription & partition_key)
@@ -469,15 +469,19 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
 
     /// Try to find the date column in columns used by the partition key (a common case).
-    bool encountered_date_column = false;
+    /// If there are no - DateTime or DateTime64 would also suffice.
+
+    bool has_date_column = false;
+    bool has_datetime_column = false;
+
     for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
     {
-        if (typeid_cast<const DataTypeDate *>(minmax_idx_columns_types[i].get()))
+        if (isDate(minmax_idx_columns_types[i]))
         {
-            if (!encountered_date_column)
+            if (!has_date_column)
             {
                 minmax_idx_date_column_pos = i;
-                encountered_date_column = true;
+                has_date_column = true;
             }
             else
             {
@@ -486,21 +490,23 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
             }
         }
     }
-    if (!encountered_date_column)
+    if (!has_date_column)
     {
         for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
         {
-            if (typeid_cast<const DataTypeDateTime *>(minmax_idx_columns_types[i].get()))
+            if (isDateTime(minmax_idx_columns_types[i])
+                || isDateTime64(minmax_idx_columns_types[i])
+            )
             {
-                if (!encountered_date_column)
+                if (!has_datetime_column)
                 {
                     minmax_idx_time_column_pos = i;
-                    encountered_date_column = true;
+                    has_datetime_column = true;
                 }
                 else
                 {
                     /// There is more than one DateTime column in partition key and we don't know which one to choose.
-                   minmax_idx_time_column_pos = -1;
+                    minmax_idx_time_column_pos = -1;
                 }
             }
         }
@@ -744,8 +750,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         auto disk_ptr = *disk_it;
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
-            /// Skip temporary directories.
-            if (startsWith(it->name(), "tmp"))
+            /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
+            if (startsWith(it->name(), "tmp") || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME || it->name() == MergeTreeData::DETACHED_DIR_NAME)
                 continue;
 
             if (!startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
@@ -1337,8 +1343,8 @@ void MergeTreeData::dropIfEmpty()
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
         /// Non recursive, exception is thrown if there are more files.
-        disk->removeFile(path + "format_version.txt");
-        disk->removeDirectory(path + "detached");
+        disk->removeFile(path + MergeTreeData::FORMAT_VERSION_FILE_NAME);
+        disk->removeDirectory(path + MergeTreeData::DETACHED_DIR_NAME);
         disk->removeDirectory(path);
     }
 }
@@ -1825,7 +1831,7 @@ void MergeTreeData::changeSettings(
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
                         disk->createDirectories(relative_data_path);
-                        disk->createDirectories(relative_data_path + "detached");
+                        disk->createDirectories(relative_data_path + MergeTreeData::DETACHED_DIR_NAME);
                     }
                     /// FIXME how would that be done while reloading configuration???
 
@@ -1847,11 +1853,6 @@ void MergeTreeData::changeSettings(
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
     }
-}
-
-PartitionCommandsResultInfo MergeTreeData::freezeAll(const String & with_name, const StorageMetadataPtr & metadata_snapshot, const Context & context, TableLockHolder &)
-{
-    return freezePartitionsByMatcher([] (const DataPartPtr &) { return true; }, metadata_snapshot, with_name, context);
 }
 
 void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name)
@@ -2690,44 +2691,6 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
     }
 }
 
-
-PartitionCommandsResultInfo MergeTreeData::freezePartition(const ASTPtr & partition_ast, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder &)
-{
-    std::optional<String> prefix;
-    String partition_id;
-
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-    {
-        /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
-        if (const auto * partition_lit = partition_ast->as<ASTPartition &>().value->as<ASTLiteral>())
-            prefix = partition_lit->value.getType() == Field::Types::UInt64
-                ? toString(partition_lit->value.get<UInt64>())
-                : partition_lit->value.safeGet<String>();
-        else
-            partition_id = getPartitionIDFromQuery(partition_ast, context);
-    }
-    else
-        partition_id = getPartitionIDFromQuery(partition_ast, context);
-
-    if (prefix)
-        LOG_DEBUG(log, "Freezing parts with prefix {}", *prefix);
-    else
-        LOG_DEBUG(log, "Freezing parts with partition ID {}", partition_id);
-
-
-    return freezePartitionsByMatcher(
-        [&prefix, &partition_id](const DataPartPtr & part)
-        {
-            if (prefix)
-                return startsWith(part->info.partition_id, *prefix);
-            else
-                return part->info.partition_id == partition_id;
-        },
-        metadata_snapshot,
-        with_name,
-        context);
-}
-
 void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings) const
 {
     for (const auto & command : commands)
@@ -2957,6 +2920,21 @@ Pipe MergeTreeData::alterPartition(
                 current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
             }
             break;
+
+            case PartitionCommand::UNFREEZE_PARTITION:
+            {
+                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                current_command_results = unfreezePartition(command.partition, command.with_name, query_context, lock);
+            }
+            break;
+
+            case PartitionCommand::UNFREEZE_ALL_PARTITIONS:
+            {
+                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                current_command_results = unfreezeAll(command.with_name, query_context, lock);
+            }
+
+            break;
         }
         for (auto & command_result : current_command_results)
             command_result.command_type = command.typeToString();
@@ -3096,7 +3074,7 @@ MergeTreeData::getDetachedParts() const
 
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
     {
-        for (auto it = disk->iterateDirectory(path + "detached"); it->isValid(); it->next())
+        for (auto it = disk->iterateDirectory(path + MergeTreeData::DETACHED_DIR_NAME); it->isValid(); it->next())
         {
             res.emplace_back();
             auto & part = res.back();
@@ -3271,11 +3249,13 @@ ReservationPtr MergeTreeData::reserveSpacePreferringTTLRules(
     const IMergeTreeDataPart::TTLInfos & ttl_infos,
     time_t time_of_move,
     size_t min_volume_index,
-    bool is_insert) const
+    bool is_insert,
+    DiskPtr selected_disk) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
-    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(metadata_snapshot, expected_size, ttl_infos, time_of_move, min_volume_index, is_insert);
+    ReservationPtr reservation = tryReserveSpacePreferringTTLRules(
+        metadata_snapshot, expected_size, ttl_infos, time_of_move, min_volume_index, is_insert, selected_disk);
 
     return checkAndReturnReservation(expected_size, std::move(reservation));
 }
@@ -3286,7 +3266,8 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
     const IMergeTreeDataPart::TTLInfos & ttl_infos,
     time_t time_of_move,
     size_t min_volume_index,
-    bool is_insert) const
+    bool is_insert,
+    DiskPtr selected_disk) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
 
@@ -3321,7 +3302,12 @@ ReservationPtr MergeTreeData::tryReserveSpacePreferringTTLRules(
         }
     }
 
-    reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
+    // Prefer selected_disk
+    if (selected_disk)
+        reservation = selected_disk->reserve(expected_size);
+
+    if (!reservation)
+        reservation = getStoragePolicy()->reserve(expected_size, min_volume_index);
 
     return reservation;
 }
@@ -3711,7 +3697,60 @@ MergeTreeData::PathsWithDisks MergeTreeData::getRelativeDataPathsWithDisks() con
     return res;
 }
 
-PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context)
+MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, const Context & context) const
+{
+    bool prefixed = false;
+    String id;
+
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
+        if (const auto * partition_lit = partition_ast->as<ASTPartition &>().value->as<ASTLiteral>())
+        {
+            id = partition_lit->value.getType() == Field::Types::UInt64
+                 ? toString(partition_lit->value.get<UInt64>())
+                 : partition_lit->value.safeGet<String>();
+            prefixed = true;
+        }
+        else
+            id = getPartitionIDFromQuery(partition_ast, context);
+    }
+    else
+        id = getPartitionIDFromQuery(partition_ast, context);
+
+    return [prefixed, id](const String & partition_id)
+    {
+        if (prefixed)
+            return startsWith(partition_id, id);
+        else
+            return id == partition_id;
+    };
+}
+
+PartitionCommandsResultInfo MergeTreeData::freezePartition(
+    const ASTPtr & partition_ast,
+    const StorageMetadataPtr & metadata_snapshot,
+    const String & with_name,
+    const Context & context,
+    TableLockHolder &)
+{
+    return freezePartitionsByMatcher(getPartitionMatcher(partition_ast, context), metadata_snapshot, with_name, context);
+}
+
+PartitionCommandsResultInfo MergeTreeData::freezeAll(
+    const String & with_name,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Context & context,
+    TableLockHolder &)
+{
+    return freezePartitionsByMatcher([] (const String &) { return true; }, metadata_snapshot, with_name, context);
+}
+
+PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
+    MatcherFn matcher,
+    const StorageMetadataPtr & metadata_snapshot,
+    const String & with_name,
+    const Context & context)
 {
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
     String default_shadow_path = clickhouse_path + "shadow/";
@@ -3734,7 +3773,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
     size_t parts_processed = 0;
     for (const auto & part : data_parts)
     {
-        if (!matcher(part))
+        if (!matcher(part->info.partition_id))
             continue;
 
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
@@ -3761,6 +3800,70 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(MatcherFn m
     }
 
     LOG_DEBUG(log, "Freezed {} parts", parts_processed);
+    return result;
+}
+
+PartitionCommandsResultInfo MergeTreeData::unfreezePartition(
+    const ASTPtr & partition,
+    const String & backup_name,
+    const Context & context,
+    TableLockHolder &)
+{
+    return unfreezePartitionsByMatcher(getPartitionMatcher(partition, context), backup_name, context);
+}
+
+PartitionCommandsResultInfo MergeTreeData::unfreezeAll(
+    const String & backup_name,
+    const Context & context,
+    TableLockHolder &)
+{
+    return unfreezePartitionsByMatcher([] (const String &) { return true; }, backup_name, context);
+}
+
+PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, const Context &)
+{
+    auto backup_path = std::filesystem::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
+
+    LOG_DEBUG(log, "Unfreezing parts by path {}", backup_path.generic_string());
+
+    PartitionCommandsResultInfo result;
+
+    for (const auto & disk : getStoragePolicy()->getDisks())
+    {
+        if (!disk->exists(backup_path))
+            continue;
+
+        for (auto it = disk->iterateDirectory(backup_path); it->isValid(); it->next())
+        {
+            const auto & partition_directory = it->name();
+
+            /// Partition ID is prefix of part directory name: <partition id>_<rest of part directory name>
+            auto found = partition_directory.find('_');
+            if (found == std::string::npos)
+                continue;
+            auto partition_id = partition_directory.substr(0, found);
+
+            if (!matcher(partition_id))
+                continue;
+
+            const auto & path = it->path();
+
+            disk->removeRecursive(path);
+
+            result.push_back(PartitionCommandResultInfo{
+                .partition_id = partition_id,
+                .part_name = partition_directory,
+                .backup_path = disk->getPath() + backup_path.generic_string(),
+                .part_backup_path = disk->getPath() + path,
+                .backup_name = backup_name,
+            });
+
+            LOG_DEBUG(log, "Unfreezed part by path {}", disk->getPath() + path);
+        }
+    }
+
+    LOG_DEBUG(log, "Unfreezed {} parts", result.size());
+
     return result;
 }
 
@@ -4120,4 +4223,187 @@ void MergeTreeData::removeQueryId(const String & query_id) const
     else
         query_id_set.erase(query_id);
 }
+
+ReservationPtr MergeTreeData::balancedReservation(
+    const StorageMetadataPtr & metadata_snapshot,
+    size_t part_size,
+    size_t max_volume_index,
+    const String & part_name,
+    const MergeTreePartInfo & part_info,
+    MergeTreeData::DataPartsVector covered_parts,
+    std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
+    const IMergeTreeDataPart::TTLInfos * ttl_infos,
+    bool is_insert)
+{
+    ReservationPtr reserved_space;
+    auto min_bytes_to_rebalance_partition_over_jbod = getSettings()->min_bytes_to_rebalance_partition_over_jbod;
+    if (tagger_ptr && min_bytes_to_rebalance_partition_over_jbod > 0 && part_size >= min_bytes_to_rebalance_partition_over_jbod)
+    try
+    {
+        const auto & disks = getStoragePolicy()->getVolume(max_volume_index)->getDisks();
+        std::map<String, size_t> disk_occupation;
+        std::map<String, std::vector<String>> disk_parts_for_logging;
+        for (const auto & disk : disks)
+            disk_occupation.emplace(disk->getName(), 0);
+
+        std::set<String> committed_big_parts_from_partition;
+        std::set<String> submerging_big_parts_from_partition;
+        std::lock_guard lock(currently_submerging_emerging_mutex);
+
+        for (const auto & part : currently_submerging_big_parts)
+        {
+            if (part_info.partition_id == part->info.partition_id)
+                submerging_big_parts_from_partition.insert(part->name);
+        }
+
+        {
+            auto lock_parts = lockParts();
+            if (covered_parts.empty())
+            {
+                // It's a part fetch. Calculate `covered_parts` here.
+                MergeTreeData::DataPartPtr covering_part;
+                covered_parts = getActivePartsToReplace(part_info, part_name, covering_part, lock_parts);
+            }
+
+            // Remove irrelevant parts.
+            covered_parts.erase(
+                std::remove_if(
+                    covered_parts.begin(),
+                    covered_parts.end(),
+                    [min_bytes_to_rebalance_partition_over_jbod](const auto & part)
+                    {
+                        return !(part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod);
+                    }),
+                covered_parts.end());
+
+            // Include current submerging big parts which are not yet in `currently_submerging_big_parts`
+            for (const auto & part : covered_parts)
+                submerging_big_parts_from_partition.insert(part->name);
+
+            for (const auto & part : getDataPartsStateRange(MergeTreeData::DataPartState::Committed))
+            {
+                if (part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod
+                    && part_info.partition_id == part->info.partition_id)
+                {
+                    auto name = part->volume->getDisk()->getName();
+                    auto it = disk_occupation.find(name);
+                    if (it != disk_occupation.end())
+                    {
+                        if (submerging_big_parts_from_partition.find(part->name) == submerging_big_parts_from_partition.end())
+                        {
+                            it->second += part->getBytesOnDisk();
+                            disk_parts_for_logging[name].push_back(formatReadableSizeWithBinarySuffix(part->getBytesOnDisk()));
+                            committed_big_parts_from_partition.insert(part->name);
+                        }
+                        else
+                        {
+                            disk_parts_for_logging[name].push_back(formatReadableSizeWithBinarySuffix(part->getBytesOnDisk()) + " (submerging)");
+                        }
+                    }
+                    else
+                    {
+                        // Part is on different volume. Ignore it.
+                    }
+                }
+            }
+        }
+
+        for (const auto & [name, emerging_part] : currently_emerging_big_parts)
+        {
+            // It's possible that the emerging big parts are committed and get added twice. Thus a set is used to deduplicate.
+            if (committed_big_parts_from_partition.find(name) == committed_big_parts_from_partition.end()
+                && part_info.partition_id == emerging_part.partition_id)
+            {
+                auto it = disk_occupation.find(emerging_part.disk_name);
+                if (it != disk_occupation.end())
+                {
+                    it->second += emerging_part.estimate_bytes;
+                    disk_parts_for_logging[emerging_part.disk_name].push_back(
+                        formatReadableSizeWithBinarySuffix(emerging_part.estimate_bytes) + " (emerging)");
+                }
+                else
+                {
+                    // Part is on different volume. Ignore it.
+                }
+            }
+        }
+
+        size_t min_occupation_size = std::numeric_limits<size_t>::max();
+        std::vector<String> candidates;
+        for (const auto & [disk_name, size] : disk_occupation)
+        {
+            if (size < min_occupation_size)
+            {
+                min_occupation_size = size;
+                candidates = {disk_name};
+            }
+            else if (size == min_occupation_size)
+            {
+                candidates.push_back(disk_name);
+            }
+        }
+
+        if (!candidates.empty())
+        {
+            // Random pick one disk from best candidates
+            std::shuffle(candidates.begin(), candidates.end(), thread_local_rng);
+            String selected_disk_name = candidates.front();
+            WriteBufferFromOwnString log_str;
+            writeCString("\nbalancer: \n", log_str);
+            for (const auto & [disk_name, per_disk_parts] : disk_parts_for_logging)
+                writeString(fmt::format("  {}: [{}]\n", disk_name, fmt::join(per_disk_parts, ", ")), log_str);
+            LOG_DEBUG(log, log_str.str());
+
+            if (ttl_infos)
+                reserved_space = tryReserveSpacePreferringTTLRules(
+                    metadata_snapshot,
+                    part_size,
+                    *ttl_infos,
+                    time(nullptr),
+                    max_volume_index,
+                    is_insert,
+                    getStoragePolicy()->getDiskByName(selected_disk_name));
+            else
+                reserved_space = tryReserveSpace(part_size, getStoragePolicy()->getDiskByName(selected_disk_name));
+
+            if (reserved_space)
+            {
+                currently_emerging_big_parts.emplace(
+                    part_name, EmergingPartInfo{reserved_space->getDisk(0)->getName(), part_info.partition_id, part_size});
+
+                for (const auto & part : covered_parts)
+                {
+                    if (currently_submerging_big_parts.count(part))
+                        LOG_WARNING(log, "currently_submerging_big_parts contains duplicates. JBOD might lose balance");
+                    else
+                        currently_submerging_big_parts.insert(part);
+                }
+
+                // Record submerging big parts in the tagger to clean them up.
+                tagger_ptr->emplace(*this, part_name, std::move(covered_parts), log);
+            }
+        }
+    }
+    catch (...)
+    {
+        LOG_DEBUG(log, "JBOD balancer encounters an error. Fallback to random disk selection");
+        tryLogCurrentException(log);
+    }
+    return reserved_space;
+}
+
+CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
+{
+    std::lock_guard lock(storage.currently_submerging_emerging_mutex);
+
+    for (const auto & part : submerging_parts)
+    {
+        if (!storage.currently_submerging_big_parts.count(part))
+            LOG_WARNING(log, "currently_submerging_big_parts doesn't contain part {} to erase. This is a bug", part->name);
+        else
+            storage.currently_submerging_big_parts.erase(part);
+    }
+    storage.currently_emerging_big_parts.erase(emerging_part_name);
+}
+
 }

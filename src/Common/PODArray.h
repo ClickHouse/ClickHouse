@@ -117,8 +117,11 @@ protected:
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
-        c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
-        c_end_of_storage = c_start + bytes - pad_right - pad_left;
+        char * allocated = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
+
+        c_start = allocated + pad_left;
+        c_end = c_start;
+        c_end_of_storage = allocated + bytes - pad_right;
 
         if (pad_left)
             memset(c_start - ELEMENT_SIZE, 0, ELEMENT_SIZE);
@@ -147,12 +150,12 @@ protected:
 
         ptrdiff_t end_diff = c_end - c_start;
 
-        c_start = reinterpret_cast<char *>(
-                TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...))
-            + pad_left;
+        char * allocated = reinterpret_cast<char *>(
+            TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...));
 
+        c_start = allocated + pad_left;
         c_end = c_start + end_diff;
-        c_end_of_storage = c_start + bytes - pad_right - pad_left;
+        c_end_of_storage = allocated + bytes - pad_right;
     }
 
     bool isInitialized() const
@@ -318,11 +321,9 @@ protected:
 
     T * t_start()                      { return reinterpret_cast<T *>(this->c_start); }
     T * t_end()                        { return reinterpret_cast<T *>(this->c_end); }
-    T * t_end_of_storage()             { return reinterpret_cast<T *>(this->c_end_of_storage); }
 
     const T * t_start() const          { return reinterpret_cast<const T *>(this->c_start); }
     const T * t_end() const            { return reinterpret_cast<const T *>(this->c_end); }
-    const T * t_end_of_storage() const { return reinterpret_cast<const T *>(this->c_end_of_storage); }
 
 public:
     using value_type = T;
@@ -334,7 +335,7 @@ public:
     using const_iterator = const T *;
 
 
-    PODArray() {}
+    PODArray() = default;
 
     PODArray(size_t n)
     {
@@ -430,7 +431,7 @@ public:
     template <typename U, typename ... TAllocatorParams>
     void push_back(U && x, TAllocatorParams &&... allocator_params)
     {
-        if (unlikely(this->c_end == this->c_end_of_storage))
+        if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
         new (t_end()) T(std::forward<U>(x));
@@ -443,7 +444,7 @@ public:
     template <typename... Args>
     void emplace_back(Args &&... args)
     {
-        if (unlikely(this->c_end == this->c_end_of_storage))
+        if (unlikely(this->c_end + sizeof(T) > this->c_end_of_storage))
             this->reserveForNextSize();
 
         new (t_end()) T(std::forward<Args>(args)...);
@@ -567,7 +568,7 @@ public:
 
             /// arr1 takes ownership of the heap memory of arr2.
             arr1.c_start = arr2.c_start;
-            arr1.c_end_of_storage = arr1.c_start + heap_allocated - arr1.pad_right;
+            arr1.c_end_of_storage = arr1.c_start + heap_allocated - arr2.pad_right - arr2.pad_left;
             arr1.c_end = arr1.c_start + this->byte_size(heap_size);
 
             /// Allocate stack space for arr2.
@@ -584,7 +585,7 @@ public:
                 dest.dealloc();
                 dest.alloc(src.allocated_bytes(), std::forward<TAllocatorParams>(allocator_params)...);
                 memcpy(dest.c_start, src.c_start, this->byte_size(src.size()));
-                dest.c_end = dest.c_start + (src.c_end - src.c_start);
+                dest.c_end = dest.c_start + this->byte_size(src.size());
 
                 src.c_start = Base::null;
                 src.c_end = Base::null;
@@ -638,8 +639,8 @@ public:
             size_t rhs_size = rhs.size();
             size_t rhs_allocated = rhs.allocated_bytes();
 
-            this->c_end_of_storage = this->c_start + rhs_allocated - Base::pad_right;
-            rhs.c_end_of_storage = rhs.c_start + lhs_allocated - Base::pad_right;
+            this->c_end_of_storage = this->c_start + rhs_allocated - Base::pad_right - Base::pad_left;
+            rhs.c_end_of_storage = rhs.c_start + lhs_allocated - Base::pad_right - Base::pad_left;
 
             this->c_end = this->c_start + this->byte_size(rhs_size);
             rhs.c_end = rhs.c_start + this->byte_size(lhs_size);
@@ -692,34 +693,34 @@ public:
     }
 
 
-    bool operator== (const PODArray & other) const
+    bool operator== (const PODArray & rhs) const
     {
-        if (this->size() != other.size())
+        if (this->size() != rhs.size())
             return false;
 
-        const_iterator this_it = begin();
-        const_iterator that_it = other.begin();
+        const_iterator lhs_it = begin();
+        const_iterator rhs_it = rhs.begin();
 
-        while (this_it != end())
+        while (lhs_it != end())
         {
-            if (*this_it != *that_it)
+            if (*lhs_it != *rhs_it)
                 return false;
 
-            ++this_it;
-            ++that_it;
+            ++lhs_it;
+            ++rhs_it;
         }
 
         return true;
     }
 
-    bool operator!= (const PODArray & other) const
+    bool operator!= (const PODArray & rhs) const
     {
-        return !operator==(other);
+        return !operator==(rhs);
     }
 };
 
-template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_>
-void swap(PODArray<T, initial_bytes, TAllocator, pad_right_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_> & rhs)
+template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
+void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & rhs)
 {
     lhs.swap(rhs);
 }

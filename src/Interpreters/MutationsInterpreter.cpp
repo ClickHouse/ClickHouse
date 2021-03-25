@@ -273,10 +273,9 @@ MutationsInterpreter::MutationsInterpreter(
     , commands(std::move(commands_))
     , context(context_)
     , can_execute(can_execute_)
+    , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits())
 {
     mutation_ast = prepare(!can_execute);
-    SelectQueryOptions limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
-    select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot_, limits);
 }
 
 static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
@@ -674,16 +673,24 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
             for (const auto & kv : stage.column_to_updated)
                 stage.analyzer->appendExpression(actions_chain, kv.second, dry_run);
 
+            auto & actions = actions_chain.getLastStep().actions();
+
             for (const auto & kv : stage.column_to_updated)
             {
-                actions_chain.getLastStep().actions()->addAlias(
-                        kv.second->getColumnName(), kv.first, /* can_replace = */ true);
+                auto column_name = kv.second->getColumnName();
+                const auto & dag_node = actions->findInIndex(column_name);
+                const auto & alias = actions->addAlias(dag_node, kv.first);
+                actions->addOrReplaceInIndex(alias);
             }
         }
 
         /// Remove all intermediate columns.
         actions_chain.addStep();
-        actions_chain.getLastStep().required_output.assign(stage.output_columns.begin(), stage.output_columns.end());
+        actions_chain.getLastStep().required_output.clear();
+        ActionsDAG::NodeRawConstPtrs new_index;
+        for (const auto & name : stage.output_columns)
+            actions_chain.getLastStep().addRequiredOutput(name);
+
         actions_chain.getLastActions();
 
         actions_chain.finalize();
@@ -756,7 +763,10 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
         }
     }
 
-    auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    auto pipeline = plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
+
     pipeline->addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<MaterializingTransform>(header);
@@ -767,6 +777,9 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
 
 void MutationsInterpreter::validate()
 {
+    if (!select_interpreter)
+        select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
+
     const Settings & settings = context.getSettingsRef();
 
     /// For Replicated* storages mutations cannot employ non-deterministic functions
@@ -793,6 +806,9 @@ BlockInputStreamPtr MutationsInterpreter::execute()
 {
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
+
+    if (!select_interpreter)
+        select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
 
     QueryPlan plan;
     select_interpreter->buildQueryPlan(plan);
