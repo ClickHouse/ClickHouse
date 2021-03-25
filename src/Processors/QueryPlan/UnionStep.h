@@ -17,6 +17,8 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
+    size_t getMaxThreads() const { return max_threads; }
+
 private:
     Block header;
     size_t max_threads;
