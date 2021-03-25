@@ -1525,7 +1525,7 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     // be able to process at least the lag/lead in streaming fashion.
     // A partial solution for constant offsets is rewriting, say `lag(value, offset)
     // to `any(value) over (rows between offset preceding and offset preceding)`.
-    // We also implement non-standard functions `lag/lead_in_frame`, that are
+    // We also implement non-standard functions `lag/leadInFrame`, that are
     // analogous to `lag/lead`, but respect the frame.
     // Functions like cume_dist() do require materializing the entire
     // partition, but it's probably also simpler to implement them by rewriting
@@ -1553,14 +1553,14 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
                 parameters);
         });
 
-    factory.registerFunction("lag_in_frame", [](const std::string & name,
+    factory.registerFunction("lagInFrame", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
         });
 
-    factory.registerFunction("lead_in_frame", [](const std::string & name,
+    factory.registerFunction("leadInFrame", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
