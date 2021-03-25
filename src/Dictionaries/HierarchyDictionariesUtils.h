@@ -191,7 +191,7 @@ PaddedPODArray<UInt8> isInKeysHierarchy(
 }
 
 template <typename KeyType, typename IsKeyValidFunc, typename GetDescendantKeyFunc>
-ColumnPtr getDescendandsArray(
+ColumnPtr getDescendantsArray(
     const PaddedPODArray<KeyType> & hierarchy_keys,
     const KeyType & hierarchy_null_value,
     size_t level,
@@ -206,6 +206,16 @@ ColumnPtr getDescendandsArray(
 
     auto & elements = elements_and_offsets.elements;
     auto & offsets = elements_and_offsets.offsets;
+
+    std::cerr << "getDescendantsArray" << std::endl;
+    std::cerr << "Elements " << elements.size() << std::endl;
+    for (auto element : elements)
+        std::cerr << element << " ";
+    std::cerr << std::endl;
+    std::cerr << "Offsets " << offsets.size() << std::endl;
+    for (auto offset : offsets)
+        std::cerr << offset << " ";
+    std::cerr << std::endl;
 
     PaddedPODArray<KeyType> descendants;
     descendants.reserve(elements.size());
@@ -228,10 +238,10 @@ ColumnPtr getDescendandsArray(
     }
 
     auto elements_column = ColumnVector<KeyType>::create();
-    elements_column->getData() = std::move(elements_and_offsets.elements);
+    elements_column->getData() = std::move(descendants);
 
     auto offsets_column = ColumnVector<IColumn::Offset>::create();
-    offsets_column->getData() = std::move(offsets);
+    offsets_column->getData() = std::move(descendants_offsets);
 
     auto column_array = ColumnArray::create(std::move(elements_column), std::move(offsets_column));
     return column_array;

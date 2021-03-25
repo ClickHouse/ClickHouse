@@ -179,13 +179,13 @@ struct IDictionary : public IExternalLoadable
                         getDictionaryID().getNameForLogs());
     }
 
-    virtual ColumnPtr getDescendands(
+    virtual ColumnPtr getDescendants(
         ColumnPtr key_column [[maybe_unused]],
         const DataTypePtr & key_type [[maybe_unused]],
         size_t level [[maybe_unused]]) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Method getDescendands is not supported for {} dictionary.",
+                        "Method getDescendants is not supported for {} dictionary.",
                         getDictionaryID().getNameForLogs());
     }
 
