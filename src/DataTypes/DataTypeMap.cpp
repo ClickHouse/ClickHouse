@@ -48,7 +48,7 @@ std::string DataTypeMap::doGetName() const
 
 DataTypePtr DataTypeMap::tryGetSubcolumnType(const String & subcolumn_name) const
 {
-    size_t loc = subcolumn_name.find_first_of(".");
+    size_t loc = subcolumn_name.find_first_of('.');
     String first_name, last_name;
     if (loc == std::string::npos)
     {
@@ -66,8 +66,8 @@ DataTypePtr DataTypeMap::tryGetSubcolumnType(const String & subcolumn_name) cons
 
 ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
 {
-    const auto & colMap = assert_cast<const ColumnMap &>(column);
-    size_t loc = subcolumn_name.find_first_of(".");
+    const auto & col_map = assert_cast<const ColumnMap &>(column);
+    size_t loc = subcolumn_name.find_first_of('.');
     String first_name, last_name;
     if (loc == std::string::npos)
     {
@@ -78,8 +78,8 @@ ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn
         first_name = subcolumn_name.substr(0, loc);
         last_name = subcolumn_name.substr(loc+1);
     }
-    auto it = colMap.subColumns.find(first_name);
-    if (it == colMap.subColumns.end())
+    auto it = col_map.subColumns.find(first_name);
+    if (it == col_map.subColumns.end())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
     }
@@ -91,10 +91,10 @@ ColumnPtr DataTypeMap::getSubcolumn(const String & subcolumn_name, const IColumn
 template <typename KeyWriter, typename ValWriter>
 void DataTypeMap::serializeTextImpl(const IColumn & column, WriteBuffer & ostr, KeyWriter && keyWriter, ValWriter valWriter) const
 {
-    const auto & colMap = assert_cast<const ColumnMap &>(column);
+    const auto & col_map = assert_cast<const ColumnMap &>(column);
     bool first = true;
     writeChar('{', ostr);
-    for (const auto & elem : colMap.subColumns)
+    for (const auto & elem : col_map.subColumns)
     {
         if (!first)
             writeChar(',', ostr);
@@ -109,9 +109,9 @@ void DataTypeMap::serializeTextImpl(const IColumn & column, WriteBuffer & ostr, 
 template <typename KeyReader, typename ValReader>
 void DataTypeMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, KeyReader && keyReader, ValReader && valReader) const
 {
-    ColumnMap & colMap = assert_cast<ColumnMap &>(column);
-    MutableColumnPtr keysColumn = key_type->createColumn()->assumeMutable();
-    auto & subColumns = colMap.subColumns;
+    ColumnMap & col_map = assert_cast<ColumnMap &>(column);
+    MutableColumnPtr keys_column = key_type->createColumn()->assumeMutable();
+    auto & subColumns = col_map.subColumns;
     size_t orig_size = column.size();
 
     assertChar('{', istr);
@@ -135,18 +135,18 @@ void DataTypeMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, KeyRe
             if (*istr.position() == '}')
                 break;
 
-            String keyStr;
-            keyReader(keyStr);
+            String key_str;
+            keyReader(key_str);
             skipWhitespaceIfAny(istr);
             assertChar(':', istr);
             skipWhitespaceIfAny(istr);
-            auto it = subColumns.find(keyStr);
+            auto it = subColumns.find(key_str);
             if (it == subColumns.end())
             {
                 MutableColumnPtr mcp = value_type->createColumn();
                 mcp->insertManyDefaults(orig_size);
                 valReader(*mcp);
-                subColumns[keyStr] = std::move(mcp);
+                subColumns[key_str] = std::move(mcp);
             }
             else
             {
@@ -156,7 +156,7 @@ void DataTypeMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, KeyRe
         }
         assertChar('}', istr);
 
-        for (auto & elem : colMap.subColumns)
+        for (auto & elem : col_map.subColumns)
         {
             if (elem.second->size()==orig_size)
             {
@@ -173,9 +173,9 @@ void DataTypeMap::deserializeTextImpl(IColumn & column, ReadBuffer & istr, KeyRe
 void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeTextImpl(column, ostr,
-        [&](const String & keyStr)
+        [&](const String & key_str)
         {
-            writeQuotedString(keyStr, ostr);
+            writeQuotedString(key_str, ostr);
         },
         [&](const IColumn & subcolumn)
         {
@@ -186,9 +186,9 @@ void DataTypeMap::serializeText(const IColumn & column, size_t row_num, WriteBuf
 void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextImpl(column, istr,
-        [&](String & keyStr)
+        [&](String & key_str)
         {
-            readQuotedString(keyStr, istr);
+            readQuotedString(key_str, istr);
         },
         [&](IColumn & subcolumn)
         {
@@ -200,9 +200,9 @@ void DataTypeMap::deserializeText(IColumn & column, ReadBuffer & istr, const For
 void DataTypeMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeTextImpl(column, ostr,
-        [&](const String & keyStr)
+        [&](const String & key_str)
         {
-            writeJSONString(keyStr, ostr, settings);
+            writeJSONString(key_str, ostr, settings);
         },
         [&](const IColumn & subcolumn)
         {
@@ -213,9 +213,9 @@ void DataTypeMap::serializeTextJSON(const IColumn & column, size_t row_num, Writ
 void DataTypeMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextImpl(column, istr,
-        [&](String & keyStr)
+        [&](String & key_str)
         {
-            readJSONString(keyStr, istr);
+            readJSONString(key_str, istr);
         },
         [&](IColumn & subcolumn)
         {
@@ -240,9 +240,9 @@ void DataTypeMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const 
 
 void DataTypeMap::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & colMap = assert_cast<const ColumnMap &>(column);
+    const auto & col_map = assert_cast<const ColumnMap &>(column);
     writeCString("<map>", ostr);
-    for (const auto & elem : colMap.subColumns)
+    for (const auto & elem : col_map.subColumns)
     {
         writeCString("<elem>", ostr);
         writeCString("<key>", ostr);
@@ -284,10 +284,10 @@ void DataTypeMap::deserializeBinary(Field & field, ReadBuffer & istr) const
 
 void DataTypeMap::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    auto & colMap = assert_cast<const ColumnMap &>(column);
-    auto & subColumns = colMap.subColumns;
-    writeVarUInt(subColumns.size(), ostr);
-    for (const auto & elem : subColumns)
+    auto & col_map = assert_cast<const ColumnMap &>(column);
+    auto & sub_columns = col_map.subColumns;
+    writeVarUInt(sub_columns.size(), ostr);
+    for (const auto & elem : sub_columns)
     {
         key_type->serializeBinary(elem.first, ostr);
         value_type->serializeBinary(*(elem.second), row_num, ostr);
@@ -296,8 +296,8 @@ void DataTypeMap::serializeBinary(const IColumn & column, size_t row_num, WriteB
 
 void DataTypeMap::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    ColumnMap & colMap = assert_cast<ColumnMap &>(column);
-    auto & subColumns = colMap.subColumns;
+    ColumnMap & col_map = assert_cast<ColumnMap &>(column);
+    auto & sub_columns = col_map.subColumns;
     size_t orig_size = column.size();
     Int32 size;
     readVarInt(size, istr);
@@ -305,21 +305,21 @@ void DataTypeMap::deserializeBinary(IColumn & column, ReadBuffer & istr) const
     {
         Field key, value;
         key_type->deserializeBinary(key, istr);
-        String & keyStr = get<String &>(key);
-        const auto & it = subColumns.find(keyStr);
-        if (it == subColumns.end())
+        String & key_str = get<String &>(key);
+        const auto & it = sub_columns.find(key_str);
+        if (it == sub_columns.end())
         {
             MutableColumnPtr mcp = value_type->createColumn();
             mcp->insertManyDefaults(orig_size);
             value_type->deserializeBinary(*mcp, istr);
-            subColumns[keyStr] = std::move(mcp);
+            sub_columns[key_str] = std::move(mcp);
         }
         else
         {
             value_type->deserializeBinary(*(it->second->assumeMutable()), istr);
         }
     }
-    for (auto & elem : subColumns)
+    for (auto & elem : sub_columns)
     {
         if (elem.second->size()==orig_size)
         {
@@ -344,9 +344,9 @@ void DataTypeMap::enumerateStreamsImpl(const StreamCallback & callback, Substrea
 void DataTypeMap::enumerateDynamicStreams(const IColumn & column, const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::MapValues);
-    const auto & colMap = assert_cast<const ColumnMap &>(column);
-    auto & subColumns = colMap.subColumns;
-    for (auto & elem : subColumns)
+    const auto & col_map = assert_cast<const ColumnMap &>(column);
+    auto & sub_columns = col_map.subColumns;
+    for (const auto & elem : sub_columns)
     {
         path.back().map_key = elem.first;
         // iterate recursively into subcolumns
@@ -405,7 +405,6 @@ void DataTypeMap::serializeBinaryBulkStatePrefixImpl(
     SerializeBinaryBulkSettings & /*settings*/,
     SerializeBinaryBulkStatePtr & /*state*/) const
 {
-    return;
 }
 
 void DataTypeMap::serializeBinaryBulkStateSuffixImpl(
@@ -433,7 +432,6 @@ void DataTypeMap::deserializeBinaryBulkStatePrefixImpl(
     DeserializeBinaryBulkSettings & /*settings*/,
     DeserializeBinaryBulkStatePtr & /*state*/) const
 {
-    return;
 }
 
 
@@ -444,7 +442,7 @@ void DataTypeMap::serializeBinaryBulkWithMultipleStreamsImpl(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    const ColumnMap & colMap = assert_cast<const ColumnMap &>(column);
+    const ColumnMap & col_map = assert_cast<const ColumnMap &>(column);
     SerializeBinaryBulkStateMap * map_state;
     if (state == nullptr)
     {
@@ -474,29 +472,29 @@ void DataTypeMap::serializeBinaryBulkWithMultipleStreamsImpl(
     {
         known_keys.insert(elem.first);
     }
-    for (const auto & elem : colMap.subColumns)
+    for (const auto & elem : col_map.subColumns)
     {
         known_keys.insert(elem.first);
     }
 
-    MutableColumnPtr keysColumn = key_type->createColumn()->assumeMutable();
-    keysColumn->insert(std::to_string(limit));
+    MutableColumnPtr keys_column = key_type->createColumn()->assumeMutable();
+    keys_column->insert(std::to_string(limit));
     size_t num_keys = known_keys.size();
-    keysColumn->insert(std::to_string(num_keys));
+    keys_column->insert(std::to_string(num_keys));
     for (const auto & elem : known_keys)
     {
-        keysColumn->insert(elem);
+        keys_column->insert(elem);
     }
     if (auto * stream = settings.getter(settings.path))
     {
-        key_type->serializeBinaryBulk(*(keysColumn), *stream, 0, keysColumn->size());
+        key_type->serializeBinaryBulk(*(keys_column), *stream, 0, keys_column->size());
     }
     settings.path.pop_back();
 
     /// Serialize content of each subcolumn.
     settings.path.push_back(Substream::MapValues);
     ColumnPtr gap = nullptr;
-    for (auto & key : known_keys)
+    for (const auto & key : known_keys)
     {
         settings.path.back().map_key = key;
         auto [it, inserted] = map_state->states.emplace(key, nullptr);
@@ -505,8 +503,8 @@ void DataTypeMap::serializeBinaryBulkWithMultipleStreamsImpl(
             value_type->serializeBinaryBulkStatePrefix(settings, it->second);
         }
 
-        auto it2 = colMap.subColumns.find(key);
-        if (it2 == colMap.subColumns.end())
+        auto it2 = col_map.subColumns.find(key);
+        if (it2 == col_map.subColumns.end())
         {
             /// For subcolumns ever serialized but not exist in this block, create them with default value and serialize.
             if (gap == nullptr)
@@ -530,9 +528,9 @@ void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    ColumnMap & colMap = assert_cast<ColumnMap &>(column);
-    size_t orig_size = colMap.size();
-    auto & subColumns = colMap.subColumns;
+    ColumnMap & col_map = assert_cast<ColumnMap &>(column);
+    size_t orig_size = col_map.size();
+    auto & subColumns = col_map.subColumns;
     DeserializeBinaryBulkStateMap * map_state;
     if (state == nullptr)
     {

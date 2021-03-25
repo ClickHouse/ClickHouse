@@ -88,7 +88,7 @@ private:
 
     /** For a map the function finds the matched value for a key.
      */
-    ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+    static ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count);
 
     using Offsets = ColumnArray::Offsets;
 
@@ -944,7 +944,7 @@ bool FunctionArrayElement::matchKeyToIndexConst(
 }
 
 ColumnPtr FunctionArrayElement::executeMap(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count)
 {
     const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
     if (!col_map)
@@ -1032,9 +1032,9 @@ ColumnPtr FunctionArrayElement::executeImpl(const ColumnsWithTypeAndName & argum
     /// Check nullability.
     bool is_array_of_nullable = false;
 
-    const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
-    if (col_map)
-        return executeMap(arguments, result_type, input_rows_count);
+    ColumnPtr res;
+    if ((res = executeMap(arguments, result_type, input_rows_count)))
+        return res;
 
     const ColumnArray * col_array = nullptr;
     const ColumnArray * col_const_array = nullptr;
@@ -1105,10 +1105,10 @@ ColumnPtr FunctionArrayElement::executeImpl(const ColumnsWithTypeAndName & argum
             builder.initSource(nullable_col.getNullMapData().data());
         }
 
-        auto res = perform(source_columns, tmp_ret_type, builder, input_rows_count);
+        auto nested_column = perform(source_columns, tmp_ret_type, builder, input_rows_count);
 
         /// Store the result.
-        return ColumnNullable::create(res, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+        return ColumnNullable::create(nested_column, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
     }
 }
 

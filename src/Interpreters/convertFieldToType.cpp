@@ -285,7 +285,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Map res;
             bool have_unconvertible_element = false;
 
-            for (auto & elem : map)
+            for (const auto & elem : map)
             {
                 const auto & key = elem.first;
                 const auto & value = elem.second;

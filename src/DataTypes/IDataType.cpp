@@ -253,7 +253,6 @@ void IDataType::enumerateStreams(const StreamCallback & callback, SubstreamPath 
 
 void IDataType::enumerateDynamicStreams(const IColumn & /*column*/, const StreamCallback & /*callback*/, SubstreamPath & /*path*/) const
 {
-    return;
 }
 
 void IDataType::serializeBinaryBulkStatePrefix(

@@ -195,7 +195,7 @@ public:
                 const auto & col_val = col_map.getSubColumn(key);
                 if (!col_val)
                     continue;
-                auto & col_val_nullable = assert_cast<const ColumnNullable &>(*col_val);
+                const auto & col_val_nullable = assert_cast<const ColumnNullable &>(*col_val);
                 if (!col_val_nullable.isNullAt(i))
                     vec_to[i] = 0x01;
             }
@@ -241,7 +241,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnMap & col_map = assert_cast<const ColumnMap &>(*arguments[0].column.get());
-        const auto & subColumns = col_map.subColumns;
+        const auto & sub_columns = col_map.subColumns;
 
         auto res = result_type->createColumn();
         auto & col_arr = assert_cast<ColumnArray &>(*res);
@@ -251,9 +251,9 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             int size = 0;
-            for (const auto & elem : subColumns)
+            for (const auto & elem : sub_columns)
             {
-                auto & col_val_nullable = assert_cast<const ColumnNullable &>(*elem.second);
+                const auto & col_val_nullable = assert_cast<const ColumnNullable &>(*elem.second);
                 if (!col_val_nullable.isNullAt(i))
                 {
                     vec_to.insert(elem.first);
@@ -303,38 +303,38 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const ColumnMap & col_map = assert_cast<const ColumnMap &>(*arguments[0].column.get());
-        const auto & subColumns = col_map.subColumns;
+        const auto & sub_columns = col_map.subColumns;
 
         auto res = result_type->createColumn();
         auto & col_arr = assert_cast<ColumnArray &>(*res);
         auto & vec_to = col_arr.getData();
         auto & offsets = col_arr.getOffsets();
 
-        Int64 valI64;
-        Float64 valF64;
-        String valStr;
+        Int64 val_i64;
+        Float64 val_f64;
+        String val_str;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             int size = 0;
-            for (const auto & elem : subColumns)
+            for (const auto & elem : sub_columns)
             {
-                auto & col_val_nullable = assert_cast<const ColumnNullable &>(*elem.second);
+                const auto & col_val_nullable = assert_cast<const ColumnNullable &>(*elem.second);
                 const Field & f = col_val_nullable[i];
                 switch (f.getType())
                 {
                     case Field::Types::Int64:
-                        valI64 = f.safeGet<Int64>();
-                        vec_to.insert(valI64);
+                        val_i64 = f.safeGet<Int64>();
+                        vec_to.insert(val_i64);
                         size++;
                         break;
                     case Field::Types::Float64:
-                        valF64 = f.safeGet<Float64>();
-                        vec_to.insert(valF64);
+                        val_f64 = f.safeGet<Float64>();
+                        vec_to.insert(val_f64);
                         size++;
                         break;
                     case Field::Types::String:
-                        valStr = std::move(f.safeGet<String>());
-                        vec_to.insert(valStr);
+                        val_str = std::move(f.safeGet<String>());
+                        vec_to.insert(val_str);
                         size++;
                         break;
                     case Field::Types::Null:

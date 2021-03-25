@@ -376,7 +376,7 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         size_t separator;
         while (tail != "}")
         {
-            separator = tail.find_first_of(":");
+            separator = tail.find_first_of(':');
             if (separator == std::string_view::npos)
                 show_error();
             String key(tail.substr(0, separator));
