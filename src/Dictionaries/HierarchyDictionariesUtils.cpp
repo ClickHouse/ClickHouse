@@ -70,6 +70,7 @@ namespace
 
 ColumnPtr getHierarchyDefaultImplementation(const IDictionary * dictionary, ColumnPtr key_column, const DataTypePtr & key_type)
 {
+    key_column = key_column->convertToFullColumnIfConst();
     const auto * key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*key_column);
     if (!key_column_typed)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Key column should be UInt64");
@@ -106,6 +107,9 @@ ColumnUInt8::Ptr isInHierarchyDefaultImplementation(
     ColumnPtr in_key_column,
     const DataTypePtr & key_type)
 {
+    key_column = key_column->convertToFullColumnIfConst();
+    in_key_column = in_key_column->convertToFullColumnIfConst();
+
     const auto * key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*key_column);
     if (!key_column_typed)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Key column should be UInt64");

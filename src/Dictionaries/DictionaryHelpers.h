@@ -307,33 +307,27 @@ public:
         assert(!key_columns.empty());
 
         if constexpr (key_type == DictionaryKeyType::simple)
-            keys = getColumnVectorData(key_columns.front());
-        else
-            keys = deserializeKeyColumnsInArena(key_columns, existing_arena);
-    }
+        {
+            simple_key_column = key_columns.front()->convertToFullColumnIfConst();
 
+            const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(simple_key_column.get());
+
+            if (!vector_col)
+                throw Exception{ErrorCodes::TYPE_MISMATCH, "Column type mismatch for simple key expected UInt64"};
+        }
+        else
+            complex_keys_serialized = deserializeKeyColumnsInArena(key_columns, existing_arena);
+    }
 
     const PaddedPODArray<KeyType> & getKeys() const
     {
-        return keys;
+        if constexpr (key_type == DictionaryKeyType::simple)
+            return static_cast<const ColumnVector<UInt64> *>(simple_key_column.get())->getData();
+        else
+            return complex_keys_serialized;
     }
 
 private:
-    static PaddedPODArray<UInt64> getColumnVectorData(const ColumnPtr column)
-    {
-        PaddedPODArray<UInt64> result;
-
-        auto full_column = column->convertToFullColumnIfConst();
-        const auto *vector_col = checkAndGetColumn<ColumnVector<UInt64>>(full_column.get());
-
-        if (!vector_col)
-            throw Exception{ErrorCodes::TYPE_MISMATCH, "Column type mismatch for simple key expected UInt64"};
-
-        result.assign(vector_col->getData());
-
-        return result;
-    }
-
     static PaddedPODArray<StringRef> deserializeKeyColumnsInArena(const Columns & key_columns, Arena & temporary_arena)
     {
         size_t keys_size = key_columns.front()->size();
@@ -361,7 +355,8 @@ private:
         return result;
     }
 
-    PaddedPODArray<KeyType> keys;
+    PaddedPODArray<KeyType> complex_keys_serialized;
+    ColumnPtr simple_key_column;
 
 };
 
