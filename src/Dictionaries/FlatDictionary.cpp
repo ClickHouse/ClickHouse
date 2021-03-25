@@ -213,10 +213,7 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
         return result;
     };
 
-    auto is_in_hierarchy_result = isInKeysHierarchy(keys, keys_in, null_value, is_key_valid_func, get_parent_key_func);
-
-    auto result = ColumnUInt8::create();
-    result->getData() = std::move(is_in_hierarchy_result);
+    auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_key_func);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
 
@@ -245,7 +242,7 @@ ColumnPtr FlatDictionary::getDescendants(
             parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
     }
 
-    auto result = getDescendantsArray(keys, parent_to_child, level);
+    auto result = getKeysDescendantsArray(keys, parent_to_child, level);
 
     query_count.fetch_add(keys.size(), std::memory_order_relaxed);
 
