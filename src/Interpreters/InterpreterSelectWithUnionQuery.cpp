@@ -6,6 +6,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -251,11 +252,23 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         {
             plans[i] = std::make_unique<QueryPlan>();
             nested_interpreters[i]->buildQueryPlan(*plans[i]);
+
+            if (!blocksHaveEqualStructure(plans[i]->getCurrentDataStream().header, result_header))
+            {
+                auto actions_dag = ActionsDAG::makeConvertingActions(
+                        plans[i]->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                        result_header.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Position);
+                auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentDataStream(), std::move(actions_dag));
+                converting_step->setStepDescription("Conversion before UNION");
+                plans[i]->addStep(std::move(converting_step));
+            }
+
             data_streams[i] = plans[i]->getCurrentDataStream();
         }
 
         auto max_threads = context->getSettingsRef().max_threads;
-        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
+        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), max_threads);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
