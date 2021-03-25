@@ -560,7 +560,7 @@ Result:
 └───────────┘
 ```
 
-## ngramSimHashUTF8 {#ngramSimhashutf8}
+## ngramSimHashUTF8 {#ngramsimhashutf8}
 
 Returns the n-gram simhash of a string in UTF8.
 
@@ -599,7 +599,7 @@ Result:
 └────────────┘
 ```
 
-## ngramSimHashCaseInsensitiveUTF8 {#ngramSimHashCaseInsensitiveutf8}
+## ngramSimHashCaseInsensitiveUTF8 {#ngramsimhashcaseinsensitiveutf8}
 
 Returns the n-gram simhash of a string in UTF8 case insensitive.
 
@@ -677,7 +677,7 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseInsensitive}
+## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseinsensitive}
 
 Returns the word shingle simhash of a string in ASCII case insensitive.
 
@@ -716,7 +716,7 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHashUTF8 {#wordShingleSimHashutf8}
+## wordShingleSimHashUTF8 {#wordshinglesimhashutf8}
 
 Returns the word shingle simhash of a string in UTF8.
 
@@ -755,7 +755,7 @@ Result:
 └────────────┘
 ```
 
-## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimHashcaseinsensitiveutf8}
+## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimhashcaseinsensitiveutf8}
 
 Returns the word shingle simhash of a string in UTF8 case insensitive.
 
@@ -794,7 +794,7 @@ Result:
 └────────────┘
 ```
 
-## ngramMinHash {#ngraminHash}
+## ngramMinHash {#ngraminhash}
 
 Calculates a hash value for each n-gram of a string in ASCII and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
 
@@ -843,7 +843,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 **Syntax**
 
 ``` sql
-ngramMinHash(string [, ngramsize, hashnum])
+ngramMinHashCaseInsensitive(string [, ngramsize, hashnum])
 ```
 
 **Arguments**
@@ -883,7 +883,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 **Syntax**
 
 ``` sql
-ngramMinHash(string [, ngramsize, hashnum])
+ngramMinHashUTF8(string [, ngramsize, hashnum])
 ```
 
 **Arguments**
@@ -923,7 +923,7 @@ Can be used for detection of semi-duplicate strings with [tupleHammingDistance](
 **Syntax**
 
 ``` sql
-ngramMinHash(string [, ngramsize, hashnum])
+ngramMinHashCaseInsensitiveUTF8(string [, ngramsize, hashnum])
 ```
 
 **Arguments**
@@ -999,7 +999,7 @@ Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n
 **Syntax**
 
 ``` sql
-ngramMinHashArg(string [, ngramsize, hashnum])
+ngramMinHashArgCaseInsensitive(string [, ngramsize, hashnum])
 ```
 
 **Arguments**
@@ -1037,7 +1037,7 @@ Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n
 **Syntax**
 
 ``` sql
-ngramMinHashArg(string [, ngramsize, hashnum])
+ngramMinHashArgUTF8(string [, ngramsize, hashnum])
 ```
 
 **Arguments**
