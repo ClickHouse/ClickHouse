@@ -62,7 +62,7 @@ WindowStep::WindowStep(const DataStream & input_stream_,
 
 }
 
-void WindowStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void WindowStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & /*header*/)
     {

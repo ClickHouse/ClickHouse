@@ -14,24 +14,23 @@ namespace DB
 class SharedLibrary : private boost::noncopyable
 {
 public:
-    explicit SharedLibrary(std::string_view path, int flags = RTLD_LAZY);
+    explicit SharedLibrary(const std::string & path, int flags = RTLD_LAZY);
 
     ~SharedLibrary();
 
     template <typename Func>
-    Func get(std::string_view name)
+    Func get(const std::string & name)
     {
         return reinterpret_cast<Func>(getImpl(name));
     }
-
     template <typename Func>
-    Func tryGet(std::string_view name)
+    Func tryGet(const std::string & name)
     {
         return reinterpret_cast<Func>(getImpl(name, true));
     }
 
 private:
-    void * getImpl(std::string_view name, bool no_throw = false);
+    void * getImpl(const std::string & name, bool no_throw = false);
 
     void * handle = nullptr;
 };

@@ -625,12 +625,6 @@ public:
         return collectLoadResults<ReturnType>(filter);
     }
 
-    bool has(const String & name) const
-    {
-        std::lock_guard lock{mutex};
-        return infos.contains(name);
-    }
-
     /// Starts reloading all the object which update time is earlier than now.
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
@@ -823,9 +817,7 @@ private:
 
             if (info->loading_id < min_id)
                 startLoading(*info, forced_to_reload, *min_id);
-
-            /// Wait for the next event if loading wasn't completed, and stop otherwise.
-            return (info->state_id >= min_id);
+            return false; /// wait for the next event
         };
 
         if (timeout == WAIT)
@@ -853,10 +845,9 @@ private:
                 if (info.state_id >= min_id)
                     continue;
 
+                all_ready = false;
                 if (info.loading_id < min_id)
                     startLoading(info, forced_to_reload, *min_id);
-
-                all_ready &= (info.state_id >= min_id);
             }
             return all_ready;
         };
@@ -1398,11 +1389,6 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
     std::unordered_set<String> names;
     boost::range::copy(getAllTriedToLoadNames(), std::inserter(names, names.end()));
     return loadOrReload<ReturnType>([&names](const String & name) { return names.count(name); });
-}
-
-bool ExternalLoader::has(const String & name) const
-{
-    return loading_dispatcher->has(name);
 }
 
 Strings ExternalLoader::getAllTriedToLoadNames() const

@@ -47,7 +47,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/ExpressionJIT.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -831,7 +830,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
+    if (compiled_expression_cache_size)
+        global_context->setCompiledExpressionCache(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files

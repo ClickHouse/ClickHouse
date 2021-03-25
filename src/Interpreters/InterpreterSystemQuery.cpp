@@ -24,7 +24,6 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/ExpressionJIT.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -271,17 +270,14 @@ BlockIO InterpreterSystemQuery::execute()
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
-            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->reset();
+            system_context.dropCompiledExpressionCache();
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
         {
             context.checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
-
-            auto & external_dictionaries_loader = system_context.getExternalDictionariesLoader();
-            external_dictionaries_loader.reloadDictionary(query.target_dictionary, context);
-
+            system_context.getExternalDictionariesLoader().loadOrReload(
+                    DatabaseCatalog::instance().resolveDictionaryName(query.target_dictionary));
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -756,11 +752,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::END: break;
     }
     return required_access;
-}
-
-void InterpreterSystemQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, const Context &) const
-{
-    elem.query_kind = "System";
 }
 
 }

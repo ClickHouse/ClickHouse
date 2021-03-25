@@ -250,7 +250,7 @@ BlockIO InterpreterInsertQuery::execute()
                 }
             }
 
-            res.pipeline = QueryPipeline::unitePipelines(std::move(pipelines), {}, ExpressionActionsSettings::fromContext(context));
+            res.pipeline = QueryPipeline::unitePipelines(std::move(pipelines), {});
         }
     }
 
@@ -378,7 +378,7 @@ BlockIO InterpreterInsertQuery::execute()
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
                 header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Position);
-        auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context));
+        auto actions = std::make_shared<ExpressionActions>(actions_dag);
 
         res.pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {

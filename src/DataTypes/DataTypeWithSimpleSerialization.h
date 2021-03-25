@@ -9,7 +9,8 @@ namespace DB
 class DataTypeWithSimpleSerialization : public IDataType
 {
 protected:
-    DataTypeWithSimpleSerialization() = default;
+    DataTypeWithSimpleSerialization()
+    {}
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {

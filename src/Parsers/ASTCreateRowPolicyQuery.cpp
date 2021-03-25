@@ -169,15 +169,15 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 }
 
 
-void ASTCreateRowPolicyQuery::replaceCurrentUserTag(const String & current_user_name) const
+void ASTCreateRowPolicyQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
 {
     if (roles)
-        roles->replaceCurrentUserTag(current_user_name);
+        roles->replaceCurrentUserTagWithName(current_user_name);
 }
 
-void ASTCreateRowPolicyQuery::replaceEmptyDatabase(const String & current_database) const
+void ASTCreateRowPolicyQuery::replaceEmptyDatabaseWithCurrent(const String & current_database) const
 {
     if (names)
-        names->replaceEmptyDatabase(current_database);
+        names->replaceEmptyDatabaseWithCurrent(current_database);
 }
 }

@@ -11,7 +11,6 @@
 #    include <Columns/ColumnFixedString.h>
 #    include <DataTypes/IDataType.h>
 #    include <DataTypes/DataTypeNullable.h>
-#    include <IO/ReadBufferFromString.h>
 #    include <IO/ReadHelpers.h>
 #    include <IO/WriteHelpers.h>
 #    include <IO/Operators.h>
@@ -98,15 +97,8 @@ namespace
                 assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
                 break;
             case ValueType::vtDateTime:
-            {
-                ReadBufferFromString in(value);
-                time_t time = 0;
-                readDateTimeText(time, in);
-                if (time < 0)
-                    time = 0;
-                assert_cast<ColumnUInt32 &>(column).insertValue(time);
+                assert_cast<ColumnUInt32 &>(column).insertValue(UInt32(value.getDateTime()));
                 break;
-            }
             case ValueType::vtUUID:
                 assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
                 break;

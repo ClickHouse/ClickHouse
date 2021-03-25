@@ -47,7 +47,7 @@ You can use the `EXCEPT` expression to skip columns as a result of the query.
 
 **Arguments**
 
--   `x` — A `tuple` function, column, or tuple of elements. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `x` - A `tuple` function, column, or tuple of elements. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Returned value**
 

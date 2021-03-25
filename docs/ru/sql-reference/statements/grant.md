@@ -483,3 +483,4 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Привилегия `ADMIN OPTION` разрешает пользователю назначать свои роли другому пользователю.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/grant/) <!--hide-->
