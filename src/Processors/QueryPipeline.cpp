@@ -234,20 +234,6 @@ QueryPipeline QueryPipeline::unitePipelines(
 
         assertBlocksHaveEqualStructure(pipeline.getHeader(), common_header, "QueryPipeline::unitePipelines");
 
-        // if (!pipeline.isCompleted())
-        // {
-        //     auto actions_dag = ActionsDAG::makeConvertingActions(
-        //             pipeline.getHeader().getColumnsWithTypeAndName(),
-        //             common_header.getColumnsWithTypeAndName(),
-        //             ActionsDAG::MatchColumnsMode::Position);
-        //     auto actions = std::make_shared<ExpressionActions>(actions_dag, settings);
-
-        //     pipeline.addSimpleTransform([&](const Block & header)
-        //     {
-        //        return std::make_shared<ExpressionTransform>(header, actions);
-        //     });
-        // }
-
         pipes.emplace_back(std::move(pipeline.pipe));
 
         max_threads += pipeline.max_threads;
