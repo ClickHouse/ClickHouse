@@ -852,7 +852,7 @@ private:
         if (!dict->hasHierarchy())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary ({}) does not support hierarchy", dict->getFullName());
 
-        ColumnPtr res = dict->getDescendants(arguments[1].column, std::make_shared<DataTypeUInt64>(), 0);
+        ColumnPtr res = dict->getDescendants(arguments[1].column, std::make_shared<DataTypeUInt64>(), 1);
 
         return res;
     }
@@ -895,7 +895,7 @@ private:
             throw Exception{"Illegal type " + arguments[1]->getName() + " of third argument of function " + getName()
                 + ", must be const unsigned integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        return std::make_shared<DataTypeUInt8>();
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
     bool isDeterministic() const override { return false; }

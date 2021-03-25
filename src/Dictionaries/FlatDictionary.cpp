@@ -218,6 +218,8 @@ ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
     auto result = ColumnUInt8::create();
     result->getData() = std::move(is_in_hierarchy_result);
 
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+
     return result;
 }
 
@@ -231,44 +233,22 @@ ColumnPtr FlatDictionary::getDescendants(
 
     size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
     const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
-
-    const UInt64 null_value = std::get<UInt64>(hierarchical_attribute.null_values);
     const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.arrays);
 
-    HashMap<UInt64, UInt64> parent_to_child;
+    HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
 
     for (size_t i = 0; i < parent_keys.size(); ++i)
     {
         auto parent_key = parent_keys[i];
-        parent_to_child[parent_key] = static_cast<UInt64>(i);
+
+        if (loaded_ids[i])
+            parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
     }
 
+    auto result = getDescendantsArray(keys, parent_to_child, level);
 
-    std::cerr << "FlatDictionary::getDescendants " << parent_to_child.size() << std::endl;
-    for (auto & node : parent_to_child)
-    {
-        std::cerr << node.getKey() << " " << node.getMapped() << std::endl;
-    }
-    std::cerr << std::endl;
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
 
-    auto is_key_valid_func = [&](auto & key)
-    {
-        return parent_to_child.find(key) != nullptr;
-    };
-
-    auto get_child_key_func = [&](auto & key)
-    {
-        std::optional<UInt64> result;
-
-        auto it = parent_to_child.find(key);
-
-        if (it)
-            result = it->getMapped();
-
-        return result;
-    };
-
-    auto result = getDescendantsArray(keys, null_value, level, is_key_valid_func, get_child_key_func);
     return result;
 }
 
