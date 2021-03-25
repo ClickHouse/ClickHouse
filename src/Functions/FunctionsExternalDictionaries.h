@@ -852,7 +852,7 @@ private:
         if (!dict->hasHierarchy())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary ({}) does not support hierarchy", dict->getFullName());
 
-        ColumnPtr res = dict->getDescendands(arguments[1].column, std::make_shared<DataTypeUInt64>(), 0);
+        ColumnPtr res = dict->getDescendants(arguments[1].column, std::make_shared<DataTypeUInt64>(), 0);
 
         return res;
     }
@@ -860,17 +860,17 @@ private:
     mutable FunctionDictHelper helper;
 };
 
-class FunctionDictGetDescendands final : public IFunction
+class FunctionDictGetDescendants final : public IFunction
 {
 public:
-    static constexpr auto name = "dictGetDescendands";
+    static constexpr auto name = "dictGetDescendants";
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionDictGetDescendands>(context);
+        return std::make_shared<FunctionDictGetDescendants>(context);
     }
 
-    explicit FunctionDictGetDescendands(const Context & context_)
+    explicit FunctionDictGetDescendants(const Context & context_)
         : helper(context_) {}
 
     String getName() const override { return name; }
@@ -891,9 +891,9 @@ private:
             throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
                 + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!WhichDataType(arguments[2]).isUInt64())
+        if (!isUnsignedInteger(arguments[2]))
             throw Exception{"Illegal type " + arguments[1]->getName() + " of third argument of function " + getName()
-                + ", must be const UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                + ", must be const unsigned integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -905,19 +905,14 @@ private:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        const auto * level_const_column = checkAndGetColumnConst<ColumnVector<UInt64>>(arguments[2].column.get());
-
-        if (!level_const_column)
-            throw Exception{"Illegal type " + arguments[1].type->getName() + " of third argument of function " + getName()
-                + ", must be const UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        size_t level = static_cast<size_t>(arguments[2].column->get64(0));
 
         auto dict = helper.getDictionary(arguments[0]);
 
         if (!dict->hasHierarchy())
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary ({}) does not support hierarchy", dict->getFullName());
 
-        size_t level = static_cast<size_t>(level_const_column->getValue<UInt64>());
-        ColumnPtr res = dict->getDescendands(arguments[1].column, std::make_shared<DataTypeUInt64>(), level);
+        ColumnPtr res = dict->getDescendants(arguments[1].column, std::make_shared<DataTypeUInt64>(), level);
 
         return res;
     }
