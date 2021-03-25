@@ -482,23 +482,26 @@ Result:
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-## ngramSimhash {#ngramsimhash}
+## ngramSimHash {#ngramsimhash}
 
-Returns the hash of a string in ASCII.
+Returns the n-gram simhash of a string in ASCII.
+
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). For two values: the smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely those values are the same.
 
 **Syntax**
 
 ``` sql
-ngramSimhash(string)
+ngramSimHash(string [, ngramsize])
 ```
 
 **Arguments**
 
--   `string` — String. [String](../../sql-reference/data-types/string.md). 
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Hash value. 
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -507,7 +510,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-select ngramSimHash('ClickHouse') as Hash;
+SELECT ngramSimHash('ClickHouse') AS Hash;
 ```
 
 Result:
@@ -518,23 +521,26 @@ Result:
 └────────────┘
 ```
 
-## ngramSimhashCaseInsensitive {#ngramsimhashcaseinsensitive}
+## ngramSimHashCaseInsensitive {#ngramsimhashcaseinsensitive}
 
-Returns the hash of a string in ASCII case insensitive.
+Returns the n-gram simhash of a string in ASCII case insensitive.
+
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). For two values: the smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely those values are the same.
 
 **Syntax**
 
 ``` sql
-ngramSimhashCaseInsensitive(string)
+ngramSimHashCaseInsensitive(string [, ngramsize])
 ```
 
 **Arguments**
 
--   `string` — String. [String](../../sql-reference/data-types/string.md). 
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Hash value. 
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -554,23 +560,26 @@ Result:
 └───────────┘
 ```
 
-## ngramSimhashUTF8 {#ngramSimhashutf8}
+## ngramSimHashUTF8 {#ngramSimhashutf8}
 
-Returns the hash of a string in UTF8.
+Returns the n-gram simhash of a string in UTF8.
+
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). For two values: the smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely those values are the same.
 
 **Syntax**
 
 ``` sql
-ngramSimhashUTF8(string)
+ngramSimHashUTF8(string [, ngramsize])
 ```
 
 **Arguments**
 
--   `string` — String. [String](../../sql-reference/data-types/string.md). 
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Hash value. 
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -579,7 +588,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-select ngramSimHashUTF8('ClickHouse') as Hash;
+SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
 ```
 
 Result:
@@ -592,21 +601,24 @@ Result:
 
 ## ngramSimHashCaseInsensitiveUTF8 {#ngramSimHashCaseInsensitiveutf8}
 
-Returns the hash of a string in UTF8 case insensitive.
+Returns the n-gram simhash of a string in UTF8 case insensitive.
+
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). For two values: the smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely those values are the same.
 
 **Syntax**
 
 ``` sql
-ngramSimHashCaseInsensitiveUTF8(string)
+ngramSimHashCaseInsensitiveUTF8(string [, ngramsize])
 ```
 
 **Arguments**
 
--   `string` — String. [String](../../sql-reference/data-types/string.md). 
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Hash value. 
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -615,7 +627,7 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-select ngramSimHashCaseInsensitiveUTF8('ClickHouse') as Hash;
+SELECT ngramSimHashCaseInsensitiveUTF8('ClickHouse') AS Hash;
 ```
 
 Result:
@@ -628,21 +640,24 @@ Result:
 
 ## wordShingleSimHash {#wordshinglesimhash}
 
-Returns the hash of a string in ASCII.
+Returns the word shingle simhash of a string in ASCII.
+
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). For two values: the smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely those values are the same.
 
 **Syntax**
 
 ``` sql
-wordShingleSimHash(string)
+wordShingleSimHash(string [, shinglesize])
 ```
 
 **Arguments**
 
--   `string` — String. [String](../../sql-reference/data-types/string.md). 
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of a word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Hash value. 
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -651,34 +666,37 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-select wordShingleSimHash('ClickHouse') as Hash;
+SELECT wordShingleSimHash('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Result:
 
 ``` text
 ┌───────Hash─┐
-│ 3415403737 │
+│ 2328277067 │
 └────────────┘
 ```
 
 ## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseInsensitive}
 
-Returns the hash of a string in ASCII case insensitive.
+Returns the word shingle simhash of a string in ASCII case insensitive.
+
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). For two values: the smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely those values are the same.
 
 **Syntax**
 
 ``` sql
-wordShingleSimHashCaseInsensitive(string)
+wordShingleSimHashCaseInsensitive(string [, shinglesize])
 ```
 
 **Arguments**
 
--   `string` — String. [String](../../sql-reference/data-types/string.md). 
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of a word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Hash value. 
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -687,34 +705,37 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-select wordShingleSimHashCaseInsensitive('ClickHouse') as Hash;
+SELECT wordShingleSimHashCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Result:
 
 ``` text
 ┌───────Hash─┐
-│ 3468526407 │
+│ 2194812424 │
 └────────────┘
 ```
 
 ## wordShingleSimHashUTF8 {#wordShingleSimHashutf8}
 
-Returns the hash of a string in UTF8.
+Returns the word shingle simhash of a string in UTF8.
+
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). For two values: the smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely those values are the same.
 
 **Syntax**
 
 ``` sql
-wordShingleSimHashUTF8(string)
+wordShingleSimHashUTF8(string [, shinglesize])
 ```
 
 **Arguments**
 
--   `string` — String. [String](../../sql-reference/data-types/string.md). 
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of a word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Hash value. 
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -723,34 +744,37 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-select wordShingleSimHashUTF8('ClickHouse') as Hash;
+SELECT wordShingleSimHashUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Result:
 
 ``` text
 ┌───────Hash─┐
-│ 3415403737 │
+│ 2328277067 │
 └────────────┘
 ```
 
 ## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimHashcaseinsensitiveutf8}
 
-Returns the hash of a string in UTF8 case insensitive.
+Returns the word shingle simhash of a string in UTF8 case insensitive.
+
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). For two values: the smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely those values are the same.
 
 **Syntax**
 
 ``` sql
-wordShingleSimHashCaseInsensitiveUTF8(string)
+wordShingleSimHashCaseInsensitiveUTF8(string [, shinglesize])
 ```
 
 **Arguments**
 
--   `string` — String. [String](../../sql-reference/data-types/string.md). 
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of a word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Hash value. 
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -759,13 +783,637 @@ Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-select wordShingleSimHashCaseInsensitiveUTF8('ClickHouse') as Hash;
+SELECT wordShingleSimHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Hash;
 ```
 
 Result:
 
 ``` text
 ┌───────Hash─┐
-│ 3468526407 │
+│ 2194812424 │
 └────────────┘
+```
+
+## ngramMinHash {#ngraminHash}
+
+Calculates a hash value for each n-gram of a string in ASCII and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#bithammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
+
+**Syntax**
+
+``` sql
+ngramMinHash(string [, ngramsize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two hashes.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngramMinHash('ClickHouse') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple──────────────────────────────────────┐
+│ (18333312859352735453,9054248444481805918) │
+└────────────────────────────────────────────┘
+```
+
+## ngramMinHashCaseInsensitive {#ngramminhashcaseinsensitive}
+
+Calculates a hash value for each n-gram of a string in ASCII case insensitive and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#bithammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
+
+**Syntax**
+
+``` sql
+ngramMinHash(string [, ngramsize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two hashes.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngramMinHashCaseInsensitive('ClickHouse') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple──────────────────────────────────────┐
+│ (2106263556442004574,13203602793651726206) │
+└────────────────────────────────────────────┘
+```
+
+## ngramMinHashUTF8 {#ngramminhashutf8}
+
+Calculates a hash value for each n-gram of a string in UTF8 and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#bithammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
+
+**Syntax**
+
+``` sql
+ngramMinHash(string [, ngramsize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two hashes.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngramMinHashUTF8('ClickHouse') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple──────────────────────────────────────┐
+│ (18333312859352735453,6742163577938632877) │
+└────────────────────────────────────────────┘
+```
+
+## ngramMinHashCaseInsensitiveUTF8 {#ngramminhashcaseinsensitiveutf8}
+
+Calculates a hash value for each n-gram of a string in UTF8 case insensitive and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#bithammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
+
+**Syntax**
+
+``` sql
+ngramMinHash(string [, ngramsize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two hashes.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngramMinHashCaseInsensitiveUTF8('ClickHouse') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple───────────────────────────────────────┐
+│ (12493625717655877135,13203602793651726206) │
+└─────────────────────────────────────────────┘
+```
+
+## ngramMinHashArg {#ngramminhasharg}
+
+Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n-grams in the calculation of the minimum and the maximum hashes of [ngramMinHash](#ngramminhash) function with the same input.
+
+**Syntax**
+
+``` sql
+ngramMinHashArg(string [, ngramsize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two tuples with `hashnum` n-grams each.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngramMinHashArg('ClickHouse') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────────────┐
+│ (('ous','ick','lic','Hou','kHo','use'),('Hou','lic','ick','ous','ckH','Cli')) │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## ngramMinHashArgCaseInsensitive {#ngramminhashargcaseinsensitive}
+
+Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n-grams in the calculation of the minimum and the maximum hashes of [ngramMinHashCaseInsensitive](#ngramminhashcaseinsensitive) function with the same input.
+
+**Syntax**
+
+``` sql
+ngramMinHashArg(string [, ngramsize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two tuples with `hashnum` n-grams each.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngramMinHashArgCaseInsensitive('ClickHouse') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────────────┐
+│ (('ous','ick','lic','kHo','use','Cli'),('kHo','lic','ick','ous','ckH','Hou')) │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## ngramMinHashArgUTF8 {#ngramminhashargutf8}
+
+Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n-grams in the calculation of the minimum and the maximum hashes of [ngramMinHashUTF8](#ngramminhashutf8) function with the same input.
+
+**Syntax**
+
+``` sql
+ngramMinHashArg(string [, ngramsize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two tuples with `hashnum` n-grams each.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngramMinHashArgUTF8('ClickHouse') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────────────┐
+│ (('ous','ick','lic','Hou','kHo','use'),('kHo','Hou','lic','ick','ous','ckH')) │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## ngramMinHashArgCaseInsensitiveUTF8 {#ngramminhashargcaseinsensitiveutf8}
+
+Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n-grams in the calculation of the minimum and the maximum hashes of [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) function with the same input.
+
+**Syntax**
+
+``` sql
+ngramMinHashArgCaseInsensitiveUTF8(string [, ngramsize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two tuples with `hashnum` n-grams each.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngramMinHashArgCaseInsensitiveUTF8('ClickHouse') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────────────┐
+│ (('ckH','ous','ick','lic','kHo','use'),('kHo','lic','ick','ous','ckH','Hou')) │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+## wordShingleMinHash {#wordshingleminhash}
+
+Calculates a hash value for each word shingle of a string in ASCII and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#bithammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
+
+**Syntax**
+
+``` sql
+wordShingleMinHash(string [, shinglesize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two hashes.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT wordShingleMinHash('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple──────────────────────────────────────┐
+│ (16452112859864147620,5844417301642981317) │
+└────────────────────────────────────────────┘
+```
+
+## wordShingleMinHashCaseInsensitive {#wordshingleminhashcaseinsensitive}
+
+Calculates a hash value for each word shingle of a string in ASCII case insensitive and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#bithammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
+
+**Syntax**
+
+``` sql
+wordShingleMinHashCaseInsensitive(string [, shinglesize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two hashes.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT wordShingleMinHashCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple─────────────────────────────────────┐
+│ (3065874883688416519,1634050779997673240) │
+└───────────────────────────────────────────┘
+```
+
+## wordShingleMinHashUTF8 {#wordshingleminhashutf8}
+
+Calculates a hash value for each word shingle of a string in UTF8 and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#bithammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
+
+**Syntax**
+
+``` sql
+wordShingleMinHashUTF8(string [, shinglesize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two hashes.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT wordShingleMinHashUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple──────────────────────────────────────┐
+│ (16452112859864147620,5844417301642981317) │
+└────────────────────────────────────────────┘
+```
+
+## wordShingleMinHashCaseInsensitiveUTF8 {#wordshingleminhashcaseinsensitiveutf8}
+
+Calculates a hash value for each word shingle of a string in UTF8 case insensitive and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+
+Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#bithammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
+
+**Syntax**
+
+``` sql
+wordShingleMinHashCaseInsensitiveUTF8(string [, shinglesize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two hashes.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT wordShingleMinHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).') AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple─────────────────────────────────────┐
+│ (3065874883688416519,1634050779997673240) │
+└───────────────────────────────────────────┘
+```
+
+## wordShingleMinHashArg {#wordshingleminhasharg}
+
+Returns a tuple with two sets of `hashnum` word shingles each. Shingles correspond to shingles in the calculation of the minimum and the maximum hashes of [wordShingleMinHash](#wordshingleminhash) function with the same input.
+
+**Syntax**
+
+``` sql
+wordShingleMinHashArg(string [, shinglesize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of a word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two tuples with `hashnum` word shingles each.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT wordShingleMinHashArg('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────┐
+│ (('OLAP','database','analytical'),('online','oriented','processing')) │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+## wordShingleMinHashArgCaseInsensitive {#wordshingleminhashargcaseinsensitive}
+
+Returns a tuple with two sets of `hashnum` word shingles each. Shingles correspond to shingles in the calculation of the minimum and the maximum hashes of [wordShingleMinHashCaseInsensitive](#wordshingleminhashcaseinsensitive) function with the same input.
+
+**Syntax**
+
+``` sql
+wordShingleMinHashArgCaseInsensitive(string [, shinglesize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of a word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two tuples with `hashnum` word shingles each.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT wordShingleMinHashArgCaseInsensitive('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple──────────────────────────────────────────────────────────────────┐
+│ (('queries','database','analytical'),('oriented','processing','DBMS')) │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+## wordShingleMinHashArgUTF8 {#wordshingleminhashargutf8}
+
+Returns a tuple with two sets of `hashnum` word shingles each. Shingles correspond to shingles in the calculation of the minimum and the maximum hashes of [wordShingleMinHashUTF8](#wordshingleminhashutf8) function with the same input.
+
+**Syntax**
+
+``` sql
+wordShingleMinHashArgUTF8(string [, shinglesize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of a word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two tuples with `hashnum` word shingles each.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT wordShingleMinHashArgUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple─────────────────────────────────────────────────────────────────┐
+│ (('OLAP','database','analytical'),('online','oriented','processing')) │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+## wordShingleMinHashArgCaseInsensitiveUTF8 {#wordshingleminhashargcaseinsensitiveutf8}
+
+Returns a tuple with two sets of `hashnum` word shingles each. Shingles correspond to shingles in the calculation of the minimum and the maximum hashes of [wordShingleMinHashCaseInsensitiveUTF8](#wordshingleminhashcaseinsensitiveutf8) function with the same input.
+
+**Syntax**
+
+``` sql
+wordShingleMinHashArgCaseInsensitiveUTF8(string [, shinglesize, hashnum])
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md).
+-   `shinglesize` — The size of a word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Tuple with two tuples with `hashnum` word shingles each.
+
+Type: [Tuple](../../sql-reference/data-types/tuple.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md)), [Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md))).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT wordShingleMinHashArgCaseInsensitiveUTF8('ClickHouse® is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).', 1, 3) AS Tuple;
+```
+
+Result:
+
+``` text
+┌─Tuple──────────────────────────────────────────────────────────────────┐
+│ (('queries','database','analytical'),('oriented','processing','DBMS')) │
+└────────────────────────────────────────────────────────────────────────┘
 ```
