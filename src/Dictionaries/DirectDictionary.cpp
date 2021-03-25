@@ -192,7 +192,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::simple)
     {
-        auto result = getHierarchyDefaultImplementation(this, key_column, key_type);
+        auto result = getKeysHierarchyDefaultImplementation(this, key_column, key_type);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
         return result;
     }
@@ -208,7 +208,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
 {
     if (dictionary_key_type == DictionaryKeyType::simple)
     {
-        auto result = isInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type);
+        auto result = getKeysIsInHierarchyDefaultImplementation(this, key_column, in_key_column, key_type);
         query_count.fetch_add(key_column->size(), std::memory_order_relaxed);
         return result;
     }

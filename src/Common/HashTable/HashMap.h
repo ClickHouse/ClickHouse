@@ -134,7 +134,8 @@ struct HashMapCell
 
 };
 
-namespace std {
+namespace std
+{
 
     template <typename Key, typename TMapped, typename Hash, typename TState>
     struct tuple_size<HashMapCell<Key, TMapped, Hash, TState>> : std::integral_constant<size_t, 2> { };
@@ -257,7 +258,8 @@ public:
     }
 };
 
-namespace std {
+namespace std
+{
 
     template <typename Key, typename TMapped, typename Hash, typename TState>
     struct tuple_size<HashMapCellWithSavedHash<Key, TMapped, Hash, TState>> : std::integral_constant<size_t, 2> { };

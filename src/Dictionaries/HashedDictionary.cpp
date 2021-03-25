@@ -395,10 +395,9 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
             return result;
         };
 
-        auto is_in_hierarchy_result = isInKeysHierarchy(keys, keys_in, null_value, is_key_valid_func, get_parent_func);
+        auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_func);
 
-        auto result = ColumnUInt8::create();
-        result->getData() = std::move(is_in_hierarchy_result);
+        query_count.fetch_add(keys.size(), std::memory_order_relaxed);
 
         return result;
     }
@@ -427,7 +426,10 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
         for (const auto & [key, value] : parent_keys)
             parent_to_child[value].emplace_back(key);
 
-        auto result = getDescendantsArray(keys, parent_to_child, level);
+        auto result = getKeysDescendantsArray(keys, parent_to_child, level);
+
+        query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+
         return result;
     }
     else
