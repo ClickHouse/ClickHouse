@@ -237,12 +237,14 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                                 // The parser doesn't create decimal literals, but
                                 // they can be produced by constant folding or the
                                 // fuzzer.
-                                if (value.getValue() >= 0)
+                                const auto int_value = value.getValue().value;
+                                // We compare to zero so we don't care about scale.
+                                if (int_value >= 0)
                                 {
                                     return false;
                                 }
 
-                                settings.ostr << ValueType{-value.getValue(),
+                                settings.ostr << ValueType{-int_value,
                                     value.getScale()};
                             }
                             else if constexpr (std::is_arithmetic_v<ValueType>)
