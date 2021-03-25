@@ -113,8 +113,10 @@
 
 (def useful-nemesises ["random-node-killer"
                        "simple-partitioner"
-                       "logs-and-snapshots-corruptor"
-                       "drop-data-corruptor"
+                       "all-nodes-hammer-time"
+                       ; can lead to a very rare data loss https://github.com/eBay/NuRaft/issues/185
+                       ;"logs-and-snapshots-corruptor"
+                       ;"drop-data-corruptor"
                        "bridge-partitioner"
                        "blind-node-partitioner"
                        "blind-others-partitioner"])
