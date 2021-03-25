@@ -377,6 +377,11 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
+
+        /// NULL remains NULL after any conversion.
+        if (WhichDataType(nested_type).isNothing())
+            return {};
+
         if (from_type_hint && from_type_hint->equals(nested_type))
             return from_value;
         return convertFieldToTypeImpl(from_value, nested_type, from_type_hint);
