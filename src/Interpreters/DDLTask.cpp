@@ -320,6 +320,8 @@ std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from
 
 String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 {
+    /// Sequential counter in ZooKeeper is Int32.
+    assert(log_entry_number < std::numeric_limits<Int32>::max());
     constexpr size_t seq_node_digits = 10;
     String number = toString(log_entry_number);
     String name = "query-" + String(seq_node_digits - number.size(), '0') + number;
@@ -330,7 +332,9 @@ UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
 {
     constexpr const char * name = "query-";
     assert(startsWith(log_entry_name, name));
-    return parse<UInt32>(log_entry_name.substr(strlen(name)));
+    UInt32 num = parse<UInt32>(log_entry_name.substr(strlen(name)));
+    assert(num < std::numeric_limits<Int32>::max());
+    return num;
 }
 
 void ZooKeeperMetadataTransaction::commit()

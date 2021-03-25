@@ -1254,7 +1254,7 @@ ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query
 
 Unsupported Parquet data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
 ### Inserting and Selecting Data {#inserting-and-selecting-data}
 
@@ -1359,15 +1359,15 @@ When working with the `Regexp` format, you can use the following settings:
     - Escaped (similarly to [TSV](#tabseparated))
     - Quoted (similarly to [Values](#data-format-values))
     - Raw (extracts subpatterns as a whole, no escaping rules)
-- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`. 
+- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
-**Usage** 
+**Usage**
 
-The regular expression from `format_regexp` setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset. 
+The regular expression from `format_regexp` setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
 
-Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`. 
+Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`.
 
-The content of every matched subpattern is parsed with the method of corresponding data type, according to `format_regexp_escaping_rule` setting. 
+The content of every matched subpattern is parsed with the method of corresponding data type, according to `format_regexp_escaping_rule` setting.
 
 If the regular expression does not match the line and `format_regexp_skip_unmatched` is set to 1, the line is silently skipped. If `format_regexp_skip_unmatched` is set to 0, exception is thrown.
 

@@ -81,7 +81,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
         }
         else if (frame.end_type == WindowFrame::BoundaryType::Unbounded)
         {
-            settings.ostr << "UNBOUNDED PRECEDING";
+            settings.ostr << "UNBOUNDED FOLLOWING";
         }
         else
         {

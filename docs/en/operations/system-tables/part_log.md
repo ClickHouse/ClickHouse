@@ -17,7 +17,6 @@ The `system.part_log` table contains the following columns:
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Event date.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Event time.
 -   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Event time with microseconds precision.
-
 -   `duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Duration.
 -   `database` ([String](../../sql-reference/data-types/string.md)) — Name of the database the data part is in.
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table the data part is in.

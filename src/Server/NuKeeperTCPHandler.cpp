@@ -158,7 +158,7 @@ struct SocketInterruptablePollWrapper
 
             if (rc >= 1 && poll_buf[0].revents & POLLIN)
                 socket_ready = true;
-            if (rc == 2 && poll_buf[1].revents & POLLIN)
+            if (rc >= 1 && poll_buf[1].revents & POLLIN)
                 fd_ready = true;
 #endif
         }
@@ -348,8 +348,10 @@ void NuKeeperTCPHandler::runImpl()
                 else if (received_op == Coordination::OpNum::Heartbeat)
                 {
                     LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
-                    session_stopwatch.restart();
                 }
+
+                /// Each request restarts session stopwatch
+                session_stopwatch.restart();
             }
 
             /// Process exact amount of responses from pipe

@@ -209,7 +209,13 @@ void DiskCacheWrapper::clearDirectory(const String & path)
 void DiskCacheWrapper::moveDirectory(const String & from_path, const String & to_path)
 {
     if (cache_disk->exists(from_path))
+    {
+        /// Destination directory may not be empty if previous directory move attempt was failed.
+        if (cache_disk->exists(to_path) && cache_disk->isDirectory(to_path))
+            cache_disk->clearDirectory(to_path);
+
         cache_disk->moveDirectory(from_path, to_path);
+    }
     DiskDecorator::moveDirectory(from_path, to_path);
 }
 
@@ -263,6 +269,20 @@ void DiskCacheWrapper::removeRecursive(const String & path)
     if (cache_disk->exists(path))
         cache_disk->removeRecursive(path);
     DiskDecorator::removeRecursive(path);
+}
+
+void DiskCacheWrapper::removeSharedFile(const String & path, bool keep_s3)
+{
+    if (cache_disk->exists(path))
+        cache_disk->removeSharedFile(path, keep_s3);
+    DiskDecorator::removeSharedFile(path, keep_s3);
+}
+
+void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
+{
+    if (cache_disk->exists(path))
+        cache_disk->removeSharedRecursive(path, keep_s3);
+    DiskDecorator::removeSharedRecursive(path, keep_s3);
 }
 
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)

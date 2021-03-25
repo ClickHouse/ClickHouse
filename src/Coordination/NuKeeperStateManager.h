@@ -25,7 +25,7 @@ public:
         int port,
         const std::string & logs_path);
 
-    void loadLogStore(size_t start_log_index);
+    void loadLogStore(size_t last_commited_index, size_t logs_to_keep);
 
     void flushLogStore();
 

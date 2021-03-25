@@ -40,7 +40,7 @@ private:
 class PocoHTTPResponse : public Aws::Http::Standard::StandardHttpResponse
 {
 public:
-    using SessionPtr = PooledHTTPSessionPtr;
+    using SessionPtr = HTTPSessionPtr;
 
     PocoHTTPResponse(const std::shared_ptr<const Aws::Http::HttpRequest> request)
         : Aws::Http::Standard::StandardHttpResponse(request)
@@ -91,7 +91,6 @@ private:
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
     unsigned int s3_max_redirects;
-    unsigned int max_connections;
 };
 
 }

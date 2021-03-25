@@ -1,3 +1,6 @@
+#include <DataTypes/DataTypeCustomGeo.h>
+
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -11,88 +14,84 @@ namespace DB
 
 namespace
 {
+    const auto point_data_type = std::make_shared<const DataTypeTuple>(
+        DataTypes{std::make_shared<const DataTypeFloat64>(), std::make_shared<const DataTypeFloat64>()}
+    );
 
-class DataTypeCustomPointSerialization : public DataTypeCustomSimpleTextSerialization
+    const auto ring_data_type = std::make_shared<const DataTypeArray>(DataTypeCustomPointSerialization::nestedDataType());
+
+    const auto polygon_data_type = std::make_shared<const DataTypeArray>(DataTypeCustomRingSerialization::nestedDataType());
+
+    const auto multipolygon_data_type = std::make_shared<const DataTypeArray>(DataTypeCustomPolygonSerialization::nestedDataType());
+}
+
+
+void DataTypeCustomPointSerialization::serializeText(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-public:
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        nestedDataType()->serializeAsText(column, row_num, ostr, settings);
-    }
+    nestedDataType()->serializeAsText(column, row_num, ostr, settings);
+}
 
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        nestedDataType()->deserializeAsWholeText(column, istr, settings);
-    }
-
-    static DataTypePtr nestedDataType()
-    {
-        static auto data_type = DataTypePtr(std::make_unique<DataTypeTuple>(
-            DataTypes({std::make_unique<DataTypeFloat64>(), std::make_unique<DataTypeFloat64>()})));
-        return data_type;
-    }
-};
-
-class DataTypeCustomRingSerialization : public DataTypeCustomSimpleTextSerialization
+void DataTypeCustomPointSerialization::deserializeText(
+    IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-public:
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        nestedDataType()->serializeAsText(column, row_num, ostr, settings);
-    }
+    nestedDataType()->deserializeAsWholeText(column, istr, settings);
+}
 
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        nestedDataType()->deserializeAsWholeText(column, istr, settings);
-    }
-
-    static DataTypePtr nestedDataType()
-    {
-        static auto data_type = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomPointSerialization::nestedDataType()));
-        return data_type;
-    }
-};
-
-class DataTypeCustomPolygonSerialization : public DataTypeCustomSimpleTextSerialization
+DataTypePtr DataTypeCustomPointSerialization::nestedDataType()
 {
-public:
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        nestedDataType()->serializeAsText(column, row_num, ostr, settings);
-    }
+    return point_data_type;
+}
 
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        nestedDataType()->deserializeAsWholeText(column, istr, settings);
-    }
-
-    static DataTypePtr nestedDataType()
-    {
-        static auto data_type = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomRingSerialization::nestedDataType()));
-        return data_type;
-    }
-};
-
-class DataTypeCustomMultiPolygonSerialization : public DataTypeCustomSimpleTextSerialization
+void DataTypeCustomRingSerialization::serializeText(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-public:
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        nestedDataType()->serializeAsText(column, row_num, ostr, settings);
-    }
+    nestedDataType()->serializeAsText(column, row_num, ostr, settings);
+}
 
-    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        nestedDataType()->deserializeAsWholeText(column, istr, settings);
-    }
+void DataTypeCustomRingSerialization::deserializeText(
+    IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    nestedDataType()->deserializeAsWholeText(column, istr, settings);
+}
 
-    static DataTypePtr nestedDataType()
-    {
-        static auto data_type = DataTypePtr(std::make_unique<DataTypeArray>(DataTypeCustomPolygonSerialization::nestedDataType()));
-        return data_type;
-    }
-};
+DataTypePtr DataTypeCustomRingSerialization::nestedDataType()
+{
+    return ring_data_type;
+}
 
+void DataTypeCustomPolygonSerialization::serializeText(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    nestedDataType()->serializeAsText(column, row_num, ostr, settings);
+}
+
+void DataTypeCustomPolygonSerialization::deserializeText(
+    IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    nestedDataType()->deserializeAsWholeText(column, istr, settings);
+}
+
+DataTypePtr DataTypeCustomPolygonSerialization::nestedDataType()
+{
+    return polygon_data_type;
+}
+
+void DataTypeCustomMultiPolygonSerialization::serializeText(
+    const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    nestedDataType()->serializeAsText(column, row_num, ostr, settings);
+}
+
+void DataTypeCustomMultiPolygonSerialization::deserializeText(
+    IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    nestedDataType()->deserializeAsWholeText(column, istr, settings);
+}
+
+DataTypePtr DataTypeCustomMultiPolygonSerialization::nestedDataType()
+{
+    return multipolygon_data_type;
 }
 
 void registerDataTypeDomainGeo(DataTypeFactory & factory)

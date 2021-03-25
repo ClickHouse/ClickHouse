@@ -316,6 +316,17 @@ SELECT
 FROM numbers(2)
 ;
 
+-- optimize_read_in_order conflicts with sorting for window functions, must
+-- be disabled.
+create table window_mt engine MergeTree order by number
+    as select number, mod(number, 3) p from numbers(100);
+
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 0;
+
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 1;
+
 -- some true window functions -- rank and friends
 select number, p, o,
     count(*) over w,
@@ -345,3 +356,7 @@ from numbers(10)
 window w as (order by number range between 1 preceding and 1 following)
 order by number
 ;
+
+-- In this case, we had a problem with PartialSortingTransform returning zero-row
+-- chunks for input chunks w/o columns.
+select count() over () from numbers(4) where number < 2;
