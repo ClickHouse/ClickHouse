@@ -1,5 +1,6 @@
 #include <Parsers/ASTFunction.h>
 
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
@@ -214,27 +215,62 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (0 == strcmp(name.c_str(), func[0]))
+                if (strcmp(name.c_str(), func[0]) != 0)
                 {
-                    if (frame.need_parens)
-                        settings.ostr << '(';
-
-                    settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
-
-                    /** A particularly stupid case. If we have a unary minus before a literal that is a negative number
-                        * "-(-1)" or "- -1", this can not be formatted as `--1`, since this will be interpreted as a comment.
-                        * Instead, add a space.
-                        * PS. You can not just ask to add parentheses - see formatImpl for ASTLiteral.
-                        */
-                    if (name == "negate" && arguments->children[0]->as<ASTLiteral>())
-                        settings.ostr << ' ';
-
-                    arguments->formatImpl(settings, state, nested_need_parens);
-                    written = true;
-
-                    if (frame.need_parens)
-                        settings.ostr << ')';
+                    continue;
                 }
+
+                const auto * literal = arguments->children[0]->as<ASTLiteral>();
+                /* A particularly stupid case. If we have a unary minus before
+                 * a literal that is a negative number "-(-1)" or "- -1", this
+                 * can not be formatted as `--1`, since this will be
+                 * interpreted as a comment. Instead, negate the literal
+                 * in place.
+                 */
+                if (literal && name == "negate")
+                {
+                    written = applyVisitor(
+                        [&settings](const auto & value) {
+                            using ValueType = std::decay_t<decltype(value)>;
+                            // We don't have decimal literals.
+                            assert(!isDecimalField<ValueType>());
+                            if constexpr (!std::is_arithmetic_v<ValueType>)
+                            {
+                                return false;
+                            }
+                            else
+                            {
+                                if (value >= 0)
+                                {
+                                    return false;
+                                }
+                                // We don't need parentheses around a single
+                                // literal.
+                                settings.ostr << -value;
+                                return true;
+                            }
+                        },
+                        literal->value);
+
+                    if (written)
+                    {
+                        break;
+                    }
+                }
+
+                // We don't need parentheses around a single literal.
+                if (!literal && frame.need_parens)
+                    settings.ostr << '(';
+
+                settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
+
+                arguments->formatImpl(settings, state, nested_need_parens);
+                written = true;
+
+                if (!literal && frame.need_parens)
+                    settings.ostr << ')';
+
+                break;
             }
         }
 
