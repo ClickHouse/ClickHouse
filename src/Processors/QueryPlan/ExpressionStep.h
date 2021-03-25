@@ -45,6 +45,8 @@ public:
 
     void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
+    const JoinPtr & getJoin() const { return join; }
+
 private:
     JoinPtr join;
     bool has_non_joined_rows;
