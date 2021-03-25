@@ -208,9 +208,6 @@ public:
 private:
     String host;
     UInt16 port;
-
-    std::optional<String> explicitly_resolved_address;
-
     String default_database;
     String user;
     String password;

@@ -1102,6 +1102,9 @@ void TCPHandler::receiveQuery()
     Settings passed_settings;
     passed_settings.read(*in, settings_format);
 
+    std::cout << "receive Query" << std::endl;
+    std::cout << passed_settings.output_format_json_named_tuples_as_objects << std::endl;
+
     /// Interserver secret.
     std::string received_hash;
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET)

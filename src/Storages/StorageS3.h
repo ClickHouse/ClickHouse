@@ -105,7 +105,7 @@ private:
     friend class StorageS3Distributed;
     friend class TableFunctionS3Distributed;
     friend class StorageS3SequentialSource;
-    friend class StorageS3Distributed;
+
     struct ClientAuthentificaiton
     {
         const S3::URI uri;
