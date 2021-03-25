@@ -1118,8 +1118,6 @@ void TCPHandler::receiveQuery()
 
     readStringBinary(state.query, *in);
 
-    std::cout << state.query << std::endl;
-
     /// It is OK to check only when query != INITIAL_QUERY,
     /// since only in that case the actions will be done.
     if (!cluster.empty() && client_info.query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
