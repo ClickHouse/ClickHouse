@@ -50,6 +50,7 @@ SRCS(
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
     SeekAvoidingReadBuffer.cpp
+    TimeoutSetter.cpp
     UseSSL.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
