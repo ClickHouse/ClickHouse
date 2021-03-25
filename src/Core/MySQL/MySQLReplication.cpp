@@ -421,8 +421,8 @@ namespace MySQLReplication
                         UInt32 i24 = 0;
                         payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
-                        DayNum date_day_number = DateLUT::instance().makeDayNum(
-                            static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f));
+                        const DayNum date_day_number(DateLUT::instance().makeDayNum(
+                            static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f)).toUnderType());
 
                         row.push_back(Field(date_day_number.toUnderType()));
                         break;
@@ -444,7 +444,7 @@ namespace MySQLReplication
                             row.push_back(Field{UInt32(date_time)});
                         else
                         {
-                            DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{
+                            DB::DecimalUtils::DecimalComponents<DateTime64> components{
                                 static_cast<DateTime64::NativeType>(date_time), 0};
 
                             components.fractional = fsp;
@@ -463,7 +463,7 @@ namespace MySQLReplication
                             row.push_back(Field{sec});
                         else
                         {
-                            DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{
+                            DB::DecimalUtils::DecimalComponents<DateTime64> components{
                                 static_cast<DateTime64::NativeType>(sec), 0};
 
                             components.fractional = fsp;

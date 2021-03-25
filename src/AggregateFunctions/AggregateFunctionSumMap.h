@@ -420,7 +420,7 @@ public:
 
         for (const Field & f : keys_to_keep_)
         {
-            keys_to_keep.emplace(f.safeGet<NearestFieldType<T>>());
+            keys_to_keep.emplace(f.safeGet<T>());
         }
     }
 

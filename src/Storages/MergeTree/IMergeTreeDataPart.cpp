@@ -1019,7 +1019,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     }
 
     volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
-    volume->getDisk()->moveFile(from, to);
+    volume->getDisk()->moveDirectory(from, to);
     relative_path = new_relative_path;
 
     SyncGuardPtr sync_guard;
@@ -1071,7 +1071,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 
     try
     {
-        volume->getDisk()->moveFile(from, to);
+        volume->getDisk()->moveDirectory(from, to);
     }
     catch (const Poco::FileNotFoundException &)
     {

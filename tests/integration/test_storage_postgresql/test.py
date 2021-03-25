@@ -2,12 +2,14 @@ import time
 
 import pytest
 import psycopg2
+from multiprocessing.dummy import Pool
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=[], with_postgres=True)
+node1 = cluster.add_instance('node1', main_configs=["configs/log_conf.xml"], with_postgres=True)
 
 def get_postgres_conn(database=False):
     if database == True:
@@ -130,6 +132,91 @@ def test_postgres_conversions(started_cluster):
         "[]\n"
         )
     assert(result == expected)
+
+
+def test_non_default_scema(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    cursor.execute('CREATE SCHEMA test_schema')
+    cursor.execute('CREATE TABLE test_schema.test_table (a integer)')
+    cursor.execute('INSERT INTO test_schema.test_table SELECT i FROM generate_series(0, 99) as t(i)')
+
+    node1.query('''
+        CREATE TABLE test_pg_table_schema (a UInt32)
+        ENGINE PostgreSQL('postgres1:5432', 'clickhouse', 'test_table', 'postgres', 'mysecretpassword', 'test_schema');
+    ''')
+
+    result = node1.query('SELECT * FROM test_pg_table_schema')
+    expected = node1.query('SELECT number FROM numbers(100)')
+    assert(result == expected)
+
+    table_function = '''postgresql('postgres1:5432', 'clickhouse', 'test_table', 'postgres', 'mysecretpassword', 'test_schema')'''
+    result = node1.query('SELECT * FROM {}'.format(table_function))
+    assert(result == expected)
+
+    cursor.execute('''CREATE SCHEMA "test.nice.schema"''')
+    cursor.execute('''CREATE TABLE "test.nice.schema"."test.nice.table" (a integer)''')
+    cursor.execute('INSERT INTO "test.nice.schema"."test.nice.table" SELECT i FROM generate_series(0, 99) as t(i)')
+
+    node1.query('''
+        CREATE TABLE test_pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('postgres1:5432', 'clickhouse', 'test.nice.table', 'postgres', 'mysecretpassword', 'test.nice.schema');
+    ''')
+    result = node1.query('SELECT * FROM test_pg_table_schema_with_dots')
+    assert(result == expected)
+
+
+def test_concurrent_queries(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+
+    node1.query('''
+        CREATE TABLE test_table (key UInt32, value UInt32)
+        ENGINE = PostgreSQL('postgres1:5432', 'clickhouse', 'test_table', 'postgres', 'mysecretpassword')''')
+
+    cursor.execute('CREATE TABLE test_table (key integer, value integer)')
+
+    prev_count =  node1.count_in_log('New connection to postgres1:5432')
+    def node_select(_):
+        for i in range(20):
+            result = node1.query("SELECT * FROM test_table", user='default')
+    busy_pool = Pool(20)
+    p = busy_pool.map_async(node_select, range(20))
+    p.wait()
+    count =  node1.count_in_log('New connection to postgres1:5432')
+    print(count, prev_count)
+    # 16 is default size for connection pool
+    assert(int(count) == int(prev_count) + 16)
+
+    def node_insert(_):
+        for i in range(5):
+            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
+
+    busy_pool = Pool(5)
+    p = busy_pool.map_async(node_insert, range(5))
+    p.wait()
+    result = node1.query("SELECT count() FROM test_table", user='default')
+    print(result)
+    assert(int(result) == 5 * 5 * 1000)
+
+    def node_insert_select(_):
+        for i in range(5):
+            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
+            result = node1.query("SELECT * FROM test_table LIMIT 100", user='default')
+
+    busy_pool = Pool(5)
+    p = busy_pool.map_async(node_insert_select, range(5))
+    p.wait()
+    result = node1.query("SELECT count() FROM test_table", user='default')
+    print(result)
+    assert(int(result) == 5 * 5 * 1000  * 2)
+
+    node1.query('DROP TABLE test_table;')
+    cursor.execute('DROP TABLE test_table;')
+
+    count =  node1.count_in_log('New connection to postgres1:5432')
+    print(count, prev_count)
+    assert(int(count) == int(prev_count) + 16)
 
 
 if __name__ == '__main__':

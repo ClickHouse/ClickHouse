@@ -104,11 +104,11 @@ void RemoteQueryExecutorReadContext::setConnectionFD(int fd, const Poco::Timespa
     connection_fd_description = fd_description;
 }
 
-bool RemoteQueryExecutorReadContext::checkTimeout() const
+bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking) const
 {
     try
     {
-        return checkTimeoutImpl();
+        return checkTimeoutImpl(blocking);
     }
     catch (DB::Exception & e)
     {
@@ -118,13 +118,13 @@ bool RemoteQueryExecutorReadContext::checkTimeout() const
     }
 }
 
-bool RemoteQueryExecutorReadContext::checkTimeoutImpl() const
+bool RemoteQueryExecutorReadContext::checkTimeoutImpl(bool blocking) const
 {
     /// Wait for epoll will not block if it was polled externally.
     epoll_event events[3];
     events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
 
-    int num_events = epoll.getManyReady(3, events,/* blocking = */ false);
+    int num_events = epoll.getManyReady(3, events, blocking);
 
     bool is_socket_ready = false;
     bool is_pipe_alarmed = false;
@@ -184,8 +184,15 @@ bool RemoteQueryExecutorReadContext::resumeRoutine()
 void RemoteQueryExecutorReadContext::cancel()
 {
     std::lock_guard guard(fiber_lock);
+
     /// It is safe to just destroy fiber - we are not in the process of reading from socket.
     boost::context::fiber to_destroy = std::move(fiber);
+
+    while (is_read_in_progress.load(std::memory_order_relaxed))
+    {
+        checkTimeout(/* blocking= */ true);
+        to_destroy = std::move(to_destroy).resume();
+    }
 
     /// Send something to pipe to cancel executor waiting.
     uint64_t buf = 0;

@@ -595,7 +595,7 @@ void IPAddressDictionary::calculateBytesAllocated()
 template <typename T>
 void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = null_value.isNull() ? T{} : T(null_value.get<NearestFieldType<T>>());
+    attribute.null_values = null_value.isNull() ? T{} : T(null_value.get<T>());
     attribute.maps.emplace<ContainerType<T>>();
 }
 
@@ -786,7 +786,7 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
         }
         else
         {
-            setAttributeValueImpl<AttributeType>(attribute, value.get<NearestFieldType<AttributeType>>());
+            setAttributeValueImpl<AttributeType>(attribute, value.get<AttributeType>());
         }
     };
 

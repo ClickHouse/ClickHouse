@@ -69,6 +69,8 @@ void SerializationDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer 
 {
     time_t x;
     readText(x, istr, settings, time_zone, utc_time_zone);
+    if (x < 0)
+        x = 0;
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
@@ -91,6 +93,8 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
     {
         readIntText(x, istr);
     }
+    if (x < 0)
+        x = 0;
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
@@ -113,6 +117,8 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
     {
         readIntText(x, istr);
     }
+    if (x < 0)
+        x = 0;
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
@@ -139,6 +145,9 @@ void SerializationDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & is
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, istr);
+
+    if (x < 0)
+        x = 0;
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
