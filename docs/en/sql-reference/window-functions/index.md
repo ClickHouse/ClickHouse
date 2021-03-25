@@ -25,7 +25,7 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `rank()`, `dense_rank()`, `row_number()` | supported |
 | `lag/lead(value, offset)` | Not supported. Workarounds: |
 |  | 1) replace with `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead`|
-|  | 2) use `lag_in_frame/lead_in_frame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following` |
+|  | 2) use `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following` |
 
 ## References
 

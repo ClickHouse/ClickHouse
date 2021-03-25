@@ -112,7 +112,7 @@
 
     <!-- Our variant of lead. -->
     <query>
-        select lead_in_frame(number) over w
+        select leadInFrame(number) over w
         from
             (select number, intDiv(number, 1111) p, mod(number, 111) o
                 from numbers(10000000)) t
@@ -133,7 +133,7 @@
     </query>
 
     <query>
-        select lead_in_frame(number, number) over w
+        select leadInFrame(number, number) over w
         from
             (select number, intDiv(number, 1111) p, mod(number, 111) o
                 from numbers(10000000)) t
@@ -143,7 +143,7 @@
     </query>
 
     <query>
-        select lead_in_frame(number, number, number) over w
+        select leadInFrame(number, number, number) over w
         from
             (select number, intDiv(number, 1111) p, mod(number, 111) o
                 from numbers(10000000)) t

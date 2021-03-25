@@ -349,8 +349,8 @@ from numbers(5);
 
 -- variants of lag/lead that respect the frame
 select number, p, pp,
-    lag_in_frame(number, number - pp, number * 11) over w as lag,
-    lead_in_frame(number, number - pp, number * 11) over w as lead
+    lagInFrame(number, number - pp, number * 11) over w as lag,
+    leadInFrame(number, number - pp, number * 11) over w as lead
 from (select number, intDiv(number, 5) p, p * 5 pp from numbers(16))
 window w as (partition by p order by number
     rows between unbounded preceding and unbounded following)
