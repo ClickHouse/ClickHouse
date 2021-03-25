@@ -237,8 +237,8 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
 
         to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
     }
-
-    codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin());
+    else
+        codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin());
 }
 
 
