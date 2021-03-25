@@ -345,7 +345,7 @@ struct ODBCBridgeMixin
 
         LOG_TRACE(log, "Starting {}", serviceAlias());
 
-        return ShellCommand::executeDirect(path.toString(), cmd_args, true);
+        return ShellCommand::executeDirect(path.toString(), cmd_args, ShellCommandDestructorStrategy(true));
     }
 };
 }

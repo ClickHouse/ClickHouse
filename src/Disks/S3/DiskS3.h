@@ -96,10 +96,13 @@ public:
         size_t buf_size,
         WriteMode mode) override;
 
-    void removeFile(const String & path) override;
+    void removeFile(const String & path) override { removeSharedFile(path, false); }
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
-    void removeRecursive(const String & path) override;
+    void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
+
+    void removeSharedFile(const String & path, bool keep_s3) override;
+    void removeSharedRecursive(const String & path, bool keep_s3) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
@@ -114,6 +117,14 @@ public:
     DiskType::Type getType() const override { return DiskType::Type::S3; }
 
     void shutdown() override;
+
+    /// Return some uniq string for file
+    /// Required for distinguish different copies of the same part on S3
+    String getUniqueId(const String & path) const override;
+
+    /// Check file exists and ClickHouse has an access to it
+    /// Required for S3 to ensure that replica has access to data wroten by other node
+    bool checkUniqueId(const String & id) const override;
 
     /// Actions performed after disk creation.
     void startup();

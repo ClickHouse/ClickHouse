@@ -36,7 +36,7 @@
 
 #if USE_LIBPQXX
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
+#include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
 #endif
 
 namespace DB
@@ -246,11 +246,15 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         auto parsed_host_port = parseAddress(host_port, 5432);
 
         /// no connection is made here
-        auto connection = std::make_shared<PostgreSQLConnection>(
-            postgres_database_name, parsed_host_port.first, parsed_host_port.second, username, password);
+        auto connection_pool = std::make_shared<PostgreSQLConnectionPool>(
+            postgres_database_name,
+            parsed_host_port.first, parsed_host_port.second,
+            username, password,
+            context.getSettingsRef().postgresql_connection_pool_size,
+            context.getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return std::make_shared<DatabasePostgreSQL>(
-            context, metadata_path, engine_define, database_name, postgres_database_name, connection, use_table_cache);
+            context, metadata_path, engine_define, database_name, postgres_database_name, connection_pool, use_table_cache);
     }
 
 #endif
