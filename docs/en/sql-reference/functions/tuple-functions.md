@@ -148,4 +148,4 @@ Result:
 └─────────────────┘
 ```
 
-Can be used with  [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
+Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
