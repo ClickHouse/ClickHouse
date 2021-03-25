@@ -6,7 +6,6 @@
 #include <common/logger_useful.h>
 #include <chrono>
 #include <ext/scope_guard.h>
-#include <Common/Exception.h>
 
 
 namespace DB
@@ -244,14 +243,7 @@ void BackgroundSchedulePool::attachToThreadGroup()
 
 void BackgroundSchedulePool::threadFunction()
 {
-    try
-    {
-        setThreadName(thread_name.c_str());
-    }
-    catch (const DB::Exception &)
-    {
-        throw;
-    }
+    setThreadName(thread_name.c_str());
 
     attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
@@ -278,16 +270,7 @@ void BackgroundSchedulePool::threadFunction()
 
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
-
-    try
-    {
-        setThreadName((thread_name + "/D").c_str());
-    }
-    catch (const DB::Exception &)
-    {
-        throw;
-    }
-
+    setThreadName((thread_name + "/D").c_str());
 
     attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
