@@ -412,7 +412,7 @@ void Connection::sendQuery(
 {
     if (!connected)
         connect(timeouts);
- 
+
     TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
 
     if (settings)
@@ -447,7 +447,6 @@ void Connection::sendQuery(
     /// Per query settings.
     if (settings)
     {
-        std::cout << "Settings enabled" << std::endl;
         auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                           : SettingsWriteFormat::BINARY;
         settings->write(*out, settings_format);
