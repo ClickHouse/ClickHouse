@@ -230,7 +230,8 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (literal && name == "negate")
                 {
                     written = applyVisitor(
-                        [&settings](const auto & value) {
+                        [&settings](const auto & value)
+                        {
                             using ValueType = std::decay_t<decltype(value)>;
                             // We don't have decimal literals.
                             assert(!isDecimalField<ValueType>());
