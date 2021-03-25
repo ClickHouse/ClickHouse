@@ -81,7 +81,7 @@ namespace
             case ValueType::vtDate:
                 return Poco::Dynamic::Var(LocalDate(DayNum(field.get<UInt64>())).toString()).convert<String>();
             case ValueType::vtDateTime:
-                return Poco::Dynamic::Var(std::to_string(LocalDateTime(time_t(field.get<UInt64>())))).convert<String>();
+                return Poco::Dynamic::Var(DateLUT::instance().timeToString(time_t(field.get<UInt64>()))).convert<String>();
             case ValueType::vtUUID:
                 return Poco::Dynamic::Var(UUID(field.get<UInt128>()).toUnderType().toHexString()).convert<std::string>();
              default:

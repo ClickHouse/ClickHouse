@@ -740,12 +740,6 @@ public:
     void setQueryParameter(const String & name, const String & value);
     void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
 
-#if USE_EMBEDDED_COMPILER
-    std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
-    void setCompiledExpressionCache(size_t cache_size);
-    void dropCompiledExpressionCache() const;
-#endif
-
     /// Add started bridge command. It will be killed after context destruction
     void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 

@@ -39,6 +39,9 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
@@ -907,8 +910,7 @@ void StorageReplicatedMergeTree::setTableStructure(
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
 
-    if (new_columns != new_metadata.columns)
-        new_metadata.columns = new_columns;
+    new_metadata.columns = new_columns;
 
     if (!metadata_diff.empty())
     {
@@ -976,45 +978,42 @@ void StorageReplicatedMergeTree::setTableStructure(
     }
 
     /// Changes in columns may affect following metadata fields
-    if (new_metadata.columns != old_metadata.columns)
+    new_metadata.column_ttls_by_name.clear();
+    for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
     {
-        new_metadata.column_ttls_by_name.clear();
-        for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
-        {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, global_context, new_metadata.primary_key);
-            new_metadata.column_ttls_by_name[name] = new_ttl_entry;
-        }
-
-        if (new_metadata.partition_key.definition_ast != nullptr)
-            new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, global_context);
-
-        if (!metadata_diff.sorting_key_changed) /// otherwise already updated
-            new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, global_context);
-
-        /// Primary key is special, it exists even if not defined
-        if (new_metadata.primary_key.definition_ast != nullptr)
-        {
-            new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, global_context);
-        }
-        else
-        {
-            new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, global_context);
-            new_metadata.primary_key.definition_ast = nullptr;
-        }
-
-        if (!metadata_diff.sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
-            new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, global_context);
-
-        if (!metadata_diff.skip_indices_changed) /// otherwise already updated
-        {
-            for (auto & index : new_metadata.secondary_indices)
-                index.recalculateWithNewColumns(new_metadata.columns, global_context);
-        }
-
-        if (!metadata_diff.ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
-            new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                new_metadata.table_ttl.definition_ast, new_metadata.columns, global_context, new_metadata.primary_key);
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, global_context, new_metadata.primary_key);
+        new_metadata.column_ttls_by_name[name] = new_ttl_entry;
     }
+
+    if (new_metadata.partition_key.definition_ast != nullptr)
+        new_metadata.partition_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+
+    if (!metadata_diff.sorting_key_changed) /// otherwise already updated
+        new_metadata.sorting_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+
+    /// Primary key is special, it exists even if not defined
+    if (new_metadata.primary_key.definition_ast != nullptr)
+    {
+        new_metadata.primary_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+    }
+    else
+    {
+        new_metadata.primary_key = KeyDescription::getKeyFromAST(new_metadata.sorting_key.definition_ast, new_metadata.columns, global_context);
+        new_metadata.primary_key.definition_ast = nullptr;
+    }
+
+    if (!metadata_diff.sampling_expression_changed && new_metadata.sampling_key.definition_ast != nullptr)
+        new_metadata.sampling_key.recalculateWithNewColumns(new_metadata.columns, global_context);
+
+    if (!metadata_diff.skip_indices_changed) /// otherwise already updated
+    {
+        for (auto & index : new_metadata.secondary_indices)
+            index.recalculateWithNewColumns(new_metadata.columns, global_context);
+    }
+
+    if (!metadata_diff.ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
+        new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+            new_metadata.table_ttl.definition_ast, new_metadata.columns, global_context, new_metadata.primary_key);
 
     /// Even if the primary/sorting/partition keys didn't change we must reinitialize it
     /// because primary/partition key column types might have changed.
@@ -1450,7 +1449,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     {
         LOG_INFO(log, "Will try to fetch part {} until '{}' because this part assigned to recompression merge. "
             "Source replica {} will try to merge this part first", entry.new_part_name,
-            LocalDateTime(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
+            DateLUT::instance().timeToString(entry.create_time + storage_settings_ptr->try_fetch_recompressed_part_timeout.totalSeconds()), entry.source_replica);
         return false;
     }
 
@@ -4054,7 +4053,9 @@ Pipe StorageReplicatedMergeTree::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 
@@ -4616,7 +4617,7 @@ static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version,
         /// The date range is all month long.
         const auto & lut = DateLUT::instance();
         time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(part_info.partition_id + "01"));
-        DayNum left_date = lut.toDayNum(start_time);
+        DayNum left_date = DayNum(lut.toDayNum(start_time).toUnderType());
         DayNum right_date = DayNum(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
         return part_info.getPartNameV0(left_date, right_date);
     }

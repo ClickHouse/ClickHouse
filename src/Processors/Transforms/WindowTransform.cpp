@@ -881,11 +881,12 @@ void WindowTransform::appendChunk(Chunk & chunk)
         assert(chunk.hasRows());
         blocks.push_back({});
         auto & block = blocks.back();
+        // Use the number of rows from the Chunk, because it is correct even in
+        // the case where the Chunk has no columns. Not sure if this actually
+        // happens, because even in the case of `count() over ()` we have a dummy
+        // input column.
+        block.rows = chunk.getNumRows();
         block.input_columns = chunk.detachColumns();
-
-        // Even in case of `count() over ()` we should have a dummy input column.
-        // Not sure how reliable this is...
-        block.rows = block.input_columns[0]->size();
 
         for (auto & ws : workspaces)
         {
@@ -1109,9 +1110,7 @@ IProcessor::Status WindowTransform::prepare()
         if (output.canPush())
         {
             // Output the ready block.
-//            fmt::print(stderr, "output block {}\n", next_output_block_number);
             const auto i = next_output_block_number - first_block_number;
-            ++next_output_block_number;
             auto & block = blocks[i];
             auto columns = block.input_columns;
             for (auto & res : block.output_columns)
@@ -1119,6 +1118,12 @@ IProcessor::Status WindowTransform::prepare()
                 columns.push_back(ColumnPtr(std::move(res)));
             }
             output_data.chunk.setColumns(columns, block.rows);
+
+//            fmt::print(stderr, "output block {} as chunk '{}'\n",
+//                next_output_block_number,
+//                output_data.chunk.dumpStructure());
+
+            ++next_output_block_number;
 
             output.pushData(std::move(output_data));
         }

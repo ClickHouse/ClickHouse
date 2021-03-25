@@ -162,12 +162,12 @@ struct DictionaryStructure final
 
     const DictionaryAttribute & getAttribute(const std::string & attribute_name) const;
     const DictionaryAttribute & getAttribute(const std::string & attribute_name, const DataTypePtr & type) const;
+
+    Strings getKeysNames() const;
     size_t getKeysSize() const;
 
     std::string getKeyDescription() const;
     bool isKeySizeFixed() const;
-    size_t getKeySize() const;
-    Strings getKeysNames() const;
 
 private:
     /// range_min and range_max have to be parsed before this function call

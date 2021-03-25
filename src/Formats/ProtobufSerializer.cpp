@@ -1488,6 +1488,8 @@ namespace
             ReadBufferFromString buf{str};
             time_t tm = 0;
             readDateTimeText(tm, buf);
+            if (tm < 0)
+                tm = 0;
             return tm;
         }
 

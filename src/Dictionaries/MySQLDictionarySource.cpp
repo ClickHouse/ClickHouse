@@ -107,10 +107,9 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
 {
     if (update_time != std::chrono::system_clock::from_time_t(0))
     {
-        auto tmp_time = update_time;
+        time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - 1;
+        std::string str_time = DateLUT::instance().timeToString(hr_time);
         update_time = std::chrono::system_clock::now();
-        time_t hr_time = std::chrono::system_clock::to_time_t(tmp_time) - 1;
-        std::string str_time = std::to_string(LocalDateTime(hr_time));
         return query_builder.composeUpdateQuery(update_field, str_time);
     }
     else
@@ -262,7 +261,7 @@ LocalDateTime MySQLDictionarySource::getLastModification(mysqlxx::Pool::Entry & 
             if (!update_time_value.isNull())
             {
                 modification_time = update_time_value.getDateTime();
-                LOG_TRACE(log, "Got modification time: {}", modification_time);
+                LOG_TRACE(log, "Got modification time: {}", update_time_value.getString());
             }
 
             /// fetch remaining rows to avoid "commands out of sync" error

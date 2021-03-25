@@ -97,6 +97,8 @@
     M(DistributedConnectionStaleReplica, "") \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished") \
     \
+    M(HedgedRequestsChangeReplica, "Total count when timeout for changing replica expired in hedged requests.") \
+    \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.") \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.") \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.") \
