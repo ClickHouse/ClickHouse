@@ -368,7 +368,9 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(ColumnPtr key_column, const DataTypePtr & key_type) const
+ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(
+    ColumnPtr key_column [[maybe_unused]],
+    const DataTypePtr & key_type [[maybe_unused]]) const
 {
     if (dictionary_key_type == DictionaryKeyType::simple)
     {
@@ -381,7 +383,10 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getHierarchy(ColumnPtr key_colum
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(ColumnPtr key_column, ColumnPtr in_key_column, const DataTypePtr & key_type) const
+ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::isInHierarchy(
+    ColumnPtr key_column [[maybe_unused]],
+    ColumnPtr in_key_column [[maybe_unused]],
+    const DataTypePtr & key_type [[maybe_unused]]) const
 {
     if (dictionary_key_type == DictionaryKeyType::simple)
     {

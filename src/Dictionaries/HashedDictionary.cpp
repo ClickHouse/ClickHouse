@@ -191,7 +191,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
-ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr key_column, const DataTypePtr &) const
+ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr key_column [[maybe_unused]], const DataTypePtr &) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
     {
@@ -200,8 +200,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
 
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
 
-        auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
-        auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
+        const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
+        const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
         const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
         const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
@@ -237,8 +237,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
-    ColumnPtr key_column,
-    ColumnPtr in_key_column,
+    ColumnPtr key_column [[maybe_unused]],
+    ColumnPtr in_key_column [[maybe_unused]],
     const DataTypePtr &) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
@@ -289,7 +289,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
-    ColumnPtr key_column,
+    ColumnPtr key_column [[maybe_unused]],
     const DataTypePtr &,
     size_t level) const
 {
