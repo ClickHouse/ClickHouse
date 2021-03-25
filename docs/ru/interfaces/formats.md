@@ -1241,7 +1241,7 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-### Выборка данных {#vyborka-dannykh-1}
+### Вывод данных {#vyvod-dannykh-1}
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата ORC, используйте команду следующего вида:
 
