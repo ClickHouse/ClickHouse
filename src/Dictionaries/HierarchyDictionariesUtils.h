@@ -14,11 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
-
 namespace detail
 {
     template <typename KeyType>
@@ -355,17 +350,6 @@ ColumnPtr getDescendantsArray(
     const HashMap<KeyType, PaddedPODArray<KeyType>> & parent_to_child,
     size_t level)
 {
-    for (auto & node : parent_to_child)
-    {
-        const auto & key = node.getKey();
-        const auto & childs = node.getMapped();
-        std::cerr << "Key " << key << " childs " << childs.size() << std::endl;
-        for (auto child : childs)
-            std::cerr << child << " ";
-        std::cerr << std::endl;
-    }
-
-
     if (level == 0)
     {
         detail::GetAllDescendantsStrategy strategy { .level = level };
