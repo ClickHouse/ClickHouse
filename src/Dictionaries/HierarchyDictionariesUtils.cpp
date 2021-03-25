@@ -1,7 +1,5 @@
 #include "HierarchyDictionariesUtils.h"
 
-#include <Common/HashTable/HashSet.h>
-
 namespace DB
 {
 

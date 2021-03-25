@@ -102,6 +102,11 @@ public:
         ColumnPtr in_key_column,
         const DataTypePtr & key_type) const override;
 
+    ColumnPtr getDescendants(
+        ColumnPtr key_column,
+        const DataTypePtr & key_type,
+        size_t level) const override;
+
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
