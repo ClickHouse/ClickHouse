@@ -794,7 +794,7 @@ Result:
 └────────────┘
 ```
 
-## ngramMinHash {#ngraminhash}
+## ngramMinHash {#ngramminhash}
 
 Calculates a hash value for each n-gram of a string in ASCII and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
 
