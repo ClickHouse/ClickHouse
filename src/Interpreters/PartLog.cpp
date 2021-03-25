@@ -71,7 +71,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(query_id);
     columns[i++]->insert(event_type);
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(duration_ms);

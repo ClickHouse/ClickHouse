@@ -9,7 +9,7 @@ toc_title: Machine Learning
 
 Prediction using fitted regression models uses `evalMLMethod` function. See link in `linearRegression`.
 
-## stochasticLinearRegressionn {#stochastic-linear-regression}
+## stochasticLinearRegression {#stochastic-linear-regression}
 
 The [stochasticLinearRegression](../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlinearregression) aggregate function implements stochastic gradient descent method using linear model and MSE loss function. Uses `evalMLMethod` to predict on new data.
 
@@ -36,14 +36,14 @@ bayesAB(distribution_name, higher_is_better, variant_names, x, y)
 
 -   `higher_is_better` — Boolean flag. [Boolean](../../sql-reference/data-types/boolean.md). Possible values:
 
-    -    `0` - lower values are considered to be better than higher
-    -    `1` - higher values are considered to be better than lower
+    -    `0` — lower values are considered to be better than higher
+    -    `1` — higher values are considered to be better than lower
 
--   `variant_names` - Variant names. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
+-   `variant_names` — Variant names. [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
--   `x` - Numbers of tests for the corresponding variants. [Array](../../sql-reference/data-types/array.md)([Float64](../../sql-reference/data-types/float.md)).
+-   `x` — Numbers of tests for the corresponding variants. [Array](../../sql-reference/data-types/array.md)([Float64](../../sql-reference/data-types/float.md)).
 
--   `y` - Numbers of successful tests for the corresponding variants. [Array](../../sql-reference/data-types/array.md)([Float64](../../sql-reference/data-types/float.md)).
+-   `y` — Numbers of successful tests for the corresponding variants. [Array](../../sql-reference/data-types/array.md)([Float64](../../sql-reference/data-types/float.md)).
 
 !!! note "Note"
     All three arrays must have the same size. All `x` and `y` values must be non-negative constant numbers. `y` cannot be larger than `x`.
@@ -51,8 +51,8 @@ bayesAB(distribution_name, higher_is_better, variant_names, x, y)
 **Returned values**
 
 For each variant the function calculates:
--   `beats_control` - long-term probability to out-perform the first (control) variant
--   `to_be_best` - long-term probability to out-perform all other variants
+-   `beats_control` — long-term probability to out-perform the first (control) variant
+-   `to_be_best` — long-term probability to out-perform all other variants
 
 Type: JSON.
 
@@ -94,4 +94,3 @@ Result:
 }
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/machine-learning-functions/) <!--hide-->

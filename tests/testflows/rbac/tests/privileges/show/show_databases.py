@@ -20,7 +20,7 @@ def dict_privileges_granted_directly(self, node=None):
     with user(node, f"{user_name}"):
         db_name = f"db_name_{getuid()}"
 
-        Suite(run=check_privilege, flags=TE,
+        Suite(run=check_privilege,
             examples=Examples("privilege on grant_target_name user_name db_name", [
                 tuple(list(row)+[user_name,user_name,db_name]) for row in check_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -44,13 +44,14 @@ def dict_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=check_privilege, flags=TE,
+        Suite(run=check_privilege,
             examples=Examples("privilege on grant_target_name user_name db_name", [
                 tuple(list(row)+[role_name,user_name,db_name]) for row in check_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege on",[
+    ("ALL", "*.*"),
     ("SHOW","*.*"),
     ("SHOW DATABASES","db"),
     ("CREATE DATABASE","db"),
@@ -65,9 +66,9 @@ def check_privilege(self, privilege, on, grant_target_name, user_name, db_name, 
 
     on = on.replace("db", f"{db_name}")
 
-    Suite(test=show_db, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, db_name=db_name)
-    Suite(test=use, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, db_name=db_name)
-    Suite(test=show_create, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, db_name=db_name)
+    Suite(test=show_db)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, db_name=db_name)
+    Suite(test=use)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, db_name=db_name)
+    Suite(test=show_create)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, db_name=db_name)
 
 @TestSuite
 @Requirements(
@@ -83,14 +84,23 @@ def show_db(self, privilege, on, grant_target_name, user_name, db_name, node=Non
 
     try:
         with Given("I have a database"):
+
             node.query(f"CREATE DATABASE {db_name}")
 
         with Scenario("SHOW DATABASES without privilege"):
-            with When("I check the user doesn't see the database"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user doesn't see the database"):
                 output = node.query("SHOW DATABASES", settings = [("user", f"{user_name}")]).output
                 assert output == '', error()
 
         with Scenario("SHOW DATABASES with privilege"):
+
             with When(f"I grant {privilege} on the database"):
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
@@ -98,6 +108,7 @@ def show_db(self, privilege, on, grant_target_name, user_name, db_name, node=Non
                 output = node.query("SHOW DATABASES", settings = [("user", f"{user_name}")], message = f'{db_name}')
 
         with Scenario("SHOW DATABASES with revoked privilege"):
+
             with When(f"I grant {privilege} on the database"):
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
@@ -130,11 +141,19 @@ def use(self, privilege, on, grant_target_name, user_name, db_name, node=None):
             node.query(f"CREATE DATABASE {db_name}")
 
         with Scenario("USE without privilege"):
-            with When(f"I attempt to USE {db_name}"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then(f"I attempt to USE {db_name}"):
                 node.query(f"USE {db_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
         with Scenario("USE with privilege"):
+
             with When(f"I grant {privilege} on the database"):
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
@@ -142,6 +161,7 @@ def use(self, privilege, on, grant_target_name, user_name, db_name, node=None):
                 node.query(f"USE {db_name}", settings=[("user",user_name)])
 
         with Scenario("USE with revoked privilege"):
+
             with When(f"I grant {privilege} on the database"):
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
@@ -174,11 +194,19 @@ def show_create(self, privilege, on, grant_target_name, user_name, db_name, node
             node.query(f"CREATE DATABASE {db_name}")
 
         with Scenario("SHOW CREATE without privilege"):
-            with When(f"I attempt to SHOW CREATE {db_name}"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then(f"I attempt to SHOW CREATE {db_name}"):
                 node.query(f"SHOW CREATE DATABASE {db_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
         with Scenario("SHOW CREATE with privilege"):
+
             with When(f"I grant {privilege} on the database"):
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
@@ -186,6 +214,7 @@ def show_create(self, privilege, on, grant_target_name, user_name, db_name, node
                 node.query(f"SHOW CREATE DATABASE {db_name}", settings=[("user",user_name)])
 
         with Scenario("SHOW CREATE with revoked privilege"):
+
             with When(f"I grant {privilege} on the database"):
                 node.query(f"GRANT {privilege} ON {db_name}.* TO {grant_target_name}")
 
@@ -203,7 +232,9 @@ def show_create(self, privilege, on, grant_target_name, user_name, db_name, node
 @TestFeature
 @Name("show databases")
 @Requirements(
-    RQ_SRS_006_RBAC_ShowDatabases_Privilege("1.0")
+    RQ_SRS_006_RBAC_ShowDatabases_Privilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SHOW DATABASES.

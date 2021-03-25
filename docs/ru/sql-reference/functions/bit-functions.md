@@ -1,6 +1,6 @@
 ---
 toc_priority: 48
-toc_title: "\u0411\u0438\u0442\u043e\u0432\u044b\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
+toc_title: "Битовые функции"
 ---
 
 # Битовые функции {#bitovye-funktsii}
@@ -31,10 +31,10 @@ toc_title: "\u0411\u0438\u0442\u043e\u0432\u044b\u0435\u0020\u0444\u0443\u043d\u
 SELECT bitTest(number, index)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `number` – целое число.
--   `index` – position of bit.
+-   `index` – позиция бита.
 
 **Возвращаемое значение**
 
@@ -49,10 +49,10 @@ SELECT bitTest(number, index)
 Запрос:
 
 ``` sql
-SELECT bitTest(43, 1)
+SELECT bitTest(43, 1);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─bitTest(43, 1)─┐
@@ -65,10 +65,10 @@ SELECT bitTest(43, 1)
 Запрос:
 
 ``` sql
-SELECT bitTest(43, 2)
+SELECT bitTest(43, 2);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─bitTest(43, 2)─┐
@@ -93,7 +93,7 @@ SELECT bitTest(43, 2)
 SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `number` – целое число.
 -   `index1`, `index2`, `index3`, `index4` – позиция бита. Например, конъюнкция для набора позиций `index1`, `index2`, `index3`, `index4` является истинной, если все его позиции истинны `index1` ⋀ `index2` ⋀ `index3` ⋀ `index4`.
@@ -111,10 +111,10 @@ SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 Запрос:
 
 ``` sql
-SELECT bitTestAll(43, 0, 1, 3, 5)
+SELECT bitTestAll(43, 0, 1, 3, 5);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─bitTestAll(43, 0, 1, 3, 5)─┐
@@ -127,10 +127,10 @@ SELECT bitTestAll(43, 0, 1, 3, 5)
 Запрос:
 
 ``` sql
-SELECT bitTestAll(43, 0, 1, 3, 5, 2)
+SELECT bitTestAll(43, 0, 1, 3, 5, 2);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─bitTestAll(43, 0, 1, 3, 5, 2)─┐
@@ -155,7 +155,7 @@ SELECT bitTestAll(43, 0, 1, 3, 5, 2)
 SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `number` – целое число.
 -   `index1`, `index2`, `index3`, `index4` – позиции бита.
@@ -173,10 +173,10 @@ SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 Запрос:
 
 ``` sql
-SELECT bitTestAny(43, 0, 2)
+SELECT bitTestAny(43, 0, 2);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─bitTestAny(43, 0, 2)─┐
@@ -189,10 +189,10 @@ SELECT bitTestAny(43, 0, 2)
 Запрос:
 
 ``` sql
-SELECT bitTestAny(43, 4, 2)
+SELECT bitTestAny(43, 4, 2);
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─bitTestAny(43, 4, 2)─┐
@@ -210,9 +210,9 @@ SELECT bitTestAny(43, 4, 2)
 bitCount(x)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `x` — [Целое число](../../sql-reference/functions/bit-functions.md) или [число с плавающей запятой](../../sql-reference/functions/bit-functions.md). Функция использует представление числа в памяти, что позволяет поддержать числа с плавающей запятой.
+-   `x` — [целое число](../../sql-reference/functions/bit-functions.md) или [число с плавающей запятой](../../sql-reference/functions/bit-functions.md). Функция использует представление числа в памяти, что позволяет поддержать числа с плавающей запятой.
 
 **Возвращаемое значение**
 
@@ -229,7 +229,7 @@ bitCount(x)
 Запрос:
 
 ``` sql
-SELECT bitCount(333)
+SELECT bitCount(333);
 ```
 
 Результат:
@@ -240,4 +240,3 @@ SELECT bitCount(333)
 └───────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/bit_functions/) <!--hide-->

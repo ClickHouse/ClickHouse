@@ -60,7 +60,7 @@ Alias: `INET6_NTOA`.
 Examples:
 
 ``` sql
-SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
+SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr;
 ```
 
 ``` text
@@ -164,7 +164,7 @@ Result:
 └────────────┴──────────────────────────────────────┘
 ```
 
-**See also**
+**See Also**
 
 -   [cutIPv6](#cutipv6x-bytestocutforipv6-bytestocutforipv4).
 
@@ -173,7 +173,7 @@ Result:
 Takes a `UInt32` number. Interprets it as an IPv4 address in [big endian](https://en.wikipedia.org/wiki/Endianness). Returns a `FixedString(16)` value containing the IPv6 address in binary format. Examples:
 
 ``` sql
-SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
+SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr;
 ```
 
 ``` text
@@ -206,7 +206,7 @@ SELECT
 Accepts an IPv4 and an UInt8 value containing the [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing). Return a tuple with two IPv4 containing the lower range and the higher range of the subnet.
 
 ``` sql
-SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
+SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16);
 ```
 
 ``` text
@@ -342,7 +342,7 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ```sql
-SELECT addr, isIPv4String(addr) FROM ( SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr ) ARRAY JOIN addr
+SELECT addr, isIPv4String(addr) FROM ( SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr ) ARRAY JOIN addr;
 ```
 
 Result:
@@ -380,7 +380,7 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) ARRAY JOIN addr
+SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) ARRAY JOIN addr;
 ```
 
 Result:
@@ -394,4 +394,3 @@ Result:
 └──────────────────┴────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/ip_address_functions/) <!--hide-->

@@ -46,10 +46,10 @@ namespace
         roles_info.access.makeUnion(role->access);
         roles_info.settings_from_enabled_roles.merge(role->settings);
 
-        for (const auto & granted_role : role->granted_roles.roles)
+        for (const auto & granted_role : role->granted_roles.getGranted())
             collectRoles(roles_info, skip_ids, get_role_function, granted_role, false, false);
 
-        for (const auto & granted_role : role->granted_roles.roles_with_admin_option)
+        for (const auto & granted_role : role->granted_roles.getGrantedWithAdminOption())
             collectRoles(roles_info, skip_ids, get_role_function, granted_role, false, true);
     }
 }
@@ -63,15 +63,15 @@ RoleCache::~RoleCache() = default;
 
 
 std::shared_ptr<const EnabledRoles>
-RoleCache::getEnabledRoles(const boost::container::flat_set<UUID> & roles, const boost::container::flat_set<UUID> & roles_with_admin_option)
+RoleCache::getEnabledRoles(const std::vector<UUID> & roles, const std::vector<UUID> & roles_with_admin_option)
 {
     /// Declared before `lock` to send notifications after the mutex will be unlocked.
     ext::scope_guard notifications;
 
     std::lock_guard lock{mutex};
     EnabledRoles::Params params;
-    params.current_roles = roles;
-    params.current_roles_with_admin_option = roles_with_admin_option;
+    params.current_roles.insert(roles.begin(), roles.end());
+    params.current_roles_with_admin_option.insert(roles_with_admin_option.begin(), roles_with_admin_option.end());
     auto it = enabled_roles.find(params);
     if (it != enabled_roles.end())
     {
