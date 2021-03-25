@@ -37,7 +37,6 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <Processors/Pipe.h>
-#include <Processors/QueryPlan/AddingDelayedSourceStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>

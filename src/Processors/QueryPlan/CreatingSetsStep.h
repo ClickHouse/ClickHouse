@@ -12,7 +12,6 @@ class CreatingSetStep : public ITransformingStep
 public:
     CreatingSetStep(
             const DataStream & input_stream_,
-            Block header,
             String description_,
             SubqueryForSet subquery_for_set_,
             SizeLimits network_transfer_limits_,
