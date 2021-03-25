@@ -1,6 +1,5 @@
 #include <Parsers/ASTFunction.h>
 
-#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
