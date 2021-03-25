@@ -255,7 +255,7 @@ QueryPipeline QueryPipeline::unitePipelines(
     }
 
     QueryPipeline pipeline;
-    pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors));
+    pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors, false));
 
     if (will_limit_max_threads)
     {
@@ -289,7 +289,9 @@ void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryF
 void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
 {
     checkInitializedAndNotCompleted();
-    assertBlocksHaveEqualStructure(getHeader(), pipeline.getHeader(), "QueryPipeline");
+    if (pipeline.getHeader())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CreatingSets should have empty header. Got: {}",
+                        pipeline.getHeader().dumpStructure());
 
     IProcessor::PortNumbers delayed_streams(pipe.numOutputPorts());
     for (size_t i = 0; i < delayed_streams.size(); ++i)
@@ -300,7 +302,7 @@ void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
     Pipes pipes;
     pipes.emplace_back(std::move(pipe));
     pipes.emplace_back(QueryPipeline::getPipe(std::move(pipeline)));
-    pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
+    pipe = Pipe::unitePipes(std::move(pipes), collected_processors, true);
 
     auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams, true);
     addTransform(std::move(processor));

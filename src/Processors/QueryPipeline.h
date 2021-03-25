@@ -96,7 +96,8 @@ public:
             Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
-    /// Pipeline must have same header.
+    /// Pipeline must have empty header, it should not generate any chunk.
+    /// This is used for CreatingSets.
     void addPipelineBefore(QueryPipeline pipeline);
 
     void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context);
