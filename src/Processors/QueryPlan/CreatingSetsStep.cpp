@@ -74,7 +74,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
                             input_streams[i].header.dumpStructure());
 }
 
-QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings)
+QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.empty())
         throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
@@ -89,7 +89,7 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, cons
     if (pipelines.size() > 1)
     {
         QueryPipelineProcessorsCollector collector(delayed_pipeline, this);
-        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines), Block(), settings.getActionsSettings());
+        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines));
         processors = collector.detachProcessors();
     }
     else

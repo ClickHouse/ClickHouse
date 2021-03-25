@@ -90,8 +90,6 @@ public:
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static QueryPipeline unitePipelines(
             std::vector<std::unique_ptr<QueryPipeline>> pipelines,
-            const Block & common_header,
-            const ExpressionActionsSettings & settings,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 

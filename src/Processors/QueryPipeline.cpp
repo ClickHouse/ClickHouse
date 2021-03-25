@@ -211,11 +211,14 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
 
 QueryPipeline QueryPipeline::unitePipelines(
     std::vector<std::unique_ptr<QueryPipeline>> pipelines,
-    const Block & common_header,
-    const ExpressionActionsSettings & settings,
     size_t max_threads_limit,
     Processors * collected_processors)
 {
+    if (pipelines.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite an empty set of pipelines");
+
+    Block common_header = pipelines.front()->getHeader();
+
     /// Should we limit the number of threads for united pipeline. True if all pipelines have max_threads != 0.
     /// If true, result max_threads will be sum(max_threads).
     /// Note: it may be > than settings.max_threads, so we should apply this limit again.
@@ -229,19 +232,21 @@ QueryPipeline QueryPipeline::unitePipelines(
         pipeline.checkInitialized();
         pipeline.pipe.collected_processors = collected_processors;
 
-        if (!pipeline.isCompleted())
-        {
-            auto actions_dag = ActionsDAG::makeConvertingActions(
-                    pipeline.getHeader().getColumnsWithTypeAndName(),
-                    common_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Position);
-            auto actions = std::make_shared<ExpressionActions>(actions_dag, settings);
+        assertBlocksHaveEqualStructure(pipeline.getHeader(), common_header, "QueryPipeline::unitePipelines");
 
-            pipeline.addSimpleTransform([&](const Block & header)
-            {
-               return std::make_shared<ExpressionTransform>(header, actions);
-            });
-        }
+        // if (!pipeline.isCompleted())
+        // {
+        //     auto actions_dag = ActionsDAG::makeConvertingActions(
+        //             pipeline.getHeader().getColumnsWithTypeAndName(),
+        //             common_header.getColumnsWithTypeAndName(),
+        //             ActionsDAG::MatchColumnsMode::Position);
+        //     auto actions = std::make_shared<ExpressionActions>(actions_dag, settings);
+
+        //     pipeline.addSimpleTransform([&](const Block & header)
+        //     {
+        //        return std::make_shared<ExpressionTransform>(header, actions);
+        //     });
+        // }
 
         pipes.emplace_back(std::move(pipeline.pipe));
 

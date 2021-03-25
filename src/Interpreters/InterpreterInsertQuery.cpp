@@ -250,7 +250,7 @@ BlockIO InterpreterInsertQuery::execute()
                 }
             }
 
-            res.pipeline = QueryPipeline::unitePipelines(std::move(pipelines), {}, ExpressionActionsSettings::fromContext(context));
+            res.pipeline = QueryPipeline::unitePipelines(std::move(pipelines));
         }
     }
 
