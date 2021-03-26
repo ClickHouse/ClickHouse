@@ -36,10 +36,10 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
             {
                 use_environment_credentials = config.getBool(config_elem + "." + key + ".use_environment_credentials");
             }
-            std::optional<bool> use_sts_get_caller_identity_credentials;
-            if (config.has(config_elem + "." + key + ".use_sts_get_caller_identity_credentials"))
+            std::optional<bool> use_sts_assume_role_credentials;
+            if (config.has(config_elem + "." + key + ".use_sts_assume_role_credentials"))
             {
-                use_sts_get_caller_identity_credentials = config.getBool(config_elem + "." + key + ".use_sts_get_caller_identity_credentials");
+                use_sts_assume_role_credentials = config.getBool(config_elem + "." + key + ".use_sts_assume_role_credentials");
             }
 
             HeaderCollection headers;
@@ -57,7 +57,7 @@ void StorageS3Settings::loadFromConfig(const String & config_elem, const Poco::U
                 }
             }
 
-            settings.emplace(endpoint, S3AuthSettings{std::move(access_key_id), std::move(secret_access_key), std::move(server_side_encryption_customer_key_base64), std::move(headers), use_environment_credentials, use_sts_get_caller_identity_credentials});
+            settings.emplace(endpoint, S3AuthSettings{std::move(access_key_id), std::move(secret_access_key), std::move(server_side_encryption_customer_key_base64), std::move(headers), use_environment_credentials, use_sts_assume_role_credentials});
         }
     }
 }

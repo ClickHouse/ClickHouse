@@ -767,7 +767,7 @@ Required parameters:
 
 Optional parameters:    
 -   `use_environment_credentials` — Reads AWS credentials from the Environment variables AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN if they exist. Default value is `false`.
--   `use_sts_get_caller_identity_credentials` — Obtains AWS credentials from STS GetCallerIdentity request. Default value is `false`.
+-   `use_sts_assume_role_credentials` — Obtains AWS credentials from EC2 metadata and STS GetCallerIdentity request outcome. Default value is `false`.
 -   `proxy` — Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL. 
 -   `connect_timeout_ms` — Socket connect timeout in milliseconds. Default value is `10 seconds`. 
 -   `request_timeout_ms` — Request timeout in milliseconds. Default value is `5 seconds`. 

@@ -39,7 +39,7 @@ public:
         const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
         bool use_environment_credentials,
-        bool use_sts_get_caller_identity_credentials);
+        bool use_sts_assume_role_credentials);
 
     PocoHTTPClientConfiguration createClientConfiguration(
         const RemoteHostFilter & remote_host_filter,

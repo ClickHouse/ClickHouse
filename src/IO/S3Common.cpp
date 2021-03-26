@@ -106,10 +106,72 @@ private:
     std::unordered_map<String, Poco::Logger *> tag_loggers;
 };
 
+class AWSSTSAssumeRoleCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
+{
+    static const int ACCOUNT_FOR_LATENCY = 60;
+    
+public:
+    AWSSTSAssumeRoleCredentialsProvider(std::shared_ptr<Aws::STS::STSClient> sts_client_):
+        sts_client(std::move(sts_client_))
+    {
+        std::ostringstream ss;
+        ss << "aws-sdk-cpp-" << Aws::Utils::DateTime::CurrentTimeMillis();
+        session_name = ss.str();
+    }
+
+    Aws::Auth::AWSCredentials GetAWSCredentials() override
+    {
+        auto diff_seconds = static_cast<int>(Aws::Utils::DateTime::Now().SecondsWithMSPrecision() - Aws::Utils::DateTime(expiry.load()).SecondsWithMSPrecision());
+        if (diff_seconds > 0 - ACCOUNT_FOR_LATENCY)
+        {
+            auto * logger = &Poco::Logger::get("STSAssumeRoleCredentialsProvider");
+            LOG_DEBUG(logger, "Credentials have expired with diff of {} since last credentials pull.", diff_seconds);
+            LOG_TRACE(logger, "Grabbing lock.");
+            std::lock_guard<std::mutex> locker(credentials_mutex);
+            LOG_TRACE(logger, "Lock acquired. Checking expiration again.");
+            diff_seconds = static_cast<int>(Aws::Utils::DateTime::Now().SecondsWithMSPrecision() - Aws::Utils::DateTime(expiry.load()).SecondsWithMSPrecision());
+            if (diff_seconds > 0 - ACCOUNT_FOR_LATENCY)
+            {
+                auto caller_identity_outcome = sts_client->GetCallerIdentity({});
+                if (caller_identity_outcome.IsSuccess())
+                {
+                    String role_arn = caller_identity_outcome.GetResult().GetArn();
+                    if (role_arn != cached_role_arn || !underlying_credentials_provider)
+                    {
+                        underlying_credentials_provider = std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
+                            role_arn, session_name, String(), Aws::Auth::DEFAULT_CREDS_LOAD_FREQ_SECONDS, sts_client
+                        );
+                        cached_role_arn = role_arn;
+                    }
+                    cached_credentials = underlying_credentials_provider->GetAWSCredentials();
+                    expiry = Aws::Utils::DateTime::Now().SecondsWithMSPrecision();
+                }
+                else
+                {
+                    LOG_ERROR(logger, "Failed to make STS GetCallerIdentity request.");
+                }
+            }
+        }
+
+        std::lock_guard<std::mutex> locker(credentials_mutex);
+        return cached_credentials;
+    }
+
+private:
+    std::atomic<int64_t> expiry = 0;
+    std::shared_ptr<Aws::STS::STSClient> sts_client;
+    String session_name;
+    std::mutex credentials_mutex;
+    Aws::Auth::AWSCredentials cached_credentials;
+    std::shared_ptr<Aws::Auth::STSAssumeRoleCredentialsProvider> underlying_credentials_provider;
+    String cached_role_arn;
+};
+
+
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
 {
 public:
-    explicit S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_sts_get_caller_identity_credentials)
+    explicit S3CredentialsProviderChain(const DB::S3::PocoHTTPClientConfiguration & configuration, const Aws::Auth::AWSCredentials & credentials, bool use_environment_credentials, bool use_sts_assume_role_credentials)
     {
         auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
@@ -187,7 +249,7 @@ public:
             }
         }
 
-        if (use_sts_get_caller_identity_credentials)
+        if (use_sts_assume_role_credentials)
         {
             DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.remote_host_filter, configuration.s3_max_redirects);
 
@@ -195,19 +257,13 @@ public:
             aws_client_configuration.requestTimeoutMs = 1000;
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
 
-            auto sts_client = std::make_shared<Aws::STS::STSClient>(aws_client_configuration);
-            auto caller_identity_outcome = sts_client->GetCallerIdentity({});
+            auto internal_credentials_provider_chain = std::make_shared<S3CredentialsProviderChain>(
+                configuration, credentials, use_environment_credentials, /* use_sts_assume_role_credentials = */ false
+            );
+            auto sts_client = std::make_shared<Aws::STS::STSClient>(internal_credentials_provider_chain, aws_client_configuration);
 
-            if (caller_identity_outcome.IsSuccess())
-            {
-                String role_arn = caller_identity_outcome.GetResult().GetArn();
-                AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(role_arn, String(), String(), Aws::Auth::DEFAULT_CREDS_LOAD_FREQ_SECONDS, sts_client));
-                LOG_INFO(logger, "Added STS AssumeRole credentials provider to the provider chain.");
-            }
-            else
-            {
-                LOG_INFO(logger, "Failed to retrieve STS GetCallerIdentityRequest.");
-            }
+            AddProvider(std::make_shared<AWSSTSAssumeRoleCredentialsProvider>(sts_client));
+            LOG_INFO(logger, "Added STS AssumeRole credentials provider to the provider chain.");
         }
 
         AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
@@ -222,13 +278,13 @@ public:
         const Aws::Auth::AWSCredentials & credentials,
         const DB::HeaderCollection & headers_,
         bool use_environment_credentials,
-        bool use_sts_get_caller_identity_credentials)
+        bool use_sts_assume_role_credentials)
         : Aws::Client::AWSAuthV4Signer(
             std::make_shared<S3CredentialsProviderChain>(
                 static_cast<const DB::S3::PocoHTTPClientConfiguration &>(client_configuration),
                 credentials,
                 use_environment_credentials,
-                use_sts_get_caller_identity_credentials),
+                use_sts_assume_role_credentials),
             "s3",
             client_configuration.region,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
@@ -320,7 +376,7 @@ namespace S3
         const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
         bool use_environment_credentials,
-        bool use_sts_get_caller_identity_credentials)
+        bool use_sts_assume_role_credentials)
     {
         PocoHTTPClientConfiguration client_configuration = cfg_;
         client_configuration.updateSchemeAndRegion();
@@ -348,7 +404,7 @@ namespace S3
             std::move(credentials),
             std::move(headers),
             use_environment_credentials,
-            use_sts_get_caller_identity_credentials);
+            use_sts_assume_role_credentials);
 
         return std::make_shared<Aws::S3::S3Client>(
             std::move(auth_signer),
