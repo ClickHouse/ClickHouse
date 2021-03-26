@@ -16,91 +16,55 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int CANNOT_MUNMAP;
-    extern const int CANNOT_STAT;
-    extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
 
-void MMapReadBufferFromFileDescriptor::init(int fd_, size_t offset, size_t length_)
+void MMapReadBufferFromFileDescriptor::init()
 {
-    fd = fd_;
-    length = length_;
+    size_t length = mapped.getLength();
+    BufferBase::set(mapped.getData(), length, 0);
 
-    if (length)
-    {
-        void * buf = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, offset);
-        if (MAP_FAILED == buf)
-            throwFromErrno(fmt::format("MMapReadBufferFromFileDescriptor: Cannot mmap {}.", ReadableSize(length)),
-                ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-        BufferBase::set(static_cast<char *>(buf), length, 0);
-
-        size_t page_size = static_cast<size_t>(::getPageSize());
-        ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - 15);
-    }
-}
-
-void MMapReadBufferFromFileDescriptor::init(int fd_, size_t offset)
-{
-    fd = fd_;
-
-    struct stat stat_res {};
-    if (0 != fstat(fd, &stat_res))
-        throwFromErrno("MMapReadBufferFromFileDescriptor: Cannot fstat.", ErrorCodes::CANNOT_STAT);
-
-    off_t file_size = stat_res.st_size;
-
-    if (file_size < 0)
-        throw Exception("MMapReadBufferFromFileDescriptor: fstat returned negative file size", ErrorCodes::LOGICAL_ERROR);
-
-    if (offset > static_cast<size_t>(file_size))
-        throw Exception("MMapReadBufferFromFileDescriptor: requested offset is greater than file size", ErrorCodes::BAD_ARGUMENTS);
-
-    init(fd, offset, file_size - offset);
+    size_t page_size = static_cast<size_t>(::getPageSize());
+    ReadBuffer::padded = (length % page_size) > 0 && (length % page_size) <= (page_size - 15);
 }
 
 
-MMapReadBufferFromFileDescriptor::MMapReadBufferFromFileDescriptor(int fd_, size_t offset_, size_t length_)
+MMapReadBufferFromFileDescriptor::MMapReadBufferFromFileDescriptor(int fd, size_t offset, size_t length)
+    : mapped(fd, offset, length)
 {
-    init(fd_, offset_, length_);
+    init();
 }
 
 
-MMapReadBufferFromFileDescriptor::MMapReadBufferFromFileDescriptor(int fd_, size_t offset_)
+MMapReadBufferFromFileDescriptor::MMapReadBufferFromFileDescriptor(int fd, size_t offset)
+    : mapped(fd, offset)
 {
-    init(fd_, offset_);
+    init();
 }
 
 
 MMapReadBufferFromFileDescriptor::~MMapReadBufferFromFileDescriptor()
 {
-    if (length)
-        finish();    /// Exceptions will lead to std::terminate and that's Ok.
+    finish();
 }
 
 
 void MMapReadBufferFromFileDescriptor::finish()
 {
-    if (0 != munmap(internalBuffer().begin(), length))
-        throwFromErrno(fmt::format("MMapReadBufferFromFileDescriptor: Cannot munmap {}.", ReadableSize(length)),
-            ErrorCodes::CANNOT_MUNMAP);
-
-    length = 0;
+    mapped.finish();
 }
+
 
 std::string MMapReadBufferFromFileDescriptor::getFileName() const
 {
-    return "(fd = " + toString(fd) + ")";
+    return "(fd = " + toString(mapped.getFD()) + ")";
 }
 
 int MMapReadBufferFromFileDescriptor::getFD() const
 {
-    return fd;
+    return mapped.getFD();
 }
 
 off_t MMapReadBufferFromFileDescriptor::getPosition()

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/MappedFile.h>
 
 
 namespace DB
@@ -18,8 +19,9 @@ public:
 
 protected:
     MMapReadBufferFromFileDescriptor() {}
-    void init(int fd_, size_t offset, size_t length_);
-    void init(int fd_, size_t offset);
+    void init();
+
+    MappedFile mapped;
 
 public:
     MMapReadBufferFromFileDescriptor(int fd_, size_t offset_, size_t length_);
@@ -35,10 +37,6 @@ public:
     off_t getPosition() override;
     std::string getFileName() const override;
     int getFD() const;
-
-private:
-    size_t length = 0;
-    int fd = -1;
 };
 
 }
