@@ -1082,6 +1082,11 @@ class ClickHouseInstance:
             ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
 
+    def count_in_log(self, substring):
+        result = self.exec_in_container(
+            ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(substring)])
+        return result
+
     def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):
         start_time = time.time()
         result = self.exec_in_container(
