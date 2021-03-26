@@ -226,11 +226,6 @@ Strings StorageS3::listFilesWithRegexpMatching(Aws::S3::S3Client & client, const
     }
 
     Aws::S3::Model::ListObjectsV2Request request;
-
-    std::cout << "Will list objects: " << std::endl;
-    std::cout << globbed_uri.bucket << std::endl;
-    std::cout << key_prefix << std::endl;
-
     request.SetBucket(globbed_uri.bucket);
     request.SetPrefix(key_prefix);
 
