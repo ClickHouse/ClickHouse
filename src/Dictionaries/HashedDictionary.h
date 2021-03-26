@@ -6,7 +6,6 @@
 #include <optional>
 
 #include <sparsehash/sparse_hash_map>
-#include <absl/container/flat_hash_map.h>
 #include <ext/range.h>
 
 #include <Common/HashTable/HashMap.h>
@@ -116,12 +115,6 @@ private:
         HashMap<UInt64, Value>,
         HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
 
-    template <typename Value>
-    using ComplexAttributeCollectionTypeNonSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::simple,
-        absl::flat_hash_map<UInt64, Value, DefaultHash<UInt64>>,
-        absl::flat_hash_map<StringRef, Value, DefaultHash<StringRef>>>;
-
 #if !defined(ARCADIA_BUILD)
     template <typename Key, typename Value>
     using SparseHashMap = google::sparse_hash_map<Key, Value, DefaultHash<Key>>;
@@ -139,16 +132,13 @@ private:
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
 
-    template <typename Value>
-    using ComplexAttributeCollectionType = std::conditional_t<
-        sparse,
-        CollectionTypeSparse<Value>,
-        ComplexAttributeCollectionTypeNonSparse<Value>>;
+    using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        bool is_complex_type;
+        std::optional<NullableSet> is_nullable_set;
+
         std::variant<
             CollectionType<UInt8>,
             CollectionType<UInt16>,
@@ -164,10 +154,11 @@ private:
             CollectionType<Decimal128>,
             CollectionType<Float32>,
             CollectionType<Float64>,
-            CollectionType<StringRef>,
-            ComplexAttributeCollectionType<Field>>
+            CollectionType<StringRef>>
             container;
+
         std::unique_ptr<Arena> string_arena;
+
     };
 
     void createAttributes();

@@ -51,21 +51,21 @@ Get is in hierarchy
 0
 Get children
 [1]
-[2,3]
+[3,2]
 [4]
 []
 []
 []
 Get all descendants
-[1,2,3,4]
-[2,3,4]
+[1,3,2,4]
+[3,2,4]
 [4]
 []
 []
 []
 Get descendants at first level
 [1]
-[2,3]
+[3,2]
 [4]
 []
 []
