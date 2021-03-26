@@ -85,13 +85,13 @@
 (defn logs-and-snapshots-corruption-nemesis
   []
   (corruptor-nemesis coordination-data-dir (fn [path]
-                                       (do
-                                         (corrupt-file (select-last-file (str path "/snapshots")))
-                                         (corrupt-file (select-last-file (str path "/logs")))))))
+                                             (do
+                                               (corrupt-file (select-last-file (str path "/snapshots")))
+                                               (corrupt-file (select-last-file (str path "/logs")))))))
 (defn drop-all-corruption-nemesis
   []
   (corruptor-nemesis coordination-data-dir (fn [path]
-                                       (c/exec :rm :-fr path))))
+                                             (c/exec :rm :-fr path))))
 
 (defn partition-bridge-nemesis
   []

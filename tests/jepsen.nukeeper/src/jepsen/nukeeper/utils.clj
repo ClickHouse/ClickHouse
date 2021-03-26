@@ -113,11 +113,11 @@
         first-child (first (sort children))]
     (if (not (nil? first-child))
       (try
-          (do (.check txn path (:version stat))
-              (.setData txn path (data/to-bytes "") -1) ; I'm just checking multitransactions
-              (.delete txn (str path first-child) -1)
-              (.commit txn)
-              first-child)
+        (do (.check txn path (:version stat))
+            (.setData txn path (data/to-bytes "") -1) ; I'm just checking multitransactions
+            (.delete txn (str path first-child) -1)
+            (.commit txn)
+            first-child)
         (catch KeeperException$BadVersionException _ nil)
         ; Even if we got connection loss, delete may actually be executed.
         ; This function is used for queue model, which strictly require
@@ -166,7 +166,7 @@
     :--logger.errorlog (str logs-dir "/clickhouse-server.err.log")
     :--test_keeper_server.snapshot_storage_path coordination-snapshots-dir
     :--test_keeper_server.logs_storage_path coordination-logs-dir)
-  (wait-clickhouse-alive! node test)))
+   (wait-clickhouse-alive! node test)))
 
 (defn exec-with-retries
   [retries f & args]
