@@ -32,5 +32,5 @@ INSERT INTO table SELECT file('a.txt'), file('b.txt')
 **See Also**
 
 -   [user_files_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path)
--   [file](../table-functions/file/)
+-   [file](../table-functions/file.md)
 
