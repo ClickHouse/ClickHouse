@@ -980,7 +980,11 @@ bool TCPHandler::receivePacket()
         case Protocol::Client::NextTaskRequest:
         {
             auto id = receiveNextTaskRequest();
+#if USE_AWS_S3
             auto next = TaskSupervisor::instance().getNextTaskForId(id);
+#else
+            auto next = "";
+#endif
             sendNextTaskReply(next);
             return false;
         }
