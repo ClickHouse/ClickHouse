@@ -166,4 +166,19 @@ toc_title: "Визуальные интерфейсы от сторонних р
 
 [Как сконфигурировать ClickHouse в Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
-[Original article](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
+### SeekTable {#seektable}
+
+[SeekTable](https://www.seektable.com) — это комплексный набор BI инструментов для обработки данных и оперативной отчетности. Он доступен как в виде облачного сервиса, так и в виде локальной версии. Отчеты из SeekTable могут быть встроены в любое веб-приложение.
+
+Основные возможности:
+
+-   Удобный конструктор отчетов.
+-   Гибкие параметры отчетов для фильтрации SQL и настройки запросов под специфичные отчеты.
+-   Подключается к ClickHouse, используя собственную точку приема запроса TCP/IP или интерфейс HTTP(S) (2 разных драйвера).
+-   В определениях измерений/мер можно использовать всю мощь диалекта ClickHouse SQL.
+-   [WEB-API](https://www.seektable.com/help/web-api-integration) для автоматизированной генерации отчетов.
+-   Процесс разработки отчетов поддерживает работу с данными учетной записи [резервное копирование/восстановление](https://www.seektable.com/help/self-hosted-backup-restore); конфигурация моделей данных (кубов) / отчетов представляет собой удобочитаемый XML-файл, который может храниться в системе контроля версий.
+
+SeekTable [бесплатен](https://www.seektable.com/help/cloud-pricing) для личного/индивидуального использования.
+
+[Как сконфигурировать подключение ClickHouse в SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
