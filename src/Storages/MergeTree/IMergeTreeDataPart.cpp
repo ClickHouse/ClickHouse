@@ -333,39 +333,48 @@ IMergeTreeDataPart::State IMergeTreeDataPart::getState() const
 }
 
 
-DayNum IMergeTreeDataPart::getMinDate() const
+std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
-        return DayNum(minmax_idx.hyperrectangle[storage.minmax_idx_date_column_pos].left.get<UInt64>());
+    {
+        const auto & hyperrectangle = minmax_idx.hyperrectangle[storage.minmax_idx_date_column_pos];
+        return {DayNum(hyperrectangle.left.get<UInt64>()), DayNum(hyperrectangle.right.get<UInt64>())};
+    }
     else
-        return DayNum();
+        return {};
 }
 
-
-DayNum IMergeTreeDataPart::getMaxDate() const
-{
-    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
-        return DayNum(minmax_idx.hyperrectangle[storage.minmax_idx_date_column_pos].right.get<UInt64>());
-    else
-        return DayNum();
-}
-
-time_t IMergeTreeDataPart::getMinTime() const
+std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 {
     if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
-        return minmax_idx.hyperrectangle[storage.minmax_idx_time_column_pos].left.get<UInt64>();
+    {
+        const auto & hyperrectangle = minmax_idx.hyperrectangle[storage.minmax_idx_time_column_pos];
+
+        /// The case of DateTime
+        if (hyperrectangle.left.getType() == Field::Types::UInt64)
+        {
+            assert(hyperrectangle.right.getType() == Field::Types::UInt64);
+            return {hyperrectangle.left.get<UInt64>(), hyperrectangle.right.get<UInt64>()};
+        }
+        /// The case of DateTime64
+        else if (hyperrectangle.left.getType() == Field::Types::Decimal64)
+        {
+            assert(hyperrectangle.right.getType() == Field::Types::Decimal64);
+
+            auto left = hyperrectangle.left.get<DecimalField<Decimal64>>();
+            auto right = hyperrectangle.right.get<DecimalField<Decimal64>>();
+
+            assert(left.getScale() == right.getScale());
+
+            return { left.getValue() / left.getScaleMultiplier(), right.getValue() / right.getScaleMultiplier() };
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part minmax index by time is neither DateTime or DateTime64");
+    }
     else
-        return 0;
+        return {};
 }
 
-
-time_t IMergeTreeDataPart::getMaxTime() const
-{
-    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
-        return minmax_idx.hyperrectangle[storage.minmax_idx_time_column_pos].right.get<UInt64>();
-    else
-        return 0;
-}
 
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 {

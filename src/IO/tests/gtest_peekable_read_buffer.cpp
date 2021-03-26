@@ -6,11 +6,6 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
 
-namespace DB::ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 static void readAndAssert(DB::ReadBuffer & buf, const char * str)
 {
     size_t n = strlen(str);
@@ -48,20 +43,6 @@ try
         readAndAssert(peekable, "01234");
     }
 
-#ifndef ABORT_ON_LOGICAL_ERROR
-    bool exception = false;
-    try
-    {
-        peekable.rollbackToCheckpoint();
-    }
-    catch (DB::Exception & e)
-    {
-        if (e.code() != DB::ErrorCodes::LOGICAL_ERROR)
-            throw;
-        exception = true;
-    }
-    ASSERT_TRUE(exception);
-#endif
     assertAvailable(peekable, "56789");
 
     readAndAssert(peekable, "56");
