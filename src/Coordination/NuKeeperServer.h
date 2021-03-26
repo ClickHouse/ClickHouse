@@ -31,7 +31,7 @@ private:
     ResponsesQueue & responses_queue;
 
     std::mutex initialized_mutex;
-    bool initialized_flag = false;
+    std::atomic<bool> initialized_flag = false;
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
 
