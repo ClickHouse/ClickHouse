@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// MMaps a region in file descriptor (or a whole file) into memory. Unmaps in destructor.
+/// MMaps a region in file (or a whole file) into memory. Unmaps in destructor.
 /// Does not open or close file.
 class MappedFile
 {
@@ -44,6 +44,5 @@ private:
     size_t length = 0;
     char * data = nullptr;
 };
-
 
 }
