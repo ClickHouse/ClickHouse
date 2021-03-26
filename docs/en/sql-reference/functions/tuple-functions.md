@@ -126,9 +126,11 @@ tupleHammingDistance(tuple1, tuple2)
 -   `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
 -   `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
 
+Tuples should have the same type of the elements.
+
 **Returned value**
 
--   The Hamming distance. 
+-   The Hamming distance.
 
 Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 
@@ -149,3 +151,15 @@ Result:
 ```
 
 Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
+
+``` sql
+SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) as HammingDistance FROM (SELECT 'Clickhouse is a column-oriented database management system for online analytical processing of queries.' AS string);
+```
+
+Result:
+
+``` text
+┌─HammingDistance─┐
+│               2 │
+└─────────────────┘
+```
