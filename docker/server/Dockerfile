@@ -32,6 +32,7 @@ RUN groupadd -r clickhouse --gid=101 \
             clickhouse-server=$version \
             locales \
             wget \
+            tzdata \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
