@@ -179,6 +179,7 @@ StoragePtr StorageFactory::get(
         .attach = query.attach,
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
+    assert(&arguments.context == &arguments.context.getGlobalContext());
 
     auto res = storages.at(name).creator_fn(arguments);
     if (!empty_engine_args.empty())
