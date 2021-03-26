@@ -112,7 +112,6 @@ namespace detail
                     size_t start_index = previous_offset_size + array_element_offset;
                     size_t end_index = offsets[offset];
 
-                    current_hierarchy_depth += end_index - start_index;
                     elements.insertFromItself(elements.begin() + start_index, elements.begin() + end_index);
                     break;
                 }

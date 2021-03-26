@@ -538,17 +538,19 @@ public:
         /// Convert iterators to indexes because reserve can invalidate iterators
         size_t start_index = from_begin - begin();
         size_t end_index = from_end - begin();
+        size_t copy_size = end_index - start_index;
 
         assert(start_index <= end_index);
 
-        size_t required_capacity = this->size() + (end_index - start_index);
+        size_t required_capacity = this->size() + copy_size;
         if (required_capacity > this->capacity())
             this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
-        size_t bytes_to_copy = this->byte_size(end_index - start_index);
+        size_t bytes_to_copy = this->byte_size(copy_size);
         if (bytes_to_copy)
         {
-            memcpy(this->c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+            auto begin = this->c_start + this->byte_size(start_index);
+            memcpy(this->c_end, reinterpret_cast<const void *>(&*begin), bytes_to_copy);
             this->c_end += bytes_to_copy;
         }
     }
