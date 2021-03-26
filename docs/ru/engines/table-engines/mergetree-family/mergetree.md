@@ -754,7 +754,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 Необязательные параметры:   
 
 -   `use_environment_credentials` — признак, нужно ли считывать учетные данные AWS из переменных окружения `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` и `AWS_SESSION_TOKEN`, если они есть. Значение по умолчанию: `false`.
--   `use_sts_get_caller_identity_credentials` — признак, нужно ли считывать учетные данные AWS используя запрос STS GetCallerIdentity. Значение по умолчанию: `false`.
+-   `use_sts_assume_role_credentials` — признак, нужно ли считывать учетные данные AWS используя метаданные EC2 и результаты запроса STS GetCallerIdentity. Значение по умолчанию: `false`.
 -   `proxy` — конфигурация прокси-сервера для конечной точки S3. Каждый элемент `uri` внутри блока `proxy` должен содержать URL прокси-сервера. 
 -   `connect_timeout_ms` — таймаут подключения к сокету в миллисекундах. Значение по умолчанию: 10 секунд. 
 -   `request_timeout_ms` — таймаут выполнения запроса в миллисекундах. Значение по умолчанию: 5 секунд. 
