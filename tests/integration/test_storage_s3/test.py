@@ -424,7 +424,7 @@ def test_custom_auth_headers(started_cluster):
 
     instance.query(
         "CREATE TABLE test ({table_format}) ENGINE = S3('http://resolver:8080/{bucket}/{file}', 'CSV')".format(
-            bucket=cluster.minio_restricted_bucket,
+            bucket=started_cluster.minio_restricted_bucket,
             file=filename,
             table_format=table_format
         ))
