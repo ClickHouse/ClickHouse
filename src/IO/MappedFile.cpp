@@ -1,100 +1,78 @@
-#include <sys/mman.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
 
-#include <fmt/format.h>
-
+#include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
-#include <common/getPageSize.h>
 #include <IO/MappedFile.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event FileOpen;
+}
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int CANNOT_MUNMAP;
-    extern const int CANNOT_STAT;
-    extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_CLOSE_FILE;
 }
 
 
-static size_t getFileSize(int fd)
+void MappedFile::open()
 {
-    struct stat stat_res {};
-    if (0 != fstat(fd, &stat_res))
-        throwFromErrno("MMapReadBufferFromFileDescriptor: Cannot fstat.", ErrorCodes::CANNOT_STAT);
+    ProfileEvents::increment(ProfileEvents::FileOpen);
 
-    off_t file_size = stat_res.st_size;
+    fd = ::open(file_name.c_str(), O_RDONLY | O_CLOEXEC);
 
-    if (file_size < 0)
-        throw Exception("MMapReadBufferFromFileDescriptor: fstat returned negative file size", ErrorCodes::LOGICAL_ERROR);
-
-    return file_size;
+    if (-1 == fd)
+        throwFromErrnoWithPath("Cannot open file " + file_name, file_name,
+                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
 }
 
 
-MappedFile::MappedFile(int fd_, size_t offset_, size_t length_)
+std::string MappedFile::getFileName() const
 {
-    set(fd_, offset_, length_);
+    return file_name;
 }
 
-MappedFile::MappedFile(int fd_, size_t offset_)
-    : fd(fd_), offset(offset_)
+
+MappedFile::MappedFile(const std::string & file_name_, size_t offset_, size_t length_)
+    : file_name(file_name_)
 {
-    set(fd_, offset_);
+    open();
+    set(fd, offset_, length_);
 }
 
-void MappedFile::set(int fd_, size_t offset_, size_t length_)
+
+MappedFile::MappedFile(const std::string & file_name_, size_t offset_)
+    : file_name(file_name_)
 {
-    finish();
-
-    fd = fd_;
-    offset = offset_;
-    length = length_;
-
-    if (length)
-    {
-        void * buf = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, offset);
-        if (MAP_FAILED == buf)
-            throwFromErrno(fmt::format("MMapReadBufferFromFileDescriptor: Cannot mmap {}.", ReadableSize(length)),
-                ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-        data = static_cast<char *>(buf);
-    }
+    open();
+    set(fd, offset_);
 }
 
-void MappedFile::set(int fd_, size_t offset_)
-{
-    size_t file_size = getFileSize(fd_);
-
-    if (offset > static_cast<size_t>(file_size))
-        throw Exception("MMapReadBufferFromFileDescriptor: requested offset is greater than file size", ErrorCodes::BAD_ARGUMENTS);
-
-    set(fd_, offset_, file_size - offset);
-}
-
-void MappedFile::finish()
-{
-    if (!length)
-        return;
-
-    if (0 != munmap(data, length))
-        throwFromErrno(fmt::format("MMapReadBufferFromFileDescriptor: Cannot munmap {}.", ReadableSize(length)),
-            ErrorCodes::CANNOT_MUNMAP);
-
-    length = 0;
-}
 
 MappedFile::~MappedFile()
 {
-    finish(); /// Exceptions will lead to std::terminate and that's Ok.
+    if (fd != -1)
+        close();    /// Exceptions will lead to std::terminate and that's Ok.
+}
+
+
+void MappedFile::close()
+{
+    finish();
+
+    if (0 != ::close(fd))
+        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
+
+    fd = -1;
+    metric_increment.destroy();
 }
 
 }
-

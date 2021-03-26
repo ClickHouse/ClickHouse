@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/MappedFile.h>
+#include <IO/MappedFileDescriptor.h>
 
 
 namespace DB
@@ -21,7 +21,7 @@ protected:
     MMapReadBufferFromFileDescriptor() {}
     void init();
 
-    MappedFile mapped;
+    MappedFileDescriptor mapped;
 
 public:
     MMapReadBufferFromFileDescriptor(int fd_, size_t offset_, size_t length_);

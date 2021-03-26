@@ -3,7 +3,7 @@
 #if defined(OS_LINUX) || defined(__FreeBSD__)
 #include <IO/ReadBufferAIO.h>
 #endif
-#include <IO/MMapReadBufferFromFile.h>
+#include <IO/MMapReadBufferFromFileWithCache.h>
 #include <Common/ProfileEvents.h>
 
 
@@ -49,7 +49,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         try
         {
-            auto res = std::make_unique<MMapReadBufferFromFile>(filename_, 0);
+            auto res = std::make_unique<MMapReadBufferFromFileWithCache>(filename_, 0);
             ProfileEvents::increment(ProfileEvents::CreatedReadBufferMMap);
             return res;
         }
