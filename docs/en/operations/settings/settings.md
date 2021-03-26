@@ -1883,6 +1883,53 @@ Possible values:
 
 Default value: `0`.
 
+## insert_shard_id {#insert_shard_id}
+
+If not `0`, specifies the shard of [Distributed](../../engines/table-engines/special/distributed.md#distributed) table into which the data will be inserted synchronously.
+
+If `insert_shard_id` value is incorrect, the server will throw an exception.
+
+To get the number of shards on `requested_cluster`, you can check server config or use this query:
+
+``` sql
+SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
+```
+
+Possible values:
+
+-   0 — Disabled.
+-   Any number from `1` to `shards_num` of corresponding [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE x AS system.numbers ENGINE = MergeTree ORDER BY number;
+CREATE TABLE x_dist AS x ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), x);
+INSERT INTO x_dist SELECT * FROM numbers(5) SETTINGS insert_shard_id = 1;
+SELECT * FROM x_dist ORDER BY number ASC;
+```
+
+Result:
+
+``` text
+┌─number─┐
+│      0 │
+│      0 │
+│      1 │
+│      1 │
+│      2 │
+│      2 │
+│      3 │
+│      3 │
+│      4 │
+│      4 │
+└────────┘
+```
+
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
 Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.

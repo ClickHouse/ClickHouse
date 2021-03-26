@@ -247,7 +247,7 @@ struct ExpressionAnalysisResult
 
     void removeExtraColumns() const;
     void checkActions() const;
-    void finalize(const ExpressionActionsChain & chain, size_t where_step_num);
+    void finalize(const ExpressionActionsChain & chain, size_t where_step_num, const ASTSelectQuery & query);
 };
 
 /// SelectQuery specific ExpressionAnalyzer part.

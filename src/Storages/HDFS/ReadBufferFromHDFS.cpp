@@ -26,7 +26,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    explicit ReadBufferFromHDFSImpl(const std::string & hdfs_name_,
+    ReadBufferFromHDFSImpl(const std::string & hdfs_name_,
         const Poco::Util::AbstractConfiguration & config_)
         : hdfs_uri(hdfs_name_),
           builder(createHDFSBuilder(hdfs_uri, config_))
