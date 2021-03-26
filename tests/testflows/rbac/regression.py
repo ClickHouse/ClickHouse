@@ -165,10 +165,10 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
 
         if parallel is not None:
             self.context.parallel = parallel
-
-        Feature(run=load("rbac.tests.syntax.feature", "feature"))
-        Feature(run=load("rbac.tests.privileges.feature", "feature"))
-        Feature(run=load("rbac.tests.views.feature", "feature"))
+        for i in range(100):
+        # Feature(run=load("rbac.tests.syntax.feature", "feature"))
+            Feature(run=load("rbac.tests.privileges.feature", "feature"))
+        # Feature(run=load("rbac.tests.views.feature", "feature"))
 
 if main():
     regression()
