@@ -18,7 +18,19 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
     const RemoteHostFilter & remote_host_filter;
 
-    PocoHTTPClientConfiguration(const Aws::Client::ClientConfiguration & cfg, const RemoteHostFilter & remote_host_filter_);
+    void updateSchemeAndRegion();
+
+private:
+    PocoHTTPClientConfiguration(const RemoteHostFilter & remote_host_filter_, unsigned int s3_max_redirects_);
+
+    /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
+    friend ClientFactory;
+};
+
+class PocoHTTPResponse : public Aws::Http::Standard::StandardHttpResponse
+{
+public:
+    using SessionPtr = HTTPSessionPtr;
 
     void updateSchemeAndRegion();
 };
@@ -48,6 +60,7 @@ private:
     std::function<Aws::Client::ClientConfigurationPerRequest(const Aws::Http::HttpRequest &)> per_request_configuration;
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
+    unsigned int s3_max_redirects;
 };
 
 }
