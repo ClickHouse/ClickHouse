@@ -92,7 +92,6 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             std::string library_path = params.get("library_path");
             const auto & settings_string = params.get("library_settings");
             std::vector<std::string> library_settings = parseNamesFromBinary(settings_string);
-            LOG_TRACE(log, "Library path: '{}', library_settings: '{}'", library_path, settings_string);
 
             if (!params.has("attributes_names"))
             {
@@ -217,7 +216,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
     catch (...)
     {
         auto message = getCurrentExceptionMessage(true);
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, because of too soon response sending
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, message); // can't call process_error, because of too soon response sending
 
         try
         {
