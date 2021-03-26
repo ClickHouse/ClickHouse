@@ -320,8 +320,6 @@ Similar to `cache`, but stores data on SSD and index in RAM.
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
         <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
-        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
-        <max_stored_keys>1048576</max_stored_keys>
     </ssd_cache>
 </layout>
 ```
@@ -329,8 +327,8 @@ Similar to `cache`, but stores data on SSD and index in RAM.
 or
 
 ``` sql
-LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}

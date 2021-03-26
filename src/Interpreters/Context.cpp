@@ -380,10 +380,6 @@ struct ContextShared
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
-#if USE_EMBEDDED_COMPILER
-    std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
-#endif
-
     bool shutdown_called = false;
 
     Stopwatch uptime_watch;
@@ -2325,35 +2321,6 @@ void Context::setQueryParameter(const String & name, const String & value)
     if (!query_parameters.emplace(name, value).second)
         throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
-
-
-#if USE_EMBEDDED_COMPILER
-
-std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const
-{
-    auto lock = getLock();
-    return shared->compiled_expression_cache;
-}
-
-void Context::setCompiledExpressionCache(size_t cache_size)
-{
-
-    auto lock = getLock();
-
-    if (shared->compiled_expression_cache)
-        throw Exception("Compiled expressions cache has been already created.", ErrorCodes::LOGICAL_ERROR);
-
-    shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(cache_size);
-}
-
-void Context::dropCompiledExpressionCache() const
-{
-    auto lock = getLock();
-    if (shared->compiled_expression_cache)
-        shared->compiled_expression_cache->reset();
-}
-
-#endif
 
 
 void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const

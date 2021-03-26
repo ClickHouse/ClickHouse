@@ -123,5 +123,6 @@ toc_title: Adopters
 | <a href="https://mkb.ru/" class="favicon">МКБ</a> | Bank | Web-system monitoring | — | — | [Slides in Russian, September 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup28/mkb.pdf) |
 | <a href="https://cft.ru/" class="favicon">ЦФТ</a> | Banking, Financial products, Payments | — | — | — | [Meetup in Russian, April 2020](https://team.cft.ru/events/162) |
 | <a href="https://www.kakaocorp.com/" class="favicon">kakaocorp</a> | Internet company | — | — | — | [if(kakao)2020 conference](https://if.kakao.com/session/117) |
+| <a href="https://www.tesla.com/" class="favicon">Tesla</a> | Electric vehicle and clean energy company | — | — | — | [Vacancy description, March 2021](https://news.ycombinator.com/item?id=26306170) |
 
 [Original article](https://clickhouse.tech/docs/en/introduction/adopters/) <!--hide-->

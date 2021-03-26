@@ -1069,11 +1069,11 @@ public:
     }
 
     template <typename DateOrTime>
-    inline LUTIndex addMonthsIndex(DateOrTime v, Int64 delta) const
+    inline LUTIndex NO_SANITIZE_UNDEFINED addMonthsIndex(DateOrTime v, Int64 delta) const
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        Int64 month = static_cast<Int64>(values.month) + delta;
+        Int64 month = values.month + delta;
 
         if (month > 0)
         {
