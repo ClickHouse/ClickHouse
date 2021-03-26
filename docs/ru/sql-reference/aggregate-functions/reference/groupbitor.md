@@ -10,7 +10,7 @@ toc_priority: 126
 groupBitOr(expr)
 ```
 
-**Аргументы**
+**Параметры**
 
 `expr` – выражение, результат которого имеет тип данных `UInt*`.
 
@@ -45,3 +45,4 @@ binary     decimal
 01111101 = 125
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitor/) <!--hide-->

@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Coordination/NuKeeperStorageDispatcher.h>
+#include <Common/ZooKeeper/TestKeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -36,11 +36,8 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
-#include <Access/Credentials.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
-#include <Access/ExternalAuthenticators.h>
-#include <Access/GSSAcceptor.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -60,7 +57,6 @@
 #include <Parsers/parseQuery.h>
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
@@ -68,7 +64,6 @@
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 
 
 namespace ProfileEvents
@@ -309,10 +304,8 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
-#if USE_NURAFT
-    mutable std::mutex nu_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
-#endif
+    mutable std::mutex test_keeper_storage_dispatcher_mutex;
+    mutable std::shared_ptr<zkutil::TestKeeperStorageDispatcher> test_keeper_storage_dispatcher;
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
@@ -337,7 +330,6 @@ struct ContextShared
     mutable std::optional<ExternalModelsLoader> external_models_loader;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
-    String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
     AccessControlManager access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
@@ -346,7 +338,6 @@ struct ContextShared
     ReplicatedFetchList replicated_fetch_list;
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
-
     mutable std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     mutable std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     mutable std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
@@ -456,7 +447,8 @@ struct ContextShared
         trace_collector.reset();
         /// Stop zookeeper connection
         zookeeper.reset();
-
+        /// Stop test_keeper storage
+        test_keeper_storage_dispatcher.reset();
     }
 
     bool hasTraceCollector() const
@@ -673,12 +665,6 @@ void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfigur
     shared->access_control_manager.setExternalAuthenticatorsConfig(config);
 }
 
-std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
-{
-    auto lock = getLock();
-    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager.getExternalAuthenticators().getKerberosParams());
-}
-
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
@@ -693,22 +679,29 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address)
+void Context::setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
-    client_info.current_user = credentials.getUserName();
+    client_info.current_user = name;
     client_info.current_address = address;
 
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password.clear();
-    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
-        client_info.current_password = basic_credentials->getPassword();
+    client_info.current_password = password.value_or("");
 #endif
 
-    /// Find a user with such name and check the credentials.
-    auto new_user_id = getAccessControlManager().login(credentials, address.host());
+    /// Find a user with such name and check the password.
+    UUID new_user_id;
+    if (password)
+        new_user_id = getAccessControlManager().login(name, *password, address.host());
+    else
+    {
+        /// Access w/o password is done under interserver-secret (remote_servers.secret)
+        /// So it is okay not to check client's host in this case (since there is trust).
+        new_user_id = getAccessControlManager().getIDOfLoggedUser(name);
+    }
+
     auto new_access = getAccessControlManager().getContextAccess(
         new_user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
         settings, current_database, client_info);
@@ -723,12 +716,12 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
-    setUser(BasicCredentials(name, password), address);
+    setUserImpl(name, password, address);
 }
 
 void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
 {
-    setUser(AlwaysAllowCredentials(name), address);
+    setUserImpl(name, {} /* no password */, address);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -754,7 +747,7 @@ std::optional<UUID> Context::getUserID() const
 }
 
 
-void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+void Context::setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_)
 {
     auto lock = getLock();
     if (current_roles == current_roles_ && !use_default_roles)
@@ -1144,6 +1137,12 @@ String Context::getCurrentDatabase() const
 }
 
 
+String Context::getCurrentQueryId() const
+{
+    return client_info.current_query_id;
+}
+
+
 String Context::getInitialQueryId() const
 {
     return client_info.initial_query_id;
@@ -1301,13 +1300,6 @@ Context & Context::getGlobalContext()
     if (!global_context)
         throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
     return *global_context;
-}
-
-const Context & Context::getBufferContext() const
-{
-    if (!buffer_context)
-        throw Exception("Logical error: there is no buffer context", ErrorCodes::LOGICAL_ERROR);
-    return *buffer_context;
 }
 
 
@@ -1556,7 +1548,6 @@ void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
     auto lock = getLock();
     if (shared->ddl_worker)
         throw Exception("DDL background thread has already been initialized", ErrorCodes::LOGICAL_ERROR);
-    ddl_worker->startup();
     shared->ddl_worker = std::move(ddl_worker);
 }
 
@@ -1589,47 +1580,14 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
-
-void Context::initializeNuKeeperStorageDispatcher() const
+std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & Context::getTestKeeperStorageDispatcher() const
 {
-#if USE_NURAFT
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
+    std::lock_guard lock(shared->test_keeper_storage_dispatcher_mutex);
+    if (!shared->test_keeper_storage_dispatcher)
+        shared->test_keeper_storage_dispatcher = std::make_shared<zkutil::TestKeeperStorageDispatcher>();
 
-    if (shared->nu_keeper_storage_dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize NuKeeper multiple times");
-
-    const auto & config = getConfigRef();
-    if (config.has("test_keeper_server"))
-    {
-        shared->nu_keeper_storage_dispatcher = std::make_shared<NuKeeperStorageDispatcher>();
-        shared->nu_keeper_storage_dispatcher->initialize(config);
-    }
-#endif
+    return shared->test_keeper_storage_dispatcher;
 }
-
-#if USE_NURAFT
-std::shared_ptr<NuKeeperStorageDispatcher> & Context::getNuKeeperStorageDispatcher() const
-{
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
-    if (!shared->nu_keeper_storage_dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "NuKeeper must be initialized before requests");
-
-    return shared->nu_keeper_storage_dispatcher;
-}
-#endif
-
-void Context::shutdownNuKeeperStorageDispatcher() const
-{
-#if USE_NURAFT
-    std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
-    if (shared->nu_keeper_storage_dispatcher)
-    {
-        shared->nu_keeper_storage_dispatcher->shutdown();
-        shared->nu_keeper_storage_dispatcher.reset();
-    }
-#endif
-}
-
 
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
@@ -1834,17 +1792,12 @@ void Context::setClustersConfig(const ConfigurationPtr & config, const String & 
 {
     std::lock_guard lock(shared->clusters_mutex);
 
-    /// Do not update clusters if this part of config wasn't changed.
-    if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
-        return;
-
-    auto old_clusters_config = shared->clusters_config;
     shared->clusters_config = config;
 
     if (!shared->clusters)
         shared->clusters = std::make_unique<Clusters>(*shared->clusters_config, settings, config_name);
     else
-        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
+        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name);
 }
 
 
@@ -2276,10 +2229,6 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setProfile(shared->system_profile_name);
-
-    shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
-    buffer_context = std::make_shared<Context>(*this);
-    buffer_context->setProfile(shared->buffer_profile_name);
 }
 
 String Context::getDefaultProfileName() const
@@ -2564,37 +2513,6 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (exception)
         exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
     return StorageID::createEmpty();
-}
-
-void Context::initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, [[maybe_unused]] bool attach_existing)
-{
-    assert(!metadata_transaction);
-    assert(attach_existing || query_context == this);
-    metadata_transaction = std::move(txn);
-}
-
-ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
-{
-    assert(!metadata_transaction || hasQueryContext());
-    return metadata_transaction;
-}
-
-PartUUIDsPtr Context::getPartUUIDs()
-{
-    auto lock = getLock();
-    if (!part_uuids)
-        part_uuids = std::make_shared<PartUUIDs>();
-
-    return part_uuids;
-}
-
-PartUUIDsPtr Context::getIgnoredPartUUIDs()
-{
-    auto lock = getLock();
-    if (!ignored_part_uuids)
-        ignored_part_uuids = std::make_shared<PartUUIDs>();
-
-    return ignored_part_uuids;
 }
 
 }

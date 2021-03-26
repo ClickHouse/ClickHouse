@@ -1,19 +1,26 @@
-#include <Server/PrometheusRequestHandler.h>
+#include "PrometheusRequestHandler.h"
 
 #include <IO/HTTPCommon.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
-#include <Server/HTTPHandlerFactory.h>
-#include <Server/IServer.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
 
+#include <Common/Exception.h>
+
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
+
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+
+#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTPHandlerRequestFilter.h>
 
 
 namespace DB
 {
-void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+
+void PrometheusRequestHandler::handleRequest(
+    Poco::Net::HTTPServerRequest & request,
+    Poco::Net::HTTPServerResponse & response)
 {
     try
     {
@@ -24,16 +31,9 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
         response.setContentType("text/plain; version=0.0.4; charset=UTF-8");
 
-        WriteBufferFromHTTPServerResponse wb(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
-        try
-        {
-            metrics_writer.write(wb);
-            wb.finalize();
-        }
-        catch (...)
-        {
-            wb.finalize();
-        }
+        auto wb = WriteBufferFromHTTPServerResponse(request, response, keep_alive_timeout);
+        metrics_writer.write(wb);
+        wb.finalize();
     }
     catch (...)
     {
@@ -41,13 +41,10 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     }
 }
 
-HTTPRequestHandlerFactoryPtr
-createPrometheusHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & config_prefix)
+Poco::Net::HTTPRequestHandlerFactory * createPrometheusHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & config_prefix)
 {
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
-        server, PrometheusMetricsWriter(server.config(), config_prefix + ".handler", async_metrics));
-    factory->addFiltersFromConfig(server.config(), config_prefix);
-    return factory;
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>(
+        server, PrometheusMetricsWriter(server.config(), config_prefix + ".handler", async_metrics)), server.config(), config_prefix);
 }
 
 }

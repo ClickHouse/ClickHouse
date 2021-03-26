@@ -338,6 +338,18 @@ protected:
     }
 };
 
+class ParserMapOfLiterals : public IParserBase
+{
+public:
+    ParserCollectionOfLiterals<Map> map_parser{TokenType::OpeningCurlyBrace, TokenType::ClosingCurlyBrace};
+protected:
+    const char * getName() const override { return "map"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return map_parser.parse(pos, node, expected);
+    }
+};
+
 class ParserArrayOfLiterals : public IParserBase
 {
 public:
@@ -482,14 +494,6 @@ class ParserTTLElement : public IParserBase
 {
 protected:
     const char * getName() const override { return "element of TTL expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/// Part of the UPDATE command or TTL with GROUP BY of the form: col_name = expr
-class ParserAssignment : public IParserBase
-{
-protected:
-    const char * getName() const  override{ return "column assignment"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

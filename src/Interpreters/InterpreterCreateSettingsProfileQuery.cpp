@@ -2,7 +2,7 @@
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsProfile.h>
 #include <Access/AccessFlags.h>
@@ -50,7 +50,7 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
 
     if (!query.cluster.empty())
     {
-        query.replaceCurrentUserTag(context.getUserName());
+        query.replaceCurrentUserTagWithName(context.getUserName());
         return executeDDLQueryOnCluster(query_ptr, context);
     }
 

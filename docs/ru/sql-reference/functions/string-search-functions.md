@@ -1,6 +1,6 @@
 ---
 toc_priority: 41
-toc_title: "Функции поиска в строках"
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u043e\u0438\u0441\u043a\u0430\u0020\u0432\u0020\u0441\u0442\u0440\u043e\u043a\u0430\u0445"
 ---
 
 # Функции поиска в строках {#funktsii-poiska-v-strokakh}
@@ -13,6 +13,8 @@ toc_title: "Функции поиска в строках"
 
 Возвращает позицию (в байтах) найденной подстроки в строке, начиная с 1, или 0, если подстрока не найдена.
 
+Работает при допущении, что строка содержит набор байт, представляющий текст в однобайтовой кодировке. Если допущение не выполнено — то возвращает неопределенный результат (не кидает исключение). Если символ может быть представлен с помощью двух байтов, он будет представлен двумя байтами и так далее.
+
 Для поиска без учета регистра используйте функцию [positionCaseInsensitive](#positioncaseinsensitive).
 
 **Синтаксис**
@@ -23,11 +25,11 @@ position(haystack, needle[, start_pos])
 
 Алиас: `locate(haystack, needle[, start_pos])`.
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -43,10 +45,10 @@ position(haystack, needle[, start_pos])
 Запрос:
 
 ``` sql
-SELECT position('Hello, world!', '!');
+SELECT position('Hello, world!', '!')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─position('Hello, world!', '!')─┐
@@ -59,10 +61,10 @@ SELECT position('Hello, world!', '!');
 Запрос:
 
 ``` sql
-SELECT position('Привет, мир!', '!');
+SELECT position('Привет, мир!', '!')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─position('Привет, мир!', '!')─┐
@@ -82,11 +84,11 @@ SELECT position('Привет, мир!', '!');
 positionCaseInsensitive(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -100,10 +102,10 @@ positionCaseInsensitive(haystack, needle[, start_pos])
 Запрос:
 
 ``` sql
-SELECT positionCaseInsensitive('Hello, world!', 'hello');
+SELECT positionCaseInsensitive('Hello, world!', 'hello')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─positionCaseInsensitive('Hello, world!', 'hello')─┐
@@ -125,11 +127,11 @@ SELECT positionCaseInsensitive('Hello, world!', 'hello');
 positionUTF8(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -145,10 +147,10 @@ positionUTF8(haystack, needle[, start_pos])
 Запрос:
 
 ``` sql
-SELECT positionUTF8('Привет, мир!', '!');
+SELECT positionUTF8('Привет, мир!', '!')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─positionUTF8('Привет, мир!', '!')─┐
@@ -161,7 +163,7 @@ SELECT positionUTF8('Привет, мир!', '!');
 Запрос для символа `é`, который представлен одной кодовой точкой `U+00E9`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!');
+SELECT positionUTF8('Salut, étudiante!', '!')
 ```
 
 Result:
@@ -175,10 +177,10 @@ Result:
 Запрос для символа `é`, который представлен двумя кодовыми точками `U+0065U+0301`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!');
+SELECT positionUTF8('Salut, étudiante!', '!')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─positionUTF8('Salut, étudiante!', '!')─┐
@@ -198,11 +200,11 @@ SELECT positionUTF8('Salut, étudiante!', '!');
 positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -216,10 +218,10 @@ positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 Запрос:
 
 ``` sql
-SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир');
+SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')─┐
@@ -257,7 +259,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 Query:
 
 ``` sql
-SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
+SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
 ```
 
 Result:
@@ -357,7 +359,7 @@ Result:
 extractAllGroupsHorizontal(haystack, pattern)
 ```
 
-**Аргументы** 
+**Параметры** 
 
 -   `haystack` — строка для разбора. Тип: [String](../../sql-reference/data-types/string.md).
 -   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md). 
@@ -373,7 +375,7 @@ extractAllGroupsHorizontal(haystack, pattern)
 Запрос:
 
 ``` sql
-SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
+SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
 ```
 
 Результат:
@@ -384,9 +386,8 @@ SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=(
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Смотрите также**
-
--   Функция [extractAllGroupsVertical](#extractallgroups-vertical)
+**См. также**
+-   функция [extractAllGroupsVertical](#extractallgroups-vertical)
 
 ## extractAllGroupsVertical {#extractallgroups-vertical}
 
@@ -398,7 +399,7 @@ SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=(
 extractAllGroupsVertical(haystack, pattern)
 ```
 
-**Аргументы** 
+**Параметры** 
 
 -   `haystack` — строка для разбора. Тип: [String](../../sql-reference/data-types/string.md).
 -   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md).
@@ -414,7 +415,7 @@ extractAllGroupsVertical(haystack, pattern)
 Запрос:
 
 ``` sql
-SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
+SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
 ```
 
 Результат:
@@ -425,9 +426,8 @@ SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Смотрите также**
-
--   Функция [extractAllGroupsHorizontal](#extractallgroups-horizontal)
+**См. также**
+-   функция [extractAllGroupsHorizontal](#extractallgroups-horizontal)
 
 ## like(haystack, pattern), оператор haystack LIKE pattern {#function-like}
 
@@ -457,10 +457,10 @@ SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[
 ilike(haystack, pattern)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `haystack` — входная строка. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `pattern` — если `pattern` не содержит процента или нижнего подчеркивания, тогда `pattern` представляет саму строку. Нижнее подчеркивание (`_`) в `pattern` обозначает любой отдельный символ. Знак процента (`%`) соответствует последовательности из любого количества символов: от нуля и более.
+-   `haystack` — Входная строка. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `pattern` — Если `pattern` не содержит процента или нижнего подчеркивания, тогда `pattern` представляет саму строку. Нижнее подчеркивание (`_`) в `pattern` обозначает любой отдельный символ. Знак процента (`%`) соответствует последовательности из любого количества символов: от нуля и более.
 
 Некоторые примеры `pattern`:
 
@@ -492,7 +492,7 @@ ilike(haystack, pattern)
 Запрос:
 
 ``` sql
-SELECT * FROM Months WHERE ilike(name, '%j%');
+SELECT * FROM Months WHERE ilike(name, '%j%')
 ```
 
 Результат:
@@ -532,7 +532,7 @@ SELECT * FROM Months WHERE ilike(name, '%j%');
 countMatches(haystack, pattern)
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
@@ -585,11 +585,11 @@ SELECT countMatches('aaaa', 'aa');
 countSubstrings(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -651,11 +651,11 @@ SELECT countSubstrings('abc___abc', 'abc', 4);
 countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -717,11 +717,11 @@ SELECT countSubstringsCaseInsensitive('abC___abC', 'aBc', 2);
 SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -759,3 +759,4 @@ SELECT countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв');
 └────────────────────────────────────────────────────────────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_search_functions/) <!--hide-->

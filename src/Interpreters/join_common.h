@@ -2,8 +2,6 @@
 
 #include <Core/Block.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -37,8 +35,6 @@ void createMissedColumns(Block & block);
 void joinTotals(const Block & totals, const Block & columns_to_add, const TableJoin & table_join, Block & block);
 
 void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
-
-bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
 
 }
 

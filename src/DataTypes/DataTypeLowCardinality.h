@@ -1,8 +1,6 @@
 #pragma once
-
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumnUnique.h>
-
 
 namespace DB
 {
@@ -67,6 +65,8 @@ public:
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 
