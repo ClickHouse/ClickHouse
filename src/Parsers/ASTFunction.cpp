@@ -236,7 +236,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         // function, so we can implement this behavior here as
                         // well. Technically it is an UB to perform such negation
                         // w/o a cast to unsigned type.
-                        __attribute__((__no_sanitize__("undefined")))
+                        NO_SANITIZE_UNDEFINED
                         {
                             using ValueType = std::decay_t<decltype(value)>;
                             if constexpr (isDecimalField<ValueType>())
