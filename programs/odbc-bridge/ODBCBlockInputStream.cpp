@@ -1,6 +1,7 @@
 #include "ODBCBlockInputStream.h"
 #include <vector>
 #include <IO/ReadBufferFromString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -49,19 +50,26 @@ Block ODBCBlockInputStream::readImpl()
 
         for (int idx = 0; idx < result.columns(); ++idx)
         {
+            const auto & sample = description.sample_block.getByPosition(idx);
+
             if (!result.is_null(idx))
             {
-                if (description.types[idx].second)
+                bool is_nullable = description.types[idx].second;
+
+                if (is_nullable)
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
-                    insertValue(column_nullable.getNestedColumn(), description.types[idx].first, result, idx);
+                    const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
+                    insertValue(column_nullable.getNestedColumn(), data_type.getNestedType(), description.types[idx].first, result, idx);
                     column_nullable.getNullMapData().emplace_back(0);
                 }
                 else
-                    insertValue(*columns[idx], description.types[idx].first, result, idx);
+                {
+                    insertValue(*columns[idx], sample.type, description.types[idx].first, result, idx);
+                }
             }
             else
-                insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
+                insertDefaultValue(*columns[idx], *sample.column);
         }
 
         if (++num_rows == max_block_size)
@@ -73,7 +81,7 @@ Block ODBCBlockInputStream::readImpl()
 
 
 void ODBCBlockInputStream::insertValue(
-        IColumn & column, const ValueType type, nanodbc::result & row, size_t idx)
+        IColumn & column, const DataTypePtr data_type, const ValueType type, nanodbc::result & row, size_t idx)
 {
     switch (type)
     {
@@ -122,12 +130,24 @@ void ODBCBlockInputStream::insertValue(
             break;
         case ValueType::vtDateTime:
         {
-            ReadBufferFromString in(row.get<std::string>(idx));
+            auto value = row.get<std::string>(idx);
+            ReadBufferFromString in(value);
             time_t time = 0;
             readDateTimeText(time, in);
             if (time < 0)
                 time = 0;
             assert_cast<ColumnUInt32 &>(column).insertValue(time);
+            break;
+        }
+        case ValueType::vtDateTime64:[[fallthrough]];
+        case ValueType::vtDecimal32: [[fallthrough]];
+        case ValueType::vtDecimal64: [[fallthrough]];
+        case ValueType::vtDecimal128: [[fallthrough]];
+        case ValueType::vtDecimal256:
+        {
+            auto value = row.get<std::string>(idx);
+            ReadBufferFromString istr(value);
+            data_type->deserializeAsWholeText(column, istr, FormatSettings{});
             break;
         }
         default:
