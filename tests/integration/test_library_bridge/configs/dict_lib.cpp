@@ -7,8 +7,6 @@
 #include <sstream>
 #include <vector>
 
-#define CLICKHOUSE_DICTIONARY_LIBRARY_API 1
-
 namespace ClickHouseLibrary
 {
 using CString = const char *;
@@ -81,7 +79,6 @@ void log(LogLevel level, CString msg);
 struct LibHolder
 {
     std::function<void(ClickHouseLibrary::LogLevel, ClickHouseLibrary::CString)> log;
-    //Some your data, maybe service connection
 };
 
 
@@ -95,7 +92,8 @@ struct DataHolder
 };
 
 
-void MakeColumnsFromVector(DataHolder * ptr)
+template <typename T>
+void MakeColumnsFromVector(T * ptr)
 {
     for (const auto & row : ptr->dataHolder)
     {
@@ -159,7 +157,7 @@ void * ClickHouseDictionary_v3_loadIds(void * data_ptr,
         LOG(ptr->lib->log, "ids passed: " << ids->size);
         for (size_t i = 0; i < ids->size; ++i)
         {
-            LOG(ptr->lib->log, "id " << i << " :" << ids->data[i] << " replying.");
+            LOG(ptr->lib->log, "id " << i << " :" << ids->data[i] << " generating.");
             ptr->dataHolder.emplace_back(std::vector<uint64_t>{ids->data[i], ids->data[i] + 100, ids->data[i] + 200, ids->data[i] + 300});
         }
     }
@@ -178,17 +176,34 @@ void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibrary::CStri
     if (!ptr)
         return nullptr;
 
-    size_t num_rows = 0;
+    size_t num_rows = 0, num_cols = 0;
+    std::string test_type;
+    std::vector<std::string> settings_values;
     if (settings)
     {
-        LOG(ptr->lib->log, "settings passed: " << settings->size);
+        LOG(ptr->lib->log, "settings size: " << settings->size);
+
         for (size_t i = 0; i < settings->size; ++i)
         {
-            num_rows = std::atoi(settings->data[i]);
+            std::string setting_name = settings->data[i];
+            std::string setting_value = settings->data[++i];
+            LOG(ptr->lib->log, "setting " + std::to_string(i) + " name " + setting_name + " value " + setting_value);
+
+            if (setting_name == "num_rows")
+                num_rows = std::atoi(setting_value.data());
+            else if (setting_name == "num_cols")
+                num_cols = std::atoi(setting_value.data());
+            else if (setting_name == "test_type")
+                test_type = setting_value;
+            else
+            {
+                LOG(ptr->lib->log, "Adding setting " + setting_name);
+                settings_values.push_back(setting_value);
+            }
         }
     }
 
-    if (!num_rows)
+    if (test_type == "test_simple")
     {
         for (size_t i = 0; i < 10; ++i)
         {
@@ -196,7 +211,7 @@ void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibrary::CStri
             ptr->dataHolder.emplace_back(std::vector<uint64_t>{i, i + 10, i + 20, i + 30});
         }
     }
-    else
+    else if (test_type == "test_many_rows" && num_rows)
     {
         for (size_t i = 0; i < num_rows; ++i)
         {
