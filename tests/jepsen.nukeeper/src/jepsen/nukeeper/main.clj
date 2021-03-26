@@ -134,10 +134,10 @@
   [cli worload-nemeseis-collection]
   (take (:test-count cli)
         (shuffle (for [[workload nemesis] worload-nemeseis-collection]
-                                     (assoc cli
-                                            :nemesis   nemesis
-                                            :workload  workload
-                                            :test-count 1)))))
+                   (assoc cli
+                          :nemesis   nemesis
+                          :workload  workload
+                          :test-count 1)))))
 (defn all-tests
   "Turns CLI options into a sequence of tests."
   [test-fn cli]

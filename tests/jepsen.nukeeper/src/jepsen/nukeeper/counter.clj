@@ -25,9 +25,9 @@
   (invoke! [this test op]
     (case (:f op)
       :read (exec-with-retries 30 (fn []
-              (assoc op
-                     :type :ok
-                     :value (count (zk-list conn "/")))))
+                                    (assoc op
+                                           :type :ok
+                                           :value (count (zk-list conn "/")))))
       :add (try
              (do
                (zk-multi-create-many-seq-nodes conn "/seq-" (:value op))

@@ -32,20 +32,20 @@
 (defn unpack-deb
   [path]
   (do
-  (c/exec :dpkg :-x path common-prefix)
-  (c/exec :rm :-f path)
-  (c/exec :mv (str common-prefix "/usr/bin/clickhouse") common-prefix)
-  (c/exec :rm :-rf (str common-prefix "/usr") (str common-prefix "/etc"))))
+    (c/exec :dpkg :-x path common-prefix)
+    (c/exec :rm :-f path)
+    (c/exec :mv (str common-prefix "/usr/bin/clickhouse") common-prefix)
+    (c/exec :rm :-rf (str common-prefix "/usr") (str common-prefix "/etc"))))
 
 (defn unpack-tgz
   [path]
   (do
-  (c/exec :mkdir :-p (str common-prefix "/unpacked"))
-  (c/exec :tar :-zxvf path :-C (str common-prefix "/unpacked"))
-  (c/exec :rm :-f path)
-  (let [subdir (c/exec :ls (str common-prefix "/unpacked"))]
-    (c/exec :mv (str common-prefix "/unpacked/" subdir "/usr/bin/clickhouse") common-prefix)
-    (c/exec :rm :-fr (str common-prefix "/unpacked")))))
+    (c/exec :mkdir :-p (str common-prefix "/unpacked"))
+    (c/exec :tar :-zxvf path :-C (str common-prefix "/unpacked"))
+    (c/exec :rm :-f path)
+    (let [subdir (c/exec :ls (str common-prefix "/unpacked"))]
+      (c/exec :mv (str common-prefix "/unpacked/" subdir "/usr/bin/clickhouse") common-prefix)
+      (c/exec :rm :-fr (str common-prefix "/unpacked")))))
 
 (defn chmod-binary
   [path]
@@ -85,10 +85,10 @@
 
 (defn install-configs
   [test node]
-     (c/exec :echo (slurp (io/resource "config.xml")) :> (str configs-dir "/config.xml"))
-     (c/exec :echo (slurp (io/resource "users.xml")) :> (str configs-dir "/users.xml"))
-     (c/exec :echo (slurp (io/resource "listen.xml")) :> (str sub-configs-dir "/listen.xml"))
-     (c/exec :echo (cluster-config test node (slurp (io/resource "test_keeper_config.xml"))) :> (str sub-configs-dir "/test_keeper_config.xml")))
+  (c/exec :echo (slurp (io/resource "config.xml")) :> (str configs-dir "/config.xml"))
+  (c/exec :echo (slurp (io/resource "users.xml")) :> (str configs-dir "/users.xml"))
+  (c/exec :echo (slurp (io/resource "listen.xml")) :> (str sub-configs-dir "/listen.xml"))
+  (c/exec :echo (cluster-config test node (slurp (io/resource "test_keeper_config.xml"))) :> (str sub-configs-dir "/test_keeper_config.xml")))
 
 (defn db
   [version reuse-binary]
@@ -96,25 +96,24 @@
     (setup! [_ test node]
       (c/su
        (do
-       (info "Preparing directories")
-       (prepare-dirs)
-       (if (or (not (cu/exists? binary-path)) (not reuse-binary))
+         (info "Preparing directories")
+         (prepare-dirs)
+         (if (or (not (cu/exists? binary-path)) (not reuse-binary))
            (do (info "Downloading clickhouse")
-           (install-downloaded-clickhouse (download-clickhouse version)))
+               (install-downloaded-clickhouse (download-clickhouse version)))
            (info "Binary already exsist on path" binary-path "skipping download"))
-       (info "Installing configs")
-       (install-configs test node)
-       (info "Starting server")
-       (start-clickhouse! node test)
-      (info "ClickHouse started"))))
-
+         (info "Installing configs")
+         (install-configs test node)
+         (info "Starting server")
+         (start-clickhouse! node test)
+         (info "ClickHouse started"))))
 
     (teardown! [_ test node]
       (info node "Tearing down clickhouse")
       (kill-clickhouse! node test)
       (c/su
        (if (not reuse-binary)
-           (c/exec :rm :-rf binary-path))
+         (c/exec :rm :-rf binary-path))
        (c/exec :rm :-rf pid-file-path)
        (c/exec :rm :-rf data-dir)
        (c/exec :rm :-rf logs-dir)
@@ -125,5 +124,5 @@
       (c/su
        (kill-clickhouse! node test)
        (c/cd data-dir
-        (c/exec :tar :czf "coordination.tar.gz" "coordination")))
+             (c/exec :tar :czf "coordination.tar.gz" "coordination")))
       [stderr-file (str logs-dir "/clickhouse-server.log") (str data-dir "/coordination.tar.gz")])))
