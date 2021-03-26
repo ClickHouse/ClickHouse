@@ -6,11 +6,6 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
 
-namespace DB::ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 static void readAndAssert(DB::ReadBuffer & buf, const char * str)
 {
     size_t n = strlen(str);
