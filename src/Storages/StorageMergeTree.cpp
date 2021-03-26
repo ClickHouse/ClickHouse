@@ -1389,7 +1389,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             DataPartsLock lock(mutex);
 
             for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, &increment, &transaction, lock);
+                dest_table_storage->renameTempPartAndReplace(part, &dest_table_storage->increment, &transaction, lock);
 
             removePartsFromWorkingSet(src_parts, true, lock);
             transaction.commit(&lock);

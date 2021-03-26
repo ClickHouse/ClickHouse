@@ -209,7 +209,13 @@ void DiskCacheWrapper::clearDirectory(const String & path)
 void DiskCacheWrapper::moveDirectory(const String & from_path, const String & to_path)
 {
     if (cache_disk->exists(from_path))
+    {
+        /// Destination directory may not be empty if previous directory move attempt was failed.
+        if (cache_disk->exists(to_path) && cache_disk->isDirectory(to_path))
+            cache_disk->clearDirectory(to_path);
+
         cache_disk->moveDirectory(from_path, to_path);
+    }
     DiskDecorator::moveDirectory(from_path, to_path);
 }
 
