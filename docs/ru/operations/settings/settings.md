@@ -2647,7 +2647,7 @@ SELECT * FROM test2;
 
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
-Включает экспериментальную возможность использования [живых представлений](../sql-reference/statements/create/view.md#live-view).
+Включает экспериментальную возможность использования [живых представлений](../../sql-reference/statements/create/view.md#live-view).
 
 Возможные значения:
 - 0 — живые представления не поддерживаются.
@@ -2658,25 +2658,25 @@ SELECT * FROM test2;
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
-Задает интервал в секундах для периодической проверки существования [живого представления](../sql-reference/statements/create/view.md#live-view).
+Задает интервал в секундах для периодической проверки существования [живого представления](../../sql-reference/statements/create/view.md#live-view).
 
 Значение по умолчанию: `15`.
 
 ## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
 
-Задает наибольшее число вставок, после которых запрос на формирование [живого представления](../sql-reference/statements/create/view.md#live-view) исполняется снова.
+Задает наибольшее число вставок, после которых запрос на формирование [живого представления](../../sql-reference/statements/create/view.md#live-view) исполняется снова.
 
 Значение по умолчанию: `64`.
 
 ## temporary_live_view_timeout {#temporary-live-view-timeout}
 
-Задает время в секундах, после которого [живое представление](../sql-reference/statements/create/view.md#live-view) удаляется.
+Задает время в секундах, после которого [живое представление](../../sql-reference/statements/create/view.md#live-view) удаляется.
 
 Значение по умолчанию: `5`.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
-Задает время в секундах, по истечении которого [живое представление](../sql-reference/statements/create/view.md#live-view) с установленным автообновлением обновляется.
+Задает время в секундах, по истечении которого [живое представление](../../sql-reference/statements/create/view.md#live-view) с установленным автообновлением обновляется.
 
 Значение по умолчанию: `60`.
 

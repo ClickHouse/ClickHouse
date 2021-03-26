@@ -2749,7 +2749,7 @@ Default value: `0`.
 
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
-Allows working with experimental [live views](../sql-reference/statements/create/view.md#live-view).
+Allows working with experimental [live views](../../sql-reference/statements/create/view.md#live-view).
 
 Possible values:
 
@@ -2760,25 +2760,25 @@ Default value: `0`.
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
-Sets the heartbeat interval in seconds to indicate [live view](../sql-reference/statements/create/view.md#live-view) is alive .
+Sets the heartbeat interval in seconds to indicate [live view](../../sql-reference/statements/create/view.md#live-view) is alive .
 
 Default value: `15`.
 
 ## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
 
-Sets the maximum number of inserted blocks after which mergeable blocks are dropped and query for [live view](../sql-reference/statements/create/view.md#live-view) is re-executed.
+Sets the maximum number of inserted blocks after which mergeable blocks are dropped and query for [live view](../../sql-reference/statements/create/view.md#live-view) is re-executed.
 
 Default value: `64`.
 
 ## temporary_live_view_timeout {#temporary-live-view-timeout}
 
-Sets the interval in seconds after which [live view](../sql-reference/statements/create/view.md#live-view) with timeout is deleted.
+Sets the interval in seconds after which [live view](../../sql-reference/statements/create/view.md#live-view) with timeout is deleted.
 
 Default value: `5`.
 
 ## periodic_live_view_refresh {#periodic-live-view-refresh}
 
-Sets the interval in seconds after which periodically refreshed [live view](../sql-reference/statements/create/view.md#live-view) is forced to refresh.
+Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md#live-view) is forced to refresh.
 
 Default value: `60`.
 
