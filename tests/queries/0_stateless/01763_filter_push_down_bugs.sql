@@ -35,3 +35,7 @@ FROM
 WHERE  String4 ='String4_0';
 
 DROP TABLE IF EXISTS Test;
+
+SELECT -9223372036854775808 HAVING 1 SETTINGS enable_optimize_predicate_expression=0;
+-- https://clickhouse-test-reports.s3.yandex.net/22147/f1907acbcd96b3b5ce0e6073e7faa44479c3221b/fuzzer_asan/report.html#fail1
+SELECT -9223372036854775808 HAVING 0 SETTINGS enable_optimize_predicate_expression=0;

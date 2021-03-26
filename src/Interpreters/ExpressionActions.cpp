@@ -206,7 +206,10 @@ void ExpressionActions::linearizeActions()
     {
         const auto & cur = data[reverse_index[input]];
         auto pos = required_columns.size();
-        actions[cur.position].arguments.front().pos = pos;
+
+        /// Const column does not have arguments
+        if (!actions[cur.position].arguments.empty())
+            actions[cur.position].arguments.front().pos = pos;
         required_columns.push_back({input->result_name, input->result_type});
         input_positions[input->result_name].emplace_back(pos);
     }
