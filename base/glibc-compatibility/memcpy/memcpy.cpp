@@ -192,33 +192,39 @@ struct MultipleVariantsWithStatistics
         __cpuid(1, eax, ebx, ecx, edx);
         bool have_avx = ecx & bit_AVX;
 
+        bool have_erms = false;
         bool have_avx512 = false;
-        if (have_avx)
-        {
-            __cpuid(0, eax, ebx, ecx, edx);
-            bool have_leaf7 = eax >= 7;
 
-            if (have_leaf7)
-            {
-                __cpuid(7, eax, ebx, ecx, edx);
-                have_avx512 = ebx & bit_AVX512F;
-            }
+        __cpuid(0, eax, ebx, ecx, edx);
+        bool have_leaf7 = eax >= 7;
+
+        if (have_leaf7)
+        {
+            __cpuid(7, eax, ebx, ecx, edx);
+            have_erms = ebx & bit_ENH_MOVSB;
+            have_avx512 = ebx & bit_AVX512F;
         }
 
         size_t idx = 0;
 
-        variants[idx].set(idx, memcpy_erms);
+        variants[idx].set(idx, memcpy_medium_twoway_unrolled4_sse);
 
-        ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled4_sse);
+        if (have_erms)
+        {
+            ++idx;
+            variants[idx].set(idx, memcpy_erms);
+        }
 
         if (have_avx)
         {
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled4_avx);
+            ++idx;
+            variants[idx].set(idx, memcpy_medium_twoway_unrolled4_avx);
         }
 
         if (have_avx512)
         {
-            ++idx; variants[idx].set(idx, memcpy_medium_twoway_unrolled4_avx512);
+            ++idx;
+            variants[idx].set(idx, memcpy_medium_twoway_unrolled4_avx512);
         }
 
         ++idx;
