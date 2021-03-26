@@ -175,6 +175,23 @@ public:
     {
         auto * logger = &Poco::Logger::get("S3CredentialsProviderChain");
 
+        if (use_sts_assume_role_credentials)
+        {
+            DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.remote_host_filter, configuration.s3_max_redirects);
+
+            aws_client_configuration.connectTimeoutMs = 1000;
+            aws_client_configuration.requestTimeoutMs = 1000;
+            aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
+
+            auto internal_credentials_provider_chain = std::make_shared<S3CredentialsProviderChain>(
+                configuration, credentials, use_environment_credentials, /* use_sts_assume_role_credentials = */ false
+            );
+            auto sts_client = std::make_shared<Aws::STS::STSClient>(internal_credentials_provider_chain, aws_client_configuration);
+
+            AddProvider(std::make_shared<AWSSTSAssumeRoleCredentialsProvider>(sts_client));
+            LOG_INFO(logger, "Added STS AssumeRole credentials provider to the provider chain.");
+        }
+
         if (use_environment_credentials)
         {
             static const char AWS_ECS_CONTAINER_CREDENTIALS_RELATIVE_URI[] = "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI";
@@ -247,23 +264,6 @@ public:
                 AddProvider(std::make_shared<Aws::Auth::InstanceProfileCredentialsProvider>(config_loader));
                 LOG_INFO(logger, "Added EC2 metadata service credentials provider to the provider chain.");
             }
-        }
-
-        if (use_sts_assume_role_credentials)
-        {
-            DB::S3::PocoHTTPClientConfiguration aws_client_configuration = DB::S3::ClientFactory::instance().createClientConfiguration(configuration.remote_host_filter, configuration.s3_max_redirects);
-
-            aws_client_configuration.connectTimeoutMs = 1000;
-            aws_client_configuration.requestTimeoutMs = 1000;
-            aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
-
-            auto internal_credentials_provider_chain = std::make_shared<S3CredentialsProviderChain>(
-                configuration, credentials, use_environment_credentials, /* use_sts_assume_role_credentials = */ false
-            );
-            auto sts_client = std::make_shared<Aws::STS::STSClient>(internal_credentials_provider_chain, aws_client_configuration);
-
-            AddProvider(std::make_shared<AWSSTSAssumeRoleCredentialsProvider>(sts_client));
-            LOG_INFO(logger, "Added STS AssumeRole credentials provider to the provider chain.");
         }
 
         AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
