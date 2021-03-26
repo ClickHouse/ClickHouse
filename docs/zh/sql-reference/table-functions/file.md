@@ -15,7 +15,7 @@ file(path, format, structure)
 
 **输入参数**
 
--   `path` — The relative path to the file from [user_files_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). 只读模式下的globs后的文件支持路径: `*`, `?`, `{abc,def}` 和 `{N..M}` 哪里 `N`, `M` — numbers, \``'abc', 'def'` — strings.
+-   `path` — The relative path to the file from [user\_files\_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path). 只读模式下的globs后的文件支持路径: `*`, `?`, `{abc,def}` 和 `{N..M}` 哪里 `N`, `M` — numbers, \``'abc', 'def'` — strings.
 -   `format` — The [格式](../../interfaces/formats.md#formats) 的文件。
 -   `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
@@ -72,12 +72,12 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 
 1.  假设我们有几个具有以下相对路径的文件:
 
--   ‘some_dir/some_file_1’
--   ‘some_dir/some_file_2’
--   ‘some_dir/some_file_3’
--   ‘another_dir/some_file_1’
--   ‘another_dir/some_file_2’
--   ‘another_dir/some_file_3’
+-   ‘some\_dir/some\_file\_1’
+-   ‘some\_dir/some\_file\_2’
+-   ‘some\_dir/some\_file\_3’
+-   ‘another\_dir/some\_file\_1’
+-   ‘another\_dir/some\_file\_2’
+-   ‘another\_dir/some\_file\_3’
 
 1.  查询这些文件中的行数:
 

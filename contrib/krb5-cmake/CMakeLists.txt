@@ -210,7 +210,7 @@ set(ALL_SRCS
     # ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/rc4.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des3.c
-    #${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c
+    ${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/sha256.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/hmac.c
     ${KRB5_SOURCE_DIR}/lib/crypto/openssl/pbkdf2.c
@@ -474,6 +474,13 @@ add_custom_command(
     WORKING_DIRECTORY "${KRB5_SOURCE_DIR}/util/et"
 )
 
+add_custom_target(
+    CREATE_COMPILE_ET ALL
+    DEPENDS ${KRB5_SOURCE_DIR}/util/et/compile_et
+    COMMENT "creating compile_et"
+    VERBATIM
+)
+
 file(GLOB_RECURSE ET_FILES
     "${KRB5_SOURCE_DIR}/*.et"
 )
@@ -524,7 +531,7 @@ add_custom_command(
 
 
 add_custom_target(
-    ERROR_MAP_H
+    ERROR_MAP_H ALL
     DEPENDS ${KRB5_SOURCE_DIR}/lib/gssapi/krb5/error_map.h
     COMMENT "generating error_map.h"
     VERBATIM
@@ -537,14 +544,14 @@ add_custom_command(
 )
 
 add_custom_target(
-    ERRMAP_H
+    ERRMAP_H ALL
     DEPENDS ${KRB5_SOURCE_DIR}/lib/gssapi/generic/errmap.h
     COMMENT "generating errmap.h"
     VERBATIM
 )
 
 add_custom_target(
-    KRB_5_H
+    KRB_5_H ALL
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/include/krb5/krb5.h
     COMMENT "generating krb5.h"
     VERBATIM
@@ -557,19 +564,15 @@ add_dependencies(
     ERRMAP_H
     ERROR_MAP_H
     KRB_5_H
-)
+    )
 
 preprocess_et(processed_et_files ${ET_FILES})
 
-if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-    add_custom_command(
-        OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h ${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c
-        COMMAND mig -header kcmrpc.h -user kcmrpc.c -sheader /dev/null -server /dev/null -I${KRB5_SOURCE_DIR}/lib/krb5/ccache ${KRB5_SOURCE_DIR}/lib/krb5/ccache/kcmrpc.defs
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include_private"
-    )
-
-    list(APPEND ALL_SRCS ${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c)
-endif()
+add_custom_command(
+    OUTPUT ${KRB5_SOURCE_DIR}/lib/gssapi/generic/errmap.h
+    COMMAND perl -w -I../../../util  ../../../util/gen.pl bimap errmap.h NAME=mecherrmap LEFT=OM_uint32 RIGHT=struct\ mecherror LEFTPRINT=print_OM_uint32 RIGHTPRINT=mecherror_print LEFTCMP=cmp_OM_uint32 RIGHTCMP=mecherror_cmp
+    WORKING_DIRECTORY "${KRB5_SOURCE_DIR}/lib/gssapi/generic"
+)
 
 target_sources(${KRB5_LIBRARY} PRIVATE
     ${ALL_SRCS}
@@ -601,25 +604,6 @@ file(COPY ${KRB5_SOURCE_DIR}/util/et/com_err.h
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/include/
 )
 
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/osconf.h
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/include_private/
-)
-
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/profile.h
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/include_private/
-)
-
-string(TOLOWER "${CMAKE_SYSTEM_NAME}" _system_name)
-
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/autoconf_${_system_name}.h
-    DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/include_private/
-)
-
-file(RENAME
-    ${CMAKE_CURRENT_BINARY_DIR}/include_private/autoconf_${_system_name}.h
-    ${CMAKE_CURRENT_BINARY_DIR}/include_private/autoconf.h
-)
-
 file(MAKE_DIRECTORY
     ${CMAKE_CURRENT_BINARY_DIR}/include/krb5
 )
@@ -649,7 +633,7 @@ target_include_directories(${KRB5_LIBRARY} PUBLIC
 )
 
 target_include_directories(${KRB5_LIBRARY} PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR}/include_private # For autoconf.h and other generated headers.
+    ${CMAKE_CURRENT_SOURCE_DIR}  #for autoconf.h
     ${KRB5_SOURCE_DIR}
     ${KRB5_SOURCE_DIR}/include
     ${KRB5_SOURCE_DIR}/lib/gssapi/mechglue

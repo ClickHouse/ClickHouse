@@ -12,23 +12,19 @@ Calculates the [weighted arithmetic mean](https://en.wikipedia.org/wiki/Weighted
 avgWeighted(x, weight)
 ```
 
-**Arguments**
+**Parameters**
 
--   `x` — Values.
--   `weight` — Weights of the values.
+-   `x` — Values. [Integer](../../../sql-reference/data-types/int-uint.md) or [floating-point](../../../sql-reference/data-types/float.md).
+-   `weight` — Weights of the values. [Integer](../../../sql-reference/data-types/int-uint.md) or [floating-point](../../../sql-reference/data-types/float.md).
 
-`x` and `weight` must both be
-[Integer](../../../sql-reference/data-types/int-uint.md),
-[floating-point](../../../sql-reference/data-types/float.md), or 
-[Decimal](../../../sql-reference/data-types/decimal.md),
-but may have different types.
+Type of `x` and `weight` must be the same.
 
 **Returned value**
 
--   `NaN` if all the weights are equal to 0 or the supplied weights parameter is empty.
--   Weighted mean otherwise.
+-   Weighted mean.
+-   `NaN`. If all the weights are equal to 0.
 
-**Return type** is always [Float64](../../../sql-reference/data-types/float.md).
+Type: [Float64](../../../sql-reference/data-types/float.md).
 
 **Example**
 
@@ -44,56 +40,5 @@ Result:
 ``` text
 ┌─avgWeighted(x, weight)─┐
 │                      8 │
-└────────────────────────┘
-```
-
-**Example**
-
-Query:
-
-``` sql
-SELECT avgWeighted(x, w)
-FROM values('x Int8, w Float64', (4, 1), (1, 0), (10, 2))
-```
-
-Result:
-
-``` text
-┌─avgWeighted(x, weight)─┐
-│                      8 │
-└────────────────────────┘
-```
-
-**Example**
-
-Query:
-
-``` sql
-SELECT avgWeighted(x, w)
-FROM values('x Int8, w Int8', (0, 0), (1, 0), (10, 0))
-```
-
-Result:
-
-``` text
-┌─avgWeighted(x, weight)─┐
-│                    nan │
-└────────────────────────┘
-```
-
-**Example**
-
-Query:
-
-``` sql
-CREATE table test (t UInt8) ENGINE = Memory;
-SELECT avgWeighted(t) FROM test
-```
-
-Result:
-
-``` text
-┌─avgWeighted(x, weight)─┐
-│                    nan │
 └────────────────────────┘
 ```

@@ -73,9 +73,4 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 }
 
-void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
-{
-    settings.ostr << applyVisitor(FieldVisitorToString(), value);
-}
-
 }

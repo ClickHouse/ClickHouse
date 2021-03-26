@@ -1,8 +1,3 @@
----
-toc_priority: 21
-toc_title: OnTime
----
-
 # OnTime {#ontime}
 
 Этот датасет может быть получен двумя способами:
@@ -152,7 +147,7 @@ $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhous
 ## Скачивание готовых партиций {#skachivanie-gotovykh-partitsii}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
+$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
 $ # убедитесь, что установлены корректные права доступа на файлы
 $ sudo service clickhouse-server restart
@@ -407,3 +402,4 @@ LIMIT 10;
 -   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
 -   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/ontime/) <!--hide-->

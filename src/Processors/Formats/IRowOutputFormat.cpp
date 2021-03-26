@@ -21,13 +21,12 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
     {
         if (!first_row)
             writeRowBetweenDelimiter();
+        first_row = false;
 
         write(columns, row);
 
-        if (params.callback)
-            params.callback(columns, row);
-
-        first_row = false;
+        if (write_single_row_callback)
+            write_single_row_callback(columns, row);
     }
 }
 

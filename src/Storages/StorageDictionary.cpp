@@ -9,7 +9,7 @@
 #include <Common/quoteString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
-#include <IO/Operators.h>
+#include <sstream>
 
 
 namespace DB
@@ -32,9 +32,12 @@ namespace
         {
             if (names_and_types_set.find(column) == names_and_types_set.end())
             {
-                throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Not found column {} {} in dictionary {}. There are only columns {}",
-                                column.name, column.type->getName(), backQuote(dictionary_name),
-                                StorageDictionary::generateNamesAndTypesDescription(dictionary_names_and_types));
+                std::string message = "Not found column ";
+                message += column.name + " " + column.type->getName();
+                message += " in dictionary " + backQuote(dictionary_name) + ". ";
+                message += "There are only columns ";
+                message += StorageDictionary::generateNamesAndTypesDescription(dictionary_names_and_types);
+                throw Exception(message, ErrorCodes::THERE_IS_NO_COLUMN);
             }
         }
     }
@@ -78,7 +81,7 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 
 String StorageDictionary::generateNamesAndTypesDescription(const NamesAndTypesList & list)
 {
-    WriteBufferFromOwnString ss;
+    std::stringstream ss;
     bool first = true;
     for (const auto & name_and_type : list)
     {
@@ -121,20 +124,15 @@ StorageDictionary::StorageDictionary(
 void StorageDictionary::checkTableCanBeDropped() const
 {
     if (location == Location::SameDatabaseAndNameAsDictionary)
-        throw Exception("Cannot drop/detach dictionary " + backQuote(dictionary_name) + " as table, use DROP DICTIONARY or DETACH DICTIONARY query instead", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+        throw Exception("Cannot detach dictionary " + backQuote(dictionary_name) + " as table, use DETACH DICTIONARY query", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
     if (location == Location::DictionaryDatabase)
-        throw Exception("Cannot drop/detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
-}
-
-void StorageDictionary::checkTableCanBeDetached() const
-{
-    checkTableCanBeDropped();
+        throw Exception("Cannot detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
 }
 
 Pipe StorageDictionary::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
-    SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,

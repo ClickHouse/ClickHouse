@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
-. "$CURDIR"/../shell_config.sh
+. $CURDIR/../shell_config.sh
 
 ALTER_OUT_STRUCTURE='command_type String, partition_id String, part_name String'
 ATTACH_OUT_STRUCTURE='old_part_name String'

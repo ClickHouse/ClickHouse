@@ -1,17 +1,14 @@
 #include <Columns/ColumnTuple.h>
-
 #include <Columns/IColumnImpl.h>
-#include <Columns/ColumnCompressed.h>
-#include <Core/Field.h>
 #include <DataStreams/ColumnGathererStream.h>
-#include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/WeakHash.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
-#include <common/sort.h>
+#include <IO/Operators.h>
 #include <ext/map.h>
 #include <ext/range.h>
+#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -180,14 +177,6 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
-const char * ColumnTuple::skipSerializedInArena(const char * pos) const
-{
-    for (const auto & column : columns)
-        pos = column->skipSerializedInArena(pos);
-
-    return pos;
-}
-
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (const auto & column : columns)
@@ -286,25 +275,14 @@ MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & se
     return res;
 }
 
-int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator) const
+int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
-    {
-        int res;
-        if (collator && columns[i]->isCollationSupported())
-            res = columns[i]->compareAtWithCollation(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint, *collator);
-        else
-            res = columns[i]->compareAt(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint);
-        if (res)
+        if (int res = columns[i]->compareAt(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint))
             return res;
-    }
-    return 0;
-}
 
-int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
-{
-    return compareAtImpl(n, m, rhs, nan_direction_hint);
+    return 0;
 }
 
 void ColumnTuple::compareColumn(const IColumn & rhs, size_t rhs_row_num,
@@ -315,25 +293,14 @@ void ColumnTuple::compareColumn(const IColumn & rhs, size_t rhs_row_num,
                                         compare_results, direction, nan_direction_hint);
 }
 
-int ColumnTuple::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const
-{
-    return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
-}
-
-bool ColumnTuple::hasEqualValues() const
-{
-    return hasEqualValuesImpl<ColumnTuple>();
-}
-
 template <bool positive>
 struct ColumnTuple::Less
 {
     TupleColumns columns;
     int nan_direction_hint;
-    const Collator * collator;
 
-    Less(const TupleColumns & columns_, int nan_direction_hint_, const Collator * collator_=nullptr)
-        : columns(columns_), nan_direction_hint(nan_direction_hint_), collator(collator_)
+    Less(const TupleColumns & columns_, int nan_direction_hint_)
+        : columns(columns_), nan_direction_hint(nan_direction_hint_)
     {
     }
 
@@ -341,11 +308,7 @@ struct ColumnTuple::Less
     {
         for (const auto & column : columns)
         {
-            int res;
-            if (collator && column->isCollationSupported())
-                res = column->compareAtWithCollation(a, b, *column, nan_direction_hint, *collator);
-            else
-                res = column->compareAt(a, b, *column, nan_direction_hint);
+            int res = column->compareAt(a, b, *column, nan_direction_hint);
             if (res < 0)
                 return positive;
             else if (res > 0)
@@ -355,8 +318,7 @@ struct ColumnTuple::Less
     }
 };
 
-template <typename LessOperator>
-void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperator less) const
+void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     size_t rows = size();
     res.resize(rows);
@@ -367,22 +329,29 @@ void ColumnTuple::getPermutationImpl(size_t limit, Permutation & res, LessOperat
         limit = 0;
 
     if (limit)
-        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+    {
+        if (reverse)
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<false>(columns, nan_direction_hint));
+        else
+            std::partial_sort(res.begin(), res.begin() + limit, res.end(), Less<true>(columns, nan_direction_hint));
+    }
     else
-        std::sort(res.begin(), res.end(), less);
+    {
+        if (reverse)
+            std::sort(res.begin(), res.end(), Less<false>(columns, nan_direction_hint));
+        else
+            std::sort(res.begin(), res.end(), Less<true>(columns, nan_direction_hint));
+    }
 }
 
-void ColumnTuple::updatePermutationImpl(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges, const Collator * collator) const
+void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
     if (equal_ranges.empty())
         return;
 
     for (const auto & column : columns)
     {
-        if (collator && column->isCollationSupported())
-            column->updatePermutationWithCollation(*collator, reverse, limit, nan_direction_hint, res, equal_ranges);
-        else
-            column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
+        column->updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
 
         while (limit && !equal_ranges.empty() && limit <= equal_ranges.back().first)
             equal_ranges.pop_back();
@@ -390,32 +359,6 @@ void ColumnTuple::updatePermutationImpl(bool reverse, size_t limit, int nan_dire
         if (equal_ranges.empty())
             break;
     }
-}
-
-void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
-{
-    if (reverse)
-        getPermutationImpl(limit, res, Less<false>(columns, nan_direction_hint));
-    else
-        getPermutationImpl(limit, res, Less<true>(columns, nan_direction_hint));
-}
-
-void ColumnTuple::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const
-{
-    updatePermutationImpl(reverse, limit, nan_direction_hint, res, equal_ranges);
-}
-
-void ColumnTuple::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
-{
-    if (reverse)
-        getPermutationImpl(limit, res, Less<false>(columns, nan_direction_hint, &collator));
-    else
-        getPermutationImpl(limit, res, Less<true>(columns, nan_direction_hint, &collator));
-}
-
-void ColumnTuple::updatePermutationWithCollation(const Collator & collator, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
-{
-    updatePermutationImpl(reverse, limit, nan_direction_hint, res, equal_ranges, &collator);
 }
 
 void ColumnTuple::gather(ColumnGathererStream & gatherer)
@@ -435,14 +378,6 @@ size_t ColumnTuple::byteSize() const
     size_t res = 0;
     for (const auto & column : columns)
         res += column->byteSize();
-    return res;
-}
-
-size_t ColumnTuple::byteSizeAt(size_t n) const
-{
-    size_t res = 0;
-    for (const auto & column : columns)
-        res += column->byteSizeAt(n);
     return res;
 }
 
@@ -498,36 +433,5 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
         return false;
 }
 
-bool ColumnTuple::isCollationSupported() const
-{
-    for (const auto & column : columns)
-    {
-        if (column->isCollationSupported())
-            return true;
-    }
-    return false;
-}
-
-
-ColumnPtr ColumnTuple::compress() const
-{
-    size_t byte_size = 0;
-    Columns compressed;
-    compressed.reserve(columns.size());
-    for (const auto & column : columns)
-    {
-        auto compressed_column = column->compress();
-        byte_size += compressed_column->byteSize();
-        compressed.emplace_back(std::move(compressed_column));
-    }
-
-    return ColumnCompressed::create(size(), byte_size,
-        [compressed = std::move(compressed)]() mutable
-        {
-            for (auto & column : compressed)
-                column = column->decompress();
-            return ColumnTuple::create(compressed);
-        });
-}
 
 }

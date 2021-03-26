@@ -1,5 +1,5 @@
 ---
-toc_priority: 43
+toc_priority: 45
 toc_title: DETACH
 ---
 
@@ -16,3 +16,4 @@ DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Запроса `DETACH DATABASE` нет.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/detach/) <!--hide-->

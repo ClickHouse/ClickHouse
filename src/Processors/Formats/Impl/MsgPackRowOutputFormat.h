@@ -20,7 +20,7 @@ namespace DB
 class MsgPackRowOutputFormat : public IRowOutputFormat
 {
 public:
-    MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_);
+    MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback);
 
     String getName() const override { return "MsgPackRowOutputFormat"; }
 

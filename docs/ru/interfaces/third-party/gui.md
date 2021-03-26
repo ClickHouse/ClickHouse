@@ -1,9 +1,3 @@
----
-toc_priority: 28
-toc_title: "Визуальные интерфейсы от сторонних разработчиков"
----
-
-
 # Визуальные интерфейсы от сторонних разработчиков {#vizualnye-interfeisy-ot-storonnikh-razrabotchikov}
 
 ## С открытым исходным кодом {#s-otkrytym-iskhodnym-kodom}
@@ -99,10 +93,6 @@ toc_title: "Визуальные интерфейсы от сторонних р
 
 [cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) — скрипт, генерирующий [PlantUML](https://plantuml.com/) диаграммы схем таблиц.
 
-### xeus-clickhouse {#xeus-clickhouse}
-
-[xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) — это ядро Jupyter для ClickHouse, которое поддерживает запрос ClickHouse-данных с использованием SQL в Jupyter.
-
 ## Коммерческие {#kommercheskie}
 
 ### DataGrip {#datagrip}
@@ -146,6 +136,7 @@ toc_title: "Визуальные интерфейсы от сторонних р
 -   Подготовка данных и возможности ETL.
 -   Моделирование данных с помощью SQL для их реляционного отображения.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
 
 ### Looker {#looker}
 

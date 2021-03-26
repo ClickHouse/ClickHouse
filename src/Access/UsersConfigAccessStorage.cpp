@@ -10,9 +10,6 @@
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
-#include <Poco/JSON/JSON.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <common/logger_useful.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/adaptor/map.hpp>
@@ -62,15 +59,14 @@ namespace
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
-        bool has_kerberos = config.has(user_config + ".kerberos");
 
-        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos;
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap;
         if (num_password_fields > 1)
-            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos' are used to specify password for user " + user_name + ". Must be only one of them.",
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap' are used to specify password for user " + user_name + ". Must be only one of them.",
                 ErrorCodes::BAD_ARGUMENTS);
 
         if (num_password_fields < 1)
-            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
         if (has_password_plaintext)
         {
@@ -97,15 +93,8 @@ namespace
             if (ldap_server_name.empty())
                 throw Exception("LDAP server name cannot be empty for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-            user->authentication = Authentication{Authentication::LDAP};
-            user->authentication.setLDAPServerName(ldap_server_name);
-        }
-        else if (has_kerberos)
-        {
-            const auto realm = config.getString(user_config + ".kerberos.realm", "");
-
-            user->authentication = Authentication{Authentication::KERBEROS};
-            user->authentication.setKerberosRealm(realm);
+            user->authentication = Authentication{Authentication::LDAP_SERVER};
+            user->authentication.setServerName(ldap_server_name);
         }
 
         const auto profile_name_config = user_config + ".profile";
@@ -200,7 +189,7 @@ namespace
     }
 
 
-    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config)
+    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
@@ -208,8 +197,16 @@ namespace
         std::vector<AccessEntityPtr> users;
         users.reserve(user_names.size());
         for (const auto & user_name : user_names)
-            users.push_back(parseUser(config, user_name));
-
+        {
+            try
+            {
+                users.push_back(parseUser(config, user_name));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Could not parse user " + backQuote(user_name));
+            }
+        }
         return users;
     }
 
@@ -223,8 +220,6 @@ namespace
         String quota_config = "quotas." + quota_name;
         if (config.has(quota_config + ".keyed_by_ip"))
             quota->key_type = KeyType::IP_ADDRESS;
-        else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
-            quota->key_type = KeyType::FORWARDED_IP_ADDRESS;
         else if (config.has(quota_config + ".keyed"))
             quota->key_type = KeyType::CLIENT_KEY_OR_USER_NAME;
         else
@@ -258,11 +253,12 @@ namespace
         }
 
         quota->to_roles.add(user_ids);
+
         return quota;
     }
 
 
-    std::vector<AccessEntityPtr> parseQuotas(const Poco::Util::AbstractConfiguration & config)
+    std::vector<AccessEntityPtr> parseQuotas(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
@@ -279,62 +275,75 @@ namespace
         quotas.reserve(quota_names.size());
         for (const auto & quota_name : quota_names)
         {
-            auto it = quota_to_user_ids.find(quota_name);
-            const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
-            quotas.push_back(parseQuota(config, quota_name, quota_users));
+            try
+            {
+                auto it = quota_to_user_ids.find(quota_name);
+                const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
+                quotas.push_back(parseQuota(config, quota_name, quota_users));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Could not parse quota " + backQuote(quota_name));
+            }
         }
         return quotas;
     }
 
 
-    std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config)
+    std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
     {
         std::map<std::pair<String /* database */, String /* table */>, std::unordered_map<String /* user */, String /* filter */>> all_filters_map;
-
         Poco::Util::AbstractConfiguration::Keys user_names;
-        config.keys("users", user_names);
 
-        for (const String & user_name : user_names)
+        try
         {
-            const String databases_config = "users." + user_name + ".databases";
-            if (config.has(databases_config))
+            config.keys("users", user_names);
+            for (const String & user_name : user_names)
             {
-                Poco::Util::AbstractConfiguration::Keys database_keys;
-                config.keys(databases_config, database_keys);
-
-                /// Read tables within databases
-                for (const String & database_key : database_keys)
+                const String databases_config = "users." + user_name + ".databases";
+                if (config.has(databases_config))
                 {
-                    const String database_config = databases_config + "." + database_key;
+                    Poco::Util::AbstractConfiguration::Keys database_keys;
+                    config.keys(databases_config, database_keys);
 
-                    String database_name;
-                    if (((database_key == "database") || (database_key.starts_with("database["))) && config.has(database_config + "[@name]"))
-                        database_name = config.getString(database_config + "[@name]");
-                    else if (size_t bracket_pos = database_key.find('['); bracket_pos != std::string::npos)
-                        database_name = database_key.substr(0, bracket_pos);
-                    else
-                        database_name = database_key;
-
-                    Poco::Util::AbstractConfiguration::Keys table_keys;
-                    config.keys(database_config, table_keys);
-
-                    /// Read table properties
-                    for (const String & table_key : table_keys)
+                    /// Read tables within databases
+                    for (const String & database_key : database_keys)
                     {
-                        String table_config = database_config + "." + table_key;
-                        String table_name;
-                        if (((table_key == "table") || (table_key.starts_with("table["))) && config.has(table_config + "[@name]"))
-                            table_name = config.getString(table_config + "[@name]");
-                        else if (size_t bracket_pos = table_key.find('['); bracket_pos != std::string::npos)
-                            table_name = table_key.substr(0, bracket_pos);
-                        else
-                            table_name = table_key;
+                        const String database_config = databases_config + "." + database_key;
 
-                        String filter_config = table_config + ".filter";
-                        all_filters_map[{database_name, table_name}][user_name] = config.getString(filter_config);
+                        String database_name;
+                        if (((database_key == "database") || (database_key.starts_with("database["))) && config.has(database_config + "[@name]"))
+                            database_name = config.getString(database_config + "[@name]");
+                        else if (size_t bracket_pos = database_key.find('['); bracket_pos != std::string::npos)
+                            database_name = database_key.substr(0, bracket_pos);
+                        else
+                            database_name = database_key;
+
+                        Poco::Util::AbstractConfiguration::Keys table_keys;
+                        config.keys(database_config, table_keys);
+
+                        /// Read table properties
+                        for (const String & table_key : table_keys)
+                        {
+                            String table_config = database_config + "." + table_key;
+                            String table_name;
+                            if (((table_key == "table") || (table_key.starts_with("table["))) && config.has(table_config + "[@name]"))
+                                table_name = config.getString(table_config + "[@name]");
+                            else if (size_t bracket_pos = table_key.find('['); bracket_pos != std::string::npos)
+                                table_name = table_key.substr(0, bracket_pos);
+                            else
+                                table_name = table_key;
+
+                            String filter_config = table_config + ".filter";
+                            all_filters_map[{database_name, table_name}][user_name] = config.getString(filter_config);
+                        }
                     }
                 }
             }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Could not parse row policies");
         }
 
         std::vector<AccessEntityPtr> policies;
@@ -438,14 +447,23 @@ namespace
 
     std::vector<AccessEntityPtr> parseSettingsProfiles(
         const Poco::Util::AbstractConfiguration & config,
-        const std::function<void(const std::string_view &)> & check_setting_name_function)
+        const std::function<void(const std::string_view &)> & check_setting_name_function,
+        Poco::Logger * log)
     {
         std::vector<AccessEntityPtr> profiles;
         Poco::Util::AbstractConfiguration::Keys profile_names;
         config.keys("profiles", profile_names);
         for (const auto & profile_name : profile_names)
-            profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
-
+        {
+            try
+            {
+                profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Could not parse profile " + backQuote(profile_name));
+            }
+        }
         return profiles;
     }
 }
@@ -464,28 +482,10 @@ UsersConfigAccessStorage::UsersConfigAccessStorage(const String & storage_name_,
 UsersConfigAccessStorage::~UsersConfigAccessStorage() = default;
 
 
-String UsersConfigAccessStorage::getStorageParamsJSON() const
-{
-    std::lock_guard lock{load_mutex};
-    Poco::JSON::Object json;
-    if (!path.empty())
-        json.set("path", path);
-    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    oss.exceptions(std::ios::failbit);
-    Poco::JSON::Stringifier::stringify(json, oss);
-    return oss.str();
-}
-
-
-String UsersConfigAccessStorage::getPath() const
+String UsersConfigAccessStorage::getStoragePath() const
 {
     std::lock_guard lock{load_mutex};
     return path;
-}
-
-bool UsersConfigAccessStorage::isPathEqual(const String & path_) const
-{
-    return getPath() == path_;
 }
 
 
@@ -500,13 +500,13 @@ void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration
 void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-    for (const auto & entity : parseUsers(config))
+    for (const auto & entity : parseUsers(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseQuotas(config))
+    for (const auto & entity : parseQuotas(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseRowPolicies(config))
+    for (const auto & entity : parseRowPolicies(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function))
+    for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
     memory_storage.setAll(all_entities);
 }
@@ -526,7 +526,7 @@ void UsersConfigAccessStorage::load(
         preprocessed_dir,
         zkutil::ZooKeeperNodeCache(get_zookeeper_function),
         std::make_shared<Poco::Event>(),
-        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
+        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config)
         {
             parseFromConfig(*new_config);
             Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);

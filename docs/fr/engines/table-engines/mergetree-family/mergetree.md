@@ -239,7 +239,7 @@ Dans l'exemple ci-dessous, l'index ne peut pas être utilisé.
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-Pour vérifier si ClickHouse pouvez utiliser l'index lors de l'exécution d'une requête, utilisez les paramètres [force_index_by_date](../../../operations/settings/settings.md#settings-force_index_by_date) et [force_primary_key](../../../operations/settings/settings.md).
+Pour vérifier si ClickHouse pouvez utiliser l'index lors de l'exécution d'une requête, utilisez les paramètres [force\_index\_by\_date](../../../operations/settings/settings.md#settings-force_index_by_date) et [force\_primary\_key](../../../operations/settings/settings.md).
 
 La clé de partitionnement par mois permet de lire uniquement les blocs de données qui contiennent des dates de la plage appropriée. Dans ce cas, le bloc de données peut contenir des données pour plusieurs dates (jusqu'à un mois entier). Dans un bloc, les données sont triées par clé primaire, qui peut ne pas contenir la date comme première colonne. Pour cette raison, l'utilisation d'une requête avec seulement une condition de date qui ne spécifie pas le préfixe de clé primaire entraînera la lecture de plus de données que pour une seule date.
 
@@ -330,7 +330,7 @@ Les Conditions dans le `WHERE` la clause contient des appels des fonctions qui f
 
 Le `set` l'indice peut être utilisé avec toutes les fonctions. Les sous-ensembles de fonctions pour les autres index sont présentés dans le tableau ci-dessous.
 
-| Fonction (opérateur) / Indice de                                                                             | clé primaire | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter |
+| Fonction (opérateur) / Indice de                                                                             | clé primaire | minmax | ngrambf\_v1 | tokenbf\_v1 | bloom\_filter |
 |--------------------------------------------------------------------------------------------------------------|--------------|--------|-------------|-------------|---------------|
 | [égal (=, ==)](../../../sql-reference/functions/comparison-functions.md#function-equals)                     | ✔            | ✔      | ✔           | ✔           | ✔             |
 | [notEquals (!=, \<\>)](../../../sql-reference/functions/comparison-functions.md#function-notequals)          | ✔            | ✔      | ✔           | ✔           | ✔             |
@@ -495,7 +495,7 @@ La partie de données est l'unité mobile minimum pour `MergeTree`-tables de mot
 -   Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 -   Storage policy — Set of volumes and the rules for moving data between them.
 
-Les noms donnés aux entités décrites peuvent être trouvés dans les tables système, [système.storage_policies](../../../operations/system-tables.md#system_tables-storage_policies) et [système.disque](../../../operations/system-tables.md#system_tables-disks). Pour appliquer l'une des stratégies de stockage configurées pour une table, utilisez `storage_policy` réglage de `MergeTree`-moteur de table de famille.
+Les noms donnés aux entités décrites peuvent être trouvés dans les tables système, [système.storage\_policies](../../../operations/system-tables.md#system_tables-storage_policies) et [système.disque](../../../operations/system-tables.md#system_tables-disks). Pour appliquer l'une des stratégies de stockage configurées pour une table, utilisez `storage_policy` réglage de `MergeTree`-moteur de table de famille.
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
@@ -642,7 +642,7 @@ Dans tous ces cas, à l'exception des mutations et du gel de partition, une piè
 Sous le capot, les mutations et la congélation des cloisons utilisent [des liens en dur](https://en.wikipedia.org/wiki/Hard_link). Les liens durs entre différents disques ne sont pas pris en charge, donc dans de tels cas, les pièces résultantes sont stockées sur les mêmes disques que les disques initiaux.
 
 En arrière - plan, les pièces sont déplacées entre les volumes en fonction de la quantité d'espace libre (`move_factor` paramètre) selon l'ordre les volumes sont déclarées dans le fichier de configuration.
-Les données ne sont jamais transférées du dernier et dans le premier. On peut utiliser des tables système [système.part_log](../../../operations/system-tables.md#system_tables-part-log) (champ `type = MOVE_PART`) et [système.partie](../../../operations/system-tables.md#system_tables-parts) (Fields `path` et `disk`) pour surveiller l'arrière-plan se déplace. Aussi, les informations détaillées peuvent être trouvées dans les journaux du serveur.
+Les données ne sont jamais transférées du dernier et dans le premier. On peut utiliser des tables système [système.part\_log](../../../operations/system-tables.md#system_tables-part-log) (champ `type = MOVE_PART`) et [système.partie](../../../operations/system-tables.md#system_tables-parts) (Fields `path` et `disk`) pour surveiller l'arrière-plan se déplace. Aussi, les informations détaillées peuvent être trouvées dans les journaux du serveur.
 
 L'utilisateur peut forcer le déplacement d'une partie ou d'une partition d'un volume à l'autre à l'aide de la requête [ALTER TABLE … MOVE PART\|PARTITION … TO VOLUME\|DISK …](../../../sql-reference/statements/alter.md#alter_move-partition), toutes les restrictions pour les opérations de fond sont prises en compte. La requête initie un mouvement seul et n'attend pas que les opérations d'arrière-plan soient terminées. L'utilisateur recevra un message d'erreur si pas assez d'espace libre est disponible ou si l'une des conditions requises ne sont pas remplies.
 

@@ -1,17 +1,16 @@
 ---
-toc_priority: 43
+toc_priority: 9
 toc_title: SETTINGS PROFILE
 ---
 
 # CREATE SETTINGS PROFILE {#create-settings-profile-statement}
 
-Creates [settings profiles](../../../operations/access-rights.md#settings-profiles-management) that can be assigned to a user or a role.
+Creates a [settings profile](../../../operations/access-rights.md#settings-profiles-management) that can be assigned to a user or a role.
 
 Syntax:
 
 ``` sql
-CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] TO name1 [ON CLUSTER cluster_name1] 
-        [, name2 [ON CLUSTER cluster_name2] ...]
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 

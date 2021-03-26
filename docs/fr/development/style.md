@@ -356,7 +356,7 @@ Dans tous les autres cas, utilisez un nom qui décrit la signification.
 bool info_successfully_loaded = false;
 ```
 
-**9.** Les noms de `define`les constantes s et globales utilisent ALL_CAPS avec des traits de soulignement.
+**9.** Les noms de `define`les constantes s et globales utilisent ALL\_CAPS avec des traits de soulignement.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -396,7 +396,7 @@ Le suffixe de soulignement peut être omis si l'argument n'est pas utilisé dans
 timer (not m_timer)
 ```
 
-**14.** Pour les constantes dans un `enum`, utilisez CamelCase avec une lettre majuscule. ALL_CAPS est également acceptable. Si l' `enum` est non local, utilisez un `enum class`.
+**14.** Pour les constantes dans un `enum`, utilisez CamelCase avec une lettre majuscule. ALL\_CAPS est également acceptable. Si l' `enum` est non local, utilisez un `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -579,7 +579,7 @@ Si une fonction capture la propriété d'un objet créé dans le tas, définisse
 
 **14.** Les valeurs de retour.
 
-Dans la plupart des cas, il suffit d'utiliser `return`. Ne pas écrire `return std::move(res)`.
+Dans la plupart des cas, il suffit d'utiliser `return`. Ne pas écrire `[return std::move(res)]{.strike}`.
 
 Si la fonction alloue un objet sur le tas et le renvoie, utilisez `shared_ptr` ou `unique_ptr`.
 
@@ -673,7 +673,7 @@ Toujours utiliser `#pragma once` au lieu d'inclure des gardes.
 **24.** Ne pas utiliser de `trailing return type` pour les fonctions, sauf si nécessaire.
 
 ``` cpp
-auto f() -> void
+[auto f() -&gt; void;]{.strike}
 ```
 
 **25.** Déclaration et initialisation des variables.
@@ -709,7 +709,7 @@ La bibliothèque standard est utilisée (`libc++`).
 
 **4.**OS: Linux Ubuntu, pas plus vieux que précis.
 
-**5.**Le Code est écrit pour l'architecture CPU x86_64.
+**5.**Le Code est écrit pour l'architecture CPU x86\_64.
 
 Le jeu D'instructions CPU est l'ensemble minimum pris en charge parmi nos serveurs. Actuellement, il s'agit de SSE 4.2.
 

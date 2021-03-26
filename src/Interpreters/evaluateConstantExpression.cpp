@@ -15,7 +15,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -36,10 +35,6 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     auto ast = node->clone();
     ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
     param_visitor.visit(ast);
-
-    if (context.getSettingsRef().normalize_function_names)
-        FunctionNameNormalizer().visit(ast.get());
-
     String name = ast->getColumnName();
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
@@ -77,7 +72,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {
     if (const auto * id = node->as<ASTIdentifier>())
-        return std::make_shared<ASTLiteral>(id->name());
+        return std::make_shared<ASTLiteral>(id->name);
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }
@@ -118,7 +113,7 @@ namespace
             const auto & name = name_and_type.name;
             const auto & type = name_and_type.type;
 
-            if (name == identifier->name())
+            if (name == identifier->name)
             {
                 ColumnWithTypeAndName column;
                 Field converted = convertFieldToType(value, *type);

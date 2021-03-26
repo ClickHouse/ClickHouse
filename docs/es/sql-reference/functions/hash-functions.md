@@ -317,7 +317,7 @@ Calcula JumpConsistentHash forma un UInt64.
 Acepta dos argumentos: una clave de tipo UInt64 y el número de cubos. Devuelve Int32.
 Para obtener más información, consulte el enlace: [SaltarConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2_32, murmurHash2_64 {#murmurhash2-32-murmurhash2-64}
+## murmurHash2\_32, murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
 
 Produce un [Método de codificación de datos:](https://github.com/aappleby/smhasher) valor hash.
 
@@ -385,7 +385,7 @@ Resultado:
 └──────────────────────┴─────────────────────┘
 ```
 
-## murmurHash3_32, murmurHash3_64 {#murmurhash3-32-murmurhash3-64}
+## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
 
 Produce un [Método de codificación de datos:](https://github.com/aappleby/smhasher) valor hash.
 
@@ -415,7 +415,7 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └─────────────┴────────┘
 ```
 
-## murmurHash3_128 {#murmurhash3-128}
+## murmurHash3\_128 {#murmurhash3-128}
 
 Produce un [Método de codificación de datos:](https://github.com/aappleby/smhasher) valor hash.
 

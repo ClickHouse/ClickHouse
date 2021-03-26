@@ -90,12 +90,8 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
         ExpressionInfoVisitor::Data expression_info{.context = context, .tables = tables_with_columns};
         ExpressionInfoVisitor(expression_info).visit(predicate_expression);
 
-        if (expression_info.is_stateful_function
-            || !expression_info.is_deterministic_function
-            || expression_info.is_window_function)
-        {
-            return {};   /// Not optimized when predicate contains stateful function or indeterministic function or window functions
-        }
+        if (expression_info.is_stateful_function || !expression_info.is_deterministic_function)
+            return {};   /// Not optimized when predicate contains stateful function or indeterministic function
 
         if (!expression_info.is_array_join)
         {
@@ -193,12 +189,6 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
         /// TODO: If there is no group by, where, and prewhere expression, we can push down the stateful function
         if (expression_info.is_stateful_function)
             return false;
-
-        if (expression_info.is_window_function)
-        {
-            // Window functions are not allowed in either HAVING or WHERE.
-            return false;
-        }
 
         if (expression_info.is_aggregate_function)
             having_predicates.emplace_back(moving_predicate);

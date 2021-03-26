@@ -3,6 +3,7 @@ import pymongo
 import pytest
 from helpers.client import QueryRuntimeException
 
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -35,8 +36,7 @@ def test_simple_select(started_cluster):
         data.append({'key': i, 'data': hex(i * i)})
     simple_mongo_table.insert_many(data)
 
-    node.query(
-        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')")
+    node.query("CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')")
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == '100\n'
     assert node.query("SELECT sum(key) FROM simple_mongo_table") == str(sum(range(0, 100))) + '\n'
@@ -51,11 +51,10 @@ def test_complex_data_type(started_cluster):
     incomplete_mongo_table = db['complex_table']
     data = []
     for i in range(0, 100):
-        data.append({'key': i, 'data': hex(i * i), 'dict': {'a': i, 'b': str(i)}})
+        data.append({'key': i, 'data': hex(i * i), 'dict': {'a' : i, 'b': str(i)}})
     incomplete_mongo_table.insert_many(data)
 
-    node.query(
-        "CREATE TABLE incomplete_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse')")
+    node.query("CREATE TABLE incomplete_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse')")
 
     assert node.query("SELECT COUNT() FROM incomplete_mongo_table") == '100\n'
     assert node.query("SELECT sum(key) FROM incomplete_mongo_table") == str(sum(range(0, 100))) + '\n'
@@ -73,8 +72,7 @@ def test_incorrect_data_type(started_cluster):
         data.append({'key': i, 'data': hex(i * i), 'aaaa': 'Hello'})
     strange_mongo_table.insert_many(data)
 
-    node.query(
-        "CREATE TABLE strange_mongo_table(key String, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')")
+    node.query("CREATE TABLE strange_mongo_table(key String, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')")
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT COUNT() FROM strange_mongo_table")
@@ -82,8 +80,7 @@ def test_incorrect_data_type(started_cluster):
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT uniq(key) FROM strange_mongo_table")
 
-    node.query(
-        "CREATE TABLE strange_mongo_table2(key UInt64, data String, bbbb String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')")
+    node.query("CREATE TABLE strange_mongo_table2(key UInt64, data String, bbbb String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')")
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT bbbb FROM strange_mongo_table2")

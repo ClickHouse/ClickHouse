@@ -25,7 +25,7 @@ class ResultBase;
 
 /** Represents a single value read from MySQL.
   * It doesn't owns the value. It's just a wrapper of a pair (const char *, size_t).
-  * If the UseQueryResult or Connection is destroyed,
+  * If the UseQueryResult/StoreQueryResult or Connection is destroyed,
   *  or you have read the next Row while using UseQueryResult, then the object is invalidated.
   * Allows to transform (parse) the value to various data types:
   * - with getUInt(), getString(), ... (recommended);
@@ -254,23 +254,7 @@ template <> inline std::string          Value::get<std::string          >() cons
 template <> inline LocalDate            Value::get<LocalDate            >() const { return getDate(); }
 template <> inline LocalDateTime        Value::get<LocalDateTime        >() const { return getDateTime(); }
 
-
-namespace details
-{
-// To avoid stack overflow when converting to type with no appropriate c-tor,
-// resulting in endless recursive calls from `Value::get<T>()` to `Value::operator T()` to `Value::get<T>()` to ...
-template <typename T, typename std::enable_if_t<std::is_constructible_v<T, Value>>>
-inline T contructFromValue(const Value & val)
-{
-    return T(val);
-}
-}
-
-template <typename T>
-inline T Value::get() const
-{
-    return details::contructFromValue<T>(*this);
-}
+template <typename T> inline T          Value::get()                        const { return T(*this); }
 
 
 inline std::ostream & operator<< (std::ostream & ostr, const Value & x)

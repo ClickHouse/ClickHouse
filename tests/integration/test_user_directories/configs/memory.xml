@@ -5,7 +5,4 @@
         </users_xml>
         <memory/>
     </user_directories>
-
-    <users_config remove="remove"/>
-    <access_control_path remove="remove"/>
 </yandex>

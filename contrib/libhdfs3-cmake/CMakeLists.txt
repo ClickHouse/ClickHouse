@@ -17,12 +17,7 @@ if (NOT USE_INTERNAL_PROTOBUF_LIBRARY AND PROTOBUF_OLD_ABI_COMPAT)
     endif ()
 endif()
 
-if (${ENABLE_LIBRARIES} AND ${ENABLE_KRB5})
-    SET(WITH_KERBEROS 1)
-else()
-    SET(WITH_KERBEROS 0)
-endif()
-
+set(WITH_KERBEROS false)
 # project and source dir
 set(HDFS3_ROOT_DIR ${ClickHouse_SOURCE_DIR}/contrib/libhdfs3)
 set(HDFS3_SOURCE_DIR ${HDFS3_ROOT_DIR}/src)
@@ -32,6 +27,11 @@ set(HDFS3_COMMON_DIR ${HDFS3_SOURCE_DIR}/common)
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
 include(Platform)
 include(Options)
+
+# prefer shared libraries
+if (WITH_KERBEROS)
+    find_package(KERBEROS REQUIRED)
+endif()
 
 # source
 set(PROTO_FILES
@@ -192,7 +192,7 @@ set(SRCS
     ${HDFS3_SOURCE_DIR}/common/FileWrapper.h
     )
 
-# old kernels (< 3.17) doesn't have SYS_getrandom. Always use POSIX implementation to have better compatibility
+# old kernels (< 3.17) doens't have SYS_getrandom. Always use POSIX implementation to have better compatibility
 set_source_files_properties(${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp PROPERTIES COMPILE_FLAGS "-DBOOST_UUID_RANDOM_PROVIDER_FORCE_POSIX=1")
 
 # target
@@ -207,11 +207,14 @@ target_include_directories(hdfs3 PRIVATE ${HDFS3_COMMON_DIR})
 target_include_directories(hdfs3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 target_include_directories(hdfs3 PRIVATE ${LIBGSASL_INCLUDE_DIR})
+if (WITH_KERBEROS)
+    target_include_directories(hdfs3 PRIVATE ${KERBEROS_INCLUDE_DIRS})
+endif()
 target_include_directories(hdfs3 PRIVATE ${LIBXML2_INCLUDE_DIR})
 
 target_link_libraries(hdfs3 PRIVATE ${LIBGSASL_LIBRARY})
 if (WITH_KERBEROS)
-    target_link_libraries(hdfs3 PRIVATE ${KRB5_LIBRARY})
+    target_link_libraries(hdfs3 PRIVATE ${KERBEROS_LIBRARIES})
 endif()
 target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARIES})
 

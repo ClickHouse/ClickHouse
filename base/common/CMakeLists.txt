@@ -6,7 +6,6 @@ set (SRCS
     demangle.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
-    getPageSize.cpp
     getThreadId.cpp
     JSON.cpp
     LineReader.cpp
@@ -19,7 +18,6 @@ set (SRCS
     terminalColors.cpp
     errnoToString.cpp
     getResource.cpp
-    StringRef.cpp
 )
 
 if (ENABLE_REPLXX)
@@ -74,6 +72,7 @@ target_link_libraries (common
         ${CITYHASH_LIBRARIES}
         boost::headers_only
         boost::system
+        FastMemcpy
         Poco::Net
         Poco::Net::SSL
         Poco::Util

@@ -23,7 +23,7 @@ public:
         const Block & header_,
         bool with_names_,
         bool with_types_,
-        const RowOutputFormatParams & params_,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }

@@ -16,12 +16,12 @@ Vous pouvez utiliser les fonctions de table dans:
 
         The method for creating a temporary table that is available only in the current query. The table is deleted when the query finishes.
 
--   [Créer une TABLE en tant que \< table_function ()\>](../statements/create.md#create-table-query) requête.
+-   [Créer une TABLE en tant que \< table\_function ()\>](../statements/create.md#create-table-query) requête.
 
         It's one of the methods of creating a table.
 
 !!! warning "Avertissement"
-    Vous ne pouvez pas utiliser les fonctions de table si [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) paramètre est désactivé.
+    Vous ne pouvez pas utiliser les fonctions de table si [allow\_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) paramètre est désactivé.
 
 | Fonction              | Description                                                                                                                         |
 |-----------------------|-------------------------------------------------------------------------------------------------------------------------------------|

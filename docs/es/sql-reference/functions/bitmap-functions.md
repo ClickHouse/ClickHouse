@@ -65,7 +65,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapSubsetInRange {#bitmap-functions-bitmapsubsetinrange}
 
-Devuelve el subconjunto en el rango especificado (no incluye range_end).
+Devuelve el subconjunto en el rango especificado (no incluye range\_end).
 
 ``` sql
 bitmapSubsetInRange(bitmap, range_start, range_end)
@@ -241,7 +241,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 ## bitmapMin {#bitmapmin}
 
-Vuelva a ejecutar el valor más pequeño de tipo UInt64 en el conjunto, UINT32_MAX si el conjunto está vacío.
+Vuelva a ejecutar el valor más pequeño de tipo UInt64 en el conjunto, UINT32\_MAX si el conjunto está vacío.
 
     bitmapMin(bitmap)
 
@@ -288,8 +288,8 @@ Transformar una matriz de valores en un mapa de bits a otra matriz de valores, e
 **Parámetros**
 
 -   `bitmap` – bitmap object.
--   `from_array` – UInt32 array. For idx in range \[0, from_array.size()), if bitmap contains from_array\[idx\], then replace it with to_array\[idx\]. Note that the result depends on array ordering if there are common elements between from_array and to_array.
--   `to_array` – UInt32 array, its size shall be the same to from_array.
+-   `from_array` – UInt32 array. For idx in range \[0, from\_array.size()), if bitmap contains from\_array\[idx\], then replace it with to\_array\[idx\]. Note that the result depends on array ordering if there are common elements between from\_array and to\_array.
+-   `to_array` – UInt32 array, its size shall be the same to from\_array.
 
 **Ejemplo**
 

@@ -1028,7 +1028,7 @@ Resultado:
 
 ## arrayAUC {#arrayauc}
 
-Calcule AUC (Área bajo la curva, que es un concepto en el aprendizaje automático, vea más detalles: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve ).
+Calcule AUC (Área bajo la curva, que es un concepto en el aprendizaje automático, vea más detalles: https://en.wikipedia.org/wiki/Receiver\_operating\_characteristic\#Area\_under\_the\_curve ).
 
 **Sintaxis**
 

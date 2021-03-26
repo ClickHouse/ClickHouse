@@ -11,7 +11,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 RegexpRowInputFormat::RegexpRowInputFormat(
@@ -52,8 +51,6 @@ RegexpRowInputFormat::ColumnFormat RegexpRowInputFormat::stringToFormat(const St
         return ColumnFormat::Csv;
     if (format == "JSON")
         return ColumnFormat::Json;
-    if (format == "Raw")
-        return ColumnFormat::Raw;
     throw Exception("Unsupported column format \"" + format + "\".", ErrorCodes::BAD_ARGUMENTS);
 }
 
@@ -91,19 +88,13 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
                 else
                     type->deserializeAsTextJSON(*columns[index], field_buf, format_settings);
                 break;
-            case ColumnFormat::Raw:
-                if (parse_as_nullable)
-                    read = DataTypeNullable::deserializeWholeText(*columns[index], field_buf, format_settings, type);
-                else
-                    type->deserializeAsWholeText(*columns[index], field_buf, format_settings);
-                break;
             default:
                 break;
         }
     }
     catch (Exception & e)
     {
-        e.addMessage("(while reading the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
+        e.addMessage("(while read the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
     return read;
@@ -174,18 +165,15 @@ void registerInputFormatProcessorRegexp(FormatFactory & factory)
     });
 }
 
-static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static bool fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     char * pos = in.position();
     bool need_more_data = true;
-    size_t number_of_rows = 0;
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
         pos = find_first_symbols<'\n', '\r'>(pos, in.buffer().end());
-        if (pos > in.buffer().end())
-                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
-        else if (pos == in.buffer().end())
+        if (pos == in.buffer().end())
             continue;
 
         // Support DOS-style newline ("\r\n")
@@ -200,12 +188,12 @@ static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in,
             need_more_data = false;
 
         ++pos;
-        ++number_of_rows;
+
     }
 
     saveUpToPosition(in, memory, pos);
 
-    return {loadAtPosition(in, memory, pos), number_of_rows};
+    return loadAtPosition(in, memory, pos);
 }
 
 void registerFileSegmentationEngineRegexp(FormatFactory & factory)

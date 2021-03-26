@@ -15,17 +15,11 @@ namespace DB
 class JSONCompactEachRowRowOutputFormat : public IRowOutputFormat
 {
 public:
-    JSONCompactEachRowRowOutputFormat(
-        WriteBuffer & out_,
-        const Block & header_,
-        const RowOutputFormatParams & params_,
-        const FormatSettings & settings_,
-        bool with_names_,
-        bool yield_strings_);
+    JSONCompactEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_, bool with_names);
 
     String getName() const override { return "JSONCompactEachRowRowOutputFormat"; }
 
-    void doWritePrefix() override;
+    void writePrefix() override;
 
     void writeBeforeTotals() override {}
     void writeTotals(const Columns & columns, size_t row_num) override;
@@ -47,6 +41,5 @@ private:
     NamesAndTypes fields;
 
     bool with_names;
-    bool yield_strings;
 };
 }

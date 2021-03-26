@@ -141,7 +141,7 @@ inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
         {
             case TypeIndex::Date: return callOnBasicType<UInt16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::DateTime: return callOnBasicType<UInt32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::DateTime64: return callOnBasicType<DateTime64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::DateTime64: return callOnBasicType<Decimal64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             default:
                 break;
         }
@@ -205,24 +205,6 @@ bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
     }
 
     return false;
-}
-
-template <typename F>
-static bool callOnTwoTypeIndexes(TypeIndex left_type, TypeIndex right_type, F && func)
-{
-    return callOnIndexAndDataType<void>(left_type, [&](const auto & left_types) -> bool
-    {
-        using LeftTypes = std::decay_t<decltype(left_types)>;
-        using LeftType = typename LeftTypes::LeftType;
-
-        return callOnIndexAndDataType<void>(right_type, [&](const auto & right_types) -> bool
-        {
-            using RightTypes = std::decay_t<decltype(right_types)>;
-            using RightType = typename RightTypes::LeftType;
-
-            return std::forward<F>(func)(TypePair<LeftType, RightType>());
-        });
-    });
 }
 
 }

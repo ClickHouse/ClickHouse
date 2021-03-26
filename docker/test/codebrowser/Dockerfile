@@ -2,7 +2,7 @@
 # docker run --volume=path_to_repo:/repo_folder --volume=path_to_result:/test_output yandex/clickhouse-codebrowser
 FROM yandex/clickhouse-binary-builder
 
-RUN apt-get update && apt-get --yes --allow-unauthenticated install clang-9 libllvm9 libclang-9-dev
+RUN apt-get update && apt-get --yes --allow-unauthenticated install clang-9 libllvm9 libclang-9-dev llvm-9 llvm-9-dev
 
 # repo versions doesn't work correctly with C++17
 # also we push reports to s3, so we add index.html to subfolder urls

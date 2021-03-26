@@ -10,12 +10,10 @@ namespace DB
 
 struct IdentifierSemanticImpl
 {
-    bool special = false;              /// for now it's 'not a column': tables, subselects and some special stuff like FORMAT
-    bool can_be_alias = true;          /// if it's a cropped name it could not be an alias
-    bool covered = false;              /// real (compound) name is hidden by an alias (short name)
-    std::optional<size_t> membership;  /// table position in join
-    String table = {};                 /// store table name for columns just to support legacy logic.
-    bool legacy_compound = false;      /// true if identifier supposed to be comply for legacy |compound()| behavior
+    bool special = false;       /// for now it's 'not a column': tables, subselects and some special stuff like FORMAT
+    bool can_be_alias = true;   /// if it's a cropped name it could not be an alias
+    bool covered = false;       /// real (compound) name is hidden by an alias (short name)
+    std::optional<size_t> membership; /// table position in join
 };
 
 /// Static class to manipulate IdentifierSemanticImpl via ASTIdentifier

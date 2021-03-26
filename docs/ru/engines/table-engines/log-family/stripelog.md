@@ -1,8 +1,3 @@
----
-toc_priority: 32
-toc_title: StripeLog
----
-
 # StripeLog {#stripelog}
 
 Движок относится к семейству движков Log. Смотрите общие свойства и различия движков в статье [Семейство Log](index.md).
@@ -90,3 +85,4 @@ SELECT * FROM stripe_log_table ORDER BY timestamp
 └─────────────────────┴──────────────┴────────────────────────────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/stripelog/) <!--hide-->

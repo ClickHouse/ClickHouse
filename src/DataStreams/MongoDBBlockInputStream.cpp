@@ -1,3 +1,4 @@
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -36,7 +37,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int UNKNOWN_TYPE;
 }
 
 
@@ -298,8 +298,6 @@ namespace
                                     ErrorCodes::TYPE_MISMATCH};
                 break;
             }
-            default:
-                throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
         }
     }
 

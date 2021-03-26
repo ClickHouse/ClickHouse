@@ -1028,7 +1028,7 @@ Résultat:
 
 ## arrayAUC {#arrayauc}
 
-Calculer AUC (zone sous la courbe, qui est un concept dans l'apprentissage automatique, voir plus de détails: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
+Calculer AUC (zone sous la courbe, qui est un concept dans l'apprentissage automatique, voir plus de détails: https://en.wikipedia.org/wiki/Receiver\_operating\_characteristic\#Area\_under\_the\_curve).
 
 **Syntaxe**
 

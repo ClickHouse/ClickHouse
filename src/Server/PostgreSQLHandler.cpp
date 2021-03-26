@@ -5,7 +5,6 @@
 #include <Interpreters/executeQuery.h>
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
-#include <Common/setThreadName.h>
 #include <random>
 
 #if !defined(ARCADIA_BUILD)
@@ -50,10 +49,7 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void PostgreSQLHandler::run()
 {
-    setThreadName("PostgresHandler");
-    ThreadStatus thread_status;
     connection_context.makeSessionContext();
-    connection_context.getClientInfo().interface = ClientInfo::Interface::POSTGRESQL;
     connection_context.setDefaultFormat("PostgreSQLWire");
 
     try
@@ -72,7 +68,7 @@ void PostgreSQLHandler::run()
                     processQuery();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE:
-                    LOG_DEBUG(log, "Client closed the connection");
+                    LOG_INFO(log, "Client closed the connection");
                     return;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::PARSE:
                 case PostgreSQLProtocol::Messaging::FrontMessageType::BIND:
@@ -116,7 +112,7 @@ bool PostgreSQLHandler::startup()
 
     if (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info) == PostgreSQLProtocol::Messaging::FrontMessageType::CANCEL_REQUEST)
     {
-        LOG_DEBUG(log, "Client issued request canceling");
+        LOG_INFO(log, "Client issued request canceling");
         cancelRequest();
         return false;
     }
@@ -149,7 +145,7 @@ bool PostgreSQLHandler::startup()
     message_transport->send(
         PostgreSQLProtocol::Messaging::BackendKeyData(connection_id, secret_key), true);
 
-    LOG_DEBUG(log, "Successfully finished Startup stage");
+    LOG_INFO(log, "Successfully finished Startup stage");
     return true;
 }
 
@@ -162,14 +158,14 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
     switch (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info))
     {
         case PostgreSQLProtocol::Messaging::FrontMessageType::SSL_REQUEST:
-            LOG_DEBUG(log, "Client requested SSL");
+            LOG_INFO(log, "Client requested SSL");
             if (ssl_enabled)
                 makeSecureConnectionSSL();
             else
                 message_transport->send('N', true);
             break;
         case PostgreSQLProtocol::Messaging::FrontMessageType::GSSENC_REQUEST:
-            LOG_DEBUG(log, "Client requested GSSENC");
+            LOG_INFO(log, "Client requested GSSENC");
             message_transport->send('N', true);
             break;
         default:
@@ -222,7 +218,10 @@ void PostgreSQLHandler::cancelRequest()
     String query = Poco::format("KILL QUERY WHERE query_id = 'postgres:%d:%d'", msg->process_id, msg->secret_key);
     ReadBufferFromString replacement(query);
 
-    executeQuery(replacement, *out, true, connection_context, {});
+    executeQuery(
+        replacement, *out, true, connection_context,
+        [](const String &, const String &, const String &, const String &) {}
+    );
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -241,7 +240,7 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
         throw;
     }
 
-    LOG_DEBUG(log, "Successfully received Startup message");
+    LOG_INFO(log, "Successfully received Startup message");
     return message;
 }
 
@@ -276,10 +275,8 @@ void PostgreSQLHandler::processQuery()
 
         for (const auto & spl_query : queries)
         {
-            /// FIXME why do we execute all queries in a single connection context?
-            CurrentThread::QueryScope query_scope{connection_context};
             ReadBufferFromString read_buf(spl_query);
-            executeQuery(read_buf, *out, false, connection_context, {});
+            executeQuery(read_buf, *out, true, connection_context, {});
 
             PostgreSQLProtocol::Messaging::CommandComplete::Command command =
                 PostgreSQLProtocol::Messaging::CommandComplete::classifyQuery(spl_query);

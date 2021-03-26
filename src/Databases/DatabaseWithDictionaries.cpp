@@ -4,7 +4,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderTempConfigRepository.h>
 #include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
-#include <Interpreters/DDLTask.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -177,7 +176,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
     /// Add a temporary repository containing the dictionary.
     /// We need this temp repository to try loading the dictionary before actually attaching it to the database.
     auto temp_repository = external_loader.addConfigRepository(std::make_unique<ExternalLoaderTempConfigRepository>(
-        getDatabaseName(), dictionary_metadata_tmp_path, getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>(), context)));
+        getDatabaseName(), dictionary_metadata_tmp_path, getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>())));
 
     bool lazy_load = context.getConfigRef().getBool("dictionaries_lazy_load", true);
     if (!lazy_load)
@@ -187,16 +186,12 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
         external_loader.load(dict_id.getInternalDictionaryName());
     }
 
-    auto config = getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>(), context);
+    auto config = getDictionaryConfigurationFromAST(query->as<const ASTCreateQuery &>());
     attachDictionary(dictionary_name, DictionaryAttachInfo{query, config, time(nullptr)});
     SCOPE_EXIT({
         if (!succeeded)
             detachDictionary(dictionary_name);
     });
-
-    auto txn = context.getZooKeeperMetadataTransaction();
-    if (txn && !context.isInternalSubquery())
-        txn->commit();      /// Commit point (a sort of) for Replicated database
 
     /// If it was ATTACH query and file with dictionary metadata already exist
     /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -210,7 +205,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
     succeeded = true;
 }
 
-void DatabaseWithDictionaries::removeDictionary(const Context & context, const String & dictionary_name)
+void DatabaseWithDictionaries::removeDictionary(const Context &, const String & dictionary_name)
 {
     DictionaryAttachInfo attach_info;
     detachDictionaryImpl(dictionary_name, attach_info);
@@ -218,11 +213,6 @@ void DatabaseWithDictionaries::removeDictionary(const Context & context, const S
     try
     {
         String dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
-
-        auto txn = context.getZooKeeperMetadataTransaction();
-        if (txn && !context.isInternalSubquery())
-            txn->commit();      /// Commit point (a sort of) for Replicated database
-
         Poco::File(dictionary_metadata_path).remove();
         CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus,
                                  StorageID(attach_info.create_query).getInternalDictionaryName());
@@ -233,10 +223,6 @@ void DatabaseWithDictionaries::removeDictionary(const Context & context, const S
         attachDictionary(dictionary_name, attach_info);
         throw;
     }
-
-    UUID dict_uuid = attach_info.create_query->as<ASTCreateQuery>()->uuid;
-    if (dict_uuid != UUIDHelpers::Nil)
-        DatabaseCatalog::instance().removeUUIDMappingFinally(dict_uuid);
 }
 
 DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name)

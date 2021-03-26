@@ -52,7 +52,6 @@ Engines in the family:
 -   [ODBC](../../engines/table-engines/integrations/odbc.md#table-engine-odbc)
 -   [JDBC](../../engines/table-engines/integrations/jdbc.md#table-engine-jdbc)
 -   [HDFS](../../engines/table-engines/integrations/hdfs.md#hdfs)
--   [S3](../../engines/table-engines/integrations/s3.md#table_engines-s3)
 
 ### Special Engines {#special-engines}
 

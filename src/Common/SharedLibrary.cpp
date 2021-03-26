@@ -13,11 +13,11 @@ namespace ErrorCodes
     extern const int CANNOT_DLSYM;
 }
 
-SharedLibrary::SharedLibrary(std::string_view path, int flags)
+SharedLibrary::SharedLibrary(const std::string & path, int flags)
 {
-    handle = dlopen(path.data(), flags);
+    handle = dlopen(path.c_str(), flags);
     if (!handle)
-        throw Exception(ErrorCodes::CANNOT_DLOPEN, "Cannot dlopen: ({})", dlerror());
+        throw Exception(std::string("Cannot dlopen: ") + dlerror(), ErrorCodes::CANNOT_DLOPEN);
 
     updatePHDRCache();
 
@@ -31,18 +31,17 @@ SharedLibrary::~SharedLibrary()
         std::terminate();
 }
 
-void * SharedLibrary::getImpl(std::string_view name, bool no_throw)
+void * SharedLibrary::getImpl(const std::string & name, bool no_throw)
 {
     dlerror();
 
-    auto * res = dlsym(handle, name.data());
+    auto * res = dlsym(handle, name.c_str());
 
     if (char * error = dlerror())
     {
         if (no_throw)
             return nullptr;
-
-        throw Exception(ErrorCodes::CANNOT_DLSYM, "Cannot dlsym: ({})", error);
+        throw Exception(std::string("Cannot dlsym: ") + error, ErrorCodes::CANNOT_DLSYM);
     }
 
     return res;

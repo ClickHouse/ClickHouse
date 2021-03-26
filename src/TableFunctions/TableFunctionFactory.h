@@ -41,7 +41,7 @@ public:
     }
 
     /// Throws an exception if not found.
-    TableFunctionPtr get(const ASTPtr & ast_function, const Context & context) const;
+    TableFunctionPtr get(const std::string & name, const Context & context) const;
 
     /// Returns nullptr if not found.
     TableFunctionPtr tryGet(const std::string & name, const Context & context) const;

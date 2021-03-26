@@ -11,11 +11,10 @@ toc_title: "Biblioth\xE8ques Clientes"
     Yandex ne **pas** maintenir les bibliothèques énumérées ci-dessous et n'ont pas fait de tests approfondis pour assurer leur qualité.
 
 -   Python
-    -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
     -   [clickhouse-chauffeur](https://github.com/mymarilyn/clickhouse-driver)
     -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
     -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
-    -   [asynch](https://github.com/long2ice/asynch)
 -   PHP
     -   [smi2 / phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
     -   [8bitov / clickhouse-PHP-client](https://packagist.org/packages/8bitov/clickhouse-php-client)
@@ -48,7 +47,7 @@ toc_title: "Biblioth\xE8ques Clientes"
     -   [clickhouse-Scala-client](https://github.com/crobox/clickhouse-scala-client)
 -   Kotlin
     -   [AORM](https://github.com/TanVD/AORM)
--   C#
+-   C\#
     -   [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
     -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)

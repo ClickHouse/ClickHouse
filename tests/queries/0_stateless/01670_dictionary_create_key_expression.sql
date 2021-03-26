@@ -11,7 +11,7 @@ CREATE DICTIONARY database_dictionary_test_key_expression.test_query_log_diction
     `value` String
 )
 PRIMARY KEY value_id
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'test_for_dictionary' DB 'database_dictionary_test_key_expression'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'test_for_dictionary' DB 'database_dictionary_test_key_expression'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
@@ -28,7 +28,7 @@ CREATE DICTIONARY database_dictionary_test_key_expression.test_query_log_diction
     `value` String
 )
 PRIMARY KEY value_id, value_length
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'test_for_dictionary' DB 'database_dictionary_test_key_expression'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'test_for_dictionary' DB 'database_dictionary_test_key_expression'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(COMPLEX_KEY_HASHED());
 

@@ -17,8 +17,6 @@ public:
 
     void describeActions(FormatSettings & settings) const override;
 
-    const SortDescription & getSortDescription() const { return sort_description; }
-
 private:
     SortDescription sort_description;
 };

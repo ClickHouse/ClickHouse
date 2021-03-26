@@ -120,7 +120,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
             {
                 /// FLUSH DISTRIBUTED requires table
-                /// START/STOP DISTRIBUTED SENDS does not require table
+                /// START/STOP DISTRIBUTED SENDS does not requires table
                 if (res->type == Type::FLUSH_DISTRIBUTED)
                     return false;
             }
@@ -129,33 +129,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::STOP_MERGES:
         case Type::START_MERGES:
-        {
-            String storage_policy_str;
-            String volume_str;
-
-            if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
-            {
-                ASTPtr ast;
-                if (ParserIdentifier{}.parse(pos, ast, expected))
-                    storage_policy_str = ast->as<ASTIdentifier &>().name();
-                else
-                    return false;
-
-                if (!ParserToken{TokenType::Dot}.ignore(pos, expected))
-                    return false;
-
-                if (ParserIdentifier{}.parse(pos, ast, expected))
-                    volume_str = ast->as<ASTIdentifier &>().name();
-                else
-                    return false;
-            }
-            res->storage_policy = storage_policy_str;
-            res->volume = volume_str;
-            if (res->volume.empty() && res->storage_policy.empty())
-                parseDatabaseAndTableName(pos, expected, res->database, res->table);
-            break;
-        }
-
         case Type::STOP_TTL_MERGES:
         case Type::START_TTL_MERGES:
         case Type::STOP_MOVES:
@@ -168,20 +141,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATION_QUEUES:
             parseDatabaseAndTableName(pos, expected, res->database, res->table);
             break;
-
-        case Type::SUSPEND:
-        {
-            ASTPtr seconds;
-            if (!(ParserKeyword{"FOR"}.ignore(pos, expected)
-                && ParserUnsignedInteger().parse(pos, seconds, expected)
-                && ParserKeyword{"SECOND"}.ignore(pos, expected)))   /// SECOND, not SECONDS to be consistent with INTERVAL parsing in SQL
-            {
-                return false;
-            }
-
-            res->seconds = seconds->as<ASTLiteral>()->value.get<UInt64>();
-            break;
-        }
 
         default:
             /// There are no [db.table] after COMMAND NAME

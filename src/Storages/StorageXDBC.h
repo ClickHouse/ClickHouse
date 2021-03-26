@@ -18,7 +18,7 @@ public:
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & query_info,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -34,7 +34,6 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
-    std::string getName() const override;
 private:
 
     BridgeHelperPtr bridge_helper;
@@ -62,6 +61,8 @@ private:
         size_t max_block_size) const override;
 
     Block getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const override;
+
+    std::string getName() const override;
 };
 
 }
