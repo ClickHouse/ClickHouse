@@ -18,33 +18,7 @@
                 <port>9000</port>
             </replica>
         </shard>
-    </cluster_simple>
-
-    <cluster_with_dead_node>
-        <shard>
-            <internal_replication>true</internal_replication>
-            <replica>
-                <host>s0_0_0</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>s0_0_1</host>
-                <port>9000</port>
-            </replica>
-        </shard>
-        <shard>
-            <internal_replication>true</internal_replication>
-            <replica>
-                <host>s0_1_0</host>
-                <port>9000</port>
-            </replica>
-            <replica>
-                <host>255.255.255.255</host>
-                <port>9000</port>
-            </replica>
-        </shard>
-    </cluster_with_dead_node>
-
+    </cluster_simple>s
 
     </remote_servers>
 </yandex>
