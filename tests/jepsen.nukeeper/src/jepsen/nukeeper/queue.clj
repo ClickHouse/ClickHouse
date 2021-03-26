@@ -40,11 +40,9 @@
         (catch Exception _ (assoc op :type :info, :error :connect-error)))
       :drain
       ; drain via delete is to long, just list all nodes
-      (try
-        (do
-          (zk-sync conn)
-          (assoc op :type :ok :value (into #{} (map #(str %1) (zk-list conn "/")))))
-        (catch Exception _ (assoc op :type :info, :error :connect-error)))))
+      (exec-with-retries 30 (fn []
+        (zk-sync conn)
+        (assoc op :type :ok :value (into #{} (map #(str %1) (zk-list conn "/"))))))))
 
   (teardown! [_ test])
 
