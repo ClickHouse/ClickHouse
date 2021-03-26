@@ -103,7 +103,7 @@
                         (gen/nemesis (gen/once {:type :info, :f :stop}))
                         (gen/log "Waiting for recovery")
                         (gen/sleep 10)
-                        (gen/clients (:final-generator workload)))})))
+                        (gen/clients (gen/until-ok (:final-generator workload))))})))
 
 (def all-nemesises (keys custom-nemesis/custom-nemesises))
 
