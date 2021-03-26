@@ -771,7 +771,36 @@ log_query_threads=1
 
 ## log_comment {#settings-log-comment}
 
+Logs the comment into [system.query_log](../system-tables/query_log.md) table and server log.
 
+It can be used to improve readability of server logs. Additionally, you can quickly select related to the test queries from the `system.query_log` in [clickhouse-test](../../development/tests.md).
+
+Possible values:
+
+-   Any string no longer than [max_query_size](#settings-max_query_size). If length is exceeded, the server throws an exception.
+
+Default value: empty string.
+
+**Example**
+
+Query:
+
+``` sql
+SET log_comment = 'log_comment test', log_queries = 1;
+SELECT 1;
+SYSTEM FLUSH LOGS;
+SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 2;
+WHERE event_date >= yesterday() ORDER BY event_time DESC LIMIT 2;
+```
+
+Result:
+
+``` text
+┌─type────────┬─query─────┐
+│ QueryStart  │ SELECT 1; │
+│ QueryFinish │ SELECT 1; │
+└─────────────┴───────────┘
+```
 
 ## max_insert_block_size {#settings-max_insert_block_size}
 
