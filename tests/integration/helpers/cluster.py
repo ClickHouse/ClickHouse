@@ -895,7 +895,7 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql_logs_dir)
                 os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
-                self.wait_mysql_to_start(60)
+                self.wait_mysql_to_start(120)
 
             if self.with_mysql8 and self.base_mysql8_cmd:
                 logging.debug('Setup MySQL 8')
@@ -904,7 +904,7 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql8_logs_dir)
                 os.chmod(self.mysql8_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql8_cmd + common_opts)
-                self.wait_mysql8_to_start(120)
+                self.wait_mysql8_to_start(180)
 
             if self.with_postgres and self.base_postgres_cmd:
                 logging.debug('Setup Postgres')

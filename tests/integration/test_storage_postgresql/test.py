@@ -168,7 +168,7 @@ def test_non_default_scema(started_cluster):
 
 
 def test_concurrent_queries(started_cluster):
-    conn = get_postgres_conn(True)
+    conn = get_postgres_conn(started_cluster, True)
     cursor = conn.cursor()
 
     node1.query('''
