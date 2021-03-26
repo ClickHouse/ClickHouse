@@ -170,7 +170,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     if need_drop_database:
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-        seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 10)
+        seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
         try:
             clickhouse_proc_create.communicate(("DROP DATABASE " + database), timeout=seconds_left)
         except TimeoutExpired:
@@ -207,7 +207,7 @@ def need_retry(stderr):
 def get_processlist(args):
     try:
         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        (stdout, _) = clickhouse_proc.communicate((b"SHOW PROCESSLIST FORMAT Vertical"), timeout=10)
+        (stdout, _) = clickhouse_proc.communicate((b"SHOW PROCESSLIST FORMAT Vertical"), timeout=20)
         return False, stdout.decode('utf-8')
     except Exception as ex:
         print("Exception", ex)
@@ -352,7 +352,7 @@ def run_tests_array(all_tests_with_params):
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
                         failed_to_check = False
                         try:
-                            clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=10)
+                            clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=20)
                         except:
                             failed_to_check = True
 

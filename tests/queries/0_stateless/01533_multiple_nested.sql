@@ -36,7 +36,7 @@ SYSTEM FLUSH LOGS;
 SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col1.a FROM %nested%'))
-    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
+    AND event_date >= yesterday() AND current_database = currentDatabase();
 
 SYSTEM DROP MARK CACHE;
 SELECT col3.n2.s FROM nested FORMAT Null;
@@ -46,7 +46,7 @@ SYSTEM FLUSH LOGS;
 SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col3.n2.s FROM %nested%'))
-    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
+    AND event_date >= yesterday() AND current_database = currentDatabase();
 
 DROP TABLE nested;
 
