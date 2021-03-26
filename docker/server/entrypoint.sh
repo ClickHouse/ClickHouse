@@ -46,9 +46,11 @@ DATA_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --
 TMP_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=tmp_path || true)"
 USER_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=user_files_path || true)"
 LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.log || true)"
-LOG_DIR="$(dirname "$LOG_PATH" || true)"
+LOG_DIR=""
+if [ -n "$LOG_PATH" ]; then LOG_DIR="$(dirname "$LOG_PATH")"; fi
 ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.errorlog || true)"
-ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH" || true)"
+ERROR_LOG_DIR=""
+if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; fi
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
