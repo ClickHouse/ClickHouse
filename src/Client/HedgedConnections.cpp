@@ -362,7 +362,7 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     epoll_event event;
     event.data.fd = -1;
     size_t events_count = 0;
-    bool blocking = async_callback ? false : true;
+    bool blocking = !static_cast<bool>(async_callback);
     while (events_count == 0)
     {
         events_count = epoll.getManyReady(1, &event, blocking);
