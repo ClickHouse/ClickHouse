@@ -1,5 +1,5 @@
 ---
-toc_priority: 68
+toc_priority: 43
 toc_title: Files
 ---
 
@@ -17,7 +17,7 @@ file(path)
 
 **Arguments**
 
--   `path` — The relative path to the file from `user_files_path`.
+-   `path` — The relative path to the file from `user_files_path`. Path to file support following globs in read-only mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc', 'def'` — strings.
 
 **Example**
 
