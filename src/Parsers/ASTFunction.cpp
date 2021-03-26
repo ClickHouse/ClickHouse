@@ -224,12 +224,19 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                  * a literal that is a negative number "-(-1)" or "- -1", this
                  * can not be formatted as `--1`, since this will be
                  * interpreted as a comment. Instead, negate the literal
-                 * in place.
+                 * in place. Another possible solution is to use parentheses,
+                 * but the old comment said it is impossible, without mentioning
+                 * the reason.
                  */
                 if (literal && name == "negate")
                 {
                     written = applyVisitor(
                         [&settings](const auto & value)
+                        // -INT_MAX is negated to -INT_MAX by the negate()
+                        // function, so we can implement this behavior here as
+                        // well. Technically it is an UB to perform such negation
+                        // w/o a cast to unsigned type.
+                        __attribute__((__no_sanitize__("undefined")))
                         {
                             using ValueType = std::decay_t<decltype(value)>;
                             if constexpr (isDecimalField<ValueType>())
