@@ -769,6 +769,10 @@ Example:
 log_query_threads=1
 ```
 
+## log_comment {#settings-log-comment}
+
+
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 The size of blocks (in a count of rows) to form for insertion into a table.
