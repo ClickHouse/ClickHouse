@@ -23,8 +23,7 @@ from system.query_log
 where
     query like '%01547_query_log_current_database%'
     and current_database = currentDatabase()
-    and event_date = today()
-    and event_time >= now() - interval 1 minute;
+    and event_date >= yesterday();
 
 -- at least two threads for processing
 -- (but one just waits for another, sigh)
