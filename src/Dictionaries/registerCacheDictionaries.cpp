@@ -1,6 +1,6 @@
 #include "CacheDictionary.h"
-#include "SSDCacheDictionaryStorage.h"
 #include "CacheDictionaryStorage.h"
+#include "SSDCacheDictionaryStorage.h"
 #include <Dictionaries/DictionaryFactory.h>
 
 namespace DB
@@ -20,13 +20,13 @@ CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     const DictionaryLifetime & dict_lifetime,
     DictionaryKeyType dictionary_key_type)
 {
-    String dictionary_type_prefix = dictionary_key_type == DictionaryKeyType::complex ? ".complex_key_cache." : ".cache.";
+    String dictionary_type_prefix = (dictionary_key_type == DictionaryKeyType::complex) ? ".complex_key_cache." : ".cache.";
     String dictionary_configuration_prefix = layout_prefix + dictionary_type_prefix;
 
     const size_t size = config.getUInt64(dictionary_configuration_prefix + "size_in_cells");
     if (size == 0)
         throw Exception(ErrorCodes::TOO_SMALL_BUFFER_SIZE,
-            "({}: cache dictionary cannot have 0 cells",
+            "({}): cache dictionary cannot have 0 cells",
             full_name);
 
     size_t dict_lifetime_seconds = static_cast<size_t>(dict_lifetime.max_sec);
@@ -59,7 +59,6 @@ SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     static constexpr size_t DEFAULT_READ_BUFFER_SIZE_BYTES = 16 * DEFAULT_SSD_BLOCK_SIZE_BYTES;
     static constexpr size_t DEFAULT_WRITE_BUFFER_SIZE_BYTES = DEFAULT_SSD_BLOCK_SIZE_BYTES;
 
-    static constexpr size_t DEFAULT_MAX_STORED_KEYS = 100000;
     static constexpr size_t DEFAULT_PARTITIONS_COUNT = 16;
 
     const size_t max_partitions_count
@@ -94,16 +93,11 @@ SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     if (directory_path.at(0) != '/')
         directory_path = std::filesystem::path{config.getString("path")}.concat(directory_path).string();
 
-    const size_t max_stored_keys_in_partition
-        = config.getInt64(dictionary_configuration_prefix + "max_stored_keys", DEFAULT_MAX_STORED_KEYS);
-    const size_t rounded_size = roundUpToPowerOfTwoOrZero(max_stored_keys_in_partition);
-
     SSDCacheDictionaryStorageConfiguration configuration{
         strict_max_lifetime_seconds,
         dict_lifetime,
         directory_path,
         max_partitions_count,
-        rounded_size,
         block_size,
         file_size / block_size,
         read_buffer_size / block_size,
@@ -194,7 +188,8 @@ DictionaryPtr createCacheDictionaryLayout(
     const bool allow_read_expired_keys = config.getBool(layout_prefix + ".cache.allow_read_expired_keys", false);
 
     auto storage_configuration = parseCacheStorageConfiguration(full_name, config, layout_prefix, dict_lifetime, dictionary_key_type);
-    auto storage = std::make_shared<CacheDictionaryStorage<dictionary_key_type>>(storage_configuration);
+
+    std::shared_ptr<ICacheDictionaryStorage> storage = std::make_shared<CacheDictionaryStorage<dictionary_key_type>>(dict_struct, storage_configuration);
 
     auto update_queue_configuration = parseCacheDictionaryUpdateQueueConfiguration(full_name, config, layout_prefix, dictionary_key_type);
 
