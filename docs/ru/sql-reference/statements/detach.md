@@ -16,3 +16,4 @@ DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Запроса `DETACH DATABASE` нет.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/detach/) <!--hide-->

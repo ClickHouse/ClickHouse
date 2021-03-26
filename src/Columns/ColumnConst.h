@@ -163,11 +163,6 @@ public:
         return res;
     }
 
-    const char * skipSerializedInArena(const char * pos) const override
-    {
-        return data->skipSerializedInArena(pos);
-    }
-
     void updateHashWithValue(size_t, SipHash & hash) const override
     {
         data->updateHashWithValue(0, hash);
@@ -210,8 +205,6 @@ public:
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
-
-    bool hasEqualValues() const override { return true; }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 

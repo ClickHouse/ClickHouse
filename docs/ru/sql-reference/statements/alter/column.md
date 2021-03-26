@@ -1,6 +1,6 @@
 ---
 toc_priority: 37
-toc_title: "Манипуляции со столбцами"
+toc_title: "\u041c\u0430\u043d\u0438\u043f\u0443\u043b\u044f\u0446\u0438\u0438\u0020\u0441\u043e\u0020\u0441\u0442\u043e\u043b\u0431\u0446\u0430\u043c\u0438"
 ---
 
 # Манипуляции со столбцами {#manipuliatsii-so-stolbtsami}
@@ -12,7 +12,6 @@ toc_title: "Манипуляции со столбцами"
 -   [CLEAR COLUMN](#alter_clear-column) — сбрасывает все значения в столбце для заданной партиции;
 -   [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
 -   [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
--   [MODIFY COLUMN REMOVE](#modify-remove) — удаляет какое-либо из свойств столбца.
 
 Подробное описание для каждого действия приведено ниже.
 
@@ -136,28 +135,6 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Запрос `ALTER` на изменение столбцов реплицируется. Соответствующие инструкции сохраняются в ZooKeeper, и затем каждая реплика их применяет. Все запросы `ALTER` выполняются в одном и том же порядке. Запрос ждёт выполнения соответствующих действий на всех репликах. Но при этом, запрос на изменение столбцов в реплицируемой таблице можно прервать, и все действия будут осуществлены асинхронно.
 
-## MODIFY COLUMN REMOVE {#modify-remove}
-
-Удаляет какое-либо из свойств столбца: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`.
-
-Синтаксис:
-
-```sql
-ALTER TABLE table_name MODIFY column_name REMOVE property;
-```
-
-**Пример**
-
-Удаление свойства TTL:
-
-```sql
-ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
-```
-
-## Смотрите также
-
-- [REMOVE TTL](ttl.md).
-
 ## Ограничения запроса ALTER {#ogranicheniia-zaprosa-alter}
 
 Запрос `ALTER` позволяет создавать и удалять отдельные элементы (столбцы) вложенных структур данных, но не вложенные структуры данных целиком. Для добавления вложенной структуры данных, вы можете добавить столбцы с именем вида `name.nested_name` и типом `Array(T)` - вложенная структура данных полностью эквивалентна нескольким столбцам-массивам с именем, имеющим одинаковый префикс до точки.
@@ -170,3 +147,4 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 Для таблиц, которые не хранят данные самостоятельно (типа [Merge](../../../sql-reference/statements/alter/index.md) и [Distributed](../../../sql-reference/statements/alter/index.md)), `ALTER` всего лишь меняет структуру таблицы, но не меняет структуру подчинённых таблиц. Для примера, при ALTER-е таблицы типа `Distributed`, вам также потребуется выполнить запрос `ALTER` для таблиц на всех удалённых серверах.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/column/) <!--hide-->

@@ -5,14 +5,14 @@
 #endif
 
 #if USE_PROTOBUF
+#    include <DataTypes/IDataType.h>
+#    include <Formats/ProtobufReader.h>
 #    include <Processors/Formats/IRowInputFormat.h>
 
 namespace DB
 {
 class Block;
 class FormatSchemaInfo;
-class ProtobufReader;
-class ProtobufSerializer;
 
 
 /** Stream designed to deserialize data from the google protobuf format.
@@ -29,19 +29,18 @@ class ProtobufSerializer;
 class ProtobufRowInputFormat : public IRowInputFormat
 {
 public:
-    ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, const Params & params_, const FormatSchemaInfo & schema_info_, bool with_length_delimiter_);
+    ProtobufRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSchemaInfo & info_, const bool use_length_delimiters_);
     ~ProtobufRowInputFormat() override;
 
     String getName() const override { return "ProtobufRowInputFormat"; }
 
-    bool readRow(MutableColumns & columns, RowReadExtension &) override;
+    bool readRow(MutableColumns & columns, RowReadExtension & extra) override;
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
 private:
-    std::unique_ptr<ProtobufReader> reader;
-    std::vector<size_t> missing_column_indices;
-    std::unique_ptr<ProtobufSerializer> serializer;
+    DataTypes data_types;
+    ProtobufReader reader;
 };
 
 }

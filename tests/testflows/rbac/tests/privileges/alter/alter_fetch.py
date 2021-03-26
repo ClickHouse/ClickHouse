@@ -1,3 +1,5 @@
+from multiprocessing.dummy import Pool
+
 from testflows.core import *
 from testflows.asserts import error
 
@@ -5,7 +7,7 @@ from rbac.requirements import *
 from rbac.helper.common import *
 import rbac.helper.errors as errors
 
-aliases = {"ALTER FETCH PARTITION", "FETCH PARTITION", "ALL"}
+aliases = {"ALTER FETCH PARTITION", "FETCH PARTITION"}
 
 @TestSuite
 def privilege_granted_directly_or_via_role(self, table_type, privilege, node=None):
@@ -39,17 +41,10 @@ def privilege_check(grant_target_name, user_name, table_type, privilege, node=No
 
     with Scenario("user without privilege", setup=instrument_clickhouse_server_log):
         table_name = f"merge_tree_{getuid()}"
-
         with table(node, table_name, table_type):
 
-            with When("I grant the user NONE privilege"):
-                node.query(f"GRANT NONE TO {grant_target_name}")
-
-            with And("I grant the user USAGE privilege"):
-                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-            with Then("I attempt to fetch a partition without privilege"):
-                node.query(f"ALTER TABLE {table_name} FETCH PARTITION 1 FROM '/clickhouse/'", settings = [("user", user_name)],
+            with When("I attempt to fetch a partition without privilege"):
+                node.query(f"ALTER TABLE {table_name} FETCH PARTITION 1 FROM '/clickhouse/tables/{{shard}}/{table_name}'", settings = [("user", user_name)],
                     exitcode=exitcode, message=message)
 
     with Scenario("user with privilege", setup=instrument_clickhouse_server_log):
@@ -60,7 +55,7 @@ def privilege_check(grant_target_name, user_name, table_type, privilege, node=No
                 node.query(f"GRANT {privilege} ON {table_name} TO {grant_target_name}")
 
             with Then("I attempt to fetch a partition"):
-                node.query(f"ALTER TABLE {table_name} FETCH PARTITION 1 FROM '/clickhouse/'", settings = [("user", user_name)],
+                node.query(f"ALTER TABLE {table_name} FETCH PARTITION 1 FROM '/clickhouse/tables/{{shard}}/{table_name}'", settings = [("user", user_name)],
                     exitcode=231, message="DB::Exception: No node")
 
     with Scenario("user with revoked privilege", setup=instrument_clickhouse_server_log):
@@ -74,14 +69,12 @@ def privilege_check(grant_target_name, user_name, table_type, privilege, node=No
                 node.query(f"REVOKE {privilege} ON {table_name} FROM {grant_target_name}")
 
             with Then("I attempt to fetch a partition"):
-                node.query(f"ALTER TABLE {table_name} FETCH PARTITION 1 FROM '/clickhouse/'", settings = [("user", user_name)],
+                node.query(f"ALTER TABLE {table_name} FETCH PARTITION 1 FROM '/clickhouse/tables/{{shard}}/{table_name}'", settings = [("user", user_name)],
                     exitcode=exitcode, message=message)
 
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterFetch("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type",[
     ("ReplicatedMergeTree-sharded_cluster",),

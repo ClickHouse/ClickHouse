@@ -117,7 +117,7 @@ struct QueryPlanSettings
 {
     QueryPlan::ExplainPlanOptions query_plan_options;
 
-    /// Apply query plan optimizations.
+    /// Apply query plan optimisations.
     bool optimize = true;
 
     constexpr static char name[] = "PLAN";
@@ -251,7 +251,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         interpreter.buildQueryPlan(plan);
 
         if (settings.optimize)
-            plan.optimize(QueryPlanOptimizationSettings(context.getSettingsRef()));
+            plan.optimize();
 
         plan.explainPlan(buf, settings.query_plan_options);
     }
@@ -265,7 +265,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), context, SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
-        auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context.getSettingsRef()));
+        auto pipeline = plan.buildQueryPipeline();
 
         if (settings.graph)
         {

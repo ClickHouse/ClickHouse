@@ -93,7 +93,7 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
     {
         const auto & column = index_sample_block.getByPosition(i);
         const auto & type = column.type;
-        ColumnPtr new_column = type->createColumn();
+        auto new_column = type->createColumn();
 
         IDataType::DeserializeBinaryBulkSettings settings;
         settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -101,9 +101,9 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
 
         IDataType::DeserializeBinaryBulkStatePtr state;
         type->deserializeBinaryBulkStatePrefix(settings, state);
-        type->deserializeBinaryBulkWithMultipleStreams(new_column, rows_to_read, settings, state);
+        type->deserializeBinaryBulkWithMultipleStreams(*new_column, rows_to_read, settings, state);
 
-        block.insert(ColumnWithTypeAndName(new_column, type, column.name));
+        block.insert(ColumnWithTypeAndName(new_column->getPtr(), type, column.name));
     }
 }
 

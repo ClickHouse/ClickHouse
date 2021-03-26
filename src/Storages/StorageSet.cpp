@@ -242,12 +242,15 @@ void registerStorageSet(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         bool has_settings = args.storage_def->settings;
-        SetSettings set_settings;
-        if (has_settings)
-            set_settings.loadFromQuery(*args.storage_def);
 
-        DiskPtr disk = args.context.getDisk(set_settings.disk);
-        return StorageSet::create(disk, args.relative_data_path, args.table_id, args.columns, args.constraints, set_settings.persistent);
+        auto set_settings = std::make_unique<SetSettings>();
+        if (has_settings)
+        {
+            set_settings->loadFromQuery(*args.storage_def);
+        }
+
+        DiskPtr disk = args.context.getDisk(set_settings->disk);
+        return StorageSet::create(disk, args.relative_data_path, args.table_id, args.columns, args.constraints, set_settings->persistent);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }
 

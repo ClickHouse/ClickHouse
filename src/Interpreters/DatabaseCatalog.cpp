@@ -8,7 +8,6 @@
 #include <Poco/File.h>
 #include <Common/quoteString.h>
 #include <Storages/StorageMemory.h>
-#include <Storages/LiveView/TemporaryLiveViewCleaner.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
@@ -149,16 +148,10 @@ void DatabaseCatalog::loadDatabases()
     std::lock_guard lock{tables_marked_dropped_mutex};
     if (!tables_marked_dropped.empty())
         (*drop_task)->schedule();
-
-    /// Another background thread which drops temporary LiveViews.
-    /// We should start it after loadMarkedAsDroppedTables() to avoid race condition.
-    TemporaryLiveViewCleaner::instance().startupIfNecessary();
 }
 
 void DatabaseCatalog::shutdownImpl()
 {
-    TemporaryLiveViewCleaner::shutdown();
-
     if (drop_task)
         (*drop_task)->deactivate();
 
@@ -531,7 +524,6 @@ std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
 DatabaseCatalog::DatabaseCatalog(Context & global_context_)
     : global_context(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
-    TemporaryLiveViewCleaner::init(global_context);
 }
 
 DatabaseCatalog & DatabaseCatalog::init(Context & global_context_)
@@ -609,7 +601,7 @@ DatabaseCatalog::updateDependency(const StorageID & old_from, const StorageID & 
         view_dependencies[{new_from.getDatabaseName(), new_from.getTableName()}].insert(new_where);
 }
 
-DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table)
+std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
     std::unique_lock lock(ddl_guards_mutex);
     auto db_guard_iter = ddl_guards.try_emplace(database).first;
@@ -956,38 +948,36 @@ DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<s
     ++it->second.counter;
     guards_lock.unlock();
     table_lock = std::unique_lock(*it->second.mutex);
-    is_database_guard = elem.empty();
-    if (!is_database_guard)
+    bool is_database = elem.empty();
+    if (!is_database)
     {
 
         bool locked_database_for_read = db_mutex.try_lock_shared();
         if (!locked_database_for_read)
         {
-            releaseTableLock();
+            removeTableLock();
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
         }
     }
 }
 
-void DDLGuard::releaseTableLock() noexcept
+void DDLGuard::removeTableLock()
 {
-    if (table_lock_removed)
-        return;
-
-    table_lock_removed = true;
     guards_lock.lock();
-    UInt32 counter = --it->second.counter;
-    table_lock.unlock();
-    if (counter == 0)
+    --it->second.counter;
+    if (!it->second.counter)
+    {
+        table_lock.unlock();
         map.erase(it);
-    guards_lock.unlock();
+    }
 }
 
 DDLGuard::~DDLGuard()
 {
-    if (!is_database_guard)
+    bool is_database = it->first.empty();
+    if (!is_database)
         db_mutex.unlock_shared();
-    releaseTableLock();
+    removeTableLock();
 }
 
 }

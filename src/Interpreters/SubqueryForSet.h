@@ -40,7 +40,7 @@ struct SubqueryForSet
     void makeSource(std::shared_ptr<InterpreterSelectWithUnionQuery> & interpreter,
                     NamesWithAliases && joined_block_aliases_);
 
-    void addJoinActions(ExpressionActionsPtr actions);
+    void setJoinActions(ExpressionActionsPtr actions);
 
     bool insertJoinedBlock(Block & block);
     void setTotals(Block totals);

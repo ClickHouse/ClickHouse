@@ -16,15 +16,7 @@ inline ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithoutFailover(cons
 /// Timeouts for the case when we will try many addresses in a loop.
 inline ConnectionTimeouts ConnectionTimeouts::getTCPTimeoutsWithFailover(const Settings & settings)
 {
-    return ConnectionTimeouts(
-        settings.connect_timeout_with_failover_ms,
-        settings.send_timeout,
-        settings.receive_timeout,
-        settings.tcp_keep_alive_timeout,
-        0,
-        settings.connect_timeout_with_failover_secure_ms,
-        settings.hedged_connection_timeout,
-        settings.receive_data_timeout);
+    return ConnectionTimeouts(settings.connect_timeout_with_failover_ms, settings.send_timeout, settings.receive_timeout, settings.tcp_keep_alive_timeout, 0, settings.connect_timeout_with_failover_secure_ms);
 }
 
 inline ConnectionTimeouts ConnectionTimeouts::getHTTPTimeouts(const Context & context)

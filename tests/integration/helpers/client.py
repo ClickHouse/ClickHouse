@@ -61,10 +61,7 @@ class QueryTimeoutExceedException(Exception):
 
 
 class QueryRuntimeException(Exception):
-    def __init__(self, message, returncode, stderr):
-        super(QueryRuntimeException, self).__init__(message)
-        self.returncode = returncode
-        self.stderr = stderr
+    pass
 
 
 class CommandRequest:
@@ -109,7 +106,7 @@ class CommandRequest:
 
         if (self.process.returncode != 0 or stderr) and not self.ignore_error:
             raise QueryRuntimeException(
-                'Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr), self.process.returncode, stderr)
+                'Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
 
         return stdout
 
@@ -125,7 +122,7 @@ class CommandRequest:
             raise QueryTimeoutExceedException('Client timed out!')
 
         if (self.process.returncode == 0):
-            raise QueryRuntimeException('Client expected to be failed but succeeded! stdout: {}'.format(stdout), self.process.returncode, stderr)
+            raise QueryRuntimeException('Client expected to be failed but succeeded! stdout: {}'.format(stdout))
 
         return stderr
 

@@ -48,7 +48,7 @@ private:
         SingleExpressionEvaluation
     };
 
-    using ConstantExpressionTemplates = std::vector<std::optional<ConstantExpressionTemplate>>;
+    typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
 
     Chunk generate() override;
 

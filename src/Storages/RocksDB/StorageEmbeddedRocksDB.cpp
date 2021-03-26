@@ -24,7 +24,6 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/convertFieldToType.h>
 
 #include <Poco/File.h>
 #include <Poco/Path.h>
@@ -45,12 +44,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-using FieldVectorPtr = std::shared_ptr<FieldVector>;
-
 
 // returns keys may be filter by condition
-static bool traverseASTFilter(
-    const String & primary_key, const DataTypePtr & primary_key_type, const ASTPtr & elem, const PreparedSets & sets, FieldVectorPtr & res)
+static bool traverseASTFilter(const String & primary_key, const DataTypePtr & primary_key_type, const ASTPtr & elem, const PreparedSets & sets, FieldVector & res)
 {
     const auto * function = elem->as<ASTFunction>();
     if (!function)
@@ -67,9 +63,13 @@ static bool traverseASTFilter(
     else if (function->name == "or")
     {
         // make sure every child has the key filter condition
+        FieldVector child_res;
         for (const auto & child : function->arguments->children)
-            if (!traverseASTFilter(primary_key, primary_key_type, child, sets, res))
+        {
+            if (!traverseASTFilter(primary_key, primary_key_type, child, sets, child_res))
                 return false;
+        }
+        res.insert(res.end(), child_res.begin(), child_res.end());
         return true;
     }
     else if (function->name == "equals" || function->name == "in")
@@ -108,7 +108,9 @@ static bool traverseASTFilter(
             prepared_set->checkColumnsNumber(1);
             const auto & set_column = *prepared_set->getSetElements()[0];
             for (size_t row = 0; row < set_column.size(); ++row)
-                res->push_back(set_column[row]);
+            {
+                res.push_back(set_column[row]);
+            }
             return true;
         }
         else
@@ -123,12 +125,10 @@ static bool traverseASTFilter(
             if (ident->name() != primary_key)
                 return false;
 
-            /// function->name == "equals"
+            //function->name == "equals"
             if (const auto * literal = value->as<ASTLiteral>())
             {
-                auto converted_field = convertFieldToType(literal->value, *primary_key_type);
-                if (!converted_field.isNull())
-                    res->push_back(converted_field);
+                res.push_back(literal->value);
                 return true;
             }
         }
@@ -140,14 +140,14 @@ static bool traverseASTFilter(
 /** Retrieve from the query a condition of the form `key = 'key'`, `key in ('xxx_'), from conjunctions in the WHERE clause.
   * TODO support key like search
   */
-static std::pair<FieldVectorPtr, bool> getFilterKeys(
-    const String & primary_key, const DataTypePtr & primary_key_type, const SelectQueryInfo & query_info)
+static std::pair<FieldVector, bool> getFilterKeys(const String & primary_key, const DataTypePtr & primary_key_type, const SelectQueryInfo & query_info)
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
     if (!select.where())
-        return {{}, true};
-
-    FieldVectorPtr res = std::make_shared<FieldVector>();
+    {
+        return std::make_pair(FieldVector{}, true);
+    }
+    FieldVector res;
     auto matched_keys = traverseASTFilter(primary_key, primary_key_type, select.where(), query_info.sets, res);
     return std::make_pair(res, !matched_keys);
 }
@@ -159,19 +159,23 @@ public:
     EmbeddedRocksDBSource(
         const StorageEmbeddedRocksDB & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        FieldVectorPtr keys_,
-        FieldVector::const_iterator begin_,
-        FieldVector::const_iterator end_,
+        const FieldVector & keys_,
+        const size_t start_,
+        const size_t end_,
         const size_t max_block_size_)
         : SourceWithProgress(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-        , keys(std::move(keys_))
-        , begin(begin_)
+        , start(start_)
         , end(end_)
-        , it(begin)
         , max_block_size(max_block_size_)
     {
+        // slice the keys
+        if (end > start)
+        {
+            keys.resize(end - start);
+            std::copy(keys_.begin() + start, keys_.begin() + end, keys.begin());
+        }
     }
 
     String getName() const override
@@ -181,34 +185,27 @@ public:
 
     Chunk generate() override
     {
-        if (it >= end)
+        if (processed_keys >= keys.size() || (start == end))
             return {};
 
-        size_t num_keys = end - begin;
-
-        std::vector<std::string> serialized_keys(num_keys);
-        std::vector<rocksdb::Slice> slices_keys(num_keys);
+        std::vector<rocksdb::Slice> slices_keys;
+        slices_keys.reserve(keys.size());
+        std::vector<String> values;
+        std::vector<WriteBufferFromOwnString> wbs(keys.size());
 
         const auto & sample_block = metadata_snapshot->getSampleBlock();
         const auto & key_column = sample_block.getByName(storage.primary_key);
         auto columns = sample_block.cloneEmptyColumns();
         size_t primary_key_pos = sample_block.getPositionByName(storage.primary_key);
 
-        size_t rows_processed = 0;
-        while (it < end && rows_processed < max_block_size)
+        for (size_t i = processed_keys; i < std::min(keys.size(), processed_keys + max_block_size); ++i)
         {
-            WriteBufferFromString wb(serialized_keys[rows_processed]);
-            key_column.type->serializeBinary(*it, wb);
-            wb.finalize();
-            slices_keys[rows_processed] = std::move(serialized_keys[rows_processed]);
-
-            ++it;
-            ++rows_processed;
+            key_column.type->serializeBinary(keys[i], wbs[i]);
+            auto str_ref = wbs[i].stringRef();
+            slices_keys.emplace_back(str_ref.data, str_ref.size);
         }
 
-        std::vector<String> values;
         auto statuses = storage.rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
-
         for (size_t i = 0; i < statuses.size(); ++i)
         {
             if (statuses[i].ok())
@@ -224,6 +221,7 @@ public:
                 }
             }
         }
+        processed_keys += max_block_size;
 
         UInt64 num_rows = columns.at(0)->size();
         return Chunk(std::move(columns), num_rows);
@@ -233,11 +231,12 @@ private:
     const StorageEmbeddedRocksDB & storage;
 
     const StorageMetadataPtr metadata_snapshot;
-    FieldVectorPtr keys;
-    FieldVector::const_iterator begin;
-    FieldVector::const_iterator end;
-    FieldVector::const_iterator it;
+    const size_t start;
+    const size_t end;
     const size_t max_block_size;
+    FieldVector keys;
+
+    size_t processed_keys = 0;
 };
 
 
@@ -290,8 +289,7 @@ Pipe StorageEmbeddedRocksDB::read(
         unsigned num_streams)
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
-
-    FieldVectorPtr keys;
+    FieldVector keys;
     bool all_scan = false;
 
     auto primary_key_data_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
@@ -304,34 +302,37 @@ Pipe StorageEmbeddedRocksDB::read(
     }
     else
     {
-        if (keys->empty())
+        if (keys.empty())
             return {};
 
-        std::sort(keys->begin(), keys->end());
-        keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
+        std::sort(keys.begin(), keys.end());
+        auto unique_iter = std::unique(keys.begin(), keys.end());
+        if (unique_iter != keys.end())
+            keys.erase(unique_iter, keys.end());
 
         Pipes pipes;
+        size_t start = 0;
+        size_t end;
 
-        size_t num_keys = keys->size();
-        size_t num_threads = std::min(size_t(num_streams), keys->size());
+        const size_t num_threads = std::min(size_t(num_streams), keys.size());
+        const size_t batch_per_size = ceil(keys.size() * 1.0 / num_threads);
 
-        assert(num_keys <= std::numeric_limits<uint32_t>::max());
-        assert(num_threads <= std::numeric_limits<uint32_t>::max());
-
-        for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+        for (size_t t = 0; t < num_threads; ++t)
         {
-            size_t begin = num_keys * thread_idx / num_threads;
-            size_t end = num_keys * (thread_idx + 1) / num_threads;
+            if (start >= keys.size())
+                start = end = 0;
+            else
+                end = start + batch_per_size > keys.size() ? keys.size() : start + batch_per_size;
 
-            pipes.emplace_back(std::make_shared<EmbeddedRocksDBSource>(
-                    *this, metadata_snapshot, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
+            pipes.emplace_back(
+                std::make_shared<EmbeddedRocksDBSource>(*this, metadata_snapshot, keys, start, end, max_block_size));
+            start += batch_per_size;
         }
         return Pipe::unitePipes(std::move(pipes));
     }
 }
 
-BlockOutputStreamPtr StorageEmbeddedRocksDB::write(
-    const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageEmbeddedRocksDB::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
     return std::make_shared<EmbeddedRocksDBBlockOutputStream>(*this, metadata_snapshot);
 }

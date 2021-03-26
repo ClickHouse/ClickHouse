@@ -35,7 +35,7 @@ public:
     {
     }
 
-    /** Для того, чтобы создать Row, используйте соответствующие методы UseQueryResult. */
+    /** Для того, чтобы создать Row, используйте соответствующие методы UseQueryResult или StoreQueryResult. */
     Row(MYSQL_ROW row_, ResultBase * res_, MYSQL_LENGTHS lengths_)
         : row(row_), res(res_), lengths(lengths_)
     {

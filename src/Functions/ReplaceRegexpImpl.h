@@ -164,10 +164,7 @@ struct ReplaceRegexpImpl
         size_t size = offsets.size();
         res_offsets.resize(size);
 
-        typename re2_st::RE2::Options regexp_options;
-        /// Never write error messages to stderr. It's ignorant to do it from library code.
-        regexp_options.set_log_errors(false);
-        re2_st::RE2 searcher(needle, regexp_options);
+        re2_st::RE2 searcher(needle);
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
         Instructions instructions = createInstructions(replacement, num_captures);
@@ -196,10 +193,7 @@ struct ReplaceRegexpImpl
         res_data.reserve(data.size());
         res_offsets.resize(size);
 
-        typename re2_st::RE2::Options regexp_options;
-        /// Never write error messages to stderr. It's ignorant to do it from library code.
-        regexp_options.set_log_errors(false);
-        re2_st::RE2 searcher(needle, regexp_options);
+        re2_st::RE2 searcher(needle);
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, static_cast<int>(max_captures));
 
         Instructions instructions = createInstructions(replacement, num_captures);
