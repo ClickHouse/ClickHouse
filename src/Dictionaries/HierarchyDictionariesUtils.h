@@ -51,8 +51,8 @@ namespace detail
       *
       * If hierarchy_null_value will be 0. Requested keys [1, 2, 3, 4, 5].
       * Result: [1], [2, 1], [3, 1], [4, 2, 1], []
-      * Elements: [1, 2, 1, 3, 4, 4, 2, 1]
-      * Offsets: [1, 2, 2, 3, 0]
+      * Elements: [1, 2, 1, 3, 1, 4, 2, 1]
+      * Offsets: [1, 3, 5, 8, 8]
       */
     template <typename KeyType, typename IsKeyValidFunc, typename GetParentKeyFunc>
     ElementsAndOffsets<KeyType> getHierarchy(
@@ -113,14 +113,7 @@ namespace detail
                     size_t end_index = offsets[offset];
 
                     current_hierarchy_depth += end_index - start_index;
-
-                    /// TODO: Insert part of pod array into itself
-                    while (start_index < end_index)
-                    {
-                        elements.emplace_back(elements[start_index]);
-                        ++start_index;
-                    }
-
+                    elements.insertFromItself(elements.begin() + start_index, elements.begin() + end_index);
                     break;
                 }
 
@@ -162,7 +155,7 @@ namespace detail
         IsKeyValidFunc && is_key_valid_func,
         GetParentKeyFunc && get_parent_func)
     {
-        assert(hierarchy_keys.size() == hierarchy_in_keys.size());
+        assert(keys.size() == in_keys.size());
 
         PaddedPODArray<UInt8> result;
         result.resize_fill(keys.size());
@@ -212,10 +205,15 @@ namespace detail
       * 4   2
       *
       * Example. Strategy GetAllDescendantsStrategy.
-      * Requested keys [0, 1, 2, 5].
-      * Result: [2, 3, 4], [2, 4], [4], []
-      * Elements: [2, 3, 4, 2, 4, 4]
-      * Offsets: [3, 2, 1, 0]
+      * Requested keys [0, 1, 2, 3, 4].
+      * Result: [1, 2, 3, 4], [2, 2, 4], [4], [], []
+      * Elements: [1, 2, 3, 4, 2, 3, 4, 4]
+      * Offsets: [4, 7, 8, 8, 8]
+      *
+      * Example. Strategy GetDescendantsAtSpecificLevelStrategy with level 1.
+      * Requested keys [0, 1, 2, 3, 4].
+      * Result: [1], [2, 3], [4], [], [];
+      * Offsets: [1, 3, 4, 4, 4];
       */
     template <typename KeyType, typename Strategy>
     ElementsAndOffsets<KeyType> getDescendants(
@@ -319,13 +317,9 @@ namespace detail
                         }
                         else
                         {
-                            /// TODO: Insert part of pod array
-                            while (range.start_index != range.end_index)
-                            {
-                                descendants.emplace_back(descendants[range.start_index]);
-                                ++range.start_index;
-                            }
-
+                            auto insert_start_iterator = descendants.begin() + range.start_index;
+                            auto insert_end_iterator = descendants.begin() + range.end_index;
+                            descendants.insertFromItself(insert_start_iterator, insert_end_iterator);
                             continue;
                         }
                     }

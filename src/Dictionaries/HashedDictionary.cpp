@@ -307,13 +307,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
         const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
         const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
 
-        auto is_key_valid_func = [&](auto & key)
-        {
-            if constexpr (sparse)
-                return parent_keys_map.find(key) != parent_keys_map.end();
-            else
-                return parent_keys_map.find(key) != nullptr;
-        };
+        auto is_key_valid_func = [&](auto & key) { return parent_keys_map.find(key) != parent_keys_map.end(); };
 
         auto get_parent_func = [&](auto & hierarchy_key)
         {
@@ -321,16 +315,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
 
             auto it = parent_keys_map.find(hierarchy_key);
 
-            if constexpr (sparse)
-            {
-                if (it != parent_keys_map.end())
-                    result = it->second;
-            }
-            else
-            {
-                if (it != nullptr)
-                    result = it->getMapped();
-            }
+            if (it != parent_keys_map.end())
+                result = getValueFromCell(it);
 
             return result;
         };
@@ -367,13 +353,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
         const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
         const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
 
-        auto is_key_valid_func = [&](auto & key)
-        {
-            if constexpr (sparse)
-                return parent_keys_map.find(key) != parent_keys_map.end();
-            else
-                return parent_keys_map.find(key) != nullptr;
-        };
+        auto is_key_valid_func = [&](auto & key) { return parent_keys_map.find(key) != parent_keys_map.end(); };
 
         auto get_parent_func = [&](auto & hierarchy_key)
         {
@@ -381,16 +361,8 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 
             auto it = parent_keys_map.find(hierarchy_key);
 
-            if constexpr (sparse)
-            {
-                if (it != parent_keys_map.end())
-                    result = it->second;
-            }
-            else
-            {
-                if (it != nullptr)
-                    result = it->getMapped();
-            }
+            if (it != parent_keys_map.end())
+                result = getValueFromCell(it);
 
             return result;
         };
