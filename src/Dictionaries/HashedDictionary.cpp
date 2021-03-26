@@ -2,6 +2,8 @@
 
 #include <ext/size.h>
 
+#include <absl/container/flat_hash_map.h>
+
 #include <Core/Defines.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -155,98 +157,91 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
     const DictionaryAttribute & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
     DefaultValueProvider default_value_provider(dictionary_attribute.null_value, default_values_column);
 
+    /// TODO: Check extractor performance
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, temporary_complex_key_arena);
     const auto & requested_keys = extractor.getKeys();
 
-    auto result_column = dictionary_attribute.type->createColumn();
+    auto result_column = dictionary_attribute.nested_type->createColumn();
 
     size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     const auto & attribute = attributes[attribute_index];
 
     size_t requested_keys_size = requested_keys.size();
 
-    if (unlikely(attribute.is_complex_type))
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
-        const auto & attribute_container = std::get<ComplexAttributeCollectionType<Field>>(attribute.container);
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnType = std::conditional_t<
+            std::is_same_v<AttributeType, String>,
+            ColumnString,
+            std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<ValueType>, ColumnVector<AttributeType>>>;
 
-        Field row_value_to_insert;
+        const auto & attribute_container = std::get<CollectionType<ValueType>>(attribute.container);
+        ColumnType & result_column_typed = static_cast<ColumnType &>(*result_column);
+
+        if constexpr (std::is_same_v<ColumnType, ColumnString>)
+        {
+            result_column_typed.reserve(requested_keys_size);
+
+            for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
+            {
+                auto & requested_key = requested_keys[requested_key_index];
+                auto it = attribute_container.find(requested_key);
+
+                if (it != attribute_container.end())
+                {
+                    StringRef item = getValueFromCell(it);
+                    result_column->insertData(item.data, item.size);
+                }
+                else
+                {
+                    Field default_value = default_value_provider.getDefaultValue(requested_key_index);
+                    String & default_value_string = default_value.get<String>();
+                    result_column->insertData(default_value_string.data(), default_value_string.size());
+                }
+            }
+        }
+        else
+        {
+            auto & result_data = result_column_typed.getData();
+            result_data.resize_fill(requested_keys_size);
+
+            for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
+            {
+                auto & requested_key = requested_keys[requested_key_index];
+
+                auto it = attribute_container.find(requested_key);
+
+                if (it != attribute_container.end())
+                {
+                    ValueType item = getValueFromCell(it);
+                    result_data[requested_key_index] = item;
+                }
+                else
+                {
+                    auto default_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
+                    result_data[requested_key_index] = default_value_to_insert.get<NearestFieldType<ValueType>>();
+                }
+            }
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    if (attribute.is_nullable_set)
+    {
+        ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(requested_keys_size, false);
+        ColumnUInt8::Container& vec_null_map_to = col_null_map_to->getData();
 
         for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
         {
-            auto & requested_key = requested_keys[requested_key_index];
-            auto it = attribute_container.find(requested_key);
-
-            if (it != attribute_container.end())
-                row_value_to_insert = getValueFromCell(it);
-            else
-                row_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
-
-            result_column->insert(row_value_to_insert);
+            auto key = requested_keys[requested_key_index];
+            vec_null_map_to[requested_key_index] = (attribute.is_nullable_set->find(key) != nullptr);
         }
-    }
-    else
-    {
-        auto type_call = [&](const auto & dictionary_attribute_type)
-        {
-            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-            using AttributeType = typename Type::AttributeType;
-            using ValueType = DictionaryValueType<AttributeType>;
-            using ColumnType = std::conditional_t<
-                std::is_same_v<AttributeType, String>,
-                ColumnString,
-                std::conditional_t<IsDecimalNumber<AttributeType>, ColumnDecimal<ValueType>, ColumnVector<AttributeType>>>;
 
-            const auto & attribute_container = std::get<CollectionType<ValueType>>(attribute.container);
-            ColumnType & result_column_typed = static_cast<ColumnType &>(*result_column);
-
-            if constexpr (std::is_same_v<ColumnType, ColumnString>)
-            {
-                result_column_typed.reserve(requested_keys_size);
-
-                for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
-                {
-                    auto & requested_key = requested_keys[requested_key_index];
-                    auto it = attribute_container.find(requested_key);
-
-                    if (it != attribute_container.end())
-                    {
-                        StringRef item = getValueFromCell(it);
-                        result_column->insertData(item.data, item.size);
-                    }
-                    else
-                    {
-                        Field default_value = default_value_provider.getDefaultValue(requested_key_index);
-                        String & default_value_string = default_value.get<String>();
-                        result_column->insertData(default_value_string.data(), default_value_string.size());
-                    }
-                }
-            }
-            else
-            {
-                auto & result_data = result_column_typed.getData();
-                result_data.resize_fill(requested_keys_size);
-
-                for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
-                {
-                    auto & requested_key = requested_keys[requested_key_index];
-
-                    auto it = attribute_container.find(requested_key);
-
-                    if (it != attribute_container.end())
-                    {
-                        ValueType item = getValueFromCell(it);
-                        result_data[requested_key_index] = item;
-                    }
-                    else
-                    {
-                        auto default_value_to_insert = default_value_provider.getDefaultValue(requested_key_index);
-                        result_data[requested_key_index] = default_value_to_insert.get<NearestFieldType<ValueType>>();
-                    }
-                }
-            }
-        };
-
-        callOnDictionaryAttributeType(attribute.type, type_call);
+        result_column = ColumnNullable::create(std::move(result_column), std::move(col_null_map_to));
     }
 
     query_count.fetch_add(requested_keys.size(), std::memory_order_relaxed);
@@ -260,6 +255,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
     if (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
+    /// TODO: Check performance of extractor
     Arena complex_keys_arena;
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_keys_arena);
 
@@ -275,14 +271,18 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
         return result;
     }
 
-    /// Contaiiner
+    const auto & attribute = attributes.front();
 
     getAttributeContainer(0, [&](const auto & container)
     {
         for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
         {
             const auto & requested_key = keys[requested_key_index];
+
             out[requested_key_index] = container.find(requested_key) != container.end();
+
+            if (unlikely(attribute.is_nullable_set) && !out[requested_key_index])
+                out[requested_key_index] = attribute.is_nullable_set->find(requested_key) != nullptr;
         }
     });
 
@@ -416,26 +416,17 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 
     for (const auto & dictionary_attribute : dict_struct.attributes)
     {
-        bool is_complex_type = dictionary_attribute.is_nullable || dictionary_attribute.is_array;
-
         auto type_call = [&, this](const auto & dictionary_attribute_type)
         {
             using Type = std::decay_t<decltype(dictionary_attribute_type)>;
             using AttributeType = typename Type::AttributeType;
             using ValueType = DictionaryValueType<AttributeType>;
 
+            auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
             std::unique_ptr<Arena> string_arena = std::is_same_v<AttributeType, String> ? std::make_unique<Arena>() : nullptr;
 
-            if (is_complex_type)
-            {
-                Attribute attribute{dictionary_attribute.underlying_type, is_complex_type, ComplexAttributeCollectionType<Field>(), std::move(string_arena)};
-                attributes.emplace_back(std::move(attribute));
-            }
-            else
-            {
-                Attribute attribute{dictionary_attribute.underlying_type, is_complex_type, CollectionType<ValueType>(), std::move(string_arena)};
-                attributes.emplace_back(std::move(attribute));
-            }
+            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), CollectionType<ValueType>(), std::move(string_arena)};
+            attributes.emplace_back(std::move(attribute));
         };
 
         callOnDictionaryAttributeType(dictionary_attribute.underlying_type, type_call);
@@ -567,6 +558,9 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
                 auto key = keys_extracted_from_block[key_index];
                 auto it = container.find(key);
 
+                if (attribute.is_nullable_set && (attribute.is_nullable_set->find(key) != nullptr))
+                    continue;
+
                 if (it != container.end())
                     continue;
 
@@ -575,11 +569,13 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
 
                 attribute_column.get(key_index, column_value_to_insert);
 
-                if constexpr (std::is_same_v<AttributeValueType, Field>)
+                if (attribute.is_nullable_set && column_value_to_insert.isNull())
                 {
-                    container.insert({key, column_value_to_insert});
+                    attribute.is_nullable_set->insert(key);
+                    continue;
                 }
-                else if constexpr (std::is_same_v<AttributeValueType, StringRef>)
+
+                if constexpr (std::is_same_v<AttributeValueType, StringRef>)
                 {
                     String & value_to_insert = column_value_to_insert.get<String>();
                     size_t value_to_insert_size = value_to_insert.size();
@@ -696,6 +692,9 @@ BlockInputStreamPtr HashedDictionary<dictionary_key_type, sparse>::getBlockInput
     PaddedPODArray<HashedDictionary::KeyType> keys;
 
     if (!attributes.empty())
+    {
+        const auto & attribute = attributes.front();
+
         getAttributeContainer(0, [&](auto & container)
         {
             keys.reserve(container.size());
@@ -705,7 +704,17 @@ BlockInputStreamPtr HashedDictionary<dictionary_key_type, sparse>::getBlockInput
                 (void)(value);
                 keys.emplace_back(key);
             }
+
+            if (attribute.is_nullable_set)
+            {
+                const auto & is_nullable_set = *attribute.is_nullable_set;
+                keys.reserve(is_nullable_set.size());
+
+                for (auto & node : is_nullable_set)
+                    keys.emplace_back(node.getKey());
+            }
         });
+    }
 
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
         return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, std::move(keys), column_names);
@@ -721,25 +730,17 @@ void HashedDictionary<dictionary_key_type, sparse>::getAttributeContainer(size_t
 
     auto & attribute = attributes[attribute_index];
 
-    if (unlikely(attribute.is_complex_type))
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
-        auto & attribute_container = std::get<ComplexAttributeCollectionType<Field>>(attribute.container);
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+
+        auto & attribute_container = std::get<CollectionType<ValueType>>(attribute.container);
         std::forward<GetContainerFunc>(get_container_func)(attribute_container);
-    }
-    else
-    {
-        auto type_call = [&](const auto & dictionary_attribute_type)
-        {
-            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-            using AttributeType = typename Type::AttributeType;
-            using ValueType = DictionaryValueType<AttributeType>;
+    };
 
-            auto & attribute_container = std::get<CollectionType<ValueType>>(attribute.container);
-            std::forward<GetContainerFunc>(get_container_func)(attribute_container);
-        };
-
-        callOnDictionaryAttributeType(attribute.type, type_call);
-    }
+    callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
