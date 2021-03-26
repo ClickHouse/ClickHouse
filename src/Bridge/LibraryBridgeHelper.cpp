@@ -13,6 +13,7 @@
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <Core/Field.h>
+#include <Common/escapeForFileName.h>
 
 
 namespace DB
@@ -65,10 +66,10 @@ bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const st
     auto uri = createRequestURI(LIB_NEW_METHOD);
     return executeRequest(uri, [library_path, library_settings, attributes_names, this](std::ostream & os)
     {
-        os << "library_path=" << library_path << "&";
-        os << "library_settings=" << library_settings << "&";
-        os << "attributes_names=" << attributes_names << "&";
-        os << "sample_block=" << sample_block.getNamesAndTypesList().toString();
+        os << "library_path=" << escapeForFileName(library_path) << "&";
+        os << "library_settings=" << escapeForFileName(library_settings) << "&";
+        os << "attributes_names=" << escapeForFileName(attributes_names) << "&";
+        os << "sample_block=" << escapeForFileName(sample_block.getNamesAndTypesList().toString());
     });
 }
 

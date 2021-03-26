@@ -7,7 +7,12 @@ from helpers.cluster import ClickHouseCluster, run_and_check
 
 cluster = ClickHouseCluster(__file__)
 
-instance = cluster.add_instance('instance', main_configs=['configs/config.d/config.xml', 'configs/log_conf.xml'])
+instance = cluster.add_instance('instance',
+        main_configs=[
+            'configs/enable_dict.xml',
+            'configs/config.d/config.xml',
+            'configs/dictionaries/dict1.xml',
+            'configs/log_conf.xml'])
 
 @pytest.fixture(scope="module")
 def ch_cluster():
@@ -41,7 +46,9 @@ def test_load_all(ch_cluster):
     instance.query('''
         CREATE DICTIONARY lib_dict (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
         PRIMARY KEY key
-        SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'))
+        SOURCE(library(
+            PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'
+            SETTINGS (test_type test_simple)))
         LAYOUT(HASHED())
         LIFETIME (MIN 0 MAX 10)
     ''')
@@ -59,7 +66,17 @@ def test_load_all(ch_cluster):
 "8\t18\t28\t38\n" +
 "9\t19\t29\t39\n"
 )
+    instance.query('SYSTEM RELOAD DICTIONARY dict1')
     instance.query('DROP DICTIONARY lib_dict')
+    assert(result == expected)
+
+    instance.query("""
+        CREATE TABLE IF NOT EXISTS `dict1_table` (
+             key UInt64, value1 UInt64, value2 UInt64, value3 UInt64
+        ) ENGINE = Dictionary(dict1)
+        """)
+
+    result = instance.query('SELECT * FROM dict1_table ORDER BY key')
     assert(result == expected)
 
 
@@ -107,7 +124,7 @@ def test_load_all_many_rows(ch_cluster):
             PRIMARY KEY key
             SOURCE(library(
                 PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'
-                SETTINGS (num_rows {})))
+                SETTINGS (num_rows {} test_type test_many_rows)))
             LAYOUT(HASHED())
             LIFETIME (MIN 0 MAX 10)
         '''.format(num))
