@@ -13,7 +13,7 @@ namespace
     /** In case of cache or direct dictionary we does not have structure with child to parent representation.
       * This function build such structure calling getColumn for initial keys to request and for next keys in hierarchy,
       * until all keys are requested or result key is null value.
-      * To distinquish null value key and key that is not present in dictionary, we use special default value column
+      * To distinguish null value key and key that is not present in dictionary, we use special default value column
       * with max UInt64 value, if result column key has such value we assume that current key is not presented in dictionary storage.
       */
     HashMap<UInt64, UInt64> getChildToParentHierarchyMapImpl(
