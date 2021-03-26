@@ -25,7 +25,7 @@ private:
 
     Block readImpl() override;
 
-    static void insertValue(IColumn & column, const ValueType type, nanodbc::result & row, size_t idx);
+    static void insertValue(IColumn & column, const DataTypePtr data_type, const ValueType type, nanodbc::result & row, size_t idx);
 
     static void insertDefaultValue(IColumn & column, const IColumn & sample_column)
     {
