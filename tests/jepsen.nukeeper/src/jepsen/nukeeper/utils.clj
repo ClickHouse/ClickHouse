@@ -167,3 +167,14 @@
     :--test_keeper_server.snapshot_storage_path coordination-snapshots-dir
     :--test_keeper_server.logs_storage_path coordination-logs-dir)
   (wait-clickhouse-alive! node test)))
+
+(defn exec-with-retries
+  [retries f & args]
+  (let [res (try {:value (apply f args)}
+                 (catch Exception e
+                   (if (zero? retries)
+                     (throw e)
+                     {:exception e})))]
+    (if (:exception res)
+      (do (Thread/sleep 1000) (recur (dec retries) f args))
+      (:value res))))
