@@ -2749,7 +2749,7 @@ Default value: `0`.
 
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
-Allows working with experimental [live views](../../sql-reference/statements/create/view.md#live-view).
+Allows creation of experimental [live views](../../sql-reference/statements/create/view.md#live-view).
 
 Possible values:
 
