@@ -229,7 +229,7 @@ void NuKeeperStateMachine::save_logical_snp_obj(
     cloned_meta = nuraft::snapshot::deserialize(*snp_buf);
 
     /// Sometimes NuRaft can call save and create snapshots from different threads
-    /// at onces. To avoid race conditions we serialize snapshots through snapshots_queue
+    /// at once. To avoid race conditions we serialize snapshots through snapshots_queue
     /// TODO: make something better
     CreateSnapshotTask snapshot_task;
     std::shared_ptr<std::promise<void>> waiter = std::make_shared<std::promise<void>>();
