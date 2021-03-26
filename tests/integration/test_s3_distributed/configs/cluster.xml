@@ -20,22 +20,22 @@
         </shard>
     </cluster_simple>
 
-    <!-- <cluster1>
+    <cluster_with_dead_node>
         <shard>
             <internal_replication>true</internal_replication>
             <replica>
-                <host>s1_0_0</host>
+                <host>s0_0_0</host>
                 <port>9000</port>
             </replica>
             <replica>
-                <host>s1_0_1</host>
+                <host>s0_0_1</host>
                 <port>9000</port>
             </replica>
         </shard>
         <shard>
             <internal_replication>true</internal_replication>
             <replica>
-                <host>s1_1_0</host>
+                <host>s0_1_0</host>
                 <port>9000</port>
             </replica>
             <replica>
@@ -43,7 +43,7 @@
                 <port>9000</port>
             </replica>
         </shard>
-    </cluster1> -->
+    </cluster_with_dead_node>
 
 
     </remote_servers>

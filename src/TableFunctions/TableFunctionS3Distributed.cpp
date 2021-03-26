@@ -1,12 +1,12 @@
 #include <thread>
 #include <Common/config.h>
 #include "DataStreams/RemoteBlockInputStream.h"
+#include "Interpreters/ClientInfo.h"
 #include "Parsers/ASTExpressionList.h"
 #include "Parsers/ASTFunction.h"
 #include "Parsers/IAST_fwd.h"
 #include "Processors/Sources/SourceFromInputStream.h"
 #include "Storages/StorageS3Distributed.h"
-#include "Storages/System/StorageSystemOne.h"
 
 #if USE_AWS_S3
 
@@ -18,7 +18,6 @@
 #include <TableFunctions/TableFunctionS3.h>
 #include <TableFunctions/TableFunctionS3Distributed.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
-#include <Storages/StorageTaskManager.h>
 #include <Parsers/ASTLiteral.h>
 #include "registerTableFunctions.h"
 
@@ -82,7 +81,7 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
     UInt64 max_connections = context.getSettingsRef().s3_max_connections;
 
     /// Initiator specific logic
-    while (context.getInitialQueryId() == context.getCurrentQueryId())
+    while (context.getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         auto poco_uri = Poco::URI{filename_or_initiator_hash};
 
@@ -107,6 +106,7 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
 
         break;
     }
+
 
     StoragePtr storage = StorageS3Distributed::create(
             ast_function->getTreeHash(),

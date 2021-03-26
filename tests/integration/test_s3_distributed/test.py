@@ -38,20 +38,69 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_log_family_s3(started_cluster):
+def test_select_all(started_cluster):
     node = started_cluster.instances['s0_0_0']
-    pure_s3 = node.query("SELECT * from s3('http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)")
+    pure_s3 = node.query("""
+    SELECT * from s3(
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 
+        'minio', 'minio123', 'CSV', 
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') 
+    ORDER BY (name, value, polygon)""")
     # print(pure_s3)
-    s3_distibuted = node.query("SELECT * from s3Distributed('cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)")
+    s3_distibuted = node.query("""
+    SELECT * from s3Distributed(
+        'cluster_simple', 
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)""")
     # print(s3_distibuted)
 
     assert TSV(pure_s3) == TSV(s3_distibuted)
+
+
+def test_select_all_with_dead_replica(started_cluster):
+    node = started_cluster.instances['s0_0_0']
+    pure_s3 = node.query("""
+    SELECT * from s3(
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 
+        'minio', 'minio123', 'CSV', 
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') 
+    ORDER BY (name, value, polygon)""")
+    # print(pure_s3)
+    s3_distibuted = node.query("""
+    SELECT * from s3Distributed('cluster_simple',
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 
+        'minio', 'minio123', 'CSV', 
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') 
+    ORDER BY (name, value, polygon)""")
+    # print(s3_distibuted)
+
+    assert TSV(pure_s3) == TSV(s3_distibuted)
+
 
 def test_count(started_cluster):
     node = started_cluster.instances['s0_0_0']
-    pure_s3 = node.query("SELECT count(*) from s3('http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')")
+    pure_s3 = node.query("""
+    SELECT count(*) from s3(
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 
+        'minio', 'minio123', 'CSV', 
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')""")
     # print(pure_s3)
-    s3_distibuted = node.query("SELECT count(*) from s3Distributed('cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')")
+    s3_distibuted = node.query("""
+    SELECT count(*) from s3Distributed(
+        'cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 
+        'minio', 'minio123', 'CSV',
+        'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')""")
     # print(s3_distibuted)
 
     assert TSV(pure_s3) == TSV(s3_distibuted)
+
+
+def test_wrong_cluster(started_cluster):
+    node = started_cluster.instances['s0_0_0']
+    error = node.query_and_get_error("""
+    SELECT count(*) from s3Distributed(
+        'non_existent_cluster',
+        'http://minio1:9001/root/data/{clickhouse,database}/*', 
+        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')""")
+    
+    assert "not found" in error

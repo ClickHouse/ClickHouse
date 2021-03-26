@@ -96,7 +96,7 @@ Chunk StorageS3Source::generate()
 
     if (!initialized)
     {
-        reader->readSuffix();
+        reader->readPrefix();
         initialized = true;
     }
 
@@ -226,6 +226,11 @@ Strings StorageS3::listFilesWithRegexpMatching(Aws::S3::S3Client & client, const
     }
 
     Aws::S3::Model::ListObjectsV2Request request;
+
+    std::cout << "Will list objects: " << std::endl;
+    std::cout << globbed_uri.bucket << std::endl;
+    std::cout << key_prefix << std::endl;
+
     request.SetBucket(globbed_uri.bucket);
     request.SetPrefix(key_prefix);
 
@@ -252,6 +257,7 @@ Strings StorageS3::listFilesWithRegexpMatching(Aws::S3::S3Client & client, const
         for (const auto & row : outcome.GetResult().GetContents())
         {
             String key = row.GetKey();
+            std::cout << "KEY   " << key << std::endl;
             if (re2::RE2::FullMatch(key, matcher))
                 result.emplace_back(std::move(key));
         }

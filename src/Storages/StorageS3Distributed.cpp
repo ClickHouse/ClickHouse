@@ -1,6 +1,7 @@
 #include "Storages/StorageS3Distributed.h"
 
 #include <Common/config.h>
+#include "Processors/Sources/SourceWithProgress.h"
 
 #if USE_AWS_S3
 
@@ -12,51 +13,38 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
-
-#include <Formats/FormatFactory.h>
-
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/AddingDefaultsBlockInputStream.h>
-#include <DataStreams/narrowBlockInputStreams.h>
-
-#include <Processors/Formats/InputStreamFromInputFormat.h>
-
-
-#include <Storages/IStorage.h>
-#include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageS3.h>
-#include <Parsers/queryToString.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Formats/FormatFactory.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Pipe.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Parsers/queryToString.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Storages/IStorage.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageS3.h>
+#include <common/logger_useful.h>
 
-#include <Poco/Logger.h>
-#include <Poco/Net/TCPServerConnection.h>
+#include <aws/core/auth/AWSCredentials.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
 
 #include <ios>
 #include <memory>
 #include <string>
 #include <thread>
 #include <cassert>
-
-#include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/ListObjectsV2Request.h>
-
-#include <Storages/StorageS3.h>
-
 
 namespace DB
 {
@@ -184,11 +172,12 @@ private:
             s3_source_builder.context,
             s3_source_builder.columns,
             s3_source_builder.max_block_size,
-            chooseCompressionMethod(client_auth.uri.key, s3_source_builder.compression_method),
+            chooseCompressionMethod(client_auth.uri.key, ""),
             client_auth.client,
             client_auth.uri.bucket,
             next_uri.key
         );
+
         return true;
     }
 
@@ -236,7 +225,6 @@ StorageS3Distributed::StorageS3Distributed(
 }
 
 
-
 Pipe StorageS3Distributed::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -247,17 +235,20 @@ Pipe StorageS3Distributed::read(
     unsigned /*num_streams*/)
 {
     /// Secondary query, need to read from S3
-    if (context.getCurrentQueryId() != context.getInitialQueryId())
+    if (context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         /// Find initiator in cluster
         Cluster::Address initiator;
-        for (const auto & replicas : cluster->getShardsAddresses())
-            for (const auto & node : replicas)
-                if (node.getHash() == address_hash_or_filename)
-                {
-                    initiator = node;
-                    break;
-                }
+        [&]() 
+        {
+            for (const auto & replicas : cluster->getShardsAddresses())
+                for (const auto & node : replicas)
+                    if (node.getHash() == address_hash_or_filename)
+                    {
+                        initiator = node;
+                        return;
+                    }
+        }();
 
 
         bool need_path_column = false;
@@ -292,21 +283,29 @@ Pipe StorageS3Distributed::read(
     }
 
 
-    /// This part of code executes on initiator
+    /// The code from here and below executes on initiator
 
     String hash_of_address;
-    for (const auto & replicas : cluster->getShardsAddresses())
-        for (const auto & node : replicas)
-            if (node.is_local && node.port == context.getTCPPort())
-            {
-                hash_of_address = node.getHash();
-                break;
-            }
+    [&]()
+    {
+        for (const auto & replicas : cluster->getShardsAddresses())
+            for (const auto & node : replicas)
+                /// Finding ourselves in cluster
+                if (node.is_local && node.port == context.getTCPPort())
+                {
+                    hash_of_address = node.getHash();
+                    break;
+                }
+    }();
 
-    /// FIXME: better exception
     if (hash_of_address.empty())
-        throw Exception(fmt::format("Could not find outself in cluster {}", ""), ErrorCodes::LOGICAL_ERROR); 
+        throw Exception(fmt::format("The initiator must be a part of a cluster {}", cluster_name), ErrorCodes::BAD_ARGUMENTS); 
 
+    /// Our purpose to change some arguments of this function to store some relevant 
+    /// information. Then we will send changed query to another hosts.
+    /// We got a pointer to table function representation in AST (a pointer to subtree)
+    /// as parameter of TableFunctionRemote::execute and saved its hash value.
+    /// Here we find it in the AST of whole query, change parameter and format it to string.
     auto remote_query_ast = query_info.query->clone();
     auto table_expressions_from_whole_query = getTableExpressions(remote_query_ast->as<ASTSelectQuery &>());
 
@@ -328,8 +327,9 @@ Pipe StorageS3Distributed::read(
     }
 
     if (remote_query.empty())
-        throw Exception("No table function", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(fmt::format("There is no table function with hash of AST equals to {}", hash_of_address), ErrorCodes::LOGICAL_ERROR);
 
+    /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
         InterpreterSelectQuery(remote_query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
@@ -356,15 +356,14 @@ Pipe StorageS3Distributed::read(
                 /*query=*/remote_query,
                 /*header=*/header,
                 /*context=*/context,
-                nullptr,
-                scalars,
-                Tables(),
-                processed_stage
+                /*throttler=*/nullptr,
+                /*scalars*/scalars,
+                /*external_tables*/Tables(),
+                /*stage*/processed_stage
             );
             pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
         }
     }
-
 
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
     return Pipe::unitePipes(std::move(pipes));
