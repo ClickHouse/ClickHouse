@@ -642,7 +642,7 @@ Result:
 
 Returns the word shingle simhash of a string in ASCII.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). For two values: the smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely those values are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely these values are the same.
 
 **Syntax**
 
