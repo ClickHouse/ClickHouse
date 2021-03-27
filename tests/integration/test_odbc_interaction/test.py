@@ -360,6 +360,7 @@ def test_bridge_dies_with_parent(started_cluster):
 
     assert clickhouse_pid is None
     assert bridge_pid is None
+    node1.start_clickhouse(20)
 
 
 def test_odbc_postgres_date_data_type(started_cluster):
