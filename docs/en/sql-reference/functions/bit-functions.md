@@ -252,7 +252,7 @@ Result:
 
 ## bitHammingDistance {#bithammingdistance}
 
-Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two integer values.
+Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two integer values. The smaller is the distance, the more likely those strings are the semi-duplicate.
 
 **Syntax**
 
@@ -300,5 +300,3 @@ Result:
 │                                                                            5 │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
-
-The smaller is the distance, the more likely those strings are the semi-duplicate.
