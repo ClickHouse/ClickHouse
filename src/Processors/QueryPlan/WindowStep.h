@@ -20,7 +20,7 @@ public:
 
     String getName() const override { return "Window"; }
 
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(FormatSettings & settings) const override;
 

@@ -22,19 +22,25 @@ NuKeeperServer::NuKeeperServer(
     int server_id_,
     const CoordinationSettingsPtr & coordination_settings_,
     const Poco::Util::AbstractConfiguration & config,
-    ResponsesQueue & responses_queue_)
+    ResponsesQueue & responses_queue_,
+    SnapshotsQueue & snapshots_queue_)
     : server_id(server_id_)
     , coordination_settings(coordination_settings_)
-    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, coordination_settings))
+    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, snapshots_queue_, config.getString("test_keeper_server.snapshot_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/snapshots"), coordination_settings))
     , state_manager(nuraft::cs_new<NuKeeperStateManager>(server_id, "test_keeper_server", config, coordination_settings))
     , responses_queue(responses_queue_)
 {
+    if (coordination_settings->quorum_reads)
+        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Quorum reads enabled, NuKeeper will work slower.");
 }
 
 void NuKeeperServer::startup()
 {
 
-    state_manager->loadLogStore(state_machine->last_commit_index());
+    state_machine->init();
+
+    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
+
     bool single_server = state_manager->getTotalServers() == 1;
 
     nuraft::raft_params params;
@@ -54,6 +60,8 @@ void NuKeeperServer::startup()
 
     params.reserved_log_items_ = coordination_settings->reserved_log_items;
     params.snapshot_distance_ = coordination_settings->snapshot_distance;
+    params.stale_log_gap_ = coordination_settings->stale_log_gap;
+    params.fresh_log_gap_ = coordination_settings->fresh_log_gap;
     params.client_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds();
     params.auto_forwarding_ = coordination_settings->auto_forwarding;
     params.auto_forwarding_req_timeout_ = coordination_settings->operation_timeout_ms.totalMilliseconds() * 2;
@@ -101,7 +109,7 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coord
 void NuKeeperServer::putRequest(const NuKeeperStorage::RequestForSession & request_for_session)
 {
     auto [session_id, request] = request_for_session;
-    if (isLeaderAlive() && request->isReadRequest())
+    if (!coordination_settings->quorum_reads && isLeaderAlive() && request->isReadRequest())
     {
         state_machine->processReadRequest(request_for_session);
     }
@@ -174,8 +182,14 @@ bool NuKeeperServer::isLeaderAlive() const
 
 nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
 {
-    /// Only initial record
-    bool empty_store = state_manager->getLogStore()->size() == 1;
+    size_t last_commited = state_machine->last_commit_index();
+    size_t next_index = state_manager->getLogStore()->next_slot();
+    bool commited_store = false;
+    if (next_index < last_commited || next_index - last_commited <= 1)
+        commited_store = true;
+
+    if (initialized_flag)
+        return nuraft::cb_func::ReturnCode::Ok;
 
     auto set_initialized = [this] ()
     {
@@ -188,8 +202,25 @@ nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type t
     {
         case nuraft::cb_func::BecomeLeader:
         {
-            if (empty_store) /// We become leader and store is empty, ready to serve requests
+            /// We become leader and store is empty or we already committed it
+            if (commited_store || initial_batch_committed)
                 set_initialized();
+            return nuraft::cb_func::ReturnCode::Ok;
+        }
+        case nuraft::cb_func::BecomeFollower:
+        case nuraft::cb_func::GotAppendEntryReqFromLeader:
+        {
+            if (isLeaderAlive())
+            {
+                auto leader_index = raft_instance->get_leader_committed_log_idx();
+                auto our_index = raft_instance->get_committed_log_idx();
+                /// This may happen when we start RAFT cluster from scratch.
+                /// Node first became leader, and after that some other node became leader.
+                /// BecameFresh for this node will not be called because it was already fresh
+                /// when it was leader.
+                if (leader_index < our_index + coordination_settings->fresh_log_gap)
+                    set_initialized();
+            }
             return nuraft::cb_func::ReturnCode::Ok;
         }
         case nuraft::cb_func::BecomeFresh:
@@ -201,6 +232,7 @@ nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type t
         {
             if (isLeader()) /// We have committed our log store and we are leader, ready to serve requests.
                 set_initialized();
+            initial_batch_committed = true;
             return nuraft::cb_func::ReturnCode::Ok;
         }
         default: /// ignore other events
@@ -212,7 +244,7 @@ void NuKeeperServer::waitInit()
 {
     std::unique_lock lock(initialized_mutex);
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
-    if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag; }))
+    if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
         throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
 }
 

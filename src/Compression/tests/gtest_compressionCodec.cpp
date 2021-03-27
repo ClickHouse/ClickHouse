@@ -749,7 +749,7 @@ auto RandomishGenerator = [](auto i)
 {
     using T = decltype(i);
     double sin_value = sin(static_cast<double>(i * i)) * i;
-    if (sin_value < std::numeric_limits<T>::lowest() || sin_value > std::numeric_limits<T>::max())
+    if (sin_value < std::numeric_limits<T>::lowest() || sin_value > static_cast<double>(std::numeric_limits<T>::max()))
         return T{};
     return T(sin_value);
 };

@@ -32,6 +32,9 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
 
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -47,6 +50,9 @@
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/IFunction.h>
+
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sources/NullSource.h>
 
 #include <Core/Field.h>
 #include <Core/Settings.h>
@@ -83,6 +89,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int STORAGE_REQUIRES_PARAMETER;
     extern const int BAD_ARGUMENTS;
@@ -513,7 +520,9 @@ Pipe StorageDistributed::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 void StorageDistributed::read(
@@ -530,7 +539,18 @@ void StorageDistributed::read(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
     Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock();
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+
+    /// Return directly (with correct header) if no shard to query.
+    if (query_info.cluster->getShardsInfo().empty())
+    {
+        Pipe pipe(std::make_shared<NullSource>(header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
+        query_plan.addStep(std::move(read_from_pipe));
+
+        return;
+    }
 
     const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
 
@@ -546,6 +566,10 @@ void StorageDistributed::read(
 
     ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
         modified_query_ast, context, query_info);
+
+    /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
+    if (!query_plan.isInitialized())
+        throw Exception("Pipeline is not initialized", ErrorCodes::LOGICAL_ERROR);
 }
 
 

@@ -152,7 +152,7 @@ template <typename T>
 void DataTypeNumberBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::ValueType x = get<NearestFieldType<FieldType>>(field);
+    typename ColumnVector<T>::ValueType x = get<FieldType>(field);
     writeBinary(x, ostr);
 }
 
@@ -212,13 +212,13 @@ MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
-    return std::is_integral_v<T>;
+    return is_integer_v<T>;
 }
 
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
-    return std::is_integral_v<T> && is_unsigned_v<T>;
+    return is_integer_v<T> && is_unsigned_v<T>;
 }
 
 

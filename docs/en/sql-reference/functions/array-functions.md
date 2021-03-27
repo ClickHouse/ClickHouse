@@ -376,7 +376,7 @@ arrayPopBack(array)
 **Example**
 
 ``` sql
-SELECT arrayPopBack([1, 2, 3]) AS res
+SELECT arrayPopBack([1, 2, 3]) AS res;
 ```
 
 ``` text
@@ -400,7 +400,7 @@ arrayPopFront(array)
 **Example**
 
 ``` sql
-SELECT arrayPopFront([1, 2, 3]) AS res
+SELECT arrayPopFront([1, 2, 3]) AS res;
 ```
 
 ``` text
@@ -425,7 +425,7 @@ arrayPushBack(array, single_value)
 **Example**
 
 ``` sql
-SELECT arrayPushBack(['a'], 'b') AS res
+SELECT arrayPushBack(['a'], 'b') AS res;
 ```
 
 ``` text
@@ -450,7 +450,7 @@ arrayPushFront(array, single_value)
 **Example**
 
 ``` sql
-SELECT arrayPushFront(['b'], 'a') AS res
+SELECT arrayPushFront(['b'], 'a') AS res;
 ```
 
 ``` text
@@ -482,7 +482,7 @@ An array of length `size`.
 **Examples of calls**
 
 ``` sql
-SELECT arrayResize([1], 3)
+SELECT arrayResize([1], 3);
 ```
 
 ``` text
@@ -492,7 +492,7 @@ SELECT arrayResize([1], 3)
 ```
 
 ``` sql
-SELECT arrayResize([1], 3, NULL)
+SELECT arrayResize([1], 3, NULL);
 ```
 
 ``` text
@@ -513,12 +513,12 @@ arraySlice(array, offset[, length])
 
 -   `array` – Array of data.
 -   `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
--   `length` - The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length)`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.
+-   `length` – The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length)`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.
 
 **Example**
 
 ``` sql
-SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
+SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
 ```
 
 ``` text
@@ -766,7 +766,7 @@ Type: [UInt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges)
 Query:
 
 ``` sql
-SELECT arrayDifference([1, 2, 3, 4])
+SELECT arrayDifference([1, 2, 3, 4]);
 ```
 
 Result:
@@ -782,7 +782,7 @@ Example of the overflow due to result type Int64:
 Query:
 
 ``` sql
-SELECT arrayDifference([0, 10000000000000000000])
+SELECT arrayDifference([0, 10000000000000000000]);
 ```
 
 Result:
@@ -816,7 +816,7 @@ Returns an array containing the distinct elements.
 Query:
 
 ``` sql
-SELECT arrayDistinct([1, 2, 2, 3, 1])
+SELECT arrayDistinct([1, 2, 2, 3, 1]);
 ```
 
 Result:
@@ -883,7 +883,7 @@ arrayReduce(agg_func, arr1, arr2, ..., arrN)
 Query:
 
 ``` sql
-SELECT arrayReduce('max', [1, 2, 3])
+SELECT arrayReduce('max', [1, 2, 3]);
 ```
 
 Result:
@@ -899,7 +899,7 @@ If an aggregate function takes multiple arguments, then this function must be ap
 Query:
 
 ``` sql
-SELECT arrayReduce('maxIf', [3, 5], [1, 0])
+SELECT arrayReduce('maxIf', [3, 5], [1, 0]);
 ```
 
 Result:
@@ -915,7 +915,7 @@ Example with a parametric aggregate function:
 Query:
 
 ``` sql
-SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 ```
 
 Result:
@@ -1014,7 +1014,7 @@ Alias: `flatten`.
 **Examples**
 
 ``` sql
-SELECT flatten([[[1]], [[2], [3]]])
+SELECT flatten([[[1]], [[2], [3]]]);
 ```
 
 ``` text
@@ -1048,7 +1048,7 @@ Type: `Array`.
 Query:
 
 ``` sql
-SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
+SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3]);
 ```
 
 Result:
@@ -1086,7 +1086,7 @@ Type: [Array](../../sql-reference/data-types/array.md).
 Query:
 
 ``` sql
-SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1])
+SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
 ```
 
 Result:
@@ -1108,17 +1108,20 @@ arrayAUC(arr_scores, arr_labels)
 ```
 
 **Arguments**
+
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negtive sample.
 
 **Returned value**
+
 Returns AUC value with type Float64.
 
 **Example**
+
 Query:
 
 ``` sql
-select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])
+select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 ```
 
 Result:
@@ -1541,4 +1544,3 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 Note that the `arraySumNonNegative` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/array_functions/) <!--hide-->

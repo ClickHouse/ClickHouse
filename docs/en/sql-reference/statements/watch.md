@@ -102,5 +102,5 @@ WATCH lv EVENTS LIMIT 1
 The `FORMAT` clause works the same way as for the [SELECT](../../sql-reference/statements/select/format.md#format-clause).
 
 !!! info "Note"
-    The [JSONEachRowWithProgress](../../../interfaces/formats/#jsoneachrowwithprogress) format should be used when watching [live view](./create/view.md#live-view) tables over the HTTP interface. The progress messages will be added to the output to keep the long-lived HTTP connection alive until the query result changes. The interval between progress messages is controlled using the [live_view_heartbeat_interval](./create/view.md#live-view-settings) setting.
+    The [JSONEachRowWithProgress](../../interfaces/formats/#jsoneachrowwithprogress) format should be used when watching [live view](./create/view.md#live-view) tables over the HTTP interface. The progress messages will be added to the output to keep the long-lived HTTP connection alive until the query result changes. The interval between progress messages is controlled using the [live_view_heartbeat_interval](./create/view.md#live-view-settings) setting.
 
