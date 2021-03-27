@@ -287,7 +287,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-With [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash).
+With [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash):
 
 ``` sql
 SELECT bitHammingDistance(ngramSimHash('cat ate rat'), ngramSimHash('rat ate cat'));
