@@ -13,7 +13,7 @@ public:
 
     String getName() const override { return "ReadFromPreparedSource"; }
 
-    void initializePipeline(QueryPipeline & pipeline) override;
+    void initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     Pipe pipe;

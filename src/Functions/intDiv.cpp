@@ -49,11 +49,10 @@ struct DivideIntegralByConstantImpl
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
         /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
-        /// And signed integer overflow is well defined in C++20.
         if (unlikely(is_signed_v<B> && b == -1))
         {
             for (size_t i = 0; i < size; ++i)
-                c_pos[i] = -a_pos[i];
+                c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
             return;
         }
 
