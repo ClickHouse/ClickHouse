@@ -771,7 +771,7 @@ log_query_threads=1
 
 ## log_comment {#settings-log-comment}
 
-Logs the comment into [system.query_log](../system-tables/query_log.md) table and server log.
+Specifies the value for the `log_comment` field of the [system.query_log](../system-tables/query_log.md) table and comment text for the server log.
 
 It can be used to improve the readability of server logs. Additionally, you can quickly select related to the test queries from the `system.query_log` while doing [clickhouse-test](../../development/tests.md).
 
