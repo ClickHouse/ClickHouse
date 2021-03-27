@@ -45,9 +45,8 @@ StorageExternalDistributed::StorageExternalDistributed(
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 
-    /// TODO: add proper setting
-    size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
-
+    size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
+    UInt16 default_port = context.getSettingsRef().storage_external_distributed_default_port;
     /// Split into shards
     std::vector<String> shards_descriptions = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
@@ -55,9 +54,7 @@ StorageExternalDistributed::StorageExternalDistributed(
     for (const auto & shard_description : shards_descriptions)
     {
         /// Parse shard description like host-{01..02}-{1|2|3}:port, into host_description_pattern (host-01-{1..2}-{1|2|3}) and port
-        /// TODO: add setting with default port
-        LOG_TRACE(&Poco::Logger::get("StorageExternalDistributed"), "Adding shard description: {}", shard_description);
-        auto parsed_shard_description = parseAddress(shard_description, 3306);
+        auto parsed_shard_description = parseAddress(shard_description, default_port);
 
         StoragePtr shard;
         if (engine_name == "MySQL")
@@ -66,7 +63,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                 remote_database,
                 parsed_shard_description.first,
                 parsed_shard_description.second,
-                username, password);
+                username, password, max_addresses);
 
             shard = StorageMySQL::create(
                 table_id_,
@@ -75,8 +72,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                 remote_table,
                 /* replace_query = */ false,
                 /* on_duplicate_clause = */ "",
-                columns_,
-                constraints_,
+                columns_, constraints_,
                 context);
         }
         else if (engine_name == "PostgreSQL")
@@ -85,17 +81,16 @@ StorageExternalDistributed::StorageExternalDistributed(
                 remote_database,
                 parsed_shard_description.first,
                 parsed_shard_description.second,
-                username,
-                password,
+                username, password,
                 context.getSettingsRef().postgresql_connection_pool_size,
-                context.getSettingsRef().postgresql_connection_pool_wait_timeout);
+                context.getSettingsRef().postgresql_connection_pool_wait_timeout,
+                max_addresses);
 
             shard = StoragePostgreSQL::create(
                 table_id_,
                 std::move(pool),
                 remote_table,
-                columns_,
-                constraints_,
+                columns_, constraints_,
                 context);
         }
         else
