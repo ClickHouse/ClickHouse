@@ -650,6 +650,11 @@ std::string ActionsDAG::dumpDAG() const
         out << ' ' << map[node];
     out << '\n';
 
+    out << "Inputs:";
+    for (const auto * node : inputs)
+        out << ' ' << map[node];
+    out << '\n';
+
     return out.str();
 }
 
