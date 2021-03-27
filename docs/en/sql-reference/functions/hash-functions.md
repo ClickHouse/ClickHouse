@@ -1241,8 +1241,8 @@ wordShingleMinHashCaseInsensitiveUTF8(string [, shinglesize, hashnum])
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `shinglesize` — The size of word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `shinglesize` — The size of word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
