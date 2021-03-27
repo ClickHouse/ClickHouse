@@ -42,8 +42,6 @@ def started_cluster():
         ## create mysql db and table
         conn1 = get_mysql_conn(port=3308)
         create_mysql_db(conn1, 'clickhouse')
-        conn2 = get_mysql_conn(port=3388)
-        create_mysql_db(conn2, 'clickhouse')
         yield cluster
 
     finally:
@@ -188,39 +186,55 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('
     conn.close()
 
 
-def test_mysql_many_replicas(started_cluster):
+def test_mysql_distributed(started_cluster):
     table_name = 'test_replicas'
     conn1 = get_mysql_conn(port=3308)
     create_mysql_table(conn1, table_name)
-    conn2 = get_mysql_conn(port=3388)
-    create_mysql_table(conn2, table_name)
 
-    # Storage with mysql{1|2}
+    conn2 = get_mysql_conn(port=3388)
+    create_mysql_db(conn2, 'clickhouse')
+    create_mysql_table(conn2, table_name)
+    conn3 = get_mysql_conn(port=3368)
+    create_mysql_db(conn3, 'clickhouse')
+    create_mysql_table(conn3, table_name)
+
+    # Storage with with two replicas mysql1:3306 and mysql2:3306
     node1.query('''
         CREATE TABLE test_replicas
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = MySQL(`mysql{1|2}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+        ENGINE = MySQL(`mysql{1|2|3}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
 
     # Fill remote tables with different data to be able to check
-    node1.query('''
-        CREATE TABLE test_replica1
-        (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = MySQL(`mysql1:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');''')
-    node1.query('''
-        CREATE TABLE test_replica2
-        (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = MySQL(`mysql2:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
-    node1.query("INSERT INTO test_replica1 (id, name) SELECT number, 'host1' from numbers(10) ")
-    node1.query("INSERT INTO test_replica2 (id, name) SELECT number, 'host2' from numbers(10) ")
+    for i in range(1, 4):
+        node1.query('''
+            CREATE TABLE test_replica{}
+            (id UInt32, name String, age UInt32, money UInt32)
+            ENGINE = MySQL(`mysql{}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');'''.format(i, i))
+        node1.query("INSERT INTO test_replica{} (id, name) SELECT number, 'host{}' from numbers(10) ".format(i, i))
 
     # check both remote replicas are accessible throught that table
     query = "SELECT * FROM ("
-    for i in range (2):
+    for i in range (3):
         query += "SELECT name FROM test_replicas UNION DISTINCT "
     query += "SELECT name FROM test_replicas)"
 
     result = node1.query(query.format(t=table_name))
-    assert(result == 'host1\nhost2\n')
+    assert(result == 'host1\nhost2\nhost3\n')
+
+    # Storage with with two two shards, each has 2 replicas
+    node1.query('''
+        CREATE TABLE test_shards
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+
+    # check both remote replicas are accessible throught that table
+    query = "SELECT name FROM ("
+    for i in range (2):
+        query += "SELECT name FROM test_shards UNION DISTINCT "
+    query += "SELECT name FROM test_shards) ORDER BY name"
+
+    result = node1.query(query.format(t=table_name))
+    assert(result == 'host1\nhost2\nhost3\n')
 
 
 if __name__ == '__main__':
