@@ -38,18 +38,18 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 -   `password` — Пароль пользователя PostgreSQL.
 
-`SELECT` запросы на стороне PostgreSQL выполняются как `COPY (SELECT ...) TO STDOUT` внутри транзакции PostgreSQL только на чтение  с коммитом после каждого `SELECT` запроса.
+Запросы `SELECT` на стороне PostgreSQL выполняются как `COPY (SELECT ...) TO STDOUT` внутри транзакции PostgreSQL только на чтение с коммитом после каждого запроса `SELECT`.
 
-Простые условия для `WHERE` такие как `=, !=, >, >=, <, <=, IN` исполняются на стороне PostgreSQL сервера.
+Простые условия для `WHERE`, такие как `=`, `!=`, `>`, `>=`, `<`, `<=` и `IN`, исполняются на стороне PostgreSQL сервера.
 
-Все операции объединения, аггрегации, сортировки, условия `IN [ array ]` и ограничения `LIMIT` выполняются на стороне ClickHouse только после того как запрос к PostgreSQL закончился.
+Все операции объединения, аггрегации, сортировки, условия `IN [ array ]` и ограничения `LIMIT` выполняются на стороне ClickHouse только после того, как запрос к PostgreSQL закончился.
 
-`INSERT` запросы на стороне PostgreSQL выполняются как `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` внутри PostgreSQL транзакции с автоматическим коммитом после каждого `INSERT` запроса.
+Запросы `INSERT` на стороне PostgreSQL выполняются как `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` внутри PostgreSQL транзакции с автоматическим коммитом после каждого запроса `INSERT`.
 
 PostgreSQL массивы конвертируются в массивы ClickHouse.
 
 !!! info "Внимание"
-    Будьте осторожны в PostgreSQL массивы созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы, внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
+    Будьте осторожны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
 
 ## Пример использования {#usage-example}
 
@@ -89,17 +89,16 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgre
 ```
 
 ``` sql
-SELECT * FROM postgresql_table WHERE str IN ('test') 
+SELECT * FROM postgresql_table WHERE str IN ('test'); 
 ```
 
 ``` text
 ┌─float_nullable─┬─str──┬─int_id─┐
 │           ᴺᵁᴸᴸ │ test │      1 │
 └────────────────┴──────┴────────┘
-1 rows in set. Elapsed: 0.019 sec.
 ```
 
-**Смотри также** {#see-also}**
+**Смотри также** 
 
 -   [Табличная функция `postgresql`](../../../sql-reference/table-functions/postgresql.md)
 -   [Использование PostgreSQL в качестве истояника для внешнего словаря](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)

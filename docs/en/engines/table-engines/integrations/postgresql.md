@@ -40,16 +40,16 @@ The table structure can differ from the original PostgreSQL table structure:
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 
-Simple `WHERE` clauses such as `=, !=, >, >=, <, <=, IN` are executed on the PostgreSQL server.
+Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
 All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
 
 `INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
 
-PostgreSQL Array types converts into ClickHouse arrays.
+PostgreSQL `Array` types are converted into ClickHouse arrays.
 
 !!! info "Note"
-    Be careful - in PostgreSQL an array data created like a `type_name[]` may contain multi-dimensional arrays of different dimensions in different table rows in same column, but in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
+    Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
 
 ## Usage Example {#usage-example}
 
@@ -89,14 +89,13 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgre
 ```
 
 ``` sql
-SELECT * FROM postgresql_table WHERE str IN ('test') 
+SELECT * FROM postgresql_table WHERE str IN ('test');
 ```
 
 ``` text
 ┌─float_nullable─┬─str──┬─int_id─┐
 │           ᴺᵁᴸᴸ │ test │      1 │
 └────────────────┴──────┴────────┘
-1 rows in set. Elapsed: 0.019 sec.
 ```
 
 **See Also**

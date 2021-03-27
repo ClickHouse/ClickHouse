@@ -15,7 +15,7 @@ toc_title: PostgreSQL
 
 ``` sql
 CREATE DATABASE test_database 
-ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cache`]);
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, use_table_cache]);
 ```
 
 **Параметры движка**

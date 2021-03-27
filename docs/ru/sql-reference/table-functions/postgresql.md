@@ -26,23 +26,25 @@ postgresql('host:port', 'database', 'table', 'user', 'password')
 -   `password` — пароль пользователя.
 
 
-SELECT запросы на стороне PostgreSQL выполняются как `COPY (SELECT ...) TO STDOUT` внутри транзакции PostgreSQL только на чтение  с коммитом после каждого `SELECT` запроса.
+Запросы `SELECT` на стороне PostgreSQL выполняются как `COPY (SELECT ...) TO STDOUT` внутри транзакции PostgreSQL только на чтение  с коммитом после каждого запроса `SELECT`.
 
-Простые условия для `WHERE` такие как `=, !=, >, >=, <, <=, IN` исполняются на стороне PostgreSQL сервера.
+Простые условия для `WHERE` такие как `=`, `!=`, `>`, `>=`, `<`, `<=` и `IN` исполняются на стороне PostgreSQL сервера.
 
 Все операции объединения, аггрегации, сортировки, условия `IN [ array ]` и ограничения `LIMIT` выполняются на стороне ClickHouse только после того как запрос к PostgreSQL закончился.
 
-INSERT запросы на стороне PostgreSQL выполняются как `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` внутри PostgreSQL транзакции с автоматическим коммитом после каждого `INSERT` запроса.
+Запросы `INSERT` на стороне PostgreSQL выполняются как `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` внутри PostgreSQL транзакции с автоматическим коммитом после каждого запроса `INSERT`.
 
 PostgreSQL массивы конвертируются в массивы ClickHouse.
-Будьте осторожны в PostgreSQL массивы созданные как type_name[], являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы, внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
+
+!!! info "Note"
+    Будьте внимательны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
 
 **Возвращаемое значение**
 
 Объект таблицы с теми же столбцами, что и в исходной таблице PostgreSQL.
 
 !!! info "Примечание"
-В запросах `INSERT` для того чтобы отличить табличную функцию `postgresql(...)` от таблицы со списком имен столбцов вы должны указывать ключевые слова `FUNCTION` или `TABLE FUNCTION`. See examples below.
+    В запросах `INSERT` для того чтобы отличить табличную функцию `postgresql(...)` от таблицы со списком имен столбцов вы должны указывать ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
 
 **Примеры**
 
@@ -81,7 +83,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 └────────┴──────────────┴───────┴──────┴────────────────┘
 ```
 
-Вставка:
+Вставка данных:
 
 ```sql
 INSERT INTO TABLE FUNCTION postgresql('localhost:5432', 'test', 'test', 'postgrsql_user', 'password') (int_id, float) VALUES (2, 3);
@@ -95,7 +97,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 └────────┴──────────────┴───────┴──────┴────────────────┘
 ```
 
-**Смотрите также**
+**См. также**
 
--   [Движок таблиц `PostgreSQL`](../../sql-reference/table-functions/postgresql.md)
+-   [Движок таблиц PostgreSQL](../../sql-reference/table-functions/postgresql.md)
 -   [Использование PostgreSQL как источника данных для внешнего словаря](../../sql-reference/table-functions/postgresql.md#dicts-external_dicts_dict_sources-postgresql)

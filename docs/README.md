@@ -23,7 +23,6 @@ Writing the docs is extremely useful for project's users and developers, and gro
 - [What is the ClickHouse Documentation](#clickhouse-docs)
 - [How to Contribute to ClickHouse Documentation](#how-to-contribute)
     - [Markdown Dialect Cheatsheet](#markdown-cheatsheet)
-    - [Adding a New File](#adding-a-new-file)
     - [Adding a New Language](#adding-a-new-language)
 -  [How to Write Content for ClickHouse Documentation](#what-to-write)
     - [Documentation for Different Audience](#target-audience)
@@ -122,17 +121,11 @@ Contribute all new information in English language. Other languages are translat
     | Cell     C1 | Cell     C2 | Cell     C3 |
     ```
 
+{##
 <a name="adding-a-new-file"/>
-
 ### Adding a New File
 
-When you add a new file, it should end with a link like:
-
-`[Original article](https://clickhouse.tech/docs/<path-to-the-page>) <!--hide-->`
-
-and there should be **a new empty line** after it.
-
-{## When adding a new file:
+When adding a new file:
 
 - Make symbolic links for all other languages. You can use the following commands:
 

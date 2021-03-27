@@ -28,7 +28,7 @@ postgresql('host:port', 'database', 'table', 'user', 'password')
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 
-Simple `WHERE` clauses such as `=, !=, >, >=, <, <=, IN` are executed on the PostgreSQL server.
+Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
 All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
 
@@ -37,7 +37,7 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 PostgreSQL Array types converts into ClickHouse arrays.
 
 !!! info "Note"
-    Be careful in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
+    Be careful, in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
 
 **Returned Value**
 
