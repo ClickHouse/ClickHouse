@@ -252,7 +252,7 @@ Result:
 
 ## bitHammingDistance {#bithammingdistance}
 
-Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two integer values. The smaller is the distance, the more likely those strings are the semi-duplicate.
+Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between the bit representations of two integer values. Can be used with [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash) functions for detection of semi-duplicate strings. The smaller is the distance, the more likely those strings are the semi-duplicate.
 
 **Syntax**
 
@@ -287,7 +287,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-Can be used with [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash) functions for detection of semi-duplicate strings:
+With [SimHash](../../sql-reference/functions/hash-functions.md#ngramsimhash).
 
 ``` sql
 SELECT bitHammingDistance(ngramSimHash('cat ate rat'), ngramSimHash('rat ate cat'));
