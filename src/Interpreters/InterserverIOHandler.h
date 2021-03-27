@@ -9,8 +9,6 @@
 #include <Common/ActionBlocker.h>
 #include <common/types.h>
 
-#include <Poco/Net/HTMLForm.h>
-
 #include <atomic>
 #include <map>
 #include <shared_mutex>
