@@ -2557,26 +2557,23 @@ def test_premature_flush_on_eof(kafka_cluster):
     ''')
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(180)
 def test_kafka_unavailable(kafka_cluster):
     messages = [json.dumps({'key': j + 1, 'value': j + 1}) for j in range(20000)]
-    kafka_produce(kafka_cluster, 'test_kafka_unavailable', messages)
+    kafka_produce(kafka_cluster, 'test_bad_reschedule', messages)
 
     kafka_cluster.pause_container('kafka1')
 
     instance.query('''
-        DROP TABLE IF EXISTS test.destination_kafka_unavailable;
-        DROP TABLE IF EXISTS test.test_kafka_unavailable;
-        CREATE TABLE test.test_kafka_unavailable (key UInt64, value UInt64)
+        CREATE TABLE test.test_bad_reschedule (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
-                    kafka_topic_list = 'test_kafka_unavailable',
-                    kafka_group_name = 'test_kafka_unavailable',
+                    kafka_topic_list = 'test_bad_reschedule',
+                    kafka_group_name = 'test_bad_reschedule',
                     kafka_format = 'JSONEachRow',
-                    kafka_max_block_size = 1000,
-                    kafka_flush_interval_ms = 1000;
+                    kafka_max_block_size = 1000;
 
-        CREATE MATERIALIZED VIEW test.destination_kafka_unavailable Engine=Log AS
+        CREATE MATERIALIZED VIEW test.destination_unavailable Engine=Log AS
         SELECT
             key,
             now() as consume_ts,
@@ -2586,19 +2583,20 @@ def test_kafka_unavailable(kafka_cluster):
             _offset,
             _partition,
             _timestamp
-        FROM test.test_kafka_unavailable;
+        FROM test.test_bad_reschedule;
     ''')
 
-    instance.query("SELECT * FROM test.test_kafka_unavailable")
+    instance.query("SELECT * FROM test.test_bad_reschedule")
+    instance.query("SELECT count() FROM test.destination_unavailable")
 
-    instance.wait_for_log_line('brokers are down')
-    instance.wait_for_log_line('stalled. Reschedule', repetitions=2)
-
+    # enough to trigger issue
+    time.sleep(30)
     kafka_cluster.unpause_container('kafka1')
 
-    instance.wait_for_log_line("Committed offset 2000")
-    assert int(instance.query("SELECT count() FROM test.destination_kafka_unavailable")) == 5000
-    time.sleep(5) # needed to give time for kafka client in python test to recovery
+    while int(instance.query("SELECT count() FROM test.destination_unavailable")) < 20000:
+        print("Waiting for consume")
+        time.sleep(1)
+
 
 @pytest.mark.timeout(180)
 def test_kafka_issue14202(kafka_cluster):
