@@ -14,12 +14,14 @@
 namespace DB
 {
 
-class StorageMySQLDistributed final : public ext::shared_ptr_helper<StorageMySQLDistributed>, public DB::IStorage
+/// Storages MySQL and PostgreSQL use ConnectionPoolWithFailover and support multiple replicas.
+/// This is a class which unites multiple storages with replicas into multiple shards with replicas.
+class StorageExternalDistributed final : public ext::shared_ptr_helper<StorageExternalDistributed>, public DB::IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageMySQLDistributed>;
+    friend struct ext::shared_ptr_helper<StorageExternalDistributed>;
 
 public:
-    std::string getName() const override { return "MySQLDistributed"; }
+    std::string getName() const override { return "ExternalDistributed"; }
 
     Pipe read(
         const Names & column_names,
@@ -31,11 +33,12 @@ public:
         unsigned num_streams) override;
 
 protected:
-    StorageMySQLDistributed(
+    StorageExternalDistributed(
         const StorageID & table_id_,
-        const String & remote_database__,
-        const String & remote_table_,
+        const String & engine_name_,
         const String & cluster_description,
+        const String & remote_database_,
+        const String & remote_table_,
         const String & username,
         const String & password,
         const ColumnsDescription & columns_,
@@ -43,13 +46,7 @@ protected:
         const Context & context_);
 
 private:
-    using Replicas = std::shared_ptr<mysqlxx::PoolWithFailover>;
-    using Shards = std::unordered_set<Replicas>;
-
-    const std::string remote_database;
-    const std::string remote_table;
-    const Context & context;
-    size_t shard_count;
+    using Shards = std::unordered_set<StoragePtr>;
     Shards shards;
 };
 
