@@ -1311,7 +1311,7 @@ Returns a tuple with two sets of `hashnum` word shingles each. Shingles correspo
 **Syntax**
 
 ``` sql
-wordShingleMinHashArgCaseInsensitive(string [, shinglesize, hashnum])
+wordShingleMinHashArgCaseInsensitive(string[, shinglesize, hashnum])
 ```
 
 **Arguments**
