@@ -29,8 +29,6 @@ public:
     /// Map till end of file.
     MMapReadBufferFromFileDescriptor(int fd_, size_t offset_);
 
-    ~MMapReadBufferFromFileDescriptor() override;
-
     /// unmap memory before call to destructor
     void finish();
 

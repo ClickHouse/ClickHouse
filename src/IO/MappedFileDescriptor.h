@@ -17,7 +17,7 @@ public:
     /// Makes empty object that can be initialized with `set`.
     MappedFileDescriptor() {}
 
-    ~MappedFileDescriptor();
+    virtual ~MappedFileDescriptor();
 
     char * getData() { return data; }
     const char * getData() const { return data; }

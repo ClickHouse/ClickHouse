@@ -45,12 +45,6 @@ MMapReadBufferFromFileDescriptor::MMapReadBufferFromFileDescriptor(int fd, size_
 }
 
 
-MMapReadBufferFromFileDescriptor::~MMapReadBufferFromFileDescriptor()
-{
-    finish();
-}
-
-
 void MMapReadBufferFromFileDescriptor::finish()
 {
     mapped.finish();
