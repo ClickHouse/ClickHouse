@@ -1268,7 +1268,7 @@ Result:
 
 ## wordShingleMinHashArg {#wordshingleminhasharg}
 
-Returns a tuple with two sets of `hashnum` word shingles each. Shingles correspond to shingles in the calculation of the minimum and the maximum hashes of [wordShingleMinHash](#wordshingleminhash) function with the same input.
+Returns a tuple with two sets of `hashnum` word shingles each. Shingles correspond to shingles in the calculation of the minimum and the maximum hashes of [wordShingleMinHash](#wordshingleminhash) function with the same input. Is case sensitive.
 
 **Syntax**
 
