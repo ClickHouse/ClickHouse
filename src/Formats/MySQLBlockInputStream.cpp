@@ -73,7 +73,7 @@ MySQLBlockInputStream::MySQLBlockInputStream(
 
 /// Used by MySQL storage / table function and dictionary source.
 MySQLWithFailoverBlockInputStream::MySQLWithFailoverBlockInputStream(
-    mysqlxx::PoolWithFailover & pool_,
+    mysqlxx::PoolWithFailoverPtr pool_,
     const std::string & query_str_,
     const Block & sample_block_,
     const UInt64 max_block_size_,
@@ -96,7 +96,7 @@ void MySQLWithFailoverBlockInputStream::readPrefix()
     {
         try
         {
-            connection = std::make_unique<Connection>(pool.get(), query_str);
+            connection = std::make_unique<Connection>(pool->get(), query_str);
             break;
         }
         catch (const mysqlxx::ConnectionLost & ecl)  /// There are two retriable failures: CR_SERVER_GONE_ERROR, CR_SERVER_LOST

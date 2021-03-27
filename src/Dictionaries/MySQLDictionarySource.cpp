@@ -70,7 +70,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , dont_check_update_time{config.getBool(config_prefix + ".dont_check_update_time", false)}
     , sample_block{sample_block_}
-    , pool{mysqlxx::PoolFactory::instance().get(config, config_prefix)}
+    , pool{std::make_shared<mysqlxx::PoolWithFailover>(mysqlxx::PoolFactory::instance().get(config, config_prefix))}
     , query_builder{dict_struct, db, "", table, where, IdentifierQuotingStyle::Backticks}
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
@@ -127,7 +127,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadBase(const String & query)
 
 BlockInputStreamPtr MySQLDictionarySource::loadAll()
 {
-    auto connection = pool.get();
+    auto connection = pool->get();
     last_modification = getLastModification(connection, false);
 
     LOG_TRACE(log, load_all_query);
@@ -136,7 +136,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
 
 BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
 {
-    auto connection = pool.get();
+    auto connection = pool->get();
     last_modification = getLastModification(connection, false);
 
     std::string load_update_query = getUpdateFieldAndDate();
@@ -171,7 +171,7 @@ bool MySQLDictionarySource::isModified() const
 
     if (dont_check_update_time)
         return true;
-    auto connection = pool.get();
+    auto connection = pool->get();
     return getLastModification(connection, true) > last_modification;
 }
 
@@ -269,7 +269,7 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    MySQLBlockInputStream block_input_stream(pool.get(), request, invalidate_sample_block, 1, close_connection);
+    MySQLBlockInputStream block_input_stream(pool->get(), request, invalidate_sample_block, 1, close_connection);
     return readInvalidateQuery(block_input_stream);
 }
 

@@ -127,4 +127,6 @@ namespace mysqlxx
         /** Allocates a connection to use. */
         Entry get();
     };
+
+    using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;
 }

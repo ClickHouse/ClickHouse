@@ -60,7 +60,7 @@ public:
     static constexpr inline auto MAX_TRIES_MYSQL_CONNECT = 5;
 
     MySQLWithFailoverBlockInputStream(
-        mysqlxx::PoolWithFailover & pool_,
+        mysqlxx::PoolWithFailoverPtr pool_,
         const std::string & query_str_,
         const Block & sample_block_,
         const UInt64 max_block_size_,
@@ -71,7 +71,7 @@ public:
 private:
     void readPrefix() override;
 
-    mysqlxx::PoolWithFailover & pool;
+    mysqlxx::PoolWithFailoverPtr pool;
     std::string query_str;
     size_t max_tries;
 };
