@@ -15,7 +15,7 @@ toc_title: WATCH
 WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
 ```
 
-Запрос `WATCH` постоянно возвращает содержимое [живого представления](./create/view.md#live-view). Если параметр `LIMIT` не был задан, запрос `WATCH` будет непрерывно обновлять содержимое [живого представления](./create/view.md#live-view).
+Запрос `WATCH` постоянно возвращает содержимое [LIVE-представления](./create/view.md#live-view). Если параметр `LIMIT` не был задан, запрос `WATCH` будет непрерывно обновлять содержимое [LIVE-представления](./create/view.md#live-view).
 
 ```sql
 WATCH [db.]live_view;
@@ -103,4 +103,4 @@ WATCH lv EVENTS LIMIT 1;
 Параметр `FORMAT` работает аналогично одноименному параметру запроса [SELECT](../../sql-reference/statements/select/format.md#format-clause).
 
 !!! info "Примечание"
-    При отслеживании [живого представления](./create/view.md#live-view) через интерфейс HTTP следует использовать формат [JSONEachRowWithProgress](../../interfaces/formats.md#jsoneachrowwithprogress). Постоянные сообщения об изменениях будут добавлены в поток вывода для поддержания активности долговременного HTTP-соединения до тех пор, пока результат запроса изменяется. Проомежуток времени между сообщениями об изменениях управляется настройкой[live_view_heartbeat_interval](./create/view.md#live-view-settings).
+    При отслеживании [LIVE VIEW](./create/view.md#live-view) через интерфейс HTTP следует использовать формат [JSONEachRowWithProgress](../../interfaces/formats.md#jsoneachrowwithprogress). Постоянные сообщения об изменениях будут добавлены в поток вывода для поддержания активности долговременного HTTP-соединения до тех пор, пока результат запроса изменяется. Проомежуток времени между сообщениями об изменениях управляется настройкой[live_view_heartbeat_interval](./create/view.md#live-view-settings).

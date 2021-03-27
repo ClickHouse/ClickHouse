@@ -17,7 +17,7 @@ WATCH [db.]live_view
 [FORMAT format]
 ```
 
-The `WATCH` query performs continuous data retrieval from a [live view](./create/view.md#live-view) table. Unless the `LIMIT` clause is specified it provides an infinite stream of query results from a [live view](./create/view.md#live-view).
+The `WATCH` query performs continuous data retrieval from a [LIVE VIEW](./create/view.md#live-view) table. Unless the `LIMIT` clause is specified it provides an infinite stream of query results from a [LIVE VIEW](./create/view.md#live-view).
 
 ```sql
 WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
@@ -106,4 +106,4 @@ WATCH lv EVENTS LIMIT 1;
 The `FORMAT` clause works the same way as for the [SELECT](../../sql-reference/statements/select/format.md#format-clause).
 
 !!! info "Note"
-    The [JSONEachRowWithProgress](../../interfaces/formats.md#jsoneachrowwithprogress) format should be used when watching [live view](./create/view.md#live-view) tables over the HTTP interface. The progress messages will be added to the output to keep the long-lived HTTP connection alive until the query result changes. The interval between progress messages is controlled using the [live_view_heartbeat_interval](./create/view.md#live-view-settings) setting.
+    The [JSONEachRowWithProgress](../../interfaces/formats.md#jsoneachrowwithprogress) format should be used when watching [LIVE VIEW](./create/view.md#live-view) tables over the HTTP interface. The progress messages will be added to the output to keep the long-lived HTTP connection alive until the query result changes. The interval between progress messages is controlled using the [live_view_heartbeat_interval](./create/view.md#live-view-settings) setting.
