@@ -248,7 +248,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         auto parsed_host_port = parseAddress(host_port, 5432);
 
         /// no connection is made here
-        auto connection_pool = std::make_shared<PostgreSQLConnectionPool>(
+        auto connection_pool = std::make_shared<PostgreSQLPoolWithFailover>(
             postgres_database_name,
             parsed_host_port.first, parsed_host_port.second,
             username, password,

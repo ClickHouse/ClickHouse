@@ -1,0 +1,109 @@
+#include "PostgreSQLPoolWithFailover.h"
+#include "PostgreSQLConnection.h"
+#include <Common/parseRemoteDescription.h>
+#include <Common/Exception.h>
+#include <common/logger_useful.h>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int POSTGRESQL_CONNECTION_FAILURE;
+}
+
+
+PostgreSQLPoolWithFailover::PostgreSQLPoolWithFailover(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        const size_t max_tries_)
+        : max_tries(max_tries_)
+{
+    auto db = config.getString(config_prefix + ".db", "");
+    auto host = config.getString(config_prefix + ".host", "");
+    auto port = config.getUInt(config_prefix + ".port", 0);
+    auto user = config.getString(config_prefix + ".user", "");
+    auto password = config.getString(config_prefix + ".password", "");
+
+    if (config.has(config_prefix + ".replica"))
+    {
+        Poco::Util::AbstractConfiguration::Keys config_keys;
+        config.keys(config_prefix, config_keys);
+
+        for (const auto & config_key : config_keys)
+        {
+            if (config_key.starts_with("replica"))
+            {
+                std::string replica_name = config_prefix + "." + config_key;
+                size_t priority = config.getInt(replica_name + ".priority", 0);
+
+                auto replica_host = config.getString(replica_name + ".host", host);
+                auto replica_port = config.getUInt(replica_name + ".port", port);
+                auto replica_user = config.getString(replica_name + ".user", user);
+                auto replica_password = config.getString(replica_name + ".password", password);
+
+                replicas_with_priority[priority].emplace_back(std::make_shared<PostgreSQLConnectionPool>(db, replica_host, replica_port, replica_user, replica_password));
+            }
+        }
+    }
+    else
+    {
+        replicas_with_priority[0].emplace_back(std::make_shared<PostgreSQLConnectionPool>(db, host, port, user, password));
+    }
+}
+
+
+PostgreSQLPoolWithFailover::PostgreSQLPoolWithFailover(
+        const std::string & database,
+        const std::string & hosts_pattern,
+        const uint16_t port,
+        const std::string & user,
+        const std::string & password,
+        const size_t max_tries_,
+        const size_t max_addresses)
+    : max_tries(max_tries_)
+{
+    auto hosts = parseRemoteDescription(hosts_pattern, 0, hosts_pattern.size(), '|', max_addresses);
+    for (const auto & host : hosts)
+    {
+        /// Replicas have the same priority, but traversed replicas are moved to the end of the queue after each fetch.
+        replicas_with_priority[0].emplace_back(std::make_shared<PostgreSQLConnectionPool>(database, host, port, user, password));
+        LOG_TRACE(&Poco::Logger::get("PostgreSQLPoolWithFailover"), "Adding address {}:{} to pool", host, port);
+    }
+}
+
+
+PostgreSQLPoolWithFailover::PostgreSQLPoolWithFailover(const PostgreSQLPoolWithFailover & other)
+        : replicas_with_priority(other.replicas_with_priority)
+        , max_tries(other.max_tries)
+{
+}
+
+
+PostgreSQLConnectionHolderPtr PostgreSQLPoolWithFailover::get()
+{
+    std::lock_guard lock(mutex);
+
+    for (size_t try_idx = 0; try_idx < max_tries; ++try_idx)
+    {
+        for (auto & priority : replicas_with_priority)
+        {
+            auto & replicas = priority.second;
+            for (size_t i = 0; i < replicas.size(); ++i)
+            {
+                auto connection = replicas[i]->get();
+                if (connection->isConnected())
+                {
+                    /// Move all traversed replicas to the end.
+                    std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
+                    return connection;
+                }
+            }
+        }
+    }
+
+    throw Exception(ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, "Unable to connect to any of the replicas");
+}
+
+}
