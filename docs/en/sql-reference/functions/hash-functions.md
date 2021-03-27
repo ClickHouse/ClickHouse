@@ -601,7 +601,7 @@ Result:
 
 ## ngramSimHashCaseInsensitiveUTF8 {#ngramsimhashcaseinsensitiveutf8}
 
-Returns the n-gram simhash of a string in UTF8 case insensitive.
+Returns the n-gram simhash of a string in UTF-8. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). For two values: the smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely those values are the same.
 
