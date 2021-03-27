@@ -188,17 +188,19 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('
 
 def test_mysql_distributed(started_cluster):
     table_name = 'test_replicas'
-    conn1 = get_mysql_conn(port=3308)
-    create_mysql_table(conn1, table_name)
 
+    conn1 = get_mysql_conn(port=3308)
     conn2 = get_mysql_conn(port=3388)
-    create_mysql_db(conn2, 'clickhouse')
-    create_mysql_table(conn2, table_name)
     conn3 = get_mysql_conn(port=3368)
+
+    create_mysql_db(conn2, 'clickhouse')
     create_mysql_db(conn3, 'clickhouse')
+
+    create_mysql_table(conn1, table_name)
+    create_mysql_table(conn2, table_name)
     create_mysql_table(conn3, table_name)
 
-    # Storage with with two replicas mysql1:3306 and mysql2:3306
+    # Storage with with 3 replicas
     node1.query('''
         CREATE TABLE test_replicas
         (id UInt32, name String, age UInt32, money UInt32)
@@ -212,7 +214,7 @@ def test_mysql_distributed(started_cluster):
             ENGINE = MySQL(`mysql{}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');'''.format(i, i))
         node1.query("INSERT INTO test_replica{} (id, name) SELECT number, 'host{}' from numbers(10) ".format(i, i))
 
-    # check both remote replicas are accessible throught that table
+    # check all remote replicas are accessible throught that table
     query = "SELECT * FROM ("
     for i in range (3):
         query += "SELECT name FROM test_replicas UNION DISTINCT "

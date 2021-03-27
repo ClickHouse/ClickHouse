@@ -51,9 +51,9 @@ protected:
     ExternalResultDescription description;
 };
 
-/// Like MySQLBlockInputStream, but allocates connection only when reading is starting
-/// and retries in case of connection errors. It allows to create a lot of stream objects
-/// without occupation of all connection pool.
+/// Like MySQLBlockInputStream, but allocates connection only when reading is starting.
+/// It allows to create a lot of stream objects without occupation of all connection pool.
+/// Also mekes attempts to reconnect in case of connection failures.
 class MySQLWithFailoverBlockInputStream final : public MySQLBlockInputStream
 {
 public:

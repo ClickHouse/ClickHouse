@@ -1,23 +1,16 @@
 #include "StorageExternalDistributed.h"
 
-#if USE_MYSQL
+#if USE_MYSQL || USE_LIBPQXX
 
 #include <Storages/StorageFactory.h>
-#include <Storages/transformQueryForExternalDatabase.h>
-#include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Common/parseAddress.h>
-#include <IO/Operators.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
-#include <mysqlxx/Transaction.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>

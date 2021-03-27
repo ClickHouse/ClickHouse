@@ -57,7 +57,7 @@ MySQLBlockInputStream::MySQLBlockInputStream(
     initPositionMappingFromQueryResultStructure();
 }
 
-/// As a base class contructor for MySQLWithFailoverBlockInputStream.
+/// For descendant MySQLWithFailoverBlockInputStream
 MySQLBlockInputStream::MySQLBlockInputStream(
     const Block & sample_block_,
     UInt64 max_block_size_,
@@ -89,7 +89,7 @@ MySQLWithFailoverBlockInputStream::MySQLWithFailoverBlockInputStream(
 
 void MySQLWithFailoverBlockInputStream::readPrefix()
 {
-    size_t count_connection_lost = 0;
+    size_t count_connect_attempts = 0;
 
     /// For recovering from "Lost connection to MySQL server during query" errors
     while (true)
@@ -101,14 +101,12 @@ void MySQLWithFailoverBlockInputStream::readPrefix()
         }
         catch (const mysqlxx::ConnectionLost & ecl)  /// There are two retriable failures: CR_SERVER_GONE_ERROR, CR_SERVER_LOST
         {
-            LOG_WARNING(log, ecl.displayText());
+            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, max_tries, ecl.displayText());
         }
 
-        LOG_WARNING(log, "Lost connection ({}/{}). Trying to reconnect...", count_connection_lost, max_tries);
-
-        if (++count_connection_lost > max_tries)
+        if (++count_connect_attempts > max_tries)
         {
-            LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connection_lost, max_tries);
+            LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, max_tries);
             throw;
         }
     }
@@ -201,11 +199,8 @@ Block MySQLBlockInputStream::readImpl()
     if (!row)
     {
         if (auto_close)
-        {
-            LOG_TRACE(log, "Removing connection, kssenii");
            connection->entry.disconnect();
-        }
-        LOG_TRACE(log, "Connection disconnected kssenii");
+
         return {};
     }
 

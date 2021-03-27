@@ -5,8 +5,14 @@
 
 #include <mysqlxx/PoolWithFailover.h>
 #include <Common/parseRemoteDescription.h>
-#include <IO/ReadHelpers.h>
 #include <common/logger_useful.h>
+
+
+/// Duplicate of code from StringUtils.h. Copied here for less dependencies.
+static bool startsWith(const std::string & s, const char * prefix)
+{
+    return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
+}
 
 
 using namespace mysqlxx;
@@ -83,9 +89,9 @@ PoolWithFailover::PoolWithFailover(
     auto hosts = DB::parseRemoteDescription(hosts_pattern, 0, hosts_pattern.size(), '|', max_addresses);
     for (const auto & host : hosts)
     {
-        /// Replicas have the same priority, but traversed replicas are moved to the end of the queue after each fetch.
+        /// Replicas have the same priority, but traversed replicas (with failed connection) are moved to the end of the queue.
         replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database, host, user, password, port));
-        LOG_TRACE(&Poco::Logger::get("MySQLPoolWithFailover"), "Adding address {}:{} to pool", host, port);
+        LOG_TRACE(&Poco::Logger::get("MySQLPoolWithFailover"), "Adding address {}:{} to MySQL pool", host, port);
     }
 }
 

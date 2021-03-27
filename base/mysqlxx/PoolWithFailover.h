@@ -71,12 +71,9 @@ namespace mysqlxx
         using PoolPtr = std::shared_ptr<Pool>;
         using Replicas = std::vector<PoolPtr>;
 
-        /// Mysql dictionary sourse related priotity:
         /// [priority][index] -> replica. Highest priotity is 0.
         using ReplicasByPriority = std::map<int, Replicas>;
         ReplicasByPriority replicas_by_priority;
-
-        /// Mysql storage related priotity:
 
         /// Number of connection tries.
         size_t max_tries;
