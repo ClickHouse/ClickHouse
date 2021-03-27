@@ -82,14 +82,14 @@ PoolWithFailover::PoolWithFailover(
         const uint16_t port,
         const std::string & user,
         const std::string & password,
-        const size_t max_tries_,
-        const size_t max_addresses)
+        const size_t max_addresses,
+        const size_t max_tries_)
     : max_tries(max_tries_)
 {
     auto hosts = DB::parseRemoteDescription(hosts_pattern, 0, hosts_pattern.size(), '|', max_addresses);
     for (const auto & host : hosts)
     {
-        /// Replicas have the same priority, but traversed replicas (with failed connection) are moved to the end of the queue.
+        /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
         replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database, host, user, password, port));
         LOG_TRACE(&Poco::Logger::get("MySQLPoolWithFailover"), "Adding address {}:{} to MySQL pool", host, port);
     }

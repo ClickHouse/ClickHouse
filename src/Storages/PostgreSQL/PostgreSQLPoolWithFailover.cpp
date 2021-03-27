@@ -62,6 +62,8 @@ PoolWithFailover::PoolWithFailover(
         const uint16_t port,
         const std::string & user,
         const std::string & password,
+        size_t pool_size,
+        int64_t pool_wait_timeout,
         const size_t max_tries_,
         const size_t max_addresses)
     : max_tries(max_tries_)
@@ -69,8 +71,9 @@ PoolWithFailover::PoolWithFailover(
     auto hosts = DB::parseRemoteDescription(hosts_pattern, 0, hosts_pattern.size(), '|', max_addresses);
     for (const auto & host : hosts)
     {
-        /// Replicas have the same priority, but traversed replicas are moved to the end of the queue after each fetch.
-        replicas_with_priority[0].emplace_back(std::make_shared<ConnectionPool>(database, host, port, user, password));
+        /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
+        replicas_with_priority[0].emplace_back(
+            std::make_shared<ConnectionPool>(database, host, port, user, password, pool_size, pool_wait_timeout));
         LOG_TRACE(&Poco::Logger::get("PostgreSQLPoolWithFailover"), "Adding address {}:{} to pool", host, port);
     }
 }

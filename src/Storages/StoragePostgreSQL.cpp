@@ -311,6 +311,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        size_t max_addresses = args.context.getSettingsRef().storage_external_distributed_max_addresses;
 
         String remote_table_schema;
         if (engine_args.size() == 6)
@@ -323,7 +324,8 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             username,
             password,
             args.context.getSettingsRef().postgresql_connection_pool_size,
-            args.context.getSettingsRef().postgresql_connection_pool_wait_timeout);
+            args.context.getSettingsRef().postgresql_connection_pool_wait_timeout,
+            max_addresses);
 
         return StoragePostgreSQL::create(
             args.table_id, pool, remote_table,
