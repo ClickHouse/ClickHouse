@@ -23,7 +23,7 @@ public:
     /// Map till end of file.
     MappedFile(const std::string & file_name_, size_t offset_);
 
-    ~MappedFile();
+    ~MappedFile() override;
 
     void close();
 
