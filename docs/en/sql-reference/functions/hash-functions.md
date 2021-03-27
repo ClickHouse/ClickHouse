@@ -1273,7 +1273,7 @@ Returns a tuple with two sets of `hashnum` word shingles each. Shingles correspo
 **Syntax**
 
 ``` sql
-wordShingleMinHashArg(string [, shinglesize, hashnum])
+wordShingleMinHashArg(string[, shinglesize, hashnum])
 ```
 
 **Arguments**
