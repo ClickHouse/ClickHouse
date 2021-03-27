@@ -1,6 +1,6 @@
 ---
 toc_priority: 44
-toc_title: "\u041a\u043b\u044e\u0447\u0020\u0438\u0020\u043f\u043e\u043b\u044f\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u044f"
+toc_title: "Ключ и поля словаря"
 ---
 
 # Ключ и поля словаря {#kliuch-i-polia-slovaria}
@@ -169,4 +169,3 @@ CREATE DICTIONARY somename (
 
 -   [Функции для работы с внешними словарями](../../../sql-reference/functions/ext-dict-functions.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

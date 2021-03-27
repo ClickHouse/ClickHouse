@@ -41,10 +41,6 @@ private:
     using IndexesMap = std::unordered_map<String, size_t>;
     IndexesMap column_indexes_by_names;
 
-    using OptionalIndexes = std::vector<std::optional<size_t>>;
-    OptionalIndexes column_indexes_for_input_fields;
-
-    std::vector<UInt8> read_columns;
     std::vector<size_t> columns_to_fill_with_default_values;
 
     void addInputColumn(const String & column_name);

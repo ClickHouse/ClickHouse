@@ -354,6 +354,10 @@ def check_add_column_when_privilege_is_not_granted(table, user, node, column=Non
         node.query(f"ALTER TABLE {table} ADD COLUMN {column} String",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
+    with Then("I try to ADD COLUMN"):
+        node.query(f"ALTER TABLE {table} ADD COLUMN {column} String",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
 def check_clear_column_when_privilege_is_not_granted(table, user, node, column=None):
     """Ensures CLEAR COLUMN errors as expected without the required privilege
     for the specified user.
@@ -366,6 +370,13 @@ def check_clear_column_when_privilege_is_not_granted(table, user, node, column=N
         node.query(f"ALTER TABLE {table} CLEAR COLUMN {column}",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
+    with And(f"I grant NONE to the user"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with Then("I try to CLEAR COLUMN"):
+        node.query(f"ALTER TABLE {table} CLEAR COLUMN {column}",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
 def check_modify_column_when_privilege_is_not_granted(table, user, node, column=None):
     """Ensures MODIFY COLUMN errors as expected without the required privilege
     for the specified user.
@@ -375,6 +386,13 @@ def check_modify_column_when_privilege_is_not_granted(table, user, node, column=
 
     with When("I try to use privilege that has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
+        node.query(f"ALTER TABLE {table} MODIFY COLUMN {column} String",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
+    with And(f"I grant NONE to the user"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with Then("I try to MODIFY COLUMN"):
         node.query(f"ALTER TABLE {table} MODIFY COLUMN {column} String",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
@@ -392,6 +410,13 @@ def check_rename_column_when_privilege_is_not_granted(table, user, node, column=
         node.query(f"ALTER TABLE {table} RENAME COLUMN {column} TO {new_column}",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
+    with And(f"I grant NONE to the user"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with Then("I try to RENAME COLUMN"):
+        node.query(f"ALTER TABLE {table} RENAME COLUMN {column} TO {new_column}",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
 def check_comment_column_when_privilege_is_not_granted(table, user, node, column=None):
     """Ensures COMMENT COLUMN errors as expected without the required privilege
     for the specified user.
@@ -404,6 +429,13 @@ def check_comment_column_when_privilege_is_not_granted(table, user, node, column
         node.query(f"ALTER TABLE {table} COMMENT COLUMN {column} 'This is a comment.'",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
+    with And(f"I grant NONE to the user"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with When("I try to COMMENT COLUMN"):
+        node.query(f"ALTER TABLE {table} COMMENT COLUMN {column} 'This is a comment.'",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
 def check_drop_column_when_privilege_is_not_granted(table, user, node, column=None):
     """Ensures DROP COLUMN errors as expected without the required privilege
     for the specified user.
@@ -413,6 +445,13 @@ def check_drop_column_when_privilege_is_not_granted(table, user, node, column=No
 
     with When("I try to use privilege that has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
+        node.query(f"ALTER TABLE {table} DROP COLUMN {column}",
+            settings = [("user", user)], exitcode=exitcode, message=message)
+
+    with And(f"I grant NONE to the user"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with Then("I try to DROP COLUMN"):
         node.query(f"ALTER TABLE {table} DROP COLUMN {column}",
             settings = [("user", user)], exitcode=exitcode, message=message)
 
@@ -676,7 +715,8 @@ def scenario_parallelization(self, table_type, permutation):
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterColumn("1.0"),
     RQ_SRS_006_RBAC_Privileges_AlterColumn_TableEngines("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0")
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()

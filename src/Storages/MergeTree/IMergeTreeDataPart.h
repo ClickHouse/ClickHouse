@@ -22,6 +22,12 @@
 
 #include <shared_mutex>
 
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
+
 namespace DB
 {
 
@@ -124,7 +130,7 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove() const;
+    void remove(bool keep_s3 = false) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -149,13 +155,11 @@ public:
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
-    /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
-    DayNum getMinDate() const;
-    DayNum getMaxDate() const;
+    /// If the partition key includes date column (a common case), this function will return min and max values for that column.
+    std::pair<DayNum, DayNum> getMinMaxDate() const;
 
-    /// otherwise, if the partition key includes dateTime column (also a common case), these functions will return min and max values for this column.
-    time_t getMinTime() const;
-    time_t getMaxTime() const;
+    /// otherwise, if the partition key includes dateTime column (also a common case), this function will return min and max values for that column.
+    std::pair<time_t, time_t> getMinMaxTime() const;
 
     bool isEmpty() const { return rows_count == 0; }
 
@@ -360,6 +364,10 @@ public:
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
+
+    /// Return some uniq string for file
+    /// Required for distinguish different copies of the same part on S3
+    String getUniqueId() const;
 
 protected:
 

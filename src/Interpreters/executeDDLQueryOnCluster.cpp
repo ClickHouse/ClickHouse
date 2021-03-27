@@ -50,12 +50,12 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     return executeDDLQueryOnCluster(query_ptr_, context, {});
 }
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access)
 {
-    return executeDDLQueryOnCluster(query_ptr, context, AccessRightsElements{query_requires_access}, query_requires_grant_option);
+    return executeDDLQueryOnCluster(query_ptr, context, AccessRightsElements{query_requires_access});
 }
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, AccessRightsElements && query_requires_access)
 {
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
@@ -154,10 +154,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config
-    if (query_requires_grant_option)
-        context.getAccess()->checkGrantOption(query_requires_access);
-    else
-        context.checkAccess(query_requires_access);
+    context.checkAccess(query_requires_access);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);

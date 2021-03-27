@@ -1,9 +1,7 @@
 ---
-toc_folder_title: "\u041A\u043E\u043C\u043C\u0435\u0440\u0447\u0435\u0441\u043A\u0438\
-  \u0435 \u0443\u0441\u043B\u0443\u0433\u0438"
+toc_folder_title: "Коммерческие услуги"
 toc_priority: 70
-toc_title: "\u041A\u043E\u043C\u043C\u0435\u0440\u0447\u0435\u0441\u043A\u0438\u0435\
-  \ \u0443\u0441\u043B\u0443\u0433\u0438"
+toc_title: "Коммерческие услуги"
 ---
 
 # Коммерческие услуги {#clickhouse-commercial-services}

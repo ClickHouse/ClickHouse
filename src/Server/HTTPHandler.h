@@ -18,6 +18,8 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class Context;
+class Credentials;
 class IServer;
 class WriteBufferFromHTTPServerResponse;
 
@@ -27,6 +29,7 @@ class HTTPHandler : public HTTPRequestHandler
 {
 public:
     HTTPHandler(IServer & server_, const std::string & name);
+    virtual ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
@@ -68,6 +71,22 @@ private:
     String server_display_name;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
+
+    // The request_context and the request_credentials instances may outlive a single request/response loop.
+    // This happens only when the authentication mechanism requires more than a single request/response exchange (e.g., SPNEGO).
+    std::unique_ptr<Context> request_context;
+    std::unique_ptr<Credentials> request_credentials;
+
+    // Returns true when the user successfully authenticated,
+    //  the request_context instance will be configured accordingly, and the request_credentials instance will be dropped.
+    // Returns false when the user is not authenticated yet, and the 'Negotiate' response is sent,
+    //  the request_context and request_credentials instances are preserved.
+    // Throws an exception if authentication failed.
+    bool authenticateUser(
+        Context & context,
+        HTTPServerRequest & request,
+        HTMLForm & params,
+        HTTPServerResponse & response);
 
     /// Also initializes 'used_output'.
     void processQuery(

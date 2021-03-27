@@ -13,7 +13,7 @@
 #define DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC 300
 /// Timeouts for hedged requests.
 #define DBMS_DEFAULT_HEDGED_CONNECTION_TIMEOUT_MS 100
-#define DBMS_DEFAULT_RECEIVE_DATA_TIMEOUT_SEC 2
+#define DBMS_DEFAULT_RECEIVE_DATA_TIMEOUT_MS 2000
 /// Timeout for synchronous request-result protocol call (like Ping or TablesStatus).
 #define DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC 5
 #define DBMS_DEFAULT_POLL_INTERVAL 10
