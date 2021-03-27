@@ -10,8 +10,8 @@
 namespace DB
 {
 
-class PostgreSQLConnectionPool;
-using PostgreSQLConnectionPoolPtr = std::shared_ptr<PostgreSQLConnectionPool>;
+class PostgreSQLPoolWithFailover;
+using PostgreSQLPoolWithFailoverPtr = std::shared_ptr<PostgreSQLPoolWithFailover>;
 
 class TableFunctionPostgreSQL : public ITableFunction
 {
@@ -31,7 +31,7 @@ private:
 
     String connection_str;
     String remote_table_name, remote_table_schema;
-    PostgreSQLConnectionPoolPtr connection_pool;
+    PostgreSQLPoolWithFailoverPtr connection_pool;
 };
 
 }

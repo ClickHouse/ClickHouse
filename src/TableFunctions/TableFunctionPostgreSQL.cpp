@@ -29,8 +29,8 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 {
     auto columns = getActualTableStructure(context);
     auto result = std::make_shared<StoragePostgreSQL>(
-            StorageID(getDatabaseName(), table_name), remote_table_name,
-            connection_pool, columns, ConstraintsDescription{}, context, remote_table_schema);
+            StorageID(getDatabaseName(), table_name), *connection_pool, remote_table_name,
+            columns, ConstraintsDescription{}, context, remote_table_schema);
 
     result->startup();
     return result;
@@ -73,7 +73,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
     if (args.size() == 6)
         remote_table_schema = args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
-    connection_pool = std::make_shared<PostgreSQLConnectionPool>(
+    connection_pool = std::make_shared<PostgreSQLPoolWithFailover>(
         args[1]->as<ASTLiteral &>().value.safeGet<String>(),
         parsed_host_port.first,
         parsed_host_port.second,

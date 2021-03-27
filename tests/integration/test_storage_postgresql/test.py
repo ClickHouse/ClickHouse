@@ -11,11 +11,12 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=["configs/log_conf.xml"], with_postgres=True)
 
-def get_postgres_conn(database=False):
+def get_postgres_conn(database=False, port=5432):
     if database == True:
-        conn_string = "host='localhost' dbname='clickhouse' user='postgres' password='mysecretpassword'"
+        conn_string = "host='localhost' port={} dbname='clickhouse' user='postgres' password='mysecretpassword'".format(port)
     else:
-        conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
+        conn_string = "host='localhost' port={} user='postgres' password='mysecretpassword'".format(port)
+
     conn = psycopg2.connect(conn_string)
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     conn.autocommit = True
@@ -30,9 +31,17 @@ def create_postgres_db(conn, name):
 def started_cluster():
     try:
         cluster.start()
-        postgres_conn = get_postgres_conn()
-        print("postgres connected")
+
+        postgres_conn = get_postgres_conn(port=5432)
         create_postgres_db(postgres_conn, 'clickhouse')
+
+        postgres_conn = get_postgres_conn(port=5441)
+        create_postgres_db(postgres_conn, 'clickhouse')
+
+        postgres_conn = get_postgres_conn(port=5461)
+        create_postgres_db(postgres_conn, 'clickhouse')
+
+        print("postgres connected")
         yield cluster
 
     finally:
@@ -217,6 +226,51 @@ def test_concurrent_queries(started_cluster):
     count =  node1.count_in_log('New connection to postgres1:5432')
     print(count, prev_count)
     assert(int(count) == int(prev_count) + 16)
+
+
+def test_postgres_distributed(started_cluster):
+    conn1 = get_postgres_conn(port=5432, database=True)
+    conn2 = get_postgres_conn(port=5441, database=True)
+    conn3 = get_postgres_conn(port=5461, database=True)
+
+    cursor1 = conn1.cursor()
+    cursor2 = conn2.cursor()
+    cursor3 = conn3.cursor()
+    cursors = [cursor1, cursor2, cursor3]
+
+    for i in range(3):
+        cursors[i].execute('CREATE TABLE test_replicas (id Integer, name Text)')
+        cursors[i].execute("""INSERT INTO test_replicas select i, 'host{}' from generate_series(0, 99) as t(i);""".format(i + 1));
+
+    # Storage with with 3 replicas
+    node1.query('''
+        CREATE TABLE test_replicas
+        (id UInt32, name String)
+        ENGINE = PostgreSQL(`postgres{1|2|3}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
+
+    # check both remote replicas are accessible throught that table
+    query = "SELECT name FROM ("
+    for i in range (3):
+        query += "SELECT name FROM test_replicas UNION DISTINCT "
+    query += "SELECT name FROM test_replicas) ORDER BY name"
+
+    result = node1.query(query)
+    assert(result == 'host1\nhost2\nhost3\n')
+
+    # Storage with with two two shards, each has 2 replicas
+    node1.query('''
+        CREATE TABLE test_shards
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = ExternalDistributed('PostgreSQL', `postgres{1|2}:5432,postgres{3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
+
+    # check both remote replicas are accessible throught that table
+    query = "SELECT name FROM ("
+    for i in range (2):
+        query += "SELECT name FROM test_shards UNION DISTINCT "
+    query += "SELECT name FROM test_shards) ORDER BY name"
+
+    result = node1.query(query)
+    assert(result == 'host1\nhost2\nhost3\n')
 
 
 if __name__ == '__main__':

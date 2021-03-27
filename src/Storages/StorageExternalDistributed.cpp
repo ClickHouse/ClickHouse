@@ -21,6 +21,7 @@
 #include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
+#include <Storages/StoragePostgreSQL.h>
 #include <common/logger_useful.h>
 
 
@@ -68,14 +69,41 @@ StorageExternalDistributed::StorageExternalDistributed(
         StoragePtr shard;
         if (engine_name == "MySQL")
         {
-            mysqlxx::PoolWithFailover pool(remote_database, parsed_shard_description.first, parsed_shard_description.second, username, password);
+            mysqlxx::PoolWithFailover pool(
+                remote_database,
+                parsed_shard_description.first,
+                parsed_shard_description.second,
+                username, password);
+
             shard = StorageMySQL::create(
-                table_id_, std::move(pool), remote_database, remote_table,
-                /* replace_query = */ false, /* on_duplicate_clause = */ "",
-                columns_, constraints_, context);
+                table_id_,
+                std::move(pool),
+                remote_database,
+                remote_table,
+                /* replace_query = */ false,
+                /* on_duplicate_clause = */ "",
+                columns_,
+                constraints_,
+                context);
         }
         else if (engine_name == "PostgreSQL")
         {
+            PostgreSQLPoolWithFailover pool(
+                remote_database,
+                parsed_shard_description.first,
+                parsed_shard_description.second,
+                username,
+                password,
+                context.getSettingsRef().postgresql_connection_pool_size,
+                context.getSettingsRef().postgresql_connection_pool_wait_timeout);
+
+            shard = StoragePostgreSQL::create(
+                table_id_,
+                std::move(pool),
+                remote_table,
+                columns_,
+                constraints_,
+                context);
         }
         else
         {

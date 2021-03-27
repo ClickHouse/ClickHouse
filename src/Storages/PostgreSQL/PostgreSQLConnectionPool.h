@@ -11,7 +11,7 @@
 namespace DB
 {
 
-class PostgreSQLReplicaConnection;
+class PostgreSQLPoolWithFailover;
 
 
 /// Connection pool size is defined by user with setting `postgresql_connection_pool_size` (default 16).
@@ -21,7 +21,7 @@ class PostgreSQLReplicaConnection;
 class PostgreSQLConnectionPool
 {
 
-friend class PostgreSQLReplicaConnection;
+friend class PostgreSQLPoolWithFailover;
 
 static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
 
