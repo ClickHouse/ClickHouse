@@ -347,7 +347,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
 
         size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
 
-        auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
+        const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
         const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
@@ -381,7 +381,7 @@ template <DictionaryKeyType dictionary_key_type, bool sparse>
 ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
     ColumnPtr key_column [[maybe_unused]],
     const DataTypePtr &,
-    size_t level) const
+    size_t level [[maybe_unused]]) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::simple)
     {
