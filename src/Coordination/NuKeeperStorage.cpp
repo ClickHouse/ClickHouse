@@ -233,7 +233,7 @@ struct NuKeeperStorageGetRequest final : public NuKeeperStorageRequest
 struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
 {
     using NuKeeperStorageRequest::NuKeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & ephemerals, int64_t /*zxid*/, int64_t session_id) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & ephemerals, int64_t /*zxid*/, int64_t /*session_id*/) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperRemoveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveResponse &>(*response_ptr);
@@ -257,7 +257,12 @@ struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
         {
             auto prev_node = it->value;
             if (prev_node.stat.ephemeralOwner != 0)
-                ephemerals[session_id].erase(request.path);
+            {
+                auto ephemerals_it = ephemerals.find(prev_node.stat.ephemeralOwner);
+                ephemerals_it->second.erase(request.path);
+                if (ephemerals_it->second.empty())
+                    ephemerals.erase(ephemerals_it);
+            }
 
             auto child_basename = getBaseName(it->key);
             container.updateValue(parentPath(request.path), [&child_basename] (NuKeeperStorage::Node & parent)
@@ -271,10 +276,10 @@ struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
 
             container.erase(request.path);
 
-            undo = [prev_node, &container, &ephemerals, session_id, path = request.path, child_basename]
+            undo = [prev_node, &container, &ephemerals, path = request.path, child_basename]
             {
                 if (prev_node.stat.ephemeralOwner != 0)
-                    ephemerals[session_id].emplace(path);
+                    ephemerals[prev_node.stat.ephemeralOwner].emplace(path);
 
                 container.insert(path, prev_node);
                 container.updateValue(parentPath(path), [&child_basename] (NuKeeperStorage::Node & parent)
@@ -377,7 +382,6 @@ struct NuKeeperStorageSetRequest final : public NuKeeperStorageRequest
     {
         return processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::CHANGED);
     }
-
 };
 
 struct NuKeeperStorageListRequest final : public NuKeeperStorageRequest
@@ -641,6 +645,13 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
             for (const auto & ephemeral_path : it->second)
             {
                 container.erase(ephemeral_path);
+                container.updateValue(parentPath(ephemeral_path), [&ephemeral_path] (NuKeeperStorage::Node & parent)
+                {
+                    --parent.stat.numChildren;
+                    ++parent.stat.cversion;
+                    parent.children.erase(getBaseName(ephemeral_path));
+                });
+
                 auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);
                 results.insert(results.end(), responses.begin(), responses.end());
             }
