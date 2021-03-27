@@ -81,7 +81,7 @@ private:
     const std::string update_field;
     const bool dont_check_update_time;
     Block sample_block;
-    mutable mysqlxx::PoolWithFailover pool;
+    mutable mysqlxx::PoolWithFailoverPtr pool;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
     LocalDateTime last_modification;

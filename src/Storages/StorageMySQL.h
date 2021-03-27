@@ -7,6 +7,7 @@
 #if USE_MYSQL
 
 #include <ext/shared_ptr_helper.h>
+
 #include <Storages/IStorage.h>
 #include <mysqlxx/PoolWithFailover.h>
 
@@ -54,7 +55,7 @@ private:
     bool replace_query;
     std::string on_duplicate_clause;
 
-    mysqlxx::PoolWithFailover pool;
+    mysqlxx::PoolWithFailoverPtr pool;
     const Context & global_context;
 };
 

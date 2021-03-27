@@ -54,7 +54,7 @@ StorageMySQL::StorageMySQL(
     , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
-    , pool(std::move(pool_))
+    , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
     , global_context(context_.getGlobalContext())
 {
     StorageInMemoryMetadata storage_metadata;
@@ -212,7 +212,7 @@ private:
 
 BlockOutputStreamPtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    return std::make_shared<StorageMySQLBlockOutputStream>(*this, metadata_snapshot, remote_database_name, remote_table_name, pool.get(), context.getSettingsRef().mysql_max_rows_to_insert);
+    return std::make_shared<StorageMySQLBlockOutputStream>(*this, metadata_snapshot, remote_database_name, remote_table_name, pool->get(), context.getSettingsRef().mysql_max_rows_to_insert);
 }
 
 void registerStorageMySQL(StorageFactory & factory)
