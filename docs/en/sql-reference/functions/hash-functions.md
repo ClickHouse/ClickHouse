@@ -686,7 +686,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 **Syntax**
 
 ``` sql
-wordShingleSimHashCaseInsensitive(string [, shinglesize])
+wordShingleSimHashCaseInsensitive(string[, shinglesize])
 ```
 
 **Arguments**
