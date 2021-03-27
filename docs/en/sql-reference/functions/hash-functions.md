@@ -725,7 +725,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 **Syntax**
 
 ``` sql
-wordShingleSimHashUTF8(string [, shinglesize])
+wordShingleSimHashUTF8(string[, shinglesize])
 ```
 
 **Arguments**
