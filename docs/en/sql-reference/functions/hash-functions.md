@@ -757,20 +757,20 @@ Result:
 
 ## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimhashcaseinsensitiveutf8}
 
-Returns the word shingle simhash of a string in UTF8 case insensitive.
+Returns the word shingle simhash of a string in UTF-8. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely these values are the same.
 
 **Syntax**
 
 ``` sql
-wordShingleSimHashCaseInsensitiveUTF8(string [, shinglesize])
+wordShingleSimHashCaseInsensitiveUTF8(string[, shinglesize])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `shinglesize` — The size of a word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `shinglesize` — The size of a word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -796,25 +796,25 @@ Result:
 
 ## ngramMinHash {#ngramminhash}
 
-Calculates a hash value for each n-gram of a string in ASCII and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+Calculates a hash value for each n-gram of a string in ASCII and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
 
 **Syntax**
 
 ``` sql
-ngramMinHash(string [, ngramsize, hashnum])
+ngramMinHash(string[, ngramsize, hashnum])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Tuple with two hashes.
+-   Tuple with two hashes — minimum and maximum.
 
 Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
 
@@ -836,21 +836,21 @@ Result:
 
 ## ngramMinHashCaseInsensitive {#ngramminhashcaseinsensitive}
 
-Calculates a hash value for each n-gram of a string in ASCII case insensitive and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+Calculates a hash value for each n-gram of a string in ASCII and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
 
 **Syntax**
 
 ``` sql
-ngramMinHashCaseInsensitive(string [, ngramsize, hashnum])
+ngramMinHashCaseInsensitive(string[, ngramsize, hashnum])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -876,21 +876,21 @@ Result:
 
 ## ngramMinHashUTF8 {#ngramminhashutf8}
 
-Calculates a hash value for each n-gram of a string in UTF8 and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+Calculates a hash value for each n-gram of a string in UTF-8 and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
 
 **Syntax**
 
 ``` sql
-ngramMinHashUTF8(string [, ngramsize, hashnum])
+ngramMinHashUTF8(string[, ngramsize, hashnum])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -916,7 +916,7 @@ Result:
 
 ## ngramMinHashCaseInsensitiveUTF8 {#ngramminhashcaseinsensitiveutf8}
 
-Calculates a hash value for each n-gram of a string in UTF8 case insensitive and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+Calculates a hash value for each n-gram of a string in UTF-8 and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
 
@@ -929,12 +929,12 @@ ngramMinHashCaseInsensitiveUTF8(string [, ngramsize, hashnum])
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
--   Tuple with two hashes.
+-   Tuple with two hashes — minimum and maximum.
 
 Type: [Tuple](../../sql-reference/data-types/tuple.md)([UInt64](../../sql-reference/data-types/int-uint.md), [UInt64](../../sql-reference/data-types/int-uint.md)).
 
@@ -956,19 +956,19 @@ Result:
 
 ## ngramMinHashArg {#ngramminhasharg}
 
-Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n-grams in the calculation of the minimum and the maximum hashes of [ngramMinHash](#ngramminhash) function with the same input.
+Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n-grams in the calculation of the minimum and the maximum hashes of [ngramMinHash](#ngramminhash) function with the same input. Is case sensitive.
 
 **Syntax**
 
 ``` sql
-ngramMinHashArg(string [, ngramsize, hashnum])
+ngramMinHashArg(string[, ngramsize, hashnum])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -999,14 +999,14 @@ Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n
 **Syntax**
 
 ``` sql
-ngramMinHashArgCaseInsensitive(string [, ngramsize, hashnum])
+ngramMinHashArgCaseInsensitive(string[, ngramsize, hashnum])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -1037,14 +1037,14 @@ Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n
 **Syntax**
 
 ``` sql
-ngramMinHashArgUTF8(string [, ngramsize, hashnum])
+ngramMinHashArgUTF8(string[, ngramsize, hashnum])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -1075,14 +1075,14 @@ Returns a tuple with two sets of `hashnum` n-grams each. N-grams correspond to n
 **Syntax**
 
 ``` sql
-ngramMinHashArgCaseInsensitiveUTF8(string [, ngramsize, hashnum])
+ngramMinHashArgCaseInsensitiveUTF8(string[, ngramsize, hashnum])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `ngramsize` — The size of an n-gram. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `ngramsize` — The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -1108,21 +1108,21 @@ Result:
 
 ## wordShingleMinHash {#wordshingleminhash}
 
-Calculates a hash value for each word shingle of a string in ASCII and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+Calculates a hash value for each word shingle of a string in ASCII and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
 
 **Syntax**
 
 ``` sql
-wordShingleMinHash(string [, shinglesize, hashnum])
+wordShingleMinHash(string[, shinglesize, hashnum])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `shinglesize` — The size of word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `shinglesize` — The size of word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -1148,21 +1148,21 @@ Result:
 
 ## wordShingleMinHashCaseInsensitive {#wordshingleminhashcaseinsensitive}
 
-Calculates a hash value for each word shingle of a string in ASCII case insensitive and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+Calculates a hash value for each word shingle of a string in ASCII and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
 
 **Syntax**
 
 ``` sql
-wordShingleMinHashCaseInsensitive(string [, shinglesize, hashnum])
+wordShingleMinHashCaseInsensitive(string[, shinglesize, hashnum])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `shinglesize` — The size of word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `shinglesize` — The size of word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -1188,21 +1188,21 @@ Result:
 
 ## wordShingleMinHashUTF8 {#wordshingleminhashutf8}
 
-Calculates a hash value for each word shingle of a string in UTF8 and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+Calculates a hash value for each word shingle of a string in UTF-8 and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
 
 **Syntax**
 
 ``` sql
-wordShingleMinHashUTF8(string [, shinglesize, hashnum])
+wordShingleMinHashUTF8(string[, shinglesize, hashnum])
 ```
 
 **Arguments**
 
 -   `string` — Text. [String](../../sql-reference/data-types/string.md).
--   `shinglesize` — The size of word shingle. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
--   `hashnum` — Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `shinglesize` — The size of word shingle. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `hashnum` — Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
@@ -1228,14 +1228,14 @@ Result:
 
 ## wordShingleMinHashCaseInsensitiveUTF8 {#wordshingleminhashcaseinsensitiveutf8}
 
-Calculates a hash value for each word shingle of a string in UTF8 case insensitive and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes.
+Calculates a hash value for each word shingle of a string in UTF-8 and uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with those hashes. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two values: if one of the returned hashes is the same for both values, we think that those values are the same.
 
 **Syntax**
 
 ``` sql
-wordShingleMinHashCaseInsensitiveUTF8(string [, shinglesize, hashnum])
+wordShingleMinHashCaseInsensitiveUTF8(string[, shinglesize, hashnum])
 ```
 
 **Arguments**
