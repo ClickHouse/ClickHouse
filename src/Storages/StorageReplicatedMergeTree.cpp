@@ -39,6 +39,9 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
@@ -4050,7 +4053,9 @@ Pipe StorageReplicatedMergeTree::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 
@@ -4927,7 +4932,7 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
 
     const auto & stop_waiting = [&]()
     {
-        bool stop_waiting_itself = waiting_itself && is_dropped;
+        bool stop_waiting_itself = waiting_itself && (partial_shutdown_called || is_dropped);
         bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(table_zookeeper_path + "/replicas/" + replica + "/is_active");
         return stop_waiting_itself || stop_waiting_non_active;
     };

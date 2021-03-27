@@ -241,9 +241,10 @@ NuKeeperStorageSnapshot::~NuKeeperStorageSnapshot()
     storage->disableSnapshotMode();
 }
 
-NuKeeperSnapshotManager::NuKeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_)
+NuKeeperSnapshotManager::NuKeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, size_t storage_tick_time_)
     : snapshots_path(snapshots_path_)
     , snapshots_to_keep(snapshots_to_keep_)
+    , storage_tick_time(storage_tick_time_)
 {
     namespace fs = std::filesystem;
 
@@ -325,22 +326,24 @@ nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::serializeSnapshotToBuffer(c
     return writer.getBuffer();
 }
 
-SnapshotMetadataPtr NuKeeperSnapshotManager::deserializeSnapshotFromBuffer(NuKeeperStorage * storage, nuraft::ptr<nuraft::buffer> buffer)
+SnapshotMetaAndStorage NuKeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
     ReadBufferFromNuraftBuffer reader(buffer);
     CompressedReadBuffer compressed_reader(reader);
-    return NuKeeperStorageSnapshot::deserialize(*storage, compressed_reader);
+    auto storage = std::make_unique<NuKeeperStorage>(storage_tick_time);
+    auto snapshot_metadata = NuKeeperStorageSnapshot::deserialize(*storage, compressed_reader);
+    return std::make_pair(snapshot_metadata, std::move(storage));
 }
 
-SnapshotMetadataPtr NuKeeperSnapshotManager::restoreFromLatestSnapshot(NuKeeperStorage * storage)
+SnapshotMetaAndStorage NuKeeperSnapshotManager::restoreFromLatestSnapshot()
 {
     if (existing_snapshots.empty())
-        return nullptr;
+        return {};
 
     auto buffer = deserializeLatestSnapshotBufferFromDisk();
     if (!buffer)
-        return nullptr;
-    return deserializeSnapshotFromBuffer(storage, buffer);
+        return {};
+    return deserializeSnapshotFromBuffer(buffer);
 }
 
 void NuKeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()

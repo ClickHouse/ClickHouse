@@ -32,6 +32,9 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
 
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -517,7 +520,9 @@ Pipe StorageDistributed::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 void StorageDistributed::read(
