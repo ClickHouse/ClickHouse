@@ -4,8 +4,8 @@ FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 # TODO remove when DNS will be fixed
-RUN echo "151.101.246.49 apt.llvm.org" >> /etc/hosts
 RUN echo "2a04:4e42:3a::561 apt.llvm.org" >> /etc/hosts
+RUN echo "151.101.246.49 apt.llvm.org" >> /etc/hosts
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
