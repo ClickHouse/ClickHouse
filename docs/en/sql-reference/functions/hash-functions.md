@@ -640,7 +640,7 @@ Result:
 
 ## wordShingleSimHash {#wordshinglesimhash}
 
-Returns the word shingle simhash of a string in ASCII.
+Returns the word shingle simhash of a string in ASCII. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two values, the more likely these values are the same.
 
