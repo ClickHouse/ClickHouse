@@ -4,18 +4,23 @@
 #include "config_core.h"
 #endif
 
-#if USE_MYSQL
+#if USE_MYSQL || USE_LIBPQXX
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <mysqlxx/PoolWithFailover.h>
 
 
+
 namespace DB
 {
 
 /// Storages MySQL and PostgreSQL use ConnectionPoolWithFailover and support multiple replicas.
-/// This is a class which unites multiple storages with replicas into multiple shards with replicas.
+/// This class unites multiple storages with replicas into multiple shards with replicas.
+/// A query to external database is passed to one replica on each shard, the result is united.
+/// Replicas on each shard have the same priority, unavailable replicas are moved to the end of
+/// the queue. The queue is shuffled from time to time.
+/// TODO: try `load_balancing` setting for replicas priorities same way as for table function `remote`
 class StorageExternalDistributed final : public ext::shared_ptr_helper<StorageExternalDistributed>, public DB::IStorage
 {
     friend struct ext::shared_ptr_helper<StorageExternalDistributed>;
