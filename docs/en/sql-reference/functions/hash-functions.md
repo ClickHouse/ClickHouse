@@ -608,7 +608,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 **Syntax**
 
 ``` sql
-ngramSimHashCaseInsensitiveUTF8(string [, ngramsize])
+ngramSimHashCaseInsensitiveUTF8(string[, ngramsize])
 ```
 
 **Arguments**
