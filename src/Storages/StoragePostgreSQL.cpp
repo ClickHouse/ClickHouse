@@ -41,7 +41,7 @@ namespace ErrorCodes
 
 StoragePostgreSQL::StoragePostgreSQL(
     const StorageID & table_id_,
-    const PostgreSQLPoolWithFailover & pool_,
+    const postgres::PoolWithFailover & pool_,
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
@@ -51,7 +51,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
     , global_context(context_)
-    , pool(std::make_shared<PostgreSQLPoolWithFailover>(pool_))
+    , pool(std::make_shared<postgres::PoolWithFailover>(pool_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -97,7 +97,7 @@ class PostgreSQLBlockOutputStream : public IBlockOutputStream
 public:
     explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
-        PostgreSQLConnectionHolderPtr connection_,
+        postgres::ConnectionHolderPtr connection_,
         const std::string & remote_table_name_)
         : metadata_snapshot(metadata_snapshot_)
         , connection(std::move(connection_))
@@ -276,7 +276,7 @@ public:
 
 private:
     StorageMetadataPtr metadata_snapshot;
-    PostgreSQLConnectionHolderPtr connection;
+    postgres::ConnectionHolderPtr connection;
     std::string remote_table_name;
 
     std::unique_ptr<pqxx::work> work;
@@ -316,7 +316,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         if (engine_args.size() == 6)
             remote_table_schema = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
-        PostgreSQLPoolWithFailover pool(
+        postgres::PoolWithFailover pool(
             remote_database,
             parsed_host_port.first,
             parsed_host_port.second,

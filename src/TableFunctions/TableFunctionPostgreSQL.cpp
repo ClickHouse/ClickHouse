@@ -73,7 +73,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
     if (args.size() == 6)
         remote_table_schema = args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
-    connection_pool = std::make_shared<PostgreSQLPoolWithFailover>(
+    connection_pool = std::make_shared<postgres::PoolWithFailover>(
         args[1]->as<ASTLiteral &>().value.safeGet<String>(),
         parsed_host_port.first,
         parsed_host_port.second,
