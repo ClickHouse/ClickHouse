@@ -15,7 +15,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password');
+) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, `schema`]);
 ```
 
 See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
@@ -29,14 +29,13 @@ The table structure can differ from the original PostgreSQL table structure:
 **Engine Parameters**
 
 -   `host:port` — PostgreSQL server address.
-
 -   `database` — Remote database name.
-
 -   `table` — Remote table name.
-
 -   `user` — PostgreSQL user.
-
 -   `password` — User password.
+-   `schema` — Non-default table schema. Optional.
+
+## Implementation Details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 
@@ -50,6 +49,8 @@ PostgreSQL `Array` types are converted into ClickHouse arrays.
 
 !!! info "Note"
     Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
+
+Supports replicas priority for PostgreSQL dictionary source. The bigger the number in map, the less the priority. The highest priority is `0`. 
 
 ## Usage Example {#usage-example}
 
@@ -66,10 +67,10 @@ PRIMARY KEY (int_id));
 
 CREATE TABLE
 
-postgres=# insert into test (int_id, str, "float") VALUES (1,'test',2);
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
-postgresql> select * from test;
+postgresql> SELECT * FROM test;
  int_id | int_nullable | float | str  | float_nullable
 --------+--------------+-------+------+----------------
       1 |              |     2 | test |
@@ -96,6 +97,21 @@ SELECT * FROM postgresql_table WHERE str IN ('test');
 ┌─float_nullable─┬─str──┬─int_id─┐
 │           ᴺᵁᴸᴸ │ test │      1 │
 └────────────────┴──────┴────────┘
+```
+
+Using Non-default Schema:
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE test_pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('postgres1:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
 **See Also**

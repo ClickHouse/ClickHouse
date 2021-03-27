@@ -15,7 +15,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
-) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password');
+) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, `schema`]);
 ```
 
 Смотрите подробное описание запроса [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query).
@@ -29,14 +29,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 **Параметры движка**
 
 -   `host:port` — адрес сервера PostgreSQL.
-
 -   `database` — Имя базы данных на сервере PostgreSQL.
-
 -   `table` — Имя таблицы.
-
 -   `user` — Имя пользователя PostgreSQL.
-
 -   `password` — Пароль пользователя PostgreSQL.
+-   `schema` — имя схемы, если не используется схема по умолчанию. Необязательный аргумент. 
+
+## Особенности реализации {#implementation-details}
 
 Запросы `SELECT` на стороне PostgreSQL выполняются как `COPY (SELECT ...) TO STDOUT` внутри транзакции PostgreSQL только на чтение с коммитом после каждого запроса `SELECT`.
 
@@ -49,8 +48,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 PostgreSQL массивы конвертируются в массивы ClickHouse.
 
 !!! info "Внимание"
-    Будьте осторожны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
+    Будьте внимательны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустимы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
 
+При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.    
 ## Пример использования {#usage-example}
 
 Таблица в PostgreSQL:
@@ -66,10 +66,10 @@ PRIMARY KEY (int_id));
 
 CREATE TABLE
 
-postgres=# insert into test (int_id, str, "float") VALUES (1,'test',2);
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
-postgresql> select * from test;
+postgresql> SELECT * FROM test;
  int_id | int_nullable | float | str  | float_nullable
 --------+--------------+-------+------+----------------
       1 |              |     2 | test |
@@ -96,6 +96,21 @@ SELECT * FROM postgresql_table WHERE str IN ('test');
 ┌─float_nullable─┬─str──┬─int_id─┐
 │           ᴺᵁᴸᴸ │ test │      1 │
 └────────────────┴──────┴────────┘
+```
+
+Using Non-default Schema:
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE test_pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('postgres1:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
 **Смотри также** 

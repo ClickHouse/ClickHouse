@@ -5,26 +5,31 @@ toc_title: postgresql
 
 # postgresql {#postgresql}
 
-Позволяет выполнять заполсы `SELECT` и `INSERT` над таблицами удаленной БД PostgreSQL.
+Позволяет выполнять запросы `SELECT` и `INSERT` над таблицами удаленной БД PostgreSQL.
 
 **Синтаксис**
 
 ``` sql
-postgresql('host:port', 'database', 'table', 'user', 'password')
+postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `host:port` — адрес сервера PostgreSQL.
-
 -   `database` — имя базы данных на удалённом сервере.
-
 -   `table` — имя таблицы на удалённом сервере.
-
 -   `user` — пользователь PostgreSQL.
-
 -   `password` — пароль пользователя.
+-   `schema` — имя схемы, если не используется схема по умолчанию. Необязательный аргумент. 
 
+**Возвращаемое значение**
+
+Таблица с теми же столбцами, что и в исходной таблице PostgreSQL.
+
+!!! info "Примечание"
+    В запросах `INSERT` для того чтобы отличить табличную функцию `postgresql(...)` от таблицы со списком имен столбцов вы должны указывать ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
+
+## Особенности реализации {#implementation-details}
 
 Запросы `SELECT` на стороне PostgreSQL выполняются как `COPY (SELECT ...) TO STDOUT` внутри транзакции PostgreSQL только на чтение  с коммитом после каждого запроса `SELECT`.
 
@@ -36,15 +41,10 @@ postgresql('host:port', 'database', 'table', 'user', 'password')
 
 PostgreSQL массивы конвертируются в массивы ClickHouse.
 
-!!! info "Note"
+!!! info "Примечание"
     Будьте внимательны, в PostgreSQL массивы, созданные как `type_name[]`, являются многомерными и могут содержать в себе разное количество измерений в разных строках одной таблицы. Внутри ClickHouse допустипы только многомерные массивы с одинаковым кол-вом измерений во всех строках таблицы.
 
-**Возвращаемое значение**
-
-Объект таблицы с теми же столбцами, что и в исходной таблице PostgreSQL.
-
-!!! info "Примечание"
-    В запросах `INSERT` для того чтобы отличить табличную функцию `postgresql(...)` от таблицы со списком имен столбцов вы должны указывать ключевые слова `FUNCTION` или `TABLE FUNCTION`. См. примеры ниже.
+При использовании словаря PostgreSQL поддерживается приоритет реплик. Чем больше номер реплики, тем ниже ее приоритет. Наивысший приоритет у реплики с номером `0`.    
 
 **Примеры**
 
@@ -61,10 +61,10 @@ PRIMARY KEY (int_id));
 
 CREATE TABLE
 
-postgres=# insert into test (int_id, str, "float") VALUES (1,'test',2);
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
-postgresql> select * from test;
+postgresql> SELECT * FROM test;
  int_id | int_nullable | float | str  | float_nullable
 --------+--------------+-------+------+----------------
       1 |              |     2 | test |
@@ -95,6 +95,21 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 │      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
 │      2 │         ᴺᵁᴸᴸ │     3 │      │           ᴺᵁᴸᴸ │
 └────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+Using Non-default Schema:
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE test_pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('postgres1:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
 **См. также**
