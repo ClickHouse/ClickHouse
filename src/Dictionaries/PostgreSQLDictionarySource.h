@@ -51,7 +51,7 @@ private:
 
     const DictionaryStructure dict_struct;
     Block sample_block;
-    PostgreSQLPoolWithFailoverPtr connection;
+    postgres::PoolWithFailoverPtr connection;
     Poco::Logger * log;
 
     const std::string db;

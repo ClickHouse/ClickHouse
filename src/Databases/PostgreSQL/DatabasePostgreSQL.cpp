@@ -40,7 +40,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & dbname_,
         const String & postgres_dbname,
-        PostgreSQLPoolWithFailoverPtr connection_pool_,
+        postgres::PoolWithFailoverPtr connection_pool_,
         const bool cache_tables_)
     : IDatabase(dbname_)
     , global_context(context.getGlobalContext())

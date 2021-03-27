@@ -88,7 +88,7 @@ StorageExternalDistributed::StorageExternalDistributed(
         }
         else if (engine_name == "PostgreSQL")
         {
-            PostgreSQLPoolWithFailover pool(
+            postgres::PoolWithFailover pool(
                 remote_database,
                 parsed_shard_description.first,
                 parsed_shard_description.second,

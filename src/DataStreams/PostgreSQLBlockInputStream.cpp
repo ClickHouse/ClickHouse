@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
-    PostgreSQLConnectionHolderPtr connection_,
+    postgres::ConnectionHolderPtr connection_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
