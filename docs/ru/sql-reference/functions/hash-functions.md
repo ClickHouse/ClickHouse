@@ -603,7 +603,7 @@ SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
 
 ## ngramSimHashCaseInsensitiveUTF8 {#ngramsimhashcaseinsensitiveutf8}
 
-Выделяет из строки в UTF-8 n-граммы размером `ngramsize` и возвращает n-граммовый simhash. Функция регистрозависимая.
+Выделяет из строки в UTF-8 n-граммы размером `ngramsize` и возвращает n-граммовый simhash. Функция регистронезависимая.
 
 Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
 
@@ -1071,7 +1071,7 @@ SELECT ngramMinHashArgUTF8('ClickHouse') AS Tuple;
 
 ## ngramMinHashArgCaseInsensitiveUTF8 {#ngramminhashargcaseinsensitiveutf8}
 
-Выделяет из строки в UTF-8 n-граммы размером `ngramsize` и возвращает n-граммы, которые соответствуют n-граммам, которые используются при вычислении минимального и максимального хешей функцией [ngramMinHashCaseInsensitiveUTF8](##ngramminhashcaseinsensitiveutf8) при одинаковых значениях аргументов. Функция регистронезависимая.
+Выделяет из строки в UTF-8 n-граммы размером `ngramsize` и возвращает n-граммы, которые соответствуют n-граммам, которые используются при вычислении минимального и максимального хешей функцией [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) при одинаковых значениях аргументов. Функция регистронезависимая.
 
 **Синтаксис**
 
