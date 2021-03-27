@@ -227,7 +227,7 @@ namespace detail
         PaddedPODArray<KeyType> descendants;
         descendants.reserve(keys_size);
 
-        PaddedPODArray<size_t> descendants_offsets;
+        PaddedPODArray<IColumn::Offset> descendants_offsets;
         descendants_offsets.reserve(keys_size);
 
         struct Range
