@@ -1349,7 +1349,7 @@ Returns a tuple with two sets of `hashnum` word shingles each. Shingles correspo
 **Syntax**
 
 ``` sql
-wordShingleMinHashArgUTF8(string [, shinglesize, hashnum])
+wordShingleMinHashArgUTF8(string[, shinglesize, hashnum])
 ```
 
 **Arguments**
