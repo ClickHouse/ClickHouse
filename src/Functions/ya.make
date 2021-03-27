@@ -467,6 +467,7 @@ SRCS(
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp
+    timezoneOf.cpp
     timezoneOffset.cpp
     toColumnTypeName.cpp
     toCustomWeek.cpp
@@ -506,7 +507,7 @@ SRCS(
     toStartOfTenMinutes.cpp
     toStartOfYear.cpp
     toTime.cpp
-    toTimeZone.cpp
+    toTimezone.cpp
     toTypeName.cpp
     toUnixTimestamp64Micro.cpp
     toUnixTimestamp64Milli.cpp

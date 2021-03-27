@@ -132,6 +132,10 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
 
     coordination_settings->loadFromConfig("test_keeper_server.coordination_settings", config);
 
+    request_thread = ThreadFromGlobalPool([this] { requestThread(); });
+    responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
+    snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
+
     server = std::make_unique<NuKeeperServer>(myid, coordination_settings, config, responses_queue, snapshots_queue);
     try
     {
@@ -148,10 +152,8 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
         throw;
     }
 
-    request_thread = ThreadFromGlobalPool([this] { requestThread(); });
-    responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
+
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
-    snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
