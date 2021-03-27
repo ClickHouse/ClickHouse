@@ -1070,7 +1070,7 @@ Result:
 
 ## ngramMinHashArgCaseInsensitiveUTF8 {#ngramminhashargcaseinsensitiveutf8}
 
-Splits a string in UTF-8 into n-grams of `ngramsize` size and returns the n-grams that correspond to n-grams in the calculation of the minimum and the maximum hashes of [ngramMinHashCaseInsensitiveUTF8](##ngramminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
+Splits a string in UTF-8 into n-grams of `ngramsize` size and returns the n-grams that correspond to n-grams in the calculation of the minimum and the maximum hashes of [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
 
 **Syntax**
 
