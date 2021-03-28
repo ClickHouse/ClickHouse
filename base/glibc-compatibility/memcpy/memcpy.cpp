@@ -32,7 +32,12 @@ void * memcpy_erms(void * dst, const void * src, size_t size)
 }
 
 
-ALWAYS_INLINE uint32_t rdtsc()
+#if defined(__clang__)
+ALWAYS_INLINE
+#else
+inline
+#endif
+uint32_t rdtsc()
 {
     uint32_t low;
     uint32_t high;
