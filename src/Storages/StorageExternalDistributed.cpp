@@ -8,7 +8,6 @@
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
-#include <Common/parseAddress.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
 #include <Processors/Pipe.h>
@@ -29,7 +28,7 @@ namespace ErrorCodes
 
 StorageExternalDistributed::StorageExternalDistributed(
     const StorageID & table_id_,
-    const String & engine_name,
+    ExternalStorageEngine table_engine,
     const String & cluster_description,
     const String & remote_database,
     const String & remote_table,
@@ -57,47 +56,56 @@ StorageExternalDistributed::StorageExternalDistributed(
         auto parsed_shard_description = parseAddress(shard_description, default_port);
 
         StoragePtr shard;
-        if (engine_name == "MySQL")
-        {
-            mysqlxx::PoolWithFailover pool(
-                remote_database,
-                parsed_shard_description.first,
-                parsed_shard_description.second,
-                username, password, max_addresses);
 
-            shard = StorageMySQL::create(
-                table_id_,
-                std::move(pool),
-                remote_database,
-                remote_table,
-                /* replace_query = */ false,
-                /* on_duplicate_clause = */ "",
-                columns_, constraints_,
-                context);
-        }
-        else if (engine_name == "PostgreSQL")
+        switch (table_engine)
         {
-            postgres::PoolWithFailover pool(
-                remote_database,
-                parsed_shard_description.first,
-                parsed_shard_description.second,
-                username, password,
-                context.getSettingsRef().postgresql_connection_pool_size,
-                context.getSettingsRef().postgresql_connection_pool_wait_timeout,
-                max_addresses);
+#if USE_MYSQL
 
-            shard = StoragePostgreSQL::create(
-                table_id_,
-                std::move(pool),
-                remote_table,
-                columns_, constraints_,
-                context);
-        }
-        else
-        {
-            throw Exception(
-                "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL",
-                ErrorCodes::BAD_ARGUMENTS);
+            case ExternalStorageEngine::MySQL:
+            {
+                mysqlxx::PoolWithFailover pool(
+                    remote_database,
+                    parsed_shard_description.first,
+                    parsed_shard_description.second,
+                    username, password, max_addresses);
+
+                shard = StorageMySQL::create(
+                    table_id_,
+                    std::move(pool),
+                    remote_database,
+                    remote_table,
+                    /* replace_query = */ false,
+                    /* on_duplicate_clause = */ "",
+                    columns_, constraints_,
+                    context);
+                break;
+            }
+#endif
+#if USE_LIBPQXX
+
+            case ExternalStorageEngine::PostgreSQL:
+            {
+                postgres::PoolWithFailover pool(
+                    remote_database,
+                    parsed_shard_description.first,
+                    parsed_shard_description.second,
+                    username, password,
+                    context.getSettingsRef().postgresql_connection_pool_size,
+                    context.getSettingsRef().postgresql_connection_pool_wait_timeout,
+                    max_addresses);
+
+                shard = StoragePostgreSQL::create(
+                    table_id_,
+                    std::move(pool),
+                    remote_table,
+                    columns_, constraints_,
+                    context);
+                break;
+            }
+#endif
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Unsupported table engine. Supported engines are: MySQL, PostgreSQL");
         }
 
         shards.emplace(std::move(shard));
@@ -153,9 +161,19 @@ void registerStorageExternalDistributed(StorageFactory & factory)
         const String & username = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
         const String & password = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
+        StorageExternalDistributed::ExternalStorageEngine table_engine;
+        if (engine_name == "MySQL")
+            table_engine = StorageExternalDistributed::ExternalStorageEngine::MySQL;
+        else if (engine_name == "PostgreSQL")
+            table_engine = StorageExternalDistributed::ExternalStorageEngine::PostgreSQL;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL",
+                engine_name);
+
         return StorageExternalDistributed::create(
             args.table_id,
-            engine_name,
+            table_engine,
             cluster_description,
             remote_database,
             remote_table,
