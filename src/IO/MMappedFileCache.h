@@ -4,13 +4,13 @@
 #include <Common/SipHash.h>
 #include <Common/UInt128.h>
 #include <Common/ProfileEvents.h>
-#include <IO/MappedFile.h>
+#include <IO/MMappedFile.h>
 
 
 namespace ProfileEvents
 {
-    extern const Event MappedFileCacheHits;
-    extern const Event MappedFileCacheMisses;
+    extern const Event MMappedFileCacheHits;
+    extern const Event MMappedFileCacheMisses;
 }
 
 namespace DB
@@ -20,13 +20,13 @@ namespace DB
 /** Cache of opened and mmapped files for reading.
   * mmap/munmap is heavy operation and better to keep mapped file to subsequent use than to map/unmap every time.
   */
-class MappedFileCache : public LRUCache<UInt128, MappedFile, UInt128TrivialHash>
+class MMappedFileCache : public LRUCache<UInt128, MMappedFile, UInt128TrivialHash>
 {
 private:
-    using Base = LRUCache<UInt128, MappedFile, UInt128TrivialHash>;
+    using Base = LRUCache<UInt128, MMappedFile, UInt128TrivialHash>;
 
 public:
-    MappedFileCache(size_t max_size_in_bytes)
+    MMappedFileCache(size_t max_size_in_bytes)
         : Base(max_size_in_bytes) {}
 
     /// Calculate key from path to file and offset.
@@ -49,15 +49,15 @@ public:
     {
         auto result = Base::getOrSet(key, load);
         if (result.second)
-            ProfileEvents::increment(ProfileEvents::MappedFileCacheMisses);
+            ProfileEvents::increment(ProfileEvents::MMappedFileCacheMisses);
         else
-            ProfileEvents::increment(ProfileEvents::MappedFileCacheHits);
+            ProfileEvents::increment(ProfileEvents::MMappedFileCacheHits);
 
         return result.first;
     }
 };
 
-using MappedFileCachePtr = std::shared_ptr<MappedFileCache>;
+using MMappedFileCachePtr = std::shared_ptr<MMappedFileCache>;
 
 }
 

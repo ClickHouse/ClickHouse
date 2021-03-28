@@ -22,22 +22,22 @@ void MMapReadBufferFromFileWithCache::init()
 
 
 MMapReadBufferFromFileWithCache::MMapReadBufferFromFileWithCache(
-    MappedFileCache & cache, const std::string & file_name, size_t offset, size_t length)
+    MMappedFileCache & cache, const std::string & file_name, size_t offset, size_t length)
 {
     mapped = cache.getOrSet(cache.hash(file_name, offset, length), [&]
     {
-        return std::make_shared<MappedFile>(file_name, offset, length);
+        return std::make_shared<MMappedFile>(file_name, offset, length);
     });
 
     init();
 }
 
 MMapReadBufferFromFileWithCache::MMapReadBufferFromFileWithCache(
-    MappedFileCache & cache, const std::string & file_name, size_t offset)
+    MMappedFileCache & cache, const std::string & file_name, size_t offset)
 {
     mapped = cache.getOrSet(cache.hash(file_name, offset, -1), [&]
     {
-        return std::make_shared<MappedFile>(file_name, offset);
+        return std::make_shared<MMappedFile>(file_name, offset);
     });
 
     init();

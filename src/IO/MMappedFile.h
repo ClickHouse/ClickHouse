@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
-#include <IO/MappedFileDescriptor.h>
+#include <IO/MMappedFileDescriptor.h>
 #include <cstddef>
 
 
@@ -15,15 +15,15 @@ namespace DB
 {
 
 /// Opens a file and mmaps a region in it (or a whole file) into memory. Unmaps and closes in destructor.
-class MappedFile : public MappedFileDescriptor
+class MMappedFile : public MMappedFileDescriptor
 {
 public:
-    MappedFile(const std::string & file_name_, size_t offset_, size_t length_);
+    MMappedFile(const std::string & file_name_, size_t offset_, size_t length_);
 
     /// Map till end of file.
-    MappedFile(const std::string & file_name_, size_t offset_);
+    MMappedFile(const std::string & file_name_, size_t offset_);
 
-    ~MappedFile() override;
+    ~MMappedFile() override;
 
     void close();
 

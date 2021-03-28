@@ -832,7 +832,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// A cache for mmapped files.
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
     if (mmap_cache_size)
-        global_context->setMappedFileCache(mmap_cache_size);
+        global_context->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);

@@ -4,7 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/Exception.h>
-#include <IO/MappedFile.h>
+#include <IO/MMappedFile.h>
 
 
 namespace ProfileEvents
@@ -23,7 +23,7 @@ namespace ErrorCodes
 }
 
 
-void MappedFile::open()
+void MMappedFile::open()
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -35,13 +35,13 @@ void MappedFile::open()
 }
 
 
-std::string MappedFile::getFileName() const
+std::string MMappedFile::getFileName() const
 {
     return file_name;
 }
 
 
-MappedFile::MappedFile(const std::string & file_name_, size_t offset_, size_t length_)
+MMappedFile::MMappedFile(const std::string & file_name_, size_t offset_, size_t length_)
     : file_name(file_name_)
 {
     open();
@@ -49,7 +49,7 @@ MappedFile::MappedFile(const std::string & file_name_, size_t offset_, size_t le
 }
 
 
-MappedFile::MappedFile(const std::string & file_name_, size_t offset_)
+MMappedFile::MMappedFile(const std::string & file_name_, size_t offset_)
     : file_name(file_name_)
 {
     open();
@@ -57,14 +57,14 @@ MappedFile::MappedFile(const std::string & file_name_, size_t offset_)
 }
 
 
-MappedFile::~MappedFile()
+MMappedFile::~MMappedFile()
 {
     if (fd != -1)
         close();    /// Exceptions will lead to std::terminate and that's Ok.
 }
 
 
-void MappedFile::close()
+void MMappedFile::close()
 {
     finish();
 

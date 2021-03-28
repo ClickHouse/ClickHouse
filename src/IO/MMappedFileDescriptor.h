@@ -5,8 +5,8 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric MappedFiles;
-    extern const Metric MappedFileBytes;
+    extern const Metric MMappedFiles;
+    extern const Metric MMappedFileBytes;
 }
 
 
@@ -15,16 +15,16 @@ namespace DB
 
 /// MMaps a region in file (or a whole file) into memory. Unmaps in destructor.
 /// Does not open or close file.
-class MappedFileDescriptor
+class MMappedFileDescriptor
 {
 public:
-    MappedFileDescriptor(int fd_, size_t offset_, size_t length_);
-    MappedFileDescriptor(int fd_, size_t offset_);
+    MMappedFileDescriptor(int fd_, size_t offset_, size_t length_);
+    MMappedFileDescriptor(int fd_, size_t offset_);
 
     /// Makes empty object that can be initialized with `set`.
-    MappedFileDescriptor() {}
+    MMappedFileDescriptor() {}
 
-    virtual ~MappedFileDescriptor();
+    virtual ~MMappedFileDescriptor();
 
     char * getData() { return data; }
     const char * getData() const { return data; }
@@ -41,8 +41,8 @@ public:
     void set(int fd_, size_t offset_);
 
 protected:
-    MappedFileDescriptor(const MappedFileDescriptor &) = delete;
-    MappedFileDescriptor(MappedFileDescriptor &&) = delete;
+    MMappedFileDescriptor(const MMappedFileDescriptor &) = delete;
+    MMappedFileDescriptor(MMappedFileDescriptor &&) = delete;
 
     void init();
 
@@ -51,8 +51,8 @@ protected:
     size_t length = 0;
     char * data = nullptr;
 
-    CurrentMetrics::Increment files_metric_increment{CurrentMetrics::MappedFiles, 0};
-    CurrentMetrics::Increment bytes_metric_increment{CurrentMetrics::MappedFileBytes, 0};
+    CurrentMetrics::Increment files_metric_increment{CurrentMetrics::MMappedFiles, 0};
+    CurrentMetrics::Increment bytes_metric_increment{CurrentMetrics::MMappedFileBytes, 0};
 };
 
 }
