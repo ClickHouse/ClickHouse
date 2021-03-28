@@ -22,6 +22,7 @@
 
 #include <AggregateFunctions/UniquesHashSet.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/ThetaSketchData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
 
@@ -124,6 +125,25 @@ struct AggregateFunctionUniqExactData<String>
 };
 
 
+/// uniqThetaSketch
+
+struct AggregateFunctionUniqThetaSketchData
+{
+    using Set = ThetaSketchData<UInt64>;
+    Set set;
+
+    static String getName() { return "uniqThetaSketch"; }
+};
+
+/// For a function that takes multiple arguments. Such a function pre-hashes them in advance, so TrivialHash is used here.
+struct AggregateFunctionUniqThetaSketchDataForVariadic
+{
+    using Set = ThetaSketchData<UInt64, TrivialHash>;
+    Set set;
+
+    static String getName() { return "uniqThetaSketch"; }
+};
+
 namespace detail
 {
 
@@ -188,6 +208,10 @@ struct OneAdder
 
                 data.set.insert(key);
             }
+        }
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaSketchData>)
+        {
+            data.set.insert_original(column.getDataAt(row_num));
         }
     }
 };

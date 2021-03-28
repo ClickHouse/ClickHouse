@@ -132,6 +132,9 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 
     factory.registerFunction("uniqExact",
         {createAggregateFunctionUniq<true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>, properties});
+
+    factory.registerFunction("uniqThetaSketch",
+        {createAggregateFunctionUniq<AggregateFunctionUniqThetaSketchData, AggregateFunctionUniqThetaSketchDataForVariadic>, properties});
 }
 
 }
