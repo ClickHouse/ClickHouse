@@ -85,6 +85,7 @@ PoolWithFailover::PoolWithFailover(
         size_t max_addresses,
         size_t max_tries_)
     : max_tries(max_tries_)
+    , shareable(false)
 {
     auto hosts = DB::parseRemoteDescription(hosts_pattern, 0, hosts_pattern.size(), '|', max_addresses);
     for (const auto & host : hosts)
