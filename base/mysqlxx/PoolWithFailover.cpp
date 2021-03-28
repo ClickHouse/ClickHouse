@@ -79,11 +79,11 @@ PoolWithFailover::PoolWithFailover(
 PoolWithFailover::PoolWithFailover(
         const std::string & database,
         const std::string & hosts_pattern,
-        const uint16_t port,
+        uint16_t port,
         const std::string & user,
         const std::string & password,
-        const size_t max_addresses,
-        const size_t max_tries_)
+        size_t max_addresses,
+        size_t max_tries_)
     : max_tries(max_tries_)
 {
     auto hosts = DB::parseRemoteDescription(hosts_pattern, 0, hosts_pattern.size(), '|', max_addresses);

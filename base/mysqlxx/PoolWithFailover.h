@@ -71,7 +71,7 @@ namespace mysqlxx
         using PoolPtr = std::shared_ptr<Pool>;
         using Replicas = std::vector<PoolPtr>;
 
-        /// [priority][index] -> replica. Highest priotity is 0.
+        /// [priority][index] -> replica. Highest priority is 0.
         using ReplicasByPriority = std::map<int, Replicas>;
         ReplicasByPriority replicas_by_priority;
 
@@ -112,12 +112,12 @@ namespace mysqlxx
 
         PoolWithFailover(
             const std::string & database,
-            const std::string & host_pattern,
+            const std::string & hosts_pattern,
             uint16_t port,
             const std::string & user,
             const std::string & password,
-            const size_t max_addresses = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_ADDRESSES,
-            const size_t max_tries = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
+            size_t max_addresses = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_ADDRESSES,
+            size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
         PoolWithFailover(const PoolWithFailover & other);
 

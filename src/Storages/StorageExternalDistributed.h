@@ -11,7 +11,6 @@
 #include <mysqlxx/PoolWithFailover.h>
 
 
-
 namespace DB
 {
 
@@ -25,6 +24,13 @@ class StorageExternalDistributed final : public ext::shared_ptr_helper<StorageEx
     friend struct ext::shared_ptr_helper<StorageExternalDistributed>;
 
 public:
+    enum class ExternalStorageEngine
+    {
+        MySQL,
+        PostgreSQL,
+        Default
+    };
+
     std::string getName() const override { return "ExternalDistributed"; }
 
     Pipe read(
@@ -39,7 +45,7 @@ public:
 protected:
     StorageExternalDistributed(
         const StorageID & table_id_,
-        const String & engine_name_,
+        ExternalStorageEngine table_engine,
         const String & cluster_description,
         const String & remote_database_,
         const String & remote_table_,
