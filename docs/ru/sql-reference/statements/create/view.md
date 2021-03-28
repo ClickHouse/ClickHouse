@@ -160,7 +160,7 @@ LIVE-представление, созданное с параметром `WIT
 CREATE LIVE VIEW [db.]table_name WITH TIMEOUT [value_in_sec] AS SELECT ...
 ```
 
-Если не было указано значение временного промежутка, используется значение настройки [temporary_live_view_timeout](../../../operations/settings/settings.md#temporary-live-view-timeout).
+Если временной промежуток не указан, используется значение настройки [temporary_live_view_timeout](../../../operations/settings/settings.md#temporary-live-view-timeout).
 
 **Пример:**
 
