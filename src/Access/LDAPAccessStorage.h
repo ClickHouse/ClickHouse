@@ -68,12 +68,12 @@ private:
     void updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const;
     std::set<String> mapExternalRolesNoLock(const LDAPClient::SearchResultsList & external_roles) const;
     bool areLDAPCredentialsValidNoLock(const User & user, const Credentials & credentials,
-        const ExternalAuthenticators & external_authenticators, LDAPClient::SearchResultsList & search_results) const;
+        const ExternalAuthenticators & external_authenticators, LDAPClient::SearchResultsList & role_search_results) const;
 
     mutable std::recursive_mutex mutex;
     AccessControlManager * access_control_manager = nullptr;
     String ldap_server_name;
-    LDAPClient::SearchParamsList role_search_params;
+    LDAPClient::RoleSearchParamsList role_search_params;
     std::set<String> common_role_names;                         // role name that should be granted to all users at all times
     mutable std::map<String, std::size_t> external_role_hashes; // user name -> LDAPClient::SearchResultsList hash (most recently retrieved and processed)
     mutable std::map<String, std::set<String>> users_per_roles; // role name -> user names (...it should be granted to; may but don't have to exist for common roles)

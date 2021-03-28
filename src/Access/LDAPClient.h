@@ -38,12 +38,20 @@ public:
         Scope scope = Scope::SUBTREE;
         String search_filter;
         String attribute = "cn";
+
+        void combineHash(std::size_t & seed) const;
+    };
+
+    struct RoleSearchParams
+        : public SearchParams
+    {
         String prefix;
 
         void combineHash(std::size_t & seed) const;
     };
 
-    using SearchParamsList = std::vector<SearchParams>;
+    using RoleSearchParamsList = std::vector<RoleSearchParams>;
+
     using SearchResults = std::set<String>;
     using SearchResultsList = std::vector<SearchResults>;
 
@@ -105,6 +113,8 @@ public:
         String user;
         String password;
 
+        std::optional<SearchParams> user_dn_detection;
+
         std::chrono::seconds verification_cooldown{0};
 
         std::chrono::seconds operation_timeout{40};
@@ -134,6 +144,9 @@ protected:
 #if USE_LDAP
     LDAP * handle = nullptr;
 #endif
+    String final_user_name;
+    String final_bind_dn;
+    String final_user_dn;
 };
 
 class LDAPSimpleAuthClient
@@ -141,7 +154,7 @@ class LDAPSimpleAuthClient
 {
 public:
     using LDAPClient::LDAPClient;
-    bool authenticate(const SearchParamsList * search_params, SearchResultsList * search_results);
+    bool authenticate(const RoleSearchParamsList * role_search_params, SearchResultsList * role_search_results);
 };
 
 }

@@ -68,34 +68,15 @@ void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_m
         common_roles_cfg.insert(role_names.begin(), role_names.end());
     }
 
-    LDAPClient::SearchParamsList role_search_params_cfg;
+    LDAPClient::RoleSearchParamsList role_search_params_cfg;
     if (has_role_mapping)
     {
         Poco::Util::AbstractConfiguration::Keys all_keys;
         config.keys(prefix, all_keys);
         for (const auto & key : all_keys)
         {
-            if (key != "role_mapping" && key.find("role_mapping[") != 0)
-                continue;
-
-            const String rm_prefix = prefix_str + key;
-            const String rm_prefix_str = rm_prefix + '.';
-            role_search_params_cfg.emplace_back();
-            auto & rm_params = role_search_params_cfg.back();
-
-            rm_params.base_dn = config.getString(rm_prefix_str + "base_dn", "");
-            rm_params.search_filter = config.getString(rm_prefix_str + "search_filter", "");
-            rm_params.attribute = config.getString(rm_prefix_str + "attribute", "cn");
-            rm_params.prefix = config.getString(rm_prefix_str + "prefix", "");
-
-            auto scope = config.getString(rm_prefix_str + "scope", "subtree");
-            boost::algorithm::to_lower(scope);
-            if (scope == "base")           rm_params.scope = LDAPClient::SearchParams::Scope::BASE;
-            else if (scope == "one_level") rm_params.scope = LDAPClient::SearchParams::Scope::ONE_LEVEL;
-            else if (scope == "subtree")   rm_params.scope = LDAPClient::SearchParams::Scope::SUBTREE;
-            else if (scope == "children")  rm_params.scope = LDAPClient::SearchParams::Scope::CHILDREN;
-            else
-                throw Exception("Invalid value of 'scope' field in '" + key + "' section of LDAP user directory, must be one of 'base', 'one_level', 'subtree', or 'children'", ErrorCodes::BAD_ARGUMENTS);
+            if (key == "role_mapping" || key.find("role_mapping[") == 0)
+                parseLDAPRoleSearchParams(role_search_params_cfg.emplace_back(), config, prefix_str + key);
         }
     }
 
@@ -364,7 +345,7 @@ std::set<String> LDAPAccessStorage::mapExternalRolesNoLock(const LDAPClient::Sea
 
 
 bool LDAPAccessStorage::areLDAPCredentialsValidNoLock(const User & user, const Credentials & credentials,
-    const ExternalAuthenticators & external_authenticators, LDAPClient::SearchResultsList & search_results) const
+    const ExternalAuthenticators & external_authenticators, LDAPClient::SearchResultsList & role_search_results) const
 {
     if (!credentials.isReady())
         return false;
@@ -373,7 +354,7 @@ bool LDAPAccessStorage::areLDAPCredentialsValidNoLock(const User & user, const C
         return false;
 
     if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
-        return external_authenticators.checkLDAPCredentials(ldap_server_name, *basic_credentials, &role_search_params, &search_results);
+        return external_authenticators.checkLDAPCredentials(ldap_server_name, *basic_credentials, &role_search_params, &role_search_results);
 
     return false;
 }

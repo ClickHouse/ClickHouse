@@ -17,6 +17,7 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
 <yandex>
     <!- ... -->
     <ldap_servers>
+        <!- Typical LDAP server. -->
         <my_ldap_server>
             <host>localhost</host>
             <port>636</port>
@@ -31,6 +32,18 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
             <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
         </my_ldap_server>
+
+        <!- Typical Active Directory with configured user DN detection for further role mapping. -->
+        <my_ad_server>
+            <host>localhost</host>
+            <port>389</port>
+            <bind_dn>EXAMPLE\{user_name}</bind_dn>
+            <user_dn_detection>
+                <base_dn>CN=Users,DC=example,DC=com</base_dn>
+                <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+            </user_dn_detection>
+            <enable_tls>no</enable_tls>
+        </my_ad_server>
     </ldap_servers>
 </yandex>
 ```
@@ -43,6 +56,15 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 - `port` — LDAP server port, default is `636` if `enable_tls` is set to `true`, `389` otherwise.
 - `bind_dn` — Template used to construct the DN to bind to.
     - The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt.
+- `user_dn_detection` - Section with LDAP search parameters for detecting the actual user DN of the bound user.
+    - This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value.
+        - `base_dn` - Template used to construct the base DN for the LDAP search.
+            - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during the LDAP search.
+        - `scope` - Scope of the LDAP search.
+            - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
+        - `search_filter` - Template used to construct the search filter for the LDAP search.
+            - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search.
+            - Note, that the special characters must be escaped properly in XML.
 - `verification_cooldown` — A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server.
     - Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.
 - `enable_tls` — A flag to trigger the use of the secure connection to the LDAP server.
@@ -107,7 +129,7 @@ Goes into `config.xml`.
 <yandex>
     <!- ... -->
     <user_directories>
-        <!- ... -->
+        <!- Typical LDAP server. -->
         <ldap>
             <server>my_ldap_server</server>
             <roles>
@@ -119,6 +141,18 @@ Goes into `config.xml`.
                 <scope>subtree</scope>
                 <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
                 <attribute>cn</attribute>
+                <prefix>clickhouse_</prefix>
+            </role_mapping>
+        </ldap>
+
+        <!- Typical Active Directory with role mapping that relies on the detected user DN. -->
+        <ldap>
+            <server>my_ad_server</server>
+            <role_mapping>
+                <base_dn>CN=Users,DC=example,DC=com</base_dn>
+                <attribute>CN</attribute>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
                 <prefix>clickhouse_</prefix>
             </role_mapping>
         </ldap>
@@ -137,13 +171,13 @@ Note that `my_ldap_server` referred in the `ldap` section inside the `user_direc
     - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](../../sql-reference/statements/create/role.md#create-role-statement) statement.
     - There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
         - `base_dn` — Template used to construct the base DN for the LDAP search.
-           - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during each LDAP search.
+            - The resulting DN will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{user_dn}` substrings of the template with the actual user name, bind DN, and user DN during each LDAP search.
         - `scope` — Scope of the LDAP search.
             - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
         - `search_filter` — Template used to construct the search filter for the LDAP search.
-            - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}` and `{base_dn}` substrings of the template with the actual user name, bind DN and base DN during each LDAP search.
+            - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, `{user_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, user DN, and base DN during each LDAP search.
             - Note, that the special characters must be escaped properly in XML.
-        - `attribute` — Attribute name whose values will be returned by the LDAP search.
+        - `attribute` — Attribute name whose values will be returned by the LDAP search. `cn`, by default.
         - `prefix` — Prefix, that will be expected to be in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. Empty by default.
 
 [Original article](https://clickhouse.tech/docs/en/operations/external-authenticators/ldap/) <!--hide-->
