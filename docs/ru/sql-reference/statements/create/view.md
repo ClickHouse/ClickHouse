@@ -97,7 +97,6 @@ LIVE-представления работают по тому же принци
 CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
 ```
-### Отслеживание изменений {#live-view-monitoring}
 Отслеживаем изменения LIVE-представления при вставке данных в исходную таблицу.
 
 ```sql
