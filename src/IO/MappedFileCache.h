@@ -44,16 +44,16 @@ public:
         return key;
     }
 
-    MappedPtr get(const Key & key)
+    template <typename LoadFunc>
+    MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {
-        MappedPtr res = Base::get(key);
-
-        if (res)
-            ProfileEvents::increment(ProfileEvents::MappedFileCacheHits);
-        else
+        auto result = Base::getOrSet(key, load);
+        if (result.second)
             ProfileEvents::increment(ProfileEvents::MappedFileCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::MappedFileCacheHits);
 
-        return res;
+        return result.first;
     }
 };
 

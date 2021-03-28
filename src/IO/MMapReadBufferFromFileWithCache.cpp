@@ -27,7 +27,7 @@ MMapReadBufferFromFileWithCache::MMapReadBufferFromFileWithCache(
     mapped = cache.getOrSet(cache.hash(file_name, offset, length), [&]
     {
         return std::make_shared<MappedFile>(file_name, offset, length);
-    }).first;
+    });
 
     init();
 }
@@ -38,7 +38,7 @@ MMapReadBufferFromFileWithCache::MMapReadBufferFromFileWithCache(
     mapped = cache.getOrSet(cache.hash(file_name, offset, -1), [&]
     {
         return std::make_shared<MappedFile>(file_name, offset);
-    }).first;
+    });
 
     init();
 }
