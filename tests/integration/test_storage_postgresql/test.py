@@ -248,7 +248,7 @@ def test_postgres_distributed(started_cluster):
         (id UInt32, name String)
         ENGINE = PostgreSQL(`postgres{1|2|3}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
 
-    # check both remote replicas are accessible throught that table
+    # check all replicas are traversed
     query = "SELECT name FROM ("
     for i in range (3):
         query += "SELECT name FROM test_replicas UNION DISTINCT "
@@ -263,7 +263,11 @@ def test_postgres_distributed(started_cluster):
         (id UInt32, name String, age UInt32, money UInt32)
         ENGINE = ExternalDistributed('PostgreSQL', `postgres{1|2}:5432,postgres{3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
 
-    # check both remote replicas are accessible throught that table
+    # Check only one replica in each shard is used
+    result = node1.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    assert(result == 'host1\nhost3\n')
+
+    # check all replicas are traversed
     query = "SELECT name FROM ("
     for i in range (2):
         query += "SELECT name FROM test_shards UNION DISTINCT "
