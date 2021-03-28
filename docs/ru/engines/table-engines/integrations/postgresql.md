@@ -3,7 +3,7 @@ toc_priority: 11
 toc_title: PostgreSQL
 ---
 
-#PostgreSQL {#postgresql}
+# PostgreSQL {#postgresql}
 
 Движок PostgreSQL позволяет выполнять запросы `SELECT` и `INSERT` для таблиц на удаленном сервере PostgreSQL.
 
