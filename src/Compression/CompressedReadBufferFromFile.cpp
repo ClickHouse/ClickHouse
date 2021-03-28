@@ -49,7 +49,7 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(
     size_t estimated_size,
     size_t aio_threshold,
     size_t mmap_threshold,
-    MappedFileCache * mmap_cache,
+    MMappedFileCache * mmap_cache,
     size_t buf_size,
     bool allow_different_codecs_)
     : BufferWithOwnMemory<ReadBuffer>(0)

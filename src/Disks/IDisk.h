@@ -31,7 +31,7 @@ using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
-class MappedFileCache;
+class MMappedFileCache;
 
 /**
  * Mode of opening a file for write.
@@ -155,7 +155,7 @@ public:
         size_t estimated_size = 0,
         size_t aio_threshold = 0,
         size_t mmap_threshold = 0,
-        MappedFileCache * mmap_cache = nullptr) const = 0;
+        MMappedFileCache * mmap_cache = nullptr) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(

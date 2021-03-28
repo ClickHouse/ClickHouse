@@ -270,7 +270,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::DROP_MMAP_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
-            system_context.dropMappedFileCache();
+            system_context.dropMMappedFileCache();
             break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:

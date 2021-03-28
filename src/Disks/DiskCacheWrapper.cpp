@@ -109,7 +109,7 @@ DiskCacheWrapper::readFile(
     size_t estimated_size,
     size_t aio_threshold,
     size_t mmap_threshold,
-    MappedFileCache * mmap_cache) const
+    MMappedFileCache * mmap_cache) const
 {
     if (!cache_file_predicate(path))
         return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);

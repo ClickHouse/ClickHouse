@@ -21,7 +21,7 @@ namespace DB
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename_,
-    size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MappedFileCache * mmap_cache,
+    size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache,
     size_t buffer_size_, int flags_, char * existing_memory_, size_t alignment)
 {
 #if defined(OS_LINUX) || defined(__FreeBSD__)

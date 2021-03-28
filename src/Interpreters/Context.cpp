@@ -55,7 +55,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
-#include <IO/MappedFileCache.h>
+#include <IO/MMappedFileCache.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -342,7 +342,7 @@ struct ContextShared
     AccessControlManager access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
-    mutable MappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
@@ -1456,23 +1456,23 @@ void Context::dropMarkCache() const
 }
 
 
-void Context::setMappedFileCache(size_t cache_size_in_num_entries)
+void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
 {
     auto lock = getLock();
 
     if (shared->mmap_cache)
         throw Exception("Mapped file cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->mmap_cache = std::make_shared<MappedFileCache>(cache_size_in_num_entries);
+    shared->mmap_cache = std::make_shared<MMappedFileCache>(cache_size_in_num_entries);
 }
 
-MappedFileCachePtr Context::getMappedFileCache() const
+MMappedFileCachePtr Context::getMMappedFileCache() const
 {
     auto lock = getLock();
     return shared->mmap_cache;
 }
 
-void Context::dropMappedFileCache() const
+void Context::dropMMappedFileCache() const
 {
     auto lock = getLock();
     if (shared->mmap_cache)
