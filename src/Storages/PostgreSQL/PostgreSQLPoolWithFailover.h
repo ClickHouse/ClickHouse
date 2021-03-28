@@ -23,14 +23,14 @@ public:
 
     PoolWithFailover(
         const std::string & database,
-        const std::string & host_pattern,
+        const std::string & hosts_pattern,
         uint16_t port,
         const std::string & user,
         const std::string & password,
         size_t pool_size = POSTGRESQL_POOL_DEFAULT_SIZE,
         int64_t pool_wait_timeout = -1,
-        const size_t max_addresses = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_ADDRESSES,
-        const size_t max_tries_ = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
+        size_t max_addresses = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_ADDRESSES,
+        size_t max_tries_ = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
     PoolWithFailover(const PoolWithFailover & other);
 
