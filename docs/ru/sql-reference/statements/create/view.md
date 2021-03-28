@@ -62,7 +62,7 @@ CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]na
 
 Чтобы удалить представление, следует использовать [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Впрочем, `DROP TABLE` тоже работает для представлений.
 
-## LIVE-представления (экспериментальные) {#live-view}
+## LIVE-представления {#live-view}
 
 !!! important "Важно"
    Представления `LIVE VIEW` являются экспериментальной возможностью. Их использование может повлечь потерю совместимости в будущих версиях. 
