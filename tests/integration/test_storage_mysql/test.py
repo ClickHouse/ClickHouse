@@ -214,7 +214,7 @@ def test_mysql_distributed(started_cluster):
             ENGINE = MySQL(`mysql{}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');'''.format(i, i))
         node1.query("INSERT INTO test_replica{} (id, name) SELECT number, 'host{}' from numbers(10) ".format(i, i))
 
-    # check all remote replicas are accessible throught that table
+    # check all replicas are traversed
     query = "SELECT * FROM ("
     for i in range (3):
         query += "SELECT name FROM test_replicas UNION DISTINCT "
@@ -229,7 +229,11 @@ def test_mysql_distributed(started_cluster):
         (id UInt32, name String, age UInt32, money UInt32)
         ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
 
-    # check both remote replicas are accessible throught that table
+    # Check only one replica in each shard is used
+    result = node1.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    assert(result == 'host1\nhost3\n')
+
+    # check all replicas are traversed
     query = "SELECT name FROM ("
     for i in range (2):
         query += "SELECT name FROM test_shards UNION DISTINCT "
