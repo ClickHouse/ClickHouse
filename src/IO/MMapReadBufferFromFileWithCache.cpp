@@ -4,13 +4,6 @@
 namespace DB
 {
 
-namespace
-{
-    /// TODO: Move to a better place, make configurable.
-    MappedFileCache cache(1000);
-}
-
-
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -29,7 +22,7 @@ void MMapReadBufferFromFileWithCache::init()
 
 
 MMapReadBufferFromFileWithCache::MMapReadBufferFromFileWithCache(
-    const std::string & file_name, size_t offset, size_t length)
+    MappedFileCache & cache, const std::string & file_name, size_t offset, size_t length)
 {
     mapped = cache.getOrSet(cache.hash(file_name, offset, length), [&]
     {
@@ -40,7 +33,7 @@ MMapReadBufferFromFileWithCache::MMapReadBufferFromFileWithCache(
 }
 
 MMapReadBufferFromFileWithCache::MMapReadBufferFromFileWithCache(
-    const std::string & file_name, size_t offset)
+    MappedFileCache & cache, const std::string & file_name, size_t offset)
 {
     mapped = cache.getOrSet(cache.hash(file_name, offset, -1), [&]
     {

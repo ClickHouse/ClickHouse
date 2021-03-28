@@ -1,6 +1,13 @@
 #pragma once
 
 #include <cstddef>
+#include <Common/CurrentMetrics.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric MappedFiles;
+    extern const Metric MappedFileBytes;
+}
 
 
 namespace DB
@@ -43,6 +50,9 @@ protected:
     size_t offset = 0;
     size_t length = 0;
     char * data = nullptr;
+
+    CurrentMetrics::Increment files_metric_increment{CurrentMetrics::MappedFiles, 0};
+    CurrentMetrics::Increment bytes_metric_increment{CurrentMetrics::MappedFileBytes, 0};
 };
 
 }

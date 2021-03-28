@@ -58,15 +58,18 @@ void MappedFileDescriptor::set(int fd_, size_t offset_, size_t length_)
     offset = offset_;
     length = length_;
 
-    if (length)
-    {
-        void * buf = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, offset);
-        if (MAP_FAILED == buf)
-            throwFromErrno(fmt::format("MappedFileDescriptor: Cannot mmap {}.", ReadableSize(length)),
-                ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+    if (!length)
+        return;
 
-        data = static_cast<char *>(buf);
-    }
+    void * buf = mmap(nullptr, length, PROT_READ, MAP_PRIVATE, fd, offset);
+    if (MAP_FAILED == buf)
+        throwFromErrno(fmt::format("MappedFileDescriptor: Cannot mmap {}.", ReadableSize(length)),
+            ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+    data = static_cast<char *>(buf);
+
+    files_metric_increment.changeTo(1);
+    bytes_metric_increment.changeTo(length);
 }
 
 void MappedFileDescriptor::set(int fd_, size_t offset_)
@@ -89,6 +92,9 @@ void MappedFileDescriptor::finish()
             ErrorCodes::CANNOT_MUNMAP);
 
     length = 0;
+
+    files_metric_increment.changeTo(0);
+    bytes_metric_increment.changeTo(0);
 }
 
 MappedFileDescriptor::~MappedFileDescriptor()
