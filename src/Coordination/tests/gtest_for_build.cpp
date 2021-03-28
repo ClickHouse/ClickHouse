@@ -897,25 +897,25 @@ TEST(CoordinationTest, TestStorageSnapshotSimple)
     manager.serializeSnapshotBufferToDisk(*buf, 2);
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin"));
 
-    DB::NuKeeperStorage restored_storage(500);
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
-    manager.deserializeSnapshotFromBuffer(&restored_storage, debuf);
 
-    EXPECT_EQ(restored_storage.container.size(), 3);
-    EXPECT_EQ(restored_storage.container.getValue("/").children.size(), 1);
-    EXPECT_EQ(restored_storage.container.getValue("/hello").children.size(), 1);
-    EXPECT_EQ(restored_storage.container.getValue("/hello/somepath").children.size(), 0);
+    auto [snapshot_meta, restored_storage] = manager.deserializeSnapshotFromBuffer(debuf);
 
-    EXPECT_EQ(restored_storage.container.getValue("/").data, "");
-    EXPECT_EQ(restored_storage.container.getValue("/hello").data, "world");
-    EXPECT_EQ(restored_storage.container.getValue("/hello/somepath").data, "somedata");
-    EXPECT_EQ(restored_storage.session_id_counter, 7);
-    EXPECT_EQ(restored_storage.zxid, 2);
-    EXPECT_EQ(restored_storage.ephemerals.size(), 2);
-    EXPECT_EQ(restored_storage.ephemerals[3].size(), 1);
-    EXPECT_EQ(restored_storage.ephemerals[1].size(), 1);
-    EXPECT_EQ(restored_storage.session_and_timeout.size(), 2);
+    EXPECT_EQ(restored_storage->container.size(), 3);
+    EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello").children.size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").children.size(), 0);
+
+    EXPECT_EQ(restored_storage->container.getValue("/").data, "");
+    EXPECT_EQ(restored_storage->container.getValue("/hello").data, "world");
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").data, "somedata");
+    EXPECT_EQ(restored_storage->session_id_counter, 7);
+    EXPECT_EQ(restored_storage->zxid, 2);
+    EXPECT_EQ(restored_storage->ephemerals.size(), 2);
+    EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
+    EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
+    EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
 }
 
 TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
@@ -946,15 +946,14 @@ TEST(CoordinationTest, TestStorageSnapshotMoreWrites)
     manager.serializeSnapshotBufferToDisk(*buf, 50);
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin"));
 
-    DB::NuKeeperStorage restored_storage(500);
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-    manager.deserializeSnapshotFromBuffer(&restored_storage, debuf);
+    auto [meta, restored_storage] = manager.deserializeSnapshotFromBuffer(debuf);
 
-    EXPECT_EQ(restored_storage.container.size(), 51);
+    EXPECT_EQ(restored_storage->container.size(), 51);
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(restored_storage.container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
     }
 }
 
@@ -987,14 +986,13 @@ TEST(CoordinationTest, TestStorageSnapshotManySnapshots)
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_250.bin"));
 
 
-    DB::NuKeeperStorage restored_storage(500);
-    manager.restoreFromLatestSnapshot(&restored_storage);
+    auto [meta, restored_storage] = manager.restoreFromLatestSnapshot();
 
-    EXPECT_EQ(restored_storage.container.size(), 251);
+    EXPECT_EQ(restored_storage->container.size(), 251);
 
     for (size_t i = 0; i < 250; ++i)
     {
-        EXPECT_EQ(restored_storage.container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
     }
 }
 
@@ -1040,12 +1038,11 @@ TEST(CoordinationTest, TestStorageSnapshotMode)
             EXPECT_FALSE(storage.container.contains("/hello_" + std::to_string(i)));
     }
 
-    DB::NuKeeperStorage restored_storage(500);
-    manager.restoreFromLatestSnapshot(&restored_storage);
+    auto [meta, restored_storage] = manager.restoreFromLatestSnapshot();
 
     for (size_t i = 0; i < 50; ++i)
     {
-        EXPECT_EQ(restored_storage.container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
+        EXPECT_EQ(restored_storage->container.getValue("/hello_" + std::to_string(i)).data, "world_" + std::to_string(i));
     }
 
 }
@@ -1071,8 +1068,7 @@ TEST(CoordinationTest, TestStorageSnapshotBroken)
     plain_buf.truncate(34);
     plain_buf.sync();
 
-    DB::NuKeeperStorage restored_storage(500);
-    EXPECT_THROW(manager.restoreFromLatestSnapshot(&restored_storage), DB::Exception);
+    EXPECT_THROW(manager.restoreFromLatestSnapshot(), DB::Exception);
 }
 
 nuraft::ptr<nuraft::buffer> getBufferFromZKRequest(int64_t session_id, const Coordination::ZooKeeperRequestPtr & request)
@@ -1235,6 +1231,37 @@ TEST(CoordinationTest, TestStateMachineAndLogStore)
         testLogAndStateMachine(settings, 45);
     }
 }
+
+TEST(CoordinationTest, TestEphemeralNodeRemove)
+{
+    using namespace Coordination;
+    using namespace DB;
+
+    ChangelogDirTest snapshots("./snapshots");
+    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
+
+    ResponsesQueue queue;
+    SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<NuKeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
+    state_machine->init();
+
+    std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
+    request_c->path = "/hello";
+    request_c->is_ephemeral = true;
+    auto entry_c = getLogEntryFromZKRequest(0, 1, request_c);
+    state_machine->commit(1, entry_c->get_buf());
+    const auto & storage = state_machine->getStorage();
+
+    EXPECT_EQ(storage.ephemerals.size(), 1);
+    std::shared_ptr<ZooKeeperRemoveRequest> request_d = std::make_shared<ZooKeeperRemoveRequest>();
+    request_d->path = "/hello";
+    /// Delete from other session
+    auto entry_d = getLogEntryFromZKRequest(0, 2, request_d);
+    state_machine->commit(2, entry_d->get_buf());
+
+    EXPECT_EQ(storage.ephemerals.size(), 0);
+}
+
 
 int main(int argc, char ** argv)
 {
