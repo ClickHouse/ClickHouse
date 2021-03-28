@@ -1,6 +1,6 @@
 <test max_ignored_relative_change="0.3">
     <create_query>
-        CREATE TABLE simple_key_source_table
+        CREATE TABLE simple_key_direct_dictionary_source_table
         (
             id UInt64,
             value_int UInt64,
@@ -11,7 +11,7 @@
     </create_query>
 
     <create_query>
-        CREATE TABLE complex_key_source_table
+        CREATE TABLE complex_key_direct_dictionary_source_table
         (
             id UInt64,
             id_key String,
@@ -32,7 +32,7 @@
             value_string_nullable Nullable(String)
         )
         PRIMARY KEY id
-        SOURCE(CLICKHOUSE(DB 'default' TABLE 'simple_key_source_table'))
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'simple_key_direct_dictionary_source_table'))
         LAYOUT(DIRECT())
     </create_query>
 
@@ -47,35 +47,35 @@
             value_string_nullable Nullable(String)
         )
         PRIMARY KEY id, id_key
-        SOURCE(CLICKHOUSE(DB 'default' TABLE 'complex_key_source_table'))
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'complex_key_direct_dictionary_source_table'))
         LAYOUT(COMPLEX_KEY_DIRECT())
     </create_query>
 
     <fill_query>
-        INSERT INTO simple_key_source_table
+        INSERT INTO simple_key_direct_dictionary_source_table
         SELECT number, number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
         LIMIT 100000;
     </fill_query>
 
     <fill_query>
-        INSERT INTO complex_key_source_table
+        INSERT INTO complex_key_direct_dictionary_source_table
         SELECT number, toString(number), number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
         LIMIT 100000;
     </fill_query>
 
-    <query>SELECT dictGet('default.simple_key_source_table', 'value_int', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.simple_key_source_table', 'value_string', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.simple_key_source_table', 'value_decimal', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.simple_key_source_table', 'value_string_nullable', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictHas('default.simple_key_source_table', number) FROM system.numbers LIMIT 75000;</query>
+    <query>SELECT dictGet('default.simple_key_direct_dictionary', 'value_int', number) FROM system.numbers LIMIT 75000;</query>
+    <query>SELECT dictGet('default.simple_key_direct_dictionary', 'value_string', number) FROM system.numbers LIMIT 75000;</query>
+    <query>SELECT dictGet('default.simple_key_direct_dictionary', 'value_decimal', number) FROM system.numbers LIMIT 75000;</query>
+    <query>SELECT dictGet('default.simple_key_direct_dictionary', 'value_string_nullable', number) FROM system.numbers LIMIT 75000;</query>
+    <query>SELECT dictHas('default.simple_key_direct_dictionary', number) FROM system.numbers LIMIT 75000;</query>
 
-    <query>SELECT dictGet('default.simple_key_source_table', 'value_int', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.simple_key_source_table', 'value_string', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.simple_key_source_table', 'value_decimal', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.simple_key_source_table', 'value_string_nullable', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictHas('default.simple_key_source_table', number) FROM system.numbers LIMIT 150000;</query>
+    <query>SELECT dictGet('default.simple_key_direct_dictionary', 'value_int', number) FROM system.numbers LIMIT 150000;</query>
+    <query>SELECT dictGet('default.simple_key_direct_dictionary', 'value_string', number) FROM system.numbers LIMIT 150000;</query>
+    <query>SELECT dictGet('default.simple_key_direct_dictionary', 'value_decimal', number) FROM system.numbers LIMIT 150000;</query>
+    <query>SELECT dictGet('default.simple_key_direct_dictionary', 'value_string_nullable', number) FROM system.numbers LIMIT 150000;</query>
+    <query>SELECT dictHas('default.simple_key_direct_dictionary', number) FROM system.numbers LIMIT 150000;</query>
 
     <query>SELECT dictGet('default.complex_key_direct_dictionary', 'value_int', (number, toString(number))) FROM system.numbers LIMIT 75000;</query>
     <query>SELECT dictGet('default.complex_key_direct_dictionary', 'value_string', (number, toString(number))) FROM system.numbers LIMIT 75000;</query>
@@ -88,5 +88,11 @@
     <query>SELECT dictGet('default.complex_key_direct_dictionary', 'value_decimal', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
     <query>SELECT dictGet('default.complex_key_direct_dictionary', 'value_string_nullable', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
     <query>SELECT dictHas('default.complex_key_direct_dictionary', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
+
+    <drop_query>DROP TABLE IF EXISTS simple_key_direct_dictionary_source_table;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS complex_key_direct_dictionary_source_table;</drop_query>
+
+    <drop_query>DROP DICTIONARY IF EXISTS simple_key_direct_dictionary;</drop_query>
+    <drop_query>DROP DICTIONARY IF EXISTS complex_key_direct_dictionary;</drop_query>
 
 </test>
