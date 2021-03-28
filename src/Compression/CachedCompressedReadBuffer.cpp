@@ -47,9 +47,9 @@ bool CachedCompressedReadBuffer::nextImpl()
 
         if (cell->compressed_size)
         {
-            owned_cell->additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
-            owned_cell->data.resize(size_decompressed + owned_cell->additional_bytes);
-            decompressTo(owned_cell->data.data(), size_decompressed, size_compressed_without_checksum);
+            cell->additional_bytes = codec->getAdditionalSizeAtTheEndOfBuffer();
+            cell->data.resize(size_decompressed + cell->additional_bytes);
+            decompressTo(cell->data.data(), size_decompressed, size_compressed_without_checksum);
         }
 
         return cell;
