@@ -152,6 +152,9 @@ private:
 StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>())
 {
+    // TODO: this table must be created with original write structure, and aggregated read structure
+    // TODO: also i should add metadata to indicate that aggregation is not needed in this case.
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));

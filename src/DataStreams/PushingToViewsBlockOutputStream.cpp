@@ -17,6 +17,7 @@
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageAggregatingMemory.h>
 #include <common/logger_useful.h>
 
 
@@ -86,6 +87,14 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
                 materialized_view->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
 
             StoragePtr inner_table = materialized_view->getTargetTable();
+
+            if (dynamic_cast<const StorageAggregatingMemory *>(inner_table.get()))
+            {
+                // TODO: process insert without aggregation
+                // out = std::make_shared<PushingToViewsBlockOutputStream>(
+                // dependent_table, dependent_metadata_snapshot, *insert_context, ASTPtr(), true);
+            }
+
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
