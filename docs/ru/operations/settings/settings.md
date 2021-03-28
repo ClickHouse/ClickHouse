@@ -759,6 +759,38 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 log_query_threads=1
 ```
 
+## log_comment {#settings-log-comment}
+
+Указывает значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
+
+Может быть использована для улучшения читабельности логов сервера. Кроме того, можно быстро выделить связанные с тестом запросы из `system.query_log` во время проведения [clickhouse-test](../../development/tests.md)
+
+Возможные значения:
+
+-   Любая строка не длиннее чем [max_query_size](#settings-max_query_size). При привышении длины, сервер сгенерирует исключение.
+
+Значениее по умолчанию: пустая строка.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SET log_comment = 'log_comment test', log_queries = 1;
+SELECT 1;
+SYSTEM FLUSH LOGS;
+SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 2;
+```
+
+Результат:
+
+``` text
+┌─type────────┬─query─────┐
+│ QueryStart  │ SELECT 1; │
+│ QueryFinish │ SELECT 1; │
+└─────────────┴───────────┘
+```
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 Формировать блоки указанного размера, при вставке в таблицу.
