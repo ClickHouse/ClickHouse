@@ -131,4 +131,6 @@ public:
     }
 };
 
+using NuKeeperStoragePtr = std::unique_ptr<NuKeeperStorage>;
+
 }

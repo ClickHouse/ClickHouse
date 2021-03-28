@@ -551,11 +551,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         .checksum_on_read = settings.checksum_on_read,
     };
 
-    /// PREWHERE
-    String prewhere_column;
-    if (select.prewhere())
-        prewhere_column = select.prewhere()->getColumnName();
-
     struct DataSkippingIndexAndCondition
     {
         MergeTreeIndexPtr index;
