@@ -36,9 +36,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    bool supportsParallelInsert() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-
     /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
     bool prefersLargeBlocks() const override { return false; }
 
