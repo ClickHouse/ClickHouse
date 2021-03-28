@@ -1163,7 +1163,8 @@ void MergeTreeData::clearOldPartsFromFilesystem(bool force)
 
     /// This is needed to close files to avoid they reside on disk after being deleted.
     /// NOTE: we can drop files from cache more selectively but this is good enough.
-    global_context.dropMappedFileCache();
+    if (!parts_to_remove.empty())
+        global_context.dropMappedFileCache();
 }
 
 void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_remove)
