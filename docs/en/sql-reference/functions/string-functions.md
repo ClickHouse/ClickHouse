@@ -649,3 +649,39 @@ Result:
 -   [List of XML and HTML character entity references](https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references)
 
 
+
+## extractTextFromHTML {#extracttextfromhtml}
+
+Removes tags from a text.
+
+**Syntax**
+
+``` sql
+extractTextFromHTML(x)
+```
+
+
+
+**Arguments** (Optional)
+
+-   `x` — string to process. [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Extracted text.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+```
+
+Result:
+
+``` text
+```
+
+
