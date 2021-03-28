@@ -108,8 +108,8 @@ postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(
 ```
 
 ```sql
-CREATE TABLE test_pg_table_schema_with_dots (a UInt32)
-        ENGINE PostgreSQL('postgres1:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
 **См. также**
