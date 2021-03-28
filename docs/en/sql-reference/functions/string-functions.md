@@ -677,11 +677,13 @@ Type: [String](../../sql-reference/data-types/string.md).
 Query:
 
 ``` sql
+SELECT extractTextFromHTML('<p>Text with<b>tags</b></p>');
 ```
 
 Result:
 
 ``` text
+Text with tags 
 ```
 
 
