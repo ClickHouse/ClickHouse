@@ -90,7 +90,7 @@ Live views work similarly to how a query in a distributed table works. But inste
 
     See [WITH REFRESH](#live-view-with-refresh) to force periodic updates of a live view that in some cases can be used as a workaround.
 
-You can watch for changes in the live view query result using the [WATCH](../../../sql-reference/statements/watch.md) query.
+You can monitor changes in the `LIVE VIEW` query result using [WATCH](../../../sql-reference/statements/watch.md) query.
 
 ```sql
 WATCH [db.]live_view
