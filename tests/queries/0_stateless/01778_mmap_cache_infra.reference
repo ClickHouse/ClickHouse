@@ -1,6 +1,6 @@
-MMappedFileCacheHits
-MMappedFileCacheMisses
 CreatedReadBufferMMap
 CreatedReadBufferMMapFailed
-MMappedFiles
+MMappedFileCacheHits
+MMappedFileCacheMisses
 MMappedFileBytes
+MMappedFiles
