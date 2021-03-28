@@ -113,7 +113,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
         ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
-**Смотри также** 
+**См. также** 
 
 -   [Табличная функция `postgresql`](../../../sql-reference/table-functions/postgresql.md)
 -   [Использование PostgreSQL в качестве источника для внешнего словаря](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
