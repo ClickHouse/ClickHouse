@@ -953,3 +953,26 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 String toString(const Field & x);
 
 }
+
+template <>
+struct fmt::formatter<DB::Field>
+{
+    constexpr auto parse(format_parse_context & ctx)
+    {
+        auto it = ctx.begin();
+        auto end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::Field & x, FormatContext & ctx)
+    {
+        return format_to(ctx.out(), "{}", toString(x));
+    }
+};
+
