@@ -504,6 +504,11 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 The maximum number of simultaneously processed requests.
 
+Possible values:
+
+-   Positive integer.
+-   0 — Disabled.
+
 **Example**
 
 ``` xml
@@ -524,6 +529,25 @@ Default value: `0` that means no limit.
 
 ``` xml
 <max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
+```
+
+**See Also**
+
+-   [max_concurrent_queries](#max-concurrent-queries)
+
+## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
+
+Minimal number of marks for applying the `max_concurrent_queries` setting.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Disabled.
+
+**Example**
+
+``` xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
 **See Also**
