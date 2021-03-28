@@ -1,0 +1,6 @@
+MMappedFileCacheHits
+MMappedFileCacheMisses
+CreatedReadBufferMMap
+CreatedReadBufferMMapFailed
+MMappedFiles
+MMappedFileBytes
