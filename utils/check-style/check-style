@@ -162,6 +162,7 @@ git status -uno 2> >(grep "fatal: not a git repository: /place/sandbox-data/task
 # Check that every header file has #pragma once in first line
 find $ROOT_PATH/{src,programs,utils} -name '*.h' |
     grep -vP $EXCLUDE_DIRS |
+    grep -vF '.inl.' |
     while read file; do [[ $(head -n1 $file) != '#pragma once' ]] && echo "File $file must have '#pragma once' in first line"; done
 
 # Check for executable bit on non-executable files
