@@ -104,7 +104,6 @@ WATCH [db.]live_view
 CREATE TABLE mt (x Int8) Engine = MergeTree ORDER BY x;
 CREATE LIVE VIEW lv AS SELECT sum(x) FROM mt;
 ```
-### Monitoring Changes {#live-view-monitoring}
 Watch a live view while doing a parallel insert into the source table.
 
 ```sql
