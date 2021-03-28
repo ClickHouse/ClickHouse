@@ -11,10 +11,10 @@ namespace DB
 class MMapReadBufferFromFileWithCache : public ReadBufferFromFileBase
 {
 public:
-    MMapReadBufferFromFileWithCache(const std::string & file_name, size_t offset, size_t length);
+    MMapReadBufferFromFileWithCache(MappedFileCache & cache, const std::string & file_name, size_t offset, size_t length);
 
     /// Map till end of file.
-    MMapReadBufferFromFileWithCache(const std::string & file_name, size_t offset);
+    MMapReadBufferFromFileWithCache(MappedFileCache & cache, const std::string & file_name, size_t offset);
 
     off_t getPosition() override;
     std::string getFileName() const override;
@@ -27,5 +27,3 @@ private:
 };
 
 }
-
-

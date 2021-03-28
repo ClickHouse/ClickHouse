@@ -12,6 +12,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <IO/UncompressedCache.h>
+#include <IO/MappedFileCache.h>
 #include <Databases/IDatabase.h>
 #include <chrono>
 
@@ -183,6 +184,13 @@ void AsynchronousMetrics::update()
         {
             new_values["UncompressedCacheBytes"] = uncompressed_cache->weight();
             new_values["UncompressedCacheCells"] = uncompressed_cache->count();
+        }
+    }
+
+    {
+        if (auto mmap_cache = global_context.getMappedFileCache())
+        {
+            new_values["MMapCacheCells"] = mmap_cache->count();
         }
     }
 
