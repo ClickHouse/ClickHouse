@@ -61,7 +61,8 @@ public:
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {
-        auto result = Base::getOrSet(key, load);
+        auto result = Base::getOrSet(key, std::forward<LoadFunc>(load));
+
         if (result.second)
             ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
         else
