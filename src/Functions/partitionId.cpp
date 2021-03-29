@@ -16,6 +16,7 @@ namespace ErrorCodes
 
 
 /** partitionId(x, y, ...) is a function that computes partition ids of arguments.
+  * The function is slow and should not be called for large amount of rows.
   */
 class FunctionPartitionId : public IFunction
 {
