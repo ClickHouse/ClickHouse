@@ -51,7 +51,7 @@ void SubqueryForSet::addJoinActions(ExpressionActionsPtr actions)
         auto new_dag = ActionsDAG::merge(
             std::move(*joined_block_actions->getActionsDAG().clone()),
             std::move(*actions->getActionsDAG().clone()));
-        joined_block_actions = std::make_shared<ExpressionActions>(new_dag);
+        joined_block_actions = std::make_shared<ExpressionActions>(new_dag, actions->getSettings());
     }
 }
 

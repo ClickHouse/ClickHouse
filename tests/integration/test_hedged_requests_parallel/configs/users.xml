@@ -4,8 +4,8 @@
         <default>
             <load_balancing>in_order</load_balancing>
             <max_parallel_replicas>2</max_parallel_replicas>
-            <hedged_connection_timeout>100</hedged_connection_timeout>
-            <receive_data_timeout>2</receive_data_timeout>
+            <hedged_connection_timeout_ms>100</hedged_connection_timeout_ms>
+            <receive_data_timeout_ms>2000</receive_data_timeout_ms>
         </default>
     </profiles>
 </yandex>
