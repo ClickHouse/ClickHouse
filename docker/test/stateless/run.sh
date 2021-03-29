@@ -74,7 +74,13 @@ timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
 ./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
-pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
+clickhouse-client -q "sytem flush logs" ||:
+
+pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
+clickhouse-client -q "select * from system.query_log format TSVWithNamesAndTypes" | pigz > /test_output/query-log.tsv.gz &
+clickhouse-client -q "select * from system.query_thread_log format TSVWithNamesAndTypes" | pigz > /test_output/query-thread-log.tsv.gz &
+wait ||:
+
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
 if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
     tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
