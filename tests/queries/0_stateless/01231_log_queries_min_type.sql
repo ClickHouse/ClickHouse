@@ -22,8 +22,10 @@ select count() from system.query_log where current_database = currentDatabase()
     and query like 'select \'01231_log_queries_min_type/EXCEPTION_WHILE_PROCESSING%'
     and event_date >= yesterday() and type = 'ExceptionWhileProcessing';
 
+set max_rows_to_read='100K';
 select '01231_log_queries_min_type w/ Settings/EXCEPTION_WHILE_PROCESSING', max(number) from system.numbers limit 1e6; -- { serverError 158; }
 system flush logs;
+set max_rows_to_read=0;
 select count() from system.query_log where
     current_database = currentDatabase() and
     query like 'select \'01231_log_queries_min_type w/ Settings/EXCEPTION_WHILE_PROCESSING%' and
