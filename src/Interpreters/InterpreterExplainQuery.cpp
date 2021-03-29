@@ -33,7 +33,8 @@ namespace
 {
     struct ExplainAnalyzedSyntaxMatcher
     {
-        struct Data : public WithContext {
+        struct Data : public WithContext
+        {
             explicit Data(ContextPtr context_) : WithContext(context_) {}
         };
 

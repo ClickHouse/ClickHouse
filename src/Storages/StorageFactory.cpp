@@ -31,6 +31,23 @@ static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_t
 }
 
 
+ContextPtr StorageFactory::Arguments::getContext() const
+{
+    auto ptr = context.lock();
+    if (!ptr)
+        throw Exception("Context has expired", ErrorCodes::LOGICAL_ERROR);
+    return ptr;
+}
+
+ContextPtr StorageFactory::Arguments::getLocalContext() const
+{
+    auto ptr = local_context.lock();
+    if (!ptr)
+        throw Exception("Context has expired", ErrorCodes::LOGICAL_ERROR);
+    return ptr;
+}
+
+
 void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features)
 {
     if (!storages.emplace(name, Creator{std::move(creator_fn), features}).second)

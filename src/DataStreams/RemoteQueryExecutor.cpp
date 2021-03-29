@@ -37,7 +37,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     QueryProcessingStage::Enum stage_)
     : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
-    create_connections = [this, &connection, throttler]() {
+    create_connections = [this, &connection, throttler]()
+    {
         return std::make_unique<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
     };
 }

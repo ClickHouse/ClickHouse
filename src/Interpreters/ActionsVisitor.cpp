@@ -290,7 +290,7 @@ Block createBlockForSet(
     const DataTypes & set_element_types,
     ContextPtr context)
 {
-    auto get_tuple_type_from_ast = [&context](const auto & func) -> DataTypePtr
+    auto get_tuple_type_from_ast = [context](const auto & func) -> DataTypePtr
     {
         if (func && (func->name == "tuple" || func->name == "array") && !func->arguments->children.empty())
         {

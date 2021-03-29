@@ -118,7 +118,8 @@ void DatabaseOrdinary::loadStoredObjects(ContextPtr local_context, bool has_forc
     size_t total_dictionaries = 0;
 
     auto process_metadata = [context_weak = ContextWeakPtr(local_context), &file_names, &total_dictionaries, &file_names_mutex, this](
-                                const String & file_name) {
+                                const String & file_name)
+    {
         fs::path path(getMetadataPath());
         fs::path file_path(file_name);
         fs::path full_path = path / file_path;

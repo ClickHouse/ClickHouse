@@ -46,18 +46,8 @@ public:
         bool attach;
         bool has_force_restore_data_flag;
 
-        ContextPtr getContext() const
-        {
-            auto ptr = context.lock();
-            if (!ptr) throw Exception("Context has expired", ErrorCodes::LOGICAL_ERROR);
-            return ptr;
-        }
-        ContextPtr getLocalContext() const
-        {
-            auto ptr = local_context.lock();
-            if (!ptr) throw Exception("Context has expired", ErrorCodes::LOGICAL_ERROR);
-            return ptr;
-        }
+        ContextPtr getContext() const;
+        ContextPtr getLocalContext() const;
     };
 
     /// Analog of the IStorage::supports*() helpers
