@@ -3,7 +3,8 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
-#include <IO/MMapReadBufferFromFile.h>
+#include <Common/Exception.h>
+#include <IO/MMappedFile.h>
 
 
 namespace ProfileEvents
@@ -22,7 +23,7 @@ namespace ErrorCodes
 }
 
 
-void MMapReadBufferFromFile::open()
+void MMappedFile::open()
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
@@ -34,38 +35,36 @@ void MMapReadBufferFromFile::open()
 }
 
 
-std::string MMapReadBufferFromFile::getFileName() const
+std::string MMappedFile::getFileName() const
 {
     return file_name;
 }
 
 
-MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, size_t offset, size_t length_)
+MMappedFile::MMappedFile(const std::string & file_name_, size_t offset_, size_t length_)
     : file_name(file_name_)
 {
     open();
-    mapped.set(fd, offset, length_);
-    init();
+    set(fd, offset_, length_);
 }
 
 
-MMapReadBufferFromFile::MMapReadBufferFromFile(const std::string & file_name_, size_t offset)
+MMappedFile::MMappedFile(const std::string & file_name_, size_t offset_)
     : file_name(file_name_)
 {
     open();
-    mapped.set(fd, offset);
-    init();
+    set(fd, offset_);
 }
 
 
-MMapReadBufferFromFile::~MMapReadBufferFromFile()
+MMappedFile::~MMappedFile()
 {
     if (fd != -1)
         close();    /// Exceptions will lead to std::terminate and that's Ok.
 }
 
 
-void MMapReadBufferFromFile::close()
+void MMappedFile::close()
 {
     finish();
 
