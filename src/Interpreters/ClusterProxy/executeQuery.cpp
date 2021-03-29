@@ -19,7 +19,7 @@ namespace DB
 namespace ClusterProxy
 {
 
-std::shared_ptr<Context> updateSettingsForCluster(const Cluster & cluster, const Context & context, const Settings & settings, Poco::Logger * log)
+ContextPtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -78,7 +78,7 @@ std::shared_ptr<Context> updateSettingsForCluster(const Cluster & cluster, const
         }
     }
 
-    auto new_context = std::make_shared<Context>(context);
+    auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);
     return new_context;
 }
@@ -86,11 +86,11 @@ std::shared_ptr<Context> updateSettingsForCluster(const Cluster & cluster, const
 void executeQuery(
     QueryPlan & query_plan,
     IStreamFactory & stream_factory, Poco::Logger * log,
-    const ASTPtr & query_ast, const Context & context, const SelectQueryInfo & query_info)
+    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info)
 {
     assert(log);
 
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
 
     std::vector<QueryPlanPtr> plans;
     Pipes remote_pipes;
@@ -101,7 +101,7 @@ void executeQuery(
     auto new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
 
     ThrottlerPtr user_level_throttler;
-    if (auto * process_list_element = context.getProcessListElement())
+    if (auto * process_list_element = context->getProcessListElement())
         user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.

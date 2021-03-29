@@ -169,10 +169,10 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         const FunctionOverloadResolverPtr & function,
         const Names & argument_names,
         std::string result_name,
-        const Context & context [[maybe_unused]],
+        ContextPtr context,
         bool can_replace)
 {
-    const auto & all_settings = context.getSettingsRef();
+    const auto & all_settings = context->getSettingsRef();
     settings.max_temporary_columns = all_settings.max_temporary_columns;
     settings.max_temporary_non_const_columns = all_settings.max_temporary_non_const_columns;
 
@@ -181,7 +181,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     settings.min_count_to_compile_expression = all_settings.min_count_to_compile_expression;
 
     if (!compilation_cache)
-        compilation_cache = context.getCompiledExpressionCache();
+        compilation_cache = context->getCompiledExpressionCache();
 #endif
 
     Inputs children;

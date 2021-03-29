@@ -62,7 +62,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 
     auto & body = request.getStream();
 
-    auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
+    auto endpoint = server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing
     std::shared_lock lock(endpoint->rwlock);
     if (endpoint->blocker.isCancelled())

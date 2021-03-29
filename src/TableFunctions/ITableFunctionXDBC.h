@@ -18,16 +18,16 @@ namespace DB
 class ITableFunctionXDBC : public ITableFunction
 {
 private:
-    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
-    virtual BridgeHelperPtr createBridgeHelper(Context & context,
+    virtual BridgeHelperPtr createBridgeHelper(ContextPtr context,
         const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const = 0;
 
-    ColumnsDescription getActualTableStructure(const Context & context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
 
-    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String connection_string;
     String schema_name;
@@ -45,7 +45,7 @@ public:
     }
 
 private:
-    BridgeHelperPtr createBridgeHelper(Context & context,
+    BridgeHelperPtr createBridgeHelper(ContextPtr context,
         const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const override
     {
@@ -65,7 +65,7 @@ public:
     }
 
 private:
-    BridgeHelperPtr createBridgeHelper(Context & context,
+    BridgeHelperPtr createBridgeHelper(ContextPtr context,
         const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const override
     {

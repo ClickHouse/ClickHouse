@@ -1,11 +1,13 @@
 #pragma once
-#include <memory>
-#include <list>
-#include <vector>
-#include <set>
 
 #include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
+#include <list>
+#include <memory>
+#include <set>
+#include <vector>
 
 namespace DB
 {
@@ -18,7 +20,6 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
-class Context;
 class WriteBuffer;
 
 class QueryPlan;

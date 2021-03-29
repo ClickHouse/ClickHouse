@@ -50,7 +50,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DATABASE;
 }
 
-DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, Context & context)
+DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
     bool created = false;
 
@@ -65,8 +65,8 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
 
         DatabasePtr impl = getImpl(create, metadata_path, context);
 
-        if (impl && context.hasQueryContext() && context.getSettingsRef().log_queries)
-            context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
+        if (impl && context->hasQueryContext() && context->getSettingsRef().log_queries)
+            context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
 
         return impl;
 
@@ -91,7 +91,7 @@ static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &eng
     return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
 
-DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, Context & context)
+DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
     auto * engine_define = create.storage;
     const String & database_name = create.database;
@@ -204,9 +204,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
         String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
 
-        zookeeper_path = context.getMacros()->expand(zookeeper_path);
-        shard_name = context.getMacros()->expand(shard_name);
-        replica_name = context.getMacros()->expand(replica_name);
+        zookeeper_path = context->getMacros()->expand(zookeeper_path);
+        shard_name = context->getMacros()->expand(shard_name);
+        replica_name = context->getMacros()->expand(replica_name);
 
         DatabaseReplicatedSettings database_replicated_settings{};
         if (engine_define->settings)

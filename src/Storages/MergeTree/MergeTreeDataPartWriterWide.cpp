@@ -336,7 +336,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
         type->serializeBinaryBulkStatePrefix(serialize_settings, it->second);
     }
 
-    const auto & global_settings = storage.global_context.getSettingsRef();
+    const auto & global_settings = storage.getContext()->getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
     serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
@@ -499,7 +499,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
 
 void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
 {
-    const auto & global_settings = storage.global_context.getSettingsRef();
+    const auto & global_settings = storage.getContext()->getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;

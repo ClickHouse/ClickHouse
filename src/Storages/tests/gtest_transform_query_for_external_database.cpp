@@ -22,7 +22,7 @@ struct State
 {
     State(const State&) = delete;
 
-    Context context;
+    ContextPtr context;
     NamesAndTypesList columns{
         {"column", std::make_shared<DataTypeUInt8>()},
         {"apply_id", std::make_shared<DataTypeUInt64>()},
@@ -41,18 +41,18 @@ struct State
 
 private:
     explicit State()
-        : context(getContext().context)
+        : context(Context::createCopy(getContext().context))
     {
         tryRegisterFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test", context);
         database->attachTable("table", StorageMemory::create(StorageID("test", "table"), ColumnsDescription{columns}, ConstraintsDescription{}));
         DatabaseCatalog::instance().attachDatabase("test", database);
-        context.setCurrentDatabase("test");
+        context->setCurrentDatabase("test");
     }
 };
 
 
-static void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
+static void check(const std::string & query, const std::string & expected, ContextPtr context, const NamesAndTypesList & columns)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000);

@@ -35,21 +35,21 @@ public:
     /// Takes already set connection.
     RemoteQueryExecutor(
         Connection & connection,
-        const String & query_, const Block & header_, const Context & context_,
+        const String & query_, const Block & header_, ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections_,
-        const String & query_, const Block & header_, const Context & context_,
+        const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Block & header_, const Context & context_,
+        const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
@@ -108,8 +108,8 @@ private:
     std::unique_ptr<IConnections> connections;
 
     const String query;
-    String query_id = "";
-    Context context;
+    String query_id;
+    ContextPtr context;
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;

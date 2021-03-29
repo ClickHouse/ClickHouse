@@ -1,12 +1,13 @@
 #pragma once
-#include <cmath>
 
 #include <Columns/ColumnDecimal.h>
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeWithSimpleSerialization.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/Context_fwd.h>
 
+#include <cmath>
 #include <type_traits>
 
 
@@ -18,9 +19,8 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-class Context;
-bool decimalCheckComparisonOverflow(const Context & context);
-bool decimalCheckArithmeticOverflow(const Context & context);
+bool decimalCheckComparisonOverflow(ContextPtr context);
+bool decimalCheckArithmeticOverflow(ContextPtr context);
 
 inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 {

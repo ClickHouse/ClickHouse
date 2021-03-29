@@ -374,7 +374,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTExpressionList * ast_expr_list,
-    const Context & context)
+    ContextPtr context)
 {
     const auto & children = ast_expr_list->children;
     for (size_t i = 0; i != children.size(); ++i)
@@ -442,7 +442,7 @@ void buildSourceConfiguration(
     AutoPtr<Element> root,
     const ASTFunctionWithKeyValueArguments * source,
     const ASTDictionarySettings * settings,
-    const Context & context)
+    ContextPtr context)
 {
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
@@ -503,7 +503,7 @@ void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs
 
 
 DictionaryConfigurationPtr
-getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const Context & context, const std::string & database_)
+getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
 {
     checkAST(query);
 

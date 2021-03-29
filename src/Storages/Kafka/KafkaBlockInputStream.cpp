@@ -83,7 +83,7 @@ Block KafkaBlockInputStream::readImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto input_format = FormatFactory::instance().getInputFormat(
-        storage.getFormatName(), *buffer, non_virtual_header, *context, max_block_size);
+        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
     InputPort port(input_format->getPort().getHeader(), input_format.get());
     connect(input_format->getPort(), port);

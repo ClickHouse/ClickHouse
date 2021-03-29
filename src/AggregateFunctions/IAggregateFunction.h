@@ -1,21 +1,23 @@
 #pragma once
 
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/Field.h>
+#include <Interpreters/Context_fwd.h>
+#include <Common/Exception.h>
+#include <common/types.h>
+
 #include <cstddef>
 #include <memory>
 #include <type_traits>
 #include <vector>
 
-#include <common/types.h>
-#include <Common/Exception.h>
-#include <Core/Block.h>
-#include <Core/ColumnNumbers.h>
-#include <Core/Field.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -122,7 +124,7 @@ public:
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
-        const Context & /*context*/) const
+        ContextPtr /*context*/) const
     {
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

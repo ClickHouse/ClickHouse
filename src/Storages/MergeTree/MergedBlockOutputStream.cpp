@@ -26,7 +26,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , default_codec(default_codec_)
 {
     MergeTreeWriterSettings writer_settings(
-        storage.global_context.getSettings(),
+        storage.getContext()->getSettings(),
         storage.getSettings(),
         data_part->index_granularity_info.is_adaptive,
         /* rewrite_primary_key = */ true,

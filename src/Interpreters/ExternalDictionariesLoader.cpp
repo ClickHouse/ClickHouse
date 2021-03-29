@@ -14,9 +14,9 @@ namespace DB
 {
 
 /// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
-ExternalDictionariesLoader::ExternalDictionariesLoader(Context & context_)
+ExternalDictionariesLoader::ExternalDictionariesLoader(ContextPtr context_)
     : ExternalLoader("external dictionary", &Poco::Logger::get("ExternalDictionariesLoader"))
-    , context(context_)
+    , WithContext(context_)
 {
     setConfigSettings({"dictionary", "name", "database", "uuid"});
     enableAsyncLoading(true);
@@ -31,7 +31,7 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     /// For dictionaries from databases (created with DDL queries) we have to perform
     /// additional checks, so we identify them here.
     bool dictionary_from_database = !repository_name.empty();
-    return DictionaryFactory::instance().create(name, config, key_in_config, context, dictionary_from_database);
+    return DictionaryFactory::instance().create(name, config, key_in_config, getContext(), dictionary_from_database);
 }
 
 

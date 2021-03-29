@@ -1,26 +1,22 @@
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTWithElement.h>
-
-#include <Interpreters/Context.h>
-#include <Interpreters/misc.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
-#include <Interpreters/addTypeConversionToAST.h>
 
+#include <Columns/ColumnTuple.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
-
-#include <Columns/ColumnTuple.h>
-
 #include <IO/WriteHelpers.h>
-
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/misc.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithElement.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 namespace DB
@@ -82,17 +78,17 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     auto scalar_query_hash_str = toString(hash.first) + "_" + toString(hash.second);
 
     Block scalar;
-    if (data.context.hasQueryContext() && data.context.getQueryContext().hasScalar(scalar_query_hash_str))
-        scalar = data.context.getQueryContext().getScalar(scalar_query_hash_str);
+    if (data.getContext()->hasQueryContext() && data.getContext()->getQueryContext()->hasScalar(scalar_query_hash_str))
+        scalar = data.getContext()->getQueryContext()->getScalar(scalar_query_hash_str);
     else if (data.scalars.count(scalar_query_hash_str))
         scalar = data.scalars[scalar_query_hash_str];
     else
     {
-        Context subquery_context = data.context;
-        Settings subquery_settings = data.context.getSettings();
+        auto subquery_context = Context::createCopy(data.getContext());
+        Settings subquery_settings = data.getContext()->getSettings();
         subquery_settings.max_result_rows = 1;
         subquery_settings.extremes = false;
-        subquery_context.setSettings(subquery_settings);
+        subquery_context->setSettings(subquery_settings);
 
         ASTPtr subquery_select = subquery.children.at(0);
 
@@ -167,10 +163,11 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
     }
 
-    const Settings & settings = data.context.getSettingsRef();
+    const Settings & settings = data.getContext()->getSettingsRef();
 
     // Always convert to literals when there is no query context.
-    if (data.only_analyze || !settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar) || !data.context.hasQueryContext())
+    if (data.only_analyze || !settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar)
+        || !data.getContext()->hasQueryContext())
     {
         auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
         lit->alias = subquery.alias;

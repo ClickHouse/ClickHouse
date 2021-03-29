@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
-        const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+        ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
     auto result = std::make_shared<StoragePostgreSQL>(
@@ -37,9 +37,9 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 }
 
 
-ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(const Context & context) const
+ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context) const
 {
-    const bool use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
+    const bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
     auto columns = fetchPostgreSQLTableStructure(
             connection->conn(),
             remote_table_schema.empty() ? doubleQuoteString(remote_table_name)
@@ -50,7 +50,7 @@ ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(const Contex
 }
 
 
-void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const Context & context)
+void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
 

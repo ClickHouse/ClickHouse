@@ -42,8 +42,8 @@ void StorageFactory::registerStorage(const std::string & name, CreatorFn creator
 StoragePtr StorageFactory::get(
     const ASTCreateQuery & query,
     const String & relative_data_path,
-    Context & local_context,
-    Context & context,
+    ContextPtr local_context,
+    ContextPtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     bool has_force_restore_data_flag) const
@@ -190,8 +190,8 @@ StoragePtr StorageFactory::get(
         storage_def->engine->arguments->children = empty_engine_args;
     }
 
-    if (local_context.hasQueryContext() && context.getSettingsRef().log_queries)
-        local_context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
+    if (local_context->hasQueryContext() && context->getSettingsRef().log_queries)
+        local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
 
     return res;
 }

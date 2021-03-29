@@ -1,22 +1,24 @@
 #pragma once
 
 #include <Dictionaries/IDictionary.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExternalLoader.h>
+
 #include <memory>
 
 namespace DB
 {
-class Context;
+
 class IExternalLoaderConfigRepository;
 
 /// Manages user-defined dictionaries.
-class ExternalDictionariesLoader : public ExternalLoader
+class ExternalDictionariesLoader : public ExternalLoader, WithContext
 {
 public:
     using DictPtr = std::shared_ptr<const IDictionaryBase>;
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalDictionariesLoader(Context & context_);
+    ExternalDictionariesLoader(ContextPtr context_);
 
     DictPtr getDictionary(const std::string & name) const
     {
@@ -39,9 +41,6 @@ protected:
 
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
-
-private:
-    Context & context;
 };
 
 }

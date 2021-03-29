@@ -18,7 +18,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & /* context */,
+                                 ContextPtr /* context */,
                                  const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr {
 #if USE_MYSQL

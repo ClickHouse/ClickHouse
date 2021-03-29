@@ -3,6 +3,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -26,7 +27,6 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
-class Context;
 class CompiledExpressionCache;
 
 /// Directed acyclic graph of expressions.
@@ -208,7 +208,7 @@ public:
             const FunctionOverloadResolverPtr & function,
             const Names & argument_names,
             std::string result_name,
-            const Context & context,
+            ContextPtr context,
             bool can_replace = false);
 
     void addNodeToIndex(const Node * node) { index.insert(const_cast<Node *>(node)); }

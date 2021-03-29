@@ -26,27 +26,40 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-template<>
+template <>
 DatabaseMaterializeMySQL<DatabaseOrdinary>::DatabaseMaterializeMySQL(
-    const Context & context, const String & database_name_, const String & metadata_path_, UUID /*uuid*/,
-    const String & mysql_database_name_, mysqlxx::Pool && pool_, MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_)
-    : DatabaseOrdinary(database_name_
-                      , metadata_path_
-                      , "data/" + escapeForFileName(database_name_) + "/"
-                      , "DatabaseMaterializeMySQL<Ordinary> (" + database_name_ + ")", context
-                      )
+    ContextPtr context_,
+    const String & database_name_,
+    const String & metadata_path_,
+    UUID /*uuid*/,
+    const String & mysql_database_name_,
+    mysqlxx::Pool && pool_,
+    MySQLClient && client_,
+    std::unique_ptr<MaterializeMySQLSettings> settings_)
+    : DatabaseOrdinary(
+        database_name_,
+        metadata_path_,
+        "data/" + escapeForFileName(database_name_) + "/",
+        "DatabaseMaterializeMySQL<Ordinary> (" + database_name_ + ")",
+        context_)
     , settings(std::move(settings_))
-    , materialize_thread(context, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
+    , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
 {
 }
 
-template<>
+template <>
 DatabaseMaterializeMySQL<DatabaseAtomic>::DatabaseMaterializeMySQL(
-    const Context & context, const String & database_name_, const String & metadata_path_, UUID uuid,
-    const String & mysql_database_name_, mysqlxx::Pool && pool_, MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializeMySQL<Atomic> (" + database_name_ + ")", context)
+    ContextPtr context_,
+    const String & database_name_,
+    const String & metadata_path_,
+    UUID uuid,
+    const String & mysql_database_name_,
+    mysqlxx::Pool && pool_,
+    MySQLClient && client_,
+    std::unique_ptr<MaterializeMySQLSettings> settings_)
+    : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializeMySQL<Atomic> (" + database_name_ + ")", context_)
     , settings(std::move(settings_))
-    , materialize_thread(context, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
+    , materialize_thread(context_, database_name_, mysql_database_name_, std::move(pool_), std::move(client_), settings.get())
 {
 }
 
@@ -79,7 +92,7 @@ void DatabaseMaterializeMySQL<Base>::setException(const std::exception_ptr & exc
 }
 
 template<typename Base>
-void DatabaseMaterializeMySQL<Base>::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseMaterializeMySQL<Base>::loadStoredObjects(ContextPtr context, bool has_force_restore_data_flag, bool force_attach)
 {
     Base::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
     if (!force_attach)
@@ -90,14 +103,14 @@ void DatabaseMaterializeMySQL<Base>::loadStoredObjects(Context & context, bool h
 }
 
 template<typename Base>
-void DatabaseMaterializeMySQL<Base>::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
+void DatabaseMaterializeMySQL<Base>::createTable(ContextPtr context, const String & name, const StoragePtr & table, const ASTPtr & query)
 {
     assertCalledFromSyncThreadOrDrop("create table");
     Base::createTable(context, name, table, query);
 }
 
 template<typename Base>
-void DatabaseMaterializeMySQL<Base>::dropTable(const Context & context, const String & name, bool no_delay)
+void DatabaseMaterializeMySQL<Base>::dropTable(ContextPtr context, const String & name, bool no_delay)
 {
     assertCalledFromSyncThreadOrDrop("drop table");
     Base::dropTable(context, name, no_delay);
@@ -118,7 +131,7 @@ StoragePtr DatabaseMaterializeMySQL<Base>::detachTable(const String & name)
 }
 
 template<typename Base>
-void DatabaseMaterializeMySQL<Base>::renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name, bool exchange, bool dictionary)
+void DatabaseMaterializeMySQL<Base>::renameTable(ContextPtr context, const String & name, IDatabase & to_database, const String & to_name, bool exchange, bool dictionary)
 {
     assertCalledFromSyncThreadOrDrop("rename table");
 
@@ -135,14 +148,14 @@ void DatabaseMaterializeMySQL<Base>::renameTable(const Context & context, const 
 }
 
 template<typename Base>
-void DatabaseMaterializeMySQL<Base>::alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseMaterializeMySQL<Base>::alterTable(ContextPtr context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
     assertCalledFromSyncThreadOrDrop("alter table");
     Base::alterTable(context, table_id, metadata);
 }
 
 template<typename Base>
-void DatabaseMaterializeMySQL<Base>::drop(const Context & context)
+void DatabaseMaterializeMySQL<Base>::drop(ContextPtr context)
 {
     /// Remove metadata info
     Poco::File metadata(Base::getMetadataPath() + "/.metadata");
@@ -154,7 +167,7 @@ void DatabaseMaterializeMySQL<Base>::drop(const Context & context)
 }
 
 template<typename Base>
-StoragePtr DatabaseMaterializeMySQL<Base>::tryGetTable(const String & name, const Context & context) const
+StoragePtr DatabaseMaterializeMySQL<Base>::tryGetTable(const String & name, ContextPtr context) const
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
     {
@@ -170,7 +183,7 @@ StoragePtr DatabaseMaterializeMySQL<Base>::tryGetTable(const String & name, cons
 }
 
 template<typename Base>
-DatabaseTablesIteratorPtr DatabaseMaterializeMySQL<Base>::getTablesIterator(const Context & context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseMaterializeMySQL<Base>::getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
 {
     if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
     {

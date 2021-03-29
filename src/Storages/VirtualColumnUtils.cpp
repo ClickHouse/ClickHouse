@@ -96,7 +96,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     }
 }
 
-void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)
+void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context)
 {
     const auto & select = query->as<ASTSelectQuery &>();
     if (!select.where() && !select.prewhere())

@@ -16,7 +16,7 @@
 namespace DB
 {
 
-HTTPServerRequest::HTTPServerRequest(const Context & context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
+HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
 {
     response.attachRequest(this);
 
@@ -24,9 +24,9 @@ HTTPServerRequest::HTTPServerRequest(const Context & context, HTTPServerResponse
     client_address = session.clientAddress();
     server_address = session.serverAddress();
 
-    auto receive_timeout = context.getSettingsRef().http_receive_timeout;
-    auto send_timeout = context.getSettingsRef().http_send_timeout;
-    auto max_query_size = context.getSettingsRef().max_query_size;
+    auto receive_timeout = context->getSettingsRef().http_receive_timeout;
+    auto send_timeout = context->getSettingsRef().http_send_timeout;
+    auto max_query_size = context->getSettingsRef().max_query_size;
 
     session.socket().setReceiveTimeout(receive_timeout);
     session.socket().setSendTimeout(send_timeout);

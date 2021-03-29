@@ -187,7 +187,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         }
 
         auto dag = DB::evaluateMissingDefaults(
-                additional_columns, columns, metadata_snapshot->getColumns(), storage.global_context);
+                additional_columns, columns, metadata_snapshot->getColumns(), storage.getContext());
         if (dag)
         {
             auto actions = std::make_shared<ExpressionActions>(std::move(dag));
@@ -267,7 +267,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
             copy_block.insert({res_columns[pos], getColumnFromPart(*name_and_type).type, name_and_type->name});
         }
 
-        DB::performRequiredConversions(copy_block, columns, storage.global_context);
+        DB::performRequiredConversions(copy_block, columns, storage.getContext());
 
         /// Move columns from block.
         name_and_type = columns.begin();

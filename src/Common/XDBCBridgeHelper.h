@@ -50,7 +50,7 @@ public:
 using BridgeHelperPtr = std::shared_ptr<IXDBCBridgeHelper>;
 
 template <typename BridgeHelperMixin>
-class XDBCBridgeHelper : public IXDBCBridgeHelper
+class XDBCBridgeHelper : public IXDBCBridgeHelper, public WithContext
 {
 private:
     Poco::Timespan http_timeout;
@@ -73,7 +73,6 @@ protected:
 public:
     using Configuration = Poco::Util::AbstractConfiguration;
 
-    const Context & context;
     const Configuration & config;
 
     static constexpr inline auto DEFAULT_HOST = "127.0.0.1";
@@ -85,8 +84,11 @@ public:
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
-    XDBCBridgeHelper(const Context & global_context_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
-        : http_timeout(http_timeout_), connection_string(connection_string_), context(global_context_), config(context.getConfigRef())
+    XDBCBridgeHelper(ContextPtr global_context_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
+        : WithContext(global_context_)
+        , http_timeout(http_timeout_)
+        , connection_string(connection_string_)
+        , config(global_context_->getConfigRef())  /// FIXME: extra opportunity to get dangling reference
     {
         size_t bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
         std::string bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
@@ -113,7 +115,7 @@ public:
             uri.addQueryParameter("connection_string", getConnectionString());
 
             ReadWriteBufferFromHTTP buf(
-                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
             std::string character;
             readStringBinary(character, buf);
             if (character.length() > 1)
@@ -142,7 +144,7 @@ public:
             uri.addQueryParameter("connection_string", getConnectionString());
 
             ReadWriteBufferFromHTTP buf(
-                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+                uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
 
             bool res;
             readBoolText(res, buf);
@@ -234,7 +236,7 @@ private:
         try
         {
             ReadWriteBufferFromHTTP buf(
-                ping_url, Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+                ping_url, Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
             return checkString(XDBCBridgeHelper::PING_OK_ANSWER, buf);
         }
         catch (...)
@@ -247,22 +249,22 @@ private:
     void startBridge() const
     {
         auto cmd = BridgeHelperMixin::startBridge(config, log, http_timeout);
-        context.addXDBCBridgeCommand(std::move(cmd));
+        getContext()->addXDBCBridgeCommand(std::move(cmd));
     }
 };
 
 struct JDBCBridgeMixin
 {
     static constexpr inline auto DEFAULT_PORT = 9019;
-    static const String configPrefix()
+    static String configPrefix()
     {
         return "jdbc_bridge";
     }
-    static const String serviceAlias()
+    static String serviceAlias()
     {
         return "clickhouse-jdbc-bridge";
     }
-    static const String getName()
+    static String getName()
     {
         return "JDBC";
     }
@@ -281,15 +283,15 @@ struct ODBCBridgeMixin
 {
     static constexpr inline auto DEFAULT_PORT = 9018;
 
-    static const String configPrefix()
+    static String configPrefix()
     {
         return "odbc_bridge";
     }
-    static const String serviceAlias()
+    static String serviceAlias()
     {
         return "clickhouse-odbc-bridge";
     }
-    static const String getName()
+    static String getName()
     {
         return "ODBC";
     }

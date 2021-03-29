@@ -14,11 +14,11 @@ namespace ProfileEvents
 namespace DB
 {
 
-StoragePtr ITableFunction::execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name,
+StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name,
                                    ColumnsDescription cached_columns) const
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
-    context.checkAccess(AccessType::CREATE_TEMPORARY_TABLE | StorageFactory::instance().getSourceAccessType(getStorageTypeName()));
+    context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE | StorageFactory::instance().getSourceAccessType(getStorageTypeName()));
 
     if (cached_columns.empty() || (hasStaticStructure() && cached_columns == getActualTableStructure(context)))
         return executeImpl(ast_function, context, table_name, std::move(cached_columns));

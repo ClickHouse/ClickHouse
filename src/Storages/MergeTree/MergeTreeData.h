@@ -110,7 +110,7 @@ namespace ErrorCodes
 /// - MergeTreeDataWriter
 /// - MergeTreeDataMergerMutator
 
-class MergeTreeData : public IStorage
+class MergeTreeData : public IStorage, public WithContext
 {
 public:
     /// Function to call if the part is suspected to contain corrupt data.
@@ -348,7 +348,7 @@ public:
     MergeTreeData(const StorageID & table_id_,
                   const String & relative_data_path_,
                   const StorageInMemoryMetadata & metadata_,
-                  Context & context_,
+                  ContextPtr context_,
                   const String & date_column_name,
                   const MergingParams & merging_params_,
                   std::unique_ptr<MergeTreeSettings> settings_,
@@ -374,7 +374,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &, const StorageMetadataPtr & metadata_snapshot) const override;
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const override;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
@@ -397,10 +397,10 @@ public:
 
     void validateDetachedPartName(const String & name) const;
 
-    void dropDetached(const ASTPtr & partition, bool part, const Context & context);
+    void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
 
     MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
-            const Context & context, PartsTemporaryRename & renamed_parts);
+            ContextPtr context, PartsTemporaryRename & renamed_parts);
 
     /// Returns Committed parts
     DataParts getDataParts() const;
@@ -530,7 +530,7 @@ public:
     /// - all type conversions can be done.
     /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
-    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     /// Checks if the Mutation can be performed.
     /// (currently no additional checks: always ok)
@@ -548,7 +548,7 @@ public:
     PartitionCommandsResultInfo freezeAll(
         const String & with_name,
         const StorageMetadataPtr & metadata_snapshot,
-        const Context & context,
+        ContextPtr context,
         TableLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
@@ -568,15 +568,14 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    PartitionCommandsResultInfo freezePartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
+    PartitionCommandsResultInfo freezePartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & with_name, ContextPtr context, TableLockHolder & table_lock_holder);
 
 
-public:
     /// Moves partition to specified Disk
-    void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, const Context & context);
+    void movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
 
     /// Moves partition to specified Volume
-    void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, const Context & context);
+    void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
 
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
@@ -585,7 +584,7 @@ public:
     Pipe alterPartition(
         const StorageMetadataPtr & metadata_snapshot,
         const PartitionCommands & commands,
-        const Context & query_context) override;
+        ContextPtr query_context) override;
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
@@ -601,7 +600,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context) const;
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
@@ -715,8 +714,6 @@ public:
     WriteAheadLogPtr getWriteAheadLog();
 
     MergeTreeDataFormatVersion format_version;
-
-    Context & global_context;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;
@@ -940,18 +937,18 @@ protected:
 
     /// Common part for |freezePartition()| and |freezeAll()|.
     using MatcherFn = std::function<bool(const DataPartPtr &)>;
-    PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context);
+    PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, ContextPtr context);
 
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
 
-    virtual void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, const Context & context, bool throw_if_noop = true) = 0;
-    virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, const Context & context) = 0;
-    virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) = 0;
-    virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context) = 0;
+    virtual void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr context, bool throw_if_noop = true) = 0;
+    virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) = 0;
+    virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) = 0;
+    virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) = 0;
 
     /// Makes sense only for replicated tables
-    virtual void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, const Context & query_context);
+    virtual void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, ContextPtr query_context);
 
     void writePartLog(
         PartLogElement::Type type,

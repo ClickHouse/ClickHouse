@@ -26,7 +26,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 
 /// Leave in the block only the rows that fit under the WHERE clause and the PREWHERE clause of the query.
 /// Only elements of the outer conjunction are considered, depending only on the columns present in the block.
-void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context);
+void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>

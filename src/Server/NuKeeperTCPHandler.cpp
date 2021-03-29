@@ -193,10 +193,10 @@ NuKeeperTCPHandler::NuKeeperTCPHandler(IServer & server_, const Poco::Net::Strea
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , log(&Poco::Logger::get("NuKeeperTCPHandler"))
-    , global_context(server.context())
-    , nu_keeper_storage_dispatcher(global_context.getNuKeeperStorageDispatcher())
-    , operation_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
-    , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
+    , global_context(Context::createCopy(server.context()))
+    , nu_keeper_storage_dispatcher(global_context->getNuKeeperStorageDispatcher())
+    , operation_timeout(0, global_context->getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
+    , session_timeout(0, global_context->getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
     , responses(std::make_unique<ThreadSafeResponseQueue>())
 {
@@ -264,8 +264,8 @@ void NuKeeperTCPHandler::runImpl()
 {
     setThreadName("TstKprHandler");
     ThreadStatus thread_status;
-    auto global_receive_timeout = global_context.getSettingsRef().receive_timeout;
-    auto global_send_timeout = global_context.getSettingsRef().send_timeout;
+    auto global_receive_timeout = global_context->getSettingsRef().receive_timeout;
+    auto global_send_timeout = global_context->getSettingsRef().send_timeout;
 
     socket().setReceiveTimeout(global_receive_timeout);
     socket().setSendTimeout(global_send_timeout);

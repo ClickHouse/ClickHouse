@@ -45,12 +45,12 @@ StoragePostgreSQL::StoragePostgreSQL(
     PostgreSQLConnectionPtr connection_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context_,
+    ContextPtr context_,
     const String & remote_table_schema_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
-    , global_context(context_)
+    , global_context(Context::createCopy(context_))
     , connection(std::move(connection_))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -64,7 +64,7 @@ Pipe StoragePostgreSQL::read(
     const Names & column_names_,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info_,
-    const Context & context_,
+    ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,
     unsigned)
@@ -285,7 +285,7 @@ private:
 
 
 BlockOutputStreamPtr StoragePostgreSQL::write(
-        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /* context */)
+        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
     return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, connection->conn(), remote_table_name);
 }
@@ -303,7 +303,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
         auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
@@ -320,7 +320,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
 
         return StoragePostgreSQL::create(
-            args.table_id, remote_table, connection, args.columns, args.constraints, args.context, remote_table_schema);
+            args.table_id, remote_table, connection, args.columns, args.constraints, args.getContext(), remote_table_schema);
     },
     {
         .source_access_type = AccessType::POSTGRES,

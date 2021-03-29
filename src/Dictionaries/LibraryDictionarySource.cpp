@@ -121,7 +121,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix_,
     Block & sample_block_,
-    const Context & context,
+    ContextPtr context,
     bool check_config)
     : log(&Poco::Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
@@ -132,7 +132,7 @@ LibraryDictionarySource::LibraryDictionarySource(
 
     if (check_config)
     {
-        const String dictionaries_lib_path = context.getDictionariesLibPath();
+        const String dictionaries_lib_path = context->getDictionariesLibPath();
         if (!startsWith(path, dictionaries_lib_path))
             throw Exception("LibraryDictionarySource: Library path " + path + " is not inside " + dictionaries_lib_path, ErrorCodes::PATH_ACCESS_DENIED);
     }
@@ -300,7 +300,7 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool check_config) -> DictionarySourcePtr
     {

@@ -24,7 +24,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams) override
@@ -33,14 +33,14 @@ public:
             std::move(*MergeTreeDataSelectExecutor(part->storage)
                       .readFromParts({part}, column_names, metadata_snapshot, query_info, context, max_block_size, num_streams));
 
-        return query_plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+        return query_plan.convertToPipe(QueryPlanOptimizationSettings(context->getSettingsRef()));
     }
 
 
     bool supportsIndexForIn() const override { return true; }
 
     bool mayBenefitFromIndexForIn(
-        const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override
+        const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override
     {
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
@@ -55,7 +55,7 @@ public:
         return part->info.partition_id;
     }
 
-    String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context) const
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const
     {
         return part->storage.getPartitionIDFromQuery(ast, context);
     }

@@ -24,7 +24,7 @@ public:
         const std::string & path_to_settings,
         const std::string & config_prefix,
         const Block & sample_block_,
-        const Context & context,
+        ContextPtr context,
         const std::string & default_database);
 
     /// copy-constructor is provided in order to support cloneability
@@ -74,7 +74,7 @@ private:
     mutable std::string invalidate_query_response;
     ExternalQueryBuilder query_builder;
     Block sample_block;
-    Context context;
+    ContextPtr context;
     const bool is_local;
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;

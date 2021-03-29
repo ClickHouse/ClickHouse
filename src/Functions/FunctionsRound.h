@@ -523,7 +523,7 @@ class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRounding>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRounding>(); }
 
     String getName() const override
     {
@@ -623,7 +623,7 @@ class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRoundDown>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRoundDown>(); }
 
     String getName() const override { return name; }
 

@@ -20,9 +20,9 @@ namespace DB
 
 static const size_t MAX_CONNECTIONS = 16;
 
-inline static UInt16 getPortFromContext(const Context & context, bool secure)
+inline static UInt16 getPortFromContext(ContextPtr context, bool secure)
 {
-    return secure ? context.getTCPPortSecure().value_or(0) : context.getTCPPort();
+    return secure ? context->getTCPPortSecure().value_or(0) : context->getTCPPort();
 }
 
 static ConnectionPoolWithFailoverPtr createPool(
@@ -56,7 +56,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const std::string & path_to_settings,
     const std::string & config_prefix,
     const Block & sample_block_,
-    const Context & context_,
+    ContextPtr context_,
     const std::string & default_database)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
@@ -80,13 +80,13 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
     if (is_local)
     {
-        context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0));
+        context->setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0));
         context = copyContextAndApplySettings(path_to_settings, context, config);
     }
 
     /// Query context is needed because some code in executeQuery function may assume it exists.
     /// Current example is Context::getSampleBlockCache from InterpreterSelectWithUnionQuery::getSampleBlock.
-    context.makeQueryContext();
+    context->makeQueryContext();
 }
 
 
@@ -106,12 +106,12 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , invalidate_query_response{other.invalidate_query_response}
     , query_builder{dict_struct, db, "", table, where, IdentifierQuotingStyle::Backticks}
     , sample_block{other.sample_block}
-    , context(other.context)
+    , context(Context::createCopy(other.context))
     , is_local{other.is_local}
     , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password)}
     , load_all_query{other.load_all_query}
 {
-    context.makeQueryContext();
+    context->makeQueryContext();
 }
 
 std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
@@ -197,7 +197,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     LOG_TRACE(log, "Performing invalidate query");
     if (is_local)
     {
-        Context query_context = context;
+        auto query_context = Context::createCopy(context);
         auto input_block = executeQuery(request, query_context, true).getInputStream();
         return readInvalidateQuery(*input_block);
     }
@@ -217,7 +217,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context,
+                                 ContextPtr context,
                                  const std::string & default_database,
                                  bool /* check_config */) -> DictionarySourcePtr
     {

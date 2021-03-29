@@ -5,6 +5,7 @@
 #include "DictionaryStructure.h"
 #include <Core/ExternalResultDescription.h>
 #include "IDictionarySource.h"
+#include <Interpreters/Context_fwd.h>
 
 
 namespace Poco
@@ -37,7 +38,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix_,
         Block & sample_block_,
-        const Context & context,
+        ContextPtr context,
         bool check_config);
 
     LibraryDictionarySource(const LibraryDictionarySource & other);
