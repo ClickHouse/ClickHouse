@@ -1,6 +1,6 @@
 #pragma once
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
-#include <Coordination/NuKeeperStorage.h>
+#include <Coordination/KeeperStorage.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 
@@ -15,42 +15,42 @@ enum SnapshotVersion : uint8_t
     V0 = 0,
 };
 
-struct NuKeeperStorageSnapshot
+struct KeeperStorageSnapshot
 {
 public:
-    NuKeeperStorageSnapshot(NuKeeperStorage * storage_, size_t up_to_log_idx_);
+    KeeperStorageSnapshot(KeeperStorage * storage_, size_t up_to_log_idx_);
 
-    NuKeeperStorageSnapshot(NuKeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_);
-    ~NuKeeperStorageSnapshot();
+    KeeperStorageSnapshot(KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_);
+    ~KeeperStorageSnapshot();
 
-    static void serialize(const NuKeeperStorageSnapshot & snapshot, WriteBuffer & out);
+    static void serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out);
 
-    static SnapshotMetadataPtr deserialize(NuKeeperStorage & storage, ReadBuffer & in);
+    static SnapshotMetadataPtr deserialize(KeeperStorage & storage, ReadBuffer & in);
 
-    NuKeeperStorage * storage;
+    KeeperStorage * storage;
 
     SnapshotVersion version = SnapshotVersion::V0;
     SnapshotMetadataPtr snapshot_meta;
     int64_t session_id;
     size_t snapshot_container_size;
-    NuKeeperStorage::Container::const_iterator begin;
+    KeeperStorage::Container::const_iterator begin;
     SessionAndTimeout session_and_timeout;
 };
 
-using NuKeeperStorageSnapshotPtr = std::shared_ptr<NuKeeperStorageSnapshot>;
-using CreateSnapshotCallback = std::function<void(NuKeeperStorageSnapshotPtr &&)>;
+using KeeperStorageSnapshotPtr = std::shared_ptr<KeeperStorageSnapshot>;
+using CreateSnapshotCallback = std::function<void(KeeperStorageSnapshotPtr &&)>;
 
 
-using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, NuKeeperStoragePtr>;
+using SnapshotMetaAndStorage = std::pair<SnapshotMetadataPtr, KeeperStoragePtr>;
 
-class NuKeeperSnapshotManager
+class KeeperSnapshotManager
 {
 public:
-    NuKeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, size_t storage_tick_time_ = 500);
+    KeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, size_t storage_tick_time_ = 500);
 
     SnapshotMetaAndStorage restoreFromLatestSnapshot();
 
-    static nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const NuKeeperStorageSnapshot & snapshot);
+    static nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot);
     std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, size_t up_to_log_idx);
 
     SnapshotMetaAndStorage deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
@@ -82,7 +82,7 @@ private:
 
 struct CreateSnapshotTask
 {
-    NuKeeperStorageSnapshotPtr snapshot;
+    KeeperStorageSnapshotPtr snapshot;
     CreateSnapshotCallback create_snapshot;
 };
 

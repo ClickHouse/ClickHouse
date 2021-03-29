@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <string>
-#include <Coordination/NuKeeperLogStore.h>
+#include <Coordination/KeeperLogStore.h>
 #include <Coordination/CoordinationSettings.h>
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <Poco/Util/AbstractConfiguration.h>
@@ -10,16 +10,16 @@
 namespace DB
 {
 
-class NuKeeperStateManager : public nuraft::state_mgr
+class KeeperStateManager : public nuraft::state_mgr
 {
 public:
-    NuKeeperStateManager(
+    KeeperStateManager(
         int server_id_,
         const std::string & config_prefix,
         const Poco::Util::AbstractConfiguration & config,
         const CoordinationSettingsPtr & coordination_settings);
 
-    NuKeeperStateManager(
+    KeeperStateManager(
         int server_id_,
         const std::string & host,
         int port,
@@ -52,7 +52,7 @@ public:
         return start_as_follower_servers.count(my_server_id);
     }
 
-    nuraft::ptr<NuKeeperLogStore> getLogStore() const { return log_store; }
+    nuraft::ptr<KeeperLogStore> getLogStore() const { return log_store; }
 
     size_t getTotalServers() const { return total_servers; }
 
@@ -61,7 +61,7 @@ private:
     int my_port;
     size_t total_servers{0};
     std::unordered_set<int> start_as_follower_servers;
-    nuraft::ptr<NuKeeperLogStore> log_store;
+    nuraft::ptr<KeeperLogStore> log_store;
     nuraft::ptr<nuraft::srv_config> my_server_config;
     nuraft::ptr<nuraft::cluster_config> cluster_config;
     nuraft::ptr<nuraft::srv_state> server_state;

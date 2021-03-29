@@ -1,4 +1,4 @@
-(ns jepsen.nukeeper.queue
+(ns jepsen.clickhouse-keeper.queue
   (:require
    [clojure.tools.logging :refer :all]
    [jepsen
@@ -7,7 +7,7 @@
     [generator :as gen]]
    [knossos.model :as model]
    [jepsen.checker.timeline :as timeline]
-   [jepsen.nukeeper.utils :refer :all]
+   [jepsen.clickhouse-keeper.utils :refer :all]
    [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 

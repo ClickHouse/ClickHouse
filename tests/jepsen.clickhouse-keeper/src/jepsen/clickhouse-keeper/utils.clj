@@ -1,10 +1,10 @@
-(ns jepsen.nukeeper.utils
+(ns jepsen.clickhouse-keeper.utils
   (:require [clojure.string :as str]
             [zookeeper.data :as data]
             [zookeeper :as zk]
             [zookeeper.internal :as zi]
             [jepsen.control.util :as cu]
-            [jepsen.nukeeper.constants :refer :all]
+            [jepsen.clickhouse-keeper.constants :refer :all]
             [jepsen.control :as c]
             [clojure.tools.logging :refer :all])
   (:import (org.apache.zookeeper.data Stat)
@@ -164,8 +164,8 @@
     :--top_level_domains_path (str data-dir "/top_level_domains")
     :--logger.log (str logs-dir "/clickhouse-server.log")
     :--logger.errorlog (str logs-dir "/clickhouse-server.err.log")
-    :--test_keeper_server.snapshot_storage_path coordination-snapshots-dir
-    :--test_keeper_server.logs_storage_path coordination-logs-dir)
+    :--keeper_server.snapshot_storage_path coordination-snapshots-dir
+    :--keeper_server.logs_storage_path coordination-logs-dir)
    (wait-clickhouse-alive! node test)))
 
 (defn exec-with-retries

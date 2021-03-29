@@ -1,4 +1,4 @@
-#include <Coordination/NuKeeperStorageDispatcher.h>
+#include <Coordination/KeeperStorageDispatcher.h>
 #include <Common/setThreadName.h>
 
 namespace DB
@@ -11,18 +11,18 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
 }
 
-NuKeeperStorageDispatcher::NuKeeperStorageDispatcher()
+KeeperStorageDispatcher::KeeperStorageDispatcher()
     : coordination_settings(std::make_shared<CoordinationSettings>())
-    , log(&Poco::Logger::get("NuKeeperDispatcher"))
+    , log(&Poco::Logger::get("KeeperDispatcher"))
 {
 }
 
-void NuKeeperStorageDispatcher::requestThread()
+void KeeperStorageDispatcher::requestThread()
 {
-    setThreadName("NuKeeperReqT");
+    setThreadName("KeeperReqT");
     while (!shutdown_called)
     {
-        NuKeeperStorage::RequestForSession request;
+        KeeperStorage::RequestForSession request;
 
         UInt64 max_wait = UInt64(coordination_settings->operation_timeout_ms.totalMilliseconds());
 
@@ -43,12 +43,12 @@ void NuKeeperStorageDispatcher::requestThread()
     }
 }
 
-void NuKeeperStorageDispatcher::responseThread()
+void KeeperStorageDispatcher::responseThread()
 {
-    setThreadName("NuKeeperRspT");
+    setThreadName("KeeperRspT");
     while (!shutdown_called)
     {
-        NuKeeperStorage::ResponseForSession response_for_session;
+        KeeperStorage::ResponseForSession response_for_session;
 
         UInt64 max_wait = UInt64(coordination_settings->operation_timeout_ms.totalMilliseconds());
 
@@ -69,9 +69,9 @@ void NuKeeperStorageDispatcher::responseThread()
     }
 }
 
-void NuKeeperStorageDispatcher::snapshotThread()
+void KeeperStorageDispatcher::snapshotThread()
 {
-    setThreadName("NuKeeperSnpT");
+    setThreadName("KeeperSnpT");
     while (!shutdown_called)
     {
         CreateSnapshotTask task;
@@ -91,7 +91,7 @@ void NuKeeperStorageDispatcher::snapshotThread()
     }
 }
 
-void NuKeeperStorageDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
+void KeeperStorageDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
     auto session_writer = session_to_response_callback.find(session_id);
@@ -104,7 +104,7 @@ void NuKeeperStorageDispatcher::setResponse(int64_t session_id, const Coordinati
         session_to_response_callback.erase(session_writer);
 }
 
-bool NuKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
+bool KeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
     {
         std::lock_guard lock(session_to_response_callback_mutex);
@@ -112,7 +112,7 @@ bool NuKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestP
             return false;
     }
 
-    NuKeeperStorage::RequestForSession request_info;
+    KeeperStorage::RequestForSession request_info;
     request_info.request = request;
     request_info.session_id = session_id;
 
@@ -125,18 +125,18 @@ bool NuKeeperStorageDispatcher::putRequest(const Coordination::ZooKeeperRequestP
     return true;
 }
 
-void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
+void KeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfiguration & config)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
-    int myid = config.getInt("test_keeper_server.server_id");
+    int myid = config.getInt("keeper_server.server_id");
 
-    coordination_settings->loadFromConfig("test_keeper_server.coordination_settings", config);
+    coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<NuKeeperServer>(myid, coordination_settings, config, responses_queue, snapshots_queue);
+    server = std::make_unique<KeeperServer>(myid, coordination_settings, config, responses_queue, snapshots_queue);
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
@@ -158,7 +158,7 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
     LOG_DEBUG(log, "Dispatcher initialized");
 }
 
-void NuKeeperStorageDispatcher::shutdown()
+void KeeperStorageDispatcher::shutdown()
 {
     try
     {
@@ -191,7 +191,7 @@ void NuKeeperStorageDispatcher::shutdown()
         if (server)
             server->shutdown();
 
-        NuKeeperStorage::RequestForSession request_for_session;
+        KeeperStorage::RequestForSession request_for_session;
         while (requests_queue.tryPop(request_for_session))
         {
             if (request_for_session.request)
@@ -215,19 +215,19 @@ void NuKeeperStorageDispatcher::shutdown()
     LOG_DEBUG(log, "Dispatcher shut down");
 }
 
-NuKeeperStorageDispatcher::~NuKeeperStorageDispatcher()
+KeeperStorageDispatcher::~KeeperStorageDispatcher()
 {
     shutdown();
 }
 
-void NuKeeperStorageDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
+void KeeperStorageDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
     if (!session_to_response_callback.try_emplace(session_id, callback).second)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
 }
 
-void NuKeeperStorageDispatcher::sessionCleanerTask()
+void KeeperStorageDispatcher::sessionCleanerTask()
 {
     while (true)
     {
@@ -244,7 +244,7 @@ void NuKeeperStorageDispatcher::sessionCleanerTask()
                     LOG_INFO(log, "Found dead session {}, will try to close it", dead_session);
                     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
                     request->xid = Coordination::CLOSE_XID;
-                    NuKeeperStorage::RequestForSession request_info;
+                    KeeperStorage::RequestForSession request_info;
                     request_info.request = request;
                     request_info.session_id = dead_session;
                     {
@@ -265,7 +265,7 @@ void NuKeeperStorageDispatcher::sessionCleanerTask()
     }
 }
 
-void NuKeeperStorageDispatcher::finishSession(int64_t session_id)
+void KeeperStorageDispatcher::finishSession(int64_t session_id)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
     auto session_it = session_to_response_callback.find(session_id);

@@ -13,7 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Coordination/NuKeeperStorageDispatcher.h>
+#include <Coordination/KeeperStorageDispatcher.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Coordination/ThreadSafeQueue.h>
@@ -29,16 +29,16 @@ using ThreadSafeResponseQueue = ThreadSafeQueue<Coordination::ZooKeeperResponseP
 
 using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
 
-class NuKeeperTCPHandler : public Poco::Net::TCPServerConnection
+class KeeperTCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    NuKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
+    KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
     void run() override;
 private:
     IServer & server;
     Poco::Logger * log;
     Context global_context;
-    std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
+    std::shared_ptr<KeeperStorageDispatcher> nu_keeper_storage_dispatcher;
     Poco::Timespan operation_timeout;
     Poco::Timespan session_timeout;
     int64_t session_id{-1};

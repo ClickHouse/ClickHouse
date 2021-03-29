@@ -9,10 +9,10 @@
 namespace DB
 {
 
-class NuKeeperLogStore : public nuraft::log_store
+class KeeperLogStore : public nuraft::log_store
 {
 public:
-    NuKeeperLogStore(const std::string & changelogs_path, size_t rotate_interval_, bool force_sync_);
+    KeeperLogStore(const std::string & changelogs_path, size_t rotate_interval_, bool force_sync_);
 
     void init(size_t last_commited_log_index, size_t logs_to_keep);
 

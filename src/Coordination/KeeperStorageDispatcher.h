@@ -13,7 +13,7 @@
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
 #include <functional>
-#include <Coordination/NuKeeperServer.h>
+#include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>
 
 
@@ -22,14 +22,14 @@ namespace DB
 
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
 
-class NuKeeperStorageDispatcher
+class KeeperStorageDispatcher
 {
 
 private:
     std::mutex push_request_mutex;
 
     CoordinationSettingsPtr coordination_settings;
-    using RequestsQueue = ConcurrentBoundedQueue<NuKeeperStorage::RequestForSession>;
+    using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
 
     RequestsQueue requests_queue{1};
@@ -46,7 +46,7 @@ private:
     ThreadFromGlobalPool session_cleaner_thread;
     ThreadFromGlobalPool snapshot_thread;
 
-    std::unique_ptr<NuKeeperServer> server;
+    std::unique_ptr<KeeperServer> server;
 
     Poco::Logger * log;
 
@@ -58,13 +58,13 @@ private:
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
 public:
-    NuKeeperStorageDispatcher();
+    KeeperStorageDispatcher();
 
     void initialize(const Poco::Util::AbstractConfiguration & config);
 
     void shutdown();
 
-    ~NuKeeperStorageDispatcher();
+    ~KeeperStorageDispatcher();
 
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 

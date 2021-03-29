@@ -1,4 +1,4 @@
-#include <Server/NuKeeperTCPHandler.h>
+#include <Server/KeeperTCPHandler.h>
 
 #if USE_NURAFT
 
@@ -189,20 +189,20 @@ struct SocketInterruptablePollWrapper
 #endif
 };
 
-NuKeeperTCPHandler::NuKeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
+KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
-    , log(&Poco::Logger::get("NuKeeperTCPHandler"))
+    , log(&Poco::Logger::get("KeeperTCPHandler"))
     , global_context(server.context())
-    , nu_keeper_storage_dispatcher(global_context.getNuKeeperStorageDispatcher())
-    , operation_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
-    , session_timeout(0, global_context.getConfigRef().getUInt("test_keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
+    , nu_keeper_storage_dispatcher(global_context.getKeeperStorageDispatcher())
+    , operation_timeout(0, global_context.getConfigRef().getUInt("keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
+    , session_timeout(0, global_context.getConfigRef().getUInt("keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
     , responses(std::make_unique<ThreadSafeResponseQueue>())
 {
 }
 
-void NuKeeperTCPHandler::sendHandshake(bool has_leader)
+void KeeperTCPHandler::sendHandshake(bool has_leader)
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
@@ -217,12 +217,12 @@ void NuKeeperTCPHandler::sendHandshake(bool has_leader)
     out->next();
 }
 
-void NuKeeperTCPHandler::run()
+void KeeperTCPHandler::run()
 {
     runImpl();
 }
 
-Poco::Timespan NuKeeperTCPHandler::receiveHandshake()
+Poco::Timespan KeeperTCPHandler::receiveHandshake()
 {
     int32_t handshake_length;
     int32_t protocol_version;
@@ -254,7 +254,7 @@ Poco::Timespan NuKeeperTCPHandler::receiveHandshake()
 }
 
 
-void NuKeeperTCPHandler::runImpl()
+void KeeperTCPHandler::runImpl()
 {
     setThreadName("TstKprHandler");
     ThreadStatus thread_status;
@@ -393,7 +393,7 @@ void NuKeeperTCPHandler::runImpl()
     }
 }
 
-std::pair<Coordination::OpNum, Coordination::XID> NuKeeperTCPHandler::receiveRequest()
+std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
     int32_t length;
     Coordination::read(length, *in);

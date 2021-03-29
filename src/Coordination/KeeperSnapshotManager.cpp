@@ -1,4 +1,4 @@
-#include <Coordination/NuKeeperSnapshotManager.h>
+#include <Coordination/KeeperSnapshotManager.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -51,7 +51,7 @@ namespace
         return "/";
     }
 
-    void writeNode(const NuKeeperStorage::Node & node, WriteBuffer & out)
+    void writeNode(const KeeperStorage::Node & node, WriteBuffer & out)
     {
         writeBinary(node.data, out);
 
@@ -81,7 +81,7 @@ namespace
         writeBinary(node.seq_num, out);
     }
 
-    void readNode(NuKeeperStorage::Node & node, ReadBuffer & in)
+    void readNode(KeeperStorage::Node & node, ReadBuffer & in)
     {
         readBinary(node.data, in);
 
@@ -132,7 +132,7 @@ namespace
 }
 
 
-void NuKeeperStorageSnapshot::serialize(const NuKeeperStorageSnapshot & snapshot, WriteBuffer & out)
+void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, WriteBuffer & out)
 {
     writeBinary(static_cast<uint8_t>(snapshot.version), out);
     serializeSnapshotMetadata(snapshot.snapshot_meta, out);
@@ -159,7 +159,7 @@ void NuKeeperStorageSnapshot::serialize(const NuKeeperStorageSnapshot & snapshot
     }
 }
 
-SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & storage, ReadBuffer & in)
+SnapshotMetadataPtr KeeperStorageSnapshot::deserialize(KeeperStorage & storage, ReadBuffer & in)
 {
     uint8_t version;
     readBinary(version, in);
@@ -180,7 +180,7 @@ SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & stora
     {
         std::string path;
         readBinary(path, in);
-        NuKeeperStorage::Node node;
+        KeeperStorage::Node node;
         readNode(node, in);
         storage.container.insertOrReplace(path, node);
         if (node.stat.ephemeralOwner != 0)
@@ -194,7 +194,7 @@ SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & stora
         if (itr.key != "/")
         {
             auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(parent_path, [&path = itr.key] (NuKeeperStorage::Node & value) { value.children.insert(getBaseName(path)); });
+            storage.container.updateValue(parent_path, [&path = itr.key] (KeeperStorage::Node & value) { value.children.insert(getBaseName(path)); });
         }
     }
 
@@ -214,7 +214,7 @@ SnapshotMetadataPtr NuKeeperStorageSnapshot::deserialize(NuKeeperStorage & stora
     return result;
 }
 
-NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, size_t up_to_log_idx_)
+KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, size_t up_to_log_idx_)
     : storage(storage_)
     , snapshot_meta(std::make_shared<SnapshotMetadata>(up_to_log_idx_, 0, std::make_shared<nuraft::cluster_config>()))
     , session_id(storage->session_id_counter)
@@ -225,7 +225,7 @@ NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, siz
     session_and_timeout = storage->getActiveSessions();
 }
 
-NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_)
+KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_)
     : storage(storage_)
     , snapshot_meta(snapshot_meta_)
     , session_id(storage->session_id_counter)
@@ -236,12 +236,12 @@ NuKeeperStorageSnapshot::NuKeeperStorageSnapshot(NuKeeperStorage * storage_, con
     session_and_timeout = storage->getActiveSessions();
 }
 
-NuKeeperStorageSnapshot::~NuKeeperStorageSnapshot()
+KeeperStorageSnapshot::~KeeperStorageSnapshot()
 {
     storage->disableSnapshotMode();
 }
 
-NuKeeperSnapshotManager::NuKeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, size_t storage_tick_time_)
+KeeperSnapshotManager::KeeperSnapshotManager(const std::string & snapshots_path_, size_t snapshots_to_keep_, size_t storage_tick_time_)
     : snapshots_path(snapshots_path_)
     , snapshots_to_keep(snapshots_to_keep_)
     , storage_tick_time(storage_tick_time_)
@@ -266,7 +266,7 @@ NuKeeperSnapshotManager::NuKeeperSnapshotManager(const std::string & snapshots_p
 }
 
 
-std::string NuKeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, size_t up_to_log_idx)
+std::string KeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffer & buffer, size_t up_to_log_idx)
 {
     ReadBufferFromNuraftBuffer reader(buffer);
 
@@ -287,7 +287,7 @@ std::string NuKeeperSnapshotManager::serializeSnapshotBufferToDisk(nuraft::buffe
     return new_snapshot_path;
 }
 
-nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::deserializeLatestSnapshotBufferFromDisk()
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeLatestSnapshotBufferFromDisk()
 {
     while (!existing_snapshots.empty())
     {
@@ -307,7 +307,7 @@ nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::deserializeLatestSnapshotBu
     return nullptr;
 }
 
-nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::deserializeSnapshotBufferFromDisk(size_t up_to_log_idx) const
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::deserializeSnapshotBufferFromDisk(size_t up_to_log_idx) const
 {
     const std::string & snapshot_path = existing_snapshots.at(up_to_log_idx);
     WriteBufferFromNuraftBuffer writer;
@@ -316,26 +316,26 @@ nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::deserializeSnapshotBufferFr
     return writer.getBuffer();
 }
 
-nuraft::ptr<nuraft::buffer> NuKeeperSnapshotManager::serializeSnapshotToBuffer(const NuKeeperStorageSnapshot & snapshot)
+nuraft::ptr<nuraft::buffer> KeeperSnapshotManager::serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot)
 {
     WriteBufferFromNuraftBuffer writer;
     CompressedWriteBuffer compressed_writer(writer);
 
-    NuKeeperStorageSnapshot::serialize(snapshot, compressed_writer);
+    KeeperStorageSnapshot::serialize(snapshot, compressed_writer);
     compressed_writer.finalize();
     return writer.getBuffer();
 }
 
-SnapshotMetaAndStorage NuKeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
+SnapshotMetaAndStorage KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
     ReadBufferFromNuraftBuffer reader(buffer);
     CompressedReadBuffer compressed_reader(reader);
-    auto storage = std::make_unique<NuKeeperStorage>(storage_tick_time);
-    auto snapshot_metadata = NuKeeperStorageSnapshot::deserialize(*storage, compressed_reader);
+    auto storage = std::make_unique<KeeperStorage>(storage_tick_time);
+    auto snapshot_metadata = KeeperStorageSnapshot::deserialize(*storage, compressed_reader);
     return std::make_pair(snapshot_metadata, std::move(storage));
 }
 
-SnapshotMetaAndStorage NuKeeperSnapshotManager::restoreFromLatestSnapshot()
+SnapshotMetaAndStorage KeeperSnapshotManager::restoreFromLatestSnapshot()
 {
     if (existing_snapshots.empty())
         return {};
@@ -346,13 +346,13 @@ SnapshotMetaAndStorage NuKeeperSnapshotManager::restoreFromLatestSnapshot()
     return deserializeSnapshotFromBuffer(buffer);
 }
 
-void NuKeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
+void KeeperSnapshotManager::removeOutdatedSnapshotsIfNeeded()
 {
     while (existing_snapshots.size() > snapshots_to_keep)
         removeSnapshot(existing_snapshots.begin()->first);
 }
 
-void NuKeeperSnapshotManager::removeSnapshot(size_t log_idx)
+void KeeperSnapshotManager::removeSnapshot(size_t log_idx)
 {
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())

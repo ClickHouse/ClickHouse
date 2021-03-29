@@ -1,4 +1,4 @@
-#include <Coordination/NuKeeperStorage.h>
+#include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/setThreadName.h>
 #include <mutex>
@@ -31,9 +31,9 @@ static std::string getBaseName(const String & path)
     return std::string{&path[basename_start + 1], path.length() - basename_start - 1};
 }
 
-static NuKeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, NuKeeperStorage::Watches & watches, NuKeeperStorage::Watches & list_watches, Coordination::Event event_type)
+static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
 {
-    NuKeeperStorage::ResponsesForSessions result;
+    KeeperStorage::ResponsesForSessions result;
     auto it = watches.find(path);
     if (it != watches.end())
     {
@@ -44,7 +44,7 @@ static NuKeeperStorage::ResponsesForSessions processWatchesImpl(const String & p
         watch_response->type = event_type;
         watch_response->state = Coordination::State::CONNECTED;
         for (auto watcher_session : it->second)
-            result.push_back(NuKeeperStorage::ResponseForSession{watcher_session, watch_response});
+            result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_response});
 
         watches.erase(it);
     }
@@ -60,14 +60,14 @@ static NuKeeperStorage::ResponsesForSessions processWatchesImpl(const String & p
         watch_list_response->type = Coordination::Event::CHILD;
         watch_list_response->state = Coordination::State::CONNECTED;
         for (auto watcher_session : it->second)
-            result.push_back(NuKeeperStorage::ResponseForSession{watcher_session, watch_list_response});
+            result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_list_response});
 
         list_watches.erase(it);
     }
     return result;
 }
 
-NuKeeperStorage::NuKeeperStorage(int64_t tick_time_ms)
+KeeperStorage::KeeperStorage(int64_t tick_time_ms)
     : session_expiry_queue(tick_time_ms)
 {
     container.insert("/", Node());
@@ -75,32 +75,32 @@ NuKeeperStorage::NuKeeperStorage(int64_t tick_time_ms)
 
 using Undo = std::function<void()>;
 
-struct NuKeeperStorageRequest
+struct KeeperStorageRequest
 {
     Coordination::ZooKeeperRequestPtr zk_request;
 
-    explicit NuKeeperStorageRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
+    explicit KeeperStorageRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
         : zk_request(zk_request_)
     {}
-    virtual std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const = 0;
-    virtual NuKeeperStorage::ResponsesForSessions processWatches(NuKeeperStorage::Watches & /*watches*/, NuKeeperStorage::Watches & /*list_watches*/) const { return {}; }
+    virtual std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & container, KeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const = 0;
+    virtual KeeperStorage::ResponsesForSessions processWatches(KeeperStorage::Watches & /*watches*/, KeeperStorage::Watches & /*list_watches*/) const { return {}; }
 
-    virtual ~NuKeeperStorageRequest() = default;
+    virtual ~KeeperStorageRequest() = default;
 };
 
-struct NuKeeperStorageHeartbeatRequest final : public NuKeeperStorageRequest
+struct KeeperStorageHeartbeatRequest final : public KeeperStorageRequest
 {
-    using NuKeeperStorageRequest::NuKeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & /* container */, NuKeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
+    using KeeperStorageRequest::KeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & /* container */, KeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
     {
         return {zk_request->makeResponse(), {}};
     }
 };
 
-struct NuKeeperStorageSyncRequest final : public NuKeeperStorageRequest
+struct KeeperStorageSyncRequest final : public KeeperStorageRequest
 {
-    using NuKeeperStorageRequest::NuKeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & /* container */, NuKeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
+    using KeeperStorageRequest::KeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & /* container */, KeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
     {
         auto response = zk_request->makeResponse();
         dynamic_cast<Coordination::ZooKeeperSyncResponse *>(response.get())->path = dynamic_cast<Coordination::ZooKeeperSyncRequest *>(zk_request.get())->path;
@@ -108,16 +108,16 @@ struct NuKeeperStorageSyncRequest final : public NuKeeperStorageRequest
     }
 };
 
-struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
+struct KeeperStorageCreateRequest final : public KeeperStorageRequest
 {
-    using NuKeeperStorageRequest::NuKeeperStorageRequest;
+    using KeeperStorageRequest::KeeperStorageRequest;
 
-    NuKeeperStorage::ResponsesForSessions processWatches(NuKeeperStorage::Watches & watches, NuKeeperStorage::Watches & list_watches) const override
+    KeeperStorage::ResponsesForSessions processWatches(KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches) const override
     {
         return processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::CREATED);
     }
 
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & container, KeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Undo undo;
@@ -143,7 +143,7 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
             }
             else
             {
-                NuKeeperStorage::Node created_node;
+                KeeperStorage::Node created_node;
                 created_node.stat.czxid = zxid;
                 created_node.stat.mzxid = zxid;
                 created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
@@ -167,7 +167,7 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
                 }
 
                 auto child_path = getBaseName(path_created);
-                container.updateValue(parent_path, [child_path] (NuKeeperStorage::Node & parent)
+                container.updateValue(parent_path, [child_path] (KeeperStorage::Node & parent)
                 {
                     /// Increment sequential number even if node is not sequential
                     ++parent.seq_num;
@@ -188,7 +188,7 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
                     if (is_ephemeral)
                         ephemerals[session_id].erase(path_created);
 
-                    container.updateValue(parent_path, [child_path] (NuKeeperStorage::Node & undo_parent)
+                    container.updateValue(parent_path, [child_path] (KeeperStorage::Node & undo_parent)
                     {
                         --undo_parent.stat.cversion;
                         --undo_parent.stat.numChildren;
@@ -205,10 +205,10 @@ struct NuKeeperStorageCreateRequest final : public NuKeeperStorageRequest
     }
 };
 
-struct NuKeeperStorageGetRequest final : public NuKeeperStorageRequest
+struct KeeperStorageGetRequest final : public KeeperStorageRequest
 {
-    using NuKeeperStorageRequest::NuKeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
+    using KeeperStorageRequest::KeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & container, KeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperGetResponse & response = dynamic_cast<Coordination::ZooKeeperGetResponse &>(*response_ptr);
@@ -230,10 +230,10 @@ struct NuKeeperStorageGetRequest final : public NuKeeperStorageRequest
     }
 };
 
-struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
+struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
 {
-    using NuKeeperStorageRequest::NuKeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & ephemerals, int64_t /*zxid*/, int64_t /*session_id*/) const override
+    using KeeperStorageRequest::KeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & container, KeeperStorage::Ephemerals & ephemerals, int64_t /*zxid*/, int64_t /*session_id*/) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperRemoveResponse & response = dynamic_cast<Coordination::ZooKeeperRemoveResponse &>(*response_ptr);
@@ -265,7 +265,7 @@ struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
             }
 
             auto child_basename = getBaseName(it->key);
-            container.updateValue(parentPath(request.path), [&child_basename] (NuKeeperStorage::Node & parent)
+            container.updateValue(parentPath(request.path), [&child_basename] (KeeperStorage::Node & parent)
             {
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
@@ -282,7 +282,7 @@ struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
                     ephemerals[prev_node.stat.ephemeralOwner].emplace(path);
 
                 container.insert(path, prev_node);
-                container.updateValue(parentPath(path), [&child_basename] (NuKeeperStorage::Node & parent)
+                container.updateValue(parentPath(path), [&child_basename] (KeeperStorage::Node & parent)
                 {
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
@@ -294,16 +294,16 @@ struct NuKeeperStorageRemoveRequest final : public NuKeeperStorageRequest
         return { response_ptr, undo };
     }
 
-    NuKeeperStorage::ResponsesForSessions processWatches(NuKeeperStorage::Watches & watches, NuKeeperStorage::Watches & list_watches) const override
+    KeeperStorage::ResponsesForSessions processWatches(KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches) const override
     {
         return processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::DELETED);
     }
 };
 
-struct NuKeeperStorageExistsRequest final : public NuKeeperStorageRequest
+struct KeeperStorageExistsRequest final : public KeeperStorageRequest
 {
-    using NuKeeperStorageRequest::NuKeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & /* ephemerals */, int64_t /*zxid*/, int64_t /* session_id */) const override
+    using KeeperStorageRequest::KeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & container, KeeperStorage::Ephemerals & /* ephemerals */, int64_t /*zxid*/, int64_t /* session_id */) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperExistsResponse & response = dynamic_cast<Coordination::ZooKeeperExistsResponse &>(*response_ptr);
@@ -324,10 +324,10 @@ struct NuKeeperStorageExistsRequest final : public NuKeeperStorageRequest
     }
 };
 
-struct NuKeeperStorageSetRequest final : public NuKeeperStorageRequest
+struct KeeperStorageSetRequest final : public KeeperStorageRequest
 {
-    using NuKeeperStorageRequest::NuKeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & /* ephemerals */, int64_t zxid, int64_t /* session_id */) const override
+    using KeeperStorageRequest::KeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & container, KeeperStorage::Ephemerals & /* ephemerals */, int64_t zxid, int64_t /* session_id */) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperSetResponse & response = dynamic_cast<Coordination::ZooKeeperSetResponse &>(*response_ptr);
@@ -343,7 +343,7 @@ struct NuKeeperStorageSetRequest final : public NuKeeperStorageRequest
         {
             auto prev_node = it->value;
 
-            auto itr = container.updateValue(request.path, [zxid, request] (NuKeeperStorage::Node & value)
+            auto itr = container.updateValue(request.path, [zxid, request] (KeeperStorage::Node & value)
             {
                 value.data = request.data;
                 value.stat.version++;
@@ -353,7 +353,7 @@ struct NuKeeperStorageSetRequest final : public NuKeeperStorageRequest
                 value.data = request.data;
             });
 
-            container.updateValue(parentPath(request.path), [] (NuKeeperStorage::Node & parent)
+            container.updateValue(parentPath(request.path), [] (KeeperStorage::Node & parent)
             {
                 parent.stat.cversion++;
             });
@@ -363,8 +363,8 @@ struct NuKeeperStorageSetRequest final : public NuKeeperStorageRequest
 
             undo = [prev_node, &container, path = request.path]
             {
-                container.updateValue(path, [&prev_node] (NuKeeperStorage::Node & value) { value = prev_node; });
-                container.updateValue(parentPath(path), [] (NuKeeperStorage::Node & parent)
+                container.updateValue(path, [&prev_node] (KeeperStorage::Node & value) { value = prev_node; });
+                container.updateValue(parentPath(path), [] (KeeperStorage::Node & parent)
                 {
                     parent.stat.cversion--;
                 });
@@ -378,16 +378,16 @@ struct NuKeeperStorageSetRequest final : public NuKeeperStorageRequest
         return { response_ptr, undo };
     }
 
-    NuKeeperStorage::ResponsesForSessions processWatches(NuKeeperStorage::Watches & watches, NuKeeperStorage::Watches & list_watches) const override
+    KeeperStorage::ResponsesForSessions processWatches(KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches) const override
     {
         return processWatchesImpl(zk_request->getPath(), watches, list_watches, Coordination::Event::CHANGED);
     }
 };
 
-struct NuKeeperStorageListRequest final : public NuKeeperStorageRequest
+struct KeeperStorageListRequest final : public KeeperStorageRequest
 {
-    using NuKeeperStorageRequest::NuKeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & /* ephemerals */, int64_t /*zxid*/, int64_t /*session_id*/) const override
+    using KeeperStorageRequest::KeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & container, KeeperStorage::Ephemerals & /* ephemerals */, int64_t /*zxid*/, int64_t /*session_id*/) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
@@ -415,10 +415,10 @@ struct NuKeeperStorageListRequest final : public NuKeeperStorageRequest
     }
 };
 
-struct NuKeeperStorageCheckRequest final : public NuKeeperStorageRequest
+struct KeeperStorageCheckRequest final : public KeeperStorageRequest
 {
-    using NuKeeperStorageRequest::NuKeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & /* ephemerals */, int64_t /*zxid*/, int64_t /*session_id*/) const override
+    using KeeperStorageRequest::KeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & container, KeeperStorage::Ephemerals & /* ephemerals */, int64_t /*zxid*/, int64_t /*session_id*/) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperCheckResponse & response = dynamic_cast<Coordination::ZooKeeperCheckResponse &>(*response_ptr);
@@ -441,11 +441,11 @@ struct NuKeeperStorageCheckRequest final : public NuKeeperStorageRequest
     }
 };
 
-struct NuKeeperStorageMultiRequest final : public NuKeeperStorageRequest
+struct KeeperStorageMultiRequest final : public KeeperStorageRequest
 {
-    std::vector<NuKeeperStorageRequestPtr> concrete_requests;
-    explicit NuKeeperStorageMultiRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
-        : NuKeeperStorageRequest(zk_request_)
+    std::vector<KeeperStorageRequestPtr> concrete_requests;
+    explicit KeeperStorageMultiRequest(const Coordination::ZooKeeperRequestPtr & zk_request_)
+        : KeeperStorageRequest(zk_request_)
     {
         Coordination::ZooKeeperMultiRequest & request = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*zk_request);
         concrete_requests.reserve(request.requests.size());
@@ -455,26 +455,26 @@ struct NuKeeperStorageMultiRequest final : public NuKeeperStorageRequest
             auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_request);
             if (sub_zk_request->getOpNum() == Coordination::OpNum::Create)
             {
-                concrete_requests.push_back(std::make_shared<NuKeeperStorageCreateRequest>(sub_zk_request));
+                concrete_requests.push_back(std::make_shared<KeeperStorageCreateRequest>(sub_zk_request));
             }
             else if (sub_zk_request->getOpNum() == Coordination::OpNum::Remove)
             {
-                concrete_requests.push_back(std::make_shared<NuKeeperStorageRemoveRequest>(sub_zk_request));
+                concrete_requests.push_back(std::make_shared<KeeperStorageRemoveRequest>(sub_zk_request));
             }
             else if (sub_zk_request->getOpNum() == Coordination::OpNum::Set)
             {
-                concrete_requests.push_back(std::make_shared<NuKeeperStorageSetRequest>(sub_zk_request));
+                concrete_requests.push_back(std::make_shared<KeeperStorageSetRequest>(sub_zk_request));
             }
             else if (sub_zk_request->getOpNum() == Coordination::OpNum::Check)
             {
-                concrete_requests.push_back(std::make_shared<NuKeeperStorageCheckRequest>(sub_zk_request));
+                concrete_requests.push_back(std::make_shared<KeeperStorageCheckRequest>(sub_zk_request));
             }
             else
                 throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal command as part of multi ZooKeeper request {}", sub_zk_request->getOpNum());
         }
     }
 
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container & container, NuKeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const override
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & container, KeeperStorage::Ephemerals & ephemerals, int64_t zxid, int64_t session_id) const override
     {
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperMultiResponse & response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*response_ptr);
@@ -527,9 +527,9 @@ struct NuKeeperStorageMultiRequest final : public NuKeeperStorageRequest
         }
     }
 
-    NuKeeperStorage::ResponsesForSessions processWatches(NuKeeperStorage::Watches & watches, NuKeeperStorage::Watches & list_watches) const override
+    KeeperStorage::ResponsesForSessions processWatches(KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches) const override
     {
-        NuKeeperStorage::ResponsesForSessions result;
+        KeeperStorage::ResponsesForSessions result;
         for (const auto & generic_request : concrete_requests)
         {
             auto responses = generic_request->processWatches(watches, list_watches);
@@ -539,16 +539,16 @@ struct NuKeeperStorageMultiRequest final : public NuKeeperStorageRequest
     }
 };
 
-struct NuKeeperStorageCloseRequest final : public NuKeeperStorageRequest
+struct KeeperStorageCloseRequest final : public KeeperStorageRequest
 {
-    using NuKeeperStorageRequest::NuKeeperStorageRequest;
-    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(NuKeeperStorage::Container &, NuKeeperStorage::Ephemerals &, int64_t, int64_t) const override
+    using KeeperStorageRequest::KeeperStorageRequest;
+    std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container &, KeeperStorage::Ephemerals &, int64_t, int64_t) const override
     {
         throw DB::Exception("Called process on close request", ErrorCodes::LOGICAL_ERROR);
     }
 };
 
-void NuKeeperStorage::finalize()
+void KeeperStorage::finalize()
 {
     if (finalized)
         throw DB::Exception("Testkeeper storage already finalized", ErrorCodes::LOGICAL_ERROR);
@@ -568,20 +568,20 @@ void NuKeeperStorage::finalize()
 }
 
 
-class NuKeeperWrapperFactory final : private boost::noncopyable
+class KeeperWrapperFactory final : private boost::noncopyable
 {
 
 public:
-    using Creator = std::function<NuKeeperStorageRequestPtr(const Coordination::ZooKeeperRequestPtr &)>;
+    using Creator = std::function<KeeperStorageRequestPtr(const Coordination::ZooKeeperRequestPtr &)>;
     using OpNumToRequest = std::unordered_map<Coordination::OpNum, Creator>;
 
-    static NuKeeperWrapperFactory & instance()
+    static KeeperWrapperFactory & instance()
     {
-        static NuKeeperWrapperFactory factory;
+        static KeeperWrapperFactory factory;
         return factory;
     }
 
-    NuKeeperStorageRequestPtr get(const Coordination::ZooKeeperRequestPtr & zk_request) const
+    KeeperStorageRequestPtr get(const Coordination::ZooKeeperRequestPtr & zk_request) const
     {
         auto it = op_num_to_request.find(zk_request->getOpNum());
         if (it == op_num_to_request.end())
@@ -598,37 +598,37 @@ public:
 
 private:
     OpNumToRequest op_num_to_request;
-    NuKeeperWrapperFactory();
+    KeeperWrapperFactory();
 };
 
 template<Coordination::OpNum num, typename RequestT>
-void registerNuKeeperRequestWrapper(NuKeeperWrapperFactory & factory)
+void registerKeeperRequestWrapper(KeeperWrapperFactory & factory)
 {
     factory.registerRequest(num, [] (const Coordination::ZooKeeperRequestPtr & zk_request) { return std::make_shared<RequestT>(zk_request); });
 }
 
 
-NuKeeperWrapperFactory::NuKeeperWrapperFactory()
+KeeperWrapperFactory::KeeperWrapperFactory()
 {
-    registerNuKeeperRequestWrapper<Coordination::OpNum::Heartbeat, NuKeeperStorageHeartbeatRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::Sync, NuKeeperStorageSyncRequest>(*this);
-    //registerNuKeeperRequestWrapper<Coordination::OpNum::Auth, NuKeeperStorageAuthRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::Close, NuKeeperStorageCloseRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::Create, NuKeeperStorageCreateRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::Remove, NuKeeperStorageRemoveRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::Exists, NuKeeperStorageExistsRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::Get, NuKeeperStorageGetRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::Set, NuKeeperStorageSetRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::List, NuKeeperStorageListRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::SimpleList, NuKeeperStorageListRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::Check, NuKeeperStorageCheckRequest>(*this);
-    registerNuKeeperRequestWrapper<Coordination::OpNum::Multi, NuKeeperStorageMultiRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::Heartbeat, KeeperStorageHeartbeatRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::Sync, KeeperStorageSyncRequest>(*this);
+    //registerKeeperRequestWrapper<Coordination::OpNum::Auth, KeeperStorageAuthRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::Close, KeeperStorageCloseRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::Create, KeeperStorageCreateRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::Remove, KeeperStorageRemoveRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::Exists, KeeperStorageExistsRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::Get, KeeperStorageGetRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::Set, KeeperStorageSetRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::List, KeeperStorageListRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::SimpleList, KeeperStorageListRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::Check, KeeperStorageCheckRequest>(*this);
+    registerKeeperRequestWrapper<Coordination::OpNum::Multi, KeeperStorageMultiRequest>(*this);
 }
 
 
-NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id, std::optional<int64_t> new_last_zxid)
+KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordination::ZooKeeperRequestPtr & zk_request, int64_t session_id, std::optional<int64_t> new_last_zxid)
 {
-    NuKeeperStorage::ResponsesForSessions results;
+    KeeperStorage::ResponsesForSessions results;
     if (new_last_zxid)
     {
         if (zxid >= *new_last_zxid)
@@ -645,7 +645,7 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
             for (const auto & ephemeral_path : it->second)
             {
                 container.erase(ephemeral_path);
-                container.updateValue(parentPath(ephemeral_path), [&ephemeral_path] (NuKeeperStorage::Node & parent)
+                container.updateValue(parentPath(ephemeral_path), [&ephemeral_path] (KeeperStorage::Node & parent)
                 {
                     --parent.stat.numChildren;
                     ++parent.stat.cversion;
@@ -669,7 +669,7 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat)
     {
-        NuKeeperStorageRequestPtr storage_request = NuKeeperWrapperFactory::instance().get(zk_request);
+        KeeperStorageRequestPtr storage_request = KeeperWrapperFactory::instance().get(zk_request);
         auto [response, _] = storage_request->process(container, ephemerals, zxid, session_id);
         response->xid = zk_request->xid;
         response->zxid = getZXID();
@@ -678,7 +678,7 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
     }
     else
     {
-        NuKeeperStorageRequestPtr storage_request = NuKeeperWrapperFactory::instance().get(zk_request);
+        KeeperStorageRequestPtr storage_request = KeeperWrapperFactory::instance().get(zk_request);
         auto [response, _] = storage_request->process(container, ephemerals, zxid, session_id);
 
         if (zk_request->has_watch)
@@ -715,7 +715,7 @@ NuKeeperStorage::ResponsesForSessions NuKeeperStorage::processRequest(const Coor
 }
 
 
-void NuKeeperStorage::clearDeadWatches(int64_t session_id)
+void KeeperStorage::clearDeadWatches(int64_t session_id)
 {
     auto watches_it = sessions_and_watchers.find(session_id);
     if (watches_it != sessions_and_watchers.end())

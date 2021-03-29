@@ -1,4 +1,4 @@
-#include <Coordination/NuKeeperStateManager.h>
+#include <Coordination/KeeperStateManager.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -9,23 +9,23 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
-NuKeeperStateManager::NuKeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
+KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
     : my_server_id(server_id_)
     , my_port(port)
-    , log_store(nuraft::cs_new<NuKeeperLogStore>(logs_path, 5000, false))
+    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     cluster_config->get_servers().push_back(peer_config);
 }
 
-NuKeeperStateManager::NuKeeperStateManager(
+KeeperStateManager::KeeperStateManager(
     int my_server_id_,
     const std::string & config_prefix,
     const Poco::Util::AbstractConfiguration & config,
     const CoordinationSettingsPtr & coordination_settings)
     : my_server_id(my_server_id_)
-    , log_store(nuraft::cs_new<NuKeeperLogStore>(
+    , log_store(nuraft::cs_new<KeeperLogStore>(
                     config.getString(config_prefix + ".log_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/logs"),
                     coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync))
     , cluster_config(nuraft::cs_new<nuraft::cluster_config>())
@@ -64,17 +64,17 @@ NuKeeperStateManager::NuKeeperStateManager(
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 }
 
-void NuKeeperStateManager::loadLogStore(size_t last_commited_index, size_t logs_to_keep)
+void KeeperStateManager::loadLogStore(size_t last_commited_index, size_t logs_to_keep)
 {
     log_store->init(last_commited_index, logs_to_keep);
 }
 
-void NuKeeperStateManager::flushLogStore()
+void KeeperStateManager::flushLogStore()
 {
     log_store->flush();
 }
 
-void NuKeeperStateManager::save_config(const nuraft::cluster_config & config)
+void KeeperStateManager::save_config(const nuraft::cluster_config & config)
 {
     // Just keep in memory in this example.
     // Need to write to disk here, if want to make it durable.
@@ -82,7 +82,7 @@ void NuKeeperStateManager::save_config(const nuraft::cluster_config & config)
     cluster_config = nuraft::cluster_config::deserialize(*buf);
 }
 
-void NuKeeperStateManager::save_state(const nuraft::srv_state & state)
+void KeeperStateManager::save_state(const nuraft::srv_state & state)
 {
      // Just keep in memory in this example.
      // Need to write to disk here, if want to make it durable.

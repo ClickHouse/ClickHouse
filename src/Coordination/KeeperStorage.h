@@ -14,15 +14,15 @@ namespace DB
 {
 
 using namespace DB;
-struct NuKeeperStorageRequest;
-using NuKeeperStorageRequestPtr = std::shared_ptr<NuKeeperStorageRequest>;
+struct KeeperStorageRequest;
+using KeeperStorageRequestPtr = std::shared_ptr<KeeperStorageRequest>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 using ChildrenSet = std::unordered_set<std::string>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
-struct NuKeeperStorageSnapshot;
+struct KeeperStorageSnapshot;
 
-class NuKeeperStorage
+class KeeperStorage
 {
 public:
     int64_t session_id_counter{1};
@@ -80,7 +80,7 @@ public:
     }
 
 public:
-    NuKeeperStorage(int64_t tick_time_ms);
+    KeeperStorage(int64_t tick_time_ms);
 
     int64_t getSessionID(int64_t session_timeout_ms)
     {
@@ -131,6 +131,6 @@ public:
     }
 };
 
-using NuKeeperStoragePtr = std::unique_ptr<NuKeeperStorage>;
+using KeeperStoragePtr = std::unique_ptr<KeeperStorage>;
 
 }

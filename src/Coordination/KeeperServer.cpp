@@ -1,7 +1,7 @@
-#include <Coordination/NuKeeperServer.h>
+#include <Coordination/KeeperServer.h>
 #include <Coordination/LoggerWrapper.h>
-#include <Coordination/NuKeeperStateMachine.h>
-#include <Coordination/NuKeeperStateManager.h>
+#include <Coordination/KeeperStateMachine.h>
+#include <Coordination/KeeperStateManager.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
-NuKeeperServer::NuKeeperServer(
+KeeperServer::KeeperServer(
     int server_id_,
     const CoordinationSettingsPtr & coordination_settings_,
     const Poco::Util::AbstractConfiguration & config,
@@ -26,15 +26,18 @@ NuKeeperServer::NuKeeperServer(
     SnapshotsQueue & snapshots_queue_)
     : server_id(server_id_)
     , coordination_settings(coordination_settings_)
-    , state_machine(nuraft::cs_new<NuKeeperStateMachine>(responses_queue_, snapshots_queue_, config.getString("test_keeper_server.snapshot_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/snapshots"), coordination_settings))
-    , state_manager(nuraft::cs_new<NuKeeperStateManager>(server_id, "test_keeper_server", config, coordination_settings))
+    , state_machine(nuraft::cs_new<KeeperStateMachine>(
+                        responses_queue_, snapshots_queue_,
+                        config.getString("keeper_server.snapshot_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/snapshots"),
+                        coordination_settings))
+    , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", config, coordination_settings))
     , responses_queue(responses_queue_)
 {
     if (coordination_settings->quorum_reads)
-        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Quorum reads enabled, NuKeeper will work slower.");
+        LOG_WARNING(&Poco::Logger::get("KeeperServer"), "Quorum reads enabled, Keeper will work slower.");
 }
 
-void NuKeeperServer::startup()
+void KeeperServer::startup()
 {
 
     state_machine->init();
@@ -84,13 +87,13 @@ void NuKeeperServer::startup()
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
 }
 
-void NuKeeperServer::shutdown()
+void KeeperServer::shutdown()
 {
     state_machine->shutdownStorage();
     state_manager->flushLogStore();
     auto timeout = coordination_settings->shutdown_timeout.totalSeconds();
     if (!launcher.shutdown(timeout))
-        LOG_WARNING(&Poco::Logger::get("NuKeeperServer"), "Failed to shutdown RAFT server in {} seconds", timeout);
+        LOG_WARNING(&Poco::Logger::get("KeeperServer"), "Failed to shutdown RAFT server in {} seconds", timeout);
 }
 
 namespace
@@ -106,7 +109,7 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coord
 
 }
 
-void NuKeeperServer::putRequest(const NuKeeperStorage::RequestForSession & request_for_session)
+void KeeperServer::putRequest(const KeeperStorage::RequestForSession & request_for_session)
 {
     auto [session_id, request] = request_for_session;
     if (!coordination_settings->quorum_reads && isLeaderAlive() && request->isReadRequest())
@@ -123,29 +126,29 @@ void NuKeeperServer::putRequest(const NuKeeperStorage::RequestForSession & reque
         auto result = raft_instance->append_entries(entries);
         if (!result->get_accepted())
         {
-            NuKeeperStorage::ResponsesForSessions responses;
+            KeeperStorage::ResponsesForSessions responses;
             auto response = request->makeResponse();
             response->xid = request->xid;
             response->zxid = 0;
             response->error = Coordination::Error::ZOPERATIONTIMEOUT;
-            responses_queue.push(DB::NuKeeperStorage::ResponseForSession{session_id, response});
+            responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response});
         }
 
         if (result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
         {
-            NuKeeperStorage::ResponsesForSessions responses;
+            KeeperStorage::ResponsesForSessions responses;
             auto response = request->makeResponse();
             response->xid = request->xid;
             response->zxid = 0;
             response->error = Coordination::Error::ZOPERATIONTIMEOUT;
-            responses_queue.push(DB::NuKeeperStorage::ResponseForSession{session_id, response});
+            responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response});
         }
         else if (result->get_result_code() != nuraft::cmd_result_code::OK)
             throw Exception(ErrorCodes::RAFT_ERROR, "Requests result failed with code {} and message: '{}'", result->get_result_code(), result->get_result_str());
     }
 }
 
-int64_t NuKeeperServer::getSessionID(int64_t session_timeout_ms)
+int64_t KeeperServer::getSessionID(int64_t session_timeout_ms)
 {
     auto entry = nuraft::buffer::alloc(sizeof(int64_t));
     /// Just special session request
@@ -170,17 +173,17 @@ int64_t NuKeeperServer::getSessionID(int64_t session_timeout_ms)
     return bs_resp.get_i64();
 }
 
-bool NuKeeperServer::isLeader() const
+bool KeeperServer::isLeader() const
 {
     return raft_instance->is_leader();
 }
 
-bool NuKeeperServer::isLeaderAlive() const
+bool KeeperServer::isLeaderAlive() const
 {
     return raft_instance->is_leader_alive();
 }
 
-nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
+nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
 {
     size_t last_commited = state_machine->last_commit_index();
     size_t next_index = state_manager->getLogStore()->next_slot();
@@ -240,7 +243,7 @@ nuraft::cb_func::ReturnCode NuKeeperServer::callbackFunc(nuraft::cb_func::Type t
     }
 }
 
-void NuKeeperServer::waitInit()
+void KeeperServer::waitInit()
 {
     std::unique_lock lock(initialized_mutex);
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
@@ -248,7 +251,7 @@ void NuKeeperServer::waitInit()
         throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
 }
 
-std::unordered_set<int64_t> NuKeeperServer::getDeadSessions()
+std::unordered_set<int64_t> KeeperServer::getDeadSessions()
 {
     return state_machine->getDeadSessions();
 }

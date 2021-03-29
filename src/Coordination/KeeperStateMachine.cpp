@@ -1,9 +1,9 @@
-#include <Coordination/NuKeeperStateMachine.h>
+#include <Coordination/KeeperStateMachine.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
-#include <Coordination/NuKeeperSnapshotManager.h>
+#include <Coordination/KeeperSnapshotManager.h>
 #include <future>
 
 namespace DB
@@ -14,10 +14,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-NuKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
+KeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
 {
     ReadBufferFromNuraftBuffer buffer(data);
-    NuKeeperStorage::RequestForSession request_for_session;
+    KeeperStorage::RequestForSession request_for_session;
     readIntBinary(request_for_session.session_id, buffer);
 
     int32_t length;
@@ -36,17 +36,17 @@ NuKeeperStorage::RequestForSession parseRequest(nuraft::buffer & data)
     return request_for_session;
 }
 
-NuKeeperStateMachine::NuKeeperStateMachine(ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_)
+KeeperStateMachine::KeeperStateMachine(ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_)
     : coordination_settings(coordination_settings_)
     , snapshot_manager(snapshots_path_, coordination_settings->snapshots_to_keep, coordination_settings->dead_session_check_period_ms.totalMicroseconds())
     , responses_queue(responses_queue_)
     , snapshots_queue(snapshots_queue_)
     , last_committed_idx(0)
-    , log(&Poco::Logger::get("NuKeeperStateMachine"))
+    , log(&Poco::Logger::get("KeeperStateMachine"))
 {
 }
 
-void NuKeeperStateMachine::init()
+void KeeperStateMachine::init()
 {
     /// Do everything without mutexes, no other threads exist.
     LOG_DEBUG(log, "Totally have {} snapshots", snapshot_manager.totalSnapshots());
@@ -85,10 +85,10 @@ void NuKeeperStateMachine::init()
     }
 
     if (!storage)
-        storage = std::make_unique<NuKeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds());
+        storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds());
 }
 
-nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
 {
     if (data.size() == sizeof(int64_t))
     {
@@ -109,7 +109,7 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
     else
     {
         auto request_for_session = parseRequest(data);
-        NuKeeperStorage::ResponsesForSessions responses_for_sessions;
+        KeeperStorage::ResponsesForSessions responses_for_sessions;
         {
             std::lock_guard lock(storage_lock);
             responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
@@ -122,7 +122,7 @@ nuraft::ptr<nuraft::buffer> NuKeeperStateMachine::commit(const size_t log_idx, n
     }
 }
 
-bool NuKeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
+bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 {
     LOG_DEBUG(log, "Applying snapshot {}", s.get_last_log_idx());
     nuraft::ptr<nuraft::buffer> latest_snapshot_ptr;
@@ -142,14 +142,14 @@ bool NuKeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
     return true;
 }
 
-nuraft::ptr<nuraft::snapshot> NuKeeperStateMachine::last_snapshot()
+nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
 {
     /// Just return the latest snapshot.
     std::lock_guard<std::mutex> lock(snapshots_lock);
     return latest_snapshot_meta;
 }
 
-void NuKeeperStateMachine::create_snapshot(
+void KeeperStateMachine::create_snapshot(
     nuraft::snapshot & s,
     nuraft::async_result<bool>::handler_type & when_done)
 {
@@ -160,10 +160,10 @@ void NuKeeperStateMachine::create_snapshot(
     CreateSnapshotTask snapshot_task;
     {
         std::lock_guard lock(storage_lock);
-        snapshot_task.snapshot = std::make_shared<NuKeeperStorageSnapshot>(storage.get(), snapshot_meta_copy);
+        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot>(storage.get(), snapshot_meta_copy);
     }
 
-    snapshot_task.create_snapshot = [this, when_done] (NuKeeperStorageSnapshotPtr && snapshot)
+    snapshot_task.create_snapshot = [this, when_done] (KeeperStorageSnapshotPtr && snapshot)
     {
         nuraft::ptr<std::exception> exception(nullptr);
         bool ret = true;
@@ -203,7 +203,7 @@ void NuKeeperStateMachine::create_snapshot(
     snapshots_queue.push(std::move(snapshot_task));
 }
 
-void NuKeeperStateMachine::save_logical_snp_obj(
+void KeeperStateMachine::save_logical_snp_obj(
     nuraft::snapshot & s,
     size_t & obj_id,
     nuraft::buffer & data,
@@ -217,7 +217,7 @@ void NuKeeperStateMachine::save_logical_snp_obj(
     if (obj_id == 0)
     {
         std::lock_guard lock(storage_lock);
-        NuKeeperStorageSnapshot snapshot(storage.get(), s.get_last_log_idx());
+        KeeperStorageSnapshot snapshot(storage.get(), s.get_last_log_idx());
         cloned_buffer = snapshot_manager.serializeSnapshotToBuffer(snapshot);
     }
     else
@@ -235,7 +235,7 @@ void NuKeeperStateMachine::save_logical_snp_obj(
     std::shared_ptr<std::promise<void>> waiter = std::make_shared<std::promise<void>>();
     auto future = waiter->get_future();
     snapshot_task.snapshot = nullptr;
-    snapshot_task.create_snapshot = [this, waiter, cloned_buffer, log_idx = s.get_last_log_idx()] (NuKeeperStorageSnapshotPtr &&)
+    snapshot_task.create_snapshot = [this, waiter, cloned_buffer, log_idx = s.get_last_log_idx()] (KeeperStorageSnapshotPtr &&)
     {
         try
         {
@@ -261,7 +261,7 @@ void NuKeeperStateMachine::save_logical_snp_obj(
     obj_id++;
 }
 
-int NuKeeperStateMachine::read_logical_snp_obj(
+int KeeperStateMachine::read_logical_snp_obj(
     nuraft::snapshot & s,
     void* & /*user_snp_ctx*/,
     ulong obj_id,
@@ -289,9 +289,9 @@ int NuKeeperStateMachine::read_logical_snp_obj(
     return 0;
 }
 
-void NuKeeperStateMachine::processReadRequest(const NuKeeperStorage::RequestForSession & request_for_session)
+void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSession & request_for_session)
 {
-    NuKeeperStorage::ResponsesForSessions responses;
+    KeeperStorage::ResponsesForSessions responses;
     {
         std::lock_guard lock(storage_lock);
         responses = storage->processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
@@ -300,13 +300,13 @@ void NuKeeperStateMachine::processReadRequest(const NuKeeperStorage::RequestForS
         responses_queue.push(response);
 }
 
-std::unordered_set<int64_t> NuKeeperStateMachine::getDeadSessions()
+std::unordered_set<int64_t> KeeperStateMachine::getDeadSessions()
 {
     std::lock_guard lock(storage_lock);
     return storage->getDeadSessions();
 }
 
-void NuKeeperStateMachine::shutdownStorage()
+void KeeperStateMachine::shutdownStorage()
 {
     std::lock_guard lock(storage_lock);
     storage->finalize();
