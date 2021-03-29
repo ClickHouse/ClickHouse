@@ -8,7 +8,7 @@ CREATE TABLE table_with_single_pk
 ENGINE = MergeTree
 ORDER BY key;
 
-INSERT INTO table_with_single_pk SELECT number, toString(number % 10) FROM numbers(10000000);
+INSERT INTO table_with_single_pk SELECT number, toString(number % 10) FROM numbers(1000000);
 
 SYSTEM FLUSH LOGS;
 
