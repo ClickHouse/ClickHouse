@@ -18,11 +18,11 @@ namespace
       */
     HashMap<UInt64, UInt64> getChildToParentHierarchyMapImpl(
         const IDictionary * dictionary,
-        const DictionaryAttribute & dictionary_attribute,
+        const DictionaryAttribute & hierarchical_attribute,
         const PaddedPODArray<UInt64> & initial_keys_to_request,
         const DataTypePtr & key_type)
     {
-        UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+        UInt64 null_value = hierarchical_attribute.null_value.get<UInt64>();
 
         ColumnPtr key_to_request_column = ColumnVector<UInt64>::create();
         auto * key_to_request_column_typed = static_cast<ColumnVector<UInt64> *>(key_to_request_column->assumeMutable().get());
@@ -42,12 +42,18 @@ namespace
         {
             child_to_parent_key.reserve(child_to_parent_key.size() + keys_to_request.size());
 
-            auto parent_key_column
-                = dictionary->getColumn(dictionary_attribute.name, dictionary_attribute.type, {key_to_request_column}, {key_type}, key_not_in_storage_default_value_column);
+            auto parent_key_column = dictionary->getColumn(
+                hierarchical_attribute.name,
+                hierarchical_attribute.type,
+                {key_to_request_column},
+                {key_type},
+                key_not_in_storage_default_value_column);
 
             const auto * parent_key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*parent_key_column);
             if (!parent_key_column_typed)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Parent key column should be UInt64");
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Parent key column should be UInt64. Actual ({})",
+                    hierarchical_attribute.type->getName());
 
             const auto & parent_keys = parent_key_column_typed->getData();
             next_keys_to_request.clear();
@@ -86,26 +92,22 @@ ColumnPtr getKeysHierarchyDefaultImplementation(const IDictionary * dictionary, 
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Key column should be UInt64");
 
     const auto & dictionary_structure = dictionary->getStructure();
-    const auto & dictionary_attribute = dictionary_structure.attributes[0];
+    size_t hierarchical_attribute_index = *dictionary_structure.hierarchical_attribute_index;
+    const auto & hierarchical_attribute = dictionary_structure.attributes[hierarchical_attribute_index];
 
     const PaddedPODArray<UInt64> & requested_keys = key_column_typed->getData();
-    HashMap<UInt64, UInt64> key_to_parent_key = getChildToParentHierarchyMapImpl(dictionary, dictionary_attribute, requested_keys, key_type);
+    HashMap<UInt64, UInt64> key_to_parent_key = getChildToParentHierarchyMapImpl(dictionary, hierarchical_attribute, requested_keys, key_type);
 
     auto is_key_valid_func = [&](auto & key) { return key_to_parent_key.find(key) != nullptr; };
 
     auto get_parent_key_func = [&](auto & key)
     {
-        std::optional<UInt64> result;
-
         auto it = key_to_parent_key.find(key);
-
-        if (it != nullptr)
-            result = it->getMapped();
-
+        std::optional<UInt64> result = (it != nullptr ? std::make_optional(it->getMapped()) : std::nullopt);
         return result;
     };
 
-    UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+    UInt64 null_value = hierarchical_attribute.null_value.get<UInt64>();
 
     auto dictionary_hierarchy_array = getKeysHierarchyArray(requested_keys, null_value, is_key_valid_func, get_parent_key_func);
     return dictionary_hierarchy_array;
@@ -129,26 +131,22 @@ ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Key column should be UInt64");
 
     const auto & dictionary_structure = dictionary->getStructure();
-    const auto & dictionary_attribute = dictionary_structure.attributes[0];
+    size_t hierarchical_attribute_index = *dictionary_structure.hierarchical_attribute_index;
+    const auto & hierarchical_attribute = dictionary_structure.attributes[hierarchical_attribute_index];
 
     const PaddedPODArray<UInt64> & requested_keys = key_column_typed->getData();
-    HashMap<UInt64, UInt64> key_to_parent_key = getChildToParentHierarchyMapImpl(dictionary, dictionary_attribute, requested_keys, key_type);
+    HashMap<UInt64, UInt64> key_to_parent_key = getChildToParentHierarchyMapImpl(dictionary, hierarchical_attribute, requested_keys, key_type);
 
     auto is_key_valid_func = [&](auto & key) { return key_to_parent_key.find(key) != nullptr; };
 
     auto get_parent_key_func = [&](auto & key)
     {
-        std::optional<UInt64> result;
-
         auto it = key_to_parent_key.find(key);
-
-        if (it != nullptr)
-            result = it->getMapped();
-
+        std::optional<UInt64> result = (it != nullptr ? std::make_optional(it->getMapped()) : std::nullopt);
         return result;
     };
 
-    UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+    UInt64 null_value = hierarchical_attribute.null_value.get<UInt64>();
     const auto & in_keys = in_key_column_typed->getData();
 
     auto result = getKeysIsInHierarchyColumn(requested_keys, in_keys, null_value, is_key_valid_func, get_parent_key_func);
