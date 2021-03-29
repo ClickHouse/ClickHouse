@@ -12,6 +12,11 @@
 #define LIKELY(x) (__builtin_expect((x), 1))
 #define UNLIKELY(x) (__builtin_expect((x), 0))
 
+/// Old versions of GCC does not have it in compiler provided headers.
+#if !defined(bit_ENH_MOVSB)
+    #define bit_ENH_MOVSB 0x00000200
+#endif
+
 
 namespace
 {
