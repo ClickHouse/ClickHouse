@@ -68,6 +68,7 @@ class ReplicatedFetchList;
 class Cluster;
 class Compiler;
 class MarkCache;
+class MMappedFileCache;
 class UncompressedCache;
 class ProcessList;
 class QueryStatus;
@@ -623,6 +624,11 @@ public:
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
 
+    /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    void setMMappedFileCache(size_t cache_size_in_num_entries);
+    std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
+    void dropMMappedFileCache() const;
+
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
       *  - since caches are linked to file names, and become incorrect.
@@ -739,12 +745,6 @@ public:
     const NameToNameMap & getQueryParameters() const;
     void setQueryParameter(const String & name, const String & value);
     void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
-
-#if USE_EMBEDDED_COMPILER
-    std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
-    void setCompiledExpressionCache(size_t cache_size);
-    void dropCompiledExpressionCache() const;
-#endif
 
     /// Add started bridge command. It will be killed after context destruction
     void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
