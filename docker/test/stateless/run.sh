@@ -51,6 +51,7 @@ function run_tests()
 
     # Skip these tests, because they fail when we rerun them multiple times
     if [ "$NUM_TRIES" -gt "1" ]; then
+        ADDITIONAL_OPTIONS+=('--order=random')
         ADDITIONAL_OPTIONS+=('--skip')
         ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
         ADDITIONAL_OPTIONS+=('--jobs')
