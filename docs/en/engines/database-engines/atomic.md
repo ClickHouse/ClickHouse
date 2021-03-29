@@ -28,6 +28,7 @@ On `DROP TABLE` no data is removed, database `Atomic` just marks table as droppe
 ### DELETE/DETACH
 
 `DELETE` and `DETACH` queries are executed asynchronously — waits for the running `SELECT` queries to finish but is invisible to the new queries.
+You also can specify `NO DELAY` or `SYNC` mode.
 
 ## Usage Example {#usage-example}
 
