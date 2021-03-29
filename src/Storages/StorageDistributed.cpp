@@ -478,7 +478,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
                 "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
                 makeFormattedListOfShards(optimized_cluster));
             cluster = optimized_cluster;
-            query_info.cluster = cluster;
+            query_info.optimized_cluster = cluster;
         }
         else
         {
@@ -558,7 +558,7 @@ void StorageDistributed::read(
         InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
     /// Return directly (with correct header) if no shard to query.
-    if (query_info.cluster->getShardsInfo().empty())
+    if (query_info.getCluster()->getShardsInfo().empty())
     {
         Pipe pipe(std::make_shared<NullSource>(header));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));

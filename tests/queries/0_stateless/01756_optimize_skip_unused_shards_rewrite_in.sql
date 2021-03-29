@@ -114,3 +114,8 @@ select * from dist_01756_str where key in ('0', '2');
 select * from dist_01756_str where key in ('0', Null); -- { serverError 507 }
 select * from dist_01756_str where key in (0, 2); -- { serverError 53 }
 select * from dist_01756_str where key in (0, Null); -- { serverError 53 }
+
+-- optimize_skip_unused_shards_limit
+select 'optimize_skip_unused_shards_limit';
+select * from dist_01756 where dummy in (0, 2) settings optimize_skip_unused_shards_limit=1; -- { serverError 507 }
+select * from dist_01756 where dummy in (0, 2) settings optimize_skip_unused_shards_limit=1, force_optimize_skip_unused_shards=0;
