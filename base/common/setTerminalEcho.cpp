@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <cstring>
 #include <string>
+#include <termios.h>
+#include <unistd.h>
 
 
 void setTerminalEcho(bool enable)
