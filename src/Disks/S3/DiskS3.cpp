@@ -671,7 +671,7 @@ void DiskS3::replaceFile(const String & from_path, const String & to_path)
         moveFile(from_path, to_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size, size_t, size_t, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
 {
     auto metadata = readMeta(path);
 

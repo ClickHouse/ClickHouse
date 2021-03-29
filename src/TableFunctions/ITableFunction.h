@@ -55,7 +55,7 @@ public:
     /// Create storage according to the query.
     StoragePtr execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns_ = {}) const;
 
-    virtual ~ITableFunction() {}
+    virtual ~ITableFunction() = default;
 
 private:
     virtual StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const = 0;

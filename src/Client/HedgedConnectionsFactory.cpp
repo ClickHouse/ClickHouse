@@ -2,10 +2,16 @@
 
 #include <Client/HedgedConnectionsFactory.h>
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
 
+namespace ProfileEvents
+{
+    extern const Event HedgedRequestsChangeReplica;
+}
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
@@ -32,6 +38,16 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
 
 HedgedConnectionsFactory::~HedgedConnectionsFactory()
 {
+    /// Stop anything that maybe in progress,
+    /// to avoid interfer with the subsequent connections.
+    ///
+    /// I.e. some replcas may be in the establishing state,
+    /// this means that hedged connection is waiting for TablesStatusResponse,
+    /// and if the connection will not be canceled,
+    /// then next user of the connection will get TablesStatusResponse,
+    /// while this is not the expected package.
+    stopChoosingReplicas();
+
     pool->updateSharedError(shuffled_pools);
 }
 
@@ -219,6 +235,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
             int index = timeout_fd_to_replica_index[event_fd];
             replicas[index].change_replica_timeout.reset();
             ++shuffled_pools[index].slowdown_count;
+            ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
         }
         else
             throw Exception("Unknown event from epoll", ErrorCodes::LOGICAL_ERROR);

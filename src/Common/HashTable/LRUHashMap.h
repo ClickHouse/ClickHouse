@@ -271,13 +271,13 @@ private:
 };
 
 template <typename Key, typename Mapped>
-struct DefaultCellDisposer
+struct DefaultLRUHashMapCellDisposer
 {
     void operator()(const Key &, const Mapped &) const {}
 };
 
-template <typename Key, typename Value, typename Disposer = DefaultCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
+template <typename Key, typename Value, typename Disposer = DefaultLRUHashMapCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
 using LRUHashMap = LRUHashMapImpl<Key, Value, Disposer, Hash, false>;
 
-template <typename Key, typename Value, typename Disposer = DefaultCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
+template <typename Key, typename Value, typename Disposer = DefaultLRUHashMapCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
 using LRUHashMapWithSavedHash = LRUHashMapImpl<Key, Value, Disposer, Hash, true>;

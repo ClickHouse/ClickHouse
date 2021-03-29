@@ -24,6 +24,7 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -267,17 +268,24 @@ BlockIO InterpreterSystemQuery::execute()
             context.checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context.dropUncompressedCache();
             break;
+        case Type::DROP_MMAP_CACHE:
+            context.checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
+            system_context.dropMMappedFileCache();
+            break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
-            system_context.dropCompiledExpressionCache();
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
         {
             context.checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            system_context.getExternalDictionariesLoader().loadOrReload(
-                    DatabaseCatalog::instance().resolveDictionaryName(query.target_dictionary));
+
+            auto & external_dictionaries_loader = system_context.getExternalDictionariesLoader();
+            external_dictionaries_loader.reloadDictionary(query.target_dictionary, context);
+
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -628,6 +636,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::DROP_DNS_CACHE: [[fallthrough]];
         case Type::DROP_MARK_CACHE: [[fallthrough]];
+        case Type::DROP_MMAP_CACHE: [[fallthrough]];
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE: [[fallthrough]];
 #endif

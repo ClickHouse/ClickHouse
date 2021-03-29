@@ -47,6 +47,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -828,10 +829,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     global_context->setMarkCache(mark_cache_size);
 
+    /// A cache for mmapped files.
+    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
+    if (mmap_cache_size)
+        global_context->setMMappedFileCache(mmap_cache_size);
+
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
-    if (compiled_expression_cache_size)
-        global_context->setCompiledExpressionCache(compiled_expression_cache_size);
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
