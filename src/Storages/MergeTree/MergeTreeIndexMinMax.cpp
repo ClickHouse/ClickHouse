@@ -37,10 +37,12 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
+        auto serialization = type->getDefaultSerialization();
+
         if (!type->isNullable())
         {
-            type->serializeBinary(hyperrectangle[i].left, ostr);
-            type->serializeBinary(hyperrectangle[i].right, ostr);
+            serialization->serializeBinary(hyperrectangle[i].left, ostr);
+            serialization->serializeBinary(hyperrectangle[i].right, ostr);
         }
         else
         {
@@ -48,8 +50,8 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
             writeBinary(is_null, ostr);
             if (!is_null)
             {
-                type->serializeBinary(hyperrectangle[i].left, ostr);
-                type->serializeBinary(hyperrectangle[i].right, ostr);
+                serialization->serializeBinary(hyperrectangle[i].left, ostr);
+                serialization->serializeBinary(hyperrectangle[i].right, ostr);
             }
         }
     }
@@ -60,13 +62,17 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
     hyperrectangle.clear();
     Field min_val;
     Field max_val;
+
+
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
+        auto serialization = type->getDefaultSerialization();
+
         if (!type->isNullable())
         {
-            type->deserializeBinary(min_val, istr);
-            type->deserializeBinary(max_val, istr);
+            serialization->deserializeBinary(min_val, istr);
+            serialization->deserializeBinary(max_val, istr);
         }
         else
         {
@@ -74,8 +80,8 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
             readBinary(is_null, istr);
             if (!is_null)
             {
-                type->deserializeBinary(min_val, istr);
-                type->deserializeBinary(max_val, istr);
+                serialization->deserializeBinary(min_val, istr);
+                serialization->deserializeBinary(max_val, istr);
             }
             else
             {

@@ -231,8 +231,9 @@ NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & requ
     {
         auto subcolumn_name = required_column.getSubcolumnName();
         auto subcolumn_type = it->second->tryGetSubcolumnType(subcolumn_name);
+
         if (!subcolumn_type)
-            subcolumn_type = required_column.type;
+            return required_column;
 
         return {it->first, subcolumn_name, it->second, subcolumn_type};
     }

@@ -106,7 +106,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
 
         try
         {
-            type->deserializeAsTextQuoted(*column_dummy, rb, FormatSettings());
+            type->getDefaultSerialization()->deserializeTextQuoted(*column_dummy, rb, FormatSettings());
         }
         catch (Exception & e)
         {
@@ -1719,7 +1719,7 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
         for (size_t i = 0; i < column.column->size(); ++i)
         {
             WriteBufferFromOwnString wb;
-            column.type->serializeAsTextQuoted(*column.column, i, wb, FormatSettings());
+            column.type->getDefaultSerialization()->serializeTextQuoted(*column.column, i, wb, FormatSettings());
             res.emplace(wb.str());
         }
     }

@@ -147,7 +147,7 @@ public:
                     }
                     else
                     {
-                        data_types[j]->serializeAsText(*columns[j], i, ostr, FormatSettings{});
+                        data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, FormatSettings{});
                     }
 
                     row[j] = ostr.str();
@@ -214,7 +214,7 @@ public:
         auto array_column = ColumnArray::create(createNested(nested));
         array_column->insert(array_field);
         WriteBufferFromOwnString ostr;
-        data_type->serializeAsText(*array_column, 0, ostr, FormatSettings{});
+        data_type->getDefaultSerialization()->serializeText(*array_column, 0, ostr, FormatSettings{});
 
         /// ostr is guaranteed to be at least '[]', i.e. size is at least 2 and 2 only if ostr.str() == '[]'
         assert(ostr.str().size() >= 2);

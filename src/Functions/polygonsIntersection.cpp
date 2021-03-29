@@ -57,7 +57,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         /// Intersection of each with figure with each could be easily represent as MultiPolygon.
-        return DataTypeCustomMultiPolygonSerialization::nestedDataType();
+        return DataTypeFactory::instance().get("MultiPolygon");
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
