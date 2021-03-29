@@ -21,7 +21,7 @@ class S3Client;
 namespace DB
 {
 const size_t subpart_size = 4 * 1024 * 1024;
-const size_t maximum_single_part_upload_size = 32 * 1024 * 1024;
+const size_t maximum_single_part_upload_size = 4 * 1024 * 1024;
 /* Perform S3 HTTP PUT request.
  */
 class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>

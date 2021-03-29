@@ -74,7 +74,9 @@ PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfigu
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(clientConfiguration.connectTimeoutMs * 1000), /// connection timeout.
           Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000), /// send timeout.
-          Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000) /// receive timeout.
+          Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 1000), /// receive timeout.
+          Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 100000), /// receive timeout.
+          Poco::Timespan(clientConfiguration.httpRequestTimeoutMs * 100000) /// receive timeout.
           ))
     , remote_host_filter(clientConfiguration.remote_host_filter)
 {

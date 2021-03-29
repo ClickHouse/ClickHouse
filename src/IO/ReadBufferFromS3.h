@@ -31,7 +31,7 @@ private:
     bool initialized = false;
     off_t offset = 0;
     Aws::S3::Model::GetObjectResult read_result;
-    std::unique_ptr<ReadBuffer> impl;
+    std::unique_ptr<ReadBuffer> impl = nullptr;
 
     Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
 
@@ -43,12 +43,15 @@ public:
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool nextImpl() override;
+    bool tryNextImpl();
 
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
 
 private:
     std::unique_ptr<ReadBuffer> initialize();
+
+    size_t already_read = 0;
 };
 
 }

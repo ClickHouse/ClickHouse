@@ -86,8 +86,8 @@ void WriteBufferFromS3::finalize()
     next();
 
     if (!upload_id.empty())
-        // writePart();
-		writePartParallel();
+		writePart();
+		// writePartParallel();
 
     complete();
 }
@@ -126,7 +126,7 @@ void WriteBufferFromS3::initiate()
 
 void WriteBufferFromS3::writePart()
 {
-    if (!temporary_buffer->tellp())
+    if (temporary_buffer->tellp() <= 0)
         return;
 
     if (part_tags.size() == S3_WARN_MAX_PARTS)
@@ -146,7 +146,7 @@ void WriteBufferFromS3::writePart()
 
     auto outcome = client_ptr->UploadPart(req);
 
-    LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, upload_id, temporary_buffer->tellp());
+    LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, upload_id, req.GetContentLength());
 
     if (outcome.IsSuccess())
     {
@@ -162,11 +162,6 @@ void WriteBufferFromS3::writePartParallel()
 {
     if (temporary_buffer->tellp() <= 0)
         return;
-
-    LOG_DEBUG(log, "writePartParallel");
-    // FILE * f = fopen("/home/fenglv/multipart.txt", "a+");
-    // fprintf(f, "in writePartParallel\n");
-    // fclose(f);
 
     auto string = temporary_buffer->str();
     auto total_size = string.size();
@@ -190,7 +185,13 @@ void WriteBufferFromS3::writePartParallel()
 
         auto outcome = client_ptr->UploadPart(req);
 
-        LOG_TRACE(log, "Writing part. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}", bucket, key, upload_id, buffer->tellp());
+        LOG_TRACE(
+            log,
+            "Writing part in parallel. Bucket: {}, Key: {}, Upload_id: {}, Data size: {}",
+            bucket,
+            key,
+            upload_id,
+            req.GetContentLength());
 
         if (outcome.IsSuccess())
         {
@@ -203,7 +204,7 @@ void WriteBufferFromS3::writePartParallel()
     };
 
     size_t subpart_number = std::min(
-        S3_WARN_MAX_PARTS - part_tags.size(), (total_size % subpart_size) ? total_size / subpart_size + 1 : total_size / subpart_size);
+        S3_WARN_MAX_PARTS - part_tags.size(), (total_size % subpart_size) ? total_size / subpart_size : total_size / subpart_size + 1);
     size_t current_part_number = part_tags.size();
 
     part_tags.resize(current_part_number + subpart_number);
@@ -267,6 +268,8 @@ void WriteBufferFromS3::complete()
     }
     else
     {
+        if (temporary_buffer->tellp() <= 0)
+            return;
         LOG_DEBUG(log, "Making single part upload. Bucket: {}, Key: {}", bucket, key);
 
         Aws::S3::Model::PutObjectRequest req;
@@ -277,11 +280,12 @@ void WriteBufferFromS3::complete()
         // const std::shared_ptr<Aws::IOStream> input_data = Aws::MakeShared<Aws::StringStream>("temporary buffer", temporary_buffer->str());
         // temporary_buffer = std::make_unique<WriteBufferFromOwnString>();
         req.SetBody(temporary_buffer);
+        req.SetContentLength(temporary_buffer->tellp());
 
         auto outcome = client_ptr->PutObject(req);
 
         if (outcome.IsSuccess())
-            LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}", bucket, key);
+            LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}", bucket, key, req.GetContentLength());
         else
             throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
     }

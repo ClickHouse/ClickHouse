@@ -34,6 +34,32 @@ ReadBufferFromS3::ReadBufferFromS3(
 {
 }
 
+bool ReadBufferFromS3::tryNextImpl()
+{
+    Stopwatch watch;
+    auto res = impl->next();
+    watch.stop();
+    ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
+    auto already_read2 = dynamic_cast<ReadBufferFromIStream *>(impl.get())->already_read;
+    LOG_TRACE(
+        log,
+        "Read S3 object. Bucket: {}, Key: {}, Offset: {}, already read: {}, gcount: {}",
+        bucket,
+        key,
+        std::to_string(offset),
+        std::to_string(already_read),
+        std::to_string(already_read2));
+    if (!res)
+        return false;
+
+    internal_buffer = impl->buffer();
+
+    ProfileEvents::increment(ProfileEvents::S3ReadBytes, internal_buffer.size());
+
+    working_buffer = internal_buffer;
+
+    return true;
+}
 
 bool ReadBufferFromS3::nextImpl()
 {
@@ -42,20 +68,26 @@ bool ReadBufferFromS3::nextImpl()
         impl = initialize();
         initialized = true;
     }
-
-    Stopwatch watch;
-    auto res = impl->next();
-    watch.stop();
-    ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
-
-    if (!res)
-        return false;
-    internal_buffer = impl->buffer();
-
-    ProfileEvents::increment(ProfileEvents::S3ReadBytes, internal_buffer.size());
-
-    working_buffer = internal_buffer;
-    return true;
+	try
+    {
+        bool res = tryNextImpl();
+        return res;
+    }
+    catch (const Exception & e)
+    {
+        LOG_TRACE(log, "yyyyyggll");
+        already_read += dynamic_cast<ReadBufferFromIStream *>(impl.get())->already_read;
+        LOG_TRACE(
+            log,
+            "Read S3 object exception {}, re-initialize. Bucket: {}, Key: {}, Offset: {}, AlreadyRead: {}",
+            e.message(),
+            bucket,
+            key,
+            toString(offset),
+            toString(already_read));
+        impl = initialize();
+    }
+    return tryNextImpl();
 }
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
@@ -82,20 +114,31 @@ off_t ReadBufferFromS3::getPosition()
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, std::to_string(offset));
+    auto uuid = UUIDHelpers::generateV4();
+    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}, uuid: {}", bucket, key, std::to_string(offset), toString(uuid));
+    LOG_DEBUG(log, "uuid = " + toString(uuid));
 
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    if (offset != 0)
-        req.SetRange("bytes=" + std::to_string(offset) + "-");
+
+    auto new_offset = offset + already_read;
+    if (new_offset != 0)
+        req.SetRange("bytes=" + std::to_string(new_offset) + "-");
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
+
+    LOG_DEBUG(log, "uuid = " + toString(uuid));
 
     if (outcome.IsSuccess())
     {
         read_result = outcome.GetResultWithOwnership();
-        return std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
+        auto len = read_result.GetContentLength();
+        if (!len)
+            LOG_DEBUG(log, "Content Length = 0");
+        auto res = std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
+        res->uuid = uuid;
+        return res;
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
@@ -103,4 +146,4 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 
 }
 
-#endif
+#    endif
