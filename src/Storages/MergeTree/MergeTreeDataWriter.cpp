@@ -327,6 +327,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
+    /// If optimize_on_insert is true, block may become empty after merge.
+    /// There is no need to create empty part.
+    if (expected_size == 0)
+        return nullptr;
+
     DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     const auto & move_ttl_entries = metadata_snapshot->getMoveTTLs();
     for (const auto & ttl_entry : move_ttl_entries)

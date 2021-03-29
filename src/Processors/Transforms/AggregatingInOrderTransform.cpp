@@ -129,6 +129,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                     source_column = source_column->cut(key_begin, rows - key_begin);
 
                 current_chunk = Chunk(source_columns, rows - key_begin);
+                src_rows -= current_chunk.getNumRows();
                 block_end_reached = true;
                 need_generate = true;
                 cur_block_size = 0;

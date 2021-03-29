@@ -9,8 +9,7 @@ namespace DB
 class SimpleTextSerialization : public ISerialization
 {
 protected:
-    SimpleTextSerialization()
-    {}
+    SimpleTextSerialization() = default;
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {

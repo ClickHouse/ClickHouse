@@ -56,7 +56,7 @@ void MergeSortingStep::updateLimit(size_t limit_)
     }
 }
 
-void MergeSortingStep::transformPipeline(QueryPipeline & pipeline)
+void MergeSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {

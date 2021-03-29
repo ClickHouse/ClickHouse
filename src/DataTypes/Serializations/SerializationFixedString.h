@@ -44,7 +44,7 @@ public:
     /// Makes sure that the length of a newly inserted string to `chars` is equal to getN().
     /// If the length is less than getN() the function will add zero characters up to getN().
     /// If the length is greater than getN() the function will throw an exception.
-    static void alignStringLength(size_t n, PaddedPODArray<UInt8> & chars, size_t old_size);
+    static void alignStringLength(size_t n, PaddedPODArray<UInt8> & data, size_t string_start);
 };
 
 }

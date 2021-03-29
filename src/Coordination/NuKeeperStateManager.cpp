@@ -64,9 +64,9 @@ NuKeeperStateManager::NuKeeperStateManager(
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 }
 
-void NuKeeperStateManager::loadLogStore(size_t start_log_index)
+void NuKeeperStateManager::loadLogStore(size_t last_commited_index, size_t logs_to_keep)
 {
-    log_store->init(start_log_index);
+    log_store->init(last_commited_index, logs_to_keep);
 }
 
 void NuKeeperStateManager::flushLogStore()

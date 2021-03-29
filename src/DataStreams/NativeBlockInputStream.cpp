@@ -84,7 +84,7 @@ void NativeBlockInputStream::readData(const IDataType & type, ColumnPtr & column
     auto serialization = type.getSerialization(*column);
 
     serialization->deserializeBinaryBulkStatePrefix(settings, state);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
     if (column->size() != rows)
         throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column->size()) + ". Rows expected: " + toString(rows) + ".",

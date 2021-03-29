@@ -107,7 +107,7 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
         auto serialization = type->getDefaultSerialization();
 
         serialization->deserializeBinaryBulkStatePrefix(settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(new_column, rows_to_read, settings, state);
+        serialization->deserializeBinaryBulkWithMultipleStreams(new_column, rows_to_read, settings, state, nullptr);
 
         block.insert(ColumnWithTypeAndName(new_column, type, column.name));
     }

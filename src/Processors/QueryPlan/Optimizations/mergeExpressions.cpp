@@ -50,8 +50,10 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &)
 
         auto merged = ActionsDAG::merge(std::move(*child_actions), std::move(*parent_actions));
 
-        auto filter = std::make_unique<FilterStep>(child_expr->getInputStreams().front(), merged,
-                                                   parent_filter->getFilterColumnName(), parent_filter->removesFilterColumn());
+        auto filter = std::make_unique<FilterStep>(child_expr->getInputStreams().front(),
+                                                   merged,
+                                                   parent_filter->getFilterColumnName(),
+                                                   parent_filter->removesFilterColumn());
         filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
 
         parent_node->step = std::move(filter);

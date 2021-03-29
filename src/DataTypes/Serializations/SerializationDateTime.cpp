@@ -67,8 +67,10 @@ void SerializationDateTime::deserializeWholeText(IColumn & column, ReadBuffer & 
 
 void SerializationDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    time_t x;
+    time_t x = 0;
     readText(x, istr, settings, time_zone, utc_time_zone);
+    if (x < 0)
+        x = 0;
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
@@ -81,7 +83,7 @@ void SerializationDateTime::serializeTextQuoted(const IColumn & column, size_t r
 
 void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    time_t x;
+    time_t x = 0;
     if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
     {
         readText(x, istr, settings, time_zone, utc_time_zone);
@@ -91,6 +93,8 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
     {
         readIntText(x, istr);
     }
+    if (x < 0)
+        x = 0;
     assert_cast<ColumnType &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
@@ -103,7 +107,7 @@ void SerializationDateTime::serializeTextJSON(const IColumn & column, size_t row
 
 void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    time_t x;
+    time_t x = 0;
     if (checkChar('"', istr))
     {
         readText(x, istr, settings, time_zone, utc_time_zone);
@@ -113,6 +117,8 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
     {
         readIntText(x, istr);
     }
+    if (x < 0)
+        x = 0;
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
@@ -125,7 +131,7 @@ void SerializationDateTime::serializeTextCSV(const IColumn & column, size_t row_
 
 void SerializationDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    time_t x;
+    time_t x = 0;
 
     if (istr.eof())
         throwReadAfterEOF();
@@ -139,6 +145,9 @@ void SerializationDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & is
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, istr);
+
+    if (x < 0)
+        x = 0;
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }

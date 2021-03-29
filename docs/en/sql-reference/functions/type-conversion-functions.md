@@ -381,7 +381,7 @@ This function accepts 16 bytes string, and returns UUID containing bytes represe
 reinterpretAsUUID(fixed_string)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `fixed_string` — Big-endian byte string. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
 
@@ -1210,4 +1210,3 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

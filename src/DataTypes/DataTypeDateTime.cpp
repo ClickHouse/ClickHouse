@@ -20,7 +20,8 @@ TimezoneMixin::TimezoneMixin(const String & time_zone_name)
     : has_explicit_time_zone(!time_zone_name.empty()),
     time_zone(DateLUT::instance(time_zone_name)),
     utc_time_zone(DateLUT::instance("UTC"))
-{}
+{
+}
 
 DataTypeDateTime::DataTypeDateTime(const String & time_zone_name)
     : TimezoneMixin(time_zone_name)
@@ -29,7 +30,8 @@ DataTypeDateTime::DataTypeDateTime(const String & time_zone_name)
 
 DataTypeDateTime::DataTypeDateTime(const TimezoneMixin & time_zone_)
     : TimezoneMixin(time_zone_)
-{}
+{
+}
 
 String DataTypeDateTime::doGetName() const
 {

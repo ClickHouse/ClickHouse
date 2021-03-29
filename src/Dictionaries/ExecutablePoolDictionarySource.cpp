@@ -221,7 +221,9 @@ BlockInputStreamPtr ExecutablePoolDictionarySource::getStreamForBlock(const Bloc
     }, configuration.max_command_execution_time * 10000);
 
     if (!result)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Could not get process from pool, max command execution timeout exceeded");
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+            "Could not get process from pool, max command execution timeout exceeded ({}) seconds",
+            configuration.max_command_execution_time);
 
     size_t rows_to_read = block.rows();
     auto read_stream = context.getInputFormat(configuration.format, process->out, sample_block, rows_to_read);
@@ -298,7 +300,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         size_t max_command_execution_time = config.getUInt64(configuration_config_prefix + ".max_command_execution_time", 10);
 
         size_t max_execution_time_seconds = static_cast<size_t>(context.getSettings().max_execution_time.totalSeconds());
-        if (max_command_execution_time > max_execution_time_seconds)
+        if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
             max_command_execution_time = max_execution_time_seconds;
 
         ExecutablePoolDictionarySource::Configuration configuration

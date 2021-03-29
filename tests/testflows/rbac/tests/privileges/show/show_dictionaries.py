@@ -20,7 +20,7 @@ def dict_privileges_granted_directly(self, node=None):
     with user(node, f"{user_name}"):
         dict_name = f"dict_name_{getuid()}"
 
-        Suite(run=check_privilege, flags=TE,
+        Suite(run=check_privilege,
             examples=Examples("privilege on grant_target_name user_name dict_name", [
                 tuple(list(row)+[user_name,user_name,dict_name]) for row in check_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -44,13 +44,14 @@ def dict_privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=check_privilege, flags=TE,
+        Suite(run=check_privilege,
             examples=Examples("privilege on grant_target_name user_name dict_name", [
                 tuple(list(row)+[role_name,user_name,dict_name]) for row in check_privilege.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege on",[
+    ("ALL", "*.*"),
     ("SHOW","*.*"),
     ("SHOW DICTIONARIES","dict"),
     ("CREATE DICTIONARY","dict"),
@@ -65,9 +66,9 @@ def check_privilege(self, privilege, on, grant_target_name, user_name, dict_name
 
     on = on.replace("dict", f"{dict_name}")
 
-    Suite(test=show_dict, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, dict_name=dict_name)
-    Suite(test=exists, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, dict_name=dict_name)
-    Suite(test=show_create, setup=instrument_clickhouse_server_log)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, dict_name=dict_name)
+    Suite(test=show_dict)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, dict_name=dict_name)
+    Suite(test=exists)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, dict_name=dict_name)
+    Suite(test=show_create)(privilege=privilege, on=on, grant_target_name=grant_target_name, user_name=user_name, dict_name=dict_name)
 
 @TestSuite
 @Requirements(
@@ -87,7 +88,14 @@ def show_dict(self, privilege, on, grant_target_name, user_name, dict_name, node
             node.query(f"CREATE DICTIONARY {dict_name}(x Int32, y Int32) PRIMARY KEY x LAYOUT(FLAT()) SOURCE(CLICKHOUSE()) LIFETIME(0)")
 
         with Scenario("SHOW DICTIONARIES without privilege"):
-            with When("I check the user doesn't see the dictionary"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user doesn't see the dictionary"):
                 output = node.query("SHOW DICTIONARIES", settings = [("user", f"{user_name}")]).output
                 assert output == '', error()
 
@@ -131,7 +139,14 @@ def exists(self, privilege, on, grant_target_name, user_name, dict_name, node=No
             node.query(f"CREATE DICTIONARY {dict_name}(x Int32, y Int32) PRIMARY KEY x LAYOUT(FLAT()) SOURCE(CLICKHOUSE()) LIFETIME(0)")
 
         with Scenario("EXISTS without privilege"):
-            with When(f"I check if {dict_name} EXISTS"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then(f"I check if {dict_name} EXISTS"):
                 node.query(f"EXISTS {dict_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
@@ -175,7 +190,14 @@ def show_create(self, privilege, on, grant_target_name, user_name, dict_name, no
             node.query(f"CREATE DICTIONARY {dict_name}(x Int32, y Int32) PRIMARY KEY x LAYOUT(FLAT()) SOURCE(CLICKHOUSE()) LIFETIME(0)")
 
         with Scenario("SHOW CREATE without privilege"):
-            with When(f"I attempt to SHOW CREATE {dict_name}"):
+
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then(f"I attempt to SHOW CREATE {dict_name}"):
                 node.query(f"SHOW CREATE DICTIONARY {dict_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
@@ -205,6 +227,8 @@ def show_create(self, privilege, on, grant_target_name, user_name, dict_name, no
 @Name("show dictionaries")
 @Requirements(
     RQ_SRS_006_RBAC_ShowDictionaries_Privilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SHOW DICTIONARIES.

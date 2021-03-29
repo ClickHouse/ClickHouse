@@ -110,7 +110,7 @@ void SerializationFixedString::serializeTextEscaped(const IColumn & column, size
 }
 
 
-void SerializationFixedString::alignStringLength(size_t n, ColumnFixedString::Chars & data, size_t string_start)
+void SerializationFixedString::alignStringLength(size_t n, PaddedPODArray<UInt8> & data, size_t string_start)
 {
     size_t length = data.size() - string_start;
     if (length < n)

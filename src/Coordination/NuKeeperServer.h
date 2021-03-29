@@ -31,8 +31,9 @@ private:
     ResponsesQueue & responses_queue;
 
     std::mutex initialized_mutex;
-    bool initialized_flag = false;
+    std::atomic<bool> initialized_flag = false;
     std::condition_variable initialized_cv;
+    std::atomic<bool> initial_batch_committed = false;
 
     nuraft::cb_func::ReturnCode callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param);
 
@@ -41,7 +42,8 @@ public:
         int server_id_,
         const CoordinationSettingsPtr & coordination_settings_,
         const Poco::Util::AbstractConfiguration & config,
-        ResponsesQueue & responses_queue_);
+        ResponsesQueue & responses_queue_,
+        SnapshotsQueue & snapshots_queue_);
 
     void startup();
 
