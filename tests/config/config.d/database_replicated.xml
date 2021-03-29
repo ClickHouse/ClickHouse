@@ -14,7 +14,7 @@
         </node>
     </zookeeper>
 
-    <test_keeper_server>
+    <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
 
@@ -50,7 +50,7 @@
                 <priority>1</priority>
             </server>
         </raft_configuration>
-    </test_keeper_server>
+    </keeper_server>
 
     <remote_servers>
         <test_cluster_database_replicated>
