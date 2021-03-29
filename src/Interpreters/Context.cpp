@@ -30,6 +30,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
@@ -1101,6 +1102,7 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     auto lock = getLock();
     for (const SettingChange & change : changes)
         applySettingChange(change);
+    applySettingsQuirks(settings);
 }
 
 
@@ -2268,6 +2270,8 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setProfile(shared->system_profile_name);
+
+    applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = std::make_shared<Context>(*this);
