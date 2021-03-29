@@ -492,6 +492,8 @@ def run_tests_array(all_tests_with_params):
             f' ({multiprocessing.current_process().name}).',
             args, "green", attrs=["bold"]))
 
+    sys.stdout.flush()
+
 
 server_logs_level = "warning"
 
