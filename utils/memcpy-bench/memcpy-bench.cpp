@@ -492,7 +492,6 @@ struct MultipleVariantsWithStatistics
 };
 
 
-
 MultipleVariantsWithStatistics variants;
 
 static uint8_t * memcpy_selftuned(uint8_t * __restrict dst, const uint8_t * __restrict src, size_t size)
