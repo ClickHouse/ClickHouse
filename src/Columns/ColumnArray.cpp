@@ -1211,7 +1211,6 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
         assert_cast<const ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
 
-
 void ColumnArray::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
