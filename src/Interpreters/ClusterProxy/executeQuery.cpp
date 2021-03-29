@@ -107,7 +107,7 @@ void executeQuery(
     Pipes remote_pipes;
     Pipes delayed_pipes;
 
-    auto new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
+    auto new_context = updateSettingsForCluster(*query_info.getCluster(), context, settings, log);
 
     new_context->getClientInfo().distributed_depth += 1;
 
@@ -128,11 +128,11 @@ void executeQuery(
     else
         throttler = user_level_throttler;
 
-    size_t shards = query_info.cluster->getShardCount();
-    for (const auto & shard_info : query_info.cluster->getShardsInfo())
+    size_t shards = query_info.getCluster()->getShardCount();
+    for (const auto & shard_info : query_info.getCluster()->getShardsInfo())
     {
         ASTPtr query_ast_for_shard;
-        if (settings.optimize_skip_unused_shards && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
+        if (query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
         {
             query_ast_for_shard = query_ast->clone();
 
