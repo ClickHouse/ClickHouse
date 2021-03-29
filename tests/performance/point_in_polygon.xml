@@ -8,7 +8,8 @@
         INSERT INTO polygons
         WITH number + 1 AS radius
         SELECT [arrayMap(x -> (cos(x / 90. * pi()) * radius, sin(x / 90. * pi()) * radius), range(180))]
-        FROM numbers(1000000)
+        FROM numbers_mt(10000000)
+        SETTINGS max_insert_threads = 8
     </create_query>
 
     <query>SELECT pointInPolygon((100, 100), polygon) FROM polygons FORMAT Null</query>
