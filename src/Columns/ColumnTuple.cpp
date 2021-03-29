@@ -180,6 +180,14 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
+const char * ColumnTuple::skipSerializedInArena(const char * pos) const
+{
+    for (const auto & column : columns)
+        pos = column->skipSerializedInArena(pos);
+
+    return pos;
+}
+
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (const auto & column : columns)

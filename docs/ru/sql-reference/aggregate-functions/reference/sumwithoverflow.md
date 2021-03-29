@@ -8,4 +8,3 @@ toc_priority: 140
 
 Работает только для чисел.
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/sumwithoverflow/) <!--hide-->

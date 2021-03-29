@@ -69,6 +69,28 @@ void NuKeeperStorageDispatcher::responseThread()
     }
 }
 
+void NuKeeperStorageDispatcher::snapshotThread()
+{
+    setThreadName("NuKeeperSnpT");
+    while (!shutdown_called)
+    {
+        CreateSnapshotTask task;
+        snapshots_queue.pop(task);
+
+        if (shutdown_called)
+            break;
+
+        try
+        {
+            task.create_snapshot(std::move(task.snapshot));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
 void NuKeeperStorageDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
@@ -110,7 +132,11 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
 
     coordination_settings->loadFromConfig("test_keeper_server.coordination_settings", config);
 
-    server = std::make_unique<NuKeeperServer>(myid, coordination_settings, config, responses_queue);
+    request_thread = ThreadFromGlobalPool([this] { requestThread(); });
+    responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
+    snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
+
+    server = std::make_unique<NuKeeperServer>(myid, coordination_settings, config, responses_queue, snapshots_queue);
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
@@ -126,8 +152,7 @@ void NuKeeperStorageDispatcher::initialize(const Poco::Util::AbstractConfigurati
         throw;
     }
 
-    request_thread = ThreadFromGlobalPool([this] { requestThread(); });
-    responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
+
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
 
     LOG_DEBUG(log, "Dispatcher initialized");
@@ -149,11 +174,18 @@ void NuKeeperStorageDispatcher::shutdown()
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
 
+            /// FIXME not the best way to notify
+            requests_queue.push({});
             if (request_thread.joinable())
                 request_thread.join();
 
+            responses_queue.push({});
             if (responses_thread.joinable())
                 responses_thread.join();
+
+            snapshots_queue.push({});
+            if (snapshot_thread.joinable())
+                snapshot_thread.join();
         }
 
         if (server)
@@ -162,9 +194,16 @@ void NuKeeperStorageDispatcher::shutdown()
         NuKeeperStorage::RequestForSession request_for_session;
         while (requests_queue.tryPop(request_for_session))
         {
-            auto response = request_for_session.request->makeResponse();
-            response->error = Coordination::Error::ZSESSIONEXPIRED;
-            setResponse(request_for_session.session_id, response);
+            if (request_for_session.request)
+            {
+                auto response = request_for_session.request->makeResponse();
+                response->error = Coordination::Error::ZSESSIONEXPIRED;
+                setResponse(request_for_session.session_id, response);
+            }
+            else
+            {
+                break;
+            }
         }
         session_to_response_callback.clear();
     }

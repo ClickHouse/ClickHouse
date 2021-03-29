@@ -141,7 +141,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     /// Conversion between Date and DateTime and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
-        return static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>());
+        return static_cast<UInt16>(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>()).toUnderType());
     }
     else if (which_type.isDateTime() && which_from_type.isDate())
     {
@@ -344,7 +344,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         ReadBufferFromString in_buffer(src.get<String>());
         try
         {
-            type_to_parse->deserializeAsWholeText(*col, in_buffer, FormatSettings{});
+            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, FormatSettings{});
         }
         catch (Exception & e)
         {
@@ -377,6 +377,11 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
+
+        /// NULL remains NULL after any conversion.
+        if (WhichDataType(nested_type).isNothing())
+            return {};
+
         if (from_type_hint && from_type_hint->equals(nested_type))
             return from_value;
         return convertFieldToTypeImpl(from_value, nested_type, from_type_hint);

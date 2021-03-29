@@ -263,8 +263,16 @@ for query_index in queries_to_run:
     for conn_index, c in enumerate(all_connections):
         try:
             prewarm_id = f'{query_prefix}.prewarm0'
-            # Will also detect too long queries during warmup stage
-            res = c.execute(q, query_id = prewarm_id, settings = {'max_execution_time': 10})
+
+            try:
+                # Will also detect too long queries during warmup stage
+                res = c.execute(q, query_id = prewarm_id, settings = {'max_execution_time': args.max_query_seconds})
+            except clickhouse_driver.errors.Error as e:
+                # Add query id to the exception to make debugging easier.
+                e.args = (prewarm_id, *e.args)
+                e.message = prewarm_id + ': ' + e.message
+                raise
+
             print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
         except KeyboardInterrupt:
             raise
@@ -311,8 +319,8 @@ for query_index in queries_to_run:
 
         for conn_index, c in enumerate(this_query_connections):
             try:
-                res = c.execute(q, query_id = run_id)
-            except Exception as e:
+                res = c.execute(q, query_id = run_id, settings = {'max_execution_time': args.max_query_seconds})
+            except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (run_id, *e.args)
                 e.message = run_id + ': ' + e.message
@@ -389,7 +397,7 @@ for query_index in queries_to_run:
             try:
                 res = c.execute(q, query_id = run_id, settings = {'query_profiler_real_time_period_ns': 10000000})
                 print(f'profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
-            except Exception as e:
+            except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (run_id, *e.args)
                 e.message = run_id + ': ' + e.message

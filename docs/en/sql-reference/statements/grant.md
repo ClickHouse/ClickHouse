@@ -473,4 +473,3 @@ Doesn’t grant any privileges.
 
 The `ADMIN OPTION` privilege allows a user to grant their role to another user.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/grant/) <!--hide-->
