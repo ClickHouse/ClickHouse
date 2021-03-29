@@ -1,6 +1,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/TimeoutSetter.h>
 
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -40,6 +41,13 @@ void WriteBufferFromPocoSocket::nextImpl()
         /// Add more details to exceptions.
         try
         {
+            /// sendBytes in SecureStreamSocket throws TimeoutException after max(receive_timeout, send_timeout),
+            /// but we want to get this exception exactly after send_timeout. So, set receive_timeout = send_timeout
+            /// before sendBytes.
+            std::unique_ptr<TimeoutSetter> timeout_setter = nullptr;
+            if (socket.secure())
+                timeout_setter = std::make_unique<TimeoutSetter>(dynamic_cast<Poco::Net::StreamSocket &>(socket), socket.getSendTimeout(), socket.getSendTimeout());
+
             res = socket.impl()->sendBytes(working_buffer.begin() + bytes_written, offset() - bytes_written);
         }
         catch (const Poco::Net::NetException & e)
