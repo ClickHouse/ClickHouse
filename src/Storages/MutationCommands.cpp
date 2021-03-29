@@ -1,5 +1,6 @@
 #include <Storages/MutationCommands.h>
-#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -128,13 +129,13 @@ void MutationCommands::writeText(WriteBuffer & out) const
 {
     std::stringstream commands_ss;
     formatAST(*ast(), commands_ss, /* hilite = */ false, /* one_line = */ true);
-    out << escape << commands_ss.str();
+    writeEscapedString(commands_ss.str(), out);
 }
 
 void MutationCommands::readText(ReadBuffer & in)
 {
     String commands_str;
-    in >> escape >> commands_str;
+    readEscapedString(commands_str, in);
 
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(

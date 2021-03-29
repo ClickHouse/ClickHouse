@@ -229,8 +229,12 @@ public:
 
     inline UInt8 daysInMonth(UInt16 year, UInt8 month) const
     {
+        UInt16 idx = year - DATE_LUT_MIN_YEAR;
+        if (unlikely(idx >= DATE_LUT_YEARS))
+            return 31;  /// Implementation specific behaviour on overflow.
+
         /// 32 makes arithmetic more simple.
-        DayNum any_day_of_month = DayNum(years_lut[year - DATE_LUT_MIN_YEAR] + 32 * (month - 1));
+        DayNum any_day_of_month = DayNum(years_lut[idx] + 32 * (month - 1));
         return lut[any_day_of_month].days_in_month;
     }
 
@@ -672,6 +676,10 @@ public:
     {
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return DayNum(0); // TODO (nemkov, DateTime64 phase 2): implement creating real date for year outside of LUT range.
+
+        // The day after 2106-02-07 will not stored fully as struct Values, so just overflow it as 0
+        if (unlikely(year == DATE_LUT_MAX_YEAR && (month > 2 || (month == 2 && day_of_month > 7))))
+            return DayNum(0);
 
         return DayNum(years_months_lut[(year - DATE_LUT_MIN_YEAR) * 12 + month - 1] + day_of_month - 1);
     }

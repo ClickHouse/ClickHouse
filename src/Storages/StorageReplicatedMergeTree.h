@@ -356,6 +356,9 @@ private:
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
     void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
 
+    /// Just removes part from ZooKeeper using previous method
+    void removePartFromZooKeeper(const String & part_name);
+
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
                                   NameSet * parts_should_be_retried = nullptr);

@@ -18,6 +18,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -1445,6 +1446,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     for (const auto & column : old_metadata.getColumns().getAllPhysical())
         old_types.emplace(column.name, column.type.get());
 
+    NamesAndTypesList columns_to_check_conversion;
     for (const AlterCommand & command : commands)
     {
         /// Just validate partition expression
@@ -1453,22 +1455,43 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             getPartitionIDFromQuery(command.partition, global_context);
         }
 
-        /// Some type changes for version column is allowed despite it's a part of sorting key
-        if (command.type == AlterCommand::MODIFY_COLUMN && command.column_name == merging_params.version_column)
+        if (command.column_name == merging_params.version_column)
         {
-            const IDataType * new_type = command.data_type.get();
-            const IDataType * old_type = old_types[command.column_name];
+            /// Some type changes for version column is allowed despite it's a part of sorting key
+            if (command.type == AlterCommand::MODIFY_COLUMN)
+            {
+                const IDataType * new_type = command.data_type.get();
+                const IDataType * old_type = old_types[command.column_name];
 
-            checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
+                checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
 
-            /// No other checks required
-            continue;
+                /// No other checks required
+                continue;
+            }
+            else if (command.type == AlterCommand::DROP_COLUMN)
+            {
+                throw Exception(
+                    "Trying to ALTER DROP version " + backQuoteIfNeed(command.column_name) + " column",
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+            else if (command.type == AlterCommand::RENAME_COLUMN)
+            {
+                throw Exception(
+                    "Trying to ALTER RENAME version " + backQuoteIfNeed(command.column_name) + " column",
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
         }
 
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
         {
             throw Exception(
                 "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
+                ErrorCodes::BAD_ARGUMENTS);
+        }
+        if (command.type == AlterCommand::MODIFY_TTL && !is_custom_partitioned)
+        {
+            throw Exception(
+                "ALTER MODIFY TTL is not supported for default-partitioned tables created with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
         }
         if (command.type == AlterCommand::MODIFY_SAMPLE_BY)
@@ -1513,9 +1536,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 throw Exception("ALTER of key column " + backQuoteIfNeed(command.column_name) + " is forbidden",
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
 
-            if (columns_alter_type_check_safe_for_partition.count(command.column_name))
+            if (command.type == AlterCommand::MODIFY_COLUMN)
             {
-                if (command.type == AlterCommand::MODIFY_COLUMN)
+                if (columns_alter_type_check_safe_for_partition.count(command.column_name))
                 {
                     auto it = old_types.find(command.column_name);
 
@@ -1526,11 +1549,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                                 + " is not safe because it can change the representation of partition key",
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
                 }
-            }
 
-            if (columns_alter_type_metadata_only.count(command.column_name))
-            {
-                if (command.type == AlterCommand::MODIFY_COLUMN)
+                if (columns_alter_type_metadata_only.count(command.column_name))
                 {
                     auto it = old_types.find(command.column_name);
                     assert(it != old_types.end());
@@ -1538,12 +1558,24 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                         + it->second->getName() + " to type " + command.data_type->getName() + " must be metadata-only",
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
                 }
+
+                if (old_metadata.getColumns().has(command.column_name))
+                {
+                    columns_to_check_conversion.push_back(
+                        new_metadata.getColumns().getPhysical(command.column_name));
+                }
             }
         }
     }
 
     checkProperties(new_metadata, old_metadata);
     checkTTLExpressions(new_metadata, old_metadata);
+
+    if (!columns_to_check_conversion.empty())
+    {
+        auto old_header = old_metadata.getSampleBlock();
+        performRequiredConversions(old_header, columns_to_check_conversion, global_context);
+    }
 
     if (old_metadata.hasSettingsChanges())
     {
@@ -1597,6 +1629,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 "Cannot drop or clear column{} '{}', because all columns in part '{}' will be removed from disk. Empty parts are not allowed", postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
         }
     }
+}
+
+
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const
+{
+    /// Some validation will be added
 }
 
 MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
@@ -2997,8 +3035,7 @@ inline ReservationPtr checkAndReturnReservation(UInt64 expected_size, Reservatio
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size) const
 {
     expected_size = std::max(RESERVATION_MIN_ESTIMATION_SIZE, expected_size);
-    auto reservation = getStoragePolicy()->reserve(expected_size);
-    return checkAndReturnReservation(expected_size, std::move(reservation));
+    return getStoragePolicy()->reserveAndCheck(expected_size);
 }
 
 ReservationPtr MergeTreeData::reserveSpace(UInt64 expected_size, SpacePtr space)

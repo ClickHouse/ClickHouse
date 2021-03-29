@@ -352,6 +352,9 @@ bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
         keys_bytes += key_sizes[j];
     }
 
+    if (keys_bytes > 16)
+        return false;
+
     executeMethod<MethodFixed>(offsets, columns, key_sizes, nullptr, res_values);
     return true;
 }

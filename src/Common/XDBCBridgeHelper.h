@@ -76,7 +76,7 @@ public:
     const Context & context;
     const Configuration & config;
 
-    static constexpr inline auto DEFAULT_HOST = "localhost";
+    static constexpr inline auto DEFAULT_HOST = "127.0.0.1";
     static constexpr inline auto DEFAULT_PORT = BridgeHelperMixin::DEFAULT_PORT;
     static constexpr inline auto PING_HANDLER = "/ping";
     static constexpr inline auto MAIN_HANDLER = "/";

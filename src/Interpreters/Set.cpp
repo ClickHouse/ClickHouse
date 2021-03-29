@@ -205,7 +205,7 @@ bool Set::insertFromBlock(const Block & block)
     {
         for (size_t i = 0; i < keys_size; ++i)
         {
-            auto filtered_column = block.getByPosition(i).column->filter(filter->getData(), rows);
+            auto filtered_column = key_columns[i]->filter(filter->getData(), rows);
             if (set_elements[i]->empty())
                 set_elements[i] = filtered_column;
             else

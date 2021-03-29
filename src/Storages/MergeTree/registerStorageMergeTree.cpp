@@ -698,6 +698,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
         ++arg_num;
+
+        if (args.storage_def->ttl_table && !args.attach)
+            throw Exception("Table TTL is not allowed for MergeTree in old syntax", ErrorCodes::BAD_ARGUMENTS);
     }
 
     if (arg_num != arg_cnt)

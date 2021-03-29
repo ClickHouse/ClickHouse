@@ -353,6 +353,7 @@ private:
     void destroyLastElement()
     {
         auto last_element = counter_list.back();
+        counter_map.erase(last_element->key);
         arena.free(last_element->key);
         delete last_element;
         counter_list.pop_back();

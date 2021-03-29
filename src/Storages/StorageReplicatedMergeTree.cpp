@@ -2394,23 +2394,23 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
 
         if (get_is_lost.error != Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "Not cloning {}, cannot get '/is_lost': {}", Coordination::errorMessage(get_is_lost.error));
+            LOG_INFO(log, "Not cloning {}, cannot get '/is_lost': {}", source_replica_name, Coordination::errorMessage(get_is_lost.error));
             continue;
         }
         else if (get_is_lost.data != "0")
         {
-            LOG_INFO(log, "Not cloning {}, it's lost");
+            LOG_INFO(log, "Not cloning {}, it's lost", source_replica_name);
             continue;
         }
 
         if (get_log_pointer.error != Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "Not cloning {}, cannot get '/log_pointer': {}", Coordination::errorMessage(get_log_pointer.error));
+            LOG_INFO(log, "Not cloning {}, cannot get '/log_pointer': {}", source_replica_name, Coordination::errorMessage(get_log_pointer.error));
             continue;
         }
         if (get_queue.error != Coordination::Error::ZOK)
         {
-            LOG_INFO(log, "Not cloning {}, cannot get '/queue': {}", Coordination::errorMessage(get_queue.error));
+            LOG_INFO(log, "Not cloning {}, cannot get '/queue': {}", source_replica_name, Coordination::errorMessage(get_queue.error));
             continue;
         }
 
@@ -2877,6 +2877,21 @@ void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_nam
     ops.emplace_back(zkutil::makeRemoveRequest(part_path, -1));
 }
 
+void StorageReplicatedMergeTree::removePartFromZooKeeper(const String & part_name)
+{
+    auto zookeeper = getZooKeeper();
+    String part_path = replica_path + "/parts/" + part_name;
+    Coordination::Stat stat;
+
+    /// Part doesn't exist, nothing to remove
+    if (!zookeeper->exists(part_path, &stat))
+        return;
+
+    Coordination::Requests ops;
+
+    removePartFromZooKeeper(part_name, ops, stat.numChildren > 0);
+    zookeeper->multi(ops);
+}
 
 void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_name)
 {
@@ -4398,7 +4413,9 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
         bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active");
         return stop_waiting_itself || stop_waiting_non_active;
     };
-    constexpr auto event_wait_timeout_ms = 1000;
+
+    /// Don't recheck ZooKeeper too often
+    constexpr auto event_wait_timeout_ms = 3000;
 
     if (startsWith(entry.znode_name, "log-"))
     {
@@ -4419,10 +4436,11 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
             if (!log_pointer.empty() && parse<UInt64>(log_pointer) > log_index)
                 break;
 
-            if (wait_for_non_active)
-                event->wait();
-            else
-                event->tryWait(event_wait_timeout_ms);
+            /// Wait with timeout because we can be already shut down, but not dropped.
+            /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
+            /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
+            /// but the query will never finish because the drop already shut down the table.
+            event->tryWait(event_wait_timeout_ms);
         }
     }
     else if (startsWith(entry.znode_name, "queue-"))
@@ -4467,10 +4485,11 @@ bool StorageReplicatedMergeTree::waitForReplicaToProcessLogEntry(
                 if (!log_pointer_new.empty() && parse<UInt64>(log_pointer_new) > log_index)
                     break;
 
-                if (wait_for_non_active)
-                    event->wait();
-                else
-                    event->tryWait(event_wait_timeout_ms);
+                /// Wait with timeout because we can be already shut down, but not dropped.
+                /// So log_pointer node will exist, but we will never update it because all background threads already stopped.
+                /// It can lead to query hung because table drop query can wait for some query (alter, optimize, etc) which called this method,
+                /// but the query will never finish because the drop already shut down the table.
+                event->tryWait(event_wait_timeout_ms);
             }
         }
     }

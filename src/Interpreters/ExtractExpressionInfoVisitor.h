@@ -21,6 +21,7 @@ struct ExpressionInfoMatcher
         bool is_array_join = false;
         bool is_stateful_function = false;
         bool is_aggregate_function = false;
+        bool is_deterministic_function = true;
         std::unordered_set<size_t> unique_reference_tables_pos = {};
     };
 

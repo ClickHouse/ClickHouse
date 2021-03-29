@@ -77,7 +77,7 @@ ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
     for (const auto & entity : entities)
     {
         create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, access_control));
-        if (entity->isTypeOf(EntityType::USER) || entity->isTypeOf(EntityType::USER))
+        if (entity->isTypeOf(EntityType::USER) || entity->isTypeOf(EntityType::ROLE))
             boost::range::push_back(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
     }
 

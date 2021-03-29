@@ -53,10 +53,13 @@ public:
 
     const String & getName() const { return name; }
 
-    /// Returns valid reservation or null
+    /// Returns valid reservation or nullptr
     ReservationPtr reserve(UInt64 bytes) const;
 
-    /// Reserve space on any volume with index > min_volume_index
+    /// Reserves space on any volume or throws
+    ReservationPtr reserveAndCheck(UInt64 bytes) const;
+
+    /// Reserves space on any volume with index > min_volume_index or returns nullptr
     ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const;
 
     /// Find volume index, which contains disk
