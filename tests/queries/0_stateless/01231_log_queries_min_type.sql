@@ -16,6 +16,7 @@ select count() from system.query_log where current_database = currentDatabase()
 set max_rows_to_read='100K';
 set log_queries_min_type='EXCEPTION_WHILE_PROCESSING';
 select '01231_log_queries_min_type/EXCEPTION_WHILE_PROCESSING', max(number) from system.numbers limit 1e6; -- { serverError 158; }
+set max_rows_to_read=0;
 system flush logs;
 select count() from system.query_log where current_database = currentDatabase()
     and query like 'select \'01231_log_queries_min_type/EXCEPTION_WHILE_PROCESSING%'
