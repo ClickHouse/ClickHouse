@@ -1539,7 +1539,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
         shared->message_broker_schedule_pool.emplace(
             settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
-            "BgMsgBrkSchPool");
+            "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
 }
 
