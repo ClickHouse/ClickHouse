@@ -96,7 +96,8 @@
         "01370_client_autocomplete_word_break_characters",
         "01676_clickhouse_client_autocomplete",
         "01193_metadata_loading",
-        "01455_time_zones"
+        "01455_time_zones",
+        "01755_client_highlight_multi_line_comment_regression"
     ],
     "release-build": [
     ],
@@ -480,6 +481,7 @@
         "00980_zookeeper_merge_tree_alter_settings",
         "00988_constraints_replication_zookeeper",
         "00989_parallel_parts_loading",
+        "00992_system_parts_race_condition_zookeeper_long",
         "00993_system_parts_race_condition_drop_zookeeper",
         "01012_show_tables_limit",
         "01013_sync_replica_timeout_zookeeper",
@@ -674,6 +676,8 @@
         "01681_cache_dictionary_simple_key",
         "01682_cache_dictionary_complex_key",
         "01684_ssd_cache_dictionary_simple_key",
-        "01685_ssd_cache_dictionary_complex_key"
+        "01685_ssd_cache_dictionary_complex_key",
+        "01760_system_dictionaries",
+        "01760_polygon_dictionaries"
     ]
 }

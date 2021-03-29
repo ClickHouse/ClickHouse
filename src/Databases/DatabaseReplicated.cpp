@@ -107,16 +107,11 @@ std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String 
 
 ClusterPtr DatabaseReplicated::getCluster() const
 {
-    {
-        std::lock_guard lock{mutex};
-        if (cluster)
-            return cluster;
-    }
-
-    ClusterPtr new_cluster = getClusterImpl();
     std::lock_guard lock{mutex};
-    if (!cluster)
-        cluster = std::move(new_cluster);
+    if (cluster)
+        return cluster;
+
+    cluster = getClusterImpl();
     return cluster;
 }
 

@@ -30,6 +30,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
@@ -56,6 +57,7 @@
 #include <Interpreters/DDLTask.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
+#include <IO/MMappedFileCache.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -342,6 +344,7 @@ struct ContextShared
     AccessControlManager access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
+    mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
@@ -380,10 +383,6 @@ struct ContextShared
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
-
-#if USE_EMBEDDED_COMPILER
-    std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
-#endif
 
     bool shutdown_called = false;
 
@@ -1105,6 +1104,7 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     auto lock = getLock();
     for (const SettingChange & change : changes)
         applySettingChange(change);
+    applySettingsQuirks(settings);
 }
 
 
@@ -1445,19 +1445,41 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
     shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
 }
 
-
 MarkCachePtr Context::getMarkCache() const
 {
     auto lock = getLock();
     return shared->mark_cache;
 }
 
-
 void Context::dropMarkCache() const
 {
     auto lock = getLock();
     if (shared->mark_cache)
         shared->mark_cache->reset();
+}
+
+
+void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
+{
+    auto lock = getLock();
+
+    if (shared->mmap_cache)
+        throw Exception("Mapped file cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->mmap_cache = std::make_shared<MMappedFileCache>(cache_size_in_num_entries);
+}
+
+MMappedFileCachePtr Context::getMMappedFileCache() const
+{
+    auto lock = getLock();
+    return shared->mmap_cache;
+}
+
+void Context::dropMMappedFileCache() const
+{
+    auto lock = getLock();
+    if (shared->mmap_cache)
+        shared->mmap_cache->reset();
 }
 
 
@@ -1470,6 +1492,9 @@ void Context::dropCaches() const
 
     if (shared->mark_cache)
         shared->mark_cache->reset();
+
+    if (shared->mmap_cache)
+        shared->mmap_cache->reset();
 }
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
@@ -1543,7 +1568,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
         shared->message_broker_schedule_pool.emplace(
             settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
-            "BgMsgBrkSchPool");
+            "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
 }
 
@@ -2281,6 +2306,8 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setProfile(shared->system_profile_name);
 
+    applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
+
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = std::make_shared<Context>(*this);
     buffer_context->setProfile(shared->buffer_profile_name);
@@ -2329,35 +2356,6 @@ void Context::setQueryParameter(const String & name, const String & value)
     if (!query_parameters.emplace(name, value).second)
         throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
-
-
-#if USE_EMBEDDED_COMPILER
-
-std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const
-{
-    auto lock = getLock();
-    return shared->compiled_expression_cache;
-}
-
-void Context::setCompiledExpressionCache(size_t cache_size)
-{
-
-    auto lock = getLock();
-
-    if (shared->compiled_expression_cache)
-        throw Exception("Compiled expressions cache has been already created.", ErrorCodes::LOGICAL_ERROR);
-
-    shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(cache_size);
-}
-
-void Context::dropCompiledExpressionCache() const
-{
-    auto lock = getLock();
-    if (shared->compiled_expression_cache)
-        shared->compiled_expression_cache->reset();
-}
-
-#endif
 
 
 void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
