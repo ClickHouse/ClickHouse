@@ -97,6 +97,7 @@ public:
         Int64 priority = 1;
 
         Address() = default;
+
         Address(
             const Poco::Util::AbstractConfiguration & config,
             const String & config_prefix,
@@ -104,6 +105,7 @@ public:
             const String & cluster_secret_,
             UInt32 shard_index_ = 0,
             UInt32 replica_index_ = 0);
+
         Address(
             const String & host_port_,
             const String & user_,
