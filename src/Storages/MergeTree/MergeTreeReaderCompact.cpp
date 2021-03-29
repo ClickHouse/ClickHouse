@@ -84,7 +84,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                         buffer_size,
                         0,
                         settings.min_bytes_to_use_direct_io,
-                        settings.min_bytes_to_use_mmap_io);
+                        settings.min_bytes_to_use_mmap_io,
+                        settings.mmap_cache.get());
                 },
                 uncompressed_cache,
                 /* allow_different_codecs = */ true);
@@ -103,7 +104,12 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             auto buffer =
                 std::make_unique<CompressedReadBufferFromFile>(
                     data_part->volume->getDisk()->readFile(
-                        full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io),
+                        full_data_path,
+                        buffer_size,
+                        0,
+                        settings.min_bytes_to_use_direct_io,
+                        settings.min_bytes_to_use_mmap_io,
+                        settings.mmap_cache.get()),
                     /* allow_different_codecs = */ true);
 
             if (profile_callback_)
