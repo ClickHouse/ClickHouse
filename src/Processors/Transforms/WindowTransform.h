@@ -19,9 +19,17 @@ class Arena;
 // Runtime data for computing one window function.
 struct WindowFunctionWorkspace
 {
-    WindowFunctionDescription window_function;
-    AlignedBuffer aggregate_function_state;
+    AggregateFunctionPtr aggregate_function;
+
+    // This field is set for pure window functions. When set, we ignore the
+    // window_function.aggregate_function, and work through this interface
+    // instead.
+    IWindowFunction * window_function_impl = nullptr;
+
     std::vector<size_t> argument_column_indices;
+
+    // Will not be initialized for a pure window function.
+    AlignedBuffer aggregate_function_state;
 
     // Argument columns. Be careful, this is a per-block cache.
     std::vector<const IColumn *> argument_columns;
@@ -102,7 +110,9 @@ public:
     Status prepare() override;
     void work() override;
 
-private:
+    /*
+     * Implementation details.
+     */
     void advancePartitionEnd();
 
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
@@ -282,6 +292,11 @@ public:
     // frames may be earlier.
     RowNumber peer_group_start;
 
+    // Row and group numbers in partition for calculating rank() and friends.
+    uint64_t current_row_number = 1;
+    uint64_t peer_group_start_row_number = 1;
+    uint64_t peer_group_number = 1;
+
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the
     // frame_start and the frame_end may jump forward by an unknown amount of
@@ -308,10 +323,7 @@ public:
     int (* compare_values_with_offset) (
         const IColumn * compared_column, size_t compared_row,
         const IColumn * reference_column, size_t reference_row,
-        // We can make it a Field later if we need the Decimals. Now we only
-        // have ints and datetime, and the underlying Field type for them is
-        // uint64_t anyway.
-        uint64_t offset,
+        const Field & offset,
         bool offset_is_preceding);
 };
 

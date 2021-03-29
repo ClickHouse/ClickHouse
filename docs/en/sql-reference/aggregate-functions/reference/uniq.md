@@ -10,7 +10,7 @@ Calculates the approximate number of different values of the argument.
 uniq(x[, ...])
 ```
 
-**Parameters**
+**Arguments**
 
 The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 

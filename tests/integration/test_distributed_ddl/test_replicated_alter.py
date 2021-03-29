@@ -12,7 +12,7 @@ from .cluster import ClickHouseClusterWithDDLHelpers
 
 @pytest.fixture(scope="module", params=["configs", "configs_secure"])
 def test_cluster(request):
-    cluster = ClickHouseClusterWithDDLHelpers(__file__, request.param)
+    cluster = ClickHouseClusterWithDDLHelpers(__file__, request.param, "alters_" + request.param)
 
     try:
         # TODO: Fix ON CLUSTER alters when nodes have different configs. Need to canonicalize node identity.

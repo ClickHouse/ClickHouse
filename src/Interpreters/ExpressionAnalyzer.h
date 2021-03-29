@@ -1,15 +1,16 @@
 #pragma once
 
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Columns/FilterDescription.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/WindowDescription.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/WindowDescription.h>
+#include <Interpreters/join_common.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Interpreters/DatabaseCatalog.h>
 
 namespace DB
 {
@@ -199,6 +200,7 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_array_join;
     ArrayJoinActionPtr array_join;
     ActionsDAGPtr before_join;
+    ActionsDAGPtr converting_join_columns;
     JoinPtr join;
     ActionsDAGPtr before_where;
     ActionsDAGPtr before_aggregation;
@@ -216,7 +218,7 @@ struct ExpressionAnalysisResult
     NameSet columns_to_remove_after_prewhere;
 
     PrewhereDAGInfoPtr prewhere_info;
-    FilterInfoPtr filter_info;
+    FilterDAGInfoPtr filter_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
@@ -231,7 +233,7 @@ struct ExpressionAnalysisResult
         bool first_stage,
         bool second_stage,
         bool only_types,
-        const FilterInfoPtr & filter_info,
+        const FilterDAGInfoPtr & filter_info,
         const Block & source_header);
 
     /// Filter for row-level security.
@@ -245,7 +247,7 @@ struct ExpressionAnalysisResult
 
     void removeExtraColumns() const;
     void checkActions() const;
-    void finalize(const ExpressionActionsChain & chain, size_t where_step_num);
+    void finalize(const ExpressionActionsChain & chain, size_t where_step_num, const ASTSelectQuery & query);
 };
 
 /// SelectQuery specific ExpressionAnalyzer part.
@@ -313,7 +315,9 @@ private:
     /// Create Set-s that we make from IN section to use index on them.
     void makeSetsForIndex(const ASTPtr & node);
 
-    JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
+    JoinPtr makeTableJoin(
+        const ASTTablesInSelectQueryElement & join_element,
+        const ColumnsWithTypeAndName & left_sample_columns);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 

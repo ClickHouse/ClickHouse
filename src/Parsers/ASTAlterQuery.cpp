@@ -271,6 +271,27 @@ void ASTAlterCommand::formatImpl(
                           << " " << DB::quote << with_name;
         }
     }
+    else if (type == ASTAlterCommand::UNFREEZE_PARTITION)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UNFREEZE PARTITION " << (settings.hilite ? hilite_none : "");
+        partition->formatImpl(settings, state, frame);
+
+        if (!with_name.empty())
+        {
+            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
+                          << " " << DB::quote << with_name;
+        }
+    }
+    else if (type == ASTAlterCommand::UNFREEZE_ALL)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UNFREEZE";
+
+        if (!with_name.empty())
+        {
+            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
+                          << " " << DB::quote << with_name;
+        }
+    }
     else if (type == ASTAlterCommand::DELETE)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE" << (settings.hilite ? hilite_none : "");
@@ -344,7 +365,7 @@ void ASTAlterCommand::formatImpl(
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
-bool ASTAlterQuery::isSettingsAlter() const
+bool ASTAlterQuery::isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const
 {
     if (command_list)
     {
@@ -353,12 +374,23 @@ bool ASTAlterQuery::isSettingsAlter() const
         for (const auto & child : command_list->children)
         {
             const auto & command = child->as<const ASTAlterCommand &>();
-            if (command.type != ASTAlterCommand::MODIFY_SETTING)
+            if (command.type != type)
                 return false;
         }
         return true;
     }
     return false;
+}
+
+bool ASTAlterQuery::isSettingsAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::MODIFY_SETTING);
+}
+
+bool ASTAlterQuery::isFreezeAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL)
+        || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_ALL);
 }
 
 /** Get the text that identifies this element. */

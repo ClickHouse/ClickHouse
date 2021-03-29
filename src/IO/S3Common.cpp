@@ -13,6 +13,7 @@
 #    include <aws/core/platform/Environment.h>
 #    include <aws/core/utils/logging/LogMacros.h>
 #    include <aws/core/utils/logging/LogSystemInterface.h>
+#    include <aws/core/utils/HashingUtils.h>
 #    include <aws/s3/S3Client.h>
 #    include <aws/core/http/HttpClientFactory.h>
 #    include <IO/S3/PocoHTTPClientFactory.h>
@@ -273,56 +274,12 @@ namespace S3
         return ret;
     }
 
-    /// This method is not static because it requires ClientFactory to be initialized.
-    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
-        const String & endpoint,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
-        bool use_environment_credentials,
-        const RemoteHostFilter & remote_host_filter,
-        unsigned int s3_max_redirects)
-    {
-        PocoHTTPClientConfiguration client_configuration(remote_host_filter, s3_max_redirects);
-
-        if (!endpoint.empty())
-            client_configuration.endpointOverride = endpoint;
-
-        return create(client_configuration,
-            is_virtual_hosted_style,
-            access_key_id,
-            secret_access_key,
-            use_environment_credentials);
-    }
-
     std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const PocoHTTPClientConfiguration & cfg_,
         bool is_virtual_hosted_style,
         const String & access_key_id,
         const String & secret_access_key,
-        bool use_environment_credentials)
-    {
-        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-
-        PocoHTTPClientConfiguration client_configuration = cfg_;
-        client_configuration.updateSchemeAndRegion();
-
-        return std::make_shared<Aws::S3::S3Client>(
-            std::make_shared<S3CredentialsProviderChain>(
-                client_configuration,
-                credentials,
-                use_environment_credentials), // AWS credentials provider.
-            std::move(client_configuration), // Client configuration.
-            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
-            is_virtual_hosted_style || client_configuration.endpointOverride.empty() // Use virtual addressing if endpoint is not specified.
-        );
-    }
-
-    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
-        const PocoHTTPClientConfiguration & cfg_,
-        bool is_virtual_hosted_style,
-        const String & access_key_id,
-        const String & secret_access_key,
+        const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
         bool use_environment_credentials)
     {
@@ -331,7 +288,28 @@ namespace S3
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
-        auto auth_signer = std::make_shared<S3AuthSigner>(client_configuration, std::move(credentials), std::move(headers), use_environment_credentials);
+        if (!server_side_encryption_customer_key_base64.empty())
+        {
+            /// See S3Client::GeneratePresignedUrlWithSSEC().
+
+            headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
+                Aws::S3::Model::ServerSideEncryptionMapper::GetNameForServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256)});
+
+            headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
+                server_side_encryption_customer_key_base64});
+
+            Aws::Utils::ByteBuffer buffer = Aws::Utils::HashingUtils::Base64Decode(server_side_encryption_customer_key_base64);
+            String str_buffer(reinterpret_cast<char *>(buffer.GetUnderlyingData()), buffer.GetLength());
+            headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
+                Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
+        }
+
+        auto auth_signer = std::make_shared<S3AuthSigner>(
+            client_configuration,
+            std::move(credentials),
+            std::move(headers),
+            use_environment_credentials);
+
         return std::make_shared<Aws::S3::S3Client>(
             std::move(auth_signer),
             std::move(client_configuration), // Client configuration.

@@ -609,7 +609,7 @@ DatabaseCatalog::updateDependency(const StorageID & old_from, const StorageID & 
         view_dependencies[{new_from.getDatabaseName(), new_from.getTableName()}].insert(new_where);
 }
 
-std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, const String & table)
+DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
     std::unique_lock lock(ddl_guards_mutex);
     auto db_guard_iter = ddl_guards.try_emplace(database).first;
@@ -910,31 +910,6 @@ String DatabaseCatalog::getPathForUUID(const UUID & uuid)
     return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
 }
 
-String DatabaseCatalog::resolveDictionaryName(const String & name) const
-{
-    /// If it's dictionary from Atomic database, then we need to convert qualified name to UUID.
-    /// Try to split name and get id from associated StorageDictionary.
-    /// If something went wrong, return name as is.
-
-    /// TODO support dot in name for dictionaries in Atomic databases
-    auto pos = name.find('.');
-    if (pos == std::string::npos || name.find('.', pos + 1) != std::string::npos)
-        return name;
-    String maybe_database_name = name.substr(0, pos);
-    String maybe_table_name = name.substr(pos + 1);
-
-    auto db_and_table = tryGetDatabaseAndTable({maybe_database_name, maybe_table_name}, global_context);
-    if (!db_and_table.first)
-        return name;
-    assert(db_and_table.second);
-    if (db_and_table.first->getUUID() == UUIDHelpers::Nil)
-        return name;
-    if (db_and_table.second->getName() != "Dictionary")
-        return name;
-
-    return toString(db_and_table.second->getStorageID().uuid);
-}
-
 void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
 {
     if (uuid == UUIDHelpers::Nil)
@@ -956,36 +931,38 @@ DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<s
     ++it->second.counter;
     guards_lock.unlock();
     table_lock = std::unique_lock(*it->second.mutex);
-    bool is_database = elem.empty();
-    if (!is_database)
+    is_database_guard = elem.empty();
+    if (!is_database_guard)
     {
 
         bool locked_database_for_read = db_mutex.try_lock_shared();
         if (!locked_database_for_read)
         {
-            removeTableLock();
+            releaseTableLock();
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} is currently dropped or renamed", database_name);
         }
     }
 }
 
-void DDLGuard::removeTableLock()
+void DDLGuard::releaseTableLock() noexcept
 {
+    if (table_lock_removed)
+        return;
+
+    table_lock_removed = true;
     guards_lock.lock();
-    --it->second.counter;
-    if (!it->second.counter)
-    {
-        table_lock.unlock();
+    UInt32 counter = --it->second.counter;
+    table_lock.unlock();
+    if (counter == 0)
         map.erase(it);
-    }
+    guards_lock.unlock();
 }
 
 DDLGuard::~DDLGuard()
 {
-    bool is_database = it->first.empty();
-    if (!is_database)
+    if (!is_database_guard)
         db_mutex.unlock_shared();
-    removeTableLock();
+    releaseTableLock();
 }
 
 }
