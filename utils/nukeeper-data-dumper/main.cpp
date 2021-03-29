@@ -1,18 +1,18 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
-#include <Coordination/NuKeeperStateMachine.h>
+#include <Coordination/KeeperStateMachine.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
-#include <Coordination/NuKeeperLogStore.h>
+#include <Coordination/KeeperLogStore.h>
 #include <Coordination/Changelog.h>
 #include <common/logger_useful.h>
 
 using namespace Coordination;
 using namespace DB;
 
-void dumpMachine(std::shared_ptr<NuKeeperStateMachine> machine)
+void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
 {
     auto & storage = machine->getStorage();
     std::queue<std::string> keys;
@@ -62,13 +62,13 @@ int main(int argc, char *argv[])
     ResponsesQueue queue;
     SnapshotsQueue snapshots_queue{1};
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-    auto state_machine = std::make_shared<NuKeeperStateMachine>(queue, snapshots_queue, argv[1], settings);
+    auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, argv[1], settings);
     state_machine->init();
     size_t last_commited_index = state_machine->last_commit_index();
 
     LOG_INFO(logger, "Last committed index: {}", last_commited_index);
 
-    DB::NuKeeperLogStore changelog(argv[2], 10000000, true);
+    DB::KeeperLogStore changelog(argv[2], 10000000, true);
     changelog.init(last_commited_index, 10000000000UL); /// collect all logs
     if (changelog.size() == 0)
         LOG_INFO(logger, "Changelog empty");

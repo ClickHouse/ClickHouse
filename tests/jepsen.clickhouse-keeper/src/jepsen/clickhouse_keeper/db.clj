@@ -116,7 +116,7 @@
          (c/exec :rm :-rf binary-path))
        (c/exec :rm :-rf pid-file-path)
        (c/exec :rm :-rf data-dir)
-       (c/exec :rm :-rf logs-dir)
+       ;(c/exec :rm :-rf logs-dir)
        (c/exec :rm :-rf configs-dir)))
 
     db/LogFiles
