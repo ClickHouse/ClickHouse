@@ -280,7 +280,11 @@ if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
 endif()
 if (USE_CASSANDRA)
+    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
+    set (CMAKE_CXX_STANDARD 17)
     add_subdirectory (cassandra)
+    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
+    unset (CMAKE_CXX_STANDARD_bak)
 endif()
 
 # Should go before:
