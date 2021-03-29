@@ -1,5 +1,5 @@
 <yandex>
-    <test_keeper_server>
+    <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
         <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
@@ -8,10 +8,8 @@
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>
             <session_timeout_ms>10000</session_timeout_ms>
+            <snapshot_distance>75</snapshot_distance>
             <raft_logs_level>trace</raft_logs_level>
-            <snapshot_distance>100</snapshot_distance>
-            <stale_log_gap>10</stale_log_gap>
-            <reserved_log_items>1</reserved_log_items>
         </coordination_settings>
 
         <raft_configuration>
@@ -20,7 +18,7 @@
                 <hostname>node1</hostname>
                 <port>44444</port>
                 <can_become_leader>true</can_become_leader>
-                <priority>70</priority>
+                <priority>3</priority>
             </server>
             <server>
                 <id>2</id>
@@ -28,7 +26,7 @@
                 <port>44444</port>
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
-                <priority>20</priority>
+                <priority>2</priority>
             </server>
             <server>
                 <id>3</id>
@@ -36,8 +34,8 @@
                 <port>44444</port>
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
-                <priority>10</priority>
+                <priority>1</priority>
             </server>
         </raft_configuration>
-    </test_keeper_server>
+    </keeper_server>
 </yandex>
