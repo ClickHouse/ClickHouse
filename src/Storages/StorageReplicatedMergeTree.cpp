@@ -1663,7 +1663,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     if (source_part->name != source_part_name)
     {
-        LOG_WARNING("Part " + source_part_name + " is covered by " + source_part->name
+        LOG_WARNING(log, "Part " + source_part_name + " is covered by " + source_part->name
                     + " but should be mutated to " + entry.new_part_name + ". "
                     + "Possibly the mutation of this part is not needed and will be skipped. This shouldn't happen often.");
         return false;
