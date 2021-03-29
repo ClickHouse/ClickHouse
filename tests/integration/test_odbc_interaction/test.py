@@ -386,7 +386,7 @@ def test_odbc_postgres_date_data_type(started_cluster):
 
 
 def test_odbc_postgres_conversions(started_cluster):
-    conn = get_postgres_conn();
+    conn = get_postgres_conn()
     cursor = conn.cursor()
 
     cursor.execute(
@@ -423,4 +423,31 @@ def test_odbc_postgres_conversions(started_cluster):
     print(result)
     cursor.execute("DROP TABLE IF EXISTS clickhouse.test_types")
     assert(result == expected)
+
+
+def test_odbc_cyrillic_with_varchar(started_cluster):
+    conn = get_postgres_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("DROP TABLE IF EXISTS clickhouse.test_cyrillic")
+    cursor.execute("CREATE TABLE clickhouse.test_cyrillic (name varchar(11))")
+
+    node1.query('''
+        CREATE TABLE test_cyrillic (name String)
+        ENGINE = ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_cyrillic')''')
+
+    cursor.execute("INSERT INTO clickhouse.test_cyrillic VALUES ('A-nice-word')")
+    cursor.execute("INSERT INTO clickhouse.test_cyrillic VALUES ('Красивенько')")
+
+    result = node1.query(''' SELECT * FROM test_cyrillic ORDER BY name''')
+
+    assert(result == 'A-nice-word\nКрасивенько\n')
+
+    node1.query(''' INSERT INTO TABLE FUNCTION
+        odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_cyrillic')
+        VALUES ('Красивенько')''')
+
+    result = node1.query('''
+        SELECT name FROM odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_cyrillic') ''')
+    assert(result == 'A-nice-word\nКрасивенько\nКрасивенько\n')
 
