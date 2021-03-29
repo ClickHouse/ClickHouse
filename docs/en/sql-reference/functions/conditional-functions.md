@@ -17,11 +17,11 @@ SELECT if(cond, then, else)
 
 If the condition `cond` evaluates to a non-zero value, returns the result of the expression `then`, and the result of the expression `else`, if present, is skipped. If the `cond` is zero or `NULL`, then the result of the `then` expression is skipped and the result of the `else` expression, if present, is returned.
 
-**Parameters**
+**Arguments**
 
 -   `cond` – The condition for evaluation that can be zero or not. The type is UInt8, Nullable(UInt8) or NULL.
--   `then` - The expression to return if condition is met.
--   `else` - The expression to return if condition is not met.
+-   `then` – The expression to return if condition is met.
+-   `else` – The expression to return if condition is not met.
 
 **Returned values**
 
@@ -32,7 +32,7 @@ The function executes `then` and `else` expressions and returns its result, depe
 Query:
 
 ``` sql
-SELECT if(1, plus(2, 2), plus(2, 6))
+SELECT if(1, plus(2, 2), plus(2, 6));
 ```
 
 Result:
@@ -46,7 +46,7 @@ Result:
 Query:
 
 ``` sql
-SELECT if(0, plus(2, 2), plus(2, 6))
+SELECT if(0, plus(2, 2), plus(2, 6));
 ```
 
 Result:
@@ -117,7 +117,7 @@ Allows you to write the [CASE](../../sql-reference/operators/index.md#operator_c
 
 Syntax: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 
-**Parameters:**
+**Arguments:**
 
 -   `cond_N` — The condition for the function to return `then_N`.
 -   `then_N` — The result of the function when executed.
@@ -202,4 +202,3 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/conditional_functions/) <!--hide-->

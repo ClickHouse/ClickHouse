@@ -76,7 +76,7 @@ protected:
     void writePayloadImpl(WriteBuffer & buffer) const override;
 
 public:
-    ResultSetRow(const DataTypes & data_types, const Columns & columns_, int row_num_);
+    ResultSetRow(const Serializations & serializations, const Columns & columns_, int row_num_);
 };
 
 class ComFieldList : public LimitedReadPacket
@@ -101,6 +101,9 @@ public:
     ColumnType column_type;
     uint16_t flags;
     uint8_t decimals = 0x00;
+    /// https://dev.mysql.com/doc/internals/en/com-query-response.html#column-definition
+    /// There are extra fields in the packet for column defaults
+    bool is_comm_field_list_response = false;
 
 protected:
     size_t getPayloadSize() const override;
@@ -114,7 +117,7 @@ public:
 
     ColumnDefinition(
         String schema_, String table_, String org_table_, String name_, String org_name_, uint16_t character_set_, uint32_t column_length_,
-        ColumnType column_type_, uint16_t flags_, uint8_t decimals_);
+        ColumnType column_type_, uint16_t flags_, uint8_t decimals_, bool with_defaults_ = false);
 
     /// Should be used when column metadata (original name, table, original table, database) is unknown.
     ColumnDefinition(

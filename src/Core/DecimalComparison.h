@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
 }
 
-///
+
 inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     if (isColumnedAsDecimal(left_type))
@@ -30,7 +30,9 @@ inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataType
             return true;
     }
     else if (isNotDecimalButComparableToDecimal(left_type) && isColumnedAsDecimal(right_type))
+    {
         return true;
+    }
     return false;
 }
 
@@ -76,7 +78,7 @@ public:
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
     {
-        static const UInt32 max_scale = DecimalUtils::maxPrecision<Decimal256>();
+        static const UInt32 max_scale = DecimalUtils::max_precision<Decimal256>;
         if (scale_a > max_scale || scale_b > max_scale)
             throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
 
@@ -252,9 +254,9 @@ private:
         else
         {
             if constexpr (scale_left)
-                x *= scale;
+                x = common::mulIgnoreOverflow(x, scale);
             if constexpr (scale_right)
-                y *= scale;
+                y = common::mulIgnoreOverflow(y, scale);
         }
 
         return Op::apply(x, y);

@@ -1,10 +1,20 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Common/Exception.h>
 #include <stack>
 
-namespace DB::QueryPlanOptimizations
+namespace DB
 {
 
-void optimizeTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
+}
+
+namespace QueryPlanOptimizations
+{
+
+void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
     const auto & optimizations = getOptimizations();
 
@@ -22,6 +32,9 @@ void optimizeTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 
     std::stack<Frame> stack;
     stack.push(Frame{.node = &root});
+
+    size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
+    size_t total_applied_optimizations = 0;
 
     while (!stack.empty())
     {
@@ -54,8 +67,15 @@ void optimizeTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
             if (!optimization.apply)
                 continue;
 
+            if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
+                throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                                "Too many optimizations applied to query plan. Current limit {}",
+                                max_optimizations_to_apply);
+
             /// Try to apply optimization.
             auto update_depth = optimization.apply(frame.node, nodes);
+            if (update_depth)
+                ++total_applied_optimizations;
             max_update_depth = std::max<size_t>(max_update_depth, update_depth);
         }
 
@@ -72,4 +92,5 @@ void optimizeTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes)
     }
 }
 
+}
 }

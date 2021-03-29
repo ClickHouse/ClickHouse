@@ -10,10 +10,10 @@ toc_priority: 150
 **Синтаксис**
 
 ``` sql
-initializeAggregation (aggregate_function, column_1, column_2);
+initializeAggregation (aggregate_function, column_1, column_2)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `aggregate_function` — название функции агрегации, состояние которой нужно создать. [String](../../../sql-reference/data-types/string.md#string).
 -   `column_n` — столбец, который передается в функцию агрегации как аргумент. [String](../../../sql-reference/data-types/string.md#string).

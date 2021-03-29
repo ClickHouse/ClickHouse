@@ -97,9 +97,9 @@ public:
         IStorage::setInMemoryMetadata(getNested()->getInMemoryMetadata());
     }
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override
     {
-        getNested()->checkAlterIsPossible(commands, settings);
+        getNested()->checkAlterIsPossible(commands, context);
     }
 
     Pipe alterPartition(

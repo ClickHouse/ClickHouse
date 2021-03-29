@@ -13,8 +13,6 @@
 
 #include <Functions/FunctionHelpers.h>
 
-#include <Common/HashTable/HashMap.h>
-
 namespace DB
 {
 
@@ -84,17 +82,6 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
-    /// MergedData records, used to avoid duplicated data copy.
-    ///key: src pointer, val:  pos in current column.
-    using Map = HashMap<
-        ConstAggregateDataPtr,
-        size_t,
-        DefaultHash<ConstAggregateDataPtr>,
-        HashTableGrower<3>,
-        HashTableAllocatorWithStackMemory<sizeof(std::pair<ConstAggregateDataPtr, size_t>) * (1 << 3)>>;
-
-    Map copiedDataInfo;
-
     ColumnAggregateFunction() {}
 
     /// Create a new column that has another column as a source.
@@ -153,8 +140,6 @@ public:
 
     void insertFrom(ConstAggregateDataPtr place);
 
-    void insertCopyFrom(ConstAggregateDataPtr place);
-
     /// Merge state at last row with specified state in another column.
     void insertMergeFrom(ConstAggregateDataPtr place);
 
@@ -169,6 +154,8 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * src_arena) override;
+
+    const char * skipSerializedInArena(const char *) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -211,6 +198,11 @@ public:
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throw Exception("Method compareColumn is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    bool hasEqualValues() const override
+    {
+        throw Exception("Method hasEqualValues is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
