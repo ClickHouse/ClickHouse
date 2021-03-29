@@ -448,7 +448,7 @@ def run_tests_array(all_tests_with_params):
                                     failures_chain += 1
                                     status += MSG_FAIL
                                     status += print_test_time(total_time)
-                                    status += " - Long test not marked as 'long'"
+                                    status += " - Test runs too long (> 30s). Make it faster."
                                 else:
                                     passed_total += 1
                                     failures_chain = 0
