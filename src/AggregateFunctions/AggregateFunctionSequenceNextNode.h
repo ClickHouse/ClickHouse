@@ -22,6 +22,7 @@
 #include <AggregateFunctions/AggregateFunctionNull.h>
 
 #include <type_traits>
+#include <bitset>
 
 
 namespace DB
