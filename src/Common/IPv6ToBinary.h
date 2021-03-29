@@ -19,7 +19,8 @@ std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address);
 /// Values of prefix_len greater than 128 interpreted as 128 exactly.
 const std::array<uint8_t, 16> & getCIDRMaskIPv6(UInt8 prefix_len);
 
-/// This is identical to getCIDRMaskIPv6 except it's for IPv4 addresses.
-const std::array<uint8_t, 4> & getCIDRMaskIPv4(UInt8 prefix_len);
+/// Check that address contained in CIDR range
+bool matchIPv4Subnet(UInt32 addr, UInt32 cidr_addr, UInt8 prefix);
+bool matchIPv6Subnet(const uint8_t * addr, const uint8_t * cidr_addr, UInt8 prefix);
 
 }

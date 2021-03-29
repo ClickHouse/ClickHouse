@@ -15,10 +15,6 @@ namespace DB
 constexpr size_t IPV6_MASKS_COUNT = 256;
 using RawMaskArrayV6 = std::array<uint8_t, IPV6_BINARY_LENGTH>;
 
-/// Same for IPv4
-constexpr size_t IPV4_MASKS_COUNT = 256;
-using RawMaskArrayV4 = std::array<uint8_t, IPV4_BINARY_LENGTH>;
-
 void IPv6ToRawBinary(const Poco::Net::IPAddress & address, char * res)
 {
     if (Poco::Net::IPAddress::IPv6 == address.family())
@@ -75,10 +71,55 @@ const std::array<uint8_t, 16> & getCIDRMaskIPv6(UInt8 prefix_len)
     return IPV6_RAW_MASK_ARRAY[prefix_len];
 }
 
-const std::array<uint8_t, 4> & getCIDRMaskIPv4(UInt8 prefix_len)
+bool matchIPv4Subnet(UInt32 addr, UInt32 cidr_addr, UInt8 prefix)
 {
-    static constexpr auto IPV4_RAW_MASK_ARRAY = generateBitMasks<RawMaskArrayV4, IPV4_MASKS_COUNT>();
-    return IPV4_RAW_MASK_ARRAY[prefix_len];
+    UInt32 mask = (prefix >= 32) ? 0xffffffffu : ~(0xffffffffu >> prefix);
+    return (addr & mask) == (cidr_addr & mask);
 }
+
+#if defined(__SSE2__)
+#include <emmintrin.h>
+
+bool matchIPv6Subnet(const uint8_t * addr, const uint8_t * cidr_addr, UInt8 prefix)
+{
+    uint16_t mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(addr)),
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(cidr_addr))));
+    mask = ~mask;
+
+    if (mask)
+    {
+        auto offset = __builtin_ctz(mask);
+
+        if (prefix / 8 != offset)
+            return prefix / 8 < offset;
+
+        auto cmpmask = ~(0xff >> (prefix % 8));
+        return (addr[offset] & cmpmask) == (cidr_addr[offset] & cmpmask);
+    }
+    return true;
+}
+
+# else
+
+bool matchIPv6Subnet(const uint8_t * addr, const uint8_t * cidr_addr, UInt8 prefix)
+{
+    if (prefix > IPV6_BINARY_LENGTH * 8U)
+        prefix = IPV6_BINARY_LENGTH * 8U;
+
+    size_t i = 0;
+    for (; prefix >= 8; ++i, prefix -= 8)
+    {
+        if (target[i] != cidr_addr[i])
+            return false;
+    }
+    if (prefix == 0)
+        return true;
+
+    auto mask = ~(0xff >> prefix);
+    return (addr[i] & mask) == (cidr_addr[i] & mask);
+}
+
+#endif  // __SSE2__
 
 }
