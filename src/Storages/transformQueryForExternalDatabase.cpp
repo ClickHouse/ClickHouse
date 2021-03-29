@@ -208,6 +208,11 @@ bool removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
     return leave_child;
 }
 
+// When a query references an external table such as table from MySQL database,
+// the corresponding table storage has to execute the relevant part of the query. We
+// send the query to the storage as AST. Before that, we have to remove the conditions
+// that reference other tables from `WHERE`, so that the external engine is not confused
+// by the unknown columns.
 bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns)
 {
     if (!node)
