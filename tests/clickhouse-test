@@ -285,6 +285,7 @@ def run_tests_array(all_tests_with_params):
     failures_total = 0
     failures = 0
     failures_chain = 0
+    start_time = datetime.now()
 
     client_options = get_additional_client_options(args)
 
@@ -479,12 +480,14 @@ def run_tests_array(all_tests_with_params):
     failures_total = failures_total + failures
 
     if failures_total > 0:
-        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(
-            passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), args, "red", attrs=["bold"]))
+        print(colored(f"\nHaving {failures_total} errors! {passed_total} tests passed."
+            f" {skipped_total} tests skipped. {(datetime.now() - start_time).total_seconds():.2f} s elapsed.",
+            args, "red", attrs=["bold"]))
         exit_code = 1
     else:
-        print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(
-            passed_total = passed_total, skipped_total = skipped_total), args, "green", attrs=["bold"]))
+        print(colored(f"\n{passed_total} tests passed. {skipped_total} tests skipped."
+            f" {(datetime.now() - start_time).total_seconds():.2f} s elapsed.",
+            args, "green", attrs=["bold"]))
 
 
 server_logs_level = "warning"
