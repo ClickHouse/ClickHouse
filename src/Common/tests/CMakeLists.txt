@@ -41,6 +41,9 @@ target_link_libraries (pod_array PRIVATE clickhouse_common_io)
 add_executable (lru_hash_map_perf lru_hash_map_perf.cpp)
 target_link_libraries (lru_hash_map_perf PRIVATE clickhouse_common_io)
 
+add_executable (concurrent_lru_hash_map_perf concurrent_lru_hash_map_perf.cpp)
+target_link_libraries (concurrent_lru_hash_map_perf PRIVATE clickhouse_common_io)
+
 add_executable (thread_creation_latency thread_creation_latency.cpp)
 target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)
 

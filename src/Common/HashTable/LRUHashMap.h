@@ -140,7 +140,7 @@ public:
     }
 
     template<typename ...Args>
-    std::pair<Cell *, bool> emplace(const Key & key, Args&&... args)
+    std::pair<Cell *, bool> emplace(const Key & key, Args && ... args)
     {
         size_t hash_value = Base::hash(key);
 
