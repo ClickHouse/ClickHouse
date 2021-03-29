@@ -1,15 +1,15 @@
-(ns jepsen.nukeeper.main
+(ns jepsen.clickhouse-keeper.main
   (:require [clojure.tools.logging :refer :all]
-            [jepsen.nukeeper.utils :refer :all]
+            [jepsen.clickhouse-keeper.utils :refer :all]
             [clojure.pprint :refer [pprint]]
-            [jepsen.nukeeper.set :as set]
-            [jepsen.nukeeper.db :refer :all]
-            [jepsen.nukeeper.nemesis :as custom-nemesis]
-            [jepsen.nukeeper.register :as register]
-            [jepsen.nukeeper.unique :as unique]
-            [jepsen.nukeeper.queue :as queue]
-            [jepsen.nukeeper.counter :as counter]
-            [jepsen.nukeeper.constants :refer :all]
+            [jepsen.clickhouse-keeper.set :as set]
+            [jepsen.clickhouse-keeper.db :refer :all]
+            [jepsen.clickhouse-keeper.nemesis :as custom-nemesis]
+            [jepsen.clickhouse-keeper.register :as register]
+            [jepsen.clickhouse-keeper.unique :as unique]
+            [jepsen.clickhouse-keeper.queue :as queue]
+            [jepsen.clickhouse-keeper.counter :as counter]
+            [jepsen.clickhouse-keeper.constants :refer :all]
             [clojure.string :as str]
             [jepsen
              [checker :as checker]
@@ -75,7 +75,7 @@
    ["-c" "--clickhouse-source URL" "URL for clickhouse deb or tgz package"
     :default "https://clickhouse-builds.s3.yandex.net/21677/ef82333089156907a0979669d9374c2e18daabe5/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_deb/clickhouse-common-static_21.4.1.6313_amd64.deb"]])
 
-(defn nukeeper-test
+(defn clickhouse-keeper-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
   :concurrency, ...), constructs a test map."
   [opts]
@@ -151,9 +151,9 @@
   [& args]
   (.setLevel
    (LoggerFactory/getLogger "org.apache.zookeeper") Level/OFF)
-  (cli/run! (merge (cli/single-test-cmd {:test-fn nukeeper-test
+  (cli/run! (merge (cli/single-test-cmd {:test-fn clickhouse-keeper-test
                                          :opt-spec cli-opts})
-                   (cli/test-all-cmd {:tests-fn (partial all-tests nukeeper-test)
+                   (cli/test-all-cmd {:tests-fn (partial all-tests clickhouse-keeper-test)
                                       :opt-spec cli-opts})
                    (cli/serve-cmd))
             args))

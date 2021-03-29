@@ -1,11 +1,11 @@
-(ns jepsen.nukeeper.db
+(ns jepsen.clickhouse-keeper.db
   (:require [clojure.tools.logging :refer :all]
             [jepsen
              [control :as c]
              [db :as db]
              [util :as util :refer [meh]]]
-            [jepsen.nukeeper.constants :refer :all]
-            [jepsen.nukeeper.utils :refer :all]
+            [jepsen.clickhouse-keeper.constants :refer :all]
+            [jepsen.clickhouse-keeper.utils :refer :all]
             [clojure.java.io :as io]
             [jepsen.control.util :as cu]
             [jepsen.os.ubuntu :as ubuntu]))
@@ -88,7 +88,7 @@
   (c/exec :echo (slurp (io/resource "config.xml")) :> (str configs-dir "/config.xml"))
   (c/exec :echo (slurp (io/resource "users.xml")) :> (str configs-dir "/users.xml"))
   (c/exec :echo (slurp (io/resource "listen.xml")) :> (str sub-configs-dir "/listen.xml"))
-  (c/exec :echo (cluster-config test node (slurp (io/resource "test_keeper_config.xml"))) :> (str sub-configs-dir "/test_keeper_config.xml")))
+  (c/exec :echo (cluster-config test node (slurp (io/resource "keeper_config.xml"))) :> (str sub-configs-dir "/keeper_config.xml")))
 
 (defn db
   [version reuse-binary]

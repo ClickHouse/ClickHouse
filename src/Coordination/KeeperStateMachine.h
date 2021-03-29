@@ -1,22 +1,22 @@
 #pragma once
 
-#include <Coordination/NuKeeperStorage.h>
+#include <Coordination/KeeperStorage.h>
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <common/logger_useful.h>
 #include <Coordination/ThreadSafeQueue.h>
 #include <Coordination/CoordinationSettings.h>
-#include <Coordination/NuKeeperSnapshotManager.h>
+#include <Coordination/KeeperSnapshotManager.h>
 
 namespace DB
 {
 
-using ResponsesQueue = ThreadSafeQueue<NuKeeperStorage::ResponseForSession>;
+using ResponsesQueue = ThreadSafeQueue<KeeperStorage::ResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
-class NuKeeperStateMachine : public nuraft::state_machine
+class KeeperStateMachine : public nuraft::state_machine
 {
 public:
-    NuKeeperStateMachine(ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_);
+    KeeperStateMachine(ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_, const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_);
 
     void init();
 
@@ -50,12 +50,12 @@ public:
         nuraft::ptr<nuraft::buffer> & data_out,
         bool & is_last_obj) override;
 
-    NuKeeperStorage & getStorage()
+    KeeperStorage & getStorage()
     {
         return *storage;
     }
 
-    void processReadRequest(const NuKeeperStorage::RequestForSession & request_for_session);
+    void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
 
     std::unordered_set<int64_t> getDeadSessions();
 
@@ -68,9 +68,9 @@ private:
 
     CoordinationSettingsPtr coordination_settings;
 
-    NuKeeperStoragePtr storage;
+    KeeperStoragePtr storage;
 
-    NuKeeperSnapshotManager snapshot_manager;
+    KeeperSnapshotManager snapshot_manager;
 
     ResponsesQueue & responses_queue;
 

@@ -1,4 +1,4 @@
-(ns jepsen.nukeeper.register
+(ns jepsen.clickhouse-keeper.register
   (:require   [jepsen
                [checker :as checker]
                [client :as client]
@@ -6,7 +6,7 @@
                [generator :as gen]]
               [jepsen.checker.timeline :as timeline]
               [knossos.model :as model]
-              [jepsen.nukeeper.utils :refer :all]
+              [jepsen.clickhouse-keeper.utils :refer :all]
               [zookeeper :as zk])
   (:import (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
