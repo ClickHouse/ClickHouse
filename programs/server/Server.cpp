@@ -1224,9 +1224,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
         async_metrics.start();
         global_context->enableNamedSessions();
 
-        for (auto & server : *servers)
-            server.start();
-
         {
             String level_str = config().getString("text_log.level", "");
             int level = level_str.empty() ? INT_MAX : Poco::Logger::parseLevel(level_str);
@@ -1246,6 +1243,40 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 getNumberOfPhysicalCPUCores(),  // on ARM processors it can show only enabled at current moment cores
                 std::thread::hardware_concurrency());
         }
+
+        /// try to load dictionaries immediately, throw on error and die
+        ext::scope_guard dictionaries_xmls, models_xmls;
+        try
+        {
+            if (!config().getBool("dictionaries_lazy_load", true))
+            {
+                global_context->tryCreateEmbeddedDictionaries();
+                global_context->getExternalDictionariesLoader().enableAlwaysLoadEverything(true);
+            }
+            dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
+            models_xmls = global_context->getExternalModelsLoader().addConfigRepository(
+                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config"));
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Caught exception while loading dictionaries.");
+            throw;
+        }
+
+        if (has_zookeeper && config().has("distributed_ddl"))
+        {
+            /// DDL worker should be started after all tables were loaded
+            String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
+            int pool_size = config().getInt("distributed_ddl.pool_size", 1);
+            if (pool_size < 1)
+                throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
+                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
+        }
+
+        for (auto & server : *servers)
+            server.start();
 
         LOG_INFO(log, "Ready for connections.");
 
