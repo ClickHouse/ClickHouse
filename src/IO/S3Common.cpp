@@ -19,6 +19,7 @@
 
 #    if __clang__
 #    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wunknown-warning-option"
 #    pragma clang diagnostic ignored "-Wdocumentation"
 #    pragma clang diagnostic ignored "-Wsuggest-destructor-override"
 #    pragma clang diagnostic ignored "-Winconsistent-missing-destructor-override"
@@ -109,14 +110,12 @@ private:
 class AWSSTSAssumeRoleCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
 {
     static const int ACCOUNT_FOR_LATENCY = 60;
-    
+
 public:
     AWSSTSAssumeRoleCredentialsProvider(std::shared_ptr<Aws::STS::STSClient> sts_client_):
-        sts_client(std::move(sts_client_))
+        sts_client(std::move(sts_client_)),
+        session_name("aws-sdk-cpp-" + std::to_string(Aws::Utils::DateTime::CurrentTimeMillis()))
     {
-        std::ostringstream ss;
-        ss << "aws-sdk-cpp-" << Aws::Utils::DateTime::CurrentTimeMillis();
-        session_name = ss.str();
     }
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override
