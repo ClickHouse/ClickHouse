@@ -1759,6 +1759,54 @@ ClickHouse генерирует исключение
 
 -   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
 -   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
+
+## insert_shard_id {#insert_shard_id}
+
+Если не `0`, указывает, в какой шард [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы данные будут вставлены синхронно.
+
+Если значение настройки `insert_shard_id` указано неверно, сервер выдаст ошибку.
+
+Узнать количество шардов `shard_num` на кластере `requested_cluster` можно из конфигурации сервера, либо используя запрос:
+
+``` sql
+SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
+```
+
+Возможные значения:
+
+-   0 — выключено.
+-   Любое число от `1` до `shards_num` соответствующей [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+CREATE TABLE x AS system.numbers ENGINE = MergeTree ORDER BY number;
+CREATE TABLE x_dist AS x ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), x);
+INSERT INTO x_dist SELECT * FROM numbers(5) SETTINGS insert_shard_id = 1;
+SELECT * FROM x_dist ORDER BY number ASC;
+```
+
+Результат:
+
+``` text
+┌─number─┐
+│      0 │
+│      0 │
+│      1 │
+│      1 │
+│      2 │
+│      2 │
+│      3 │
+│      3 │
+│      4 │
+│      4 │
+└────────┘
+```
+
 ## validate_polygons {#validate_polygons}
 
 Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
@@ -2567,14 +2615,69 @@ SELECT * FROM test2;
 
 Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
 
+## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
+
+Включает или отключает возможность выполнять запрос `SELECT` к таблице на движке [File](../../engines/table-engines/special/file.md), не содержащей файл.
+
+Возможные значения:
+- 0 — запрос `SELECT` генерирует исключение.
+- 1 — запрос `SELECT` возвращает пустой результат.
+
+Значение по умолчанию: `0`.
+
+## engine_file_truncate_on_insert {#engine-file-truncate-on-insert}
+
+Включает или выключает удаление данных из таблицы до вставки в таблицу на движке [File](../../engines/table-engines/special/file.md).
+
+Возможные значения:
+- 0 — запрос `INSERT` добавляет данные в конец файла после существующих.
+- 1 — `INSERT` удаляет имеющиеся в файле данные и замещает их новыми.
+
+Значение по умолчанию: `0`. 
+
 ## allow_experimental_geo_types {#allow-experimental-geo-types}
 
 Разрешает использование экспериментальных типов данных для работы с [географическими структурами](../../sql-reference/data-types/geo.md).
 
 Возможные значения:
-
--   0 — Использование типов данных для работы с географическими структурами не поддерживается.
--   1 — Использование типов данных для работы с географическими структурами поддерживается.
+-   0 — использование типов данных для работы с географическими структурами не поддерживается.
+-   1 — использование типов данных для работы с географическими структурами поддерживается.
 
 Значение по умолчанию: `0`.
 
+## allow_experimental_live_view {#allow-experimental-live-view}
+
+Включает экспериментальную возможность использования [LIVE-представлений](../../sql-reference/statements/create/view.md#live-view).
+
+Возможные значения:
+- 0 — живые представления не поддерживаются.
+- 1 — живые представления поддерживаются.
+
+Значение по умолчанию: `0`.
+
+
+## live_view_heartbeat_interval {#live-view-heartbeat-interval}
+
+Задает интервал в секундах для периодической проверки существования [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view).
+
+Значение по умолчанию: `15`.
+
+## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
+
+Задает наибольшее число вставок, после которых запрос на формирование [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) исполняется снова.
+
+Значение по умолчанию: `64`.
+
+## temporary_live_view_timeout {#temporary-live-view-timeout}
+
+Задает время в секундах, после которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) удаляется.
+
+Значение по умолчанию: `5`.
+
+## periodic_live_view_refresh {#periodic-live-view-refresh}
+
+Задает время в секундах, по истечении которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) с установленным автообновлением обновляется.
+
+Значение по умолчанию: `60`.
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

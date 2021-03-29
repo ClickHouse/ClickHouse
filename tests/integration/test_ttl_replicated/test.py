@@ -396,6 +396,10 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     node_right.query("OPTIMIZE TABLE test_ttl_group_by FINAL")
     node_right.query("OPTIMIZE TABLE test_ttl_where FINAL")
 
+    node_left.query("SYSTEM SYNC REPLICA test_ttl_delete", timeout=20)
+    node_left.query("SYSTEM SYNC REPLICA test_ttl_group_by", timeout=20)
+    node_left.query("SYSTEM SYNC REPLICA test_ttl_where", timeout=20)
+
     assert node_left.query("SELECT id FROM test_ttl_delete ORDER BY id") == "2\n4\n"
     assert node_right.query("SELECT id FROM test_ttl_delete ORDER BY id") == "2\n4\n"
 
