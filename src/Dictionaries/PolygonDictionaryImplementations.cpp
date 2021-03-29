@@ -39,14 +39,14 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionarySimple::clone() const
             this->point_type);
 }
 
-bool PolygonDictionarySimple::find(const Point & point, size_t & id) const
+bool PolygonDictionarySimple::find(const Point & point, size_t & polygon_index) const
 {
     bool found = false;
     for (size_t i = 0; i < polygons.size(); ++i)
     {
         if (bg::covered_by(point, polygons[i]))
         {
-            id = i;
+            polygon_index = i;
             found = true;
             break;
         }
@@ -90,7 +90,7 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexEach::clone() con
             this->max_depth);
 }
 
-bool PolygonDictionaryIndexEach::find(const Point & point, size_t & id) const
+bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_index) const
 {
     const auto * cell = grid.find(point.x(), point.y());
     if (cell)
@@ -100,13 +100,13 @@ bool PolygonDictionaryIndexEach::find(const Point & point, size_t & id) const
             size_t unused;
             if (buckets[candidate].find(point, unused))
             {
-                id = candidate;
+                polygon_index = candidate;
                 return true;
             }
         }
         if (cell->first_covered != FinalCell::kNone)
         {
-            id = cell->first_covered;
+            polygon_index = cell->first_covered;
             return true;
         }
     }
@@ -142,19 +142,19 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexCell::clone() con
             this->max_depth);
 }
 
-bool PolygonDictionaryIndexCell::find(const Point & point, size_t & id) const
+bool PolygonDictionaryIndexCell::find(const Point & point, size_t & polygon_index) const
 {
     const auto * cell = index.find(point.x(), point.y());
     if (cell)
     {
-        if (!(cell->corresponding_ids).empty() && cell->index.find(point, id))
+        if (!(cell->corresponding_ids).empty() && cell->index.find(point, polygon_index))
         {
-            id = cell->corresponding_ids[id];
+            polygon_index = cell->corresponding_ids[polygon_index];
             return true;
         }
         if (cell->first_covered != FinalCellWithSlabs::kNone)
         {
-            id = cell->first_covered;
+            polygon_index = cell->first_covered;
             return true;
         }
     }

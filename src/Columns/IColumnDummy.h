@@ -4,6 +4,7 @@
 #include <Common/PODArray.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsCommon.h>
+#include <Core/Field.h>
 
 
 namespace DB

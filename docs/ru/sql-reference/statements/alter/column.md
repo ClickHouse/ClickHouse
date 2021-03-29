@@ -13,6 +13,7 @@ toc_title: "Манипуляции со столбцами"
 -   [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
 -   [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
 -   [MODIFY COLUMN REMOVE](#modify-remove) — удаляет какое-либо из свойств столбца.
+-   [RENAME COLUMN](#alter_rename-column) — переименовывает существующий столбец.
 
 Подробное описание для каждого действия приведено ниже.
 
@@ -157,6 +158,22 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ## Смотрите также
 
 - [REMOVE TTL](ttl.md).
+
+## RENAME COLUMN {#alter_rename-column}
+
+Переименовывает существующий столбец.
+
+Синтаксис:
+
+```sql
+ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name
+```
+
+**Пример**
+
+```sql
+ALTER TABLE table_with_ttl RENAME COLUMN column_ttl TO column_ttl_new;
+```
 
 ## Ограничения запроса ALTER {#ogranicheniia-zaprosa-alter}
 
