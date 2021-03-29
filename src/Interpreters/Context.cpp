@@ -55,6 +55,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
+#include <IO/MMappedFileCache.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -341,6 +342,7 @@ struct ContextShared
     AccessControlManager access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
+    mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
@@ -1440,19 +1442,41 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
     shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
 }
 
-
 MarkCachePtr Context::getMarkCache() const
 {
     auto lock = getLock();
     return shared->mark_cache;
 }
 
-
 void Context::dropMarkCache() const
 {
     auto lock = getLock();
     if (shared->mark_cache)
         shared->mark_cache->reset();
+}
+
+
+void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
+{
+    auto lock = getLock();
+
+    if (shared->mmap_cache)
+        throw Exception("Mapped file cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->mmap_cache = std::make_shared<MMappedFileCache>(cache_size_in_num_entries);
+}
+
+MMappedFileCachePtr Context::getMMappedFileCache() const
+{
+    auto lock = getLock();
+    return shared->mmap_cache;
+}
+
+void Context::dropMMappedFileCache() const
+{
+    auto lock = getLock();
+    if (shared->mmap_cache)
+        shared->mmap_cache->reset();
 }
 
 
@@ -1465,6 +1489,9 @@ void Context::dropCaches() const
 
     if (shared->mark_cache)
         shared->mark_cache->reset();
+
+    if (shared->mmap_cache)
+        shared->mmap_cache->reset();
 }
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
