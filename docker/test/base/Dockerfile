@@ -4,8 +4,9 @@ FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
 
 RUN apt-get update \
-    && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
+    && apt-get install apt-utils ca-certificates lsb-release wget gnupg apt-transport-https \
         --yes --no-install-recommends --verbose-versions \
+    && echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
     && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
     && wget -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
@@ -31,7 +32,8 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
-RUN apt-get update \
+RUN echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
+    && apt-get update \
     && apt-get install \
         clang-${LLVM_VERSION} \
         debhelper \
@@ -58,7 +60,7 @@ RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/
 # Some python2 packages deprecated in ubuntu 20.04, so install them using pip
 RUN add-apt-repository universe \
     && apt-get install python2 --yes --no-install-recommends \
-    && curl "https://bootstrap.pypa.io/2.7/get-pip.py" --output get-pip.py \
+    && curl "https://bootstrap.pypa.io/pip/2.7/get-pip.py" --output get-pip.py \
     && python2 get-pip.py \
     && pip install requests termcolor
 
