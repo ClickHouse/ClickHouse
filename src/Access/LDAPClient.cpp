@@ -313,7 +313,7 @@ void LDAPClient::openConnection()
             {
                 const auto user_dn_search_results = search(*params.user_dn_detection);
 
-                if (user_dn_search_results.size() == 0)
+                if (user_dn_search_results.empty())
                     throw Exception("Failed to detect user DN: empty search results", ErrorCodes::LDAP_ERROR);
 
                 if (user_dn_search_results.size() > 1)

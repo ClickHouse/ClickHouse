@@ -99,7 +99,10 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     if (has_user_dn_detection)
     {
         if (!params.user_dn_detection)
-            params.user_dn_detection = { .attribute = "dn" };
+        {
+            params.user_dn_detection.emplace();
+            params.user_dn_detection->attribute = "dn";
+        }
 
         parseLDAPSearchParams(*params.user_dn_detection, config, ldap_server_config + ".user_dn_detection");
     }
