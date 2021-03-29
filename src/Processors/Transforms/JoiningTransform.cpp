@@ -38,7 +38,7 @@ void JoiningTransform::transform(Chunk & chunk)
     if (on_totals)
     {
         /// We have to make chunk empty before return
-        /// In case of using `arrayJoin` we can get more or less columns than one
+        /// In case of using `arrayJoin` we can get more or less rows than one
         auto cols = chunk.detachColumns();
         for (auto & col : cols)
             col = col->cloneResized(1);
