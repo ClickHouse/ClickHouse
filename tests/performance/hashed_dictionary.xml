@@ -57,39 +57,57 @@
         INSERT INTO simple_key_hashed_dictionary_source_table
         SELECT number, number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
-        LIMIT 100000;
+        LIMIT 5000000;
     </fill_query>
 
     <fill_query>
         INSERT INTO complex_key_hashed_dictionary_source_table
         SELECT number, toString(number), number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
-        LIMIT 100000;
+        LIMIT 5000000;
     </fill_query>
 
-    <query>SELECT dictGet('default.simple_key_hashed_dictionary', 'value_int', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.simple_key_hashed_dictionary', 'value_string', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.simple_key_hashed_dictionary', 'value_decimal', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.simple_key_hashed_dictionary', 'value_string_nullable', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictHas('default.simple_key_hashed_dictionary', number) FROM system.numbers LIMIT 75000;</query>
+    <substitutions>
+        <substitution>
+            <name>column_name</name>
+            <values>
+                <value>'value_int'</value>
+                <value>'value_string'</value>
+                <value>'value_decimal'</value>
+                <value>'value_string_nullable'</value>
+            </values>
+        </substitution>
 
-    <query>SELECT dictGet('default.simple_key_hashed_dictionary', 'value_int', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.simple_key_hashed_dictionary', 'value_string', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.simple_key_hashed_dictionary', 'value_decimal', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.simple_key_hashed_dictionary', 'value_string_nullable', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictHas('default.simple_key_hashed_dictionary', number) FROM system.numbers LIMIT 150000;</query>
+        <substitution>
+            <name>elements_count</name>
+            <values>
+                <value>2500000</value>
+                <value>5000000</value>
+                <value>7500000</value>
+                <value>10000000</value>
+            </values>
+        </substitution>
+    </substitutions>
 
-    <query>SELECT dictGet('default.complex_key_hashed_dictionary', 'value_int', (number, toString(number))) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.complex_key_hashed_dictionary', 'value_string', (number, toString(number))) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.complex_key_hashed_dictionary', 'value_decimal', (number, toString(number))) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.complex_key_hashed_dictionary', 'value_string_nullable', (number, toString(number))) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictHas('default.complex_key_hashed_dictionary', (number, toString(number))) FROM system.numbers LIMIT 75000;</query>
+    <query>
+        SELECT dictGet('default.simple_key_hashed_dictionary', {column_name}, number)
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
+    <query>
+        SELECT dictHas('default.simple_key_hashed_dictionary', number)
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
 
-    <query>SELECT dictGet('default.complex_key_hashed_dictionary', 'value_int', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.complex_key_hashed_dictionary', 'value_string', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.complex_key_hashed_dictionary', 'value_decimal', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.complex_key_hashed_dictionary', 'value_string_nullable', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictHas('default.complex_key_hashed_dictionary', (number, toString(number))) FROM system.numbers LIMIT 150000;</query>
+    <query>
+        SELECT dictGet('default.complex_key_hashed_dictionary', {column_name}, (number, toString(number)))
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
 
     <drop_query>DROP TABLE IF EXISTS simple_key_hashed_dictionary_source_table;</drop_query>
     <drop_query>DROP TABLE IF EXISTS complex_key_hashed_dictionary_source_table;</drop_query>
