@@ -123,7 +123,7 @@ namespace DB
     class FunctionIsIPAddressContainedIn : public IFunction
     {
     public:
-        static constexpr auto name = "isIPAddressContainedIn";
+        static constexpr auto name = "isIPAddressInRange";
         String getName() const override { return name; }
         static FunctionPtr create(const Context &) { return std::make_shared<FunctionIsIPAddressContainedIn>(); }
 
