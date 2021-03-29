@@ -18,6 +18,7 @@
                 <port>9000</port>
             </replica>
         </shard>
-    </cluster_simple>s
+    </cluster_simple>
 
     </remote_servers>
+</yandex>
