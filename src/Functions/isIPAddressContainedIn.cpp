@@ -88,17 +88,17 @@ IPAddressCIDR parseIPWithCIDR(const StringRef cidr_str)
     std::string_view addr_str = cidr_str_view.substr(0, pos_slash);
     IPAddressVariant addr(StringRef{addr_str.data(), addr_str.size()});
 
-    UInt8 prefix = 0;
+    uint8_t prefix = 0;
     auto prefix_str = cidr_str_view.substr(pos_slash+1);
 
     const auto * prefix_str_end = prefix_str.data() + prefix_str.size();
     auto [parse_end, parse_error] = std::from_chars(prefix_str.data(), prefix_str_end, prefix);
-    UInt8 max_prefix = (addr.asV6() ? IPV6_BINARY_LENGTH : IPV4_BINARY_LENGTH) * 8;
+    uint8_t max_prefix = (addr.asV6() ? IPV6_BINARY_LENGTH : IPV4_BINARY_LENGTH) * 8;
     bool has_error = parse_error != std::errc() || parse_end != prefix_str_end || prefix > max_prefix;
     if (has_error)
         throw DB::Exception("The CIDR has a malformed prefix bits: " + std::string(cidr_str), DB::ErrorCodes::CANNOT_PARSE_TEXT);
 
-    return {addr, prefix};
+    return {addr, static_cast<UInt8>(prefix)};
 }
 
 inline bool isAddressInRange(const IPAddressVariant & address, const IPAddressCIDR & cidr)
@@ -180,10 +180,10 @@ namespace DB
         }
 
         /// Both columns are constant.
-        ColumnPtr executeImpl(
+        static ColumnPtr executeImpl(
             const ColumnConst & col_addr_const,
             const ColumnConst & col_cidr_const,
-            size_t input_rows_count) const
+            size_t input_rows_count)
         {
             const auto & col_addr = col_addr_const.getDataColumn();
             const auto & col_cidr = col_cidr_const.getDataColumn();
@@ -200,7 +200,7 @@ namespace DB
         }
 
         /// Address is constant.
-        ColumnPtr executeImpl(const ColumnConst & col_addr_const, const IColumn & col_cidr, size_t input_rows_count) const
+        static ColumnPtr executeImpl(const ColumnConst & col_addr_const, const IColumn & col_cidr, size_t input_rows_count)
         {
             const auto & col_addr = col_addr_const.getDataColumn();
 
@@ -218,7 +218,7 @@ namespace DB
         }
 
         /// CIDR is constant.
-        ColumnPtr executeImpl(const IColumn & col_addr, const ColumnConst & col_cidr_const, size_t input_rows_count) const
+        static ColumnPtr executeImpl(const IColumn & col_addr, const ColumnConst & col_cidr_const, size_t input_rows_count)
         {
             const auto & col_cidr = col_cidr_const.getDataColumn();
 
@@ -235,7 +235,7 @@ namespace DB
         }
 
         /// Neither are constant.
-        ColumnPtr executeImpl(const IColumn & col_addr, const IColumn & col_cidr, size_t input_rows_count) const
+        static ColumnPtr executeImpl(const IColumn & col_addr, const IColumn & col_cidr, size_t input_rows_count)
         {
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();

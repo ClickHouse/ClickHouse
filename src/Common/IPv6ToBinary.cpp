@@ -110,7 +110,7 @@ bool matchIPv6Subnet(const uint8_t * addr, const uint8_t * cidr_addr, UInt8 pref
     size_t i = 0;
     for (; prefix >= 8; ++i, prefix -= 8)
     {
-        if (target[i] != cidr_addr[i])
+        if (addr[i] != cidr_addr[i])
             return false;
     }
     if (prefix == 0)
