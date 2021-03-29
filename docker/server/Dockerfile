@@ -4,15 +4,17 @@ ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
 ARG version=21.4.1.*
 ARG gosu_ver=1.10
 
-# set non-empty deb_location url tp create a docker image
+# set non-empty deb_location_url url to create a docker image
 # from debs created by CI build, for example:
-# docker build . --network host --build-arg version="21.4.1.6282" --build-arg deb_location="https://clickhouse-builds.s3.yandex.net/21852/069cfbff388b3d478d1a16dc7060b48073f5d522/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_deb/" -t filimonovq/clickhouse-server:pr21852
-ARG deb_location=""
+# docker build . --network host --build-arg version="21.4.1.6282" --build-arg deb_location_url="https://clickhouse-builds.s3.yandex.net/21852/069cfbff388b3d478d1a16dc7060b48073f5d522/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_deb/" -t filimonovq/clickhouse-server:pr21852
+ARG deb_location_url=""
 
-# set non-empty single_binary_location to create docker image
+# set non-empty single_binary_location_url to create docker image
 # from a single binary url (useful for non-standard builds - with sanitizers, for arm64).
+# for example (run on aarch64 server):
+# docker build . --network host --build-arg single_binary_location_url="https://builds.clickhouse.tech/master/aarch64/clickhouse" -t altinity/clickhouse-server:master-testing-arm
 # note: clickhouse-odbc-bridge is not supported there.
-ARG single_binary_location=""
+ARG single_binary_location_url=""
 
 # see https://github.com/moby/moby/issues/4032#issuecomment-192327844
 ARG DEBIAN_FRONTEND=noninteractive
@@ -38,19 +40,19 @@ RUN groupadd -r clickhouse --gid=101 \
     && mkdir -p /etc/apt/sources.list.d \
     && apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4 \
     && echo $repository > /etc/apt/sources.list.d/clickhouse.list \
-    && if [ -n "$deb_location" ]; then \
-            echo "installing from custom url with deb packages: $deb_location" \
+    && if [ -n "$deb_location_url" ]; then \
+            echo "installing from custom url with deb packages: $deb_location_url" \
             rm -rf /tmp/clickhouse_debs \
             && mkdir -p /tmp/clickhouse_debs \
-            && wget --progress=bar:force:noscroll "${deb_location}/clickhouse-common-static_${version}_amd64.deb" -P /tmp/clickhouse_debs \
-            && wget --progress=bar:force:noscroll "${deb_location}/clickhouse-client_${version}_all.deb" -P /tmp/clickhouse_debs \
-            && wget --progress=bar:force:noscroll "${deb_location}/clickhouse-server_${version}_all.deb" -P /tmp/clickhouse_debs \
+            && wget --progress=bar:force:noscroll "${deb_location_url}/clickhouse-common-static_${version}_amd64.deb" -P /tmp/clickhouse_debs \
+            && wget --progress=bar:force:noscroll "${deb_location_url}/clickhouse-client_${version}_all.deb" -P /tmp/clickhouse_debs \
+            && wget --progress=bar:force:noscroll "${deb_location_url}/clickhouse-server_${version}_all.deb" -P /tmp/clickhouse_debs \
             && dpkg -i /tmp/clickhouse_debs/*.deb ; \
-       elif [ -n "$single_binary_location" ]; then \
-            echo "installing from single binary: $single_binary_location" \
+       elif [ -n "$single_binary_location_url" ]; then \
+            echo "installing from single binary url: $single_binary_location_url" \
             && rm -rf /tmp/clickhouse_binary \
             && mkdir -p /tmp/clickhouse_binary \
-            && wget --progress=bar:force:noscroll "$single_binary_location" -O /tmp/clickhouse_binary/clickhouse \
+            && wget --progress=bar:force:noscroll "$single_binary_location_url" -O /tmp/clickhouse_binary/clickhouse \
             && chmod +x /tmp/clickhouse_binary/clickhouse \
             && /tmp/clickhouse_binary/clickhouse install --user "clickhouse" --group "clickhouse" ; \
        else \
