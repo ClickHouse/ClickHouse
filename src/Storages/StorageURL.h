@@ -19,7 +19,7 @@ struct ConnectionTimeouts;
  * HTTP POST when insert is called. In POST request the data is send
  * using Chunked transfer encoding, so server have to support it.
  */
-class IStorageURLBase : public IStorage, protected WithContext
+class IStorageURLBase : public IStorage
 {
 public:
     Pipe read(
@@ -85,7 +85,7 @@ public:
         const Block & sample_block_,
         ContextPtr context,
         const ConnectionTimeouts & timeouts,
-        const CompressionMethod compression_method);
+        CompressionMethod compression_method);
 
     Block getHeader() const override
     {
@@ -113,11 +113,7 @@ public:
             const ColumnsDescription & columns_,
             const ConstraintsDescription & constraints_,
             ContextPtr context_,
-            const String & compression_method_)
-        : IStorageURLBase(uri_, context_, table_id_, format_name_,
-            format_settings_, columns_, constraints_, compression_method_)
-    {
-    }
+            const String & compression_method_);
 
     String getName() const override
     {

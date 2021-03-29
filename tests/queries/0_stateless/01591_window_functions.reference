@@ -920,6 +920,34 @@ FROM numbers(2)
 ;
 1	0
 1	1
+-- optimize_read_in_order conflicts with sorting for window functions, must
+-- be disabled.
+create table window_mt engine MergeTree order by number
+    as select number, mod(number, 3) p from numbers(100);
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 0;
+0	34
+1	33
+2	33
+3	34
+4	33
+5	33
+6	34
+7	33
+8	33
+9	34
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 1;
+0	34
+1	33
+2	33
+3	34
+4	33
+5	33
+6	34
+7	33
+8	33
+9	34
 -- some true window functions -- rank and friends
 select number, p, o,
     count(*) over w,
@@ -974,6 +1002,32 @@ from numbers(5);
 1	3
 2	4
 3	\N
+-- variants of lag/lead that respect the frame
+select number, p, pp,
+    lagInFrame(number, number - pp, number * 11) over w as lag,
+    leadInFrame(number, number - pp, number * 11) over w as lead
+from (select number, intDiv(number, 5) p, p * 5 pp from numbers(16))
+window w as (partition by p order by number
+    rows between unbounded preceding and unbounded following)
+order by number
+settings max_block_size = 3;
+;
+0	0	0	0	0
+1	0	0	0	2
+2	0	0	0	4
+3	0	0	0	33
+4	0	0	0	44
+5	1	5	5	5
+6	1	5	5	7
+7	1	5	5	9
+8	1	5	5	88
+9	1	5	5	99
+10	2	10	10	10
+11	2	10	10	12
+12	2	10	10	14
+13	2	10	10	143
+14	2	10	10	154
+15	3	15	15	15
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,
@@ -993,3 +1047,21 @@ order by number
 7	6	8
 8	7	9
 9	8	9
+-- In this case, we had a problem with PartialSortingTransform returning zero-row
+-- chunks for input chunks w/o columns.
+select count() over () from numbers(4) where number < 2;
+2
+2
+-- floating point RANGE frame
+select
+    count(*) over (order by (toFloat32(number) as f32) range 5. preceding),
+    count(*) over (order by (toFloat64(number) as f64) range 5. preceding)
+from numbers(7)
+;
+1	1
+2	2
+3	3
+4	4
+5	5
+6	6
+6	6

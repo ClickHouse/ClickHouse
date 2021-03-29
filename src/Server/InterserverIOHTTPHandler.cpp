@@ -107,6 +107,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         }
         catch (...)
         {
+            tryLogCurrentException(log);
             out.finalize();
         }
     };
@@ -116,6 +117,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         if (auto [message, success] = checkAuthentication(request); success)
         {
             processQuery(request, response, used_output);
+            used_output.out->finalize();
             LOG_DEBUG(log, "Done processing query");
         }
         else

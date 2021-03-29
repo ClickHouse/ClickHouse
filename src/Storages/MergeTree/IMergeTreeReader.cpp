@@ -190,7 +190,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                 additional_columns, columns, metadata_snapshot->getColumns(), storage.getContext());
         if (dag)
         {
-            auto actions = std::make_shared<ExpressionActions>(std::move(dag));
+            auto actions = std::make_shared<
+                ExpressionActions>(std::move(dag),
+                ExpressionActionsSettings::fromSettings(storage.getContext()->getSettingsRef()));
             actions->execute(additional_columns);
         }
 

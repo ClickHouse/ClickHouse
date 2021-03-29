@@ -6,7 +6,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <sparsehash/dense_hash_map>
 
 
 namespace DB

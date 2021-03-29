@@ -14,6 +14,8 @@
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/printPipeline.h>
 
 namespace DB
@@ -250,7 +252,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         interpreter.buildQueryPlan(plan);
 
         if (settings.optimize)
-            plan.optimize(QueryPlanOptimizationSettings(getContext()->getSettingsRef()));
+            plan.optimize(QueryPlanOptimizationSettings::fromContext(getContext()));
 
         plan.explainPlan(buf, settings.query_plan_options);
     }
@@ -264,7 +266,9 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
         interpreter.buildQueryPlan(plan);
-        auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(getContext()->getSettingsRef()));
+        auto pipeline = plan.buildQueryPipeline(
+            QueryPlanOptimizationSettings::fromContext(getContext()),
+            BuildQueryPipelineSettings::fromContext(getContext()));
 
         if (settings.graph)
         {

@@ -75,17 +75,18 @@ namespace ErrorCodes
 class FunctionDictHelper : WithContext
 {
 public:
-    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_), external_loader(context_->getExternalDictionariesLoader()) {}
+    explicit FunctionDictHelper(ContextPtr context_) : WithContext(context_) {}
 
     std::shared_ptr<const IDictionaryBase> getDictionary(const String & dictionary_name)
     {
-        String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
-        auto dict = external_loader.getDictionary(resolved_name);
+        auto dict = getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, getContext());
+
         if (!access_checked)
         {
             getContext()->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
+
         return dict;
     }
 
@@ -117,15 +118,10 @@ public:
 
     DictionaryStructure getDictionaryStructure(const String & dictionary_name) const
     {
-        String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dictionary_name);
-        auto load_result = external_loader.getLoadResult(resolved_name);
-        if (!load_result.config)
-            throw Exception("Dictionary " + backQuote(dictionary_name) + " not found", ErrorCodes::BAD_ARGUMENTS);
-        return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
+        return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
     }
 
 private:
-    const ExternalDictionariesLoader & external_loader;
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
     std::atomic<bool> access_checked = false;
 
@@ -295,10 +291,12 @@ public:
 
         DataTypes types;
 
+        auto dictionary_structure = helper.getDictionaryStructure(dictionary_name);
+
         for (auto & attribute_name : attribute_names)
         {
             /// We're extracting the return type from the dictionary's config, without loading the dictionary.
-            auto attribute = helper.getDictionaryStructure(dictionary_name).getAttribute(attribute_name);
+            auto attribute = dictionary_structure.getAttribute(attribute_name);
             types.emplace_back(attribute.type);
         }
 

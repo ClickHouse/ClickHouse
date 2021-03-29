@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <list>
 #include <memory>
@@ -27,6 +26,9 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 class Pipe;
 
+struct QueryPlanOptimizationSettings;
+struct BuildQueryPipelineSettings;
+
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
 /// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimizations.
@@ -47,10 +49,14 @@ public:
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
-    QueryPipelinePtr buildQueryPipeline(const QueryPlanOptimizationSettings & optimization_settings);
+    QueryPipelinePtr buildQueryPipeline(
+        const QueryPlanOptimizationSettings & optimization_settings,
+        const BuildQueryPipelineSettings & build_pipeline_settings);
 
     /// If initialized, build pipeline and convert to pipe. Otherwise, return empty pipe.
-    Pipe convertToPipe(const QueryPlanOptimizationSettings & optimization_settings);
+    Pipe convertToPipe(
+        const QueryPlanOptimizationSettings & optimization_settings,
+        const BuildQueryPipelineSettings & build_pipeline_settings);
 
     struct ExplainPlanOptions
     {

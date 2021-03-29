@@ -39,6 +39,9 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
@@ -4050,7 +4053,9 @@ Pipe StorageReplicatedMergeTree::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(local_context->getSettingsRef()));
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(local_context),
+        BuildQueryPipelineSettings::fromContext(local_context));
 }
 
 
@@ -4927,7 +4932,7 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
 
     const auto & stop_waiting = [&]()
     {
-        bool stop_waiting_itself = waiting_itself && is_dropped;
+        bool stop_waiting_itself = waiting_itself && (partial_shutdown_called || is_dropped);
         bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(table_zookeeper_path + "/replicas/" + replica + "/is_active");
         return stop_waiting_itself || stop_waiting_non_active;
     };
@@ -5873,18 +5878,18 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 }
 
 void StorageReplicatedMergeTree::replacePartitionFrom(
-    const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
+    const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context)
 {
     /// First argument is true, because we possibly will add new data to current table.
-    auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
-    auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto lock1 = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
+    auto lock2 = source_table->lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
 
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     Stopwatch watch;
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
-    String partition_id = getPartitionIDFromQuery(partition, local_context);
+    String partition_id = getPartitionIDFromQuery(partition, query_context);
 
     DataPartsVector src_all_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
     DataPartsVector src_parts;
@@ -6010,7 +6015,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             }
         }
 
-        if (auto txn = local_context->getZooKeeperMetadataTransaction())
+        if (auto txn = query_context->getZooKeeperMetadataTransaction())
             txn->moveOpsTo(ops);
 
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/log", "", -1));  /// Just update version
@@ -6056,7 +6061,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     cleanup_thread.wakeup();
 
     /// If necessary, wait until the operation is performed on all replicas.
-    if (local_context->getSettingsRef().replication_alter_partitions_sync > 1)
+    if (query_context->getSettingsRef().replication_alter_partitions_sync > 1)
     {
         lock2.reset();
         lock1.reset();
