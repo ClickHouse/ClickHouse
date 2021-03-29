@@ -8,14 +8,14 @@ Possible value: ...
 
 Default value: ...
 
-Settings: (Optional)
+**Settings** (Optional)
 
 If the section contains several settings, list them here. Specify possible values and default values:
 
 -   setting_1 — Description.
 -   setting_2 — Description.
 
-**Example:**
+**Example**
 
 ```xml
 <server_setting_name>

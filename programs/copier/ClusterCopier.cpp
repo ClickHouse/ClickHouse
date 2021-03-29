@@ -106,7 +106,7 @@ void ClusterCopier::discoverShardPartitions(const ConnectionTimeouts & timeouts,
 
         try
         {
-            type->deserializeAsTextQuoted(*column_dummy, rb, FormatSettings());
+            type->getDefaultSerialization()->deserializeTextQuoted(*column_dummy, rb, FormatSettings());
         }
         catch (Exception & e)
         {
@@ -315,9 +315,6 @@ void ClusterCopier::process(const ConnectionTimeouts & timeouts)
                 break;
             }
         }
-
-        /// Delete helping tables in both cases (whole table is done or not)
-        dropHelpingTables(task_table);
 
         if (!table_is_done)
         {
@@ -1044,6 +1041,11 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
     {
         LOG_INFO(log, "Table {} is not processed yet.Copied {} of {}, will retry", task_table.table_id, finished_partitions, required_partitions);
     }
+    else
+    {
+        /// Delete helping tables in case that whole table is done
+        dropHelpingTables(task_table);
+    }
 
     return table_is_done;
 }
@@ -1717,7 +1719,7 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
         for (size_t i = 0; i < column.column->size(); ++i)
         {
             WriteBufferFromOwnString wb;
-            column.type->serializeAsTextQuoted(*column.column, i, wb, FormatSettings());
+            column.type->getDefaultSerialization()->serializeTextQuoted(*column.column, i, wb, FormatSettings());
             res.emplace(wb.str());
         }
     }

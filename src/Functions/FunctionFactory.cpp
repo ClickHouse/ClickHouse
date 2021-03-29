@@ -21,6 +21,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+const String & getFunctionCanonicalNameIfAny(const String & name)
+{
+    return FunctionFactory::instance().getCanonicalNameIfAny(name);
+}
 
 void FunctionFactory::registerFunction(const
     std::string & name,
@@ -36,10 +40,13 @@ void FunctionFactory::registerFunction(const
         throw Exception("FunctionFactory: the function name '" + name + "' is already registered as alias",
                         ErrorCodes::LOGICAL_ERROR);
 
-    if (case_sensitiveness == CaseInsensitive
-        && !case_insensitive_functions.emplace(function_name_lowercase, creator).second)
-        throw Exception("FunctionFactory: the case insensitive function name '" + name + "' is not unique",
-                        ErrorCodes::LOGICAL_ERROR);
+    if (case_sensitiveness == CaseInsensitive)
+    {
+        if (!case_insensitive_functions.emplace(function_name_lowercase, creator).second)
+            throw Exception("FunctionFactory: the case insensitive function name '" + name + "' is not unique",
+                ErrorCodes::LOGICAL_ERROR);
+        case_insensitive_name_mapping[function_name_lowercase] = name;
+    }
 }
 
 
@@ -92,7 +99,8 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
         res = it->second(context);
     else
     {
-        it = case_insensitive_functions.find(Poco::toLower(name));
+        name = Poco::toLower(name);
+        it = case_insensitive_functions.find(name);
         if (case_insensitive_functions.end() != it)
             res = it->second(context);
     }

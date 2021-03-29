@@ -8,7 +8,7 @@ CREATE TABLE nested
     col2 Nested(a UInt32, n Nested(s String, b UInt32)),
     col3 Nested(n1 Nested(a UInt32, b UInt32), n2 Nested(s String, t String))
 )
-ENGINE = MergeTree 
+ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0;
 
@@ -55,7 +55,7 @@ CREATE TABLE nested
     id UInt32,
     col1 Nested(a UInt32, n Nested(s String, b UInt32))
 )
-ENGINE = MergeTree 
+ENGINE = MergeTree
 ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0;
 
@@ -64,3 +64,5 @@ SELECT id % 10, sum(length(col1)), sumArray(arrayMap(x -> length(x), col1.n.b)) 
 
 SELECT arraySum(col1.a), arrayMap(x -> x * x * 2, col1.a) FROM nested ORDER BY id LIMIT 5;
 SELECT untuple(arrayJoin(arrayJoin(col1.n))) FROM nested ORDER BY id LIMIT 10 OFFSET 10;
+
+DROP TABLE nested;

@@ -39,6 +39,7 @@ SRCS(
     CRC.cpp
     FunctionFQDN.cpp
     FunctionFactory.cpp
+    FunctionFile.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
     FunctionsAES.cpp
@@ -209,6 +210,7 @@ SRCS(
     cbrt.cpp
     coalesce.cpp
     concat.cpp
+    connectionID.cpp
     convertCharset.cpp
     cos.cpp
     cosh.cpp
@@ -245,6 +247,7 @@ SRCS(
     extractAllGroupsHorizontal.cpp
     extractAllGroupsVertical.cpp
     extractGroups.cpp
+    extractTextFromHTML.cpp
     extractTimeZoneFromFunctionArguments.cpp
     filesystem.cpp
     finalizeAggregation.cpp
@@ -374,6 +377,15 @@ SRCS(
     plus.cpp
     pointInEllipses.cpp
     pointInPolygon.cpp
+    polygonArea.cpp
+    polygonConvexHull.cpp
+    polygonPerimeter.cpp
+    polygonsDistance.cpp
+    polygonsEquals.cpp
+    polygonsIntersection.cpp
+    polygonsSymDifference.cpp
+    polygonsUnion.cpp
+    polygonsWithin.cpp
     position.cpp
     positionCaseInsensitive.cpp
     positionCaseInsensitiveUTF8.cpp
@@ -386,6 +398,7 @@ SRCS(
     randomPrintableASCII.cpp
     randomString.cpp
     randomStringUTF8.cpp
+    readWkt.cpp
     regexpQuoteMeta.cpp
     registerFunctions.cpp
     registerFunctionsArithmetic.cpp
@@ -423,6 +436,7 @@ SRCS(
     rowNumberInAllBlocks.cpp
     rowNumberInBlock.cpp
     runningAccumulate.cpp
+    runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
     sigmoid.cpp
@@ -443,6 +457,7 @@ SRCS(
     subtractSeconds.cpp
     subtractWeeks.cpp
     subtractYears.cpp
+    svg.cpp
     tan.cpp
     tanh.cpp
     tcpPort.cpp
@@ -452,6 +467,7 @@ SRCS(
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp
+    timezoneOf.cpp
     timezoneOffset.cpp
     toColumnTypeName.cpp
     toCustomWeek.cpp
@@ -491,7 +507,7 @@ SRCS(
     toStartOfTenMinutes.cpp
     toStartOfYear.cpp
     toTime.cpp
-    toTimeZone.cpp
+    toTimezone.cpp
     toTypeName.cpp
     toUnixTimestamp64Micro.cpp
     toUnixTimestamp64Milli.cpp
@@ -521,6 +537,7 @@ SRCS(
     visitParamExtractString.cpp
     visitParamExtractUInt.cpp
     visitParamHas.cpp
+    wkt.cpp
     yandexConsistentHash.cpp
     yesterday.cpp
 

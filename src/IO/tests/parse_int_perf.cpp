@@ -62,7 +62,6 @@ int main(int argc, char ** argv)
         {
             DB::WriteBufferFromVector wb(formatted);
         //    DB::CompressedWriteBuffer wb2(wb1);
-        //    DB::AsynchronousWriteBuffer wb(wb2);
             Stopwatch watch;
 
             UInt64 tsc = rdtsc();

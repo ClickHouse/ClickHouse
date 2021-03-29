@@ -395,7 +395,7 @@ void DatabaseConnectionMySQL::loadStoredObjects(Context &, bool, bool /*force_at
     }
 }
 
-void DatabaseConnectionMySQL::detachTablePermanently(const String & table_name)
+void DatabaseConnectionMySQL::detachTablePermanently(const Context &, const String & table_name)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -429,9 +429,9 @@ void DatabaseConnectionMySQL::detachTablePermanently(const String & table_name)
     table_iter->second.second->is_dropped = true;
 }
 
-void DatabaseConnectionMySQL::dropTable(const Context &, const String & table_name, bool /*no_delay*/)
+void DatabaseConnectionMySQL::dropTable(const Context & context, const String & table_name, bool /*no_delay*/)
 {
-    detachTablePermanently(table_name);
+    detachTablePermanently(context, table_name);
 }
 
 DatabaseConnectionMySQL::~DatabaseConnectionMySQL()

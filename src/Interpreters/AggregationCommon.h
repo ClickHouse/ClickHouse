@@ -15,10 +15,9 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 
-
-template <>
-struct DefaultHash<StringRef> : public StringRefHash {};
-
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
+#include <tmmintrin.h>
+#endif
 
 namespace DB
 {
@@ -66,6 +65,57 @@ constexpr auto getBitmapSize()
 
 }
 
+template<typename T, size_t step>
+void fillFixedBatch(size_t num_rows, const T * source, T * dest)
+{
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        *dest = *source;
+        ++source;
+        dest += step;
+    }
+}
+
+/// Move keys of size T into binary blob, starting from offset.
+/// It is assumed that offset is aligned to sizeof(T).
+/// Example: sizeof(key) = 16, sizeof(T) = 4, offset = 8
+/// out[0] : [--------****----]
+/// out[1] : [--------****----]
+/// ...
+template<typename T, typename Key>
+void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<Key> & out, size_t & offset)
+{
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        if (key_sizes[i] == sizeof(T))
+        {
+            const auto * column = key_columns[i];
+            size_t num_rows = column->size();
+            out.resize_fill(num_rows);
+
+            /// Note: here we violate strict aliasing.
+            /// It should be ok as log as we do not reffer to any value from `out` before filling.
+            const char * source = static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<sizeof(T)>();
+            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
+            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
+            offset += sizeof(T);
+        }
+    }
+}
+
+/// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
+/// binary blob. Keys are placed starting from the longest one.
+template <typename T>
+void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<T> & out)
+{
+    size_t offset = 0;
+    fillFixedBatch<UInt128>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt64>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt32>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
+    fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
+}
+
 template <typename T>
 using KeysNullMap = std::array<UInt8, getBitmapSize<T>()>;
 
@@ -77,12 +127,8 @@ static inline T ALWAYS_INLINE packFixed(
     const ColumnRawPtrs * low_cardinality_positions [[maybe_unused]] = nullptr,
     const Sizes * low_cardinality_sizes [[maybe_unused]] = nullptr)
 {
-    union
-    {
-        T key;
-        char bytes[sizeof(key)] = {};
-    };
-
+    T key{};
+    char * bytes = reinterpret_cast<char *>(&key);
     size_t offset = 0;
 
     for (size_t j = 0; j < keys_size; ++j)
@@ -258,5 +304,37 @@ static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous(
     return {begin, sum_size};
 }
 
+
+/** Pack elements with shuffle instruction.
+  * See the explanation in ColumnsHashing.h
+  */
+#if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
+template <typename T>
+static T inline packFixedShuffle(
+    const char * __restrict * __restrict srcs,
+    size_t num_srcs,
+    const size_t * __restrict elem_sizes,
+    size_t idx,
+    const uint8_t * __restrict masks)
+{
+    assert(num_srcs > 0);
+
+    __m128i res = _mm_shuffle_epi8(
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(srcs[0] + elem_sizes[0] * idx)),
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(masks)));
+
+    for (size_t i = 1; i < num_srcs; ++i)
+    {
+        res = _mm_xor_si128(res,
+            _mm_shuffle_epi8(
+                _mm_loadu_si128(reinterpret_cast<const __m128i *>(srcs[i] + elem_sizes[i] * idx)),
+                _mm_loadu_si128(reinterpret_cast<const __m128i *>(&masks[i * sizeof(T)]))));
+    }
+
+    T out;
+    __builtin_memcpy(&out, &res, sizeof(T));
+    return out;
+}
+#endif
 
 }

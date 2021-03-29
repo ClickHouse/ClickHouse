@@ -201,7 +201,7 @@ public:
     void setFatalErrorCallback(std::function<void()> callback);
     void onFatalError();
 
-    /// Sets query context for current thread and its thread group
+    /// Sets query context for current master thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
     void attachQueryContext(Context & query_context);
 

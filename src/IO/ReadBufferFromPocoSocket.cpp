@@ -1,6 +1,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/TimeoutSetter.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
@@ -14,7 +15,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
@@ -28,23 +28,23 @@ bool ReadBufferFromPocoSocket::nextImpl()
     ssize_t bytes_read = 0;
     Stopwatch watch;
 
-    int flags = 0;
-    if (async_callback)
-        flags |= MSG_DONTWAIT;
-
     /// Add more details to exceptions.
     try
     {
-        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
-
-        /// If async_callback is specified, and read is blocking, run async_callback and try again later.
+        /// If async_callback is specified, and read will block, run async_callback and try again later.
         /// It is expected that file descriptor may be polled externally.
         /// Note that receive timeout is not checked here. External code should check it while polling.
-        while (bytes_read < 0 && async_callback && errno == EAGAIN)
-        {
-            async_callback(socket);
-            bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size(), flags);
-        }
+        while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ))
+            async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), socket_description);
+
+        /// receiveBytes in SecureStreamSocket throws TimeoutException after max(receive_timeout, send_timeout),
+        /// but we want to get this exception exactly after receive_timeout. So, set send_timeout = receive_timeout
+        /// before receiveBytes.
+        std::unique_ptr<TimeoutSetter> timeout_setter = nullptr;
+        if (socket.secure())
+            timeout_setter = std::make_unique<TimeoutSetter>(dynamic_cast<Poco::Net::StreamSocket &>(socket), socket.getReceiveTimeout(), socket.getReceiveTimeout());
+
+        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
     }
     catch (const Poco::Net::NetException & e)
     {
@@ -74,11 +74,14 @@ bool ReadBufferFromPocoSocket::nextImpl()
 }
 
 ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size), socket(socket_), peer_address(socket.peerAddress())
+    : BufferWithOwnMemory<ReadBuffer>(buf_size)
+    , socket(socket_)
+    , peer_address(socket.peerAddress())
+    , socket_description("socket (" + peer_address.toString() + ")")
 {
 }
 
-bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds)
+bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds) const
 {
     return available() || socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
 }

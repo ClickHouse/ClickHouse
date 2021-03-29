@@ -14,10 +14,12 @@
 #include <Columns/ColumnConst.h>
 
 #include <Common/Macros.h>
+#include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
+#include <Common/formatReadable.h>
 
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -29,6 +31,9 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
+
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -45,6 +50,9 @@
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/IFunction.h>
+
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/Sources/NullSource.h>
 
 #include <Core/Field.h>
 #include <Core/Settings.h>
@@ -69,11 +77,19 @@ const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
 const UInt64 DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION = 2;
 }
 
+namespace ProfileEvents
+{
+    extern const Event DistributedRejectedInserts;
+    extern const Event DistributedDelayedInserts;
+    extern const Event DistributedDelayedInsertsMilliseconds;
+}
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int STORAGE_REQUIRES_PARAMETER;
     extern const int BAD_ARGUMENTS;
@@ -84,6 +100,9 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
     extern const int INVALID_SHARD_ID;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace ActionLocks
@@ -501,7 +520,9 @@ Pipe StorageDistributed::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe();
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 void StorageDistributed::read(
@@ -518,7 +539,18 @@ void StorageDistributed::read(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
     Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock();
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+
+    /// Return directly (with correct header) if no shard to query.
+    if (query_info.cluster->getShardsInfo().empty())
+    {
+        Pipe pipe(std::make_shared<NullSource>(header));
+        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
+        query_plan.addStep(std::move(read_from_pipe));
+
+        return;
+    }
 
     const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
 
@@ -534,6 +566,10 @@ void StorageDistributed::read(
 
     ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
         modified_query_ast, context, query_info);
+
+    /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
+    if (!query_plan.isInitialized())
+        throw Exception("Pipeline is not initialized", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -577,8 +613,9 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
 }
 
 
-void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
+void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
+    auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN
@@ -589,6 +626,17 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, co
 
             throw Exception("Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
+        if (command.type == AlterCommand::DROP_COLUMN)
+        {
+            const auto & deps_mv = name_deps[command.column_name];
+            if (!deps_mv.empty())
+            {
+                throw Exception(
+                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                        + toString(deps_mv),
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+        }
     }
 }
 
@@ -596,7 +644,7 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
 {
     auto table_id = getStorageID();
 
-    checkAlterIsPossible(params, context.getSettingsRef());
+    checkAlterIsPossible(params, context);
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
@@ -681,7 +729,7 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, co
 
     for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end();)
     {
-        it->second.shutdownAndDropAllData();
+        it->second.directory_monitor->shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
 
@@ -755,6 +803,14 @@ std::vector<StorageDistributedDirectoryMonitor::Status> StorageDistributed::getD
     return statuses;
 }
 
+std::optional<UInt64> StorageDistributed::totalBytes(const Settings &) const
+{
+    UInt64 total_bytes = 0;
+    for (const auto & status : getDirectoryMonitorsStatuses())
+        total_bytes += status.bytes_count;
+    return total_bytes;
+}
+
 size_t StorageDistributed::getShardCount() const
 {
     return getCluster()->getShardCount();
@@ -797,16 +853,6 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     }
 
     return cluster;
-}
-
-void StorageDistributed::ClusterNodeData::flushAllData() const
-{
-    directory_monitor->flushAllData();
-}
-
-void StorageDistributed::ClusterNodeData::shutdownAndDropAllData() const
-{
-    directory_monitor->shutdownAndDropAllData();
 }
 
 IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
@@ -892,13 +938,24 @@ ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
     return {};
 }
 
-void StorageDistributed::flushClusterNodesAllData()
+void StorageDistributed::flushClusterNodesAllData(const Context & context)
 {
-    std::lock_guard lock(cluster_nodes_mutex);
+    /// Sync SYSTEM FLUSH DISTRIBUTED with TRUNCATE
+    auto table_lock = lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+
+    std::vector<std::shared_ptr<StorageDistributedDirectoryMonitor>> directory_monitors;
+
+    {
+        std::lock_guard lock(cluster_nodes_mutex);
+
+        directory_monitors.reserve(cluster_nodes_data.size());
+        for (auto & node : cluster_nodes_data)
+            directory_monitors.push_back(node.second.directory_monitor);
+    }
 
     /// TODO: Maybe it should be executed in parallel
-    for (auto & node : cluster_nodes_data)
-        node.second.flushAllData();
+    for (auto & node : directory_monitors)
+        node->flushAllData();
 }
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
@@ -953,6 +1010,54 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
     relative_data_path = new_path_to_table_data;
 }
 
+void StorageDistributed::delayInsertOrThrowIfNeeded() const
+{
+    if (!distributed_settings.bytes_to_throw_insert &&
+        !distributed_settings.bytes_to_delay_insert)
+        return;
+
+    UInt64 total_bytes = *totalBytes(global_context.getSettingsRef());
+
+    if (distributed_settings.bytes_to_throw_insert && total_bytes > distributed_settings.bytes_to_throw_insert)
+    {
+        ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
+        throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
+            "Too many bytes pending for async INSERT: {} (bytes_to_throw_insert={})",
+            formatReadableSizeWithBinarySuffix(total_bytes),
+            formatReadableSizeWithBinarySuffix(distributed_settings.bytes_to_throw_insert));
+    }
+
+    if (distributed_settings.bytes_to_delay_insert && total_bytes > distributed_settings.bytes_to_delay_insert)
+    {
+        /// Step is 5% of the delay and minimal one second.
+        /// NOTE: max_delay_to_insert is in seconds, and step is in ms.
+        const size_t step_ms = std::min<double>(1., double(distributed_settings.max_delay_to_insert) * 1'000 * 0.05);
+        UInt64 delayed_ms = 0;
+
+        do {
+            delayed_ms += step_ms;
+            std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
+        } while (*totalBytes(global_context.getSettingsRef()) > distributed_settings.bytes_to_delay_insert && delayed_ms < distributed_settings.max_delay_to_insert*1000);
+
+        ProfileEvents::increment(ProfileEvents::DistributedDelayedInserts);
+        ProfileEvents::increment(ProfileEvents::DistributedDelayedInsertsMilliseconds, delayed_ms);
+
+        UInt64 new_total_bytes = *totalBytes(global_context.getSettingsRef());
+        LOG_INFO(log, "Too many bytes pending for async INSERT: was {}, now {}, INSERT was delayed to {} ms",
+            formatReadableSizeWithBinarySuffix(total_bytes),
+            formatReadableSizeWithBinarySuffix(new_total_bytes),
+            delayed_ms);
+
+        if (new_total_bytes > distributed_settings.bytes_to_delay_insert)
+        {
+            ProfileEvents::increment(ProfileEvents::DistributedRejectedInserts);
+            throw Exception(ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES,
+                "Too many bytes pending for async INSERT: {} (bytes_to_delay_insert={})",
+                formatReadableSizeWithBinarySuffix(new_total_bytes),
+                formatReadableSizeWithBinarySuffix(distributed_settings.bytes_to_delay_insert));
+        }
+    }
+}
 
 void registerStorageDistributed(StorageFactory & factory)
 {
@@ -1017,6 +1122,17 @@ void registerStorageDistributed(StorageFactory & factory)
         if (args.storage_def->settings)
         {
             distributed_settings.loadFromQuery(*args.storage_def);
+        }
+
+        if (distributed_settings.max_delay_to_insert < 1)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "max_delay_to_insert cannot be less then 1");
+
+        if (distributed_settings.bytes_to_throw_insert && distributed_settings.bytes_to_delay_insert &&
+            distributed_settings.bytes_to_throw_insert <= distributed_settings.bytes_to_delay_insert)
+        {
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "bytes_to_throw_insert cannot be less or equal to bytes_to_delay_insert (since it is handled first)");
         }
 
         return StorageDistributed::create(

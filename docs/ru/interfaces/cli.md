@@ -1,6 +1,6 @@
 ---
 toc_priority: 17
-toc_title: "\u041a\u043b\u0438\u0435\u043d\u0442\u0020\u043a\u043e\u043c\u0430\u043d\u0434\u043d\u043e\u0439\u0020\u0441\u0442\u0440\u043e\u043a\u0438"
+toc_title: "Клиент командной строки"
 ---
 
 # Клиент командной строки {#klient-komandnoi-stroki}
@@ -153,4 +153,3 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 </config>
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/cli/) <!--hide-->
