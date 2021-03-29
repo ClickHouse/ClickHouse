@@ -287,6 +287,8 @@ def run_tests_array(all_tests_with_params):
     failures_chain = 0
     start_time = datetime.now()
 
+    is_concurrent = multiprocessing.current_process().name != "MainProcess"
+
     client_options = get_additional_client_options(args)
 
     def print_test_time(test_time):
@@ -296,7 +298,7 @@ def run_tests_array(all_tests_with_params):
             return ''
 
     if all_tests:
-        print("\nRunning {} {} tests.".format(len(all_tests), suite) + "\n")
+        print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
 
     for case in all_tests:
         if SERVER_DIED:
@@ -311,7 +313,6 @@ def run_tests_array(all_tests_with_params):
 
         try:
             status = ''
-            is_concurrent = multiprocessing.current_process().name != "MainProcess"
             if not is_concurrent:
                 sys.stdout.flush()
                 sys.stdout.write("{0:72}".format(name + ": "))
@@ -481,12 +482,14 @@ def run_tests_array(all_tests_with_params):
 
     if failures_total > 0:
         print(colored(f"\nHaving {failures_total} errors! {passed_total} tests passed."
-            f" {skipped_total} tests skipped. {(datetime.now() - start_time).total_seconds():.2f} s elapsed.",
+            f" {skipped_total} tests skipped. {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
+            f' ({multiprocessing.current_process().name}).',
             args, "red", attrs=["bold"]))
         exit_code = 1
     else:
         print(colored(f"\n{passed_total} tests passed. {skipped_total} tests skipped."
-            f" {(datetime.now() - start_time).total_seconds():.2f} s elapsed.",
+            f" {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
+            f' ({multiprocessing.current_process().name}).',
             args, "green", attrs=["bold"]))
 
 
