@@ -215,7 +215,7 @@ ColumnPtr fillColumnWithRandomData(
             column->getData().resize(limit);
 
             for (size_t i = 0; i < limit; ++i)
-                column->getData()[i] = rng() % (DATE_LUT_MAX_DAY_NUM + 1);   /// Slow
+                column->getData()[i] = rng() % (DATE_LUT_MAX_DAY_NUM + 1);
 
             return column;
         }

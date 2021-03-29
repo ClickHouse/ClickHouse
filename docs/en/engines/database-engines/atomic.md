@@ -6,7 +6,7 @@ toc_title: Atomic
 
 # Atomic {#atomic}
 
-It is supports non-blocking `DROP` and `RENAME TABLE` queries and atomic `EXCHANGE TABLES t1 AND t2` queries. Atomic database engine is used by default.
+It supports non-blocking `DROP` and `RENAME TABLE` queries and atomic `EXCHANGE TABLES t1 AND t2` queries. `Atomic` database engine is used by default.
 
 ## Creating a Database {#creating-a-database}
 
@@ -14,4 +14,4 @@ It is supports non-blocking `DROP` and `RENAME TABLE` queries and atomic `EXCHAN
 CREATE DATABASE test ENGINE = Atomic;
 ```
 
-[Original article](https://clickhouse.tech/docs/en/engines/database_engines/atomic/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/database-engines/atomic/) <!--hide-->

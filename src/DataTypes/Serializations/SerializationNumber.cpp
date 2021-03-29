@@ -147,7 +147,7 @@ template <typename T>
 void SerializationNumber<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::ValueType x = get<NearestFieldType<FieldType>>(field);
+    typename ColumnVector<T>::ValueType x = get<FieldType>(field);
     writeBinary(x, ostr);
 }
 

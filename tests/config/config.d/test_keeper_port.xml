@@ -6,8 +6,6 @@
         <coordination_settings>
             <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>30000</session_timeout_ms>
-            <snapshot_distance>0</snapshot_distance>
-            <reserved_log_items>0</reserved_log_items>
             <force_sync>false</force_sync>
             <startup_timeout>60000</startup_timeout>
         </coordination_settings>

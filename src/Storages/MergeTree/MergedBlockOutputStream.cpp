@@ -93,6 +93,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->calculateColumnsSizesOnDisk();
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
+    new_part->storage.lockSharedData(*new_part);
 }
 
 void MergedBlockOutputStream::finalizePartOnDisk(
