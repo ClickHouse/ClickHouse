@@ -45,21 +45,15 @@ public:
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        Block sample_block(arguments);
         size_t size = arguments.size();
-        Columns columns;
-        Block sample_block;
-        for (const auto & argument : arguments)
-        {
-            sample_block.insert(argument);
-            columns.push_back(argument.column);
-        }
 
         auto result_column = ColumnString::create();
         for (size_t j = 0; j < input_rows_count; ++j)
         {
             Row row(size);
             for (size_t i = 0; i < size; ++i)
-                columns[i]->get(j, row[i]);
+                arguments[i].column->get(j, row[i]);
             MergeTreePartition partition(std::move(row));
             result_column->insert(partition.getID(sample_block));
         }
