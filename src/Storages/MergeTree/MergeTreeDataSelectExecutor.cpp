@@ -546,29 +546,24 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
         .min_bytes_to_use_mmap_io = settings.min_bytes_to_use_mmap_io,
+        .mmap_cache = context.getMMappedFileCache(),
         .max_read_buffer_size = settings.max_read_buffer_size,
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
     };
 
-    /// PREWHERE
-    String prewhere_column;
-    if (select.prewhere())
-        prewhere_column = select.prewhere()->getColumnName();
-
     struct DataSkippingIndexAndCondition
     {
         MergeTreeIndexPtr index;
         MergeTreeIndexConditionPtr condition;
-        std::atomic<size_t> total_granules;
-        std::atomic<size_t> granules_dropped;
+        std::atomic<size_t> total_granules{0};
+        std::atomic<size_t> granules_dropped{0};
 
         DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
             : index(index_)
             , condition(condition_)
-            , total_granules(0)
-            , granules_dropped(0)
-        {}
+        {
+        }
     };
     std::list<DataSkippingIndexAndCondition> useful_indices;
 

@@ -43,6 +43,8 @@ def start_small_cluster():
 
 
 def test_single_endpoint_connections_count(start_small_cluster):
+    node1.query("TRUNCATE TABLE test_table")
+    node2.query("SYSTEM SYNC REPLICA test_table")
     def task(count):
         print(("Inserting ten times from {}".format(count)))
         for i in range(count, count + 10):
@@ -58,9 +60,11 @@ def test_single_endpoint_connections_count(start_small_cluster):
 
 
 def test_keepalive_timeout(start_small_cluster):
-    current_count = int(node1.query("select count() from test_table").strip())
+    node1.query("TRUNCATE TABLE test_table")
+    node2.query("SYSTEM SYNC REPLICA test_table")
+
     node1.query("insert into test_table values ('2017-06-16', 777, 0)")
-    assert_eq_with_retry(node2, "select count() from test_table", str(current_count + 1))
+    assert_eq_with_retry(node2, "select count() from test_table", str(1))
     # Server keepAliveTimeout is 3 seconds, default client session timeout is 8
     # lets sleep in that interval
     time.sleep(4)
@@ -69,7 +73,7 @@ def test_keepalive_timeout(start_small_cluster):
 
     time.sleep(3)
 
-    assert_eq_with_retry(node2, "select count() from test_table", str(current_count + 2))
+    assert_eq_with_retry(node2, "select count() from test_table", str(2))
 
     assert not node2.contains_in_log("No message received"), "Found 'No message received' in clickhouse-server.log"
 

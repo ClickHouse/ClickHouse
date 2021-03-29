@@ -12,7 +12,7 @@ NODES = {'node' + str(i): None for i in (1, 2)}
 config = '''<yandex>
     <profiles>
         <default>
-            <sleep_in_send_data>{sleep_in_send_data}</sleep_in_send_data>
+            <sleep_in_send_data_ms>{sleep_in_send_data_ms}</sleep_in_send_data_ms>
         </default>
     </profiles>
 </yandex>'''
@@ -45,12 +45,12 @@ def started_cluster():
 
 
 def test(started_cluster):
-    NODES['node2'].replace_config('/etc/clickhouse-server/users.d/users.xml', config.format(sleep_in_send_data=1000))
+    NODES['node2'].replace_config('/etc/clickhouse-server/users.d/users.xml', config.format(sleep_in_send_data_ms=1000000))
     
     attempts = 0
     while attempts < 1000:
-        setting = NODES['node2'].http_query("SELECT value FROM system.settings WHERE name='sleep_in_send_data'")
-        if int(setting) == 1000:
+        setting = NODES['node2'].http_query("SELECT value FROM system.settings WHERE name='sleep_in_send_data_ms'")
+        if int(setting) == 1000000:
             break
         time.sleep(0.1)
         attempts += 1

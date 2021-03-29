@@ -36,6 +36,7 @@ class ConstantExpressionTemplate : boost::noncopyable
 
         Block literals;
         ExpressionActionsPtr actions_on_literals;
+        Serializations serializations;
 
         std::vector<SpecialParserType> special_parser;
         bool null_as_default;
