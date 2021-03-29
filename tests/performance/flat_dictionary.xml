@@ -29,20 +29,43 @@
         INSERT INTO simple_key_flat_dictionary_source_table
         SELECT number, number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
-        LIMIT 100000;
+        LIMIT 500000;
     </fill_query>
 
-    <query>SELECT dictGet('default.simple_key_flat_dictionary', 'value_int', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.simple_key_flat_dictionary', 'value_string', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.simple_key_flat_dictionary', 'value_decimal', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictGet('default.simple_key_flat_dictionary', 'value_string_nullable', number) FROM system.numbers LIMIT 75000;</query>
-    <query>SELECT dictHas('default.simple_key_flat_dictionary', number) FROM system.numbers LIMIT 75000;</query>
+    <substitutions>
+        <substitution>
+            <name>column_name</name>
+            <values>
+                <value>'value_int'</value>
+                <value>'value_string'</value>
+                <value>'value_decimal'</value>
+                <value>'value_string_nullable'</value>
+            </values>
+        </substitution>
 
-    <query>SELECT dictGet('default.simple_key_flat_dictionary', 'value_int', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.simple_key_flat_dictionary', 'value_string', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.simple_key_flat_dictionary', 'value_decimal', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictGet('default.simple_key_flat_dictionary', 'value_string_nullable', number) FROM system.numbers LIMIT 150000;</query>
-    <query>SELECT dictHas('default.simple_key_flat_dictionary', number) FROM system.numbers LIMIT 150000;</query>
+        <substitution>
+            <name>elements_count</name>
+            <values>
+                <value>250000</value>
+                <value>500000</value>
+                <value>750000</value>
+                <value>1000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>
+        SELECT dictGet('default.simple_key_flat_dictionary', {column_name}, number)
+        FROM system.numbers
+        LIMIT {elements_count};
+    </query>
+
+    <query>
+        SELECT dictHas('default.simple_key_flat_dictionary', number)
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
 
     <drop_query>DROP TABLE IF EXISTS simple_key_flat_dictionary_source_table</drop_query>
 
