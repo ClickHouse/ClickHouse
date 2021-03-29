@@ -15,6 +15,8 @@ SYSTEM FLUSH LOGS;
 WITH (
          SELECT (event_time, event_time_microseconds)
          FROM system.part_log
+         WHERE "table" = 'table_with_single_pk'
+             AND "database" = currentDatabase()
          ORDER BY event_time DESC
          LIMIT 1
     ) AS time
