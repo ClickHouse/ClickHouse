@@ -119,8 +119,8 @@ private:
     template <typename Key, typename Value>
     using SparseHashMap = google::sparse_hash_map<Key, Value, DefaultHash<Key>>;
 #else
-    template <typename Value>
-    using SparseHashMap = google::sparsehash::sparse_hash_map<Key, Value, DefaultHash<Key>>;
+        template <typename Key, typename Value>
+        using SparseHashMap = google::sparsehash::sparse_hash_map<Key, Value, DefaultHash<Key>>;
 #endif
 
     template <typename Value>
