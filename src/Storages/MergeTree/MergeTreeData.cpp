@@ -469,15 +469,19 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
 
     /// Try to find the date column in columns used by the partition key (a common case).
-    bool encountered_date_column = false;
+    /// If there are no - DateTime or DateTime64 would also suffice.
+
+    bool has_date_column = false;
+    bool has_datetime_column = false;
+
     for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
     {
-        if (typeid_cast<const DataTypeDate *>(minmax_idx_columns_types[i].get()))
+        if (isDate(minmax_idx_columns_types[i]))
         {
-            if (!encountered_date_column)
+            if (!has_date_column)
             {
                 minmax_idx_date_column_pos = i;
-                encountered_date_column = true;
+                has_date_column = true;
             }
             else
             {
@@ -486,16 +490,18 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
             }
         }
     }
-    if (!encountered_date_column)
+    if (!has_date_column)
     {
         for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
         {
-            if (typeid_cast<const DataTypeDateTime *>(minmax_idx_columns_types[i].get()))
+            if (isDateTime(minmax_idx_columns_types[i])
+                || isDateTime64(minmax_idx_columns_types[i])
+            )
             {
-                if (!encountered_date_column)
+                if (!has_datetime_column)
                 {
                     minmax_idx_time_column_pos = i;
-                    encountered_date_column = true;
+                    has_datetime_column = true;
                 }
                 else
                 {
