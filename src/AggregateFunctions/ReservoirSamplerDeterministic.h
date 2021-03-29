@@ -13,6 +13,7 @@
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
 
+
 namespace DB
 {
 namespace ErrorCodes
@@ -162,6 +163,11 @@ public:
         sorted = false;
     }
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
+
     void write(DB::WriteBuffer & buf) const
     {
         size_t size = samples.size();
@@ -184,6 +190,10 @@ public:
             DB::writePODBinary(elem, buf);
         }
     }
+
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
 
 private:
     /// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
