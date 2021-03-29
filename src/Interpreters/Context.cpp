@@ -54,6 +54,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/DDLTask.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
@@ -1800,11 +1801,14 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     auto res = getClusters().getCluster(cluster_name);
+    if (res)
+        return res;
 
-    if (!res)
-        throw Exception("Requested cluster '" + cluster_name + "' not found", ErrorCodes::BAD_GET);
+    res = tryGetReplicatedDatabaseCluster(cluster_name);
+    if (res)
+        return res;
 
-    return res;
+    throw Exception("Requested cluster '" + cluster_name + "' not found", ErrorCodes::BAD_GET);
 }
 
 
