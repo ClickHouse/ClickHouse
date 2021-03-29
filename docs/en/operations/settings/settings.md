@@ -1876,7 +1876,7 @@ Enables or disables random shard insertion into a [Distributed](../../engines/ta
 
 By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
 
-**Possible values**
+Possible values:
 
 -   0 — Insertion is rejected if there are multiple shards and no distributed key is given.
 -   1 — Insertion is done randomly among all available shards when no distributed key is given.
