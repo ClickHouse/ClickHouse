@@ -62,7 +62,7 @@ class Backport:
         RE_NO_BACKPORT = re.compile(r'^v(\d+\.\d+)-no-backport$')
         RE_BACKPORTED = re.compile(r'^v(\d+\.\d+)-backported$')
 
-        # pull-requests are sorted by ancestry from the least recent.
+        # pull-requests are sorted by ancestry from the most recent.
         for pr in pull_requests:
             while repo.comparator(branches[-1][1]) >= repo.comparator(pr['mergeCommit']['oid']):
                 logging.info("PR #{} is already inside {}. Dropping this branch for further PRs".format(pr['number'], branches[-1][0]))

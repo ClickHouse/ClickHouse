@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
@@ -22,7 +23,6 @@
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Core/ExternalTable.h>
@@ -57,6 +57,28 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
+    : Poco::Net::TCPServerConnection(socket_)
+    , server(server_)
+    , parse_proxy_protocol(parse_proxy_protocol_)
+    , log(&Poco::Logger::get("TCPHandler"))
+    , connection_context(server.context())
+    , query_context(server.context())
+    , server_display_name(std::move(server_display_name_))
+{
+}
+TCPHandler::~TCPHandler()
+{
+    try
+    {
+        state.reset();
+        out->next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 void TCPHandler::runImpl()
 {
@@ -695,7 +717,18 @@ void TCPHandler::processTablesStatusRequest()
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
 
+
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
+
+    /// For testing hedged requests
+    const Settings & settings = query_context->getSettingsRef();
+    if (settings.sleep_in_send_tables_status_ms.totalMilliseconds())
+    {
+        out->next();
+        std::chrono::milliseconds ms(settings.sleep_in_send_tables_status_ms.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
+    }
+
     response.write(*out, client_tcp_protocol_version);
 }
 
@@ -1111,6 +1144,14 @@ void TCPHandler::receiveQuery()
     }
     query_context->applySettingsChanges(settings_changes);
 
+    /// Disable function name normalization when it's a secondary query, because queries are either
+    /// already normalized on initiator node, or not normalized and should remain unnormalized for
+    /// compatibility.
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        query_context->setSetting("normalize_function_names", Field(0));
+    }
+
     // Use the received query id, or generate a random default. It is convenient
     // to also generate the default OpenTelemetry trace id at the same time, and
     // set the trace parent.
@@ -1181,33 +1222,44 @@ bool TCPHandler::receiveData(bool scalar)
     if (block)
     {
         if (scalar)
+        {
+            /// Scalar value
             query_context->addScalar(temporary_id.table_name, block);
+        }
+        else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
+        {
+            /// Data for external tables
+
+            auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
+            StoragePtr storage;
+            /// If such a table does not exist, create it.
+            if (resolved)
+            {
+                storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
+            }
+            else
+            {
+                NamesAndTypesList columns = block.getNamesAndTypesList();
+                auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
+                storage = temporary_table.getTable();
+                query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+            }
+            auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+            /// The data will be written directly to the table.
+            auto temporary_table_out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
+            temporary_table_out->write(block);
+            temporary_table_out->writeSuffix();
+
+        }
+        else if (state.need_receive_data_for_input)
+        {
+            /// 'input' table function.
+            state.block_for_input = block;
+        }
         else
         {
-            /// If there is an insert request, then the data should be written directly to `state.io.out`.
-            /// Otherwise, we write the blocks in the temporary `external_table_name` table.
-            if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
-            {
-                auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
-                StoragePtr storage;
-                /// If such a table does not exist, create it.
-                if (resolved)
-                    storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
-                else
-                {
-                    NamesAndTypesList columns = block.getNamesAndTypesList();
-                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
-                    storage = temporary_table.getTable();
-                    query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
-                }
-                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                /// The data will be written directly to the table.
-                state.io.out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
-            }
-            if (state.need_receive_data_for_input)
-                state.block_for_input = block;
-            else
-                state.io.out->write(block);
+            /// INSERT query.
+            state.io.out->write(block);
         }
         return true;
     }
@@ -1360,6 +1412,15 @@ void TCPHandler::sendData(const Block & block)
     writeVarUInt(Protocol::Server::Data, *out);
     /// Send external table name (empty name is the main table)
     writeStringBinary("", *out);
+
+    /// For testing hedged requests
+    const Settings & settings = query_context->getSettingsRef();
+    if (block.rows() > 0 && settings.sleep_in_send_data_ms.totalMilliseconds())
+    {
+        out->next();
+        std::chrono::milliseconds ms(settings.sleep_in_send_data_ms.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
+    }
 
     state.block_out->write(block);
     state.maybe_compressed_out->next();

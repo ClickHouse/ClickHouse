@@ -10,8 +10,8 @@
 namespace DB
 {
 
-class PostgreSQLConnection;
-using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
+class PostgreSQLConnectionPool;
+using PostgreSQLConnectionPoolPtr = std::shared_ptr<PostgreSQLConnectionPool>;
 
 class TableFunctionPostgreSQL : public ITableFunction
 {
@@ -30,8 +30,8 @@ private:
     void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
     String connection_str;
-    String remote_table_name;
-    PostgreSQLConnectionPtr connection;
+    String remote_table_name, remote_table_schema;
+    PostgreSQLConnectionPoolPtr connection_pool;
 };
 
 }

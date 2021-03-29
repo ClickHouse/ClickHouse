@@ -363,6 +363,16 @@ void QueryFuzzer::fuzzWindowFrame(WindowFrame & frame)
             frame.end_offset = getRandomField(0).get<Int64>();
             break;
         }
+        case 5:
+        {
+            frame.begin_preceding = fuzz_rand() % 2;
+            break;
+        }
+        case 6:
+        {
+            frame.end_preceding = fuzz_rand() % 2;
+            break;
+        }
         default:
             break;
     }
@@ -560,6 +570,15 @@ void QueryFuzzer::addColumnLike(const ASTPtr ast)
     }
 
     const auto name = ast->formatForErrorMessage();
+    if (name == "Null")
+    {
+        // The `Null` identifier from FORMAT Null clause. We don't quote it
+        // properly when formatting the AST, and while the resulting query
+        // technically works, it has non-standard case for Null (the standard
+        // is NULL), so it breaks the query formatting idempotence check.
+        // Just plug this particular case for now.
+        return;
+    }
     if (name.size() < 200)
     {
         column_like_map.insert({name, ast});

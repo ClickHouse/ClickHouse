@@ -15,6 +15,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -35,6 +36,10 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     auto ast = node->clone();
     ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
     param_visitor.visit(ast);
+
+    if (context.getSettingsRef().normalize_function_names)
+        FunctionNameNormalizer().visit(ast.get());
+
     String name = ast->getColumnName();
     auto syntax_result = TreeRewriter(context).analyze(ast, source_columns);
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
@@ -285,8 +290,6 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
 {
     Blocks result;
 
-    // TODO: `node` may be always-false literal.
-
     if (const auto * fn = node->as<ASTFunction>())
     {
         const auto dnf = analyzeFunction(fn, target_expr);
@@ -344,6 +347,14 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
                 return {};
             }
         }
+    }
+    else if (const auto * literal = node->as<ASTLiteral>())
+    {
+        // Check if it's always true or false.
+        if (literal->value.getType() == Field::Types::UInt64 && literal->value.get<UInt64>() == 0)
+            return {result};
+        else
+            return {};
     }
 
     return {result};

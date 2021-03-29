@@ -13,7 +13,7 @@ public:
 
     String getName() const override { return "Union"; }
 
-    QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
+    QueryPipelinePtr updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings) override;
 
     void describePipeline(FormatSettings & settings) const override;
 

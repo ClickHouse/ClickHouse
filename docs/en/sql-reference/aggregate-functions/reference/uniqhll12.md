@@ -10,7 +10,7 @@ Calculates the approximate number of different argument values, using the [Hyper
 uniqHLL12(x[, ...])
 ```
 
-**Parameters**
+**Arguments**
 
 The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
 

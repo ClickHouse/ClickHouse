@@ -6,6 +6,10 @@
 #include <ext/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -30,6 +34,8 @@ protected:
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 
     mutable std::mutex mutex;
+
+    Poco::Logger * log;
 };
 
 }
