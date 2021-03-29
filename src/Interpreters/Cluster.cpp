@@ -116,7 +116,9 @@ Cluster::Address::Address(
         const String & password_,
         UInt16 clickhouse_port,
         bool secure_,
-        Int64 priority_)
+        Int64 priority_,
+        UInt32 shard_index_,
+        UInt32 replica_index_)
     : user(user_)
     , password(password_)
 {
@@ -126,6 +128,8 @@ Cluster::Address::Address(
     secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = priority_;
     is_local = isLocal(clickhouse_port);
+    shard_index = shard_index_;
+    replica_index = replica_index_;
 }
 
 
@@ -491,7 +495,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     {
         Addresses current;
         for (const auto & replica : shard)
-            current.emplace_back(replica, username, password, clickhouse_port, secure, priority);
+            current.emplace_back(replica, username, password, clickhouse_port, secure, priority, current_shard_num, current.size() + 1);
 
         addresses_with_failover.emplace_back(current);
 

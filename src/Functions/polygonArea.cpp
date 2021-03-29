@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeCustomGeo.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <memory>
 #include <string>
