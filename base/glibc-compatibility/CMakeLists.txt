@@ -1,5 +1,8 @@
 if (GLIBC_COMPATIBILITY)
-    set (ENABLE_FASTMEMCPY ON)
+    add_subdirectory(memcpy)
+    if(TARGET memcpy)
+        set(MEMCPY_LIBRARY memcpy)
+    endif()
 
     enable_language(ASM)
     include(CheckIncludeFile)
@@ -27,13 +30,6 @@ if (GLIBC_COMPATIBILITY)
         list(APPEND glibc_compatibility_sources musl/getentropy.c)
     endif()
 
-    if (NOT ARCH_ARM)
-        # clickhouse_memcpy don't support ARCH_ARM, see https://github.com/ClickHouse/ClickHouse/issues/18951
-        add_library (clickhouse_memcpy OBJECT
-            ${ClickHouse_SOURCE_DIR}/contrib/FastMemcpy/memcpy_wrapper.c
-        )
-    endif()
-
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 
@@ -51,15 +47,16 @@ if (GLIBC_COMPATIBILITY)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
-    target_link_libraries(global-libs INTERFACE glibc-compatibility)
+    target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
 
     install(
-        TARGETS glibc-compatibility
+        TARGETS glibc-compatibility ${MEMCPY_LIBRARY}
         EXPORT global
         ARCHIVE DESTINATION lib
     )
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
+
 elseif (YANDEX_OFFICIAL_BUILD)
     message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")
 endif ()

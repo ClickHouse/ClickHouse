@@ -1,6 +1,6 @@
 ---
 toc_priority: 38
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u0440\u0435\u043e\u0431\u0440\u0430\u0437\u043e\u0432\u0430\u043d\u0438\u044f\u0020\u0442\u0438\u043f\u043e\u0432"
+toc_title: "Функции преобразования типов"
 ---
 
 # Функции преобразования типов {#funktsii-preobrazovaniia-tipov}
@@ -22,7 +22,7 @@ toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u0440\u0435\u
 -   `toInt128(expr)` — возвращает значение типа `Int128`.
 -   `toInt256(expr)` — возвращает значение типа `Int256`.
 
-**Параметры**
+**Аргументы**
 
 -   `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее число или строку с десятичным представление числа. Бинарное, восьмеричное и шестнадцатеричное представление числа не поддержаны. Ведущие нули обрезаются.
 
@@ -100,7 +100,7 @@ SELECT toInt64OrNull('123123'), toInt8OrNull('123qwe123');
 -   `toUInt64(expr)` — возвращает значение типа `UInt64`.
 -   `toUInt256(expr)` — возвращает значение типа `UInt256`.
 
-**Параметры**
+**Аргументы**
 
 -   `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее число или строку с десятичным представление числа. Бинарное, восьмеричное и шестнадцатеричное представление числа не поддержаны. Ведущие нули обрезаются.
 
@@ -172,7 +172,7 @@ Cиноним: `DATE`.
 
 Эти функции следует использовать вместо функций `toDecimal*()`, если при ошибке обработки входного значения вы хотите получать `NULL` вместо исключения.
 
-**Параметры**
+**Аргументы**
 
 -   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
 -   `S` — количество десятичных знаков в результирующем значении.
@@ -225,7 +225,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 
 Эти функции следует использовать вместо функций `toDecimal*()`, если при ошибке обработки входного значения вы хотите получать `0` вместо исключения.
 
-**Параметры**
+**Аргументы**
 
 -   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
 -   `S` — количество десятичных знаков в результирующем значении.
@@ -377,7 +377,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut;
 reinterpretAsUUID(fixed_string)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `fixed_string` — cтрока с big-endian порядком байтов. [FixedString](../../sql-reference/data-types/fixedstring.md#fixedstring).
 
@@ -488,7 +488,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 └─────────────────────────────────────────┘
 ```
 
-**См. также**
+**Смотрите также**
 
 -   Настройка [cast_keep_nullable](../../operations/settings/settings.md#cast_keep_nullable)
 
@@ -537,7 +537,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 accurateCastOrNull(x, T)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — входное значение.
 -   `T` — имя возвращаемого типа данных.
@@ -596,7 +596,7 @@ toIntervalQuarter(number)
 toIntervalYear(number)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `number` — длительность интервала. Положительное целое число.
 
@@ -638,7 +638,7 @@ SELECT
 parseDateTimeBestEffort(time_string[, time_zone])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `time_string` — строка, содержащая дату и время для преобразования. [String](../../sql-reference/functions/type-conversion-functions.md).
 -   `time_zone` — часовой пояс. Функция анализирует `time_string` в соответствии с заданным часовым поясом. [String](../../sql-reference/functions/type-conversion-functions.md).
@@ -733,7 +733,7 @@ SELECT parseDateTimeBestEffort('10 20:19');
 └─────────────────────────────────────┘
 ```
 
-**См. также**
+**Смотрите также**
 
 -   [Информация о формате ISO 8601 от @xkcd](https://xkcd.com/1179/)
 -   [RFC 1123](https://tools.ietf.org/html/rfc1123)
@@ -750,7 +750,7 @@ SELECT parseDateTimeBestEffort('10 20:19');
 parseDateTimeBestEffortUS(time_string [, time_zone])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `time_string` — строка, содержащая дату и время для преобразования. [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — часовой пояс. Функция анализирует `time_string` в соответствии с часовым поясом. [String](../../sql-reference/data-types/string.md).
@@ -824,7 +824,7 @@ AS parseDateTimeBestEffortUS;
 parseDateTimeBestEffortUSOrNull(time_string[, time_zone])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `time_string` — строка, содержащая дату или дату со временем для преобразования. Дата должна быть в американском формате (`MM/DD/YYYY` и т.д.). [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция анализирует `time_string` в соответствии с заданным часовым поясом. Опциональный параметр. [String](../../sql-reference/data-types/string.md).
@@ -910,7 +910,7 @@ SELECT parseDateTimeBestEffortUSOrNull('10.2021') AS parseDateTimeBestEffortUSOr
 parseDateTimeBestEffortUSOrZero(time_string[, time_zone])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `time_string` — строка, содержащая дату или дату со временем для преобразования. Дата должна быть в американском формате (`MM/DD/YYYY` и т.д.). [String](../../sql-reference/data-types/string.md).
 -   `time_zone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция анализирует `time_string` в соответствии с заданным часовым поясом. Опциональный параметр. [String](../../sql-reference/data-types/string.md).
@@ -999,7 +999,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02.2021') AS parseDateTimeBestEffortUSOr
 toUnixTimestamp64Milli(value)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `value` — значение `DateTime64` с любой точностью.
 
@@ -1051,7 +1051,7 @@ SELECT toUnixTimestamp64Nano(dt64);
 fromUnixTimestamp64Milli(value [, ti])
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `value` — значение типы `Int64` с любой точностью.
 -   `timezone` — (не обязательный параметр) часовой пояс в формате `String` для возвращаемого результата.
@@ -1089,14 +1089,14 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC');
 toLowCardinality(expr)
 ```
 
-**Параметры**
+**Аргументы**
 
-- `expr` — [Выражение](../syntax.md#syntax-expressions), которое в результате преобразуется в один из [поддерживаемых типов данных](../data-types/index.md#data_types).
+-   `expr` — [выражение](../syntax.md#syntax-expressions), которое в результате преобразуется в один из [поддерживаемых типов данных](../data-types/index.md#data_types).
 
 
 **Возвращаемое значение**
 
-- Результат преобразования `expr`.
+-   Результат преобразования `expr`.
 
 Тип: `LowCardinality(expr_result_type)`
 
@@ -1126,10 +1126,10 @@ SELECT toLowCardinality('1');
 formatRow(format, x, y, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `format` — Текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
--   `x`,`y`, ... — Выражения.
+-   `format` — текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — выражения.
 
 **Возвращаемое значение**
 
@@ -1167,10 +1167,10 @@ FROM numbers(3);
 formatRowNoNewline(format, x, y, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `format` — Текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
--   `x`,`y`, ... — Выражения.
+-   `format` — текстовый формат. Например, [CSV](../../interfaces/formats.md#csv), [TSV](../../interfaces/formats.md#tabseparated).
+-   `x`,`y`, ... — выражения.
 
 **Возвращаемое значение**
 
@@ -1195,4 +1195,3 @@ FROM numbers(3);
 └───────────────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->

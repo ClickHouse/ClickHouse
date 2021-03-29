@@ -1,6 +1,6 @@
 ---
 toc_priority: 50
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0445\u044d\u0448\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f"
+toc_title: "Функции хэширования"
 ---
 
 # Функции хэширования {#funktsii-kheshirovaniia}
@@ -18,9 +18,9 @@ halfMD5(par1, ...)
 Функция относительно медленная (5 миллионов коротких строк в секунду на ядро процессора).
 По возможности, используйте функцию [sipHash64](#hash_functions-siphash64) вместо неё.
 
-**Параметры**
+**Аргументы**
 
-Функция принимает переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -29,7 +29,7 @@ halfMD5(par1, ...)
 **Пример**
 
 ``` sql
-SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type
+SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type;
 ```
 
 ``` text
@@ -61,9 +61,9 @@ sipHash64(par1,...)
 3.  Затем функция принимает хэш-значение, вычисленное на предыдущем шаге, и третий элемент исходного хэш-массива, и вычисляет хэш для массива из них.
 4.  Предыдущий шаг повторяется для всех остальных элементов исходного хэш-массива.
 
-**Параметры**
+**Аргументы**
 
-Функция принимает переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -72,7 +72,7 @@ sipHash64(par1,...)
 **Пример**
 
 ``` sql
-SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type
+SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;
 ```
 
 ``` text
@@ -97,9 +97,9 @@ cityHash64(par1,...)
 
 Это не криптографическая хэш-функция. Она использует CityHash алгоритм для строковых параметров и зависящую от реализации быструю некриптографическую хэш-функцию для параметров с другими типами данных. Функция использует комбинатор CityHash для получения конечных результатов.
 
-**Параметры**
+**Аргументы**
 
-Функция принимает переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -110,7 +110,7 @@ cityHash64(par1,...)
 Пример вызова:
 
 ``` sql
-SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type
+SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type;
 ```
 
 ``` text
@@ -166,9 +166,9 @@ farmHash64(par1, ...)
 
 Эти функции используют методы `Fingerprint64` и `Hash64` из всех [доступных методов](https://github.com/google/farmhash/blob/master/src/farmhash.h).
 
-**Параметры**
+**Аргументы**
 
-Функция принимает переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -177,7 +177,7 @@ farmHash64(par1, ...)
 **Пример**
 
 ``` sql
-SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type
+SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type;
 ```
 
 ``` text
@@ -191,7 +191,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки. `JavaHash` не отличается ни скоростью, ни качеством, поэтому эту функцию следует считать устаревшей. Используйте эту функцию, если вам необходимо получить значение хэша по такому же алгоритму.
 
 ``` sql
-SELECT javaHash('');
+SELECT javaHash('')
 ```
 
 **Возвращаемое значение**
@@ -208,7 +208,7 @@ SELECT javaHash('');
 SELECT javaHash('Hello, world!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─javaHash('Hello, world!')─┐
@@ -226,7 +226,7 @@ SELECT javaHash('Hello, world!');
 javaHashUTF16LE(stringUtf16le)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `stringUtf16le` — строка в `UTF-16LE`.
 
@@ -243,10 +243,10 @@ javaHashUTF16LE(stringUtf16le)
 Запрос:
 
 ``` sql
-SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))
+SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'));
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))─┐
@@ -259,7 +259,7 @@ SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))
 Вычисляет `HiveHash` от строки.
 
 ``` sql
-SELECT hiveHash('');
+SELECT hiveHash('')
 ```
 
 `HiveHash` — это результат [JavaHash](#hash_functions-javahash) с обнулённым битом знака числа. Функция используется в [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) вплоть до версии 3.0.
@@ -278,7 +278,7 @@ SELECT hiveHash('');
 SELECT hiveHash('Hello, world!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─hiveHash('Hello, world!')─┐
@@ -294,9 +294,9 @@ SELECT hiveHash('Hello, world!');
 metroHash64(par1, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
-Функция принимает переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -305,7 +305,7 @@ metroHash64(par1, ...)
 **Пример**
 
 ``` sql
-SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MetroHash, toTypeName(MetroHash) AS type
+SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MetroHash, toTypeName(MetroHash) AS type;
 ```
 
 ``` text
@@ -329,9 +329,9 @@ murmurHash2_32(par1, ...)
 murmurHash2_64(par1, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
-Обе функции принимают переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Обе функции принимают переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -341,7 +341,7 @@ murmurHash2_64(par1, ...)
 **Пример**
 
 ``` sql
-SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type
+SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type;
 ```
 
 ``` text
@@ -360,9 +360,9 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 gccMurmurHash(par1, ...);
 ```
 
-**Параметры**
+**Аргументы**
 
--   `par1, ...` — Переменное число параметров. Каждый параметр может быть любого из [поддерживаемых типов данных](../../sql-reference/data-types/index.md).
+-   `par1, ...` — переменное число параметров. Каждый параметр может быть любого из [поддерживаемых типов данных](../../sql-reference/data-types/index.md).
 
 **Возвращаемое значение**
 
@@ -397,9 +397,9 @@ murmurHash3_32(par1, ...)
 murmurHash3_64(par1, ...)
 ```
 
-**Параметры**
+**Аргументы**
 
-Обе функции принимают переменное число входных параметров. Параметры могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+Обе функции принимают переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -409,7 +409,7 @@ murmurHash3_64(par1, ...)
 **Пример**
 
 ``` sql
-SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type
+SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
 ``` text
@@ -426,9 +426,9 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 murmurHash3_128( expr )
 ```
 
-**Параметры**
+**Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее значение типа[String](../../sql-reference/functions/hash-functions.md).
+-   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа[String](../../sql-reference/functions/hash-functions.md).
 
 **Возвращаемое значение**
 
@@ -437,7 +437,7 @@ murmurHash3_128( expr )
 **Пример**
 
 ``` sql
-SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3) AS type
+SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
 ``` text
@@ -451,11 +451,11 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 Вычисляет `xxHash` от строки. Предлагается в двух вариантах: 32 и 64 бита.
 
 ``` sql
-SELECT xxHash32('');
+SELECT xxHash32('')
 
 OR
 
-SELECT xxHash64('');
+SELECT xxHash64('')
 ```
 
 **Возвращаемое значение**
@@ -472,7 +472,7 @@ SELECT xxHash64('');
 SELECT xxHash32('Hello, world!');
 ```
 
-Ответ:
+Результат:
 
 ``` text
 ┌─xxHash32('Hello, world!')─┐
@@ -484,4 +484,3 @@ SELECT xxHash32('Hello, world!');
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/hash_functions/) <!--hide-->
