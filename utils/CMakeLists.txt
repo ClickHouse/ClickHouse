@@ -34,10 +34,6 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (wal-dump)
     add_subdirectory (check-mysql-binlog)
 
-    if (USE_NURAFT)
-        add_subdirectory (nukeeper-data-dumper)
-    endif ()
-
     if (NOT OS_DARWIN)
         add_subdirectory (memcpy-bench)
     endif ()
