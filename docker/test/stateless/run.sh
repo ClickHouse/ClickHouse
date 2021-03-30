@@ -51,6 +51,7 @@ function run_tests()
 
     # Skip these tests, because they fail when we rerun them multiple times
     if [ "$NUM_TRIES" -gt "1" ]; then
+        ADDITIONAL_OPTIONS+=('--order=random')
         ADDITIONAL_OPTIONS+=('--skip')
         ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
         ADDITIONAL_OPTIONS+=('--jobs')
@@ -74,7 +75,13 @@ timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
 ./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
-pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
+clickhouse-client -q "system flush logs" ||:
+
+pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
+clickhouse-client -q "select * from system.query_log format TSVWithNamesAndTypes" | pigz > /test_output/query-log.tsv.gz &
+clickhouse-client -q "select * from system.query_thread_log format TSVWithNamesAndTypes" | pigz > /test_output/query-thread-log.tsv.gz &
+wait ||:
+
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
 if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
     tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
