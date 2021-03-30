@@ -299,7 +299,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## interserver_https_port {#interserver-https-port}
 
-Порт для обмена данными между серверами ClickHouse по протоколу `HTTPS`.
+Порт для обмена данными между репликами ClickHouse по протоколу `HTTPS`.
 
 **Пример**
 
