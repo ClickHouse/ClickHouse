@@ -1,6 +1,4 @@
 SET(AWS_S3_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-s3)
-SET(AWS_STS_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-sts)
-SET(AWS_IDENTITY_MANAGEMENT_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-identity-management)
 SET(AWS_CORE_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-core)
 SET(AWS_CHECKSUMS_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws-checksums)
 SET(AWS_COMMON_LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/aws-c-common)
@@ -51,18 +49,6 @@ file(GLOB AWS_S3_MODEL_SOURCES
     "${AWS_S3_LIBRARY_DIR}/source/model/*.cpp"
 )
 
-file(GLOB AWS_STS_SOURCES
-    "${AWS_STS_LIBRARY_DIR}/source/*.cpp"
-)
-
-file(GLOB AWS_STS_MODEL_SOURCES
-    "${AWS_STS_LIBRARY_DIR}/source/model/*.cpp"
-)
-
-file(GLOB AWS_IDENTITY_MANAGEMENT_AUTH_SOURCES
-    "${AWS_IDENTITY_MANAGEMENT_LIBRARY_DIR}/source/auth/STSAssumeRoleCredentialsProvider.cpp"
-)
-
 file(GLOB AWS_EVENT_STREAM_SOURCES
     "${AWS_EVENT_STREAM_LIBRARY_DIR}/source/*.c"
 )
@@ -83,9 +69,6 @@ file(GLOB S3_UNIFIED_SRC
     ${AWS_COMMON_SOURCES}
     ${AWS_S3_SOURCES}
     ${AWS_S3_MODEL_SOURCES}
-    ${AWS_STS_SOURCES}
-    ${AWS_STS_MODEL_SOURCES}
-    ${AWS_IDENTITY_MANAGEMENT_AUTH_SOURCES}
     ${AWS_CORE_SOURCES}
 )
 
@@ -93,8 +76,6 @@ set(S3_INCLUDES
     "${AWS_COMMON_LIBRARY_DIR}/include/"
     "${AWS_EVENT_STREAM_LIBRARY_DIR}/include/"
     "${AWS_S3_LIBRARY_DIR}/include/"
-    "${AWS_STS_LIBRARY_DIR}/include/"
-    "${AWS_IDENTITY_MANAGEMENT_LIBRARY_DIR}/include/"
     "${AWS_CORE_LIBRARY_DIR}/include/"
     "${CMAKE_CURRENT_BINARY_DIR}/include/"
 )
