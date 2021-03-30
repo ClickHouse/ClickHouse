@@ -1173,6 +1173,7 @@ struct DiskS3::RestoreInformation
     UInt64 revision = LATEST_REVISION;
     String source_bucket;
     String source_path;
+    bool detached;
 };
 
 void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_information)
@@ -1199,6 +1200,12 @@ void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_informa
             return;
 
         readText(restore_information.source_path, buffer);
+        assertChar('\n', buffer);
+
+        if (!buffer.hasPendingData())
+            return;
+
+        readBoolText(restore_information.detached, buffer);
         assertChar('\n', buffer);
 
         if (buffer.hasPendingData())
@@ -1253,7 +1260,7 @@ void DiskS3::restore()
                 removeSharedRecursive(root + '/', !cleanup_s3);
 
         restoreFiles(information.source_bucket, information.source_path, information.revision);
-        restoreFileOperations(information.source_bucket, information.source_path, information.revision);
+        restoreFileOperations(information.source_bucket, information.source_path, information.revision, information.detached);
 
         Poco::File restore_file(metadata_path + RESTORE_FILE_NAME);
         restore_file.remove();
@@ -1348,14 +1355,16 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
     }
 }
 
-void DiskS3::restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 target_revision)
+void DiskS3::restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 target_revision, bool detached)
 {
     LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting restore file operations for disk {}", name);
 
     /// Enable recording file operations if we restore to different bucket / path.
     send_metadata = bucket != source_bucket || s3_root_path != source_path;
 
-    listObjects(source_bucket, source_path + "operations/", [this, &source_bucket, &target_revision](auto list_result)
+    std::set<String> renames;
+
+    listObjects(source_bucket, source_path + "operations/", [this, &source_bucket, &target_revision, &detached, &renames](auto list_result)
     {
         const String rename = "rename";
         const String hardlink = "hardlink";
@@ -1389,6 +1398,16 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
                 {
                     moveFile(from_path, to_path);
                     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
+
+                    if (detached)
+                    {
+                        /// We don't need path, which is already renamed.
+                        auto it = renames.find(from_path);
+                        if (it != renames.end())
+                            renames.erase(it);
+
+                        renames.insert(to_path);
+                    }
                 }
             }
             else if (operation == hardlink)
@@ -1400,12 +1419,27 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
                     createDirectories(directoryPath(dst_path));
                     createHardLink(src_path, dst_path);
                     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Revision {}. Restored hardlink {} -> {}", revision, src_path, dst_path);
+
+                    if (detached)
+                        renames.insert(directoryPath(dst_path));
                 }
             }
         }
 
         return true;
     });
+
+    if (detached)
+    {
+        send_metadata = false;
+
+        for (const auto & path : renames)
+        {
+            auto detached_path = pathToDetached(path);
+            moveFile(path, detached_path);
+            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Move directory to detached {} -> {}", path, detached_path);
+        }
+    }
 
     send_metadata = true;
 
@@ -1449,6 +1483,12 @@ void DiskS3::onFreeze(const String & path)
     WriteBufferFromFile revision_file_buf(metadata_path + path + "revision.txt", 32);
     writeIntText(revision_counter.load(), revision_file_buf);
     revision_file_buf.finalize();
+}
+
+String DiskS3::pathToDetached(const String & source_path)
+{
+    Poco::Path path (source_path);
+    return Poco::Path(path).parent().append(Poco::Path("detached")).append(path.directory(path.depth() - 1)).toString();
 }
 
 }
