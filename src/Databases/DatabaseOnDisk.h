@@ -94,11 +94,10 @@ protected:
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                    const String & table_metadata_tmp_path, const String & table_metadata_path, const Context & query_context);
 
+    virtual void removeDetachedPermanentlyFlag(const Context & context, const String & table_name, const String & table_metadata_path, bool attach) const;
+
     const String metadata_path;
     const String data_path;
-
-private:
-    void removeDetachedPermanentlyFlag(const String & table_name, const String & table_metadata_path) const;
 };
 
 }
