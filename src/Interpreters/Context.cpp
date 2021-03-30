@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Coordination/NuKeeperStorageDispatcher.h>
+#include <Coordination/KeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -314,7 +314,7 @@ struct ContextShared
 
 #if USE_NURAFT
     mutable std::mutex nu_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
+    mutable std::shared_ptr<KeeperStorageDispatcher> nu_keeper_storage_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -1616,35 +1616,35 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 }
 
 
-void Context::initializeNuKeeperStorageDispatcher() const
+void Context::initializeKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
 
     if (shared->nu_keeper_storage_dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize NuKeeper multiple times");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
-    if (config.has("test_keeper_server"))
+    if (config.has("keeper_server"))
     {
-        shared->nu_keeper_storage_dispatcher = std::make_shared<NuKeeperStorageDispatcher>();
+        shared->nu_keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
         shared->nu_keeper_storage_dispatcher->initialize(config);
     }
 #endif
 }
 
 #if USE_NURAFT
-std::shared_ptr<NuKeeperStorageDispatcher> & Context::getNuKeeperStorageDispatcher() const
+std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher() const
 {
     std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
     if (!shared->nu_keeper_storage_dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "NuKeeper must be initialized before requests");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
     return shared->nu_keeper_storage_dispatcher;
 }
 #endif
 
-void Context::shutdownNuKeeperStorageDispatcher() const
+void Context::shutdownKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
