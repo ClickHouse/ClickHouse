@@ -120,7 +120,36 @@ struct IDictionaryBase : public IExternalLoadable
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr default_values_column) const = 0;
+        const ColumnPtr & default_values_column) const = 0;
+
+    /** Get multiple columns from dictionary.
+      *
+      * Default implementation just calls getColumn multiple times.
+      * Subclasses can provide custom more efficient implementation.
+      */
+    virtual Columns getColumns(
+        const Strings & attribute_names,
+        const DataTypes & result_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const Columns & default_values_columns) const
+    {
+        size_t attribute_names_size = attribute_names.size();
+
+        Columns result;
+        result.reserve(attribute_names_size);
+
+        for (size_t i = 0; i < attribute_names_size; ++i)
+        {
+            const auto & attribute_name = attribute_names[i];
+            const auto & result_type = result_types[i];
+            const auto & default_values_column = default_values_columns[i];
+
+            result.emplace_back(getColumn(attribute_name, result_type, key_columns, key_types, default_values_column));
+        }
+
+        return result;
+    }
 
     /** Subclass must validate key columns and key types and return ColumnUInt8 that
       * is bitmask representation of is key in dictionary or not.

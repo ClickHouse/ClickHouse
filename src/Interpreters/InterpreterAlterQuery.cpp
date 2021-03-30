@@ -137,7 +137,7 @@ BlockIO InterpreterAlterQuery::execute()
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, context);
         alter_commands.prepare(metadata);
-        table->checkAlterIsPossible(alter_commands, context.getSettingsRef());
+        table->checkAlterIsPossible(alter_commands, context);
         table->alter(alter_commands, context, alter_lock);
     }
 
@@ -299,7 +299,9 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::FREEZE_PARTITION: [[fallthrough]];
-        case ASTAlterCommand::FREEZE_ALL:
+        case ASTAlterCommand::FREEZE_ALL: [[fallthrough]];
+        case ASTAlterCommand::UNFREEZE_PARTITION: [[fallthrough]];
+        case ASTAlterCommand::UNFREEZE_ALL:
         {
             required_access.emplace_back(AccessType::ALTER_FREEZE_PARTITION, database, table);
             break;

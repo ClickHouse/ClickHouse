@@ -67,7 +67,7 @@ public:
 
     /// Read changelog from files on changelogs_dir_ skipping all entries before from_log_index
     /// Truncate broken entries, remove files after broken entries.
-    void readChangelogAndInitWriter(size_t from_log_index);
+    void readChangelogAndInitWriter(size_t last_commited_log_index, size_t logs_to_keep);
 
     /// Add entry to log with index. Call fsync if force_sync true.
     void appendEntry(size_t index, const LogEntryPtr & log_entry, bool force_sync);

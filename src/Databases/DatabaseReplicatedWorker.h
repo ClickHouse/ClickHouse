@@ -30,7 +30,7 @@ public:
     void shutdown() override;
 
 private:
-    void initializeMainThread() override;
+    bool initializeMainThread() override;
     void initializeReplication();
 
     DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper) override;

@@ -116,6 +116,11 @@ const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
     return nested->deserializeAndInsertFromArena(pos);
 }
 
+const char * ColumnMap::skipSerializedInArena(const char * pos) const
+{
+    return nested->skipSerializedInArena(pos);
+}
+
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
 {
     nested->updateHashWithValue(n, hash);
@@ -185,6 +190,11 @@ void ColumnMap::compareColumn(const IColumn & rhs, size_t rhs_row_num,
 {
     return doCompareColumn<ColumnMap>(assert_cast<const ColumnMap &>(rhs), rhs_row_num, row_indexes,
                                         compare_results, direction, nan_direction_hint);
+}
+
+bool ColumnMap::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnMap>();
 }
 
 void ColumnMap::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const

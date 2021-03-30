@@ -14,4 +14,3 @@
 -   `Tables.database` (Array(String)) - Массив имён баз данных таблиц, использующих параметр `config_name`.
 -   `Tables.table` (Array(String)) - Массив имён таблиц, использующих параметр `config_name`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/graphite_retentions) <!--hide-->

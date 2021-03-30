@@ -25,7 +25,7 @@ ExtremesStep::ExtremesStep(const DataStream & input_stream_)
 {
 }
 
-void ExtremesStep::transformPipeline(QueryPipeline & pipeline)
+void ExtremesStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addExtremesTransform();
 }

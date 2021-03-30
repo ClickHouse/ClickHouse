@@ -158,7 +158,11 @@ macro(add_object_library name common_path)
         list (APPEND all_modules ${name})
         add_headers_and_sources(${name} ${common_path})
         add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
-        target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+        if (OS_DARWIN)
+            target_link_libraries (${name} PRIVATE -Wl,-undefined,dynamic_lookup)
+        else()
+            target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+        endif()
     endif ()
 endmacro()
 
@@ -168,6 +172,7 @@ add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_datastreams DataStreams)
 add_object_library(clickhouse_datatypes DataTypes)
+add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
 add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
@@ -215,7 +220,11 @@ else()
     target_link_libraries (clickhouse_interpreters PRIVATE clickhouse_parsers_new jemalloc libdivide)
     list (APPEND all_modules dbms)
     # force all split libs to be linked
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
+    if (OS_DARWIN)
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-undefined,error")
+    else()
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
+    endif()
 endif ()
 
 macro (dbms_target_include_directories)
@@ -316,6 +325,7 @@ if (USE_CYRUS_SASL)
 endif()
 
 if (USE_KRB5)
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${KRB5_INCLUDE_DIR})
     dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
@@ -458,6 +468,8 @@ endif()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 
+include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
+
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
@@ -478,6 +490,15 @@ if (ENABLE_TESTS AND USE_GTEST)
         -Wno-gnu-zero-variadic-macro-arguments
     )
 
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_aggregate_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
+    target_link_libraries(unit_tests_dbms PRIVATE
+        ${GTEST_BOTH_LIBRARIES}
+        clickhouse_functions
+        clickhouse_aggregate_functions
+        clickhouse_parsers
+        clickhouse_storages_system
+        dbms
+        clickhouse_common_zookeeper
+        string_utils)
+
     add_check(unit_tests_dbms)
 endif ()

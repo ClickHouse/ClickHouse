@@ -155,7 +155,6 @@ option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" 
 
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
     # Only for Linux, x86_64.
-    # Implies ${ENABLE_FASTMEMCPY}
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
@@ -169,7 +168,7 @@ endif ()
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
 if (OS_LINUX)
-    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+    find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
     if (OBJCOPY_PATH)
         message(STATUS "Using objcopy: ${OBJCOPY_PATH}.")
 
@@ -241,9 +240,7 @@ else()
     message(STATUS "Disabling compiler -pipe option (have only ${AVAILABLE_PHYSICAL_MEMORY} mb of memory)")
 endif()
 
-if(NOT DISABLE_CPU_OPTIMIZE)
-    include(cmake/cpu_features.cmake)
-endif()
+include(cmake/cpu_features.cmake)
 
 option(ARCH_NATIVE "Add -march=native compiler flag")
 
@@ -251,19 +248,27 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (COMPILER_GCC OR COMPILER_CLANG)
-    # to make numeric_limits<__int128> works with GCC
-    set (_CXX_STANDARD "gnu++2a")
-else()
-    set (_CXX_STANDARD "c++2a")
-endif()
+if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
+    # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
+    # We will add C++ standard controlling flag in CMAKE_CXX_FLAGS manually for now.
 
-# cmake < 3.12 doesn't support 20. We'll set CMAKE_CXX_FLAGS for now
-# set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=${_CXX_STANDARD}")
+    if (COMPILER_GCC OR COMPILER_CLANG)
+        # to make numeric_limits<__int128> works with GCC
+        set (_CXX_STANDARD "gnu++2a")
+    else ()
+        set (_CXX_STANDARD "c++2a")
+    endif ()
 
-set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
-set (CMAKE_CXX_STANDARD_REQUIRED ON)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=${_CXX_STANDARD}")
+else ()
+    set (CMAKE_CXX_STANDARD 20)
+    set (CMAKE_CXX_EXTENSIONS ON) # Same as gnu++2a (ON) vs c++2a (OFF): https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html
+    set (CMAKE_CXX_STANDARD_REQUIRED ON)
+endif ()
+
+set (CMAKE_C_STANDARD 11)
+set (CMAKE_C_EXTENSIONS ON)
+set (CMAKE_C_STANDARD_REQUIRED ON)
 
 if (COMPILER_GCC OR COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
@@ -331,7 +336,7 @@ if (COMPILER_CLANG)
     endif ()
 
     # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
-    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
+    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-12" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
 
     if (LLVM_AR_PATH)
         message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
@@ -340,7 +345,7 @@ if (COMPILER_CLANG)
         message(WARNING "Cannot find llvm-ar. System ar will be used instead. It does not work with ThinLTO.")
     endif ()
 
-    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
+    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-12" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
 
     if (LLVM_RANLIB_PATH)
         message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
@@ -536,7 +541,7 @@ macro (add_executable target)
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
     if (GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
-        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:clickhouse_memcpy>)
+        _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
     else ()
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()

@@ -54,7 +54,7 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
 
     Pipe alterPartition(const StorageMetadataPtr & metadata_snapshot, const PartitionCommands & commands, const Context & context) override;
 
@@ -65,9 +65,6 @@ public:
     void renameInMemory(const StorageID & new_table_id) override;
 
     void shutdown() override;
-
-    void checkTableCanBeDropped() const override;
-    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 

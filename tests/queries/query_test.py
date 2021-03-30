@@ -26,7 +26,7 @@ SKIP_LIST = [
     "00990_metric_log_table_not_empty",
     "01014_lazy_database_concurrent_recreate_reattach_and_show_tables",
     "01018_Distributed__shard_num",
-    "01018_ip_dictionary",
+    "01018_ip_dictionary_long",
     "01050_clickhouse_dict_source_with_subquery",
     "01053_ssd_dictionary",
     "01054_cache_dictionary_overflow_cell",
@@ -46,7 +46,7 @@ SKIP_LIST = [
     "01293_client_interactive_vertical_singleline",  # expect-test
     "01293_system_distribution_queue",  # FLAKY
     "01293_show_clusters",
-    "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
+    "01294_lazy_database_concurrent_recreate_reattach_and_show_tables_long",
     "01294_system_distributed_on_cluster",
     "01300_client_save_history_when_terminated",  # expect-test
     "01304_direct_io",
