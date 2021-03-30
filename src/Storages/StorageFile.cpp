@@ -268,11 +268,10 @@ public:
         const ColumnsDescription & columns_description,
         const FilesInfoPtr & files_info)
     {
-        if (FormatFactory::instance().checkIfFormatIsColumnOriented(storage->format_name)) {
+        if (FormatFactory::instance().checkIfFormatIsColumnOriented(storage->format_name))
             return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
-        } else {
+        else
             return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
-        }
     }
 
     StorageFileSource(
@@ -447,12 +446,6 @@ Pipe StorageFile::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-
-    std::cout << "Names" << std::endl;
-    for (const auto & name : column_names) {
-        std::cout << name << std::endl;
-    }
-    std::cout << "-----" << std::endl;
     BlockInputStreams blocks_input;
 
     if (use_table_fd)   /// need to call ctr BlockInputStream
