@@ -9,7 +9,6 @@ fun:tolower
 # Ideally, we should report these upstream.
 src:*/contrib/zlib-ng/*
 src:*/contrib/simdjson/*
-src:*/contrib/lz4/*
 
 # Hyperscan
 fun:roseRunProgram
