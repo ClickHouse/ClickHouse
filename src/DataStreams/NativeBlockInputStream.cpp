@@ -73,14 +73,16 @@ void NativeBlockInputStream::resetParser()
 
 void NativeBlockInputStream::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
-    IDataType::DeserializeBinaryBulkSettings settings;
-    settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return &istr; };
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
     settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
 
-    IDataType::DeserializeBinaryBulkStatePtr state;
-    type.deserializeBinaryBulkStatePrefix(settings, state);
-    type.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state);
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    auto serialization = type.getDefaultSerialization();
+
+    serialization->deserializeBinaryBulkStatePrefix(settings, state);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
     if (column->size() != rows)
         throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column->size()) + ". Rows expected: " + toString(rows) + ".",

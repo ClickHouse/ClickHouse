@@ -49,7 +49,7 @@ public:
 
 void registerFunctionVersion(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionVersion>();
+    factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
 }
 
 }

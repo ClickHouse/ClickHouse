@@ -68,6 +68,7 @@ class ReplicatedFetchList;
 class Cluster;
 class Compiler;
 class MarkCache;
+class MMappedFileCache;
 class UncompressedCache;
 class ProcessList;
 class QueryStatus;
@@ -622,6 +623,11 @@ public:
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
+
+    /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    void setMMappedFileCache(size_t cache_size_in_num_entries);
+    std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
+    void dropMMappedFileCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
