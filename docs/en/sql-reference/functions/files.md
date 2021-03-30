@@ -21,7 +21,7 @@ file(path)
 
 **Example**
 
-Inserting data from files a.txt and b.txt into a table as different rows.
+Inserting data from files a.txt and b.txt into a table as strings:
 
 Query:
 
