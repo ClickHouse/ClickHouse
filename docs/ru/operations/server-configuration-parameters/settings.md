@@ -526,7 +526,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 -   Положительное целое число.
 -   0 — выключена.
 
-**Example**
+**Пример**
 
 ``` xml
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
