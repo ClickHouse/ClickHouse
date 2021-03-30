@@ -71,6 +71,7 @@ void registerFunctionTcpPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
 void registerFunctionFile(FunctionFactory & factory);
 void registerFunctionConnectionID(FunctionFactory & factory);
+void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -142,6 +143,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionByteSize(factory);
     registerFunctionFile(factory);
     registerFunctionConnectionID(factory);
+    registerFunctionIsIPAddressContainedIn(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

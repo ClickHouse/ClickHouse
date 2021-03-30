@@ -45,6 +45,7 @@ public:
                           const ASTPtr & query) override;
     void removeDictionary(const Context & context, const String & dictionary_name) override;
     void detachTablePermanently(const Context & context, const String & table_name) override;
+    void removeDetachedPermanentlyFlag(const Context & context, const String & table_name, const String & table_metadata_path, bool attach) const override;
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
@@ -76,6 +77,11 @@ private:
     ASTPtr parseQueryFromMetadataInZooKeeper(const String & node_name, const String & query);
     String readMetadataFile(const String & table_name) const;
 
+    ClusterPtr getClusterImpl() const;
+    void setCluster(ClusterPtr && new_cluster);
+
+    void createEmptyLogEntry(Coordination::Requests & ops, const ZooKeeperPtr & current_zookeeper);
+
     String zookeeper_path;
     String shard_name;
     String replica_name;
@@ -86,6 +92,8 @@ private:
 
     std::atomic_bool is_readonly = true;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
+
+    mutable ClusterPtr cluster;
 };
 
 }

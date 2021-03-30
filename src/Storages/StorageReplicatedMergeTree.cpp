@@ -1663,9 +1663,10 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     if (source_part->name != source_part_name)
     {
-        throw Exception("Part " + source_part_name + " is covered by " + source_part->name
-            + " but should be mutated to " + entry.new_part_name + ". This is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
+        LOG_WARNING(log, "Part " + source_part_name + " is covered by " + source_part->name
+                    + " but should be mutated to " + entry.new_part_name + ". "
+                    + "Possibly the mutation of this part is not needed and will be skipped. This shouldn't happen often.");
+        return false;
     }
 
     /// TODO - some better heuristic?
@@ -2313,7 +2314,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         {
             String source_replica_path = zookeeper_path + "/replicas/" + part_desc->replica;
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
-            auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
+            auto timeouts = getFetchPartHTTPTimeouts(global_context);
+
             auto [user, password] = global_context.getInterserverCredentials();
             String interserver_scheme = global_context.getInterserverScheme();
 
@@ -3246,6 +3248,23 @@ void StorageReplicatedMergeTree::exitLeaderElection()
     leader_election = nullptr;
 }
 
+ConnectionTimeouts StorageReplicatedMergeTree::getFetchPartHTTPTimeouts(const Context & context)
+{
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context);
+    auto settings = getSettings();
+
+    if (settings->replicated_fetches_http_connection_timeout.changed)
+        timeouts.connection_timeout = settings->replicated_fetches_http_connection_timeout;
+
+    if (settings->replicated_fetches_http_send_timeout.changed)
+        timeouts.send_timeout = settings->replicated_fetches_http_send_timeout;
+
+    if (settings->replicated_fetches_http_receive_timeout.changed)
+        timeouts.receive_timeout = settings->replicated_fetches_http_receive_timeout;
+
+    return timeouts;
+}
+
 bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, const String & part_name)
 {
     auto zookeeper = getZooKeeper();
@@ -3661,7 +3680,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     else
     {
         address.fromString(zookeeper->get(source_replica_path + "/host"));
-        timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
+        timeouts = getFetchPartHTTPTimeouts(global_context);
+
         user_password = global_context.getInterserverCredentials();
         interserver_scheme = global_context.getInterserverScheme();
 
