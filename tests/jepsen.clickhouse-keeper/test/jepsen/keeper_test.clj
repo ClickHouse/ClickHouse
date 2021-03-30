@@ -1,6 +1,6 @@
-(ns jepsen.nukeeper-test
+(ns jepsen.keeper-test
   (:require [clojure.test :refer :all]
-            [jepsen.nukeeper.utils :refer :all]
+            [jepsen.clickhouse-keeper.utils :refer :all]
             [zookeeper :as zk]
             [zookeeper.data :as data])
   (:import (ch.qos.logback.classic Level)
