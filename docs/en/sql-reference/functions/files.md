@@ -7,7 +7,7 @@ toc_title: Files
 
 ## file {#file}
 
-Reads file as a String. The file can contain subqueries, conditions, names of columns and any other information that will be read as one line.
+Reads file as a String. The file content is not parsed, so any information is read as one string and placed into the specified column.
 
 **Syntax**
 
@@ -33,4 +33,3 @@ INSERT INTO table SELECT file('a.txt'), file('b.txt');
 
 -   [user_files_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path)
 -   [file](../table-functions/file.md)
-
