@@ -15,7 +15,9 @@ RUN apt-get update \
         wget \
         --yes --no-install-recommends --verbose-versions \
     && cat /etc/resolv.conf \
+    && cat /etc/hosts \
     && echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
+    && dig apt.llvm.org \
     && nslookup -debug apt.llvm.org \
     && ping -c1 apt.llvm.org \
     && wget -nv --retry-connrefused --tries=10 -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
@@ -37,7 +39,9 @@ RUN apt-get update \
         --yes --no-install-recommends
 
 RUN cat /etc/resolv.conf \
+    && cat /etc/hosts \
     && echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
+    && dig apt.llvm.org \
     && nslookup -debug apt.llvm.org \
     && apt-get update \
     && apt-get install \
