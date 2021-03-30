@@ -1498,7 +1498,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
 bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 {
-    LOG_TRACE(log, "Executing log entry to merge parts {} to {}", boost::algorithm::join(entry.source_parts, ", "), entry.new_part_name);
+    LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
+        fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
     const auto storage_settings_ptr = getSettings();
 
@@ -1523,6 +1524,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     /// instead of doing exactly the same merge cluster-wise
     std::optional<String> replica_to_execute_merge;
     bool replica_to_execute_merge_picked = false;
+
     if (merge_strategy_picker.shouldMergeOnSingleReplica(entry))
     {
         replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
@@ -1530,17 +1532,21 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
         if (replica_to_execute_merge)
         {
-            LOG_DEBUG(log, "Prefer fetching part {} from replica {} due execute_merges_on_single_replica_time_threshold",
+            LOG_DEBUG(log,
+                "Prefer fetching part {} from replica {} due to execute_merges_on_single_replica_time_threshold",
                 entry.new_part_name, replica_to_execute_merge.value());
+
             return false;
         }
     }
 
     DataPartsVector parts;
     bool have_all_parts = true;
+
     for (const String & name : entry.source_parts)
     {
         DataPartPtr part = getActiveContainingPart(name);
+
         if (!part)
         {
             have_all_parts = false;
@@ -1623,8 +1629,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     if (storage_settings_ptr->allow_s3_zero_copy_replication)
     {
-        auto disk = reserved_space->getDisk();
-        if (disk->getType() == DB::DiskType::Type::S3)
+        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::Type::S3)
         {
             if (merge_strategy_picker.shouldMergeOnSingleReplicaS3Shared(entry))
             {
@@ -1633,7 +1638,9 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
                 if (replica_to_execute_merge)
                 {
-                    LOG_DEBUG(log, "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold", entry.new_part_name, replica_to_execute_merge.value());
+                    LOG_DEBUG(log,
+                        "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold",
+                        entry.new_part_name, replica_to_execute_merge.value());
                     return false;
                 }
             }
@@ -1645,8 +1652,10 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         global_context.getMergeList().bookMergeWithTTL();
 
     auto table_id = getStorageID();
+
     /// Add merge to list
-    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_merged_part);
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(
+        table_id.database_name, table_id.table_name, future_merged_part);
 
     Transaction transaction(*this);
     MutableDataPartPtr part;
@@ -1680,7 +1689,16 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
                 ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
-                LOG_ERROR(log, "{}. Data after merge is not byte-identical to data on another replicas. There could be several reasons: 1. Using newer version of compression library after server update. 2. Using another compression method. 3. Non-deterministic compression algorithm (highly unlikely). 4. Non-deterministic merge algorithm due to logical error in code. 5. Data corruption in memory due to bug in code. 6. Data corruption in memory due to hardware issue. 7. Manual modification of source data after server startup. 8. Manual modification of checksums stored in ZooKeeper. 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas. We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
+                LOG_ERROR(log,
+                    "{}. Data after merge is not byte-identical to data on another replicas. There could be several"
+                    " reasons: 1. Using newer version of compression library after server update. 2. Using another"
+                    " compression method. 3. Non-deterministic compression algorithm (highly unlikely). 4."
+                    " Non-deterministic merge algorithm due to logical error in code. 5. Data corruption in memory due"
+                    " to bug in code. 6. Data corruption in memory due to hardware issue. 7. Manual modification of"
+                    " source data after server startup. 8. Manual modification of checksums stored in ZooKeeper. 9."
+                    " Part format related settings like 'enable_mixed_granularity_parts' are different on different"
+                    " replicas. We will download merged part from replica to force byte-identical result.",
+                    getCurrentExceptionMessage(false));
 
                 write_part_log(ExecutionStatus::fromCurrentException());
 
