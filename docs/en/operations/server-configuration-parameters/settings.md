@@ -502,7 +502,10 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed requests.
+The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+
+!!! info "Note"
+	These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
 
 Possible values:
 
@@ -537,7 +540,7 @@ Default value: `0` that means no limit.
 
 ## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
 
-Minimal number of marks for applying the `max_concurrent_queries` setting.
+The minimal number of marks read by the query for applying the [max_concurrent_queries](#max-concurrent-queries) setting.
 
 Possible values:
 
@@ -549,10 +552,6 @@ Possible values:
 ``` xml
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
-
-**See Also**
-
--   [max_concurrent_queries](#max-concurrent-queries)
 
 ## max_connections {#max-connections}
 
