@@ -580,6 +580,7 @@
         "00980_zookeeper_merge_tree_alter_settings",
         "00988_constraints_replication_zookeeper",
         "00989_parallel_parts_loading",
+        "00992_system_parts_race_condition_zookeeper_long",
         "00993_system_parts_race_condition_drop_zookeeper",
         "01012_show_tables_limit",
         "01013_sync_replica_timeout_zookeeper",
