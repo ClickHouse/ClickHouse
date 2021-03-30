@@ -410,8 +410,8 @@
         "00571_non_exist_database_when_create_materializ_view",
         "00575_illegal_column_exception_when_drop_depen_column",
         "00599_create_view_with_subquery",
-        "00604_show_create_database",
         "00600_replace_running_query",
+        "00604_show_create_database",
         "00612_http_max_query_size",
         "00619_union_highlite",
         "00620_optimize_on_nonleader_replica_zookeeper",
@@ -462,6 +462,7 @@
         "00933_test_fix_extra_seek_on_compressed_cache",
         "00933_ttl_replicated_zookeeper",
         "00933_ttl_with_default",
+        "00950_dict_get",
         "00955_test_final_mark",
         "00976_ttl_with_old_parts",
         "00980_merge_alter_settings",
@@ -625,8 +626,8 @@
         "01530_drop_database_atomic_sync",
         "01541_max_memory_usage_for_user_long",
         "01542_dictionary_load_exception_race",
-        "01560_optimize_on_insert_zookeeper",
         "01545_system_errors", // looks at the difference of values in system.errors
+        "01560_optimize_on_insert_zookeeper",
         "01575_disable_detach_table_of_dictionary",
         "01593_concurrent_alter_mutations_kill",
         "01593_concurrent_alter_mutations_kill_many_replicas",
@@ -640,11 +641,23 @@
         "01666_blns",
         "01646_system_restart_replicas_smoke", // system restart replicas is a global query
         "01656_test_query_log_factories_info",
+        "01658_read_file_to_stringcolumn",
         "01669_columns_declaration_serde",
         "01676_dictget_in_default_expression",
+        "01681_cache_dictionary_simple_key",
+        "01682_cache_dictionary_complex_key",
+        "01683_flat_dictionary",
+        "01684_ssd_cache_dictionary_simple_key",
+        "01685_ssd_cache_dictionary_complex_key",
         "01700_system_zookeeper_path_in",
+        "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
+        "01702_system_query_log", // Runs many global system queries
         "01715_background_checker_blather_zookeeper",
+        "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
         "01747_alter_partition_key_enum_zookeeper",
+        "01748_dictionary_table_dot", // creates database
+        "01760_polygon_dictionaries",
+        "01760_system_dictionaries",
         "01761_alter_decimal_zookeeper",
         "attach",
         "ddl_dictionaries",
@@ -653,18 +666,6 @@
         "live_view",
         "memory_leak",
         "memory_limit",
-        "polygon_dicts", // they use an explicitly specified database
-        "01658_read_file_to_stringcolumn",
-        "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
-        "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
-        "01748_dictionary_table_dot", // creates database
-        "00950_dict_get",
-        "01683_flat_dictionary",
-        "01681_cache_dictionary_simple_key",
-        "01682_cache_dictionary_complex_key",
-        "01684_ssd_cache_dictionary_simple_key",
-        "01685_ssd_cache_dictionary_complex_key",
-        "01760_system_dictionaries",
-        "01760_polygon_dictionaries"
+        "polygon_dicts" // they use an explicitly specified database
     ]
 }
