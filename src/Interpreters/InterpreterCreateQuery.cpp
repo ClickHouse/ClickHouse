@@ -713,6 +713,19 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     }
 }
 
+static void generateUUIDForTable(ASTCreateQuery & create)
+{
+    if (create.uuid == UUIDHelpers::Nil)
+        create.uuid = UUIDHelpers::generateV4();
+
+    /// If destination table (to_table_id) is not specified for materialized view,
+    /// then MV will create inner table. We should generate UUID of inner table here,
+    /// so it will be the same on all hosts if query in ON CLUSTER or database engine is Replicated.
+    bool need_uuid_for_inner_table = create.is_materialized_view && !create.to_table_id;
+    if (need_uuid_for_inner_table && create.to_inner_uuid == UUIDHelpers::Nil)
+        create.to_inner_uuid = UUIDHelpers::generateV4();
+}
+
 void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const
 {
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
@@ -744,18 +757,19 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             kind_upper, create.table);
         }
 
-        if (create.uuid == UUIDHelpers::Nil)
-            create.uuid = UUIDHelpers::generateV4();
+        generateUUIDForTable(create);
     }
     else
     {
         bool is_on_cluster = context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        if (create.uuid != UUIDHelpers::Nil && !is_on_cluster)
+        bool has_uuid = create.uuid != UUIDHelpers::Nil || create.to_inner_uuid != UUIDHelpers::Nil;
+        if (has_uuid && !is_on_cluster)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} UUID specified, but engine of database {} is not Atomic", kind, create.database);
 
         /// Ignore UUID if it's ON CLUSTER query
         create.uuid = UUIDHelpers::Nil;
+        create.to_inner_uuid = UUIDHelpers::Nil;
     }
 
     if (create.replace_table)
@@ -804,6 +818,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.attach && !create.storage && !create.columns_list)
     {
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        if (database->getEngineName() == "Replicated")
+        {
+            auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.table);
+            if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+            {
+                create.database = database_name;
+                guard->releaseTableLock();
+                return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
+            }
+        }
+
         bool if_not_exists = create.if_not_exists;
 
         // Table SQL definition is available even if the table is detached (even permanently)
@@ -877,7 +902,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && database->getEngineName() == "Replicated")
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.database, create.table);
-        database = DatabaseCatalog::instance().getDatabase(create.database);
         if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
         {
             assertOrSetUUID(create, database);
@@ -1136,8 +1160,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, cons
 
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
-    if (create.uuid == UUIDHelpers::Nil)
-        create.uuid = UUIDHelpers::generateV4();
+    generateUUIDForTable(create);
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = context.getMacros()->expand(cluster_name);
