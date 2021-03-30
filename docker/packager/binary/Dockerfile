@@ -4,7 +4,15 @@ FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN apt-get update \
-    && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
+    && apt-get install \
+       ca-certificates \
+       lsb-release \
+       wget \
+       gnupg \
+       apt-utils \
+       dnsutils \
+       iputils-ping \
+       apt-transport-https \
         --yes --no-install-recommends --verbose-versions \
     && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
