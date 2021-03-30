@@ -22,9 +22,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
-#include "Storages/ColumnsDescription.h"
-#include "Storages/StorageInMemoryMetadata.h"
-#include "Storages/StorageMergeTree.h"
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <fcntl.h>
 #include <unistd.h>
