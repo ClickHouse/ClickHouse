@@ -169,14 +169,14 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     return getDistributedDDLStatus(node_path, entry, context);
 }
 
-BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, const Context & context, const std::optional<Strings> & hosts_to_wait)
+BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait)
 {
     BlockIO io;
     if (context->getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
     auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, context, hosts_to_wait);
-    if (context.getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
+    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
     {
         /// Wait for query to finish, but ignore output
         NullBlockOutputStream output{Block{}};
@@ -259,7 +259,7 @@ Block DDLQueryStatusInputStream::readImpl()
     assert(num_hosts_finished <= waiting_hosts.size());
     if (all_hosts_finished || timeout_exceeded)
     {
-        bool throw_if_error_on_host = context.getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
+        bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
         if (first_exception && throw_if_error_on_host)
             throw Exception(*first_exception);
 
@@ -273,7 +273,7 @@ Block DDLQueryStatusInputStream::readImpl()
     {
         if (isCancelled())
         {
-            bool throw_if_error_on_host = context.getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
+            bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
             if (first_exception && throw_if_error_on_host)
                 throw Exception(*first_exception);
 

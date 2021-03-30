@@ -507,7 +507,7 @@ private:
 
     /// Exchange parts.
 
-    ConnectionTimeouts getFetchPartHTTPTimeouts(const Context & context);
+    ConnectionTimeouts getFetchPartHTTPTimeouts(ContextPtr context);
 
     /** Returns an empty string if no one has a part.
       */

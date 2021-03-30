@@ -336,7 +336,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
 
     if (auto * query_drop = query->as<ASTDropQuery>())
     {
-        if (query_drop->kind == ASTDropQuery::Kind::Detach && query_context.getSettingsRef().database_replicated_always_detach_permanently)
+        if (query_drop->kind == ASTDropQuery::Kind::Detach && query_context->getSettingsRef().database_replicated_always_detach_permanently)
             query_drop->permanently = true;
         if (query_drop->kind == ASTDropQuery::Kind::Detach && !query_drop->permanently)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "

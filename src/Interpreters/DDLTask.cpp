@@ -52,11 +52,11 @@ void DDLLogEntry::assertVersion() const
                                                             "Maximum supported version is {}", version, max_version);
 }
 
-void DDLLogEntry::setSettingsIfRequired(const Context & context)
+void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
-    version = context.getSettingsRef().distributed_ddl_entry_format_version;
+    version = context->getSettingsRef().distributed_ddl_entry_format_version;
     if (version == 2)
-        settings.emplace(context.getSettingsRef().changes());
+        settings.emplace(context->getSettingsRef().changes());
 }
 
 String DDLLogEntry::toString() const
