@@ -4,6 +4,8 @@
 -- (with subquery to expand it on the initiator).
 
 drop table if exists dist_01756;
+drop table if exists dist_01756_str;
+drop table if exists data_01756_str;
 
 -- SELECT
 --     intHash64(0) % 2,
@@ -119,3 +121,7 @@ select * from dist_01756_str where key in (0, Null); -- { serverError 53 }
 select 'optimize_skip_unused_shards_limit';
 select * from dist_01756 where dummy in (0, 2) settings optimize_skip_unused_shards_limit=1; -- { serverError 507 }
 select * from dist_01756 where dummy in (0, 2) settings optimize_skip_unused_shards_limit=1, force_optimize_skip_unused_shards=0;
+
+drop table dist_01756;
+drop table dist_01756_str;
+drop table data_01756_str;
