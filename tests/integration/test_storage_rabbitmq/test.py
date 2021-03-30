@@ -275,7 +275,7 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
         channel.basic_publish(exchange='tsv', routing_key='', body=message)
 
     connection.close()
-    time.sleep(1)
+    time.sleep(2)
 
     result = ''
     while True:
