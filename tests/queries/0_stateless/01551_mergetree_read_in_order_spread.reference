@@ -13,16 +13,16 @@ ExpressionTransform
                 (MergingSorted)
                   (Expression)
                   ExpressionTransform
-                    (ReadFromStorage)
+                    (ReadFromMergeTree)
                     MergeTree 0 → 1
                 (MergingSorted)
                 MergingSortedTransform 2 → 1
                   (Expression)
                   ExpressionTransform × 2
-                    (ReadFromStorage)
+                    (ReadFromMergeTree)
                     MergeTree × 2 0 → 1
                 (MergingSorted)
                   (Expression)
                   ExpressionTransform
-                    (ReadFromStorage)
+                    (ReadFromMergeTree)
                     MergeTree 0 → 1

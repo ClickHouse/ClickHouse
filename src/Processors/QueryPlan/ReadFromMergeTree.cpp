@@ -91,7 +91,7 @@ Pipe ReadFromMergeTree::readFromPool()
 template<typename TSource>
 ProcessorPtr ReadFromMergeTree::createSource(const RangesInDataPart & part)
 {
-    return std::make_shared<MergeTreeSelectProcessor>(
+    return std::make_shared<TSource>(
             storage, metadata_snapshot, part.data_part, settings.max_block_size, settings.preferred_block_size_bytes,
             settings.preferred_max_column_in_block_size_bytes, required_columns, part.ranges, settings.use_uncompressed_cache,
             prewhere_info, true, settings.reader_settings, virt_column_names, part.part_index_in_query);
