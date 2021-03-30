@@ -18,8 +18,12 @@ toc_title: "Функции поиска в строках"
 **Синтаксис**
 
 ``` sql
-position((haystack, needle[, start_pos]) | (needle IN haystack))
+position(haystack, needle[, start_pos])
 ```
+
+``` sql
+position(needle IN haystack)
+``` 
 
 Алиас: `locate(haystack, needle[, start_pos])`.
 
@@ -73,7 +77,7 @@ SELECT position('Привет, мир!', '!');
 └───────────────────────────────┘
 ```
 
-**Примеры**
+**Примеры работы функции с синтаксисом POSITION(needle IN haystack)**
 
 Запрос:
 
