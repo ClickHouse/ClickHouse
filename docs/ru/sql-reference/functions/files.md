@@ -7,7 +7,7 @@ toc_title: "Функции для работы с файлами"
 
 ## file {#file}
 
-Читает файл как строку. Файл может содержать подзапросы, условия, названия столбцов и любую другую информацию, которая будет прочитана как одна строка.
+Читает файл как строку. Содержимое файла не разбирается (не парсится) и записывается в указанную колонку в виде единой строки.
 
 **Синтаксис**
 
@@ -31,4 +31,3 @@ INSERT INTO table SELECT file('a.txt'), file('b.txt');
 
 -   [user_files_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path)
 -   [file](../table-functions/file.md)
-
