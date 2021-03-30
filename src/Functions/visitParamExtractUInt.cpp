@@ -9,14 +9,14 @@ namespace DB
 struct NameVisitParamExtractUInt   { static constexpr auto name = "visitParamExtractUInt"; };
 using FunctionVisitParamExtractUInt = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<UInt64>>, NameVisitParamExtractUInt>;
 
-struct NameJSONSExtractUInt   { static constexpr auto name = "JSONSExtractUInt"; };
-using FunctionJSONSExtractUInt = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<UInt64>>, NameJSONSExtractUInt>;
+struct NameSimpleJSONExtractUInt   { static constexpr auto name = "SimpleJSONExtractUInt"; };
+using FunctionSimpleJSONExtractUInt = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<UInt64>>, NameSimpleJSONExtractUInt>;
 
 
 void registerFunctionVisitParamExtractUInt(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionVisitParamExtractUInt>();
-    factory.registerFunction<FunctionJSONSExtractUInt>();
+    factory.registerFunction<FunctionSimpleJSONExtractUInt>();
 }
 
 }

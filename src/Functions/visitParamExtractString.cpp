@@ -20,13 +20,13 @@ struct ExtractString
 struct NameVisitParamExtractString { static constexpr auto name = "visitParamExtractString"; };
 using FunctionVisitParamExtractString = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractString>, NameVisitParamExtractString>;
 
-struct NameJSONSExtractString { static constexpr auto name = "JSONSExtractString"; };
-using FunctionJSONSExtractString = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractString>, NameJSONSExtractString>;
+struct NameSimpleJSONExtractString { static constexpr auto name = "SimpleJSONExtractString"; };
+using FunctionSimpleJSONExtractString = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractString>, NameSimpleJSONExtractString>;
 
 void registerFunctionVisitParamExtractString(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionVisitParamExtractString>();
-    factory.registerFunction<FunctionJSONSExtractString>();
+    factory.registerFunction<FunctionSimpleJSONExtractString>();
 }
 
 }

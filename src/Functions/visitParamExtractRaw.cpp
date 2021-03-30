@@ -59,13 +59,13 @@ struct ExtractRaw
 struct NameVisitParamExtractRaw    { static constexpr auto name = "visitParamExtractRaw"; };
 using FunctionVisitParamExtractRaw = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractRaw>, NameVisitParamExtractRaw>;
 
-struct NameJSONSExtractRaw    { static constexpr auto name = "JSONSExtractRaw"; };
-using FunctionJSONSExtractRaw = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractRaw>, NameJSONSExtractRaw>;
+struct NameSimpleJSONExtractRaw    { static constexpr auto name = "SimpleJSONExtractRaw"; };
+using FunctionSimpleJSONExtractRaw = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractRaw>, NameSimpleJSONExtractRaw>;
 
 void registerFunctionVisitParamExtractRaw(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionVisitParamExtractRaw>();
-    factory.registerFunction<FunctionJSONSExtractRaw>();
+    factory.registerFunction<FunctionSimpleJSONExtractRaw>();
 }
 
 }
