@@ -28,6 +28,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReverseRowsStep.h>
 #include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -950,23 +951,6 @@ size_t minMarksForConcurrentRead(
 
 }
 
-static QueryPlanPtr createPlanFromPipe(Pipe pipe, const String & query_id, const MergeTreeData & data, const std::string & description = "")
-{
-    auto plan = std::make_unique<QueryPlan>();
-
-    std::string storage_name = "MergeTree";
-    if (!description.empty())
-        storage_name += ' ' + description;
-
-    // Attach QueryIdHolder if needed
-    if (!query_id.empty())
-        pipe.addQueryIdHolder(std::make_shared<QueryIdHolder>(query_id, data));
-
-    auto step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name);
-    plan->addStep(std::move(step));
-    return plan;
-}
-
 QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts,
     size_t num_streams,
@@ -1020,6 +1004,17 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     if (0 == sum_marks)
         return {};
 
+    ReadFromMergeTree::Settings step_settings
+    {
+        .max_block_size = max_block_size,
+        .preferred_block_size_bytes = settings.preferred_block_size_bytes,
+        .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
+        .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+        .use_uncompressed_cache = use_uncompressed_cache,
+        .reader_settings = reader_settings,
+        .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
+    };
+
     if (num_streams > 1)
     {
         /// Parallel query execution.
@@ -1028,67 +1023,16 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         /// Reduce the number of num_streams if the data is small.
         if (sum_marks < num_streams * min_marks_for_concurrent_read && parts.size() < num_streams)
             num_streams = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts.size());
-
-        MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
-            num_streams,
-            sum_marks,
-            min_marks_for_concurrent_read,
-            std::move(parts),
-            data,
-            metadata_snapshot,
-            query_info.prewhere_info,
-            true,
-            column_names,
-            MergeTreeReadPool::BackoffSettings(settings),
-            settings.preferred_block_size_bytes,
-            false);
-
-        /// Let's estimate total number of rows for progress bar.
-        LOG_TRACE(log, "Reading approx. {} rows with {} streams", total_rows, num_streams);
-
-        for (size_t i = 0; i < num_streams; ++i)
-        {
-            auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
-                i, pool, min_marks_for_concurrent_read, max_block_size,
-                settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
-                data, metadata_snapshot, use_uncompressed_cache,
-                query_info.prewhere_info, reader_settings, virt_columns);
-
-            if (i == 0)
-            {
-                /// Set the approximate number of rows for the first source only
-                source->addTotalRowsApprox(total_rows);
-            }
-
-            res.emplace_back(std::move(source));
-        }
-
-        return createPlanFromPipe(Pipe::unitePipes(std::move(res)), query_id, data);
     }
-    else
-    {
-        /// Sequential query execution.
-        Pipes res;
 
-        for (const auto & part : parts)
-        {
-            auto source = std::make_shared<MergeTreeSelectProcessor>(
-                data, metadata_snapshot, part.data_part, max_block_size, settings.preferred_block_size_bytes,
-                settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
-                query_info.prewhere_info, true, reader_settings, virt_columns, part.part_index_in_query);
+    auto plan = std::make_unique<QueryPlan>();
+    auto step = std::make_unique<ReadFromMergeTree>(
+        data, metadata_snapshot, query_id,
+        column_names, std::move(parts), query_info.prewhere_info, virt_columns,
+        step_settings, num_streams, /*allow_mix_streams*/ true, /*read_reverse*/ false);
 
-            res.emplace_back(std::move(source));
-        }
-
-        auto pipe = Pipe::unitePipes(std::move(res));
-
-        /// Use ConcatProcessor to concat sources together.
-        /// It is needed to read in parts order (and so in PK order) if single thread is used.
-        if (pipe.numOutputPorts() > 1)
-            pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
-
-        return createPlanFromPipe(std::move(pipe), query_id, data);
-    }
+    plan->addStep(std::move(step));
+    return plan;
 }
 
 static ActionsDAGPtr createProjection(const Block & header)
@@ -1208,8 +1152,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     for (size_t i = 0; i < num_streams && !parts.empty(); ++i)
     {
         size_t need_marks = min_marks_per_stream;
-
-        Pipes pipes;
+        RangesInDataParts new_parts;
 
         /// Loop over parts.
         /// We will iteratively take part or some subrange of a part from the back
@@ -1264,48 +1207,31 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 parts.emplace_back(part);
             }
             ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
-
-            if (input_order_info->direction == 1)
-            {
-                pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
-                    data,
-                    metadata_snapshot,
-                    part.data_part,
-                    max_block_size,
-                    settings.preferred_block_size_bytes,
-                    settings.preferred_max_column_in_block_size_bytes,
-                    column_names,
-                    ranges_to_get_from_part,
-                    use_uncompressed_cache,
-                    query_info.prewhere_info,
-                    true,
-                    reader_settings,
-                    virt_columns,
-                    part.part_index_in_query));
-            }
-            else
-            {
-                pipes.emplace_back(std::make_shared<MergeTreeReverseSelectProcessor>(
-                    data,
-                    metadata_snapshot,
-                    part.data_part,
-                    max_block_size,
-                    settings.preferred_block_size_bytes,
-                    settings.preferred_max_column_in_block_size_bytes,
-                    column_names,
-                    ranges_to_get_from_part,
-                    use_uncompressed_cache,
-                    query_info.prewhere_info,
-                    true,
-                    reader_settings,
-                    virt_columns,
-                    part.part_index_in_query));
-            }
+            new_parts.emplace_back(part.data_part, part.part_index_in_query, std::move(ranges_to_get_from_part));
         }
 
-        auto plan = createPlanFromPipe(Pipe::unitePipes(std::move(pipes)), query_id, data, "with order");
+        ReadFromMergeTree::Settings step_settings
+        {
+            .max_block_size = max_block_size,
+            .preferred_block_size_bytes = settings.preferred_block_size_bytes,
+            .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
+            .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+            .use_uncompressed_cache = use_uncompressed_cache,
+            .reader_settings = reader_settings,
+            .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
+        };
 
-        if (input_order_info->direction != 1)
+        bool read_reverse = input_order_info->direction != 1;
+
+        auto plan = std::make_unique<QueryPlan>();
+        auto step = std::make_unique<ReadFromMergeTree>(
+            data, metadata_snapshot, query_id,
+            column_names, std::move(new_parts), query_info.prewhere_info, virt_columns,
+            step_settings, num_streams, /*allow_mix_streams*/ false, /*read_reverse*/ read_reverse);
+
+        plan->addStep(std::move(step));
+
+        if (read_reverse)
         {
             auto reverse_step = std::make_unique<ReverseRowsStep>(plan->getCurrentDataStream());
             plan->addStep(std::move(reverse_step));
@@ -1403,7 +1329,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         num_streams = settings.max_final_threads;
 
     /// If setting do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
-    /// We have all parts in parts vector, where parts with same partition are nerby.
+    /// We have all parts in parts vector, where parts with same partition are nearby.
     /// So we will store iterators pointed to the beginning of each partition range (and parts.end()),
     /// then we will create a pipe for each partition that will run selecting processor and merging processor
     /// for the parts with this partition. In the end we will unite all the pipes.
@@ -1442,7 +1368,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         QueryPlanPtr plan;
 
         {
-            Pipes pipes;
+            RangesInDataParts new_parts;
 
             /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
             /// with level > 0 then we won't postprocess this part and if num_streams > 1 we
@@ -1461,36 +1387,35 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             {
                 for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
                 {
-                    auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
-                        data,
-                        metadata_snapshot,
-                        part_it->data_part,
-                        max_block_size,
-                        settings.preferred_block_size_bytes,
-                        settings.preferred_max_column_in_block_size_bytes,
-                        column_names,
-                        part_it->ranges,
-                        use_uncompressed_cache,
-                        query_info.prewhere_info,
-                        true,
-                        reader_settings,
-                        virt_columns,
-                        part_it->part_index_in_query);
-
-                    pipes.emplace_back(std::move(source_processor));
+                    new_parts.emplace_back(part_it->data_part, part_it->part_index_in_query, part_it->ranges);
                 }
             }
 
-            if (pipes.empty())
+            if (new_parts.empty())
                 continue;
 
-            auto pipe = Pipe::unitePipes(std::move(pipes));
+            ReadFromMergeTree::Settings step_settings
+            {
+                .max_block_size = max_block_size,
+                .preferred_block_size_bytes = settings.preferred_block_size_bytes,
+                .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
+                .min_marks_for_concurrent_read = 0, /// this setting is not used for reading in order
+                .use_uncompressed_cache = use_uncompressed_cache,
+                .reader_settings = reader_settings,
+                .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
+            };
+
+            plan = std::make_unique<QueryPlan>();
+            auto step = std::make_unique<ReadFromMergeTree>(
+                data, metadata_snapshot, query_id,
+                column_names, std::move(new_parts), query_info.prewhere_info, virt_columns,
+                step_settings, num_streams, /*allow_mix_streams*/ false, /*read_reverse*/ false);
+
+            plan->addStep(std::move(step));
 
             /// Drop temporary columns, added by 'sorting_key_expr'
             if (!out_projection)
-                out_projection = createProjection(pipe.getHeader());
-
-            plan = createPlanFromPipe(std::move(pipe), query_id, data, "with final");
+                out_projection = createProjection(plan->getCurrentDataStream().header);
         }
 
         auto expression_step = std::make_unique<ExpressionStep>(
@@ -1537,7 +1462,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
     if (!lonely_parts.empty())
     {
-        Pipes pipes;
+        RangesInDataParts new_parts;
 
         size_t num_streams_for_lonely_parts = num_streams * lonely_parts.size();
 
@@ -1552,41 +1477,28 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         if (sum_marks_in_lonely_parts < num_streams_for_lonely_parts * min_marks_for_concurrent_read && lonely_parts.size() < num_streams_for_lonely_parts)
             num_streams_for_lonely_parts = std::max((sum_marks_in_lonely_parts + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, lonely_parts.size());
 
-
-        MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
-            num_streams_for_lonely_parts,
-            sum_marks_in_lonely_parts,
-            min_marks_for_concurrent_read,
-            std::move(lonely_parts),
-            data,
-            metadata_snapshot,
-            query_info.prewhere_info,
-            true,
-            column_names,
-            MergeTreeReadPool::BackoffSettings(settings),
-            settings.preferred_block_size_bytes,
-            false);
-
-        LOG_TRACE(log, "Reading approx. {} rows with {} streams", total_rows_in_lonely_parts, num_streams_for_lonely_parts);
-
-        for (size_t i = 0; i < num_streams_for_lonely_parts; ++i)
+        ReadFromMergeTree::Settings step_settings
         {
-            auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
-                i, pool, min_marks_for_concurrent_read, max_block_size,
-                settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
-                data, metadata_snapshot, use_uncompressed_cache,
-                query_info.prewhere_info, reader_settings, virt_columns);
+            .max_block_size = max_block_size,
+            .preferred_block_size_bytes = settings.preferred_block_size_bytes,
+            .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
+            .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+            .use_uncompressed_cache = use_uncompressed_cache,
+            .reader_settings = reader_settings,
+            .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
+        };
 
-            pipes.emplace_back(std::move(source));
-        }
+        auto plan = std::make_unique<QueryPlan>();
+        auto step = std::make_unique<ReadFromMergeTree>(
+            data, metadata_snapshot, query_id,
+            column_names, std::move(lonely_parts), query_info.prewhere_info, virt_columns,
+            step_settings, num_streams_for_lonely_parts, /*allow_mix_streams*/ true, /*read_reverse*/ false);
 
-        auto pipe = Pipe::unitePipes(std::move(pipes));
+        plan->addStep(std::move(step));
 
         /// Drop temporary columns, added by 'sorting_key_expr'
         if (!out_projection)
-            out_projection = createProjection(pipe.getHeader());
-
-        QueryPlanPtr plan = createPlanFromPipe(std::move(pipe), query_id, data, "with final");
+            out_projection = createProjection(plan->getCurrentDataStream().header);
 
         auto expression_step = std::make_unique<ExpressionStep>(
             plan->getCurrentDataStream(),
