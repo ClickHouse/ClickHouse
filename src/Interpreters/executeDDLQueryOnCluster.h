@@ -25,6 +25,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context);
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const AccessRightsElements & query_requires_access);
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, AccessRightsElements && query_requires_access);
 
+BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, const Context & context, const std::optional<Strings> & hosts_to_wait = {});
 
 class DDLQueryStatusInputStream final : public IBlockInputStream
 {
@@ -45,6 +46,8 @@ private:
 
     Strings getNewAndUpdate(const Strings & current_list_of_finished_hosts);
 
+    std::pair<String, UInt16> parseHostAndPort(const String & host_id) const;
+
     String node_path;
     ContextPtr context;
     Stopwatch watch;
@@ -63,6 +66,8 @@ private:
 
     Int64 timeout_seconds = 120;
     bool by_hostname = true;
+    bool throw_on_timeout = true;
+    bool timeout_exceeded = false;
 };
 
 }

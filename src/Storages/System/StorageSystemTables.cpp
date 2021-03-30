@@ -359,6 +359,7 @@ protected:
                     {
                         auto & create = ast->as<ASTCreateQuery &>();
                         create.uuid = UUIDHelpers::Nil;
+                        create.to_inner_uuid = UUIDHelpers::Nil;
                     }
 
                     if (columns_mask[src_index++])
