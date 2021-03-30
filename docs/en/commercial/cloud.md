@@ -32,6 +32,7 @@ toc_title: Cloud
 ## Alibaba Cloud {#alibaba-cloud}
 
 Alibaba Cloud Managed Service for ClickHouse [China Site](https://www.aliyun.com/product/clickhouse) (Will be available at the international site in May 2021) provides the following key features:
+
 -   Highly reliable cloud disk storage engine based on Alibaba Cloud Apsara distributed system
 -   Expand capacity on-demand without manual data migration
 -   Support single-node, single-replica, multi-node, and multi-replica architectures, and support hot and cold data tiering
