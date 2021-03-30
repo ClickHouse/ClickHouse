@@ -7,7 +7,7 @@ toc_title: Files
 
 ## file {#file}
 
-Reads file as a String. The file can contain subqueries, condition, names of columns and any other information that will be read as one line.
+Reads file as a String. The file can contain subqueries, conditions, names of columns and any other information that will be read as one line.
 
 **Syntax**
 
