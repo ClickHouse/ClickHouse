@@ -21,7 +21,7 @@ system flush logs;
 select count()
 from system.query_log
 where
-    query like '%01547_query_log_current_database%'
+    query like 'select \'01547_query_log_current_database%'
     and current_database = currentDatabase()
     and event_date >= yesterday();
 
@@ -30,7 +30,6 @@ where
 select count() == 2
 from system.query_thread_log
 where
-    query like '%01547_query_log_current_database%'
+    query like 'select \'01547_query_log_current_database%'
     and current_database = currentDatabase()
-    and event_date = today()
-    and event_time >= now() - interval 1 minute;
+    and event_date >= yesterday()
