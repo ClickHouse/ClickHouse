@@ -51,6 +51,7 @@ function run_tests()
 
     # Skip these tests, because they fail when we rerun them multiple times
     if [ "$NUM_TRIES" -gt "1" ]; then
+        ADDITIONAL_OPTIONS+=('--order=random')
         ADDITIONAL_OPTIONS+=('--skip')
         ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
     fi
@@ -75,7 +76,7 @@ timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
 ./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
-clickhouse-client -q "sytem flush logs" ||:
+clickhouse-client -q "system flush logs" ||:
 
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
 clickhouse-client -q "select * from system.query_log format TSVWithNamesAndTypes" | pigz > /test_output/query-log.tsv.gz &
