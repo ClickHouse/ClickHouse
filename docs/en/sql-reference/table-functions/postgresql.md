@@ -10,25 +10,30 @@ Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a
 **Syntax**
 
 ``` sql
-postgresql('host:port', 'database', 'table', 'user', 'password')
+postgresql('host:port', 'database', 'table', 'user', 'password'[, `schema`])
 ```
 
 **Arguments**
 
 -   `host:port` — PostgreSQL server address.
-
 -   `database` — Remote database name.
-
 -   `table` — Remote table name.
-
 -   `user` — PostgreSQL user.
-
 -   `password` — User password.
+-   `schema` — Non-default table schema. Optional.
 
+**Returned Value**
+
+A table object with the same columns as the original PostgreSQL table.
+
+!!! info "Note"
+    In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
+
+## Implementation Details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 
-Simple `WHERE` clauses such as `=, !=, >, >=, <, <=, IN` are executed on the PostgreSQL server.
+Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
 All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
 
@@ -37,14 +42,9 @@ All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` samp
 PostgreSQL Array types converts into ClickHouse arrays.
 
 !!! info "Note"
-    Be careful in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
+    Be careful, in PostgreSQL an array data type column like Integer[] may contain arrays of different dimensions in different rows, but in ClickHouse it is only allowed to have multidimensional arrays of the same dimension in all rows.
 
-**Returned Value**
-
-A table object with the same columns as the original PostgreSQL table.
-
-!!! info "Note"
-    In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
+Supports replicas priority for PostgreSQL dictionary source. The bigger the number in map, the less the priority. The highest priority is `0`. 
 
 **Examples**
 
@@ -61,10 +61,10 @@ PRIMARY KEY (int_id));
 
 CREATE TABLE
 
-postgres=# insert into test (int_id, str, "float") VALUES (1,'test',2);
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
-postgresql> select * from test;
+postgresql> SELECT * FROM test;
  int_id | int_nullable | float | str  | float_nullable
 --------+--------------+-------+------+----------------
       1 |              |     2 | test |
@@ -95,6 +95,21 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 │      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
 │      2 │         ᴺᵁᴸᴸ │     3 │      │           ᴺᵁᴸᴸ │
 └────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+Using Non-default Schema:
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
 **See Also**
