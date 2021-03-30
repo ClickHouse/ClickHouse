@@ -3,7 +3,7 @@ toc_priority: 8
 toc_title: PostgreSQL
 ---
 
-# PosgtreSQL {#postgresql}
+# PostgreSQL {#postgresql}
 
 The PostgreSQL engine allows you to perform `SELECT` queries on data that is stored on a remote PostgreSQL server.
 

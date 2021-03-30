@@ -34,8 +34,8 @@ private:
 
 void registerFunctionConnectionID(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionConnectionID>();
-    factory.registerAlias("connection_id", "connectionID");
+    factory.registerFunction<FunctionConnectionID>(FunctionFactory::CaseInsensitive);
+    factory.registerAlias("connection_id", "connectionID", FunctionFactory::CaseInsensitive);
 }
 
 }
