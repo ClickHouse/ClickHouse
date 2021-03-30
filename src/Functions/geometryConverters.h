@@ -76,7 +76,7 @@ struct ColumnToPointsConverter
             if (isNaN(first) || isNaN(second))
                 throw Exception("Point's component must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            if (isinf(first) || isinf(second))
+            if (std::isinf(first) || std::isinf(second))
                 throw Exception("Point's component must not be infinite", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             answer[i] = Point(first, second);
