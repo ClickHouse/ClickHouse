@@ -1017,9 +1017,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 
     if (num_streams > 1)
     {
-        /// Parallel query execution.
-        Pipes res;
-
         /// Reduce the number of num_streams if the data is small.
         if (sum_marks < num_streams * min_marks_for_concurrent_read && parts.size() < num_streams)
             num_streams = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts.size());
