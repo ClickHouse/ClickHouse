@@ -773,7 +773,7 @@ log_query_threads=1
 
 Specifies the value for the `log_comment` field of the [system.query_log](../system-tables/query_log.md) table and comment text for the server log.
 
-It can be used to improve the readability of server logs. Additionally, you can quickly select related to the test queries from the `system.query_log` while doing [clickhouse-test](../../development/tests.md).
+It can be used to improve the readability of server logs. Additionally, it helps to select queries related to the test from the `system.query_log` after running [clickhouse-test](../../development/tests.md).
 
 Possible values:
 
