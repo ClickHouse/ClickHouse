@@ -62,6 +62,7 @@
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -142,12 +143,11 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     actions = analyzer.simpleSelectActions();
 
     auto column_name = expr_list->children.at(0)->getColumnName();
-    actions->removeUnusedActions({column_name});
+    actions->removeUnusedActions(NameSet{column_name});
     actions->projectInput(false);
 
-    ActionsDAG::Index index;
     for (const auto * node : actions->getInputs())
-        actions->addNodeToIndex(node);
+        actions->getIndex().push_back(node);
 
     return column_name;
 }
@@ -393,7 +393,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && query.where() && !query.prewhere() && !query.final())
+        if (try_move_to_prewhere && storage && query.where() && !query.prewhere())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
@@ -561,7 +561,9 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    res.pipeline = std::move(*query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context->getSettingsRef())));
+    res.pipeline = std::move(*query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(*context),
+        BuildQueryPipelineSettings::fromContext(*context)));
     return res;
 }
 
@@ -606,7 +608,9 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
         if (analysis_result.prewhere_info)
         {
-            ExpressionActions(analysis_result.prewhere_info->prewhere_actions).execute(header);
+            ExpressionActions(
+                analysis_result.prewhere_info->prewhere_actions,
+                ExpressionActionsSettings::fromContext(*context)).execute(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
                 header.erase(analysis_result.prewhere_info->prewhere_column_name);
         }
@@ -1668,19 +1672,19 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
+        auto actions_settings = ExpressionActionsSettings::fromContext(*context);
 
         if (prewhere_info)
         {
             query_info.prewhere_info = std::make_shared<PrewhereInfo>();
-
-            query_info.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions);
+            query_info.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions, actions_settings);
 
             if (prewhere_info->row_level_filter_actions)
-                query_info.prewhere_info->row_level_filter = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter_actions);
+                query_info.prewhere_info->row_level_filter = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter_actions, actions_settings);
             if (prewhere_info->alias_actions)
-                query_info.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions);
+                query_info.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(prewhere_info->alias_actions, actions_settings);
             if (prewhere_info->remove_columns_actions)
-                query_info.prewhere_info->remove_columns_actions = std::make_shared<ExpressionActions>(prewhere_info->remove_columns_actions);
+                query_info.prewhere_info->remove_columns_actions = std::make_shared<ExpressionActions>(prewhere_info->remove_columns_actions, actions_settings);
 
             query_info.prewhere_info->prewhere_column_name = prewhere_info->prewhere_column_name;
             query_info.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
@@ -2038,7 +2042,13 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
     for (size_t i = 0; i < windows_sorted.size(); ++i)
     {
         const auto & w = *windows_sorted[i];
-        if (i == 0 || !sortIsPrefix(w, *windows_sorted[i - 1]))
+
+        // We don't need to sort again if the input from previous window already
+        // has suitable sorting. Also don't create sort steps when there are no
+        // columns to sort by, because the sort nodes are confused by this. It
+        // happens in case of `over ()`.
+        if (!w.full_sort_description.empty()
+            && (i == 0 || !sortIsPrefix(w, *windows_sorted[i - 1])))
         {
             auto partial_sorting = std::make_unique<PartialSortingStep>(
                 query_plan.getCurrentDataStream(),

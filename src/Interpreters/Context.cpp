@@ -12,7 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/thread_local_rng.h>
-#include <Coordination/NuKeeperStorageDispatcher.h>
+#include <Coordination/KeeperStorageDispatcher.h>
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
@@ -30,6 +30,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
@@ -53,8 +54,10 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/DDLTask.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
+#include <IO/MMappedFileCache.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -311,7 +314,7 @@ struct ContextShared
 
 #if USE_NURAFT
     mutable std::mutex nu_keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<NuKeeperStorageDispatcher> nu_keeper_storage_dispatcher;
+    mutable std::shared_ptr<KeeperStorageDispatcher> nu_keeper_storage_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -341,6 +344,7 @@ struct ContextShared
     AccessControlManager access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
+    mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
@@ -379,10 +383,6 @@ struct ContextShared
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
-
-#if USE_EMBEDDED_COMPILER
-    std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
-#endif
 
     bool shutdown_called = false;
 
@@ -1104,6 +1104,7 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     auto lock = getLock();
     for (const SettingChange & change : changes)
         applySettingChange(change);
+    applySettingsQuirks(settings);
 }
 
 
@@ -1444,19 +1445,41 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
     shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
 }
 
-
 MarkCachePtr Context::getMarkCache() const
 {
     auto lock = getLock();
     return shared->mark_cache;
 }
 
-
 void Context::dropMarkCache() const
 {
     auto lock = getLock();
     if (shared->mark_cache)
         shared->mark_cache->reset();
+}
+
+
+void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
+{
+    auto lock = getLock();
+
+    if (shared->mmap_cache)
+        throw Exception("Mapped file cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->mmap_cache = std::make_shared<MMappedFileCache>(cache_size_in_num_entries);
+}
+
+MMappedFileCachePtr Context::getMMappedFileCache() const
+{
+    auto lock = getLock();
+    return shared->mmap_cache;
+}
+
+void Context::dropMMappedFileCache() const
+{
+    auto lock = getLock();
+    if (shared->mmap_cache)
+        shared->mmap_cache->reset();
 }
 
 
@@ -1469,6 +1492,9 @@ void Context::dropCaches() const
 
     if (shared->mark_cache)
         shared->mark_cache->reset();
+
+    if (shared->mmap_cache)
+        shared->mmap_cache->reset();
 }
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
@@ -1542,7 +1568,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
         shared->message_broker_schedule_pool.emplace(
             settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
-            "BgMsgBrkSchPool");
+            "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
 }
 
@@ -1590,35 +1616,35 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 }
 
 
-void Context::initializeNuKeeperStorageDispatcher() const
+void Context::initializeKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
 
     if (shared->nu_keeper_storage_dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize NuKeeper multiple times");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
-    if (config.has("test_keeper_server"))
+    if (config.has("keeper_server"))
     {
-        shared->nu_keeper_storage_dispatcher = std::make_shared<NuKeeperStorageDispatcher>();
+        shared->nu_keeper_storage_dispatcher = std::make_shared<KeeperStorageDispatcher>();
         shared->nu_keeper_storage_dispatcher->initialize(config);
     }
 #endif
 }
 
 #if USE_NURAFT
-std::shared_ptr<NuKeeperStorageDispatcher> & Context::getNuKeeperStorageDispatcher() const
+std::shared_ptr<KeeperStorageDispatcher> & Context::getKeeperStorageDispatcher() const
 {
     std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
     if (!shared->nu_keeper_storage_dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "NuKeeper must be initialized before requests");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
     return shared->nu_keeper_storage_dispatcher;
 }
 #endif
 
-void Context::shutdownNuKeeperStorageDispatcher() const
+void Context::shutdownKeeperStorageDispatcher() const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->nu_keeper_storage_dispatcher_mutex);
@@ -1775,11 +1801,14 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     auto res = getClusters().getCluster(cluster_name);
+    if (res)
+        return res;
 
-    if (!res)
-        throw Exception("Requested cluster '" + cluster_name + "' not found", ErrorCodes::BAD_GET);
+    res = tryGetReplicatedDatabaseCluster(cluster_name);
+    if (res)
+        return res;
 
-    return res;
+    throw Exception("Requested cluster '" + cluster_name + "' not found", ErrorCodes::BAD_GET);
 }
 
 
@@ -2277,6 +2306,8 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setProfile(shared->system_profile_name);
 
+    applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
+
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = std::make_shared<Context>(*this);
     buffer_context->setProfile(shared->buffer_profile_name);
@@ -2325,35 +2356,6 @@ void Context::setQueryParameter(const String & name, const String & value)
     if (!query_parameters.emplace(name, value).second)
         throw Exception("Duplicate name " + backQuote(name) + " of query parameter", ErrorCodes::BAD_ARGUMENTS);
 }
-
-
-#if USE_EMBEDDED_COMPILER
-
-std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const
-{
-    auto lock = getLock();
-    return shared->compiled_expression_cache;
-}
-
-void Context::setCompiledExpressionCache(size_t cache_size)
-{
-
-    auto lock = getLock();
-
-    if (shared->compiled_expression_cache)
-        throw Exception("Compiled expressions cache has been already created.", ErrorCodes::LOGICAL_ERROR);
-
-    shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(cache_size);
-}
-
-void Context::dropCompiledExpressionCache() const
-{
-    auto lock = getLock();
-    if (shared->compiled_expression_cache)
-        shared->compiled_expression_cache->reset();
-}
-
-#endif
 
 
 void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const

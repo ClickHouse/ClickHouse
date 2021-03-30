@@ -68,6 +68,7 @@ class ReplicatedFetchList;
 class Cluster;
 class Compiler;
 class MarkCache;
+class MMappedFileCache;
 class UncompressedCache;
 class ProcessList;
 class QueryStatus;
@@ -110,7 +111,7 @@ class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
-class NuKeeperStorageDispatcher;
+class KeeperStorageDispatcher;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -597,10 +598,10 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
 #if USE_NURAFT
-    std::shared_ptr<NuKeeperStorageDispatcher> & getNuKeeperStorageDispatcher() const;
+    std::shared_ptr<KeeperStorageDispatcher> & getKeeperStorageDispatcher() const;
 #endif
-    void initializeNuKeeperStorageDispatcher() const;
-    void shutdownNuKeeperStorageDispatcher() const;
+    void initializeKeeperStorageDispatcher() const;
+    void shutdownKeeperStorageDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -622,6 +623,11 @@ public:
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
+
+    /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    void setMMappedFileCache(size_t cache_size_in_num_entries);
+    std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
+    void dropMMappedFileCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -739,12 +745,6 @@ public:
     const NameToNameMap & getQueryParameters() const;
     void setQueryParameter(const String & name, const String & value);
     void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
-
-#if USE_EMBEDDED_COMPILER
-    std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
-    void setCompiledExpressionCache(size_t cache_size);
-    void dropCompiledExpressionCache() const;
-#endif
 
     /// Add started bridge command. It will be killed after context destruction
     void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;

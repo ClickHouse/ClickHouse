@@ -50,7 +50,7 @@ The supported formats are:
 | [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
 | [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
 | [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                 | ✔     | ✗      |
+| [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
 | [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
 | [Native](#native)                                                                       | ✔     | ✔      |
@@ -1284,32 +1284,33 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 ## ORC {#data-format-orc}
 
-[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. You can only insert data in this format to ClickHouse.
+[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the [Hadoop](https://hadoop.apache.org/) ecosystem.
 
 ### Data Types Matching {#data_types-matching-3}
 
-The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` queries.
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
-| ORC data type (`INSERT`) | ClickHouse data type                                |
-|--------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`          | [UInt8](../sql-reference/data-types/int-uint.md)    |
-| `INT8`                   | [Int8](../sql-reference/data-types/int-uint.md)     |
-| `UINT16`                 | [UInt16](../sql-reference/data-types/int-uint.md)   |
-| `INT16`                  | [Int16](../sql-reference/data-types/int-uint.md)    |
-| `UINT32`                 | [UInt32](../sql-reference/data-types/int-uint.md)   |
-| `INT32`                  | [Int32](../sql-reference/data-types/int-uint.md)    |
-| `UINT64`                 | [UInt64](../sql-reference/data-types/int-uint.md)   |
-| `INT64`                  | [Int64](../sql-reference/data-types/int-uint.md)    |
-| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     |
-| `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     |
-| `DATE32`                 | [Date](../sql-reference/data-types/date.md)         |
-| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) |
-| `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     |
-| `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   |
+| ORC data type (`INSERT`) | ClickHouse data type                                | ORC data type (`SELECT`) |
+|--------------------------|-----------------------------------------------------|--------------------------|
+| `UINT8`, `BOOL`          | [UInt8](../sql-reference/data-types/int-uint.md)    | `UINT8`                  |
+| `INT8`                   | [Int8](../sql-reference/data-types/int-uint.md)     | `INT8`                   |
+| `UINT16`                 | [UInt16](../sql-reference/data-types/int-uint.md)   | `UINT16`                 |
+| `INT16`                  | [Int16](../sql-reference/data-types/int-uint.md)    | `INT16`                  |
+| `UINT32`                 | [UInt32](../sql-reference/data-types/int-uint.md)   | `UINT32`                 |
+| `INT32`                  | [Int32](../sql-reference/data-types/int-uint.md)    | `INT32`                  |
+| `UINT64`                 | [UInt64](../sql-reference/data-types/int-uint.md)   | `UINT64`                 |
+| `INT64`                  | [Int64](../sql-reference/data-types/int-uint.md)    | `INT64`                  |
+| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     | `FLOAT`                  |
+| `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     | `DOUBLE`                 |
+| `DATE32`                 | [Date](../sql-reference/data-types/date.md)         | `DATE32`                 |
+| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`              |
+| `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     | `BINARY`                 |
+| `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
+| `-`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
 
 ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
 
-Unsupported ORC data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+Unsupported ORC data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
 The data types of ClickHouse table columns don’t have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
@@ -1319,6 +1320,14 @@ You can insert ORC data from a file into ClickHouse table by the following comma
 
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
+```
+
+### Selecting Data {#selecting-data-2}
+
+You can select data from a ClickHouse table and save them into some file in the ORC format by the following command:
+
+``` bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
 ```
 
 To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-engines/integrations/hdfs.md).
