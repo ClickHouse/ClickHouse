@@ -35,6 +35,12 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
 #include "Core/QueryProcessingStage.h"
+#include "Interpreters/executeQuery.h"
+#include "Parsers/ParserAlterQuery.h"
+#include "Parsers/ParserDropQuery.h"
+#include "Parsers/ParserRenameQuery.h"
+#include "Parsers/ParserSelectQuery.h"
+#include "Parsers/ParserSystemQuery.h"
 #include "Processors/Executors/PullingPipelineExecutor.h"
 #include "Storages/System/StorageSystemParts.h"
 
@@ -419,19 +425,16 @@ void InterpreterSystemQuery::restoreReplica()
     StorageReplicatedMergeTree * storage_replicated;
 
     if (!table || ((storage_replicated = dynamic_cast<StorageReplicatedMergeTree*>(table.get())) == nullptr))
-        throw Exception("There is no replicated table \"" +
-            (table_id.database_name.empty() ? "" : (table_id.database_name + ".")) +
-            table_id.table_name + "\"",
-            ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no replicated table \"{}.{}\"",
+            table_id.database_name, table_id.table_name);
 
     /// 0. Check if the replica needs to be restored (metadata missing).
 
     const zkutil::ZooKeeperPtr& zookeeper = context.getZooKeeper();
 
     if (zookeeper->expired())
-        throw Exception(
-            "Cannot restore table metadata because ZooKeeper session has expired.",
-            ErrorCodes::NO_ZOOKEEPER);
+        throw Exception(ErrorCodes::NO_ZOOKEEPER,
+            "Cannot restore table metadata because ZooKeeper session has expired");
 
     StorageReplicatedMergeTree::Status status;
     storage_replicated->getStatus(status);
@@ -447,270 +450,108 @@ void InterpreterSystemQuery::restoreReplica()
         zookeeper->tryGetChildren(replica_zk_path, replicas_present);
 
         if (!replicas_present.empty())
-            throw Exception(
-                "The metadata for " + replica_zk_path + " is present at some of the replicas -- nothing to restore,"
-                " try creating a new replica with the CREATE TABLE query",
-                ErrorCodes::NO_AVAILABLE_DATA);
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The metadata for {} is present at some of the replicas -- nothing to restore,"
+                " try creating a new replica with the CREATE TABLE query", replica_zk_path);
     }
 
-    const UUID uuid = table_id.uuid;
     const String& db_name = table_id.database_name;
     const String& old_table_name = table_id.table_name;
 
     /// The server may fail at any step of processing the query, so there can't be any random in a new table name,
     /// so you can't use a random number generator although it's faster.
     const std::hash<String> table_name_hash;
-    const String new_table_name = old_table_name + "_tmp_" + std::to_string(table_name_hash(old_table_name));
+    const String new_table_name = fmt::format("{}_tmp_{}", old_table_name, table_name_hash(old_table_name));
 
-    LOG_DEBUG(log, "Restoring " + db_name + "." + old_table_name + ", zk root path at " + zk_root_path);
+    LOG_DEBUG(log, "Restoring {}.{}, zk root path at {}", db_name, old_table_name, zk_root_path);
 
     /// 1. Create a new replicated table out of current one (CREATE TABLE new AS old).
-    {
-        ASTPtr create_query_ptr = std::make_shared<ASTCreateQuery>();
-        ASTCreateQuery& create_query = create_query_ptr->as<ASTCreateQuery&>();
+    /// If the server failed after this step, the old temporary table won't be lost in mem so the query re-run could
+    /// succeed (need of IF NOT EXISTS).
+    executeQuery(fmt::format("CREATE TABLE {0}.{1} AS {0}.{2} IF NOT EXISTS", db_name, new_table_name, old_table_name),
+        context, true);
 
-        create_query.database = db_name;
-        create_query.table = new_table_name;
-        create_query.as_database = db_name;
-        create_query.as_table = old_table_name;
-        create_query.if_not_exists = true; /// if the server failed after, the old temporary table won't be lost in mem.
-        // No need to initialize the UUID (it will be initialized in the interpreter)
-
-        InterpreterCreateQuery interpreter_create(create_query_ptr, context);
-
-        /// catch the exception here
-        interpreter_create.execute();
-
-        LOG_DEBUG(log, "Created a new replicated table " + db_name + "." + new_table_name);
-    }
+    LOG_DEBUG(log, "Created a new replicated table " + db_name + "." + new_table_name);
 
     /// 2. Stop replica fetches for the old table (SYSTEM STOP FETCHES old)
+    executeQuery(fmt::format("SYSTEM STOP FETCHES {}.{}", db_name, old_table_name), context, true);
+    LOG_DEBUG(log, "Stopped replica fetches for {}.{}", db_name, old_table_name);
+
+    /// 3.0 Move all old table parts to the detached/ folder of the new table.
+
+    Strings parts_names;
+
+    BlockIO table_parts = executeQuery(
+        fmt::format("SELECT name, path FROM system.parts WHERE database = '{}' AND table = '{}' AND active",
+            db_name, old_table_name),
+        context, true);
+
+    PullingPipelineExecutor parts_executor(table_parts.pipeline);
+    const size_t name_index = parts_executor.getHeader().getPositionByName("name");
+    const size_t path_index = parts_executor.getHeader().getPositionByName("path");
+
+    Chunk partition_ids_chunk{};
+
+    while (parts_executor.pull(partition_ids_chunk))
     {
-        ASTPtr stop_fetches_ptr = std::make_shared<ASTSystemQuery>();
-        ASTSystemQuery& stop_fetches_query = stop_fetches_ptr->as<ASTSystemQuery&>();
+        const ColumnString& parts_names_col = *checkAndGetColumn<ColumnString>(
+            partition_ids_chunk.getColumns()[name_index].get());
 
-        stop_fetches_query.database = db_name;
-        stop_fetches_query.table = old_table_name;
-        stop_fetches_query.type = ASTSystemQuery::Type::STOP_FETCHES;
+        const ColumnString& parts_paths_col = *checkAndGetColumn<ColumnString>(
+            partition_ids_chunk.getColumns()[path_index].get());
 
-        InterpreterSystemQuery interpreter_stop_fetches(stop_fetches_ptr, context);
+        assert(parts_names_col.size() == parts_paths_col.size()); // not sure if it's the invariant TODO.
 
-        interpreter_stop_fetches.execute();
+        parts_names.reserve(parts_names.size() + parts_names_col.size());
 
-        LOG_DEBUG(log, "Stopped replica fetches for " + db_name + "." + old_table_name);
-    }
-
-    /// 3. Move all old table parts to the detached/ folder of the new table and execute ALTER ... ATTACH that will
-    /// automatically attach data and add info to ZooKeeper.
-    /// TODO
-    {
-        // const auto new_table = DatabaseCatalog::instance().getTable({db_name, new_table_name}, context);
-        // const Strings& new_tables_data_paths = new_table->getDataPaths();
-
-        // Strings parts_names; // old table's parts that we moved to the new table's detached/ folder
-
-        // auto target_it = new_tables_data_paths.cbegin();
-        // const auto target_end = new_tables_data_paths.cend();
-
-        // auto f = [&](const Poco::Path& part_dir_path, auto& target_iter)
-        // {
-        //     if (target_iter == target_end)
-        //         throw Exception("Unable to move part data to the target table directory -- no free space",
-        //             ErrorCodes::SYSTEM_ERROR);
-
-        //     Poco::File part_dir {part_dir_path};
-        //     size_t space_left = new_table->getStoragePolicy()->
-        // };
-
-        // const Poco::DirectoryIterator end;
-
-        // for (const String& old_table_data_path : table->getDataPaths())
-        //     for (Poco::DirectoryIterator it{old_table_data_path}; it != end; ++it)
-        //         if (const auto& part_path = it.path().parent();
-        //             it->isDirectory() && part_path.getFileName() != "detached")
-        //             f(part_path, target_it);
-    }
-
-    /// 3. Move parts to a new table that will register them in zookeeper.
-    {
-        auto system_parts = DatabaseCatalog::instance().getTable({"system", "parts"}, context);
-
-        SelectQueryInfo info;
-
-
-        Pipe pipe = system_parts->as<StorageSystemParts>()->read({"partition_id"},
-            system_parts->getInMemoryMetadataPtr(), //snapshot
-            info,
-            context,
-            // these 3 params are ignored
-            QueryProcessingStage::Enum::Complete, 0, 0);
-
-
-        /// 3.1 Form a partitions request (from the old table)
-        /// (SELECT partition_id FROM system.parts WHERE database = 'old_db' AND table = 'old' AND active)
-
-        ASTPtr get_parts_ptr = std::make_shared<ASTSelectQuery>();
-        auto& get_parts_query = get_parts_ptr->as<ASTSelectQuery&>();
-
-        /// 3.1.1 SELECT partition_id
-        const String partition_id{"partition_id"};
-
-        ASTPtr get_parts_select_ptr = std::make_shared<ASTExpressionList>();
-
-        get_parts_select_ptr->as<ASTExpressionList&>().children = {std::make_shared<ASTIdentifier>(partition_id)};
-
-        /// 3.1.2 FROM system.parts
-
-        ASTPtr get_parts_from_ptr = std::make_shared<ASTTablesInSelectQuery>();
-        auto& get_parts_from = get_parts_from_ptr->as<ASTTablesInSelectQuery&>();
-
-        ASTPtr get_parts_from_table_ptr = std::make_shared<ASTTablesInSelectQueryElement>();
-        auto& get_parts_from_table = get_parts_from_table_ptr->as<ASTTablesInSelectQueryElement&>();
-
-        get_parts_from_table.table_expression = std::make_shared<ASTTableExpression>();
-        get_parts_from_table.table_expression->children = {
-            std::make_shared<ASTIdentifier>(std::vector<String>{"system", "parts"})};
-
-        get_parts_from.children.emplace_back(std::move(get_parts_from_table_ptr));
-
-        /// 3.1.3 WHERE database = 'db' AND table = 'old' AND active
-        /// and(active, and(equals(database, db), equals(table, old_table_name)))
-
-        ASTPtr get_parts_where_ptr = makeASTFunction("and",
-            std::make_shared<ASTIdentifier>("active"),
-            makeASTFunction("and",
-                makeASTFunction("equals",
-                    std::make_shared<ASTIdentifier>("database"),
-                    std::make_shared<ASTLiteral>(db_name)),
-                makeASTFunction("equals",
-                    std::make_shared<ASTIdentifier>("table"),
-                    std::make_shared<ASTLiteral>(old_table_name))));
-
-        /// 3.1.4 Set main query parts
-        get_parts_query.setExpression(ASTSelectQuery::Expression::SELECT, std::move(get_parts_select_ptr));
-        get_parts_query.setExpression(ASTSelectQuery::Expression::TABLES, std::move(get_parts_from_ptr));
-        get_parts_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(get_parts_where_ptr));
-
-        /// 3.2 Execute the request and get the resulting pipeline to execute.
-        InterpreterSelectQuery get_parts_interpreter(get_parts_ptr, context, {}, Names{});
-        BlockIO parts_block = get_parts_interpreter.execute();
-
-        /// 3.3 Get the resulting block index and prepare the pipeline.
-        PullingPipelineExecutor get_parts_executor(parts_block.pipeline);
-        const size_t parts_result_index = get_parts_executor.getHeader().getPositionByName(partition_id);
-
-        /// 3.4 Form the moving request.
-        /// (ALTER TABLE old MOVE PARTITION ID x TO TABLE new).
-
-        ASTPtr move_parts_ptr = std::make_shared<ASTAlterQuery>();
-        ASTAlterQuery& move_parts_query = move_parts_ptr->as<ASTAlterQuery&>();
-
-        move_parts_query.database = db_name;
-        move_parts_query.table = old_table_name;
-        move_parts_query.uuid = uuid;
-
-        ASTPtr move_parts_alter_command_ptr = std::make_shared<ASTAlterCommand>();
-        ASTAlterCommand& move_parts_alter_command = move_parts_alter_command_ptr->as<ASTAlterCommand&>();
-
-        move_parts_alter_command.type = ASTAlterCommand::Type::MOVE_PARTITION;
-        move_parts_alter_command.move_destination_type = DataDestinationType::TABLE;
-        move_parts_alter_command.partition = std::make_shared<ASTPartition>();
-        move_parts_alter_command.to_database = db_name;
-        move_parts_alter_command.to_table = new_table_name;
-
-        ASTExpressionList move_parts_command_list{};
-        move_parts_command_list.children = {move_parts_alter_command_ptr}; // ok storing pointer to stack value as
-        move_parts_query.command_list = &move_parts_command_list;       // it will be alive by the executor end.
-
-        InterpreterAlterQuery move_parts_interpreter(move_parts_ptr, context);
-
-        Chunk partition_ids_chunk{};
-
-        while (get_parts_executor.pull(partition_ids_chunk))
+        for (size_t i = 0; i < parts_names_col.size(); ++i)
         {
-            /// 3.5 Get a bunch of partition ids.
-            const ColumnString& partition_ids_col = *checkAndGetColumn<ColumnString>(
-                    partition_ids_chunk.getColumns()[parts_result_index].get());
+            const StringRef part_name_ref = parts_names_col.getDataAt(i);
+            const StringRef part_path_ref = parts_paths_col.getDataAt(i);
 
-            String part_id_str;
+            parts_names.emplace_back(part_name_ref.data, part_name_ref.size);
 
-            for (size_t i = 0; i < partition_ids_col.size(); ++i)
-            {
-                /// 3.6 Move each partition to new table
-                const StringRef part_id_ref = partition_ids_col.getDataAt(i);
-
-                part_id_str = {part_id_ref.data, part_id_ref.size};
-                move_parts_alter_command.partition->as<ASTPartition>()->id = part_id_str;
-
-                move_parts_interpreter.execute();
-
-                LOG_TRACE(log,
-                    "Moved partition " + part_id_str +
-                    " from table " + db_name + "." + old_table_name +
-                    " to table " + db_name + "." + new_table_name);
-            }
+            // TODO to what places should we move the part? The table may have multiple disks/storage paths
         }
-
-        LOG_DEBUG(log,
-            "Moved all parts from table " + db_name + "." + old_table_name +
-            " to table " + db_name + "." + new_table_name);
     }
+
+    /// 3.1 Execute ALTER ... ATTACH to register parts in new table and send data to ZooKeeper.
+
+    for (const String& part_name : parts_names)
+    {
+        executeQuery(fmt::format("ALTER TABLE {}.{} ATTACH PARTITION {}", db_name, old_table_name, part_name),
+            context, true);
+
+        LOG_TRACE(log, "Moved partition {0} from {1}.{2} to {1}.{3}",
+            part_name, db_name, old_table_name, new_table_name);
+    }
+
+    LOG_DEBUG(log, "Moved all parts from {0}.{1} to {0}.{2}", db_name, old_table_name, new_table_name);
 
     /// 4. Rename tables (RENAME TABLE new TO old, old TO new).
-    {
-        ASTPtr rename_ptr = std::make_shared<ASTRenameQuery>();
+    executeQuery(
+        fmt::format("RENAME TABLE {0}.{1} TO {0}.{2}, {0}.{2} TO {0}.{1}", db_name, new_table_name, old_table_name),
+        context, true);
 
-        rename_ptr->as<ASTRenameQuery&>().elements =
-        {
-            {{db_name, old_table_name}, {db_name, new_table_name}}, // old -> new
-            {{db_name, new_table_name}, {db_name, new_table_name}}  // new -> old
-        };
-
-        InterpreterRenameQuery interpreter_rename(rename_ptr, context);
-
-        interpreter_rename.execute();
-
-        LOG_DEBUG(log,
-            "Renamed tables " + db_name + "." + old_table_name +
-            " <-> " + db_name + "." + new_table_name);
-    }
+    LOG_DEBUG(log, "Renamed tables {0}.{1} <=> {0}.{2}", db_name, old_table_name, new_table_name);
 
     /// 5. Detach old table (DETACH TABLE old).
-    {
-        ASTPtr detach_ptr = std::make_shared<ASTDropQuery>();
-        ASTDropQuery& detach_query = detach_ptr->as<ASTDropQuery&>();
-
-        detach_query.kind = ASTDropQuery::Kind::Detach;
-        detach_query.database = db_name;
-        detach_query.uuid = uuid;
-        detach_query.table = old_table_name;
-
-        InterpreterDropQuery interpreter_drop(detach_ptr, context);
-
-        interpreter_drop.execute();
-
-        LOG_DEBUG(log, "Detached table " + db_name + "." + old_table_name);
-    }
+    executeQuery(fmt::format("DETACH TABLE {}.{}", db_name, old_table_name), context, true);
+    LOG_DEBUG(log, "Detached table {}.{}", db_name, old_table_name);
 
     /// 6. Delete information about the old table, so it wouldn't be attached after server restart.
+    const String old_table_metadata_file = db->getObjectMetadataPath(old_table_name);
+
+    std::error_code file_delete_error;
+
+    if (std::filesystem::remove(old_table_metadata_file, file_delete_error))
     {
-        const String old_table_metadata_file = db->getObjectMetadataPath(old_table_name);
-
-        std::error_code file_delete_error;
-
-        if (std::filesystem::remove(old_table_metadata_file, file_delete_error))
-        {
-            LOG_DEBUG(log,
-                "Removed table " + db_name + "." + old_table_name +
-                " 's metadata at " + old_table_metadata_file);
-
-            return;
-        }
-
-        throw Exception(
-            ErrorCodes::SYSTEM_ERROR,
-            "Error removing file " + old_table_metadata_file + ": " + file_delete_error.message());
+        LOG_DEBUG(log, "Removed table {}.{} metadata at {}", db_name, old_table_name, old_table_metadata_file);
+        return;
     }
+
+    throw Exception(ErrorCodes::SYSTEM_ERROR, "Error removing file {}: {}",
+        old_table_metadata_file, file_delete_error.message());
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context, bool need_ddl_guard)
