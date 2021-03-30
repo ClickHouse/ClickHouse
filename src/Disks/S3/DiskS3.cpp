@@ -1030,7 +1030,7 @@ void DiskS3::migrateToRestorableSchemaRecursive(const String & path, Futures & r
     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Migrate directory {} to restorable schema", metadata_path + path);
 
     bool dir_contains_only_files = true;
-    for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
+    for (auto it = iterateDirectory(path); it->isValid(); it->next())
         if (isDirectory(it->path()))
         {
             dir_contains_only_files = false;
@@ -1042,7 +1042,7 @@ void DiskS3::migrateToRestorableSchemaRecursive(const String & path, Futures & r
     {
         auto result = getExecutor().execute([this, path]
              {
-                 for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
+                 for (auto it = iterateDirectory(path); it->isValid(); it->next())
                      migrateFileToRestorableSchema(it->path());
              });
 
@@ -1050,7 +1050,7 @@ void DiskS3::migrateToRestorableSchemaRecursive(const String & path, Futures & r
     }
     else
     {
-        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
+        for (auto it = iterateDirectory(path); it->isValid(); it->next())
             if (!isDirectory(it->path()))
             {
                 auto source_path = it->path();
