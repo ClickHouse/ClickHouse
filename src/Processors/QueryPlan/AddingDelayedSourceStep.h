@@ -19,7 +19,7 @@ public:
 
     String getName() const override { return "AddingDelayedSource"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
 private:
     ProcessorPtr source;

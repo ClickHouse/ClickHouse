@@ -2,7 +2,6 @@
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
-#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -43,7 +42,7 @@ CreatingSetStep::CreatingSetStep(
 {
 }
 
-void CreatingSetStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void CreatingSetStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, context);
 }
@@ -73,7 +72,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
         assertBlocksHaveEqualStructure(output_stream->header, input_streams[i].header, "CreatingSets");
 }
 
-QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings)
+QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines)
 {
     if (pipelines.empty())
         throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
@@ -89,7 +88,7 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, cons
     if (pipelines.size() > 1)
     {
         QueryPipelineProcessorsCollector collector(delayed_pipeline, this);
-        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header, settings.getActionsSettings());
+        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header);
         processors = collector.detachProcessors();
     }
     else

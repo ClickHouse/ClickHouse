@@ -1,13 +1,12 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Server/HTTP/HTTPRequestHandler.h>
-
 #include <Poco/Logger.h>
+#include <Poco/Net/HTTPRequestHandler.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <Poco/Data/SessionPool.h>
+    #include <Poco/Data/SessionPool.h>
 #pragma GCC diagnostic pop
 
 namespace DB
@@ -17,7 +16,7 @@ namespace DB
   * and also query in request body
   * response in RowBinary format
   */
-class ODBCHandler : public HTTPRequestHandler
+class ODBCHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
     using PoolPtr = std::shared_ptr<Poco::Data::SessionPool>;
@@ -35,7 +34,7 @@ public:
     {
     }
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
+    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
 private:
     Poco::Logger * log;
@@ -48,7 +47,7 @@ private:
     static inline std::mutex mutex;
 
     PoolPtr getPool(const std::string & connection_str);
-    void processError(HTTPServerResponse & response, const std::string & message);
+    void processError(Poco::Net::HTTPServerResponse & response, const std::string & message);
 };
 
 }

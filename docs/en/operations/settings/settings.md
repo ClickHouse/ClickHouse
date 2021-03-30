@@ -312,7 +312,7 @@ Enables or disables parsing enum values as enum ids for TSV input format.
 Possible values:
 
 -   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs.
+-   1 — Enum values are parsed as enum IDs
 
 Default value: 0.
 
@@ -1097,25 +1097,14 @@ See the section “WITH TOTALS modifier”.
 
 ## max_parallel_replicas {#settings-max_parallel_replicas}
 
-The maximum number of replicas for each shard when executing a query.
+The maximum number of replicas for each shard when executing a query. In limited circumstances, this can make a query faster by executing it on more servers. This setting is only useful for replicated tables with a sampling key. There are cases where performance will not improve or even worsen:
 
-Possible values:
+- the position of the sampling key in the partitioning key's order doesn't allow efficient range scans
+- adding a sampling key to the table makes filtering by other columns less efficient
+- the sampling key is an expression that is expensive to calculate
+- the cluster's latency distribution has a long tail, so that querying more servers increases the query's overall latency
 
--   Positive integer.
-
-Default value: `1`.
-
-**Additional Info** 
-
-This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
-
-- The position of the sampling key in the partitioning key doesn't allow efficient range scans.
-- Adding a sampling key to the table makes filtering by other columns less efficient.
-- The sampling key is an expression that is expensive to calculate.
-- The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
-
-!!! warning "Warning"
-    This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+In addition, this setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain conditions. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
 
 ## compile {#compile}
 
@@ -1883,53 +1872,6 @@ Possible values:
 
 Default value: `0`.
 
-## insert_shard_id {#insert_shard_id}
-
-If not `0`, specifies the shard of [Distributed](../../engines/table-engines/special/distributed.md#distributed) table into which the data will be inserted synchronously.
-
-If `insert_shard_id` value is incorrect, the server will throw an exception.
-
-To get the number of shards on `requested_cluster`, you can check server config or use this query:
-
-``` sql
-SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
-```
-
-Possible values:
-
--   0 — Disabled.
--   Any number from `1` to `shards_num` of corresponding [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
-
-Default value: `0`.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE x AS system.numbers ENGINE = MergeTree ORDER BY number;
-CREATE TABLE x_dist AS x ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), x);
-INSERT INTO x_dist SELECT * FROM numbers(5) SETTINGS insert_shard_id = 1;
-SELECT * FROM x_dist ORDER BY number ASC;
-```
-
-Result:
-
-``` text
-┌─number─┐
-│      0 │
-│      0 │
-│      1 │
-│      1 │
-│      2 │
-│      2 │
-│      3 │
-│      3 │
-│      4 │
-│      4 │
-└────────┘
-```
-
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
 Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.
@@ -2014,8 +1956,8 @@ Default value: 16.
 
 **See Also**
 
--   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) engine.
--   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine) engine.
+-   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) engine
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine) engine
 
 ## validate_polygons {#validate_polygons}
 
@@ -2649,102 +2591,5 @@ Possible values:
 -   0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
 
 Default value: `16`.
-
-## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
-
-Sets the probability that the ClickHouse can start a trace for executed queries (if no parent [trace context](https://www.w3.org/TR/trace-context/) is supplied).
-
-Possible values:
-
--   0 — The trace for all executed queries is disabled (if no parent trace context is supplied).
--   Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
--   1 — The trace for all executed queries is enabled.
-
-Default value: `0`.
-
-## optimize_on_insert {#optimize-on-insert}
-
-Enables or disables data transformation before the insertion, as if merge was done on this block (according to table engine).
-
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: 1.
-
-**Example**
-
-The difference between enabled and disabled:
-
-Query:
-
-```sql
-SET optimize_on_insert = 1;
-
-CREATE TABLE test1 (`FirstTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY FirstTable;
-
-INSERT INTO test1 SELECT number % 2 FROM numbers(5);
-
-SELECT * FROM test1;
-
-SET optimize_on_insert = 0;
-
-CREATE TABLE test2 (`SecondTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY SecondTable;
-
-INSERT INTO test2 SELECT number % 2 FROM numbers(5);
-
-SELECT * FROM test2;
-```
-
-Result:
-
-``` text
-┌─FirstTable─┐
-│          0 │
-│          1 │
-└────────────┘
-
-┌─SecondTable─┐
-│           0 │
-│           0 │
-│           0 │
-│           1 │
-│           1 │
-└─────────────┘
-```
-
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
-
-## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
-
-Allows to select data from a file engine table without file.
-
-Possible values:
-- 0 — `SELECT` throws exception.
-- 1 — `SELECT` returns empty result.
-
-Default value: `0`.
-
-## engine_file_truncate_on_insert {#engine-file-truncate-on-insert}
-
-Enables or disables truncate before insert in file engine tables.
-
-Possible values:
-- 0 — Disabled.
-- 1 — Enabled.
-
-Default value: `0`.
-
-## allow_experimental_geo_types {#allow-experimental-geo-types}
-
-Allows working with experimental [geo data types](../../sql-reference/data-types/geo.md).
-
-Possible values:
-
--   0 — Working with geo data types is disabled.
--   1 — Working with geo data types is enabled.
-
-Default value: `0`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

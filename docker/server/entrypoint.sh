@@ -46,17 +46,14 @@ DATA_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --
 TMP_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=tmp_path || true)"
 USER_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=user_files_path || true)"
 LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.log || true)"
-LOG_DIR=""
-if [ -n "$LOG_PATH" ]; then LOG_DIR="$(dirname "$LOG_PATH")"; fi
+LOG_DIR="$(dirname "$LOG_PATH" || true)"
 ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.errorlog || true)"
-ERROR_LOG_DIR=""
-if [ -n "$ERROR_LOG_PATH" ]; then ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH")"; fi
+ERROR_LOG_DIR="$(dirname "$ERROR_LOG_PATH" || true)"
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=format_schema_path || true)"
 
 CLICKHOUSE_USER="${CLICKHOUSE_USER:-default}"
 CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD:-}"
 CLICKHOUSE_DB="${CLICKHOUSE_DB:-}"
-CLICKHOUSE_ACCESS_MANAGEMENT="${CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT:-0}"
 
 for dir in "$DATA_DIR" \
   "$ERROR_LOG_DIR" \
@@ -100,7 +97,6 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
           </networks>
           <password>${CLICKHOUSE_PASSWORD}</password>
           <quota>default</quota>
-          <access_management>${CLICKHOUSE_ACCESS_MANAGEMENT}</access_management>
         </${CLICKHOUSE_USER}>
       </users>
     </yandex>

@@ -73,19 +73,19 @@ Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
 
 ``` sql
-toValidUTF8(input_string)
+toValidUTF8( input_string )
 ```
 
-**Arguments**
+Parameters:
 
--   `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+-   input_string — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
 
 Returned value: Valid UTF-8 string.
 
 **Example**
 
 ``` sql
-SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 ```
 
 ``` text
@@ -98,15 +98,13 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 
 Repeats a string as many times as specified and concatenates the replicated values as a single string.
 
-Alias: `REPEAT`.
-
 **Syntax**
 
 ``` sql
 repeat(s, n)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `s` — The string to repeat. [String](../../sql-reference/data-types/string.md).
 -   `n` — The number of times to repeat the string. [UInt](../../sql-reference/data-types/int-uint.md).
@@ -122,7 +120,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT repeat('abc', 10);
+SELECT repeat('abc', 10)
 ```
 
 Result:
@@ -175,7 +173,7 @@ Concatenates the strings listed in the arguments, without a separator.
 concat(s1, s2, ...)
 ```
 
-**Arguments**
+**Parameters**
 
 Values of type String or FixedString.
 
@@ -190,7 +188,7 @@ If any of argument values is `NULL`, `concat` returns `NULL`.
 Query:
 
 ``` sql
-SELECT concat('Hello, ', 'World!');
+SELECT concat('Hello, ', 'World!')
 ```
 
 Result:
@@ -213,7 +211,7 @@ The function is named “injective” if it always returns different result for 
 concatAssumeInjective(s1, s2, ...)
 ```
 
-**Arguments**
+**Parameters**
 
 Values of type String or FixedString.
 
@@ -245,7 +243,7 @@ SELECT * from key_val;
 Query:
 
 ``` sql
-SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2);
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)
 ```
 
 Result:
@@ -278,13 +276,9 @@ Returns the string ‘s’ that was converted from the encoding in ‘from’ to
 
 Encodes ‘s’ string into base64
 
-Alias: `TO_BASE64`.
-
 ## base64Decode(s) {#base64decode}
 
 Decode base64-encoded string ‘s’ into original string. In case of failure raises an exception.
-
-Alias: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
@@ -334,10 +328,10 @@ By default removes all consecutive occurrences of common whitespace (ASCII chara
 trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 ```
 
-**Arguments**
+**Parameters**
 
--   `trim_character` — Specified characters for trim. [String](../../sql-reference/data-types/string.md).
--   `input_string` — String for trim. [String](../../sql-reference/data-types/string.md).
+-   `trim_character` — specified characters for trim. [String](../../sql-reference/data-types/string.md).
+-   `input_string` — string for trim. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -350,7 +344,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )');
+SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
 ```
 
 Result:
@@ -373,7 +367,7 @@ trimLeft(input_string)
 
 Alias: `ltrim(input_string)`.
 
-**Arguments**
+**Parameters**
 
 -   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
@@ -388,7 +382,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT trimLeft('     Hello, world!     ');
+SELECT trimLeft('     Hello, world!     ')
 ```
 
 Result:
@@ -411,7 +405,7 @@ trimRight(input_string)
 
 Alias: `rtrim(input_string)`.
 
-**Arguments**
+**Parameters**
 
 -   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
@@ -426,7 +420,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT trimRight('     Hello, world!     ');
+SELECT trimRight('     Hello, world!     ')
 ```
 
 Result:
@@ -449,7 +443,7 @@ trimBoth(input_string)
 
 Alias: `trim(input_string)`.
 
-**Arguments**
+**Parameters**
 
 -   `input_string` — string to trim. [String](../../sql-reference/data-types/string.md).
 
@@ -464,7 +458,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT trimBoth('     Hello, world!     ');
+SELECT trimBoth('     Hello, world!     ')
 ```
 
 Result:
@@ -497,13 +491,12 @@ The result type is UInt64.
 
 Replaces literals, sequences of literals and complex aliases with placeholders.
 
-**Syntax**
-
+**Syntax** 
 ``` sql
 normalizeQuery(x)
 ```
 
-**Arguments** 
+**Parameters** 
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -539,7 +532,7 @@ Returns identical 64bit hash values without the values of literals for similar q
 normalizedQueryHash(x)
 ```
 
-**Arguments** 
+**Parameters** 
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -577,7 +570,7 @@ The following five XML predefined entities will be replaced: `<`, `&`, `>`, `"`,
 encodeXMLComponent(x)
 ```
 
-**Arguments** 
+**Parameters** 
 
 -   `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -607,45 +600,4 @@ Hello, &quot;world&quot;!
 &apos;foo&apos;
 ```
 
-## decodeXMLComponent {#decode-xml-component}
-
-Replaces XML predefined entities with characters. Predefined entities are `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
-This function also replaces numeric character references with Unicode characters. Both decimal (like `&#10003;`) and hexadecimal (`&#x2713;`) forms are supported.
-
-**Syntax**
-
-``` sql
-decodeXMLComponent(x)
-```
-
-**Arguments**
-
--   `x` — A sequence of characters. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   The sequence of characters after replacement.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT decodeXMLComponent('&apos;foo&apos;');
-SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
-```
-
-Result:
-
-``` text
-'foo' 
-< Σ >
-```
-
-**See Also**
-
--   [List of XML and HTML character entity references](https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references)
-
-
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->

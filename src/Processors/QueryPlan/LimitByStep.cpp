@@ -33,7 +33,7 @@ LimitByStep::LimitByStep(
 }
 
 
-void LimitByStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void LimitByStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.resize(1);
 

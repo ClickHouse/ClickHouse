@@ -20,7 +20,7 @@ public:
 
     String getName() const override { return "CreatingSet"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
     void describeActions(FormatSettings & settings) const override;
 
@@ -34,11 +34,11 @@ private:
 class CreatingSetsStep : public IQueryPlanStep
 {
 public:
-    explicit CreatingSetsStep(DataStreams input_streams_);
+    CreatingSetsStep(DataStreams input_streams_);
 
     String getName() const override { return "CreatingSets"; }
 
-    QueryPipelinePtr updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings) override;
+    QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
 
     void describePipeline(FormatSettings & settings) const override;
 

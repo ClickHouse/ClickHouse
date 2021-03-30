@@ -218,11 +218,15 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
         from_file.renameTo(to_file.path());
 }
 
-std::unique_ptr<ReadBufferFromFileBase>
-DiskLocal::readFile(
-    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
+void DiskLocal::copyFile(const String & from_path, const String & to_path)
 {
-    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size);
+    Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
+}
+
+std::unique_ptr<ReadBufferFromFileBase>
+DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
+{
+    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, buf_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

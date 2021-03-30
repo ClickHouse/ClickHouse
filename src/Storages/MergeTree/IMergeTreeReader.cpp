@@ -186,15 +186,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             additional_columns.insert({res_columns[pos], name_and_type->type, name_and_type->name});
         }
 
-        auto dag = DB::evaluateMissingDefaults(
-                additional_columns, columns, metadata_snapshot->getColumns(), storage.global_context);
-        if (dag)
-        {
-            auto actions = std::make_shared<
-                ExpressionActions>(std::move(dag),
-                ExpressionActionsSettings::fromSettings(storage.global_context.getSettingsRef()));
-            actions->execute(additional_columns);
-        }
+        DB::evaluateMissingDefaults(additional_columns, columns, metadata_snapshot->getColumns(), storage.global_context);
 
         /// Move columns from block.
         name_and_type = columns.begin();

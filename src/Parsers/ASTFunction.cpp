@@ -324,14 +324,10 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
-                // It can be printed in a form of 'x.1' only if right hand side
-                // is an unsigned integer lineral. We also allow nonnegative
-                // signed integer literals, because the fuzzer sometimes inserts
-                // them, and we want to have consistent formatting.
+                /// It can be printed in a form of 'x.1' only if right hand side is unsigned integer literal.
                 if (const auto * lit = arguments->children[1]->as<ASTLiteral>())
                 {
-                    if (isInt64FieldType(lit->value.getType())
-                        && lit->value.get<Int64>() >= 0)
+                    if (lit->value.getType() == Field::Types::UInt64)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';

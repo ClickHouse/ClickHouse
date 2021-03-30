@@ -444,8 +444,7 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
   */
 bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
-    // Constant expr should use alias names if any
-    String column_name = expr->getColumnName();
+    String column_name = expr->getColumnNameWithoutAlias();
 
     if (const auto * lit = expr->as<ASTLiteral>())
     {
@@ -608,8 +607,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (strict)
         return false;
 
-    // Constant expr should use alias names if any
-    String expr_name = node->getColumnName();
+    String expr_name = node->getColumnNameWithoutAlias();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
@@ -677,8 +675,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (strict)
         return false;
 
-    // Constant expr should use alias names if any
-    String expr_name = ast->getColumnName();
+    String expr_name = ast->getColumnNameWithoutAlias();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
         return false;
@@ -1014,8 +1011,6 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
       * Therefore, use the full name of the expression for search.
       */
     const auto & sample_block = key_expr->getSampleBlock();
-
-    // Key columns should use canonical names for index analysis
     String name = node->getColumnNameWithoutAlias();
 
     auto it = key_columns.find(name);

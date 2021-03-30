@@ -28,8 +28,6 @@ using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 struct SizeLimits;
 
-struct ExpressionActionsSettings;
-
 class QueryPipeline
 {
 public:
@@ -91,7 +89,6 @@ public:
     static QueryPipeline unitePipelines(
             std::vector<std::unique_ptr<QueryPipeline>> pipelines,
             const Block & common_header,
-            const ExpressionActionsSettings & settings,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 

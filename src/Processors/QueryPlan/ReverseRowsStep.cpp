@@ -26,7 +26,7 @@ ReverseRowsStep::ReverseRowsStep(const DataStream & input_stream_)
 {
 }
 
-void ReverseRowsStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void ReverseRowsStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {

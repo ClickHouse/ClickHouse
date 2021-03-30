@@ -52,7 +52,7 @@
     M(RWLockActiveWriters, "Number of threads holding write lock in a table RWLock.") \
     M(GlobalThread, "Number of threads in global thread pool.") \
     M(GlobalThreadActive, "Number of threads in global thread pool running a task.") \
-    M(LocalThread, "Number of threads in local thread pools. The threads in local thread pools are taken from the global thread pool.") \
+    M(LocalThread, "Number of threads in local thread pools. Should be similar to GlobalThreadActive.") \
     M(LocalThreadActive, "Number of threads in local thread pools running a task.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
     M(TablesToDropQueueSize, "Number of dropped tables, that are waiting for background data removal.") \
@@ -66,8 +66,6 @@
     M(PartsWide, "Wide parts.") \
     M(PartsCompact, "Compact parts.") \
     M(PartsInMemory, "In-memory parts.") \
-    M(MMappedFiles, "Total number of mmapped files.") \
-    M(MMappedFileBytes, "Sum size of mmapped file regions.") \
 
 namespace CurrentMetrics
 {

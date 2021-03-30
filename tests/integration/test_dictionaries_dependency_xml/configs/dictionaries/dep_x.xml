@@ -11,8 +11,7 @@
                 <table>dep_z</table>
             </clickhouse>
         </source>
-        <!-- ExternalLoader::PeriodicUpdater::check_period_sec=5 anyway -->
-        <lifetime>4</lifetime>
+        <lifetime>5</lifetime>
         <layout>
             <flat/>
         </layout>
