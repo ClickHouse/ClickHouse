@@ -536,7 +536,6 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-
 ColumnPtr ColumnString::compress() const
 {
     size_t source_chars_size = chars.size();

@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -27,7 +28,8 @@ public:
     virtual ~IWindowFunction() = default;
 
     // Must insert the result for current_row.
-    virtual void windowInsertResultInto(IColumn & to, const WindowTransform * transform) = 0;
+    virtual void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) = 0;
 };
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -37,7 +39,7 @@ template <typename ColumnType>
 static int compareValuesWithOffset(const IColumn * _compared_column,
     size_t compared_row, const IColumn * _reference_column,
     size_t reference_row,
-    uint64_t _offset,
+    const Field & _offset,
     bool offset_is_preceding)
 {
     // Casting the columns to the known type here makes it faster, probably
@@ -46,7 +48,8 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
         _compared_column);
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
-    const auto offset = static_cast<typename ColumnType::ValueType>(_offset);
+    const auto offset = _offset.get<typename ColumnType::ValueType>();
+    assert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
     assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
@@ -101,6 +104,53 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     }
 }
 
+// A specialization of compareValuesWithOffset for floats.
+template <typename ColumnType>
+static int compareValuesWithOffsetFloat(const IColumn * _compared_column,
+    size_t compared_row, const IColumn * _reference_column,
+    size_t reference_row,
+    const Field & _offset,
+    bool offset_is_preceding)
+{
+    // Casting the columns to the known type here makes it faster, probably
+    // because the getData call can be devirtualized.
+    const auto * compared_column = assert_cast<const ColumnType *>(
+        _compared_column);
+    const auto * reference_column = assert_cast<const ColumnType *>(
+        _reference_column);
+    const auto offset = _offset.get<typename ColumnType::ValueType>();
+    assert(offset >= 0);
+
+    const auto compared_value_data = compared_column->getDataAt(compared_row);
+    assert(compared_value_data.size == sizeof(typename ColumnType::ValueType));
+    auto compared_value = unalignedLoad<typename ColumnType::ValueType>(
+        compared_value_data.data);
+
+    const auto reference_value_data = reference_column->getDataAt(reference_row);
+    assert(reference_value_data.size == sizeof(typename ColumnType::ValueType));
+    auto reference_value = unalignedLoad<typename ColumnType::ValueType>(
+        reference_value_data.data);
+
+    // Floats overflow to Inf and the comparison will work normally, so we don't
+    // have to do anything.
+    if (offset_is_preceding)
+    {
+        reference_value -= offset;
+    }
+    else
+    {
+        reference_value += offset;
+    }
+
+    const auto result =  compared_value < reference_value ? -1
+        : compared_value == reference_value ? 0 : 1;
+
+//    fmt::print(stderr, "compared {}, offset {}, reference {}, result {}\n",
+//        compared_value, offset, reference_value, result);
+
+    return result;
+}
+
 // Helper macros to dispatch on type of the ORDER BY column
 #define APPLY_FOR_ONE_TYPE(FUNCTION, TYPE) \
 else if (typeid_cast<const TYPE *>(column)) \
@@ -114,14 +164,20 @@ if (false) /* NOLINT */ \
 { \
     /* Do nothing, a starter condition. */ \
 } \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int8>) \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt8>) \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int16>) \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt16>) \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int32>) \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt32>) \
-APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int64>) \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<UInt64>) \
+\
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int8>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int16>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int32>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int64>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int128>) \
+\
+APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
+APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
+\
 else \
 { \
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
@@ -193,9 +249,28 @@ WindowTransform::WindowTransform(const Block & input_header_,
                 == WindowFrame::BoundaryType::Offset))
     {
         assert(order_by_indices.size() == 1);
-        const IColumn * column = input_header.getByPosition(
-            order_by_indices[0]).column.get();
+        const auto & entry = input_header.getByPosition(order_by_indices[0]);
+        const IColumn * column = entry.column.get();
         APPLY_FOR_TYPES(compareValuesWithOffset)
+
+        // Check that the offset type matches the window type.
+        // Convert the offsets to the ORDER BY column type. We can't just check
+        // that it matches, because e.g. the int literals are always (U)Int64,
+        // but the column might be Int8 and so on.
+        if (window_description.frame.begin_type
+            == WindowFrame::BoundaryType::Offset)
+        {
+            window_description.frame.begin_offset = convertFieldToTypeOrThrow(
+                window_description.frame.begin_offset,
+                *entry.type);
+        }
+        if (window_description.frame.end_type
+            == WindowFrame::BoundaryType::Offset)
+        {
+            window_description.frame.end_offset = convertFieldToTypeOrThrow(
+                window_description.frame.end_offset,
+                *entry.type);
+        }
     }
 }
 
@@ -391,7 +466,7 @@ void WindowTransform::advanceFrameStartRowsOffset()
 {
     // Just recalculate it each time by walking blocks.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.begin_offset
+        window_description.frame.begin_offset.get<UInt64>()
             * (window_description.frame.begin_preceding ? -1 : 1));
 
     frame_start = moved_row;
@@ -638,7 +713,7 @@ void WindowTransform::advanceFrameEndRowsOffset()
     // Walk the specified offset from the current row. The "+1" is needed
     // because the frame_end is a past-the-end pointer.
     const auto [moved_row, offset_left] = moveRowNumber(current_row,
-        window_description.frame.end_offset
+        window_description.frame.end_offset.get<UInt64>()
             * (window_description.frame.end_preceding ? -1 : 1)
             + 1);
 
@@ -852,14 +927,14 @@ void WindowTransform::writeOutCurrentRow()
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
     {
         auto & ws = workspaces[wi];
-        IColumn * result_column = block.output_columns[wi].get();
 
         if (ws.window_function_impl)
         {
-            ws.window_function_impl->windowInsertResultInto(*result_column, this);
+            ws.window_function_impl->windowInsertResultInto(this, wi);
         }
         else
         {
+            IColumn * result_column = block.output_columns[wi].get();
             const auto * a = ws.aggregate_function.get();
             auto * buf = ws.aggregate_function_state.data();
             // FIXME does it also allocate the result on the arena?
@@ -881,11 +956,12 @@ void WindowTransform::appendChunk(Chunk & chunk)
         assert(chunk.hasRows());
         blocks.push_back({});
         auto & block = blocks.back();
+        // Use the number of rows from the Chunk, because it is correct even in
+        // the case where the Chunk has no columns. Not sure if this actually
+        // happens, because even in the case of `count() over ()` we have a dummy
+        // input column.
+        block.rows = chunk.getNumRows();
         block.input_columns = chunk.detachColumns();
-
-        // Even in case of `count() over ()` we should have a dummy input column.
-        // Not sure how reliable this is...
-        block.rows = block.input_columns[0]->size();
 
         for (auto & ws : workspaces)
         {
@@ -1109,9 +1185,7 @@ IProcessor::Status WindowTransform::prepare()
         if (output.canPush())
         {
             // Output the ready block.
-//            fmt::print(stderr, "output block {}\n", next_output_block_number);
             const auto i = next_output_block_number - first_block_number;
-            ++next_output_block_number;
             auto & block = blocks[i];
             auto columns = block.input_columns;
             for (auto & res : block.output_columns)
@@ -1119,6 +1193,12 @@ IProcessor::Status WindowTransform::prepare()
                 columns.push_back(ColumnPtr(std::move(res)));
             }
             output_data.chunk.setColumns(columns, block.rows);
+
+//            fmt::print(stderr, "output block {} as chunk '{}'\n",
+//                next_output_block_number,
+//                output_data.chunk.dumpStructure());
+
+            ++next_output_block_number;
 
             output.pushData(std::move(output_data));
         }
@@ -1275,8 +1355,11 @@ struct WindowFunctionRank final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
-    void windowInsertResultInto(IColumn & to, const WindowTransform * transform) override
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
     {
+        IColumn & to = *transform->blockAt(transform->current_row)
+            .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->peer_group_start_row_number);
     }
@@ -1292,8 +1375,11 @@ struct WindowFunctionDenseRank final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
-    void windowInsertResultInto(IColumn & to, const WindowTransform * transform) override
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
     {
+        IColumn & to = *transform->blockAt(transform->current_row)
+            .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->peer_group_number);
     }
@@ -1309,10 +1395,120 @@ struct WindowFunctionRowNumber final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
-    void windowInsertResultInto(IColumn & to, const WindowTransform * transform) override
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
     {
+        IColumn & to = *transform->blockAt(transform->current_row)
+            .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
             transform->current_row_number);
+    }
+};
+
+// ClickHouse-specific variant of lag/lead that respects the window frame.
+template <bool is_lead>
+struct WindowFunctionLagLeadInFrame final : public WindowFunction
+{
+    WindowFunctionLagLeadInFrame(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : WindowFunction(name_, argument_types_, parameters_)
+    {
+        if (!parameters.empty())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} cannot be parameterized", name_);
+        }
+
+        if (argument_types.empty())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function {} takes at least one argument", name_);
+        }
+
+        if (argument_types.size() == 1)
+        {
+            return;
+        }
+
+        if (!isInt64FieldType(argument_types[1]->getDefault().getType()))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Offset must be an integer, '{}' given",
+                argument_types[1]->getName());
+        }
+
+        if (argument_types.size() == 2)
+        {
+            return;
+        }
+
+        if (!getLeastSupertype({argument_types[0], argument_types[2]}))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The default value type '{}' is not convertible to the argument type '{}'",
+                argument_types[2]->getName(),
+                argument_types[0]->getName());
+        }
+
+        if (argument_types.size() > 3)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Function '{}' accepts at most 3 arguments, {} given",
+                name, argument_types.size());
+        }
+    }
+
+    DataTypePtr getReturnType() const override
+    { return argument_types[0]; }
+
+    void windowInsertResultInto(const WindowTransform * transform,
+        size_t function_index) override
+    {
+        const auto & current_block = transform->blockAt(transform->current_row);
+        IColumn & to = *current_block.output_columns[function_index];
+        const auto & workspace = transform->workspaces[function_index];
+
+        int offset = 1;
+        if (argument_types.size() > 1)
+        {
+            offset = (*current_block.input_columns[
+                    workspace.argument_column_indices[1]])[
+                        transform->current_row.row].get<Int64>();
+            if (offset < 0)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The offset for function {} must be nonnegative, {} given",
+                    getName(), offset);
+            }
+        }
+
+        const auto [target_row, offset_left] = transform->moveRowNumber(
+            transform->current_row, offset * (is_lead ? 1 : -1));
+
+        if (offset_left != 0
+            || target_row < transform->frame_start
+            || transform->frame_end <= target_row)
+        {
+            // Offset is outside the frame.
+            if (argument_types.size() > 2)
+            {
+                // Column with default values is specified.
+                to.insertFrom(*current_block.input_columns[
+                            workspace.argument_column_indices[2]],
+                    transform->current_row.row);
+            }
+            else
+            {
+                to.insertDefault();
+            }
+        }
+        else
+        {
+            // Offset is inside the frame.
+            to.insertFrom(*transform->blockAt(target_row).input_columns[
+                    workspace.argument_column_indices[0]],
+                target_row.row);
+        }
     }
 };
 
@@ -1327,9 +1523,10 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     // the whole partition like Postgres does, because using a linear amount
     // of additional memory is not an option when we have a lot of data. We must
     // be able to process at least the lag/lead in streaming fashion.
-    // Our best bet is probably rewriting, say `lag(value, offset)` to
-    // `any(value) over (rows between offset preceding and offset preceding)`,
-    // at the query planning stage.
+    // A partial solution for constant offsets is rewriting, say `lag(value, offset)
+    // to `any(value) over (rows between offset preceding and offset preceding)`.
+    // We also implement non-standard functions `lag/leadInFrame`, that are
+    // analogous to `lag/lead`, but respect the frame.
     // Functions like cume_dist() do require materializing the entire
     // partition, but it's probably also simpler to implement them by rewriting
     // to a (rows between unbounded preceding and unbounded following) frame,
@@ -1354,6 +1551,20 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
+        });
+
+    factory.registerFunction("lagInFrame", [](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters)
+        {
+            return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
+                name, argument_types, parameters);
+        });
+
+    factory.registerFunction("leadInFrame", [](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters)
+        {
+            return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
+                name, argument_types, parameters);
         });
 }
 

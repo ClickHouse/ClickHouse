@@ -533,6 +533,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     ParserKeyword keyword_groups("GROUPS");
     ParserKeyword keyword_range("RANGE");
 
+    node->frame.is_default = false;
     if (keyword_rows.ignore(pos, expected))
     {
         node->frame.type = WindowFrame::FrameType::Rows;
@@ -548,6 +549,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
     else
     {
         /* No frame clause. */
+        node->frame.is_default = true;
         return true;
     }
 
@@ -579,30 +581,20 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         else if (parser_literal.parse(pos, ast_literal, expected))
         {
             const Field & value = ast_literal->as<ASTLiteral &>().value;
-            if (!isInt64FieldType(value.getType()))
+            if ((node->frame.type == WindowFrame::FrameType::Rows
+                    || node->frame.type == WindowFrame::FrameType::Groups)
+                && !(value.getType() == Field::Types::UInt64
+                     || (value.getType() == Field::Types::Int64
+                            && value.get<Int64>() >= 0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Only integer frame offsets are supported, '{}' is not supported.",
+                    "Frame offset for '{}' frame must be a nonnegative integer, '{}' of type '{}' given.",
+                    WindowFrame::toString(node->frame.type),
+                    applyVisitor(FieldVisitorToString(), value),
                     Field::Types::toString(value.getType()));
             }
-            node->frame.begin_offset = value.get<Int64>();
+            node->frame.begin_offset = value;
             node->frame.begin_type = WindowFrame::BoundaryType::Offset;
-            // We can easily get a UINT64_MAX here, which doesn't even fit into
-            // int64_t. Not sure what checks we are going to need here after we
-            // support floats and dates.
-            if (node->frame.begin_offset > INT_MAX || node->frame.begin_offset < INT_MIN)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame offset must be between {} and {}, but {} is given",
-                    INT_MAX, INT_MIN, node->frame.begin_offset);
-            }
-
-            if (node->frame.begin_offset < 0)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame start offset must be greater than zero, {} given",
-                    node->frame.begin_offset);
-            }
         }
         else
         {
@@ -650,28 +642,20 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             else if (parser_literal.parse(pos, ast_literal, expected))
             {
                 const Field & value = ast_literal->as<ASTLiteral &>().value;
-                if (!isInt64FieldType(value.getType()))
+                if ((node->frame.type == WindowFrame::FrameType::Rows
+                        || node->frame.type == WindowFrame::FrameType::Groups)
+                    && !(value.getType() == Field::Types::UInt64
+                         || (value.getType() == Field::Types::Int64
+                                && value.get<Int64>() >= 0)))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Only integer frame offsets are supported, '{}' is not supported.",
+                        "Frame offset for '{}' frame must be a nonnegative integer, '{}' of type '{}' given.",
+                        WindowFrame::toString(node->frame.type),
+                        applyVisitor(FieldVisitorToString(), value),
                         Field::Types::toString(value.getType()));
                 }
-                node->frame.end_offset = value.get<Int64>();
+                node->frame.end_offset = value;
                 node->frame.end_type = WindowFrame::BoundaryType::Offset;
-
-                if (node->frame.end_offset > INT_MAX || node->frame.end_offset < INT_MIN)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Frame offset must be between {} and {}, but {} is given",
-                        INT_MAX, INT_MIN, node->frame.end_offset);
-                }
-
-                if (node->frame.end_offset < 0)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Frame end offset must be greater than zero, {} given",
-                        node->frame.end_offset);
-                }
             }
             else
             {
@@ -697,11 +681,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                 return false;
             }
         }
-    }
-
-    if (!(node->frame == WindowFrame{}))
-    {
-        node->frame.is_default = false;
     }
 
     return true;
