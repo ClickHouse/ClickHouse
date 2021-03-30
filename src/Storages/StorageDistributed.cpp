@@ -954,7 +954,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
             throw Exception(exception_message.str(), ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS);
     }
 
-    return cluster;
+    return {};
 }
 
 IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
