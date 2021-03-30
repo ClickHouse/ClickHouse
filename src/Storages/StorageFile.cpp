@@ -22,6 +22,9 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
+#include "Storages/ColumnsDescription.h"
+#include "Storages/StorageInMemoryMetadata.h"
+#include "Storages/StorageMergeTree.h"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -227,6 +230,8 @@ static std::chrono::seconds getLockTimeout(const Context & context)
     return std::chrono::seconds{lock_timeout};
 }
 
+using StorageFilePtr = std::shared_ptr<StorageFile>;
+
 
 class StorageFileSource : public SourceWithProgress
 {
@@ -257,6 +262,19 @@ public:
         return header;
     }
 
+    static Block getBlockForSource(
+        const StorageFilePtr & storage,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ColumnsDescription & columns_description,
+        const FilesInfoPtr & files_info)
+    {
+        if (FormatFactory::instance().checkIfFormatIsColumnOriented(storage->format_name)) {
+            return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
+        } else {
+            return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
+        }
+    }
+
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
         const StorageMetadataPtr & metadata_snapshot_,
@@ -264,8 +282,7 @@ public:
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_)
-        : SourceWithProgress(storage_->isColumnOriented() ? metadata_snapshot_->getSampleBlockForColumns(columns_description_.getNamesOfPhysical(), storage_->getVirtuals(), storage_->getStorageID())
-                : getHeader(metadata_snapshot_, files_info_->need_path_column, files_info_->need_file_column))
+        : SourceWithProgress(getBlockForSource(storage_, metadata_snapshot_, columns_description_, files_info_))
         , storage(std::move(storage_))
         , metadata_snapshot(metadata_snapshot_)
         , files_info(std::move(files_info_))
@@ -345,9 +362,16 @@ public:
                 }
 
                 read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
-                auto format = FormatFactory::instance().getInput(storage->format_name, *read_buf,
-                                storage->isColumnOriented() ? metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical())
-                                : metadata_snapshot->getSampleBlock(), context, max_block_size, storage->format_settings);
+
+                auto get_block_for_format = [&]() -> Block
+                {
+                    if (FormatFactory::instance().checkIfFormatIsColumnOriented(storage->format_name))
+                        return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+                    return metadata_snapshot->getSampleBlock();
+                };
+
+                auto format = FormatFactory::instance().getInput(
+                    storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
 
                 reader = std::make_shared<InputStreamFromInputFormat>(format);
 
@@ -414,11 +438,6 @@ private:
     std::unique_lock<std::shared_timed_mutex> unique_lock;
 };
 
-bool StorageFile::isColumnOriented() const
-{
-    return (format_name == "Parquet" || format_name == "Arrow" || format_name == "ORC");
-};
-
 Pipe StorageFile::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -428,6 +447,12 @@ Pipe StorageFile::read(
     size_t max_block_size,
     unsigned num_streams)
 {
+
+    std::cout << "Names" << std::endl;
+    for (const auto & name : column_names) {
+        std::cout << name << std::endl;
+    }
+    std::cout << "-----" << std::endl;
     BlockInputStreams blocks_input;
 
     if (use_table_fd)   /// need to call ctr BlockInputStream
@@ -463,10 +488,15 @@ Pipe StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
     {
+        const auto get_columns_for_format = [&]() -> ColumnsDescription
+        {
+            if (FormatFactory::instance().checkIfFormatIsColumnOriented(format_name))
+                return metadata_snapshot->getColumnsForNames(column_names, getVirtuals(), getStorageID());
+            else
+                return metadata_snapshot->getColumns();
+        };
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info,
-            isColumnOriented() ? metadata_snapshot->getColumnsForNames(column_names, getVirtuals(), getStorageID())
-            : metadata_snapshot->getColumns()));
+            this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format()));
     }
 
     return Pipe::unitePipes(std::move(pipes));
