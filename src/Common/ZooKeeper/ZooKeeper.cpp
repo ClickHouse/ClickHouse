@@ -68,7 +68,6 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
         pcg64 generator(randomSeed());
         std::shuffle(shuffled_hosts.begin(), shuffled_hosts.end(), generator);
 
-        bool dns_error = false;
         for (auto & host_string : shuffled_hosts)
         {
             try
@@ -80,27 +79,14 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
 
                 nodes.emplace_back(Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, secure});
             }
-            catch (const Poco::Net::HostNotFoundException & e)
-            {
-                /// Most likely it's misconfiguration and wrong hostname was specified
-                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
-            }
             catch (const Poco::Net::DNSException & e)
             {
-                /// Most likely DNS is not available now
-                dns_error = true;
-                LOG_ERROR(log, "Cannot use ZooKeeper host {} due to DNS error: {}", host_string, e.displayText());
+                LOG_ERROR(log, "Cannot use ZooKeeper host {}, reason: {}", host_string, e.displayText());
             }
         }
 
         if (nodes.empty())
-        {
-            /// For DNS errors we throw exception with ZCONNECTIONLOSS code, so it will be considered as hardware error, not user error
-            if (dns_error)
-                throw KeeperException("Cannot resolve any of provided ZooKeeper hosts due to DNS error", Coordination::Error::ZCONNECTIONLOSS);
-            else
-                throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZBADARGUMENTS);
-        }
+            throw KeeperException("Cannot use any of provided ZooKeeper nodes", Coordination::Error::ZBADARGUMENTS);
 
         impl = std::make_unique<Coordination::ZooKeeper>(
                 nodes,
@@ -601,7 +587,7 @@ void ZooKeeper::removeChildren(const std::string & path)
 }
 
 
-void ZooKeeper::removeChildrenRecursive(const std::string & path, const String & keep_child_node)
+void ZooKeeper::removeChildrenRecursive(const std::string & path)
 {
     Strings children = getChildren(path);
     while (!children.empty())
@@ -610,15 +596,14 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             removeChildrenRecursive(path + "/" + children.back());
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
-                ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
+            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
             children.pop_back();
         }
         multi(ops);
     }
 }
 
-void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node)
+void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
 {
     Strings children;
     if (tryGetChildren(path, children) != Coordination::Error::ZOK)
@@ -629,14 +614,14 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         Strings batch;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            String child_path = path + "/" + children.back();
-            tryRemoveChildrenRecursive(child_path);
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
-            {
-                batch.push_back(child_path);
-                ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));
-            }
+            batch.push_back(path + "/" + children.back());
             children.pop_back();
+            tryRemoveChildrenRecursive(batch.back());
+
+            Coordination::RemoveRequest request;
+            request.path = batch.back();
+
+            ops.emplace_back(std::make_shared<Coordination::RemoveRequest>(std::move(request)));
         }
 
         /// Try to remove the children with a faster method - in bulk. If this fails,

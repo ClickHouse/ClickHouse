@@ -168,7 +168,7 @@ private:
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", isStringOrFixedString, isColumnConst, "encryption mode string"},
-                {"input", isStringOrFixedString, nullptr, "plaintext"},
+                {"input", nullptr, nullptr, "plaintext"},
                 {"key", isStringOrFixedString, nullptr, "encryption key binary string"},
             },
             optional_args
@@ -223,13 +223,13 @@ private:
         return result_column;
     }
 
-    static ColumnPtr doEncrypt(
-        const EVP_CIPHER * evp_cipher,
-        size_t input_rows_count,
-        const ColumnPtr & input_column,
-        const ColumnPtr & key_column,
-        const ColumnPtr & iv_column,
-        const ColumnPtr & aad_column)
+    template <typename InputColumnType, typename KeyColumnType, typename IvColumnType, typename AadColumnType>
+    static ColumnPtr doEncrypt(const EVP_CIPHER * evp_cipher,
+                    size_t input_rows_count,
+                    const InputColumnType & input_column,
+                    const KeyColumnType & key_column,
+                    const IvColumnType & iv_column,
+                    const AadColumnType & aad_column)
     {
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::MySQL)
         {
@@ -250,14 +250,13 @@ private:
         return nullptr;
     }
 
-    template <CipherMode mode>
-    static ColumnPtr doEncryptImpl(
-        const EVP_CIPHER * evp_cipher,
-        size_t input_rows_count,
-        const ColumnPtr & input_column,
-        const ColumnPtr & key_column,
-        [[maybe_unused]] const ColumnPtr & iv_column,
-        [[maybe_unused]] const ColumnPtr & aad_column)
+    template <CipherMode mode, typename InputColumnType, typename KeyColumnType, typename IvColumnType, typename AadColumnType>
+    static ColumnPtr doEncryptImpl(const EVP_CIPHER * evp_cipher,
+                    size_t input_rows_count,
+                    const InputColumnType & input_column,
+                    const KeyColumnType & key_column,
+                    [[maybe_unused]] const IvColumnType & iv_column,
+                    [[maybe_unused]] const AadColumnType & aad_column)
     {
         using namespace OpenSSLDetails;
 
@@ -301,7 +300,7 @@ private:
         {
             const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
             auto iv_value = StringRef{};
-            if (iv_column)
+            if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<IvColumnType>>)
             {
                 iv_value = iv_column->getDataAt(r);
 
@@ -310,7 +309,7 @@ private:
                     iv_value.data = nullptr;
             }
 
-            const StringRef input_value = input_column->getDataAt(r);
+            const auto input_value = input_column->getDataAt(r);
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
             {
@@ -347,7 +346,7 @@ private:
                         onError("Failed to set key and IV");
 
                     // 1.a.2 Set AAD
-                    if (aad_column)
+                    if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<AadColumnType>>)
                     {
                         const auto aad_data = aad_column->getDataAt(r);
                         int tmp_len = 0;
@@ -495,13 +494,13 @@ private:
         return result_column;
     }
 
-    static ColumnPtr doDecrypt(
-        const EVP_CIPHER * evp_cipher,
-        size_t input_rows_count,
-        const ColumnPtr & input_column,
-        const ColumnPtr & key_column,
-        const ColumnPtr & iv_column,
-        const ColumnPtr & aad_column)
+    template <typename InputColumnType, typename KeyColumnType, typename IvColumnType, typename AadColumnType>
+    static ColumnPtr doDecrypt(const EVP_CIPHER * evp_cipher,
+                    size_t input_rows_count,
+                    const InputColumnType & input_column,
+                    const KeyColumnType & key_column,
+                    const IvColumnType & iv_column,
+                    const AadColumnType & aad_column)
     {
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::MySQL)
         {
@@ -523,13 +522,13 @@ private:
         return nullptr;
     }
 
-    template <CipherMode mode>
+    template <CipherMode mode, typename InputColumnType, typename KeyColumnType, typename IvColumnType, typename AadColumnType>
     static ColumnPtr doDecryptImpl(const EVP_CIPHER * evp_cipher,
-        size_t input_rows_count,
-        const ColumnPtr & input_column,
-        const ColumnPtr & key_column,
-        [[maybe_unused]] const ColumnPtr & iv_column,
-        [[maybe_unused]] const ColumnPtr & aad_column)
+                    size_t input_rows_count,
+                    const InputColumnType & input_column,
+                    const KeyColumnType & key_column,
+                    [[maybe_unused]] const IvColumnType & iv_column,
+                    [[maybe_unused]] const AadColumnType & aad_column)
     {
         using namespace OpenSSLDetails;
 
@@ -538,9 +537,8 @@ private:
 
         [[maybe_unused]] const auto block_size = static_cast<size_t>(EVP_CIPHER_block_size(evp_cipher));
         [[maybe_unused]] const auto iv_size = static_cast<size_t>(EVP_CIPHER_iv_length(evp_cipher));
-
-        const size_t key_size = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
-        static constexpr size_t tag_size = 16; // https://tools.ietf.org/html/rfc5116#section-5.1
+        const auto key_size = static_cast<size_t>(EVP_CIPHER_key_length(evp_cipher));
+        const auto tag_size = 16; // https://tools.ietf.org/html/rfc5116#section-5.1
 
         auto decrypted_result_column = ColumnString::create();
         auto & decrypted_result_column_data = decrypted_result_column->getChars();
@@ -550,17 +548,9 @@ private:
             size_t resulting_size = 0;
             for (size_t r = 0; r < input_rows_count; ++r)
             {
-                size_t string_size = input_column->getDataAt(r).size;
-                resulting_size += string_size + 1;  /// With terminating zero.
-
+                resulting_size += input_column->getDataAt(r).size + 1;
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
-                {
-                    if (string_size < tag_size)
-                        throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
-                            ErrorCodes::BAD_ARGUMENTS);
-
                     resulting_size -= tag_size;
-                }
             }
 
 #if defined(MEMORY_SANITIZER)
@@ -574,7 +564,6 @@ private:
             decrypted_result_column_data.resize(resulting_size);
 #endif
         }
-
         auto * decrypted = decrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder;
@@ -583,7 +572,7 @@ private:
             // 0: prepare key if required
             auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
             auto iv_value = StringRef{};
-            if (iv_column)
+            if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<IvColumnType>>)
             {
                 iv_value = iv_column->getDataAt(r);
 
@@ -639,9 +628,9 @@ private:
                         onError("Failed to set key and IV");
 
                     // 1.a.2: Set AAD if present
-                    if (aad_column)
+                    if constexpr (!std::is_same_v<std::nullptr_t, std::decay_t<AadColumnType>>)
                     {
-                        StringRef aad_data = aad_column->getDataAt(r);
+                        const auto aad_data = aad_column->getDataAt(r);
                         int tmp_len = 0;
                         if (aad_data.size != 0 && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)

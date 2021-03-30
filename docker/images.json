@@ -45,8 +45,7 @@
         "name": "yandex/clickhouse-stateless-test",
         "dependent": [
             "docker/test/stateful",
-            "docker/test/coverage",
-            "docker/test/unit"
+            "docker/test/coverage"
         ]
     },
     "docker/test/stateless_pytest": {
@@ -135,10 +134,7 @@
          "name": "yandex/clickhouse-test-base",
          "dependent": [
             "docker/test/stateless",
-            "docker/test/stateless_unbundled",
-            "docker/test/stateless_pytest",
-            "docker/test/integration/base",
-            "docker/test/fuzzer"
+            "docker/test/stateless_pytest"
          ]
     },
     "docker/packager/unbundled": {
@@ -154,10 +150,6 @@
     },
     "docker/test/integration/kerberized_hadoop": {
         "name": "yandex/clickhouse-kerberized-hadoop",
-        "dependent": []
-    },
-    "docker/test/sqlancer": {
-        "name": "yandex/clickhouse-sqlancer-test",
         "dependent": []
     }
 }

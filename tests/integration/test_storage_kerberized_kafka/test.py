@@ -105,8 +105,6 @@ def test_kafka_json_as_string(kafka_cluster):
                      kafka_flush_interval_ms=1000;
         ''')
 
-    time.sleep(3)
-
     result = instance.query('SELECT * FROM test.kafka;')
     expected = '''\
 {"t": 123, "e": {"x": "woof"} }

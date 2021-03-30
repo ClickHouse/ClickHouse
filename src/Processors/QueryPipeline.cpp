@@ -182,11 +182,8 @@ void QueryPipeline::addExtremesTransform()
 {
     checkInitializedAndNotCompleted();
 
-    /// It is possible that pipeline already have extremes.
-    /// For example, it may be added from VIEW subquery.
-    /// In this case, recalculate extremes again - they should be calculated for different rows.
     if (pipe.getExtremesPort())
-        pipe.dropExtremes();
+        throw Exception("Extremes transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
 
     resize(1);
     auto transform = std::make_shared<ExtremesTransform>(getHeader());
@@ -212,7 +209,6 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
 QueryPipeline QueryPipeline::unitePipelines(
     std::vector<std::unique_ptr<QueryPipeline>> pipelines,
     const Block & common_header,
-    const ExpressionActionsSettings & settings,
     size_t max_threads_limit,
     Processors * collected_processors)
 {
@@ -235,7 +231,7 @@ QueryPipeline QueryPipeline::unitePipelines(
                     pipeline.getHeader().getColumnsWithTypeAndName(),
                     common_header.getColumnsWithTypeAndName(),
                     ActionsDAG::MatchColumnsMode::Position);
-            auto actions = std::make_shared<ExpressionActions>(actions_dag, settings);
+            auto actions = std::make_shared<ExpressionActions>(actions_dag);
 
             pipeline.addSimpleTransform([&](const Block & header)
             {

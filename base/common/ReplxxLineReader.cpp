@@ -12,8 +12,6 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <fstream>
-#include <fmt/format.h>
-
 
 namespace
 {
@@ -191,8 +189,8 @@ void ReplxxLineReader::openEditor()
         return;
     }
 
-    const char * editor = std::getenv("EDITOR");
-    if (!editor || !*editor)
+    String editor = std::getenv("EDITOR");
+    if (editor.empty())
         editor = "vim";
 
     replxx::Replxx::State state(rx.get_state());
@@ -206,7 +204,7 @@ void ReplxxLineReader::openEditor()
         if ((-1 == res || 0 == res) && errno != EINTR)
         {
             rx.print("Cannot write to temporary query file %s: %s\n", filename, errnoToString(errno).c_str());
-            break;
+            return;
         }
         bytes_written += res;
     }
@@ -217,7 +215,7 @@ void ReplxxLineReader::openEditor()
         return;
     }
 
-    if (0 == execute(fmt::format("{} {}", editor, filename)))
+    if (0 == execute(editor + " " + filename))
     {
         try
         {

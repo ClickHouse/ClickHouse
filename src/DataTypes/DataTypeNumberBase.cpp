@@ -8,6 +8,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 
 
 namespace DB
@@ -152,7 +154,7 @@ template <typename T>
 void DataTypeNumberBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::ValueType is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::ValueType x = get<FieldType>(field);
+    typename ColumnVector<T>::ValueType x = get<NearestFieldType<FieldType>>(field);
     writeBinary(x, ostr);
 }
 
@@ -204,6 +206,34 @@ void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer &
 
 
 template <typename T>
+void DataTypeNumberBase<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeNumber(assert_cast<const ColumnVector<T> &>(column).getData()[row_num]));
+}
+
+
+template <typename T>
+void DataTypeNumberBase<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    T value;
+    if (!protobuf.readNumber(value))
+        return;
+
+    auto & container = typeid_cast<ColumnVector<T> &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(value);
+        row_added = true;
+    }
+    else
+        container.back() = value;
+}
+
+
+template <typename T>
 MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 {
     return ColumnVector<T>::create();
@@ -212,13 +242,13 @@ MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
-    return is_integer_v<T>;
+    return std::is_integral_v<T>;
 }
 
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
-    return is_integer_v<T> && is_unsigned_v<T>;
+    return std::is_integral_v<T> && is_unsigned_v<T>;
 }
 
 

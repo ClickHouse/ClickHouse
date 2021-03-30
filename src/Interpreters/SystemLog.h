@@ -246,7 +246,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
     bool queue_is_half_full = false;
@@ -515,9 +515,7 @@ void SystemLog<LogElement>::prepareTable()
 
             LOG_DEBUG(log, "Existing table {} for system log has obsolete or different structure. Renaming it to {}", description, backQuoteIfNeed(to.table));
 
-            Context query_context = context;
-            query_context.makeQueryContext();
-            InterpreterRenameQuery(rename, query_context).execute();
+            InterpreterRenameQuery(rename, context).execute();
 
             /// The required table will be created.
             table = nullptr;
@@ -533,10 +531,7 @@ void SystemLog<LogElement>::prepareTable()
 
         auto create = getCreateTableQuery();
 
-
-        Context query_context = context;
-        query_context.makeQueryContext();
-        InterpreterCreateQuery interpreter(create, query_context);
+        InterpreterCreateQuery interpreter(create, context);
         interpreter.setInternal(true);
         interpreter.execute();
 

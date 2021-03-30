@@ -109,14 +109,6 @@ String IAST::getColumnName() const
 }
 
 
-String IAST::getColumnNameWithoutAlias() const
-{
-    WriteBufferFromOwnString write_buffer;
-    appendColumnNameWithoutAlias(write_buffer);
-    return write_buffer.str();
-}
-
-
 void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
     switch (identifier_quoting_style)
