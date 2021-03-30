@@ -33,8 +33,6 @@ RUN apt-get update \
         --yes --no-install-recommends
 
 RUN cat /etc/resolv.conf \
-    && echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
-    && nslookup -debug apt.llvm.org \
     && apt-get update \
     && apt-get install \
         bash \
