@@ -486,7 +486,7 @@ SELECT xxHash32('Hello, world!');
 
 ## ngramSimHash {#ngramsimhash}
 
-Выделяет из строки в ASCII n-граммы размером `ngramsize` и возвращает n-граммовый simhash. Функция регистрозависимая.
+Выделяет из строки в ASCII отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистрозависимая.
 
 Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
 
@@ -525,7 +525,7 @@ SELECT ngramSimHash('ClickHouse') AS Hash;
 
 ## ngramSimHashCaseInsensitive {#ngramsimhashcaseinsensitive}
 
-Выделяет из строки в ASCII n-граммы размером `ngramsize` и возвращает n-граммовый simhash. Функция регистронезависимая.
+Выделяет из строки в ASCII отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистронезависимая.
 
 Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
 
@@ -564,7 +564,7 @@ SELECT ngramSimHashCaseInsensitive('ClickHouse') AS Hash;
 
 ## ngramSimHashUTF8 {#ngramsimhashutf8}
 
-Выделяет из строки в UTF-8 n-граммы размером `ngramsize` и возвращает n-граммовый simhash. Функция регистрозависимая.
+Выделяет из строки в UTF-8 отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистрозависимая.
 
 Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
 
@@ -603,7 +603,7 @@ SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
 
 ## ngramSimHashCaseInsensitiveUTF8 {#ngramsimhashcaseinsensitiveutf8}
 
-Выделяет из строки в UTF-8 n-граммы размером `ngramsize` и возвращает n-граммовый simhash. Функция регистронезависимая.
+Выделяет из строки в UTF-8 отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистронезависимая.
 
 Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
 
@@ -642,7 +642,7 @@ SELECT ngramSimHashCaseInsensitiveUTF8('ClickHouse') AS Hash;
 
 ## wordShingleSimHash {#wordshinglesimhash}
 
-Выделяет из строки в ASCII шинглы из `shinglesize` слов и возвращает шингловый simhash. Функция регистрозависимая.
+Выделяет из строки в ASCII отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистрозависимая.
 
 Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
 
@@ -681,7 +681,7 @@ SELECT wordShingleSimHash('ClickHouse® is a column-oriented database management
 
 ## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseinsensitive}
 
-Выделяет из строки в ASCII шинглы из `shinglesize` слов и возвращает шингловый simhash. Функция регистронезависимая.
+Выделяет из строки в ASCII отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистронезависимая.
 
 Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
 
@@ -720,7 +720,7 @@ SELECT wordShingleSimHashCaseInsensitive('ClickHouse® is a column-oriented data
 
 ## wordShingleSimHashUTF8 {#wordshinglesimhashutf8}
 
-Выделяет из строки в UTF-8 шинглы из `shinglesize` слов и возвращает шингловый simhash. Функция регистрозависимая.
+Выделяет из строки в UTF-8 отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистрозависимая.
 
 Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
 
@@ -759,7 +759,7 @@ SELECT wordShingleSimHashUTF8('ClickHouse® is a column-oriented database manage
 
 ## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimhashcaseinsensitiveutf8}
 
-Выделяет из строки в UTF-8 шинглы из `shinglesize` слов и возвращает шингловый simhash. Функция регистронезависимая.
+Выделяет из строки в UTF-8 отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистронезависимая.
 
 Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
 
@@ -798,9 +798,9 @@ SELECT wordShingleSimHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented 
 
 ## ngramMinHash {#ngramminhash}
 
-Выделяет из строки в ASCII n-граммы размером `ngramsize` и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
+Выделяет из строки в ASCII отрезки (n-граммы) размером `ngramsize` символов и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Для двух строк: если один из возвращаемых хешей одинаков для обоих строк, мы считаем, что эти строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
 
 **Синтаксис**
 
@@ -838,9 +838,9 @@ SELECT ngramMinHash('ClickHouse') AS Tuple;
 
 ## ngramMinHashCaseInsensitive {#ngramminhashcaseinsensitive}
 
-Выделяет из строки в ASCII n-граммы размером `ngramsize` и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистронезависимая.
+Выделяет из строки в ASCII отрезки (n-граммы) размером `ngramsize` символов и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистронезависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Для двух строк: если один из возвращаемых хешей одинаков для обоих строк, мы считаем, что эти строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
 
 **Синтаксис**
 
@@ -878,9 +878,9 @@ SELECT ngramMinHashCaseInsensitive('ClickHouse') AS Tuple;
 
 ## ngramMinHashUTF8 {#ngramminhashutf8}
 
-Выделяет из строки в UTF-8 n-граммы размером `ngramsize` и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
+Выделяет из строки в UTF-8 отрезки (n-граммы) размером `ngramsize` символов и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Для двух строк: если один из возвращаемых хешей одинаков для обоих строк, мы считаем, что эти строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
 
 **Синтаксис**
 ``` sql
@@ -917,9 +917,9 @@ SELECT ngramMinHashUTF8('ClickHouse') AS Tuple;
 
 ## ngramMinHashCaseInsensitiveUTF8 {#ngramminhashcaseinsensitiveutf8}
 
-Выделяет из строки в UTF-8 n-граммы размером `ngramsize` и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистронезависимая.
+Выделяет из строки в UTF-8 отрезки (n-граммы) размером `ngramsize` символов и вычисляет хеш для каждой n-граммы. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистронезависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Для двух строк: если один из возвращаемых хешей одинаков для обоих строк, мы считаем, что эти строки совпадают..
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
 
 **Синтаксис**
 
@@ -957,7 +957,7 @@ SELECT ngramMinHashCaseInsensitiveUTF8('ClickHouse') AS Tuple;
 
 ## ngramMinHashArg {#ngramminhasharg}
 
-Выделяет из строки в ASCII n-граммы размером `ngramsize` и возвращает n-граммы, которые соответствуют n-граммам, которые используются при вычислении минимального и максимального хешей функцией [ngramMinHash](#ngramminhash) при одинаковых значениях аргументов. Функция регистрозависимая.
+Выделяет из строки в ASCII отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммы с минимальным и максимальным хешами, вычисленными функцией [ngramMinHash](#ngramminhash) с теми же входными данными. Функция регистрозависимая.
 
 **Синтаксис**
 
@@ -995,7 +995,7 @@ SELECT ngramMinHashArg('ClickHouse') AS Tuple;
 
 ## ngramMinHashArgCaseInsensitive {#ngramminhashargcaseinsensitive}
 
-Выделяет из строки в ASCII n-граммы размером `ngramsize` и возвращает n-граммы, которые соответствуют n-граммам, которые используются при вычислении минимального и максимального хешей функцией [ngramMinHashCaseInsensitive](#ngramminhashcaseinsensitive) при одинаковых значениях аргументов. Функция регистронезависимая.
+Выделяет из строки в ASCII отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммы с минимальным и максимальным хешами, вычисленными функцией [ngramMinHashCaseInsensitive](#ngramminhashcaseinsensitive) с теми же входными данными. Функция регистронезависимая.
 
 **Синтаксис**
 
@@ -1033,7 +1033,7 @@ SELECT ngramMinHashArgCaseInsensitive('ClickHouse') AS Tuple;
 
 ## ngramMinHashArgUTF8 {#ngramminhashargutf8}
 
-Выделяет из строки в UTF-8 n-граммы размером `ngramsize` и возвращает n-граммы, которые соответствуют n-граммам, которые используются при вычислении минимального и максимального хешей функцией [ngramMinHashUTF8](#ngramminhashutf8) при одинаковых значениях аргументов. Функция регистрозависимая.
+Выделяет из строки в UTF-8 отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммы с минимальным и максимальным хешами, вычисленными функцией [ngramMinHashUTF8](#ngramminhashutf8) с теми же входными данными. Функция регистрозависимая.
 
 **Синтаксис**
 
@@ -1071,7 +1071,7 @@ SELECT ngramMinHashArgUTF8('ClickHouse') AS Tuple;
 
 ## ngramMinHashArgCaseInsensitiveUTF8 {#ngramminhashargcaseinsensitiveutf8}
 
-Выделяет из строки в UTF-8 n-граммы размером `ngramsize` и возвращает n-граммы, которые соответствуют n-граммам, которые используются при вычислении минимального и максимального хешей функцией [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) при одинаковых значениях аргументов. Функция регистронезависимая.
+Выделяет из строки в UTF-8 отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммы с минимальным и максимальным хешами, вычисленными функцией [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) с теми же входными данными. Функция регистронезависимая.
 
 **Синтаксис**
 
@@ -1109,9 +1109,9 @@ SELECT ngramMinHashArgCaseInsensitiveUTF8('ClickHouse') AS Tuple;
 
 ## wordShingleMinHash {#wordshingleminhash}
 
-Выделяет из строки в ASCII шинглы из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
+Выделяет из строки в ASCII отрезки (шинглы) из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Для двух строк: если один из возвращаемых хешей одинаков для обоих строк, мы считаем, что эти строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
 
 **Синтаксис**
 
@@ -1149,9 +1149,9 @@ SELECT wordShingleMinHash('ClickHouse® is a column-oriented database management
 
 ## wordShingleMinHashCaseInsensitive {#wordshingleminhashcaseinsensitive}
 
-Выделяет из строки в ASCII шинглы из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистронезависимая.
+Выделяет из строки в ASCII отрезки (шинглы) из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистронезависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Для двух строк: если один из возвращаемых хешей одинаков для обоих строк, мы считаем, что эти строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
 
 **Синтаксис**
 
@@ -1189,9 +1189,9 @@ SELECT wordShingleMinHashCaseInsensitive('ClickHouse® is a column-oriented data
 
 ## wordShingleMinHashUTF8 {#wordshingleminhashutf8}
 
-Выделяет из строки в UTF-8 шинглы из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
+Выделяет из строки в UTF-8 отрезки (шинглы) из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистрозависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Для двух строк: если один из возвращаемых хешей одинаков для обоих строк, мы считаем, что эти строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
 
 **Синтаксис**
 
@@ -1229,9 +1229,9 @@ SELECT wordShingleMinHashUTF8('ClickHouse® is a column-oriented database manage
 
 ## wordShingleMinHashCaseInsensitiveUTF8 {#wordshingleminhashcaseinsensitiveutf8}
 
-Выделяет из строки в UTF-8 шинглы из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистронезависимая.
+Выделяет из строки в UTF-8 отрезки (шинглы) из `shinglesize` слов и вычисляет хеш для каждого шингла. Использует `hashnum` минимальных хешей, чтобы вычислить минимальный хеш, и `hashnum` максимальных хешей, чтобы вычислить максимальный хеш. Возвращает кортеж из этих хешей. Функция регистронезависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Для двух строк: если один из возвращаемых хешей одинаков для обоих строк, мы считаем, что эти строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). Если для двух строк минимальные или максимальные хеши одинаковы, мы считаем, что эти строки совпадают.
 
 **Синтаксис**
 
@@ -1269,7 +1269,7 @@ SELECT wordShingleMinHashCaseInsensitiveUTF8('ClickHouse® is a column-oriented 
 
 ## wordShingleMinHashArg {#wordshingleminhasharg}
 
-Выделяет из строки в ASCII шинглы из `shinglesize` слов и возвращает шинглы, которые соответствуют шинглам, которые используются при вычислении минимального и максимального хешей функцией [wordshingleMinHash](#wordshingleminhash) при одинаковых значениях аргументов. Функция регистрозависимая.
+Выделяет из строки в ASCII отрезки (шинглы) из `shinglesize` слов и возвращает шинглы с минимальным и максимальным хешами, вычисленными функцией [wordshingleMinHash](#wordshingleminhash) с теми же входными данными. Функция регистрозависимая.
 
 **Синтаксис**
 
@@ -1307,7 +1307,7 @@ SELECT wordShingleMinHashArg('ClickHouse® is a column-oriented database managem
 
 ## wordShingleMinHashArgCaseInsensitive {#wordshingleminhashargcaseinsensitive}
 
-Выделяет из строки в ASCII шинглы из `shinglesize` слов и возвращает шинглы, которые соответствуют шинглам, которые используются при вычислении минимального и максимального хешей функцией [wordShingleMinHashCaseInsensitive](#wordshingleminhashcaseinsensitive) при одинаковых значениях аргументов. Функция регистронезависимая.
+Выделяет из строки в ASCII отрезки (шинглы) из `shinglesize` слов и возвращает шинглы с минимальным и максимальным хешами, вычисленными функцией [wordShingleMinHashCaseInsensitive](#wordshingleminhashcaseinsensitive) с теми же входными данными. Функция регистронезависимая.
 
 **Синтаксис**
 
@@ -1345,7 +1345,7 @@ SELECT wordShingleMinHashArgCaseInsensitive('ClickHouse® is a column-oriented d
 
 ## wordShingleMinHashArgUTF8 {#wordshingleminhashargutf8}
 
-Выделяет из строки в UTF-8 шинглы из `shinglesize` слов и возвращает шинглы, которые соответствуют шинглам, которые используются при вычислении минимального и максимального хешей функцией [wordShingleMinHashUTF8](#wordshingleminhashutf8) при одинаковых значениях аргументов. Функция регистрозависимая.
+Выделяет из строки в UTF-8 отрезки (шинглы) из `shinglesize` слов и возвращает шинглы с минимальным и максимальным хешами, вычисленными функцией [wordShingleMinHashUTF8](#wordshingleminhashutf8) с теми же входными данными. Функция регистрозависимая.
 
 **Синтаксис**
 
@@ -1383,7 +1383,7 @@ SELECT wordShingleMinHashArgUTF8('ClickHouse® is a column-oriented database man
 
 ## wordShingleMinHashArgCaseInsensitiveUTF8 {#wordshingleminhashargcaseinsensitiveutf8}
 
-Выделяет из строки в UTF-8 шинглы из `shinglesize` слов и возвращает шинглы, которые соответствуют шинглам, которые используются при вычислении минимального и максимального хешей функцией [wordShingleMinHashCaseInsensitiveUTF8](#wordshingleminhashcaseinsensitiveutf8) при одинаковых значениях аргументов. Функция регистронезависимая.
+Выделяет из строки в UTF-8 отрезки (шинглы) из `shinglesize` слов и возвращает шинглы с минимальным и максимальным хешами, вычисленными функцией [wordShingleMinHashCaseInsensitiveUTF8](#wordshingleminhashcaseinsensitiveutf8) с теми же входными данными. Функция регистронезависимая.
 
 **Синтаксис**
 

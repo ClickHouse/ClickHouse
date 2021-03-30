@@ -262,8 +262,8 @@ bitHammingDistance(int1, int2)
 
 **Arguments**
 
--   `int1` — First integer. [Int64](../../sql-reference/data-types/int-uint.md).
--   `int2` — Second integer. [Int64](../../sql-reference/data-types/int-uint.md).
+-   `int1` — First integer value. [Int64](../../sql-reference/data-types/int-uint.md).
+-   `int2` — Second integer value. [Int64](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
