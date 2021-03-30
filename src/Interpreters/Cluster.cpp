@@ -563,6 +563,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
     if (from.addresses_with_failover.empty())
         throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
 
+    UInt32 shard_num = 0;
     std::set<std::pair<String, int>> unique_hosts;
     for (size_t shard_index : ext::range(0, from.shards_info.size()))
     {
@@ -573,6 +574,8 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
                 continue;   /// Duplicate host, skip.
 
             ShardInfo info;
+            info.shard_num = ++shard_num;
+
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
