@@ -761,15 +761,15 @@ log_query_threads=1
 
 ## log_comment {#settings-log-comment}
 
-Указывает значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
+Задаёт значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
 
 Может быть использована для улучшения читабельности логов сервера. Кроме того, можно быстро выделить связанные с тестом запросы из `system.query_log` во время проведения [clickhouse-test](../../development/tests.md)
 
 Возможные значения:
 
--   Любая строка не длиннее [max_query_size](#settings-max_query_size). При привышении длины, сервер сгенерирует исключение.
+-   Любая строка не длиннее [max_query_size](#settings-max_query_size). При превышении длины сервер сгенерирует исключение.
 
-Значениее по умолчанию: пустая строка.
+Значение по умолчанию: пустая строка.
 
 **Пример**
 
@@ -2686,7 +2686,6 @@ SELECT * FROM test2;
 - 1 — живые представления поддерживаются.
 
 Значение по умолчанию: `0`.
-
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
