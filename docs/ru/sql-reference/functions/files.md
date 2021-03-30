@@ -21,7 +21,7 @@ file(path)
 
 **Примеры**
 
-Вставка данных из файлов a.txt и b.txt в таблицу в виде отдельных строк:
+Вставка данных из файлов a.txt и b.txt в таблицу в виде строк:
 
 ``` sql
 INSERT INTO table SELECT file('a.txt'), file('b.txt');
