@@ -7,6 +7,8 @@ toc_title: "Функции хэширования"
 
 Функции хэширования могут использоваться для детерминированного псевдослучайного разбрасывания элементов.
 
+Simhash это такая хеш-функция, которая для близких значений возвращает близкий хеш.
+
 ## halfMD5 {#hash-functions-halfmd5}
 
 [Интерпретирует](../../sql-reference/functions/hash-functions.md#type_conversion_functions-reinterpretAsString) все входные параметры как строки и вычисляет хэш [MD5](https://ru.wikipedia.org/wiki/MD5) для каждой из них. Затем объединяет хэши, берет первые 8 байт хэша результирующей строки и интерпретирует их как значение типа `UInt64` с big-endian порядком байтов.
@@ -488,7 +490,7 @@ SELECT xxHash32('Hello, world!');
 
 Выделяет из строки в ASCII отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистрозависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
 
 **Синтаксис**
 
@@ -527,7 +529,7 @@ SELECT ngramSimHash('ClickHouse') AS Hash;
 
 Выделяет из строки в ASCII отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистронезависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
 
 **Синтаксис**
 
@@ -566,7 +568,7 @@ SELECT ngramSimHashCaseInsensitive('ClickHouse') AS Hash;
 
 Выделяет из строки в UTF-8 отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистрозависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
 
 **Синтаксис**
 
@@ -605,7 +607,7 @@ SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
 
 Выделяет из строки в UTF-8 отрезки (n-граммы) размером `ngramsize` символов и возвращает n-граммовый `simhash`. Функция регистронезависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
 
 **Синтаксис**
 
@@ -644,7 +646,7 @@ SELECT ngramSimHashCaseInsensitiveUTF8('ClickHouse') AS Hash;
 
 Выделяет из строки в ASCII отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистрозависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
 
 **Синтаксис**
 
@@ -683,7 +685,7 @@ SELECT wordShingleSimHash('ClickHouse® is a column-oriented database management
 
 Выделяет из строки в ASCII отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистронезависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
 
 **Синтаксис**
 
@@ -722,7 +724,7 @@ SELECT wordShingleSimHashCaseInsensitive('ClickHouse® is a column-oriented data
 
 Выделяет из строки в UTF-8 отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистрозависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
 
 **Синтаксис**
 
@@ -761,7 +763,7 @@ SELECT wordShingleSimHashUTF8('ClickHouse® is a column-oriented database manage
 
 Выделяет из строки в UTF-8 отрезки (шинглы) из `shinglesize` слов и возвращает шингловый `simhash`. Функция регистронезависимая.
 
-Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя строками, тем больше вероятность, что строки совпадают.
+Может быть использована для проверки двух строк на схожесть вместе с функцией [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). Чем меньше [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между результатом вычисления `simhash` двух строк, тем больше вероятность, что строки совпадают.
 
 **Синтаксис**
 

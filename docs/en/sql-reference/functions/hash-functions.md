@@ -7,6 +7,8 @@ toc_title: Hash
 
 Hash functions can be used for the deterministic pseudo-random shuffling of elements.
 
+Simhash is a hash function, which returns close hash values for close (similar) arguments.
+
 ## halfMD5 {#hash-functions-halfmd5}
 
 [Interprets](../../sql-reference/functions/type-conversion-functions.md#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
@@ -484,9 +486,9 @@ Result:
 
 ## ngramSimHash {#ngramsimhash}
 
-Splits a string in ASCII into n-grams of `ngramsize` symbols and returns the n-gram simhash. Is case sensitive.
+Splits a string in ASCII into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -523,9 +525,9 @@ Result:
 
 ## ngramSimHashCaseInsensitive {#ngramsimhashcaseinsensitive}
 
-Splits a string in ASCII into n-grams of `ngramsize` symbols and returns the n-gram simhash. Is case insensitive.
+Splits a string in ASCII into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -562,9 +564,9 @@ Result:
 
 ## ngramSimHashUTF8 {#ngramsimhashutf8}
 
-Splits a string in UTF-8 into n-grams of `ngramsize` symbols and returns the n-gram simhash. Is case sensitive.
+Splits a string in UTF-8 into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -601,9 +603,9 @@ Result:
 
 ## ngramSimHashCaseInsensitiveUTF8 {#ngramsimhashcaseinsensitiveutf8}
 
-Splits a string in UTF-8 into n-grams of `ngramsize` symbols and returns the n-gram simhash. Is case insensitive.
+Splits a string in UTF-8 into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -640,9 +642,9 @@ Result:
 
 ## wordShingleSimHash {#wordshinglesimhash}
 
-Splits a string in ASCII into parts (shingles) of `shinglesize` words and returns the word shingle simhash. Is case sensitive.
+Splits a string in ASCII into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -679,9 +681,9 @@ Result:
 
 ## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseinsensitive}
 
-Splits a string in ASCII into parts (shingles) of `shinglesize` words and returns the word shingle simhash. Is case insensitive.
+Splits a string in ASCII into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -718,9 +720,9 @@ Result:
 
 ## wordShingleSimHashUTF8 {#wordshinglesimhashutf8}
 
-Splits a string in UTF-8 into parts (shingles) of `shinglesize` words and returns the word shingle simhash. Is case sensitive.
+Splits a string in UTF-8 into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -757,9 +759,9 @@ Result:
 
 ## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimhashcaseinsensitiveutf8}
 
-Splits a string in UTF-8 into parts (shingles) of `shinglesize` words and returns the word shingle simhash. Is case insensitive.
+Splits a string in UTF-8 into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated simhashes of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
 **Syntax**
 
@@ -1070,7 +1072,7 @@ Result:
 
 ## ngramMinHashArgCaseInsensitiveUTF8 {#ngramminhashargcaseinsensitiveutf8}
 
-Splits a string in UTF-8 into n-grams of `ngramsize` size and returns the n-grams that correspond to n-grams in the calculation of the minimum and the maximum hashes of [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
+Splits a string in UTF-8 into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
 
 **Syntax**
 
