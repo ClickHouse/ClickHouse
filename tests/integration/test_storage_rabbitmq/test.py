@@ -258,6 +258,7 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'tsv',
                      rabbitmq_format = 'TSV',
+                     rabbitmq_queue_base = 'tsv',
                      rabbitmq_row_delimiter = '\\n';
         ''')
 
