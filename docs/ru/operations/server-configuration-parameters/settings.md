@@ -481,7 +481,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-Максимальное количество одновременно обрабатываемых запросов, связанных к семейством таблиц `MergeTree`. Запросы могут быть ограничены настройками: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных к семейством таблиц `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Примечание"
 	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений. 
@@ -519,7 +519,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
 
-Минимальное количество меток, которое считает запрос, для применения настройки [max_concurrent_queries](#max-concurrent-queries).
+Определяет минимальное количество меток, которое считает запрос, для применения настройки [max_concurrent_queries](#max-concurrent-queries).
 
 Возможные значения:
 
