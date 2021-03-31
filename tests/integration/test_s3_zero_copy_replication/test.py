@@ -88,3 +88,46 @@ def test_s3_zero_copy_replication(cluster, policy):
     node1.query("DROP TABLE IF EXISTS s3_test NO DELAY")
     node2.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
+
+def test_s3_zero_copy_on_hybrid_storage(cluster):
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    node1.query(
+        """
+        CREATE TABLE hybrid_test ON CLUSTER test_cluster (id UInt32, value String)
+        ENGINE=ReplicatedMergeTree('/clickhouse/tables/s3_test', '{}')
+        ORDER BY id
+        SETTINGS storage_policy='hybrid'
+        """
+            .format('{replica}')
+    )
+
+    node1.query("INSERT INTO hybrid_test VALUES (0,'data'),(1,'data')")
+
+    time.sleep(1)
+
+    assert node1.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
+    assert node2.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
+
+    assert node1.query("SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values") == "('all','default')"
+    assert node2.query("SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values") == "('all','default')"
+
+    node1.query("ALTER TABLE hybrid_test MOVE PARTITION ID 'all' TO DISK 's31'")
+
+    assert node1.query("SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values") == "('all','s31')"
+    assert node2.query("SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values") == "('all','default')"
+
+    # Total objects in S3
+    s3_objects = get_large_objects_count(cluster, 0)
+
+    node2.query("ALTER TABLE hybrid_test MOVE PARTITION ID 'all' TO DISK 's31'")
+
+    assert node1.query("SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values") == "('all','s31')"
+    assert node2.query("SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values") == "('all','s31')"
+
+    # Check that after moving partition on node2 no new obects on s3
+    assert get_large_objects_count(cluster, 0) == s3_objects
+
+    assert node1.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
+    assert node2.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
