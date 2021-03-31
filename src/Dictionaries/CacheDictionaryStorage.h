@@ -188,8 +188,6 @@ private:
         size_t fetched_columns_index = 0;
         size_t keys_size = keys.size();
 
-        std::chrono::seconds max_lifetime_seconds(configuration.strict_max_lifetime_seconds);
-
         PaddedPODArray<FetchedKey> fetched_keys;
         fetched_keys.resize_fill(keys_size);
 

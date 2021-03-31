@@ -20,6 +20,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 
 namespace DB
@@ -408,6 +409,35 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
         throw Exception(msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
+
+    if (is_extended_storage_def)
+    {
+        /// Allow expressions in engine arguments.
+        /// In new syntax argument can be literal or identifier or array/tuple of identifiers.
+        size_t arg_idx = 0;
+        try
+        {
+            for (; arg_idx < engine_args.size(); ++arg_idx)
+            {
+                auto & arg = engine_args[arg_idx];
+                auto * arg_func = arg->as<ASTFunction>();
+                if (!arg_func)
+                    continue;
+
+                /// If we got ASTFunction, let's evaluate it and replace with ASTLiteral.
+                /// Do not try evaluate array or tuple, because it's array or tuple of column identifiers.
+                if (arg_func->name == "array" || arg_func->name == "tuple")
+                    continue;
+                Field value = evaluateConstantExpression(arg, args.local_context).first;
+                arg = std::make_shared<ASTLiteral>(value);
+            }
+        }
+        catch (Exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot evaluate engine argument {}: {} {}",
+                            arg_idx, e.message(), getMergeTreeVerboseHelp(is_extended_storage_def));
+        }
     }
 
     /// For Replicated.

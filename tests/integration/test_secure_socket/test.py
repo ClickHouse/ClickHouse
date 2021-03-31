@@ -12,7 +12,7 @@ NODES = {'node' + str(i): None for i in (1, 2)}
 config = '''<yandex>
     <profiles>
         <default>
-            <sleep_in_send_data>{sleep_in_send_data}</sleep_in_send_data>
+            <sleep_in_send_data_ms>{sleep_in_send_data_ms}</sleep_in_send_data_ms>
         </default>
     </profiles>
 </yandex>'''
@@ -45,12 +45,12 @@ def started_cluster():
 
 
 def test(started_cluster):
-    NODES['node2'].replace_config('/etc/clickhouse-server/users.d/users.xml', config.format(sleep_in_send_data=1000))
+    NODES['node2'].replace_config('/etc/clickhouse-server/users.d/users.xml', config.format(sleep_in_send_data_ms=1000000))
     
     attempts = 0
     while attempts < 1000:
-        setting = NODES['node2'].http_query("SELECT value FROM system.settings WHERE name='sleep_in_send_data'")
-        if int(setting) == 1000:
+        setting = NODES['node2'].http_query("SELECT value FROM system.settings WHERE name='sleep_in_send_data_ms'")
+        if int(setting) == 1000000:
             break
         time.sleep(0.1)
         attempts += 1
@@ -59,12 +59,12 @@ def test(started_cluster):
 
 
     start = time.time()
-    NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5, use_hedged_requests=0, async_socket_for_remote=0;')
+    NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=0;')
     end = time.time()
     assert end - start < 10
 
     start = time.time()
-    error = NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5, use_hedged_requests=0;')
+    error = NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0;')
     end = time.time()
 
     assert end - start < 10
@@ -73,7 +73,7 @@ def test(started_cluster):
     assert error.find('DB::ReadBufferFromPocoSocket::nextImpl()') == -1
 
     start = time.time()
-    error = NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5;')
+    error = NODES['node1'].query_and_get_error('SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5;')
     end = time.time()
 
     assert end - start < 10
