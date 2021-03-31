@@ -212,18 +212,8 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
-    if (partition_pruner.isUseless())
-        return {};
-    size_t res = 0;
-    auto lock = lockParts();
-    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
-    {
-        if (!partition_pruner.canBePruned(part))
-            res += part->rows_count;
-    }
-    return res;
+    auto parts = getDataPartsVector({DataPartState::Committed});
+    return totalRowsByPartitionPredicateImpl(query_info, context, parts);
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
