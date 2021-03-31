@@ -32,15 +32,13 @@ ccache --zero-stats ||:
 
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
 ninja $NINJA_FLAGS --verbose clickhouse-bundle
+
+ccache --show-stats ||:
+
 mv ./programs/clickhouse* /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
-
-mkdir /output/ccache
-find . -name '*.ccache-*' -print -exec mv '{}' /output/ccache \;
-tar -czvf "/output/ccache.tgz" /output/ccache
-rm -rf /output/ccache
 
 # Different files for performance test.
 if [ "performance" == "$COMBINED_OUTPUT" ]
@@ -84,4 +82,9 @@ then
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output
 fi
-ccache --show-stats ||:
+
+mkdir /output/ccache
+find . -name '*.ccache-*' -print -exec mv '{}' /output/ccache \;
+tar -czvf "/output/ccache.tgz" /output/ccache
+rm -rf /output/ccache
+
