@@ -610,8 +610,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             node->frame.begin_preceding = false;
             if (node->frame.begin_type == WindowFrame::BoundaryType::Unbounded)
             {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Frame start UNBOUNDED FOLLOWING is not implemented");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame start cannot be UNBOUNDED FOLLOWING");
             }
         }
         else
@@ -667,8 +667,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                 node->frame.end_preceding = true;
                 if (node->frame.end_type == WindowFrame::BoundaryType::Unbounded)
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Frame end UNBOUNDED PRECEDING is not implemented");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Frame end cannot be UNBOUNDED PRECEDING");
                 }
             }
             else if (keyword_following.ignore(pos, expected))
