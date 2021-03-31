@@ -11,9 +11,9 @@ tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolc
 mkdir -p build/cmake/toolchain/freebsd-x86_64
 tar xJf freebsd-11.3-toolchain.tar.xz -C build/cmake/toolchain/freebsd-x86_64 --strip-components=1
 
-# # Uncomment to debug ccache
-# export CCACHE_LOGFILE=/output/ccache.log
-# export CCACHE_DEBUG=1
+# Uncomment to debug ccache
+export CCACHE_LOGFILE=/output/ccache.log
+export CCACHE_DEBUG=1
 
 mkdir -p build/build_docker
 cd build/build_docker
