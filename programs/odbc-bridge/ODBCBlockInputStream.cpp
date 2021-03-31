@@ -147,7 +147,7 @@ void ODBCBlockInputStream::insertValue(
         {
             auto value = row.get<std::string>(idx);
             ReadBufferFromString istr(value);
-            data_type->deserializeAsWholeText(column, istr, FormatSettings{});
+            data_type->getDefaultSerialization()->deserializeWholeText(column, istr, FormatSettings{});
             break;
         }
         default:
