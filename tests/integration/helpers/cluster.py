@@ -672,6 +672,8 @@ class ClickHouseCluster:
                 print('Setup MySQL')
                 subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
                 self.wait_mysql_to_start(120, port=3348)
+                self.wait_mysql_to_start(120, port=3368)
+                self.wait_mysql_to_start(120, port=3388)
 
             if self.with_postgres and self.base_postgres_cmd:
                 print('Setup Postgres')
@@ -681,7 +683,9 @@ class ClickHouseCluster:
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
                 print('Setup Postgres')
                 subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
+                self.wait_postgres_to_start(120, port=5421)
                 self.wait_postgres_to_start(120, port=5441)
+                self.wait_postgres_to_start(120, port=5461)
 
             if self.with_kafka and self.base_kafka_cmd:
                 print('Setup Kafka')
