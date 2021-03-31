@@ -73,19 +73,19 @@ Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
 
 ``` sql
-toValidUTF8( input_string )
+toValidUTF8(input_string)
 ```
 
 **Arguments**
 
--   input_string — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+-   `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
 
 Returned value: Valid UTF-8 string.
 
 **Example**
 
 ``` sql
-SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 ```
 
 ``` text
@@ -97,6 +97,8 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 ## repeat {#repeat}
 
 Repeats a string as many times as specified and concatenates the replicated values as a single string.
+
+Alias: `REPEAT`.
 
 **Syntax**
 
@@ -120,7 +122,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT repeat('abc', 10)
+SELECT repeat('abc', 10);
 ```
 
 Result:
@@ -188,7 +190,7 @@ If any of argument values is `NULL`, `concat` returns `NULL`.
 Query:
 
 ``` sql
-SELECT concat('Hello, ', 'World!')
+SELECT concat('Hello, ', 'World!');
 ```
 
 Result:
@@ -243,7 +245,7 @@ SELECT * from key_val;
 Query:
 
 ``` sql
-SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2);
 ```
 
 Result:
@@ -276,9 +278,13 @@ Returns the string ‘s’ that was converted from the encoding in ‘from’ to
 
 Encodes ‘s’ string into base64
 
+Alias: `TO_BASE64`.
+
 ## base64Decode(s) {#base64decode}
 
 Decode base64-encoded string ‘s’ into original string. In case of failure raises an exception.
+
+Alias: `FROM_BASE64`.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
@@ -330,8 +336,8 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Arguments**
 
--   `trim_character` — specified characters for trim. [String](../../sql-reference/data-types/string.md).
--   `input_string` — string for trim. [String](../../sql-reference/data-types/string.md).
+-   `trim_character` — Specified characters for trim. [String](../../sql-reference/data-types/string.md).
+-   `input_string` — String for trim. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -344,7 +350,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
+SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )');
 ```
 
 Result:
@@ -382,7 +388,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT trimLeft('     Hello, world!     ')
+SELECT trimLeft('     Hello, world!     ');
 ```
 
 Result:
@@ -420,7 +426,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT trimRight('     Hello, world!     ')
+SELECT trimRight('     Hello, world!     ');
 ```
 
 Result:
@@ -458,7 +464,7 @@ Type: `String`.
 Query:
 
 ``` sql
-SELECT trimBoth('     Hello, world!     ')
+SELECT trimBoth('     Hello, world!     ');
 ```
 
 Result:
@@ -491,7 +497,8 @@ The result type is UInt64.
 
 Replaces literals, sequences of literals and complex aliases with placeholders.
 
-**Syntax** 
+**Syntax**
+
 ``` sql
 normalizeQuery(x)
 ```
@@ -600,4 +607,45 @@ Hello, &quot;world&quot;!
 &apos;foo&apos;
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_functions/) <!--hide-->
+## decodeXMLComponent {#decode-xml-component}
+
+Replaces XML predefined entities with characters. Predefined entities are `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
+This function also replaces numeric character references with Unicode characters. Both decimal (like `&#10003;`) and hexadecimal (`&#x2713;`) forms are supported.
+
+**Syntax**
+
+``` sql
+decodeXMLComponent(x)
+```
+
+**Arguments**
+
+-   `x` — A sequence of characters. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   The sequence of characters after replacement.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT decodeXMLComponent('&apos;foo&apos;');
+SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
+```
+
+Result:
+
+``` text
+'foo' 
+< Σ >
+```
+
+**See Also**
+
+-   [List of XML and HTML character entity references](https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references)
+
+

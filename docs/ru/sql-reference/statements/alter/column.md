@@ -1,6 +1,6 @@
 ---
 toc_priority: 37
-toc_title: "\u041c\u0430\u043d\u0438\u043f\u0443\u043b\u044f\u0446\u0438\u0438\u0020\u0441\u043e\u0020\u0441\u0442\u043e\u043b\u0431\u0446\u0430\u043c\u0438"
+toc_title: "Манипуляции со столбцами"
 ---
 
 # Манипуляции со столбцами {#manipuliatsii-so-stolbtsami}
@@ -13,6 +13,7 @@ toc_title: "\u041c\u0430\u043d\u0438\u043f\u0443\u043b\u044f\u0446\u0438\u0438\u
 -   [COMMENT COLUMN](#alter_comment-column) — добавляет комментарий к столбцу;
 -   [MODIFY COLUMN](#alter_modify-column) — изменяет тип столбца, выражение для значения по умолчанию и TTL.
 -   [MODIFY COLUMN REMOVE](#modify-remove) — удаляет какое-либо из свойств столбца.
+-   [RENAME COLUMN](#alter_rename-column) — переименовывает существующий столбец.
 
 Подробное описание для каждого действия приведено ниже.
 
@@ -158,6 +159,22 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 - [REMOVE TTL](ttl.md).
 
+## RENAME COLUMN {#alter_rename-column}
+
+Переименовывает существующий столбец.
+
+Синтаксис:
+
+```sql
+ALTER TABLE table_name RENAME COLUMN column_name TO new_column_name
+```
+
+**Пример**
+
+```sql
+ALTER TABLE table_with_ttl RENAME COLUMN column_ttl TO column_ttl_new;
+```
+
 ## Ограничения запроса ALTER {#ogranicheniia-zaprosa-alter}
 
 Запрос `ALTER` позволяет создавать и удалять отдельные элементы (столбцы) вложенных структур данных, но не вложенные структуры данных целиком. Для добавления вложенной структуры данных, вы можете добавить столбцы с именем вида `name.nested_name` и типом `Array(T)` - вложенная структура данных полностью эквивалентна нескольким столбцам-массивам с именем, имеющим одинаковый префикс до точки.
@@ -170,4 +187,3 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 
 Для таблиц, которые не хранят данные самостоятельно (типа [Merge](../../../sql-reference/statements/alter/index.md) и [Distributed](../../../sql-reference/statements/alter/index.md)), `ALTER` всего лишь меняет структуру таблицы, но не меняет структуру подчинённых таблиц. Для примера, при ALTER-е таблицы типа `Distributed`, вам также потребуется выполнить запрос `ALTER` для таблиц на всех удалённых серверах.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/column/) <!--hide-->

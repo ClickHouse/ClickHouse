@@ -136,7 +136,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadIds(const std::vector<UInt64> & id
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_stream = context.getOutputStream(format, out_buffer, sample_block);
+        auto output_stream = context.getOutputStreamParallelIfPossible(format, out_buffer, sample_block);
         formatBlock(output_stream, block);
     };
 
@@ -157,7 +157,7 @@ BlockInputStreamPtr HTTPDictionarySource::loadKeys(const Columns & key_columns, 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_stream = context.getOutputStream(format, out_buffer, sample_block);
+        auto output_stream = context.getOutputStreamParallelIfPossible(format, out_buffer, sample_block);
         formatBlock(output_stream, block);
     };
 

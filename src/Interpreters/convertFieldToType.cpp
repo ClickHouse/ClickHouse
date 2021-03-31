@@ -141,7 +141,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     /// Conversion between Date and DateTime and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
-        return static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>());
+        return static_cast<UInt16>(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>()).toUnderType());
     }
     else if (which_type.isDateTime() && which_from_type.isDate())
     {
@@ -276,6 +276,44 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return have_unconvertible_element ? Field(Null()) : Field(res);
         }
     }
+    else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))
+    {
+        if (src.getType() == Field::Types::Map)
+        {
+            const auto & key_type = *type_map->getKeyType();
+            const auto & value_type = *type_map->getValueType();
+
+            const auto & map = src.get<Map>();
+            size_t map_size = map.size();
+
+            Map res(map_size);
+
+            bool have_unconvertible_element = false;
+
+            for (size_t i = 0; i < map_size; ++i)
+            {
+                const auto & map_entry = map[i].get<Tuple>();
+
+                const auto & key = map_entry[0];
+                const auto & value = map_entry[1];
+
+                Tuple updated_entry(2);
+
+                updated_entry[0] = convertFieldToType(key, key_type);
+
+                if (updated_entry[0].isNull() && !key_type.isNullable())
+                    have_unconvertible_element = true;
+
+                updated_entry[1] = convertFieldToType(value, value_type);
+                if (updated_entry[1].isNull() && !value_type.isNullable())
+                    have_unconvertible_element = true;
+
+                res[i] = updated_entry;
+            }
+
+            return have_unconvertible_element ? Field(Null()) : Field(res);
+        }
+    }
     else if (const DataTypeAggregateFunction * agg_func_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
     {
         if (src.getType() != Field::Types::AggregateFunctionState)
@@ -306,7 +344,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         ReadBufferFromString in_buffer(src.get<String>());
         try
         {
-            type_to_parse->deserializeAsWholeText(*col, in_buffer, FormatSettings{});
+            type_to_parse->getDefaultSerialization()->deserializeWholeText(*col, in_buffer, FormatSettings{});
         }
         catch (Exception & e)
         {
@@ -339,6 +377,11 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
+
+        /// NULL remains NULL after any conversion.
+        if (WhichDataType(nested_type).isNothing())
+            return {};
+
         if (from_type_hint && from_type_hint->equals(nested_type))
             return from_value;
         return convertFieldToTypeImpl(from_value, nested_type, from_type_hint);

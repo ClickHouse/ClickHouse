@@ -16,7 +16,7 @@ subprivileges = {
 
 aliases = {
     "TTL" : ["ALTER TTL", "ALTER MODIFY TTL", "MODIFY TTL"],
-    "MATERIALIZE TTL": ["ALTER MATERIALIZE TTL", "MATERIALIZE TTL"],
+    "MATERIALIZE TTL": ["ALTER MATERIALIZE TTL", "MATERIALIZE TTL", "ALL"],
 }
 
 permutation_count = (1 << len(subprivileges))
@@ -250,7 +250,9 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterTTL("1.0"),
-    RQ_SRS_006_RBAC_Privileges_AlterTTL_TableEngines("1.0")
+    RQ_SRS_006_RBAC_Privileges_AlterTTL_TableEngines("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()

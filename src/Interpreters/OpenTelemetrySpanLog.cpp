@@ -48,8 +48,8 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(operation_name);
     columns[i++]->insert(start_time_us);
     columns[i++]->insert(finish_time_us);
-    columns[i++]->insert(DateLUT::instance().toDayNum(finish_time_us / 1000000));
-
+    columns[i++]->insert(DateLUT::instance().toDayNum(finish_time_us / 1000000).toUnderType());
+    columns[i++]->insert(attribute_names);
     // The user might add some ints values, and we will have Int Field, and the
     // insert will fail because the column requires Strings. Convert the fields
     // here, because it's hard to remember to convert them in all other places.

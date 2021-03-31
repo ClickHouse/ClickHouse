@@ -15,7 +15,7 @@ CREATE TABLE table_for_rename_replicated
   value2 String,
   value3 String
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01213/table_for_rename_replicated', '1')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table_for_rename_replicated', '1')
 PARTITION BY date
 ORDER BY key;
 "

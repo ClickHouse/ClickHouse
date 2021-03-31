@@ -26,4 +26,4 @@ The name of an additional section can be any, for example, **Usage**.
 
 -   [link](#)
 
-[Original article](https://clickhouse.tech/docs/en/data_types/<data-type-name>/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data-types/<data-type-name>/) <!--hide-->

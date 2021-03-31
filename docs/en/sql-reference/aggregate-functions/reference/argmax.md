@@ -52,15 +52,15 @@ Input table:
 Query:
 
 ``` sql
-SELECT argMax(user, salary), argMax(tuple(user, salary)) FROM salary;
+SELECT argMax(user, salary), argMax(tuple(user, salary), salary), argMax(tuple(user, salary)) FROM salary;
 ```
 
 Result:
 
 ``` text
-┌─argMax(user, salary)─┬─argMax(tuple(user, salary))─┐
-│ director             │ ('director',5000)           │
-└──────────────────────┴─────────────────────────────┘
+┌─argMax(user, salary)─┬─argMax(tuple(user, salary), salary)─┬─argMax(tuple(user, salary))─┐
+│ director             │ ('director',5000)                   │ ('director',5000)           │
+└──────────────────────┴─────────────────────────────────────┴─────────────────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/argmax/) <!--hide-->

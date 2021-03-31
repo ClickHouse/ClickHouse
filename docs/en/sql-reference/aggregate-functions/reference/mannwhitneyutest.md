@@ -27,11 +27,12 @@ The null hypothesis is that two populations are stochastically equal. Also one-s
     -   `'two-sided'`;
     -   `'greater'`;
     -   `'less'`.
--   `continuity_correction` - if not 0 then continuity correction in the normal approximation for the p-value is applied. (Optional, default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
+-   `continuity_correction` — if not 0 then continuity correction in the normal approximation for the p-value is applied. (Optional, default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
 [Tuple](../../../sql-reference/data-types/tuple.md) with two elements:
+
 -   calculated U-statistic. [Float64](../../../sql-reference/data-types/float.md).
 -   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 
