@@ -1,4 +1,4 @@
-﻿---
+---
 toc_priority: 11
 toc_title: PostgreSQL
 ---
