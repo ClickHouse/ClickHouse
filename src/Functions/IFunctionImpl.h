@@ -62,6 +62,8 @@ public:
       */
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
+    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
+
     /** Some arguments could remain constant during this implementation.
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }

@@ -153,7 +153,7 @@ Block NativeBlockInputStream::readImpl()
         column.type = data_type_factory.get(type_name);
 
         /// TODO: check revision.
-        SerializationKind serialization_kind;
+        ISerialization::Kind serialization_kind;
         readIntBinary(serialization_kind, istr);
 
         if (use_index)
@@ -167,7 +167,7 @@ Block NativeBlockInputStream::readImpl()
 
         /// Data
         ColumnPtr read_column = column.type->createColumn();
-        if (serialization_kind == SerializationKind::SPARSE)
+        if (serialization_kind == ISerialization::Kind::SPARSE)
             read_column = ColumnSparse::create(read_column);
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];

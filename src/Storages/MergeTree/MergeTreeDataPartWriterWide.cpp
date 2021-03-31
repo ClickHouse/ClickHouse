@@ -197,7 +197,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     Block block_to_write = block;
     for (auto & col : block_to_write)
     {
-        if (serializations[col.name]->getKind() != SerializationKind::SPARSE)
+        if (serializations[col.name]->getKind() != ISerialization::Kind::SPARSE)
             col.column = col.column->convertToFullColumnIfSparse();
     }
 

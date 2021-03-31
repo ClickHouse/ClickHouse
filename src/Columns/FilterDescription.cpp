@@ -50,6 +50,9 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 
 FilterDescription::FilterDescription(const IColumn & column_)
 {
+    if (column_.isSparse())
+        data_holder = column_.convertToFullColumnIfSparse();
+
     if (column_.lowCardinality())
         data_holder = column_.convertToFullColumnIfLowCardinality();
 

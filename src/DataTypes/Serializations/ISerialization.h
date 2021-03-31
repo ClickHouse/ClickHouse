@@ -32,17 +32,20 @@ class Field;
 struct FormatSettings;
 struct NameAndTypePair;
 
-enum class SerializationKind : UInt8
-{
-    DEFAULT = 0,
-    SPARSE = 1
-};
-
 class ISerialization
 {
 public:
     ISerialization() = default;
     virtual ~ISerialization() = default;
+
+    enum class Kind : UInt8
+    {
+        DEFAULT = 0,
+        SPARSE = 1
+    };
+
+    virtual Kind getKind() const { return Kind::DEFAULT; }
+    static String kindToString(Kind kind);
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
@@ -102,8 +105,6 @@ public:
     {
         String toString() const;
     };
-
-    virtual SerializationKind getKind() const { return SerializationKind::DEFAULT; }
 
     /// Cache for common substreams of one type, but possible different its subcolumns.
     /// E.g. sizes of arrays of Nested data type.
