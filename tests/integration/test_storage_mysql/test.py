@@ -8,6 +8,8 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], with_mysql_cluster=True)
+
 create_table_sql_template = """
     CREATE TABLE `clickhouse`.`{}` (
     `id` int(11) NOT NULL,
@@ -189,10 +191,11 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('
 def test_mysql_distributed(started_cluster):
     table_name = 'test_replicas'
 
-    conn1 = get_mysql_conn(port=3308)
+    conn1 = get_mysql_conn(port=3348)
     conn2 = get_mysql_conn(port=3388)
     conn3 = get_mysql_conn(port=3368)
 
+    create_mysql_db(conn1, 'clickhouse')
     create_mysql_db(conn2, 'clickhouse')
     create_mysql_db(conn3, 'clickhouse')
 
@@ -201,18 +204,18 @@ def test_mysql_distributed(started_cluster):
     create_mysql_table(conn3, table_name)
 
     # Storage with with 3 replicas
-    node1.query('''
+    node2.query('''
         CREATE TABLE test_replicas
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = MySQL(`mysql{1|2|3}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+        ENGINE = MySQL(`mysql_{1|2|3}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
 
     # Fill remote tables with different data to be able to check
     for i in range(1, 4):
-        node1.query('''
+        node2.query('''
             CREATE TABLE test_replica{}
             (id UInt32, name String, age UInt32, money UInt32)
-            ENGINE = MySQL(`mysql{}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');'''.format(i, i))
-        node1.query("INSERT INTO test_replica{} (id, name) SELECT number, 'host{}' from numbers(10) ".format(i, i))
+            ENGINE = MySQL(`mysql_{}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');'''.format(i, i))
+        node2.query("INSERT INTO test_replica{} (id, name) SELECT number, 'host{}' from numbers(10) ".format(i, i))
 
     # check all replicas are traversed
     query = "SELECT * FROM ("
@@ -220,14 +223,14 @@ def test_mysql_distributed(started_cluster):
         query += "SELECT name FROM test_replicas UNION DISTINCT "
     query += "SELECT name FROM test_replicas)"
 
-    result = node1.query(query.format(t=table_name))
+    result = node2.query(query.format(t=table_name))
     assert(result == 'host1\nhost2\nhost3\n')
 
-    # Storage with with two two shards, each has 2 replicas
+    # Storage with with two shards, each has 2 replicas
     node1.query('''
         CREATE TABLE test_shards
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+        ENGINE = ExternalDistributed('MySQL', `mysql_{1|2}:3306,mysql_{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
 
     # Check only one replica in each shard is used
     result = node1.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
