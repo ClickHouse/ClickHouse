@@ -21,11 +21,11 @@ rm -f CMakeCache.txt
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
-
 # FIXME Check how ccache is used for contribs. The contrib/all target doesn't build successfully, but we don't care.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
 ninja $NINJA_FLAGS contrib/all ||:
 ccache --show-stats ||:
+ccache --zero-stats ||:
 
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
 ninja $NINJA_FLAGS clickhouse-bundle
