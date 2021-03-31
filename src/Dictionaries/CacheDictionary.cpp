@@ -138,23 +138,6 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     const DataTypes & key_types,
     const Columns & default_values_columns) const
 {
-    if (dictionary_key_type == DictionaryKeyType::complex)
-        dict_struct.validateKeyTypes(key_types);
-
-    Arena complex_keys_arena;
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, &complex_keys_arena);
-    auto keys = extractor.extractAllKeys();
-
-    return getColumnsImpl(attribute_names, key_columns, keys, default_values_columns);
-}
-
-template <DictionaryKeyType dictionary_key_type>
-Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
-    const Strings & attribute_names,
-    const Columns & key_columns,
-    const PaddedPODArray<KeyType> & keys,
-    const Columns & default_values_columns) const
-{
     /**
     * Flow of getColumsImpl
     * 1. Get fetch result from storage
@@ -168,6 +151,13 @@ Columns CacheDictionary<dictionary_key_type>::getColumnsImpl(
     * 5. Aggregate columns returned from storage and source, if key is not found in storage and in source
     * use default value.
     */
+
+    if (dictionary_key_type == DictionaryKeyType::complex)
+        dict_struct.validateKeyTypes(key_types);
+
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
+    auto keys = extractor.extractAllKeys();
 
     DictionaryStorageFetchRequest request(dict_struct, attribute_names, default_values_columns);
 
@@ -281,8 +271,9 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     if (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
-    Arena complex_keys_arena;
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, &complex_keys_arena);
+
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
     const auto keys = extractor.extractAllKeys();
 
     /// We make empty request just to fetch if keys exists
@@ -531,13 +522,19 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     size_t found_keys_size = 0;
 
-    DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(update_unit_ptr->key_columns, &update_unit_ptr->complex_key_arena);
-    const auto requested_keys = requested_keys_extractor.extractAllKeys();
+    Arena * complex_key_arena = update_unit_ptr->complex_keys_arena_holder.getComplexKeyArena();
+    DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(update_unit_ptr->key_columns, complex_key_arena);
+    auto requested_keys = requested_keys_extractor.extractAllKeys();
 
     HashSet<KeyType> not_found_keys;
 
     std::vector<UInt64> requested_keys_vector;
     std::vector<size_t> requested_complex_key_rows;
+
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        requested_keys_vector.reserve(requested_keys.size());
+    else
+        requested_complex_key_rows.reserve(requested_keys.size());
 
     auto & key_index_to_state_from_storage = update_unit_ptr->key_index_to_state;
 
@@ -598,26 +595,24 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                     block_columns.erase(block_columns.begin());
                 }
 
-                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, &update_unit_ptr->complex_key_arena);
-                const size_t keys_extracted_from_block_size = keys_extractor.getKeysSize();
+                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, complex_key_arena);
+                auto keys_extracted_from_block = keys_extractor.extractAllKeys();
 
                 for (size_t index_of_attribute = 0; index_of_attribute < fetched_columns_during_update.size(); ++index_of_attribute)
                 {
                     auto & column_to_update = fetched_columns_during_update[index_of_attribute];
                     auto column = block.safeGetByPosition(skip_keys_size_offset + index_of_attribute).column;
-                    column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block_size);
+                    column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block.size());
                 }
 
-                for (size_t i = 0; i < keys_extracted_from_block_size; ++i)
+                for (size_t i = 0; i < keys_extracted_from_block.size(); ++i)
                 {
-                    auto fetched_key_from_source = keys_extractor.extractCurrentKey();
+                    auto fetched_key_from_source = keys_extracted_from_block[i];
 
                     not_found_keys.erase(fetched_key_from_source);
                     update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_size;
                     found_keys_in_source.emplace_back(fetched_key_from_source);
                     ++found_keys_size;
-
-                    keys_extractor.rollbackCurrentKey();
                 }
             }
 

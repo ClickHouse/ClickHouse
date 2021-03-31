@@ -72,13 +72,8 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
 
     ColumnPtr result;
 
-    Arena temporary_complex_keys_arena_holder [[maybe_unused]];
-    Arena * temporary_complex_key_arena = nullptr;
-
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
-        temporary_complex_key_arena = &temporary_complex_keys_arena_holder;
-
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, temporary_complex_key_arena);
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
 
     const size_t size = extractor.getKeysSize();
 
@@ -115,7 +110,11 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 attribute,
                 extractor,
                 [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-                [&](const size_t row) { (*vec_null_map_to)[row] = true; },
+                [&](const size_t row)
+                {
+                    out->insertDefault();
+                    (*vec_null_map_to)[row] = true;
+                },
                 default_value_extractor);
         }
         else
@@ -126,7 +125,11 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 attribute,
                 extractor,
                 [&](const size_t row, const auto value) { return out[row] = value; },
-                [&](const size_t row) { (*vec_null_map_to)[row] = true; },
+                [&](const size_t row)
+                {
+                    out[row] = 0;
+                    (*vec_null_map_to)[row] = true;
+                },
                 default_value_extractor);
         }
 
@@ -147,13 +150,8 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
     if (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
-    Arena temporary_complex_keys_arena_holder [[maybe_unused]];
-    Arena * temporary_complex_key_arena = nullptr;
-
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
-        temporary_complex_key_arena = &temporary_complex_keys_arena_holder;
-
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, temporary_complex_key_arena);
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
 
     size_t keys_size = extractor.getKeysSize();
 
@@ -381,14 +379,9 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
             saved_block_key_columns.emplace_back(saved_block->safeGetByPosition(i).column);
 
 
-        Arena temporary_complex_keys_arena_holder [[maybe_unused]];
-        Arena * temporary_complex_key_arena = nullptr;
-
-        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
-            temporary_complex_key_arena = &temporary_complex_keys_arena_holder;
-
-        DictionaryKeysExtractor<dictionary_key_type> saved_keys_extractor(saved_block_key_columns, temporary_complex_key_arena);
-        const auto & saved_keys_extracted_from_block = saved_keys_extractor.extractAllKeys();
+        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+        DictionaryKeysExtractor<dictionary_key_type> saved_keys_extractor(saved_block_key_columns, arena_holder.getComplexKeyArena());
+        auto saved_keys_extracted_from_block = saved_keys_extractor.extractAllKeys();
 
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
@@ -403,15 +396,14 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
             for (size_t i = 0; i < skip_keys_size_offset; ++i)
                 block_key_columns.emplace_back(block.safeGetByPosition(i).column);
 
-            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(saved_block_key_columns, temporary_complex_key_arena);
-            const auto keys_extracted_from_block_size = block_keys_extractor.getKeysSize();
+            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(saved_block_key_columns, arena_holder.getComplexKeyArena());
+            auto keys_extracted_from_block = block_keys_extractor.extractAllKeys();
 
             absl::flat_hash_map<KeyType, std::vector<size_t>, DefaultHash<KeyType>> update_keys;
-            for (size_t row = 0; row < keys_extracted_from_block_size; ++row)
+            for (size_t row = 0; row < keys_extracted_from_block.size(); ++row)
             {
-                const auto key = block_keys_extractor.extractCurrentKey();
+                auto key = keys_extracted_from_block[row];
                 update_keys[key].push_back(row);
-                block_keys_extractor.rollbackCurrentKey();
             }
 
             IColumn::Filter filter(saved_keys_extracted_from_block.size());
@@ -447,12 +439,6 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Block & block [[maybe_unused]])
 {
-    Arena temporary_complex_keys_arena_holder [[maybe_unused]];
-    Arena * temporary_complex_key_arena = nullptr;
-
-    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
-        temporary_complex_key_arena = &temporary_complex_keys_arena_holder;
-
     size_t skip_keys_size_offset = dict_struct.getKeysSize();
 
     Columns key_columns;
@@ -462,7 +448,8 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
     for (size_t i = 0; i < skip_keys_size_offset; ++i)
         key_columns.emplace_back(block.safeGetByPosition(i).column);
 
-    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, temporary_complex_key_arena);
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, arena_holder.getComplexKeyArena());
     const size_t keys_size = keys_extractor.getKeysSize();
 
     Field column_value_to_insert;
@@ -561,7 +548,7 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
     const auto & attribute_container = std::get<CollectionType<AttributeType>>(attribute.container);
     const size_t keys_size = keys_extractor.getKeysSize();
 
-    // bool is_attribute_nullable = attribute.is_nullable_set.has_value();
+    bool is_attribute_nullable = attribute.is_nullable_set.has_value();
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
@@ -573,9 +560,9 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
             set_value(key_index, getValueFromCell(it));
         else
         {
-            // if (is_attribute_nullable && attribute.is_nullable_set->find(key) != nullptr)
-            //     set_nullable_value(key_index);
-            // else
+            if (is_attribute_nullable && attribute.is_nullable_set->find(key) != nullptr)
+                set_nullable_value(key_index);
+            else
                 set_value(key_index, default_value_extractor[key_index]);
         }
 
