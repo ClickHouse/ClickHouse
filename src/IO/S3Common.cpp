@@ -103,6 +103,8 @@ class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
     static constexpr char EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE[] = "21600";
     static constexpr char EC2_IMDS_TOKEN_TTL_HEADER[] = "x-aws-ec2-metadata-token-ttl-seconds";
 
+    static constexpr char EC2_DEFAULT_METADATA_ENDPOINT[] = "http://169.254.169.254";
+
 public:
     /// See EC2MetadataClient.
 
@@ -130,35 +132,36 @@ public:
 
     virtual Aws::String GetDefaultCredentials() const
     {
-        std::unique_lock<std::recursive_mutex> locker(token_mutex);
-
-        LOG_TRACE(logger, "Getting default credentials for ec2 instance.");
-        auto result = GetResourceWithAWSWebServiceResult(endpoint.c_str(), EC2_SECURITY_CREDENTIALS_RESOURCE, nullptr);
-        Aws::String credentialsString = result.GetPayload();
-        auto httpResponseCode = result.GetResponseCode();
-
-        if (httpResponseCode == Aws::Http::HttpResponseCode::UNAUTHORIZED)
+        String credentials_string;
         {
-            return {};
+            std::unique_lock<std::recursive_mutex> locker(token_mutex);
+
+            LOG_TRACE(logger, "Getting default credentials for EC2 instance.");
+            auto result = GetResourceWithAWSWebServiceResult(endpoint.c_str(), EC2_SECURITY_CREDENTIALS_RESOURCE, nullptr);
+            credentials_string = result.GetPayload();
+            if (result.GetResponseCode() == Aws::Http::HttpResponseCode::UNAUTHORIZED)
+            {
+                return {};
+            }
         }
-        locker.unlock();
 
-        Aws::String trimmedCredentialsString = Aws::Utils::StringUtils::Trim(credentialsString.c_str());
-        if (trimmedCredentialsString.empty()) return {};
+        String trimmed_credentials_string = Aws::Utils::StringUtils::Trim(credentials_string.c_str());
+        if (trimmed_credentials_string.empty())
+            return {};
 
-        Aws::Vector<Aws::String> securityCredentials = Aws::Utils::StringUtils::Split(trimmedCredentialsString, '\n');
+        std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_credentials_string, '\n');
 
         LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} returned credential string {}.",
-                EC2_SECURITY_CREDENTIALS_RESOURCE, trimmedCredentialsString);
+                EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_credentials_string);
 
-        if (securityCredentials.size() == 0)
+        if (security_credentials.size() == 0)
         {
-            LOG_WARNING(logger, "Initial call to ec2Metadataservice to get credentials failed.");
+            LOG_WARNING(logger, "Initial call to EC2MetadataService to get credentials failed.");
             return {};
         }
 
         Aws::StringStream ss;
-        ss << EC2_SECURITY_CREDENTIALS_RESOURCE << "/" << securityCredentials[0];
+        ss << EC2_SECURITY_CREDENTIALS_RESOURCE << "/" << security_credentials[0];
         LOG_DEBUG(logger, "Calling EC2MetadataService resource {}.", ss.str());
         return GetResource(ss.str().c_str());
     }
@@ -173,59 +176,64 @@ public:
 
     virtual Aws::String GetDefaultCredentialsSecurely() const
     {
-        std::unique_lock<std::recursive_mutex> locker(token_mutex);
+        String user_agent_string = AWSComputeUserAgentString();
+        String new_token;
 
-        Aws::StringStream ss;
-        ss << endpoint << EC2_IMDS_TOKEN_RESOURCE;
-        std::shared_ptr<Aws::Http::HttpRequest> tokenRequest(Aws::Http::CreateHttpRequest(ss.str(), Aws::Http::HttpMethod::HTTP_PUT,
-                                                                    Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
-        tokenRequest->SetHeaderValue(EC2_IMDS_TOKEN_TTL_HEADER, EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
-        auto userAgentString = AWSComputeUserAgentString();
-        tokenRequest->SetUserAgent(userAgentString);
-        LOG_TRACE(logger, "Calling EC2MetadataService to get token.");
-        auto result = GetResourceWithAWSWebServiceResult(tokenRequest);
-        Aws::String tokenString = result.GetPayload();
-        Aws::String trimmedTokenString = Aws::Utils::StringUtils::Trim(tokenString.c_str());
+        {
+            std::unique_lock<std::recursive_mutex> locker(token_mutex);
 
-        if (result.GetResponseCode() == Aws::Http::HttpResponseCode::BAD_REQUEST)
-        {
-            return {};
-        }
-        else if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK || trimmedTokenString.empty())
-        {
-            LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, falling back to less secure way.");
-            return GetDefaultCredentials();
-        }
-        token = trimmedTokenString;
-        locker.unlock();
-        ss.str("");
-        ss << endpoint << EC2_SECURITY_CREDENTIALS_RESOURCE;
-        std::shared_ptr<Aws::Http::HttpRequest> profileRequest(Aws::Http::CreateHttpRequest(ss.str(), Aws::Http::HttpMethod::HTTP_GET,
+            Aws::StringStream ss;
+            ss << endpoint << EC2_IMDS_TOKEN_RESOURCE;
+            std::shared_ptr<Aws::Http::HttpRequest> token_request(Aws::Http::CreateHttpRequest(ss.str(), Aws::Http::HttpMethod::HTTP_PUT,
                                                                         Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
-        profileRequest->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, trimmedTokenString);
-        profileRequest->SetUserAgent(userAgentString);
-        Aws::String profileString = GetResourceWithAWSWebServiceResult(profileRequest).GetPayload();
+            token_request->SetHeaderValue(EC2_IMDS_TOKEN_TTL_HEADER, EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
+            token_request->SetUserAgent(user_agent_string);
+            LOG_TRACE(logger, "Calling EC2MetadataService to get token.");
+            auto result = GetResourceWithAWSWebServiceResult(token_request);
+            String token_string = result.GetPayload();
+            new_token = Aws::Utils::StringUtils::Trim(token_string.c_str());
 
-        Aws::String trimmedProfileString = Aws::Utils::StringUtils::Trim(profileString.c_str());
-        Aws::Vector<Aws::String> securityCredentials = Aws::Utils::StringUtils::Split(trimmedProfileString, '\n');
+            if (result.GetResponseCode() == Aws::Http::HttpResponseCode::BAD_REQUEST)
+            {
+                return {};
+            }
+            else if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK || new_token.empty())
+            {
+                LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, falling back to less secure way.");
+                return GetDefaultCredentials();
+            }
+            token = new_token;
+        }
+
+        String url = endpoint + EC2_SECURITY_CREDENTIALS_RESOURCE;
+        std::shared_ptr<Aws::Http::HttpRequest> profile_request(Aws::Http::CreateHttpRequest(url,
+                Aws::Http::HttpMethod::HTTP_GET,
+                Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
+        profile_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, new_token);
+        profile_request->SetUserAgent(user_agent_string);
+        String profile_string = GetResourceWithAWSWebServiceResult(profile_request).GetPayload();
+
+        String trimmed_profile_string = Aws::Utils::StringUtils::Trim(profile_string.c_str());
+        std::vector<String> security_credentials = Aws::Utils::StringUtils::Split(trimmed_profile_string, '\n');
 
         LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} with token returned profile string {}.",
-                EC2_SECURITY_CREDENTIALS_RESOURCE, trimmedProfileString);
+                EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_profile_string);
 
-        if (securityCredentials.size() == 0)
+        if (security_credentials.size() == 0)
         {
             LOG_WARNING(logger, "Calling EC2Metadataservice to get profiles failed.");
             return {};
         }
 
-        ss.str("");
-        ss << endpoint << EC2_SECURITY_CREDENTIALS_RESOURCE << "/" << securityCredentials[0];
-        std::shared_ptr<Aws::Http::HttpRequest> credentialsRequest(Aws::Http::CreateHttpRequest(ss.str(), Aws::Http::HttpMethod::HTTP_GET,
-                                                                            Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
-        credentialsRequest->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, trimmedTokenString);
-        credentialsRequest->SetUserAgent(userAgentString);
+        Aws::StringStream ss;
+        ss << endpoint << EC2_SECURITY_CREDENTIALS_RESOURCE << "/" << security_credentials[0];
+        std::shared_ptr<Aws::Http::HttpRequest> credentials_request(Aws::Http::CreateHttpRequest(ss.str(),
+                Aws::Http::HttpMethod::HTTP_GET,
+                Aws::Utils::Stream::DefaultResponseStreamFactoryMethod));
+        credentials_request->SetHeaderValue(EC2_IMDS_TOKEN_HEADER, new_token);
+        credentials_request->SetUserAgent(user_agent_string);
         LOG_DEBUG(logger, "Calling EC2MetadataService resource {} with token.", ss.str());
-        return GetResourceWithAWSWebServiceResult(credentialsRequest).GetPayload();
+        return GetResourceWithAWSWebServiceResult(credentials_request).GetPayload();
     }
 
     virtual Aws::String GetCurrentRegion() const
@@ -234,10 +242,9 @@ public:
     }
 
 private:
-    Aws::String endpoint = "http://169.254.169.254";
+    const Aws::String endpoint = EC2_DEFAULT_METADATA_ENDPOINT;
     mutable std::recursive_mutex token_mutex;
     mutable Aws::String token;
-    mutable Aws::String region;
     Poco::Logger * logger;
 };
 
@@ -261,27 +268,28 @@ protected:
         auto credentials_str = use_secure_pull ? client->GetDefaultCredentialsSecurely() : client->GetDefaultCredentials();
 
         /// See EC2InstanceProfileConfigLoader.
-        if (credentials_str.empty()) return false;
+        if (credentials_str.empty())
+            return false;
 
-        Aws::Utils::Json::JsonValue credentialsDoc(credentials_str);
-        if (!credentialsDoc.WasParseSuccessful())
+        Aws::Utils::Json::JsonValue credentials_doc(credentials_str);
+        if (!credentials_doc.WasParseSuccessful())
         {
             LOG_ERROR(logger, "Failed to parse output from EC2MetadataService.");
             return false;
         }
-        Aws::String accessKey, secretKey, token;
+        String access_key, secret_key, token;
 
-        auto credentialsView = credentialsDoc.View();
-        accessKey = credentialsView.GetString("AccessKeyId");
-        LOG_ERROR(logger, "Successfully pulled credentials from metadata service with access key {}.", accessKey);
+        auto credentials_view = credentials_doc.View();
+        access_key = credentials_view.GetString("AccessKeyId");
+        LOG_ERROR(logger, "Successfully pulled credentials from EC2MetadataService with access key {}.", access_key);
 
-        secretKey = credentialsView.GetString("SecretAccessKey");
-        token = credentialsView.GetString("Token");
+        secret_key = credentials_view.GetString("SecretAccessKey");
+        token = credentials_view.GetString("Token");
 
         auto region = client->GetCurrentRegion();
 
         Aws::Config::Profile profile;
-        profile.SetCredentials(Aws::Auth::AWSCredentials(accessKey, secretKey, token));
+        profile.SetCredentials(Aws::Auth::AWSCredentials(access_key, secret_key, token));
         profile.SetRegion(region);
         profile.SetName(Aws::Config::INSTANCE_PROFILE_KEY);
 
