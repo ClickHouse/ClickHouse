@@ -11,6 +11,9 @@ tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolc
 mkdir -p build/cmake/toolchain/freebsd-x86_64
 tar xJf freebsd-11.3-toolchain.tar.xz -C build/cmake/toolchain/freebsd-x86_64 --strip-components=1
 
+export CCACHE_LOGFILE=/output/ccache.log
+export CCACHE_DEBUG=1
+
 mkdir -p build/build_docker
 cd build/build_docker
 ccache --show-stats ||:
@@ -23,16 +26,21 @@ cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUI
 
 # FIXME Check how ccache is used for contribs. The contrib/all target doesn't build successfully, but we don't care.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-ninja $NINJA_FLAGS contrib/all ||:
+ninja $NINJA_FLAGS --verbose contrib/all ||:
 ccache --show-stats ||:
 ccache --zero-stats ||:
 
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-ninja $NINJA_FLAGS clickhouse-bundle
+ninja $NINJA_FLAGS --verbose clickhouse-bundle
 mv ./programs/clickhouse* /output
 mv ./src/unit_tests_dbms /output ||: # may not exist for some binary builds
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
+
+mkdir /output/ccache
+find . -name '*.ccache-*' -print -exec mv '{}' /output/ccache \;
+tar -czvf "/output/ccache.tgz" /output/ccache
+rm -rf /output/ccache
 
 # Different files for performance test.
 if [ "performance" == "$COMBINED_OUTPUT" ]
