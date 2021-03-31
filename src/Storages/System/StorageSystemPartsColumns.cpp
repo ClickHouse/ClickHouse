@@ -56,7 +56,8 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_bytes_on_disk",                       std::make_shared<DataTypeUInt64>()},
         {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
-        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()}
+        {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()},
+        {"serialization_kind",                         std::make_shared<DataTypeString>()}
     }
     )
 {
@@ -211,6 +212,12 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(column_size.data_uncompressed);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
+
+            if (columns_mask[src_index++])
+            {
+                auto kind = part->getSerializationForColumn(column)->getKind();
+                columns[res_index++]->insert(ISerialization::kindToString(kind));
+            }
 
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());

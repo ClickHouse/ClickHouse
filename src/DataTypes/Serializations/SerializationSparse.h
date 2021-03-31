@@ -10,7 +10,7 @@ class SerializationSparse final : public SerializationWrapper
 public:
     SerializationSparse(const SerializationPtr & nested_);
 
-    SerializationKind getKind() const override { return SerializationKind::SPARSE; }
+    Kind getKind() const override { return Kind::SPARSE; }
 
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 

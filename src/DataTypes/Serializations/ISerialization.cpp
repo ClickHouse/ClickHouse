@@ -14,6 +14,17 @@ namespace ErrorCodes
     extern const int MULTIPLE_STREAMS_REQUIRED;
 }
 
+String ISerialization::kindToString(Kind kind)
+{
+    switch (kind)
+    {
+        case Kind::DEFAULT:
+            return "Default";
+        case Kind::SPARSE:
+            return "Sparse";
+    }
+}
+
 String ISerialization::Substream::toString() const
 {
     switch (type)

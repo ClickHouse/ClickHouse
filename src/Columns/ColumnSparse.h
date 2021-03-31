@@ -51,6 +51,7 @@ public:
         return Base::create(std::forward<Arg>(arg));
     }
 
+    bool isSparse() const override { return true; }
     const char * getFamilyName() const override { return "Sparse"; }
     std::string getName() const override { return "Sparse(" + values->getName() + ")"; }
     TypeIndex getDataType() const override { return values->getDataType(); }
@@ -69,6 +70,7 @@ public:
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * skipSerializedInArena(const char *) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insert(const Field & x) override;
     void insertFrom(const IColumn & src, size_t n) override;

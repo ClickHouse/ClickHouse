@@ -460,6 +460,8 @@ public:
 
     virtual bool lowCardinality() const { return false; }
 
+    virtual bool isSparse() const { return false; }
+
     virtual bool isCollationSupported() const { return false; }
 
     virtual ~IColumn() = default;

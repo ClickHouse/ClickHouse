@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
@@ -379,7 +380,13 @@ static void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
     }
 }
 
-ColumnPtr ExecutableFunctionAdaptor::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+static void convertSparseColumnsToFull(ColumnsWithTypeAndName & args)
+{
+    for (auto & column : args)
+        column.column = column.column->convertToFullColumnIfSparse();
+}
+
+ColumnPtr ExecutableFunctionAdaptor::executeWithoutSparseColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
     if (impl->useDefaultImplementationForLowCardinalityColumns())
     {
@@ -450,6 +457,59 @@ ColumnPtr ExecutableFunctionAdaptor::execute(const ColumnsWithTypeAndName & argu
     }
     else
         return executeWithoutLowCardinalityColumns(arguments, result_type, input_rows_count, dry_run);
+}
+
+ColumnPtr ExecutableFunctionAdaptor::execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+{
+    if (impl->useDefaultImplementationForSparseColumns())
+    {
+        size_t num_sparse_columns = 0;
+        size_t num_full_columns = 0;
+        size_t sparse_column_position = 0;
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (typeid_cast<const ColumnSparse *>(arguments[i].column.get()))
+            {
+                sparse_column_position = i;
+                ++num_sparse_columns;
+            }
+            else if (!isColumnConst(*arguments[i].column))
+            {
+                ++num_full_columns;
+            }
+        }
+
+        auto columns_without_sparse = arguments;
+        if (num_sparse_columns == 1 && num_full_columns == 0)
+        {
+            auto & arg_with_sparse = columns_without_sparse[sparse_column_position];
+            ColumnPtr sparse_offsets;
+            {
+                /// New scope to avoid possible mistakes on dangling reference.
+                const auto & column_sparse = assert_cast<const ColumnSparse &>(*arg_with_sparse.column);
+                sparse_offsets = column_sparse.getOffsetsPtr();
+                arg_with_sparse.column = column_sparse.getValuesPtr();
+            }
+
+            size_t values_size = arg_with_sparse.column->size();
+            for (size_t i = 0; i < columns_without_sparse.size(); ++i)
+            {
+                if (i == sparse_column_position)
+                    continue;
+
+                columns_without_sparse[i].column = columns_without_sparse[i].column->cloneResized(values_size);
+            }
+
+            auto res = executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
+            return ColumnSparse::create(res, sparse_offsets, input_rows_count);
+        }
+
+        convertSparseColumnsToFull(columns_without_sparse);
+        return executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
+    }
+
+    return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 }
 
 void FunctionOverloadResolverAdaptor::checkNumberOfArguments(size_t number_of_arguments) const

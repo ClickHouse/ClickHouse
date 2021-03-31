@@ -85,11 +85,14 @@ ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
         size_t offsets_diff = offsets_data[i] - current_offset;
         current_offset = offsets_data[i];
         if (offsets_diff > 1)
-            res->insertManyDefaults(offsets_diff - 1);
+            res->insertManyFrom(*values, 0, offsets_diff - 1);
         res->insertFrom(*values, i + 1);
     }
 
-    res->insertManyDefaults(_size - current_offset);
+    size_t offsets_diff = _size - current_offset;
+    if(offsets_diff > 1)
+        res->insertManyFrom(*values, 0, offsets_diff - 1);
+
     return res;
 }
 
@@ -108,6 +111,11 @@ StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char co
 const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
 {
     UNUSED(pos);
+    throwMustBeDense();
+}
+
+const char * ColumnSparse::skipSerializedInArena(const char *) const
+{
     throwMustBeDense();
 }
 
@@ -278,14 +286,10 @@ ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const
 
 int ColumnSparse::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
 {
-    UNUSED(n);
-    UNUSED(m);
-    UNUSED(rhs_);
-    UNUSED(null_direction_hint);
+    if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs_))
+        return values->compareAt(getValueIndex(n), rhs_sparse->getValueIndex(m), rhs_sparse->getValuesColumn(), null_direction_hint);
 
-    std::cerr << "rhs: " << rhs_.dumpStructure() << "\n";
-
-    throwMustBeDense();
+    return values->compareAt(getValueIndex(n), m, rhs_, null_direction_hint);
 }
 
 void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
