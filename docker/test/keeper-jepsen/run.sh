@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CLICKHOUSE_PACKAGE=${CLICKHOUSE_PACKAGE="https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_binary/clickhouse"}
+
+CLICKHOUSE_PACKAGE=${CLICKHOUSE_PACKAGE:="https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_binary/clickhouse"}
+CLICKHOUSE_REPO_PATH=${CLICKHOUSE_REPO_PATH:=""}
+
 
 if [ -z "$CLICKHOUSE_REPO_PATH" ]; then
     CLICKHOUSE_REPO_PATH=ch
