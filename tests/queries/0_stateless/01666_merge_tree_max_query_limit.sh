@@ -63,7 +63,7 @@ CODE=$?
 [ "$CODE" -ne "202" ] && echo "Expected error code: 202 but got: $CODE" && exit 1;
 echo "yes"
 
-${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$query_id' SYNC"
+${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
 wait
 
 ${CLICKHOUSE_CLIENT} --multiline --multiquery --query "
