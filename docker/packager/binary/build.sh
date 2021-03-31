@@ -11,8 +11,9 @@ tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolc
 mkdir -p build/cmake/toolchain/freebsd-x86_64
 tar xJf freebsd-11.3-toolchain.tar.xz -C build/cmake/toolchain/freebsd-x86_64 --strip-components=1
 
-export CCACHE_LOGFILE=/output/ccache.log
-export CCACHE_DEBUG=1
+# # Uncomment to debug ccache
+# export CCACHE_LOGFILE=/output/ccache.log
+# export CCACHE_DEBUG=1
 
 mkdir -p build/build_docker
 cd build/build_docker
@@ -24,14 +25,8 @@ rm -f CMakeCache.txt
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
-# FIXME Check how ccache is used for contribs. The contrib/all target doesn't build successfully, but we don't care.
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-ninja $NINJA_FLAGS --verbose contrib/all ||:
-ccache --show-stats ||:
-ccache --zero-stats ||:
-
-# shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-ninja $NINJA_FLAGS --verbose clickhouse-bundle
+ninja $NINJA_FLAGS clickhouse-bundle
 
 ccache --show-stats ||:
 
@@ -83,12 +78,18 @@ then
     mv "$COMBINED_OUTPUT.tgz" /output
 fi
 
-mkdir /output/ccache
-find . -name '*.ccache-*' -print -exec mv '{}' /output/ccache \;
-tar -czvf "/output/ccache.tgz" /output/ccache
-rm -rf /output/ccache
+if [ "${CCACHE_DEBUG:-}" == "1"]
+then
+    mkdir /output/ccache
+    find . -name '*.ccache-*' -print -exec mv '{}' /output/ccache \;
+    tar -czvf "/output/ccache.tgz" /output/ccache
+    rm -rf /output/ccache
+fi
 
-# Compress the log as well, or else the CI will try to compress all log files in place,
-# and will fail because this directory is not writable.
-gzip "/output/ccache.log"
+if ! [ -z "$CCACHE_LOGFILE" ]
+then
+    # Compress the log as well, or else the CI will try to compress all log
+    # files in place, and will fail because this directory is not writable.
+    gzip "$CCACHE_LOGFILE"
+fi
 
