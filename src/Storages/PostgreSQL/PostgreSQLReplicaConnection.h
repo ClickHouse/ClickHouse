@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "PostgreSQLConnectionPool.h"
+#include <mutex>
 
 
 namespace DB

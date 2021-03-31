@@ -309,6 +309,7 @@ SRCS(
     isConstant.cpp
     isDecimalOverflow.cpp
     isFinite.cpp
+    isIPAddressContainedIn.cpp
     isInfinite.cpp
     isNaN.cpp
     isNotNull.cpp
