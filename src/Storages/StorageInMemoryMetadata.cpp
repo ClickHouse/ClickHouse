@@ -106,37 +106,6 @@ const ColumnsDescription & StorageInMemoryMetadata::getColumns() const
     return columns;
 }
 
-ColumnsDescription StorageInMemoryMetadata::getColumnsForNames(
-        const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
-{
-    ColumnsDescription res;
-    std::unordered_map<String, ColumnDescription> columns_map;
-
-    for (const auto & column : columns)
-        columns_map.emplace(column.name, column);
-
-    /// Virtual columns also included.
-    for (const auto & column : virtuals)
-        columns_map.emplace(column.name, ColumnDescription(column.name, column.type));
-
-    for (const auto & name : column_names)
-    {
-        auto it = columns_map.find(name);
-        if (it != columns_map.end())
-        {
-            res.add(it->second);
-        }
-        else
-        {
-            throw Exception(
-                    "Column " + backQuote(name) + " not found in table " + storage_id.getNameForLogs(),
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-        }
-    }
-
-    return res;
-}
-
 const IndicesDescription & StorageInMemoryMetadata::getSecondaryIndices() const
 {
     return secondary_indices;

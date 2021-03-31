@@ -86,14 +86,9 @@ struct StorageInMemoryMetadata
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
 
-    /// Returns combined set of columns from give column Names
-    ColumnsDescription getColumnsForNames(
-            const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
-
-
     /// Returns secondary indices
-
     const IndicesDescription & getSecondaryIndices() const;
+
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
 

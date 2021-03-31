@@ -151,6 +151,11 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     return paths;
 }
 
+bool StorageFile::isColumnOriented() const
+{
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
+}
+
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
@@ -267,7 +272,7 @@ public:
         const ColumnsDescription & columns_description,
         const FilesInfoPtr & files_info)
     {
-        if (FormatFactory::instance().checkIfFormatIsColumnOriented(storage->format_name))
+        if (storage->isColumnOriented())
             return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
         else
             return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
@@ -363,7 +368,7 @@ public:
 
                 auto get_block_for_format = [&]() -> Block
                 {
-                    if (FormatFactory::instance().checkIfFormatIsColumnOriented(storage->format_name))
+                    if (storage->isColumnOriented())
                         return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
                     return metadata_snapshot->getSampleBlock();
                 };
@@ -482,8 +487,9 @@ Pipe StorageFile::read(
     {
         const auto get_columns_for_format = [&]() -> ColumnsDescription
         {
-            if (FormatFactory::instance().checkIfFormatIsColumnOriented(format_name))
-                return metadata_snapshot->getColumnsForNames(column_names, getVirtuals(), getStorageID());
+            if (isColumnOriented())
+                return ColumnsDescription{
+                    metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
             else
                 return metadata_snapshot->getColumns();
         };
