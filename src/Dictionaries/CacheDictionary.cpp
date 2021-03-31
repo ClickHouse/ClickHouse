@@ -142,8 +142,8 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
         dict_struct.validateKeyTypes(key_types);
 
     Arena complex_keys_arena;
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_keys_arena);
-    auto & keys = extractor.getKeys();
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, &complex_keys_arena);
+    auto keys = extractor.extractAllKeys();
 
     return getColumnsImpl(attribute_names, key_columns, keys, default_values_columns);
 }
@@ -282,8 +282,8 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
         dict_struct.validateKeyTypes(key_types);
 
     Arena complex_keys_arena;
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_keys_arena);
-    const auto & keys = extractor.getKeys();
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, &complex_keys_arena);
+    const auto keys = extractor.extractAllKeys();
 
     /// We make empty request just to fetch if keys exists
     DictionaryStorageFetchRequest request(dict_struct, {}, {});
@@ -531,8 +531,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     size_t found_keys_size = 0;
 
-    DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(update_unit_ptr->key_columns, update_unit_ptr->complex_key_arena);
-    const auto & requested_keys = requested_keys_extractor.getKeys();
+    DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(update_unit_ptr->key_columns, &update_unit_ptr->complex_key_arena);
+    const auto requested_keys = requested_keys_extractor.extractAllKeys();
 
     HashSet<KeyType> not_found_keys;
 
@@ -598,23 +598,26 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                     block_columns.erase(block_columns.begin());
                 }
 
-                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, update_unit_ptr->complex_key_arena);
-                const auto & keys_extracted_from_block = keys_extractor.getKeys();
+                DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, &update_unit_ptr->complex_key_arena);
+                const size_t keys_extracted_from_block_size = keys_extractor.getKeysSize();
 
                 for (size_t index_of_attribute = 0; index_of_attribute < fetched_columns_during_update.size(); ++index_of_attribute)
                 {
                     auto & column_to_update = fetched_columns_during_update[index_of_attribute];
                     auto column = block.safeGetByPosition(skip_keys_size_offset + index_of_attribute).column;
-                    column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block.size());
+                    column_to_update->assumeMutable()->insertRangeFrom(*column, 0, keys_extracted_from_block_size);
                 }
 
-                for (size_t i = 0; i < keys_extracted_from_block.size(); ++i)
+                for (size_t i = 0; i < keys_extracted_from_block_size; ++i)
                 {
-                    auto fetched_key_from_source = keys_extracted_from_block[i];
+                    auto fetched_key_from_source = keys_extractor.extractCurrentKey();
+
                     not_found_keys.erase(fetched_key_from_source);
                     update_unit_ptr->requested_keys_to_fetched_columns_during_update_index[fetched_key_from_source] = found_keys_size;
                     found_keys_in_source.emplace_back(fetched_key_from_source);
                     ++found_keys_size;
+
+                    keys_extractor.rollbackCurrentKey();
                 }
             }
 

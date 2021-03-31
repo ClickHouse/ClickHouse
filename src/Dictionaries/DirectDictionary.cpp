@@ -41,13 +41,17 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     if constexpr (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
-    Arena complex_key_arena;
+    Arena temporary_complex_keys_arena_holder [[maybe_unused]];
+    Arena * temporary_complex_key_arena = nullptr;
+
+    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        temporary_complex_key_arena = &temporary_complex_keys_arena_holder;
+
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, temporary_complex_key_arena);
+    const auto requested_keys = extractor.extractAllKeys();
 
     const DictionaryAttribute & attribute = dict_struct.getAttribute(attribute_name, result_type);
     DefaultValueProvider default_value_provider(attribute.null_value, default_values_column);
-
-    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, complex_key_arena);
-    const auto & requested_keys = extractor.getKeys();
 
     HashMap<KeyType, size_t> key_to_fetched_index;
     key_to_fetched_index.reserve(requested_keys.size());
@@ -75,19 +79,20 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
             block_columns.erase(block_columns.begin());
         }
 
-        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, complex_key_arena);
-        const auto & block_keys = block_keys_extractor.getKeys();
-        size_t block_keys_size = block_keys.size();
+        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, temporary_complex_key_arena);
+        size_t block_keys_size = block_keys_extractor.getKeysSize();
 
         const auto & block_column = block.safeGetByPosition(dictionary_keys_size + requested_attribute_index).column;
         fetched_from_storage->insertRangeFrom(*block_column, 0, block_keys_size);
 
         for (size_t block_key_index = 0; block_key_index < block_keys_size; ++block_key_index)
         {
-            const auto & block_key = block_keys[block_key_index];
+            const auto block_key = block_keys_extractor.extractCurrentKey();
 
             key_to_fetched_index[block_key] = fetched_key_index;
             ++fetched_key_index;
+
+            block_keys_extractor.rollbackCurrentKey();
         }
 
         block_key_columns.clear();
@@ -126,11 +131,15 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
     if constexpr (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
-    Arena complex_key_arena;
+    Arena temporary_complex_keys_arena_holder [[maybe_unused]];
+    Arena * temporary_complex_key_arena = nullptr;
 
-    DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(key_columns, complex_key_arena);
-    const auto & requested_keys = requested_keys_extractor.getKeys();
-    size_t requested_keys_size = requested_keys.size();
+    if constexpr (dictionary_key_type == DictionaryKeyType::complex)
+        temporary_complex_key_arena = &temporary_complex_keys_arena_holder;
+
+    DictionaryKeysExtractor<dictionary_key_type> requested_keys_extractor(key_columns, temporary_complex_key_arena);
+    const auto requested_keys = requested_keys_extractor.extractAllKeys();
+    size_t requested_keys_size = requested_keys_extractor.getKeysSize();
 
     HashMap<KeyType, size_t> requested_key_to_index;
     requested_key_to_index.reserve(requested_keys_size);
@@ -163,16 +172,20 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
             block_columns.erase(block_columns.begin());
         }
 
-        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, complex_key_arena);
-        const auto & block_keys = block_keys_extractor.getKeys();
+        DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, temporary_complex_key_arena);
+        size_t block_keys_size = block_keys_extractor.getKeysSize();
 
-        for (const auto & block_key : block_keys)
+        for (size_t i = 0; i < block_keys_size; ++i)
         {
+            auto block_key = block_keys_extractor.extractCurrentKey();
+
             const auto * it = requested_key_to_index.find(block_key);
             assert(it);
 
             size_t result_data_found_index = it->getMapped();
             result_data[result_data_found_index] = true;
+
+            block_keys_extractor.rollbackCurrentKey();
         }
 
         block_key_columns.clear();
