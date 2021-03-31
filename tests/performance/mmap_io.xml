@@ -11,7 +11,7 @@
     <fill_query>INSERT INTO hits_none SELECT WatchID FROM test.hits</fill_query>
     <fill_query>OPTIMIZE TABLE hits_none FINAL</fill_query>
 
-    <query><![CDATA[SELECT sum(WatchID) FROM hits_none]]></query>
+    <query short="1"><![CDATA[SELECT sum(WatchID) FROM hits_none]]></query>
 
     <drop_query>DROP TABLE hits_none</drop_query>
 </test>
