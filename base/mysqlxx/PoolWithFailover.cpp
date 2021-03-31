@@ -2,9 +2,7 @@
 #include <ctime>
 #include <random>
 #include <thread>
-
 #include <mysqlxx/PoolWithFailover.h>
-#include <common/logger_useful.h>
 
 
 /// Duplicate of code from StringUtils.h. Copied here for less dependencies.
@@ -89,7 +87,6 @@ PoolWithFailover::PoolWithFailover(
     {
         /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
         replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database, host, user, password, port));
-        LOG_TRACE(&Poco::Logger::get("MySQLPoolWithFailover"), "Adding address {}:{} to MySQL pool", host, port);
     }
 }
 
