@@ -26,6 +26,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Common/parseRemoteDescription.h>
 #include <Processors/Pipe.h>
 #include <IO/WriteHelpers.h>
 
@@ -305,7 +306,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
 
-        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
+        auto host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
@@ -317,15 +318,18 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         if (engine_args.size() == 6)
             remote_table_schema = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
+        /// Split into replicas if needed.
+        const auto & [remote_host_name, remote_port] = parseAddress(host_port, 5432);
+        auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
+
         postgres::PoolWithFailover pool(
             remote_database,
-            parsed_host_port.first,
-            parsed_host_port.second,
+            hosts,
+            remote_port,
             username,
             password,
             args.context.getSettingsRef().postgresql_connection_pool_size,
-            args.context.getSettingsRef().postgresql_connection_pool_wait_timeout,
-            max_addresses);
+            args.context.getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return StoragePostgreSQL::create(
             args.table_id, pool, remote_table,

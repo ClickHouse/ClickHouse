@@ -6,7 +6,6 @@
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
-#define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_ADDRESSES 1
 
 
 namespace mysqlxx
@@ -112,11 +111,10 @@ namespace mysqlxx
 
         PoolWithFailover(
             const std::string & database,
-            const std::string & hosts_pattern,
+            const std::vector<std::string> & hosts,
             uint16_t port,
             const std::string & user,
             const std::string & password,
-            size_t max_addresses = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_ADDRESSES,
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
         PoolWithFailover(const PoolWithFailover & other);

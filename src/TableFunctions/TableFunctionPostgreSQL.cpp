@@ -12,6 +12,7 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include <Common/quoteString.h>
+#include <Common/parseRemoteDescription.h>
 
 
 namespace DB
@@ -67,7 +68,12 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    auto parsed_host_port = parseAddress(args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
+    const auto & host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    const auto & [remote_host_name, remote_port] = parseAddress(host_port, 5432);
+    /// Split into replicas if needed.
+    size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
+    auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
+
     remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() == 6)
@@ -75,8 +81,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
 
     connection_pool = std::make_shared<postgres::PoolWithFailover>(
         args[1]->as<ASTLiteral &>().value.safeGet<String>(),
-        parsed_host_port.first,
-        parsed_host_port.second,
+        hosts,
+        remote_port,
         args[3]->as<ASTLiteral &>().value.safeGet<String>(),
         args[4]->as<ASTLiteral &>().value.safeGet<String>());
 }
