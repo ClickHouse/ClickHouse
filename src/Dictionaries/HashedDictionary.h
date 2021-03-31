@@ -140,6 +140,24 @@ private:
         std::optional<NullableSet> is_nullable_set;
 
         std::variant<
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            UInt128,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Float32,
+            Float64,
+            StringRef>
+            null_values;
+
+        std::variant<
             CollectionType<UInt8>,
             CollectionType<UInt16>,
             CollectionType<UInt32>,
@@ -170,6 +188,14 @@ private:
     void loadData();
 
     void calculateBytesAllocated();
+
+    template <typename AttributeType, typename ValueSetter, typename NullableValueSetter, typename DefaultValueExtractor>
+    void getItemsImpl(
+        const Attribute & attribute,
+        DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
+        ValueSetter && set_value,
+        NullableValueSetter && set_nullable_value,
+        DefaultValueExtractor & default_value_extractor) const;
 
     template <typename GetContainerFunc>
     void getAttributeContainer(size_t attribute_index, GetContainerFunc && get_container_func);
