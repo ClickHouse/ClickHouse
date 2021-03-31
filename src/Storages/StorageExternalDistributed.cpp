@@ -53,7 +53,8 @@ StorageExternalDistributed::StorageExternalDistributed(
     for (const auto & shard_description : shards_descriptions)
     {
         /// Parse shard description like host-{01..02}-{1|2|3}:port, into host_description_pattern (host-01-{1..2}-{1|2|3}) and port
-        auto parsed_shard_description = parseAddress(shard_description, default_port);
+        const auto & [remote_host_name, remote_port] = parseAddress(shard_description, default_port);
+        auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
 
         StoragePtr shard;
 
@@ -65,9 +66,9 @@ StorageExternalDistributed::StorageExternalDistributed(
             {
                 mysqlxx::PoolWithFailover pool(
                     remote_database,
-                    parsed_shard_description.first,
-                    parsed_shard_description.second,
-                    username, password, max_addresses);
+                    hosts,
+                    remote_port,
+                    username, password);
 
                 shard = StorageMySQL::create(
                     table_id_,
@@ -87,12 +88,11 @@ StorageExternalDistributed::StorageExternalDistributed(
             {
                 postgres::PoolWithFailover pool(
                     remote_database,
-                    parsed_shard_description.first,
-                    parsed_shard_description.second,
+                    hosts,
+                    remote_port,
                     username, password,
                     context.getSettingsRef().postgresql_connection_pool_size,
-                    context.getSettingsRef().postgresql_connection_pool_wait_timeout,
-                    max_addresses);
+                    context.getSettingsRef().postgresql_connection_pool_wait_timeout);
 
                 shard = StoragePostgreSQL::create(
                     table_id_,

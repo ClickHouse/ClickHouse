@@ -4,7 +4,6 @@
 #include <thread>
 
 #include <mysqlxx/PoolWithFailover.h>
-#include <Common/parseRemoteDescription.h>
 #include <common/logger_useful.h>
 
 
@@ -78,16 +77,14 @@ PoolWithFailover::PoolWithFailover(
 
 PoolWithFailover::PoolWithFailover(
         const std::string & database,
-        const std::string & hosts_pattern,
+        const std::vector<std::string> & hosts,
         uint16_t port,
         const std::string & user,
         const std::string & password,
-        size_t max_addresses,
         size_t max_tries_)
     : max_tries(max_tries_)
     , shareable(false)
 {
-    auto hosts = DB::parseRemoteDescription(hosts_pattern, 0, hosts_pattern.size(), '|', max_addresses);
     for (const auto & host : hosts)
     {
         /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.

@@ -1,29 +1,30 @@
 #if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
+#include "config_core.h"
 #endif
 
 #if USE_MYSQL
-#    include <Core/Defines.h>
-#    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <DataTypes/convertMySQLDataType.h>
-#    include <Formats/MySQLBlockInputStream.h>
-#    include <IO/Operators.h>
-#    include <Interpreters/Context.h>
-#    include <Interpreters/evaluateConstantExpression.h>
-#    include <Parsers/ASTFunction.h>
-#    include <Parsers/ASTLiteral.h>
-#    include <Storages/StorageMySQL.h>
-#    include <TableFunctions/ITableFunction.h>
-#    include <TableFunctions/TableFunctionFactory.h>
-#    include <TableFunctions/TableFunctionMySQL.h>
-#    include <Common/Exception.h>
-#    include <Common/parseAddress.h>
-#    include <Common/quoteString.h>
-#    include "registerTableFunctions.h"
+#include <Core/Defines.h>
+#include <Databases/MySQL/FetchTablesColumnsList.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/convertMySQLDataType.h>
+#include <Formats/MySQLBlockInputStream.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Storages/StorageMySQL.h>
+#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/TableFunctionMySQL.h>
+#include <Common/Exception.h>
+#include <Common/parseAddress.h>
+#include <Common/quoteString.h>
+#include "registerTableFunctions.h"
 
-#    include <Databases/MySQL/DatabaseConnectionMySQL.h> // for fetchTablesColumnsList
+#include <Databases/MySQL/DatabaseConnectionMySQL.h> // for fetchTablesColumnsList
+#include <Common/parseRemoteDescription.h>
 
 
 namespace DB
@@ -59,6 +60,12 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Conte
     user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
     password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
+    const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
+    /// Split into replicas if needed.
+    size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
+    auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
+    pool.emplace(remote_database_name, hosts, remote_port, user_name, password);
+
     if (args.size() >= 6)
         replace_query = args[5]->as<ASTLiteral &>().value.safeGet<UInt64>() > 0;
     if (args.size() == 7)
@@ -75,10 +82,6 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Conte
 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(const Context & context) const
 {
-    assert(!parsed_host_port.first.empty());
-    if (!pool)
-        pool.emplace(remote_database_name, parsed_host_port.first, parsed_host_port.second, user_name, password);
-
     const auto & settings = context.getSettingsRef();
     const auto tables_and_columns = fetchTablesColumnsList(*pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
 
@@ -91,10 +94,6 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(const Context & c
 
 StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    assert(!parsed_host_port.first.empty());
-    if (!pool)
-        pool.emplace(remote_database_name, parsed_host_port.first, parsed_host_port.second, user_name, password);
-
     auto columns = getActualTableStructure(context);
 
     auto res = StorageMySQL::create(

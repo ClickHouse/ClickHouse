@@ -30,6 +30,7 @@
 #endif
 
 #if USE_MYSQL || USE_LIBPQXX
+#include <Common/parseRemoteDescription.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/parseAddress.h>
 #endif
@@ -145,7 +146,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             if (engine_name == "MySQL")
             {
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
-                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, remote_host_name, remote_port, mysql_user_name, mysql_user_password);
+                /// Split into replicas if needed.
+                size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
+                auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
+                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, hosts, remote_port, mysql_user_name, mysql_user_password);
 
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
@@ -245,12 +249,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (engine->arguments->children.size() == 5)
             use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
 
-        auto parsed_host_port = parseAddress(host_port, 5432);
+        const auto & [remote_host_name, remote_port] = parseAddress(host_port, 5432);
+        /// Split into replicas if needed.
+        size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
+        auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
 
         /// no connection is made here
         auto connection_pool = std::make_shared<postgres::PoolWithFailover>(
             postgres_database_name,
-            parsed_host_port.first, parsed_host_port.second,
+            hosts,
+            remote_port,
             username, password,
             context.getSettingsRef().postgresql_connection_pool_size,
             context.getSettingsRef().postgresql_connection_pool_wait_timeout);
