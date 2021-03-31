@@ -280,7 +280,6 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
 
     for message in messages:
         channel.basic_publish(exchange='tsv', routing_key='', body=message)
-
     connection.close()
 
     result = ''
