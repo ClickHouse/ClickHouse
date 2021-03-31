@@ -296,6 +296,28 @@ private:
 };
 
 template <DictionaryKeyType key_type>
+class DictionaryKeysArenaHolder;
+
+template <>
+class DictionaryKeysArenaHolder<DictionaryKeyType::simple>
+{
+public:
+    static Arena * getComplexKeyArena() { return nullptr; }
+};
+
+template <>
+class DictionaryKeysArenaHolder<DictionaryKeyType::complex>
+{
+public:
+
+    Arena * getComplexKeyArena() { return &complex_key_arena; }
+
+private:
+    Arena complex_key_arena;
+};
+
+
+template <DictionaryKeyType key_type>
 class DictionaryKeysExtractor
 {
 public:

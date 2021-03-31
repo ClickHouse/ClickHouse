@@ -142,12 +142,6 @@ public:
 private:
     using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
 
-    Columns getColumnsImpl(
-        const Strings & attribute_names,
-        const Columns & key_columns,
-        const PaddedPODArray<KeyType> & keys,
-        const Columns & default_values_columns) const;
-
     static MutableColumns aggregateColumnsInOrderOfKeys(
         const PaddedPODArray<KeyType> & keys,
         const DictionaryStorageFetchRequest & request,
