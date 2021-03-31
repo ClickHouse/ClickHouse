@@ -78,7 +78,7 @@ then
     mv "$COMBINED_OUTPUT.tgz" /output
 fi
 
-if [ "${CCACHE_DEBUG:-}" == "1"]
+if [ "${CCACHE_DEBUG:-}" == "1" ]
 then
     mkdir /output/ccache
     find . -name '*.ccache-*' -print -exec mv '{}' /output/ccache \;
