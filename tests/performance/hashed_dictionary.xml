@@ -108,6 +108,12 @@
         LIMIT {elements_count}
         FORMAT Null;
     </query>
+    <query>
+        SELECT dictHas('default.complex_key_hashed_dictionary', (number, toString(number)))
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
 
     <drop_query>DROP TABLE IF EXISTS simple_key_hashed_dictionary_source_table;</drop_query>
     <drop_query>DROP TABLE IF EXISTS complex_key_hashed_dictionary_source_table;</drop_query>
