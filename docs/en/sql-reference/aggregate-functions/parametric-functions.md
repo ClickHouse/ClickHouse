@@ -253,7 +253,7 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 
 **Parameters**
 
--   `window` — Length of the sliding window. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond2 <= timestamp of cond1 + window`.
+-   `window` — Length of the sliding window, it is the time interval between first condition and last condition. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
 -   `mode` — It is an optional argument. One or more modes can be set.
     -   `'strict'` — If same condition holds for sequence of events then such non-unique events would be skipped. 
     -   `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.

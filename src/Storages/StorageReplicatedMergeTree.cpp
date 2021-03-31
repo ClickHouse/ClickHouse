@@ -1663,9 +1663,10 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     if (source_part->name != source_part_name)
     {
-        throw Exception("Part " + source_part_name + " is covered by " + source_part->name
-            + " but should be mutated to " + entry.new_part_name + ". This is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
+        LOG_WARNING(log, "Part " + source_part_name + " is covered by " + source_part->name
+                    + " but should be mutated to " + entry.new_part_name + ". "
+                    + "Possibly the mutation of this part is not needed and will be skipped. This shouldn't happen often.");
+        return false;
     }
 
     /// TODO - some better heuristic?
@@ -4115,17 +4116,9 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & set
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
-    if (partition_pruner.isUseless())
-        return {};
-    size_t res = 0;
-    foreachCommittedParts([&](auto & part)
-    {
-        if (!partition_pruner.canBePruned(part))
-            res += part->rows_count;
-    }, context.getSettingsRef().select_sequential_consistency);
-    return res;
+    DataPartsVector parts;
+    foreachCommittedParts([&](auto & part) { parts.push_back(part); }, context.getSettingsRef().select_sequential_consistency);
+    return totalRowsByPartitionPredicateImpl(query_info, context, parts);
 }
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Settings & settings) const
