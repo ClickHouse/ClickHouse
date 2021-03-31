@@ -17,7 +17,7 @@
 
 (defn get-clickhouse-url
   [url]
-  (let [download-result (cu/cached-wget! url)]
+  (let [download-result (cu/wget! url)]
     (do (c/exec :mv download-result common-prefix)
         (str common-prefix "/" download-result))))
 
