@@ -547,7 +547,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
     String part_download_path = data.getRelativeDataPath() + part_relative_path + "/";
 
     if (disk->exists(part_download_path))
-        throw Exception("Directory " + fullPath(disk, part_download_path) + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+    {
+        LOG_WARNING(log, "Directory {} already exists, probably result of a failed fetch. Will remove it before fetching part.",
+            fullPath(disk, part_download_path));
+        disk->removeRecursive(part_download_path);
+    }
 
     disk->createDirectories(part_download_path);
 
