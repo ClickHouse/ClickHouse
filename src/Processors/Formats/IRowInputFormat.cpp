@@ -108,12 +108,6 @@ Chunk IRowInputFormat::generate()
                 if (!isParseError(e.code()))
                     throw;
 
-                if (params.sync_after_error)
-                {
-                    syncAfterError();
-                    throw;
-                }
-
                 if (params.allow_errors_num == 0 && params.allow_errors_ratio == 0)
                     throw;
 

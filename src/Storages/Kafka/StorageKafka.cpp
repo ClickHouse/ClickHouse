@@ -190,6 +190,11 @@ StorageKafka::StorageKafka(
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
 {
+    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    {
+        kafka_settings->input_format_allow_errors_num = 0;
+        kafka_settings->input_format_allow_errors_ratio = 0;
+    }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
