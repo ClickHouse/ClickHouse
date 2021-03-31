@@ -818,12 +818,11 @@ private:
             if (!min_id)
                 min_id = getMinIDToFinishLoading(forced_to_reload);
 
-            if (info->state_id >= min_id)
-                return true; /// stop
-
             if (info->loading_id < min_id)
                 startLoading(*info, forced_to_reload, *min_id);
-            return false; /// wait for the next event
+
+            /// Wait for the next event if loading wasn't completed, or stop otherwise.
+            return (info->state_id >= min_id);
         };
 
         if (timeout == WAIT)
@@ -848,12 +847,10 @@ private:
                 if (filter && !filter(name))
                     continue;
 
-                if (info.state_id >= min_id)
-                    continue;
-
-                all_ready = false;
                 if (info.loading_id < min_id)
                     startLoading(info, forced_to_reload, *min_id);
+
+                all_ready &= (info.state_id >= min_id);
             }
             return all_ready;
         };

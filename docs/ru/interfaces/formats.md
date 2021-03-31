@@ -49,7 +49,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
 | [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
 | [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                 | ✔     | ✗      |
+| [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
 | [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
 | [Native](#native)                                                                       | ✔     | ✔      |
@@ -1203,45 +1203,53 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 ## ORC {#data-format-orc}
 
-[Apache ORC](https://orc.apache.org/) - это column-oriented формат данных, распространённый в экосистеме Hadoop. Вы можете только вставлять данные этого формата в ClickHouse.
+[Apache ORC](https://orc.apache.org/) — это столбцовый формат данных, распространенный в экосистеме [Hadoop](https://hadoop.apache.org/).
 
 ### Соответствие типов данных {#sootvetstvie-tipov-dannykh-1}
 
-Таблица показывает поддержанные типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT`.
+Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
 
-| Тип данных ORC (`INSERT`) | Тип данных ClickHouse                               |
-|---------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`           | [UInt8](../sql-reference/data-types/int-uint.md)    |
-| `INT8`                    | [Int8](../sql-reference/data-types/int-uint.md)     |
-| `UINT16`                  | [UInt16](../sql-reference/data-types/int-uint.md)   |
-| `INT16`                   | [Int16](../sql-reference/data-types/int-uint.md)    |
-| `UINT32`                  | [UInt32](../sql-reference/data-types/int-uint.md)   |
-| `INT32`                   | [Int32](../sql-reference/data-types/int-uint.md)    |
-| `UINT64`                  | [UInt64](../sql-reference/data-types/int-uint.md)   |
-| `INT64`                   | [Int64](../sql-reference/data-types/int-uint.md)    |
-| `FLOAT`, `HALF_FLOAT`     | [Float32](../sql-reference/data-types/float.md)     |
-| `DOUBLE`                  | [Float64](../sql-reference/data-types/float.md)     |
-| `DATE32`                  | [Date](../sql-reference/data-types/date.md)         |
-| `DATE64`, `TIMESTAMP`     | [DateTime](../sql-reference/data-types/datetime.md) |
-| `STRING`, `BINARY`        | [String](../sql-reference/data-types/string.md)     |
-| `DECIMAL`                 | [Decimal](../sql-reference/data-types/decimal.md)   |
+| Тип данных ORC (`INSERT`) | Тип данных ClickHouse                               | Тип данных ORC (`SELECT`) |
+|---------------------------|-----------------------------------------------------|---------------------------|
+| `UINT8`, `BOOL`           | [UInt8](../sql-reference/data-types/int-uint.md)    | `UINT8`                   |
+| `INT8`                    | [Int8](../sql-reference/data-types/int-uint.md)     | `INT8`                    |
+| `UINT16`                  | [UInt16](../sql-reference/data-types/int-uint.md)   | `UINT16`                  |
+| `INT16`                   | [Int16](../sql-reference/data-types/int-uint.md)    | `INT16`                   |
+| `UINT32`                  | [UInt32](../sql-reference/data-types/int-uint.md)   | `UINT32`                  |
+| `INT32`                   | [Int32](../sql-reference/data-types/int-uint.md)    | `INT32`                   |
+| `UINT64`                  | [UInt64](../sql-reference/data-types/int-uint.md)   | `UINT64`                  |
+| `INT64`                   | [Int64](../sql-reference/data-types/int-uint.md)    | `INT64`                   |
+| `FLOAT`, `HALF_FLOAT`     | [Float32](../sql-reference/data-types/float.md)     | `FLOAT`                   |
+| `DOUBLE`                  | [Float64](../sql-reference/data-types/float.md)     | `DOUBLE`                  |
+| `DATE32`                  | [Date](../sql-reference/data-types/date.md)         | `DATE32`                  |
+| `DATE64`, `TIMESTAMP`     | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`               |
+| `STRING`, `BINARY`        | [String](../sql-reference/data-types/string.md)     | `BINARY`                  |
+| `DECIMAL`                 | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                 |
+| `-`                       | [Array](../sql-reference/data-types/array.md)       | `LIST`                    |
 
-ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных Parquet `DECIMAL` как `Decimal128`.
+ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При обработке запроса `INSERT`, ClickHouse обрабатывает тип данных ORC `DECIMAL` как `Decimal128`.
 
-Неподдержанные типы данных ORC: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+Неподдерживаемые типы данных ORC: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных, ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
+Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
 
 ### Вставка данных {#vstavka-dannykh-1}
 
-Данные ORC можно вставить в таблицу ClickHouse командой:
+Чтобы вставить в ClickHouse данные из файла в формате ORC, используйте команду следующего вида:
 
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Для обмена данных с Hadoop можно использовать [движок таблиц HDFS](../engines/table-engines/integrations/hdfs.md).
+### Вывод данных {#vyvod-dannykh-1}
 
+Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата ORC, используйте команду следующего вида:
+
+``` bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
+```
+
+Для обмена данных с экосистемой Hadoop вы можете использовать [движок таблиц HDFS](../engines/table-engines/integrations/hdfs.md).
 
 ## LineAsString {#lineasstring}
 

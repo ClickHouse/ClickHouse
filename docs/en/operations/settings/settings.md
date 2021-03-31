@@ -1883,6 +1883,53 @@ Possible values:
 
 Default value: `0`.
 
+## insert_shard_id {#insert_shard_id}
+
+If not `0`, specifies the shard of [Distributed](../../engines/table-engines/special/distributed.md#distributed) table into which the data will be inserted synchronously.
+
+If `insert_shard_id` value is incorrect, the server will throw an exception.
+
+To get the number of shards on `requested_cluster`, you can check server config or use this query:
+
+``` sql
+SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
+```
+
+Possible values:
+
+-   0 — Disabled.
+-   Any number from `1` to `shards_num` of corresponding [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE x AS system.numbers ENGINE = MergeTree ORDER BY number;
+CREATE TABLE x_dist AS x ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), x);
+INSERT INTO x_dist SELECT * FROM numbers(5) SETTINGS insert_shard_id = 1;
+SELECT * FROM x_dist ORDER BY number ASC;
+```
+
+Result:
+
+``` text
+┌─number─┐
+│      0 │
+│      0 │
+│      1 │
+│      1 │
+│      2 │
+│      2 │
+│      3 │
+│      3 │
+│      4 │
+│      4 │
+└────────┘
+```
+
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
 Uses compact format for storing blocks for async (`insert_distributed_sync`) INSERT into tables with `Distributed` engine.
@@ -2681,11 +2728,11 @@ Default value: `0`.
 
 ## engine_file_truncate_on_insert {#engine-file-truncate-on-insert}
 
-Enables or disables truncate before insert in file engine tables.
+Enables or disables truncate before insert in [File](../../engines/table-engines/special/file.md) engine tables.
 
 Possible values:
-- 0 — Disabled.
-- 1 — Enabled.
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` replaces existing content of the file with the new data.
 
 Default value: `0`.
 
@@ -2699,5 +2746,40 @@ Possible values:
 -   1 — Working with geo data types is enabled.
 
 Default value: `0`.
+
+## allow_experimental_live_view {#allow-experimental-live-view}
+
+Allows creation of experimental [live views](../../sql-reference/statements/create/view.md#live-view).
+
+Possible values:
+
+-   0 — Working with live views is disabled.
+-   1 — Working with live views is enabled.
+
+Default value: `0`.
+
+## live_view_heartbeat_interval {#live-view-heartbeat-interval}
+
+Sets the heartbeat interval in seconds to indicate [live view](../../sql-reference/statements/create/view.md#live-view) is alive .
+
+Default value: `15`.
+
+## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
+
+Sets the maximum number of inserted blocks after which mergeable blocks are dropped and query for [live view](../../sql-reference/statements/create/view.md#live-view) is re-executed.
+
+Default value: `64`.
+
+## temporary_live_view_timeout {#temporary-live-view-timeout}
+
+Sets the interval in seconds after which [live view](../../sql-reference/statements/create/view.md#live-view) with timeout is deleted.
+
+Default value: `5`.
+
+## periodic_live_view_refresh {#periodic-live-view-refresh}
+
+Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md#live-view) is forced to refresh.
+
+Default value: `60`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
