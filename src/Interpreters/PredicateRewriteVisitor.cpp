@@ -42,7 +42,8 @@ void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_q
 
 void PredicateRewriteVisitorData::visitFirstInternalSelect(ASTSelectQuery & select_query, ASTPtr &)
 {
-    is_rewrite |= rewriteSubquery(select_query, {});
+    /// In this case inner_columns same as outer_columns from table_columns
+    is_rewrite |= rewriteSubquery(select_query, table_columns.columns.getNames());
 }
 
 void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & select_query, ASTPtr &)
@@ -115,8 +116,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
             const auto & outer_column_iterator = std::find(outer_columns.begin(), outer_columns.end(), column_name);
             if (outer_column_iterator != outer_columns.end())
             {
-                const Names & column_names = inner_columns.empty() ? outer_columns : inner_columns;
-                identifier->setShortName(column_names[outer_column_iterator - outer_columns.begin()]);
+                identifier->setShortName(inner_columns[outer_column_iterator - outer_columns.begin()]);
             }
         }
 
