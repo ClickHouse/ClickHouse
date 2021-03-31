@@ -269,7 +269,7 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
     node1.exec_in_container(["bash", "-c", "chmod a+rw /tmp"], privileged=True, user='root')
     node1.exec_in_container(["bash", "-c", "chmod a+rw {}".format(sqlite_db)], privileged=True, user='root')
 
-    node1.query("insert into table function odbc('DSN={};', '', 't3') values (200, 2, 7)".format(
+    node1.query("insert into table function odbc('DSN={};ReadOnly=0', '', 't3') values (200, 2, 7)".format(
         node1.odbc_drivers["SQLite3"]["DSN"]))
 
     assert node1.query("select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(200))") == "7\n"  # new value

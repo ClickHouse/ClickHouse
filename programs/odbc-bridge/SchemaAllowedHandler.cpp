@@ -9,8 +9,7 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <common/logger_useful.h>
 #include "validateODBCConnectionString.h"
-
-#include <nanodbc/nanodbc.h>
+#include "ODBCConnectionFactory.h"
 #include <sql.h>
 #include <sqlext.h>
 
@@ -49,9 +48,8 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     try
     {
         std::string connection_string = params.get("connection_string");
-        nanodbc::connection connection(validateODBCConnectionString(connection_string));
-
-        bool result = isSchemaAllowed(connection);
+        auto connection = ODBCConnectionFactory::instance().get(validateODBCConnectionString(connection_string));
+        bool result = isSchemaAllowed(*connection);
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try

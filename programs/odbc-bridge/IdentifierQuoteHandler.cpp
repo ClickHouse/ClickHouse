@@ -14,7 +14,8 @@
 #include <ext/scope_guard.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
-#include <nanodbc/nanodbc.h>
+#include "ODBCConnectionFactory.h"
+
 
 namespace DB
 {
@@ -40,8 +41,8 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     try
     {
         std::string connection_string = params.get("connection_string");
-        nanodbc::connection connection(validateODBCConnectionString(connection_string));
-        auto identifier = getIdentifierQuote(connection);
+        auto connection = ODBCConnectionFactory::instance().get(validateODBCConnectionString(connection_string));
+        auto identifier = getIdentifierQuote(*connection);
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
         try

@@ -18,6 +18,7 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
+#include "ODBCConnectionFactory.h"
 
 #include <mutex>
 #include <memory>
@@ -104,8 +105,8 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     std::string connection_string = params.get("connection_string");
     LOG_TRACE(log, "Connection string: '{}'", connection_string);
-    nanodbc::connection connection(connection_string);
 
+    auto connection = ODBCConnectionFactory::instance().get(validateODBCConnectionString(connection_string));
     WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
@@ -128,12 +129,12 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
             auto quoting_style = IdentifierQuotingStyle::None;
 #if USE_ODBC
-            quoting_style = getQuotingStyle(connection);
+            quoting_style = getQuotingStyle(*connection);
 #endif
             auto & read_buf = request.getStream();
             auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, context, max_block_size);
             auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
-            ODBCBlockOutputStream output_stream(connection, db_name, table_name, *sample_block, context, quoting_style);
+            ODBCBlockOutputStream output_stream(*connection, db_name, table_name, *sample_block, context, quoting_style);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
         }
@@ -143,7 +144,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             LOG_TRACE(log, "Query: {}", query);
 
             BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, context);
-            ODBCBlockInputStream inp(connection, query, *sample_block, max_block_size);
+            ODBCBlockInputStream inp(*connection, query, *sample_block, max_block_size);
             copyData(inp, *writer);
         }
     }
