@@ -16,6 +16,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Common/TransactionMetadata.h>
 
 #include <Poco/Path.h>
 
@@ -300,6 +301,19 @@ public:
     NameSet expired_columns;
 
     CompressionCodecPtr default_codec;
+
+    struct VersionMetadata
+    {
+        TransactionID mintid = Tx::EmptyTID;
+        TransactionID maxtid = Tx::EmptyTID;
+
+        bool maybe_visible = false;
+
+        CSN mincsn = Tx::UnknownCSN;
+        CSN maxcsn = Tx::UnknownCSN;
+    };
+
+    mutable VersionMetadata versions;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;

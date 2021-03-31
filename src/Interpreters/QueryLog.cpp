@@ -108,7 +108,9 @@ Block QueryLogElement::createBlock()
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_formats"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_functions"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_storages"},
-        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_table_functions"}
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "used_table_functions"},
+
+        {TransactionID::getDataType(),                                        "transaction_id"}
     };
 
 }
@@ -237,6 +239,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
     }
+
+    columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
