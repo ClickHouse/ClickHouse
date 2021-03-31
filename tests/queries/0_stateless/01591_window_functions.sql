@@ -347,6 +347,17 @@ select
         over (order by number rows between 1 following and 1 following)
 from numbers(5);
 
+-- variants of lag/lead that respect the frame
+select number, p, pp,
+    lagInFrame(number, number - pp, number * 11) over w as lag,
+    leadInFrame(number, number - pp, number * 11) over w as lead
+from (select number, intDiv(number, 5) p, p * 5 pp from numbers(16))
+window w as (partition by p order by number
+    rows between unbounded preceding and unbounded following)
+order by number
+settings max_block_size = 3;
+;
+
 -- case-insensitive SQL-standard synonyms for any and anyLast
 select
     number,
@@ -360,3 +371,10 @@ order by number
 -- In this case, we had a problem with PartialSortingTransform returning zero-row
 -- chunks for input chunks w/o columns.
 select count() over () from numbers(4) where number < 2;
+
+-- floating point RANGE frame
+select
+    count(*) over (order by (toFloat32(number) as f32) range 5. preceding),
+    count(*) over (order by (toFloat64(number) as f64) range 5. preceding)
+from numbers(7)
+;

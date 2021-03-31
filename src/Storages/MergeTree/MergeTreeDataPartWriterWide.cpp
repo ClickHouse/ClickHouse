@@ -395,7 +395,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
     String mrk_path = fullPath(disk, part_path + name + marks_file_extension);
     String bin_path = fullPath(disk, part_path + name + DATA_FILE_EXTENSION);
     DB::ReadBufferFromFile mrk_in(mrk_path);
-    DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0);
+    DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0, nullptr);
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;
