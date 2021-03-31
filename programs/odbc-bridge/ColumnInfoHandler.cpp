@@ -17,8 +17,8 @@
 #include <ext/scope_guard.h>
 #include "getIdentifierQuote.h"
 #include "validateODBCConnectionString.h"
+#include "ODBCConnectionFactory.h"
 
-#include <nanodbc/nanodbc.h>
 #include <sql.h>
 #include <sqlext.h>
 
@@ -105,8 +105,8 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
     {
         const bool external_table_functions_use_nulls = Poco::NumberParser::parseBool(params.get("external_table_functions_use_nulls", "false"));
 
-        nanodbc::connection connection(validateODBCConnectionString(connection_string));
-        nanodbc::catalog catalog(connection);
+        auto connection = ODBCConnectionFactory::instance().get(validateODBCConnectionString(connection_string));
+        nanodbc::catalog catalog(*connection);
         std::string catalog_name;
 
         /// In XDBC tables it is allowed to pass either database_name or schema_name in table definion, but not both of them.
