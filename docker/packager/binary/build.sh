@@ -88,3 +88,7 @@ find . -name '*.ccache-*' -print -exec mv '{}' /output/ccache \;
 tar -czvf "/output/ccache.tgz" /output/ccache
 rm -rf /output/ccache
 
+# Compress the log as well, or else the CI will try to compress all log files in place,
+# and will fail because this directory is not writable.
+gzip "/output/ccache.log"
+
