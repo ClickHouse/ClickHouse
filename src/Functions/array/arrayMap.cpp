@@ -15,8 +15,6 @@ struct ArrayMapImpl
     static bool needExpression() { return true; }
     /// true if the array must be exactly one.
     static bool needOneArray() { return false; }
-    /// true if function do folding
-    static bool isFolding() { return false; }
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {

@@ -18,7 +18,6 @@ struct ArrayFilterImpl
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
-    static bool isFolding() { return false; }
 
     static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {

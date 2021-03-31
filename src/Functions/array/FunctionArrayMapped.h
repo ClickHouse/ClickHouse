@@ -67,9 +67,8 @@ public:
             throw Exception("Function " + getName() + " needs at least one array argument.",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        size_t arguments_to_skip = Impl::isFolding() ? 1 : 0;
         DataTypes nested_types(arguments.size() - 1);
-        for (size_t i = 0; i < nested_types.size() - arguments_to_skip; ++i)
+        for (size_t i = 0; i < nested_types.size(); ++i)
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[i + 1]);
             if (!array_type)
@@ -77,8 +76,6 @@ public:
                                 + arguments[i + 1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             nested_types[i] = recursiveRemoveLowCardinality(array_type->getNestedType());
         }
-        if (Impl::isFolding())
-            nested_types[nested_types.size() - 1] = arguments[arguments.size() - 1];
 
         const DataTypeFunction * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
         if (!function_type || function_type->getArgumentTypes().size() != nested_types.size())
@@ -133,16 +130,9 @@ public:
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
                                 + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            if (Impl::isFolding())
-            {
-                const auto accum_type = arguments.back().type;
-                return Impl::getReturnType(return_type, accum_type);
-            }
-            else
-            {
-                const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
-                return Impl::getReturnType(return_type, first_array_type->getNestedType());
-            }
+            const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
+
+            return Impl::getReturnType(return_type, first_array_type->getNestedType());
         }
     }
 
@@ -183,12 +173,10 @@ public:
             ColumnPtr column_first_array_ptr;
             const ColumnArray * column_first_array = nullptr;
 
-            size_t arguments_to_skip = Impl::isFolding() ? 1 : 0;
-
             ColumnsWithTypeAndName arrays;
             arrays.reserve(arguments.size() - 1);
 
-            for (size_t i = 1; i < arguments.size() - arguments_to_skip; ++i)
+            for (size_t i = 1; i < arguments.size(); ++i)
             {
                 const auto & array_with_type_and_name = arguments[i];
 
@@ -232,65 +220,17 @@ public:
                                                           recursiveRemoveLowCardinality(array_type->getNestedType()),
                                                           array_with_type_and_name.name));
             }
-            if (Impl::isFolding())
-                arrays.emplace_back(arguments.back());
 
-            if (Impl::isFolding() && (! column_first_array->getData().empty()))
-            {
-                size_t arr_cursor = 0;
-                MutableColumnPtr result = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
-                for (size_t irow = 0; irow < column_first_array->size(); ++irow) // for each row of result
-                {
-                    // Make accumulator column for this row
-                    ColumnWithTypeAndName accumulator_column = arguments.back();
-                    ColumnPtr acc(accumulator_column.column->cut(irow, 1));
-                    auto accumulator = ColumnWithTypeAndName(acc,
-                                                             accumulator_column.type,
-                                                             accumulator_column.name);
+            /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
+            auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
+            auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
+            replicated_column_function->appendArguments(arrays);
 
-                    ColumnPtr res(acc);
-                    size_t const arr_next = column_first_array->getOffsets()[irow]; // when we do folding
-                    for (size_t iter = 0; arr_cursor < arr_next; ++iter, ++arr_cursor)
-                    {
-                        // Make slice of input arrays and accumulator for lambda
-                        ColumnsWithTypeAndName iter_arrays;
-                        iter_arrays.reserve(arrays.size() + 1);
-                        for (size_t icolumn = 0; icolumn < arrays.size() - 1; ++icolumn)
-                        {
-                            auto const & arr = arrays[icolumn];
-                            iter_arrays.emplace_back(ColumnWithTypeAndName(arr.column->cut(arr_cursor, 1),
-                                                                           arr.type,
-                                                                           arr.name));
-                        }
-                        iter_arrays.emplace_back(accumulator);
-                        // Calculate function on arguments
-                        auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(ColumnArray::Offsets(column_first_array->getOffsets().size(), 1)));
-                        auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
-                        replicated_column_function->appendArguments(iter_arrays);
-                        auto lambda_result = replicated_column_function->reduce().column;
-                        if (lambda_result->lowCardinality())
-                            lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
-                        res = Impl::execute(*column_first_array, lambda_result);
-                        accumulator.column = res;
-                    }
-                    result->insert((*res)[0]);
-                }
-                return result;
+            auto lambda_result = replicated_column_function->reduce().column;
+            if (lambda_result->lowCardinality())
+                lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
 
-            }
-            else
-            {
-                /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
-                auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
-                auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
-                replicated_column_function->appendArguments(arrays);
-
-                auto lambda_result = replicated_column_function->reduce().column;
-                if (lambda_result->lowCardinality())
-                    lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
-
-                return Impl::execute(*column_first_array, lambda_result);
-            }
+            return Impl::execute(*column_first_array, lambda_result);
         }
     }
 };
