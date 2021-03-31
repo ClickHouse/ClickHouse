@@ -66,6 +66,7 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int SYSTEM_ERROR;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int CANNOT_KILL;
 }
 
 }
@@ -886,6 +887,27 @@ namespace
                 fmt::print("Sent kill signal.\n", pid);
             else
                 throwFromErrno("Cannot send kill signal", ErrorCodes::SYSTEM_ERROR);
+
+            /// Wait for the process (100 seconds).
+            constexpr size_t num_kill_check_tries = 1000;
+            constexpr size_t kill_check_delay_ms = 100;
+            for (size_t i = 0; i < num_kill_check_tries; ++i)
+            {
+                fmt::print("Waiting for server to be killed\n");
+                if (!isRunning(pid_file))
+                {
+                    fmt::print("Server exited\n");
+                    break;
+                }
+                sleepForMilliseconds(kill_check_delay_ms);
+            }
+
+            if (isRunning(pid_file))
+            {
+                throw Exception(ErrorCodes::CANNOT_KILL,
+                    "The server process still exists after %zu ms",
+                    num_kill_check_tries, kill_check_delay_ms);
+            }
         }
 
         return 0;

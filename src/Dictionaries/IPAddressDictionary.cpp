@@ -4,19 +4,17 @@
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/memcmpSmall.h>
-#include <Common/memcpySmall.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <IO/WriteIntText.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
 #include <common/itoa.h>
 #include <ext/map.h>
 #include <ext/range.h>
-#include "DictionaryBlockInputStream.h"
-#include "DictionaryFactory.h"
+#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
 
 namespace DB
@@ -191,57 +189,6 @@ inline static void mapIPv4ToIPv6(UInt32 addr, uint8_t * buf)
     memcpy(&buf[12], &addr, 4);
 }
 
-static bool matchIPv4Subnet(UInt32 target, UInt32 addr, UInt8 prefix)
-{
-    UInt32 mask = (prefix >= 32) ? 0xffffffffu : ~(0xffffffffu >> prefix);
-    return (target & mask) == addr;
-}
-
-#if defined(__SSE2__)
-#include <emmintrin.h>
-
-static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 prefix)
-{
-    uint16_t mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(target)),
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(addr))));
-    mask = ~mask;
-
-    if (mask)
-    {
-        auto offset = __builtin_ctz(mask);
-
-        if (prefix / 8 != offset)
-            return prefix / 8 < offset;
-
-        auto cmpmask = ~(0xff >> (prefix % 8));
-        return (target[offset] & cmpmask) == addr[offset];
-    }
-    return true;
-}
-
-# else
-
-static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 prefix)
-{
-    if (prefix > IPV6_BINARY_LENGTH * 8U)
-        prefix = IPV6_BINARY_LENGTH * 8U;
-
-    size_t i = 0;
-    for (; prefix >= 8; ++i, prefix -= 8)
-    {
-        if (target[i] != addr[i])
-            return false;
-    }
-    if (prefix == 0)
-        return true;
-
-    auto mask = ~(0xff >> prefix);
-    return (target[i] & mask) == addr[i];
-}
-
-#endif  // __SSE2__
-
 IPAddressDictionary::IPAddressDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
@@ -267,7 +214,7 @@ ColumnPtr IPAddressDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr default_values_column) const
+    const ColumnPtr & default_values_column) const
 {
     validateKeyTypes(key_types);
 
@@ -289,7 +236,6 @@ ColumnPtr IPAddressDictionary::getColumn(
         DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(null_value, default_values_column);
 
         auto column = ColumnProvider::getColumn(dictionary_attribute, size);
-
 
         if constexpr (std::is_same_v<AttributeType, String>)
         {
@@ -596,7 +542,7 @@ void IPAddressDictionary::calculateBytesAllocated()
 template <typename T>
 void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = null_value.isNull() ? T{} : T(null_value.get<NearestFieldType<T>>());
+    attribute.null_values = null_value.isNull() ? T{} : T(null_value.get<T>());
     attribute.maps.emplace<ContainerType<T>>();
 }
 
@@ -787,7 +733,7 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
         }
         else
         {
-            setAttributeValueImpl<AttributeType>(attribute, value.get<NearestFieldType<AttributeType>>());
+            setAttributeValueImpl<AttributeType>(attribute, value.get<AttributeType>());
         }
     };
 

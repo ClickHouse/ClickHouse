@@ -30,7 +30,7 @@ public:
         const StorageInMemoryMetadata & metadata) override;
 
 protected:
-    virtual void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path);
+    virtual void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & statement, const Context & query_context);
 
     void startupTables(ThreadPool & thread_pool);
 };

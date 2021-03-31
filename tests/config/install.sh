@@ -29,7 +29,7 @@ ln -sf $SRC_PATH/config.d/graphite.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_atomic.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_concurrent_queries.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/test_keeper_port.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/logging_no_rotate.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/tcp_with_proxy.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d/
@@ -39,11 +39,13 @@ ln -sf $SRC_PATH/users.d/readonly.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/access_management.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/database_atomic_drop_detach_sync.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/opentelemetry.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/remote_queries.xml $DEST_SERVER_PATH/users.d/
 
 ln -sf $SRC_PATH/ints_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/strings_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/decimals_dictionary.xml $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/executable_dictionary.xml $DEST_SERVER_PATH/
+ln -sf $SRC_PATH/executable_pool_dictionary.xml $DEST_SERVER_PATH/
 
 ln -sf $SRC_PATH/top_level_domains $DEST_SERVER_PATH/
 
@@ -60,6 +62,9 @@ if [[ -n "$USE_POLYMORPHIC_PARTS" ]] && [[ "$USE_POLYMORPHIC_PARTS" -eq 1 ]]; th
 fi
 if [[ -n "$USE_DATABASE_ORDINARY" ]] && [[ "$USE_DATABASE_ORDINARY" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/database_ordinary.xml $DEST_SERVER_PATH/users.d/
+fi
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    ln -sf $SRC_PATH/users.d/database_replicated.xml $DEST_SERVER_PATH/users.d/
 fi
 
 ln -sf $SRC_PATH/client_config.xml $DEST_CLIENT_PATH/config.xml

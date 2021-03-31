@@ -717,7 +717,18 @@ void TCPHandler::processTablesStatusRequest()
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
 
+
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
+
+    /// For testing hedged requests
+    const Settings & settings = query_context->getSettingsRef();
+    if (settings.sleep_in_send_tables_status_ms.totalMilliseconds())
+    {
+        out->next();
+        std::chrono::milliseconds ms(settings.sleep_in_send_tables_status_ms.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
+    }
+
     response.write(*out, client_tcp_protocol_version);
 }
 
@@ -1133,6 +1144,14 @@ void TCPHandler::receiveQuery()
     }
     query_context->applySettingsChanges(settings_changes);
 
+    /// Disable function name normalization when it's a secondary query, because queries are either
+    /// already normalized on initiator node, or not normalized and should remain unnormalized for
+    /// compatibility.
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        query_context->setSetting("normalize_function_names", Field(0));
+    }
+
     // Use the received query id, or generate a random default. It is convenient
     // to also generate the default OpenTelemetry trace id at the same time, and
     // set the trace parent.
@@ -1393,6 +1412,15 @@ void TCPHandler::sendData(const Block & block)
     writeVarUInt(Protocol::Server::Data, *out);
     /// Send external table name (empty name is the main table)
     writeStringBinary("", *out);
+
+    /// For testing hedged requests
+    const Settings & settings = query_context->getSettingsRef();
+    if (block.rows() > 0 && settings.sleep_in_send_data_ms.totalMilliseconds())
+    {
+        out->next();
+        std::chrono::milliseconds ms(settings.sleep_in_send_data_ms.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
+    }
 
     state.block_out->write(block);
     state.maybe_compressed_out->next();

@@ -47,6 +47,8 @@ public:
 
     std::string toString() const override;
 
+    BlockInputStreamPtr getStreamForBlock(const Block & block);
+
 private:
     Poco::Logger * log;
     time_t update_time = 0;

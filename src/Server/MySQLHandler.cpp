@@ -92,6 +92,7 @@ void MySQLHandler::run()
     connection_context.makeSessionContext();
     connection_context.getClientInfo().interface = ClientInfo::Interface::MYSQL;
     connection_context.setDefaultFormat("MySQLWire");
+    connection_context.getClientInfo().connection_id = connection_id;
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
@@ -289,7 +290,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
+            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0, true
         );
         packet_endpoint->sendPacket(column_definition);
     }

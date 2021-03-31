@@ -112,4 +112,3 @@ ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'Compr
 
 - [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — описание системной таблицы `query_log`, которая содержит общую информацию о выполненных запросах.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/query_thread_log) <!--hide-->

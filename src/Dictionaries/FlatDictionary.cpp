@@ -113,7 +113,7 @@ ColumnPtr FlatDictionary::getColumn(
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes &,
-        const ColumnPtr default_values_column) const
+        const ColumnPtr & default_values_column) const
 {
     ColumnPtr result;
 
@@ -125,7 +125,7 @@ ColumnPtr FlatDictionary::getColumn(
     const auto & attribute = getAttribute(attribute_name);
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
@@ -167,7 +167,7 @@ ColumnPtr FlatDictionary::getColumn(
     if (attribute.nullable_set)
     {
         ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(size, false);
-        ColumnUInt8::Container& vec_null_map_to = col_null_map_to->getData();
+        ColumnUInt8::Container & vec_null_map_to = col_null_map_to->getData();
 
         for (size_t row = 0; row < ids.size(); ++row)
         {
@@ -370,7 +370,7 @@ void FlatDictionary::calculateBytesAllocated()
 template <typename T>
 void FlatDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+    attribute.null_values = T(null_value.get<T>());
     const auto & null_value_ref = std::get<T>(attribute.null_values);
     attribute.arrays.emplace<ContainerType<T>>(initial_array_size, null_value_ref);
 }
@@ -478,7 +478,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, cons
             }
         }
 
-        setAttributeValueImpl<AttributeType>(attribute, id, value.get<NearestFieldType<AttributeType>>());
+        setAttributeValueImpl<AttributeType>(attribute, id, value.get<AttributeType>());
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);

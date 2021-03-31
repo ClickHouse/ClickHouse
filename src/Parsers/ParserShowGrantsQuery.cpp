@@ -19,7 +19,7 @@ bool ParserShowGrantsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         ASTPtr for_roles_ast;
         ParserRolesOrUsersSet for_roles_p;
-        for_roles_p.allowUserNames().allowRoleNames().allowAll().allowCurrentUser();
+        for_roles_p.allowUsers().allowRoles().allowAll().allowCurrentUser();
         if (!for_roles_p.parse(pos, for_roles_ast, expected))
             return false;
 

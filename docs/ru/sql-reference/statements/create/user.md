@@ -1,6 +1,6 @@
 ---
 toc_priority: 39
-toc_title: "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c"
+toc_title: "Пользователь"
 ---
 
 # CREATE USER {#create-user-statement}
@@ -81,5 +81,4 @@ CREATE USER user DEFAULT ROLE ALL
 CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/user) 
 <!--hide-->

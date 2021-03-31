@@ -78,7 +78,7 @@ public:
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
     {
-        static const UInt32 max_scale = DecimalUtils::maxPrecision<Decimal256>();
+        static const UInt32 max_scale = DecimalUtils::max_precision<Decimal256>;
         if (scale_a > max_scale || scale_b > max_scale)
             throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
 
