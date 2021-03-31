@@ -39,7 +39,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
     extern const int INCORRECT_PART_TYPE;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace DataPartsExchange
