@@ -120,6 +120,12 @@ private:
         return res;
     }
 
+    template <typename T>
+    static inline auto NO_SANITIZE_UNDEFINED negate(T x)
+    {
+        return -x;
+    }
+
     template <typename KeyType, bool is_str_key, typename ValType>
     ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypeTuple & res_type) const
     {
@@ -159,14 +165,14 @@ private:
                     if constexpr (is_str_key)
                     {
                         // have to use Field structs to get strings
-                        key = arg.key_column.operator[](offset + j).get<KeyType>();
+                        key = arg.key_column[offset + j].get<KeyType>();
                     }
                     else
                     {
                         key = assert_cast<const ColumnVector<KeyType> &>(arg.key_column).getData()[offset + j];
                     }
 
-                    auto value = arg.val_column.operator[](offset + j).get<ValType>();
+                    ValType value = arg.val_column[offset + j].get<ValType>();
 
                     if constexpr (op_type == OpTypes::ADD)
                     {
@@ -177,7 +183,7 @@ private:
                     else
                     {
                         static_assert(op_type == OpTypes::SUBTRACT);
-                        const auto [it, inserted] = summing_map.insert({key, first ? value : -value});
+                        const auto [it, inserted] = summing_map.insert({key, first ? value : negate(value)});
                         if (!inserted)
                             it->second -= value;
                     }
