@@ -760,30 +760,29 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto dictionary_name_argument_column = arguments[0];
-        auto keys_argument_column = arguments[2];
+        /** We call dictHas function to get which map is key presented in dictionary.
+            For key that presented in dictionary dict has result for that key index value will be 1. Otherwise 0.
+            We invert result, and then for key that is not presented in dictionary value will be 1. Otherwise 0.
+            This inverted result will be used as null column map.
+            After that we call dict get function, by contract for key that are not presented in dictionary we
+            return default value.
+            We create nullable column from dict get result column and null column map.
 
-        ColumnsWithTypeAndName dict_has_arguments;
-        dict_has_arguments.reserve(arguments.size() - 1);
+            2 additional implementation details:
+            1. Result from dict get can be tuple if client requested multiple attributes we apply such operation on each result column.
+            2. If column is already nullable we merge column null map with null map that we get from dict has.
+          */
 
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            if (i == 1)
-                continue;
-
-            dict_has_arguments.emplace_back(arguments[i]);
-        }
-
+        auto dict_has_arguments = filterAttributesForDictHas(arguments);
         auto is_key_in_dictionary_column = dictionary_has_func_impl.executeImpl(dict_has_arguments, std::make_shared<DataTypeUInt8>(), input_rows_count);
         auto is_key_in_dictionary_column_mutable = is_key_in_dictionary_column->assumeMutable();
         ColumnVector<UInt8> & is_key_in_dictionary_column_typed = assert_cast<ColumnVector<UInt8> &>(*is_key_in_dictionary_column_mutable);
-        auto & is_key_in_dictionary_data = is_key_in_dictionary_column_typed.getData();
+        PaddedPODArray<UInt8> & is_key_in_dictionary_data = is_key_in_dictionary_column_typed.getData();
+        for (auto & key : is_key_in_dictionary_data)
+            key = !key;
 
         auto result_type = dictionary_get_func_impl.getReturnTypeImpl(arguments);
         auto dictionary_get_result_column = dictionary_get_func_impl.executeImpl(arguments, result_type, input_rows_count);
-
-        for (auto & key : is_key_in_dictionary_data)
-            key = !key;
 
         ColumnPtr result;
 
@@ -838,6 +837,22 @@ private:
 
         for (size_t i = 0; i < null_map.size(); ++i)
             null_map[i] = null_map[i] || null_map_to_add[i];
+    }
+
+    static ColumnsWithTypeAndName filterAttributesForDictHas(const ColumnsWithTypeAndName & arguments)
+    {
+        ColumnsWithTypeAndName dict_has_arguments;
+        dict_has_arguments.reserve(arguments.size() - 1);
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (i == 1)
+                continue;
+
+            dict_has_arguments.emplace_back(arguments[i]);
+        }
+
+        return dict_has_arguments;
     }
 
     const FunctionDictGetNoType<DictionaryGetFunctionType::get> dictionary_get_func_impl;
