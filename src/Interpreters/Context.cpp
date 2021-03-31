@@ -2581,6 +2581,21 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
     return metadata_transaction;
 }
 
+void Context::setCurrentTransaction(MergeTreeTransactionPtr txn)
+{
+    assert(!merge_tree_transaction || !txn);
+    assert(this == session_context || this == query_context);
+    int enable_mvcc_test_helper = getConfigRef().getInt("_enable_mvcc_test_helper_dev", 0);
+    if (enable_mvcc_test_helper != 42)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported");
+    merge_tree_transaction = std::move(txn);
+}
+
+MergeTreeTransactionPtr Context::getCurrentTransaction() const
+{
+    return merge_tree_transaction;
+}
+
 PartUUIDsPtr Context::getPartUUIDs()
 {
     auto lock = getLock();

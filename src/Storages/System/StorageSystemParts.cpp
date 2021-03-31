@@ -12,6 +12,7 @@
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Common/hex.h>
+#include <Common/TransactionMetadata.h>
 
 namespace DB
 {
@@ -75,7 +76,12 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 
         {"rows_where_ttl_info.expression",              std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"rows_where_ttl_info.min",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
-        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())}
+        {"rows_where_ttl_info.max",                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>())},
+
+        {"mintid",                                      TransactionID::getDataType()},
+        {"maxtid",                                      TransactionID::getDataType()},
+        {"mincsn",                                      std::make_shared<DataTypeUInt64>()},
+        {"maxcsn",                                      std::make_shared<DataTypeUInt64>()},
     }
     )
 {
@@ -257,6 +263,20 @@ void StorageSystemParts::processNextStorage(
         /// Do not use part->getState*, it can be changed from different thread
         if (has_state_column)
             columns[res_index++]->insert(IMergeTreeDataPart::stateToString(part_state));
+
+        auto get_tid_as_field = [](const TransactionID & tid) -> Field
+        {
+            return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
+        };
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(get_tid_as_field(part->versions.mintid));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(get_tid_as_field(part->versions.maxtid));
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->versions.mincsn);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->versions.maxcsn);
     }
 }
 

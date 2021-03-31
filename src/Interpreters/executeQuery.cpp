@@ -50,6 +50,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -265,6 +266,9 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     elem.log_comment = settings.log_comment;
     if (elem.log_comment.size() > settings.max_query_size)
         elem.log_comment.resize(settings.max_query_size);
+
+    if (auto txn = context.getCurrentTransaction())
+        elem.tid = txn->tid;
 
     if (settings.calculate_text_stack_trace)
         setExceptionStackTrace(elem);
@@ -633,6 +637,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
             elem.client_info = context.getClientInfo();
+
+            if (auto txn = context.getCurrentTransaction())
+                elem.tid = txn->tid;
 
             bool log_queries = settings.log_queries && !internal;
 

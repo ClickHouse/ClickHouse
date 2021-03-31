@@ -993,6 +993,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         {
             (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
             modifyPartState(it, DataPartState::Outdated);
+            (*it)->versions.maxtid = Tx::PrehistoricTID;
+            (*it)->versions.maxcsn = Tx::PrehistoricCSN;
             removePartContributionToDataVolume(*it);
         };
 
@@ -1000,6 +1002,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         while (curr_jt != data_parts_by_state_and_info.end() && (*curr_jt)->getState() == DataPartState::Committed)
         {
+            /// We do not have version metadata and transactions history for old parts,
+            /// so let's consider that such parts were created by some ancient transaction
+            /// and were committed with some prehistoric CSN.
+            /// TODO Transactions: distinguish "prehistoric" parts from uncommitted parts in case of hard restart
+            (*curr_jt)->versions.mintid = Tx::PrehistoricTID;
+            (*curr_jt)->versions.mincsn = Tx::PrehistoricCSN;
+            (*curr_jt)->versions.maybe_visible = true;
+
             /// Don't consider data parts belonging to different partitions.
             if ((*curr_jt)->info.partition_id != (*prev_jt)->info.partition_id)
             {
@@ -1029,7 +1039,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     }
 
     calculateColumnSizesImpl();
-
 
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
 }

@@ -2,6 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
+#include <Common/TransactionMetadata.h>
 
 
 namespace ProfileEvents
@@ -79,6 +80,8 @@ struct QueryLogElement
     std::vector<UInt64> thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
+
+    TransactionID tid;
 
     static std::string name() { return "QueryLog"; }
 
