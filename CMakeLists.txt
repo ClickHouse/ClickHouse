@@ -248,19 +248,27 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (COMPILER_GCC OR COMPILER_CLANG)
-    # to make numeric_limits<__int128> works with GCC
-    set (_CXX_STANDARD "gnu++2a")
-else()
-    set (_CXX_STANDARD "c++2a")
-endif()
+if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
+    # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
+    # We will add C++ standard controlling flag in CMAKE_CXX_FLAGS manually for now.
 
-# cmake < 3.12 doesn't support 20. We'll set CMAKE_CXX_FLAGS for now
-# set (CMAKE_CXX_STANDARD 20)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=${_CXX_STANDARD}")
+    if (COMPILER_GCC OR COMPILER_CLANG)
+        # to make numeric_limits<__int128> works with GCC
+        set (_CXX_STANDARD "gnu++2a")
+    else ()
+        set (_CXX_STANDARD "c++2a")
+    endif ()
 
-set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
-set (CMAKE_CXX_STANDARD_REQUIRED ON)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=${_CXX_STANDARD}")
+else ()
+    set (CMAKE_CXX_STANDARD 20)
+    set (CMAKE_CXX_EXTENSIONS ON) # Same as gnu++2a (ON) vs c++2a (OFF): https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html
+    set (CMAKE_CXX_STANDARD_REQUIRED ON)
+endif ()
+
+set (CMAKE_C_STANDARD 11)
+set (CMAKE_C_EXTENSIONS ON)
+set (CMAKE_C_STANDARD_REQUIRED ON)
 
 if (COMPILER_GCC OR COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
