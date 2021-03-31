@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
     extern const int INCORRECT_PART_TYPE;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DataPartsExchange
@@ -542,6 +543,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
 
     static const String TMP_PREFIX = "tmp_fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+
+    /// We will remove directory if it's already exists. Make precautions.
+    if (tmp_prefix.empty()
+        || part_name.empty()
+        || std::string::npos != tmp_prefix.find_first_of("/.")
+        || std::string::npos != part_name.find_first_of("/."))
+        throw Exception("Logical error: tmp_prefix and part_name cannot be empty or contain '.' or '/' characters.", ErrorCodes::LOGICAL_ERROR);
 
     String part_relative_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
     String part_download_path = data.getRelativeDataPath() + part_relative_path + "/";
