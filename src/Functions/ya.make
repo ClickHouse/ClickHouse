@@ -210,7 +210,7 @@ SRCS(
     cbrt.cpp
     coalesce.cpp
     concat.cpp
-    connectionID.cpp
+    connectionId.cpp
     convertCharset.cpp
     cos.cpp
     cosh.cpp
@@ -373,7 +373,7 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
-    partitionID.cpp
+    partitionId.cpp
     pi.cpp
     plus.cpp
     pointInEllipses.cpp
