@@ -25,6 +25,8 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Processors/Pipe.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <optional>
 
 namespace CurrentMetrics
@@ -198,7 +200,9 @@ Pipe StorageMergeTree::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
@@ -208,18 +212,8 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
-    if (partition_pruner.isUseless())
-        return {};
-    size_t res = 0;
-    auto lock = lockParts();
-    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
-    {
-        if (!partition_pruner.canBePruned(part))
-            res += part->rows_count;
-    }
-    return res;
+    auto parts = getDataPartsVector({DataPartState::Committed});
+    return totalRowsByPartitionPredicateImpl(query_info, context, parts);
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
@@ -1385,7 +1379,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             DataPartsLock lock(mutex);
 
             for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, &increment, &transaction, lock);
+                dest_table_storage->renameTempPartAndReplace(part, &dest_table_storage->increment, &transaction, lock);
 
             removePartsFromWorkingSet(src_parts, true, lock);
             transaction.commit(&lock);

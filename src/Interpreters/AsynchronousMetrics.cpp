@@ -12,6 +12,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <IO/UncompressedCache.h>
+#include <IO/MMappedFileCache.h>
 #include <Databases/IDatabase.h>
 #include <chrono>
 
@@ -186,9 +187,16 @@ void AsynchronousMetrics::update()
         }
     }
 
+    {
+        if (auto mmap_cache = global_context.getMMappedFileCache())
+        {
+            new_values["MMapCacheCells"] = mmap_cache->count();
+        }
+    }
+
 #if USE_EMBEDDED_COMPILER
     {
-        if (auto compiled_expression_cache = global_context.getCompiledExpressionCache())
+        if (auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
             new_values["CompiledExpressionCacheCount"]  = compiled_expression_cache->count();
     }
 #endif
