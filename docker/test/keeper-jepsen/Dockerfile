@@ -17,13 +17,12 @@ ENV TIME_LIMIT="30"
 # volumes
 ENV NODES_FILE_PATH="/nodes.txt"
 ENV TEST_OUTPUT="/test_output"
-ENV SSH_KEY_PATH="/root/.ssh/id_rsa"
 
 RUN mkdir "/root/.ssh"
 RUN touch "/root/.ssh/known_hosts"
 
 # install java
-RUN apt-get update && apt-get install default-jre default-jdk ssh gnuplot graphviz --yes --no-install-recommends
+RUN apt-get update && apt-get install default-jre default-jdk libjna-java libjna-jni ssh gnuplot graphviz --yes --no-install-recommends
 
 # install clojure
 RUN curl -O "https://download.clojure.org/install/linux-install-${CLOJURE_VERSION}.sh" && \
