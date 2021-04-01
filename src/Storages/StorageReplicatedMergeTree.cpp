@@ -1355,8 +1355,6 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     const MergeTreePartInfo actual_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     const String part_new_name = actual_part_info.getPartName();
 
-    LOG_TRACE(log, "Trying to attach part {}, checksum {}", part_new_name, entry.part_checksum);
-
     for (const DiskPtr & disk : getStoragePolicy()->getDisks())
         for (const auto it = disk->iterateDirectory(relative_data_path + "detached/"); it->isValid(); it->next())
         {
@@ -1370,7 +1368,9 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             const String part_path = "detached/" + part_old_name;
 
             const VolumePtr volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
-            MergeTreeData::MutableDataPartPtr part = createPart(part_new_name, part_info, volume, part_path);
+
+            /// actual_part_info is more recent than part_info so we use it
+            MergeTreeData::MutableDataPartPtr part = createPart(part_new_name, actual_part_info, volume, part_path);
 
             try
             {
@@ -1438,7 +1438,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             Transaction transaction(*this);
 
-            renameTempPartAndAdd(part, nullptr, &transaction);
+            renameTempPartAndReplace(part, nullptr, &transaction);
             checkPartChecksumsAndCommit(transaction, part);
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
