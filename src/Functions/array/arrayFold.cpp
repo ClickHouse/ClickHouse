@@ -157,7 +157,7 @@ public:
                 auto lambda_result = replicated_column_function->reduce().column;
                 if (lambda_result->lowCardinality())
                     lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
-                res = lambda_result->empty() ? lambda_result : lambda_result->cut(0, 1); // TODO recheck this
+                res = lambda_result->cut(0, 1);
                 accumulator.column = res;
             }
             result->insert((*res)[0]);
