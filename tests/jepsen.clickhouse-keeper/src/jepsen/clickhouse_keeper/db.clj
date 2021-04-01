@@ -90,6 +90,14 @@
   (c/exec :echo (slurp (io/resource "listen.xml")) :> (str sub-configs-dir "/listen.xml"))
   (c/exec :echo (cluster-config test node (slurp (io/resource "keeper_config.xml"))) :> (str sub-configs-dir "/keeper_config.xml")))
 
+(defn collect-traces
+  [test node]
+  (let [pid (c/exec :cat pid-file-path)]
+    (info "Executing gdb on pid" pid)
+    (c/exec :gdb :-ex "set pagination off" :-ex "set logging file " (str common-prefix "/gdb.log") :-ex
+            "set logging on" :-ex "backtrace" :-ex "thread apply all backtrace"
+            :-ex "backtrace" :--pid pid)))
+
 (defn db
   [version reuse-binary]
   (reify db/DB
@@ -110,19 +118,28 @@
 
     (teardown! [_ test node]
       (info node "Tearing down clickhouse")
-      (kill-clickhouse! node test)
       (c/su
+       (kill-clickhouse! node test)
        (if (not reuse-binary)
          (c/exec :rm :-rf binary-path))
        (c/exec :rm :-rf pid-file-path)
        (c/exec :rm :-rf data-dir)
-       ;(c/exec :rm :-rf logs-dir)
+       (c/exec :rm :-rf logs-dir)
        (c/exec :rm :-rf configs-dir)))
 
     db/LogFiles
     (log-files [_ test node]
       (c/su
+       (if (cu/exists? pid-file-path)
+         (do
+          (info node "Collecting traces")
+          (collect-traces test node))
+         (info node "Pid files doesn't exists"))
        (kill-clickhouse! node test)
        (c/cd data-dir
              (c/exec :tar :czf "coordination.tar.gz" "coordination")))
-      [stderr-file (str logs-dir "/clickhouse-server.log") (str data-dir "/coordination.tar.gz")])))
+      (let [common-logs [stderr-file (str logs-dir "/clickhouse-server.log") (str data-dir "/coordination.tar.gz")]
+            gdb-log (str common-prefix "/gdb.log")]
+        (if (cu/exists? (str common-prefix "/gdb.log"))
+          (conj common-logs gdb-log)
+          common-logs)))))
