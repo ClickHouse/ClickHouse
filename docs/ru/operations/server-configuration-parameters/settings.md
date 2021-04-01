@@ -519,7 +519,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
 
-Определяет минимальное количество меток, которое считает запрос, для применения настройки [max_concurrent_queries](#max-concurrent-queries).
+Определяет минимальное количество засечек, считываемых запросом для применения настройки [max_concurrent_queries](#max-concurrent-queries).
 
 Возможные значения:
 
