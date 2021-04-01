@@ -1,4 +1,4 @@
-if (NOT ARCH_ARM)
+if (NOT ARCH_ARM AND NOT ARCH_PPC64LE)
     option (ENABLE_CPUID "Enable libcpuid library (only internal)" ${ENABLE_LIBRARIES})
 endif()
 

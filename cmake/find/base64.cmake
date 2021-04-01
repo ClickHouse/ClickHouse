@@ -1,4 +1,8 @@
-option (ENABLE_BASE64 "Enable base64" ${ENABLE_LIBRARIES})
+if(NOT ARCH_PPC64LE)
+    option (ENABLE_BASE64 "Enable base64" ${ENABLE_LIBRARIES})
+elseif(ENABLE_BASE64)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "base64 library is not supported on PowerPC")
+endif()
 
 if (NOT ENABLE_BASE64)
     return()
