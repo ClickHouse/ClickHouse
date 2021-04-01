@@ -1295,7 +1295,7 @@ protected:
         AggregateFunctionInstructions & instructions,
         NestedColumnsHolder & nested_columns_holder);
 
-    void addToAggregateColumnsWithSingleKey(
+    void addSingleKeyToAggregateColumns(
         const AggregatedDataVariants & data_variants,
         MutableColumns & aggregate_columns);
 
