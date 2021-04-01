@@ -82,7 +82,7 @@ fi
 if [ "${CCACHE_DEBUG:-}" == "1" ]
 then
     find . -name '*.ccache-*' -print0 \
-        | tar -c -I pixz -f /output/ccache-debug.txz -null -T -
+        | tar -c -I pixz -f /output/ccache-debug.txz --null -T -
 fi
 
 if [ -n "$CCACHE_LOGFILE" ]
