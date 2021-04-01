@@ -93,9 +93,9 @@
 (defn collect-traces
   [test node]
   (let [pid (c/exec :pidof "clickhouse")]
-    (c/exec :gdb :-ex "set pagination off" :-ex (str "set logging file " logs-dir "/gdb.log") :-ex
+    (c/exec :timeout :-s "KILL" "60" :gdb :-ex "set pagination off" :-ex (str "set logging file " logs-dir "/gdb.log") :-ex
             "set logging on" :-ex "backtrace" :-ex "thread apply all backtrace"
-            :-ex "backtrace" :-ex "detach" :-ex "quit" :--pid pid)))
+            :-ex "backtrace" :-ex "detach" :-ex "quit" :--pid pid :|| :true)))
 
 (defn db
   [version reuse-binary]
