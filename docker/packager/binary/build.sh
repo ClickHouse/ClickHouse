@@ -74,7 +74,7 @@ then
     cp ../programs/server/config.xml /output/config
     cp ../programs/server/users.xml /output/config
     cp -r --dereference ../programs/server/config.d /output/config
-    tar -czvf -I pixz "$COMBINED_OUTPUT.tgz" /output
+    tar -czv -I pixz -f "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output
 fi
@@ -82,13 +82,13 @@ fi
 if [ "${CCACHE_DEBUG:-}" == "1" ]
 then
     find . -name '*.ccache-*' -print0 \
-        | tar -czf -I pixz /output/ccache-debug.tgz -null -T -
+        | tar -cz -I pixz -f /output/ccache-debug.tgz -null -T -
 fi
 
 if [ -n "$CCACHE_LOGFILE" ]
 then
     # Compress the log as well, or else the CI will try to compress all log
     # files in place, and will fail because this directory is not writable.
-    tar -czvf -I pixz /output/ccache.log.tgz "$CCACHE_LOGFILE"
+    tar -czv -I pixz -f /output/ccache.log.tgz "$CCACHE_LOGFILE"
 fi
 
