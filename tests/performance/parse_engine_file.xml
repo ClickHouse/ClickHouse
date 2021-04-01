@@ -22,6 +22,9 @@
             <value>Native</value>
             <value>Avro</value>
             <value>MsgPack</value>
+            <value>Parquet</value>
+            <value>Arrow</value>
+            <value>ORC</value>
         </values>
     </substitution>
 </substitutions>
@@ -31,6 +34,8 @@
 <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits LIMIT 100000</fill_query>
 
 <query short="'{format}' == 'Native'">SELECT * FROM table_{format} FORMAT Null</query>
+
+<query>SELECT ClientEventTime, MobilePhoneModel, ClientIP6 FROM table_{format} FORMAT Null</query>
 
 <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
 
