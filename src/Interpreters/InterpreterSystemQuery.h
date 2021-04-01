@@ -50,7 +50,13 @@ private:
 
     void restartReplicas(Context & system_context);
     void syncReplica(ASTSystemQuery & query);
+
+    /// Moves all active parts from old_table_name to new_table_name detached/ folder
+    Strings movePartsToNewTableDetachedFolder(
+        const String& db_name, const String& old_table_name, const String& new_table_name);
+
     void restoreReplica();
+
     void dropReplica(ASTSystemQuery & query);
     bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);
     void flushDistributed(ASTSystemQuery & query);

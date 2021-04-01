@@ -56,6 +56,7 @@
 #include <algorithm>
 #include <memory>
 #include <filesystem>
+#include <system_error>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -424,6 +425,60 @@ BlockIO InterpreterSystemQuery::execute()
     return BlockIO();
 }
 
+
+Strings InterpreterSystemQuery::movePartsToNewTableDetachedFolder(
+    const String& db_name, const String& old_table_name, const String& new_table_name)
+{
+    Strings parts_names;
+
+    auto new_table_ptr = DatabaseCatalog::instance().getTable({db_name, new_table_name}, context);
+    auto& storage = *static_cast<StorageReplicatedMergeTree*>(new_table_ptr.get());
+
+    BlockIO table_parts = executeQuery(fmt::format(
+        "SELECT name, path, bytes FROM system.parts WHERE database = '{}' AND table = '{}' AND active",
+            db_name, old_table_name),
+        context, true);
+
+    PullingPipelineExecutor parts_executor(table_parts.pipeline);
+
+    const size_t name_index = parts_executor.getHeader().getPositionByName("name");
+    const size_t path_index = parts_executor.getHeader().getPositionByName("path");
+    const size_t bytes_index = parts_executor.getHeader().getPositionByName("bytes");
+
+    Chunk data_chunk{};
+
+    while (parts_executor.pull(data_chunk))
+    {
+        const auto& parts_names_col = *checkAndGetColumn<ColumnString>(data_chunk.getColumns()[name_index].get());
+        const auto& parts_paths_col = *checkAndGetColumn<ColumnString>(data_chunk.getColumns()[path_index].get());
+        const auto& parts_sizes_col = *checkAndGetColumn<ColumnUInt64>(data_chunk.getColumns()[bytes_index].get());
+
+        parts_names.reserve(parts_names.size() + parts_names_col.size());
+
+        for (size_t i = 0; i < parts_names_col.size(); ++i)
+        {
+            const StringRef part_name = parts_names_col.getDataAt(i);
+            const StringRef part_path = parts_paths_col.getDataAt(i);
+            const UInt64 part_size = parts_sizes_col.getUInt(i);
+
+            const ReservationPtr reservation = storage.reserveSpace(part_size);
+            const String part_target_path = reservation->getDisk()->getPath() + "detached/" + part_path.toString();
+
+            std::error_code error;
+            std::filesystem::rename(part_path.toString(), part_target_path, error);
+
+            if (error)
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Error moving part from {} to {}: {}",
+                    part_path.toString(), part_target_path, error.message());
+
+            parts_names.emplace_back(part_name.data, part_name.size);
+            LOG_TRACE(log, "Moved part {} from {} to {}", part_name.toString(), part_path.toString(), part_target_path);
+        }
+    }
+
+    return parts_names;
+}
+
 void InterpreterSystemQuery::restoreReplica()
 {
     context.checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
@@ -484,56 +539,18 @@ void InterpreterSystemQuery::restoreReplica()
     executeQuery(fmt::format("SYSTEM STOP FETCHES {}.{}", db_name, old_table_name), context, true);
     LOG_DEBUG(log, "Stopped replica fetches for {}.{}", db_name, old_table_name);
 
-    /// 3.0 Move all old table parts to the detached/ folder of the new table.
-
-    Strings parts_names;
-
-    BlockIO table_parts = executeQuery(
-        fmt::format("SELECT name, path FROM system.parts WHERE database = '{}' AND table = '{}' AND active",
-            db_name, old_table_name),
-        context, true);
-
-    PullingPipelineExecutor parts_executor(table_parts.pipeline);
-    const size_t name_index = parts_executor.getHeader().getPositionByName("name");
-    const size_t path_index = parts_executor.getHeader().getPositionByName("path");
-
-    Chunk partition_ids_chunk{};
-
-    while (parts_executor.pull(partition_ids_chunk))
-    {
-        const ColumnString& parts_names_col = *checkAndGetColumn<ColumnString>(
-            partition_ids_chunk.getColumns()[name_index].get());
-
-        const ColumnString& parts_paths_col = *checkAndGetColumn<ColumnString>(
-            partition_ids_chunk.getColumns()[path_index].get());
-
-        assert(parts_names_col.size() == parts_paths_col.size()); // not sure if it's the invariant TODO.
-
-        parts_names.reserve(parts_names.size() + parts_names_col.size());
-
-        for (size_t i = 0; i < parts_names_col.size(); ++i)
-        {
-            const StringRef part_name_ref = parts_names_col.getDataAt(i);
-            const StringRef part_path_ref = parts_paths_col.getDataAt(i);
-
-            parts_names.emplace_back(part_name_ref.data, part_name_ref.size);
-
-            // TODO to what places should we move the part? The table may have multiple disks/storage paths
-        }
-    }
-
-    /// 3.1 Execute ALTER ... ATTACH to register parts in new table and send data to ZooKeeper.
+    /// 3.0 Execute ALTER ... ATTACH to register parts in new table and send data to ZooKeeper.
+    const Strings parts_names = movePartsToNewTableDetachedFolder(db_name, old_table_name, new_table_name);
 
     for (const String& part_name : parts_names)
     {
-        executeQuery(fmt::format("ALTER TABLE {}.{} ATTACH PARTITION {}", db_name, old_table_name, part_name),
+        executeQuery(fmt::format("ALTER TABLE {}.{} ATTACH PART {}", db_name, new_table_name, part_name),
             context, true);
 
-        LOG_TRACE(log, "Moved partition {0} from {1}.{2} to {1}.{3}",
-            part_name, db_name, old_table_name, new_table_name);
+        LOG_TRACE(log, "Attached part {0}", part_name);
     }
 
-    LOG_DEBUG(log, "Moved all parts from {0}.{1} to {0}.{2}", db_name, old_table_name, new_table_name);
+    LOG_DEBUG(log, "Moved and attached all parts from {0}.{1} to {0}.{2}", db_name, old_table_name, new_table_name);
 
     /// 4. Rename tables (RENAME TABLE new TO old, old TO new).
     executeQuery(

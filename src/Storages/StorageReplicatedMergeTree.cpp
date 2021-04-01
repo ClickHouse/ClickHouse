@@ -146,10 +146,6 @@ static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
-
-std::atomic_uint StorageReplicatedMergeTree::total_fetches {0};
-
-
 void StorageReplicatedMergeTree::setZooKeeper()
 {
     /// Every ReplicatedMergeTree table is using only one ZooKeeper session.

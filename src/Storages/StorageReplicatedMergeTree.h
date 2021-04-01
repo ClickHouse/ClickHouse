@@ -312,7 +312,7 @@ private:
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
     /// Limiting parallel fetches per node
-    static std::atomic_uint total_fetches;
+    static inline std::atomic_uint total_fetches {0};
 
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
