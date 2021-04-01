@@ -57,7 +57,8 @@
     <query>
         SELECT dictGet('default.simple_key_flat_dictionary', {column_name}, number)
         FROM system.numbers
-        LIMIT {elements_count};
+        LIMIT {elements_count}
+        FORMAR Null;
     </query>
 
     <query>
