@@ -1,0 +1,37 @@
+<test>
+
+
+
+    <query>SELECT arrayReduce('count', range(1000000))</query>
+    <query>SELECT arrayReduce('sum', range(1000000))</query>
+    <query>SELECT arrayReduceInRanges('count', [(1, 1000000)], range(1000000))</query>
+    <query>SELECT arrayReduceInRanges('sum', [(1, 1000000)], range(1000000))</query>
+    <query>SELECT arrayReduceInRanges('count', arrayZip(range(1000000), range(1000000)), range(1000000))[123456]</query>
+    <query>SELECT arrayReduceInRanges('sum', arrayZip(range(1000000), range(1000000)), range(1000000))[123456]</query>
+
+    <query>SELECT arrayFold(x, acc -> acc + 1, range(1000000), toUInt64(0))</query> <!-- count -->
+    <query>SELECT arrayFold(x, acc -> acc + x, range(1000000), toUInt64(0))</query> <!-- sum   -->
+    <!-- Next queries is veeeery long! -->
+    <!-- analog for `arrayReduceInRanges('count', ...)` -->
+    <!--
+    <query>
+        SELECT (arrayFold((x, acc) -> (arrayPushBack(acc.1,
+                                                     arrayFold(v, s -> v + 1, arraySlice(acc.2, x.1, x.2), toUInt64(0))),
+                                       acc.2),
+                arrayZip(range(1000000), range(1000000)),
+                (emptyArrayUInt64(), range(1000000))
+        ).1][123456]
+    </query>
+    -->
+    <!-- analog for `arrayReduceInRanges('sum', ...)` -->
+    <!--
+    <query>
+        SELECT (arrayFold((x, acc) -> (arrayPushBack(acc.1,
+                                                     arrayFold(v, s -> v + 1, arraySlice(acc.2, x.1, x.2), toUInt64(0))),
+                                       acc.2),
+                arrayZip(range(1000000), range(1000000)),
+                (emptyArrayUInt64(), range(1000000))
+        ).1][123456]
+    </query>
+    -->
+</test>
