@@ -58,10 +58,12 @@ std::unordered_set<std::string> MergeTreeDeduplicationLog::loadSingleLog(const s
 {
     ReadBufferFromFile read_buf(path);
 
+    std::unordered_set<std::string> result;
     while (!read_buf.eof())
     {
         readIntBinary(record_checksum, read_buf);
     }
+    return result;
 }
 
 void MergeTreeDeduplicationLog::rotate()
