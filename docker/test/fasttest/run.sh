@@ -70,7 +70,7 @@ function start_server
         --path "$FASTTEST_DATA"
         --user_files_path "$FASTTEST_DATA/user_files"
         --top_level_domains_path "$FASTTEST_DATA/top_level_domains"
-        --test_keeper_server.log_storage_path "$FASTTEST_DATA/coordination"
+        --keeper_server.log_storage_path "$FASTTEST_DATA/coordination"
     )
     clickhouse-server "${opts[@]}" &>> "$FASTTEST_OUTPUT/server.log" &
     server_pid=$!
@@ -292,6 +292,7 @@ function run_tests
         01318_decrypt                           # Depends on OpenSSL
         01663_aes_msan                          # Depends on OpenSSL
         01667_aes_args_check                    # Depends on OpenSSL
+        01776_decrypt_aead_size_check           # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent

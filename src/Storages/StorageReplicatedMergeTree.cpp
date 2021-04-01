@@ -1747,9 +1747,10 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     if (source_part->name != source_part_name)
     {
-        throw Exception("Part " + source_part_name + " is covered by " + source_part->name
-            + " but should be mutated to " + entry.new_part_name + ". This is a bug.",
-            ErrorCodes::LOGICAL_ERROR);
+        LOG_WARNING(log, "Part " + source_part_name + " is covered by " + source_part->name
+                    + " but should be mutated to " + entry.new_part_name + ". "
+                    + "Possibly the mutation of this part is not needed and will be skipped. This shouldn't happen often.");
+        return false;
     }
 
     /// TODO - some better heuristic?
@@ -2394,7 +2395,8 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         {
             String source_replica_path = zookeeper_path + "/replicas/" + part_desc->replica;
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
-            auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
+            auto timeouts = getFetchPartHTTPTimeouts(global_context);
+
             auto [user, password] = global_context.getInterserverCredentials();
             String interserver_scheme = global_context.getInterserverScheme();
 
@@ -3327,6 +3329,23 @@ void StorageReplicatedMergeTree::exitLeaderElection()
     leader_election = nullptr;
 }
 
+ConnectionTimeouts StorageReplicatedMergeTree::getFetchPartHTTPTimeouts(const Context & context)
+{
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context);
+    auto settings = getSettings();
+
+    if (settings->replicated_fetches_http_connection_timeout.changed)
+        timeouts.connection_timeout = settings->replicated_fetches_http_connection_timeout;
+
+    if (settings->replicated_fetches_http_send_timeout.changed)
+        timeouts.send_timeout = settings->replicated_fetches_http_send_timeout;
+
+    if (settings->replicated_fetches_http_receive_timeout.changed)
+        timeouts.receive_timeout = settings->replicated_fetches_http_receive_timeout;
+
+    return timeouts;
+}
+
 bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, const String & part_name)
 {
     auto zookeeper = getZooKeeper();
@@ -3747,7 +3766,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     else
     {
         address.fromString(zookeeper->get(source_replica_path + "/host"));
-        timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
+        timeouts = getFetchPartHTTPTimeouts(global_context);
+
         user_password = global_context.getInterserverCredentials();
         interserver_scheme = global_context.getInterserverScheme();
 
@@ -4182,17 +4202,9 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & set
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
-    if (partition_pruner.isUseless())
-        return {};
-    size_t res = 0;
-    foreachCommittedParts([&](auto & part)
-    {
-        if (!partition_pruner.canBePruned(part))
-            res += part->rows_count;
-    }, context.getSettingsRef().select_sequential_consistency);
-    return res;
+    DataPartsVector parts;
+    foreachCommittedParts([&](auto & part) { parts.push_back(part); }, context.getSettingsRef().select_sequential_consistency);
+    return totalRowsByPartitionPredicateImpl(query_info, context, parts);
 }
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Settings & settings) const
@@ -5025,7 +5037,7 @@ bool StorageReplicatedMergeTree::waitForTableReplicaToProcessLogEntry(
 
     const auto & stop_waiting = [&]()
     {
-        bool stop_waiting_itself = waiting_itself && is_dropped;
+        bool stop_waiting_itself = waiting_itself && (partial_shutdown_called || is_dropped);
         bool stop_waiting_non_active = !wait_for_non_active && !getZooKeeper()->exists(table_zookeeper_path + "/replicas/" + replica + "/is_active");
         return stop_waiting_itself || stop_waiting_non_active;
     };

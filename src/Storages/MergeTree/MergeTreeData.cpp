@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/localBackup.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
@@ -469,15 +470,19 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
 
     /// Try to find the date column in columns used by the partition key (a common case).
-    bool encountered_date_column = false;
+    /// If there are no - DateTime or DateTime64 would also suffice.
+
+    bool has_date_column = false;
+    bool has_datetime_column = false;
+
     for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
     {
-        if (typeid_cast<const DataTypeDate *>(minmax_idx_columns_types[i].get()))
+        if (isDate(minmax_idx_columns_types[i]))
         {
-            if (!encountered_date_column)
+            if (!has_date_column)
             {
                 minmax_idx_date_column_pos = i;
-                encountered_date_column = true;
+                has_date_column = true;
             }
             else
             {
@@ -486,16 +491,18 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
             }
         }
     }
-    if (!encountered_date_column)
+    if (!has_date_column)
     {
         for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
         {
-            if (typeid_cast<const DataTypeDateTime *>(minmax_idx_columns_types[i].get()))
+            if (isDateTime(minmax_idx_columns_types[i])
+                || isDateTime64(minmax_idx_columns_types[i])
+            )
             {
-                if (!encountered_date_column)
+                if (!has_datetime_column)
                 {
                     minmax_idx_time_column_pos = i;
-                    encountered_date_column = true;
+                    has_datetime_column = true;
                 }
                 else
                 {
@@ -672,6 +679,41 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
     }
 
     /// TODO Checks for Graphite mode.
+}
+
+
+std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
+    const SelectQueryInfo & query_info, const Context & context, const DataPartsVector & parts) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    ASTPtr expression_ast;
+    Block virtual_columns_block = MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns();
+
+    // Generate valid expressions for filtering
+    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, context, virtual_columns_block, expression_ast);
+
+    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
+    if (partition_pruner.isUseless() && !valid)
+        return {};
+
+    std::unordered_set<String> part_values;
+    if (valid && expression_ast)
+    {
+        MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context, expression_ast);
+        part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+        if (part_values.empty())
+            return 0;
+    }
+    // At this point, empty `part_values` means all parts.
+
+    size_t res = 0;
+    for (const auto & part : parts)
+    {
+        if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(part))
+            res += part->rows_count;
+    }
+    return res;
 }
 
 
@@ -1154,6 +1196,11 @@ void MergeTreeData::clearOldPartsFromFilesystem(bool force)
     DataPartsVector parts_to_remove = grabOldParts(force);
     clearPartsFromFilesystem(parts_to_remove);
     removePartsFinally(parts_to_remove);
+
+    /// This is needed to close files to avoid they reside on disk after being deleted.
+    /// NOTE: we can drop files from cache more selectively but this is good enough.
+    if (!parts_to_remove.empty())
+        global_context.dropMMappedFileCache();
 }
 
 void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_remove)

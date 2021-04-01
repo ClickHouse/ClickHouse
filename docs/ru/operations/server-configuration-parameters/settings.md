@@ -481,7 +481,15 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-Максимальное количество одновременно обрабатываемых запросов.
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+
+!!! info "Примечание"
+	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений. 
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
 
 **Пример**
 
@@ -508,6 +516,21 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 **Смотрите также**
 
 -   [max_concurrent_queries](#max-concurrent-queries)
+
+## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
+
+Определяет минимальное количество засечек, считываемых запросом для применения настройки [max_concurrent_queries](#max-concurrent-queries).
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
+
+**Пример**
+
+``` xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```
 
 ## max_connections {#max-connections}
 
@@ -1159,4 +1182,3 @@ ClickHouse использует ZooKeeper для хранения метадан
         </roles>
 </ldap>
 ```
-
