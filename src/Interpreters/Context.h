@@ -500,10 +500,13 @@ public:
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     const ExternalModelsLoader & getExternalModelsLoader() const;
+    const ExternalModelsLoader & getExternalModelsLoaderUnlocked() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     ExternalModelsLoader & getExternalModelsLoader();
     void tryCreateEmbeddedDictionaries() const;
+
+    void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
