@@ -43,20 +43,20 @@ RUN apt-get update \
         clang-tidy-${LLVM_VERSION} \
         cmake \
         curl \
-        lsof \
         expect \
         fakeroot \
-        git \
         gdb \
+        git \
         gperf \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
+        lsof \
         moreutils \
         ninja-build \
         psmisc \
         python3 \
-        python3-pip \
         python3-lxml \
+        python3-pip \
         python3-requests \
         python3-termcolor \
         rename \

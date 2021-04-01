@@ -134,16 +134,19 @@ function clone_root
         if [ "$PULL_REQUEST_NUMBER" != "0" ]; then
             if git fetch --depth 1 origin "+refs/pull/$PULL_REQUEST_NUMBER/merge"; then
                 git checkout FETCH_HEAD
-                echo 'Clonned merge head'
+                echo "Checked out pull/$PULL_REQUEST_NUMBER/merge ($(git rev-parse FETCH_HEAD))"
             else
                 git fetch --depth 1 origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
                 git checkout "$COMMIT_SHA"
-                echo 'Checked out to commit'
+                echo "Checked out nominal SHA $COMMIT_SHA for PR $PULL_REQUEST_NUMBER"
             fi
         else
             if [ -v COMMIT_SHA ]; then
                 git fetch --depth 1 origin "$COMMIT_SHA"
                 git checkout "$COMMIT_SHA"
+                echo "Checked out nominal SHA $COMMIT_SHA for master"
+            else
+                echo  "Using default repository head $(git rev-parse HEAD)"
             fi
         fi
     )
