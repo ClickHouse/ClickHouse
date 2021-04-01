@@ -8,6 +8,9 @@ trap 'kill $(jobs -pr) ||:' EXIT
 # that we can run the "everything else" stage from the cloned source.
 stage=${stage:-}
 
+# Compiler version, normally set by Dockerfile
+export LLVM_VERSION=${LLVM_VERSION:-11}
+
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
 # it being undefined. Also read it as array so that we can pass an empty list
@@ -215,7 +218,7 @@ function run_cmake
 
     (
         cd "$FASTTEST_BUILD"
-        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER=clang++-10 -DCMAKE_C_COMPILER=clang-10 "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
+        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER=clang++-${LLVM_VERSION} -DCMAKE_C_COMPILER=clang-${LLVM_VERSION} "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
     )
 }
 
