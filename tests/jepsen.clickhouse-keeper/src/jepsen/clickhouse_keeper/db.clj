@@ -92,11 +92,10 @@
 
 (defn collect-traces
   [test node]
-  (let [pid (c/exec :cat pid-file-path)]
-    (info "Executing gdb on pid" pid)
-    (c/exec :gdb :-ex "set pagination off" :-ex "set logging file " (str common-prefix "/gdb.log") :-ex
+  (let [pid (c/exec :pidof "clickhouse")]
+    (c/exec :gdb :-ex "set pagination off" :-ex (str "set logging file " logs-dir "/gdb.log") :-ex
             "set logging on" :-ex "backtrace" :-ex "thread apply all backtrace"
-            :-ex "backtrace" :--pid pid)))
+            :-ex "backtrace" :-ex "detach" :-ex "quit" :--pid pid)))
 
 (defn db
   [version reuse-binary]
@@ -139,7 +138,7 @@
        (c/cd data-dir
              (c/exec :tar :czf "coordination.tar.gz" "coordination")))
       (let [common-logs [stderr-file (str logs-dir "/clickhouse-server.log") (str data-dir "/coordination.tar.gz")]
-            gdb-log (str common-prefix "/gdb.log")]
-        (if (cu/exists? (str common-prefix "/gdb.log"))
+            gdb-log (str logs-dir "/gdb.log")]
+        (if (cu/exists? (str logs-dir "/gdb.log"))
           (conj common-logs gdb-log)
           common-logs)))))
