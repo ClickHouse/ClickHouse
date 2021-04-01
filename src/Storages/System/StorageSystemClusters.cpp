@@ -37,7 +37,7 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context
     const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & name_and_database : databases)
     {
-        if (const auto * replicated == typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
+        if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
         {
             // A quick fix for stateless tests with DatabaseReplicated. Its ZK
             // node can be destroyed at any time. If another test lists
