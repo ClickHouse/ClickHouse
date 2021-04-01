@@ -160,6 +160,12 @@ if (NOT EXTERNAL_BOOST_FOUND)
     enable_language(ASM)
     SET(ASM_OPTIONS "-x assembler-with-cpp")
 
+    set (SRCS_CONTEXT
+        ${LIBRARY_DIR}/libs/context/src/dummy.cpp
+        ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
+        ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
+    )
+
     if (SANITIZE AND (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "thread"))
         add_compile_definitions(BOOST_USE_UCONTEXT)
 
@@ -169,39 +175,34 @@ if (NOT EXTERNAL_BOOST_FOUND)
             add_compile_definitions(BOOST_USE_TSAN)
         endif()
 
-        set (SRCS_CONTEXT
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
                 ${LIBRARY_DIR}/libs/context/src/fiber.cpp
                 ${LIBRARY_DIR}/libs/context/src/continuation.cpp
-                ${LIBRARY_DIR}/libs/context/src/dummy.cpp
-                ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
-                ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
         )
-    elseif (ARCH_ARM)
-        set (SRCS_CONTEXT
+    endif()
+    if (ARCH_ARM)
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
             ${LIBRARY_DIR}/libs/context/src/asm/jump_arm64_aapcs_elf_gas.S
             ${LIBRARY_DIR}/libs/context/src/asm/make_arm64_aapcs_elf_gas.S
             ${LIBRARY_DIR}/libs/context/src/asm/ontop_arm64_aapcs_elf_gas.S
-            ${LIBRARY_DIR}/libs/context/src/dummy.cpp
-            ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
-            ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
+        )
+    elseif (ARCH_PPC64LE)
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
+            ${LIBRARY_DIR}/libs/context/src/asm/jump_ppc64_sysv_elf_gas.S
+            ${LIBRARY_DIR}/libs/context/src/asm/make_ppc64_sysv_elf_gas.S
+            ${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc64_sysv_elf_gas.S
         )
     elseif(OS_DARWIN)
-        set (SRCS_CONTEXT
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
             ${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_macho_gas.S
             ${LIBRARY_DIR}/libs/context/src/asm/make_x86_64_sysv_macho_gas.S
             ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_sysv_macho_gas.S
-            ${LIBRARY_DIR}/libs/context/src/dummy.cpp
-            ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
-            ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
         )
     else()
-        set (SRCS_CONTEXT
+        set (SRCS_CONTEXT ${SRCS_CONTEXT}
             ${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_elf_gas.S
             ${LIBRARY_DIR}/libs/context/src/asm/make_x86_64_sysv_elf_gas.S
             ${LIBRARY_DIR}/libs/context/src/asm/ontop_x86_64_sysv_elf_gas.S
-            ${LIBRARY_DIR}/libs/context/src/dummy.cpp
-            ${LIBRARY_DIR}/libs/context/src/execution_context.cpp
-            ${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp
         )
     endif()
 
