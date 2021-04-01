@@ -8,6 +8,7 @@
 
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <Core/Defines.h>
 #include <Core/DecimalFunctions.h>
@@ -35,7 +36,7 @@ template <typename T>
 using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
 
 class Field;
-using FieldVector = std::vector<Field>;
+using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 
 /// Array and Tuple use the same storage type -- FieldVector, but we declare
 /// distinct types for them, so that the caller can choose whether it wants to
@@ -953,3 +954,26 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 String toString(const Field & x);
 
 }
+
+template <>
+struct fmt::formatter<DB::Field>
+{
+    constexpr auto parse(format_parse_context & ctx)
+    {
+        auto it = ctx.begin();
+        auto end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const DB::Field & x, FormatContext & ctx)
+    {
+        return format_to(ctx.out(), "{}", toString(x));
+    }
+};
+

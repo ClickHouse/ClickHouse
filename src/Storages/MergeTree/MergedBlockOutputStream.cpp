@@ -186,7 +186,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation);
-
     rows_count += rows;
 }
 

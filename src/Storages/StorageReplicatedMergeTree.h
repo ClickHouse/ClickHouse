@@ -515,6 +515,8 @@ private:
 
     /// Exchange parts.
 
+    ConnectionTimeouts getFetchPartHTTPTimeouts(const Context & context);
+
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const String & part_name, bool active);
