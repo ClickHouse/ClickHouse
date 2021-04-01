@@ -30,7 +30,8 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
         {"status", std::make_shared<DataTypeEnum8>(getStatusEnumAllPossibleValues())},
         {"origin", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
-        {"key", std::make_shared<DataTypeString>()},
+        {"key.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"key.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"attribute.names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"attribute.types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"bytes_allocated", std::make_shared<DataTypeUInt64>()},
@@ -58,6 +59,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
     for (const auto & load_result : external_dictionaries.getLoadResults())
     {
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
+        DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 
         StorageID dict_id = StorageID::createEmpty();
         if (dict_ptr)
@@ -82,13 +84,22 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         std::exception_ptr last_exception = load_result.exception;
 
         if (dict_ptr)
-        {
             res_columns[i++]->insert(dict_ptr->getTypeName());
+        else
+            res_columns[i++]->insertDefault();
 
-            const auto & dict_struct = dict_ptr->getStructure();
-            res_columns[i++]->insert(dict_struct.getKeyDescription());
-            res_columns[i++]->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.name; }));
-            res_columns[i++]->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.type->getName(); }));
+        res_columns[i++]->insert(ext::map<Array>(dictionary_structure.getKeysNames(), [] (auto & name) { return name; }));
+
+        if (dictionary_structure.id)
+            res_columns[i++]->insert(Array({"UInt64"}));
+        else
+            res_columns[i++]->insert(ext::map<Array>(*dictionary_structure.key, [] (auto & attr) { return attr.type->getName(); }));
+
+        res_columns[i++]->insert(ext::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.name; }));
+        res_columns[i++]->insert(ext::map<Array>(dictionary_structure.attributes, [] (auto & attr) { return attr.type->getName(); }));
+
+        if (dict_ptr)
+        {
             res_columns[i++]->insert(dict_ptr->getBytesAllocated());
             res_columns[i++]->insert(dict_ptr->getQueryCount());
             res_columns[i++]->insert(dict_ptr->getHitRate());
@@ -104,7 +115,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         }
         else
         {
-            for (size_t j = 0; j != 12; ++j) // Number of empty fields if dict_ptr is null
+            for (size_t j = 0; j != 8; ++j) // Number of empty fields if dict_ptr is null
                 res_columns[i++]->insertDefault();
         }
 

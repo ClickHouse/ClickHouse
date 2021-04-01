@@ -30,7 +30,7 @@ public:
     String toString() const;
 
     /// Returns the information about all the access granted.
-    AccessRightsElementsWithOptions getElements() const;
+    AccessRightsElements getElements() const;
 
     /// Grants access on a specified database/table/column.
     /// Does nothing if the specified access has been already granted.
@@ -119,11 +119,14 @@ private:
     template <bool with_grant_option, typename... Args>
     void grantImpl(const AccessFlags & flags, const Args &... args);
 
-    template <bool with_grant_options>
+    template <bool with_grant_option>
     void grantImpl(const AccessRightsElement & element);
 
-    template <bool with_grant_options>
+    template <bool with_grant_option>
     void grantImpl(const AccessRightsElements & elements);
+
+    template <bool with_grant_option>
+    void grantImplHelper(const AccessRightsElement & element);
 
     template <bool grant_option, typename... Args>
     void revokeImpl(const AccessFlags & flags, const Args &... args);
@@ -134,6 +137,9 @@ private:
     template <bool grant_option>
     void revokeImpl(const AccessRightsElements & elements);
 
+    template <bool grant_option>
+    void revokeImplHelper(const AccessRightsElement & element);
+
     template <bool grant_option, typename... Args>
     bool isGrantedImpl(const AccessFlags & flags, const Args &... args) const;
 
@@ -142,6 +148,9 @@ private:
 
     template <bool grant_option>
     bool isGrantedImpl(const AccessRightsElements & elements) const;
+
+    template <bool grant_option>
+    bool isGrantedImplHelper(const AccessRightsElement & element) const;
 
     void logTree() const;
 

@@ -73,6 +73,15 @@ namespace
                 query->settings = user.settings.toASTWithNames(*manager);
         }
 
+        if (user.grantees != RolesOrUsersSet::AllTag{})
+        {
+            if (attach_mode)
+                query->grantees = user.grantees.toAST();
+            else
+                query->grantees = user.grantees.toASTWithNames(*manager);
+            query->grantees->use_keyword_any = true;
+        }
+
         return query;
     }
 
@@ -263,7 +272,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
     const auto & access_control = context.getAccessControlManager();
     context.checkAccess(getRequiredAccess());
-    show_query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
+    show_query.replaceEmptyDatabase(context.getCurrentDatabase());
     std::vector<AccessEntityPtr> entities;
 
     if (show_query.all)
