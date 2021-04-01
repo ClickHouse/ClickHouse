@@ -127,21 +127,22 @@ continue
 
 function clone_root
 {
-    git clone https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
+    git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$FASTTEST_SOURCE" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/clone_log.txt"
 
     (
         cd "$FASTTEST_SOURCE"
         if [ "$PULL_REQUEST_NUMBER" != "0" ]; then
-            if git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/merge"; then
+            if git fetch --depth 1 origin "+refs/pull/$PULL_REQUEST_NUMBER/merge"; then
                 git checkout FETCH_HEAD
                 echo 'Clonned merge head'
             else
-                git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
+                git fetch --depth 1 origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
                 git checkout "$COMMIT_SHA"
                 echo 'Checked out to commit'
             fi
         else
             if [ -v COMMIT_SHA ]; then
+                git fetch --depth 1 origin "$COMMIT_SHA"
                 git checkout "$COMMIT_SHA"
             fi
         fi
@@ -184,7 +185,7 @@ function clone_submodules
         )
 
         git submodule sync
-        git submodule update --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule update --depth 1 --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -218,7 +219,7 @@ function run_cmake
 
     (
         cd "$FASTTEST_BUILD"
-        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER=clang++-${LLVM_VERSION} -DCMAKE_C_COMPILER=clang-${LLVM_VERSION} "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
+        cmake "$FASTTEST_SOURCE" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DCMAKE_C_COMPILER="clang-${LLVM_VERSION}" "${CMAKE_LIBS_CONFIG[@]}" "${FASTTEST_CMAKE_FLAGS[@]}" | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/cmake_log.txt"
     )
 }
 
