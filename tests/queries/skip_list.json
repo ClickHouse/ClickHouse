@@ -118,6 +118,17 @@
         "01148_zookeeper_path_macros_unfolding",
         "01294_system_distributed_on_cluster",
         "01269_create_with_null",
+        "01451_replicated_detach_drop_and_quorum",
+        "01188_attach_table_from_path",
+        "01149_zookeeper_mutation_stuck_after_replace_partition",
+        /// user_files
+        "01721_engine_file_truncate_on_insert",
+        /// Fails due to additional replicas or shards
+        "quorum",
+        "01650_drop_part_and_deduplication_zookeeper",
+        "01532_execute_merges_on_single_replica",
+        "00652_replicated_mutations_default_database_zookeeper",
+        "00620_optimize_on_nonleader_replica_zookeeper",
         /// grep -c
         "01018_ddl_dictionaries_bad_queries",
         "00908_bloom_filter_index",
@@ -136,6 +147,7 @@
         "00626_replace_partition_from_table_zookeeper",
         "00626_replace_partition_from_table",
         "00152_insert_different_granularity",
+        "00054_merge_tree_partitions",
         /// Old syntax is not allowed
         "01062_alter_on_mutataion_zookeeper",
         "00925_zookeeper_empty_replicated_merge_tree_optimize_final",
@@ -151,7 +163,8 @@
         "00083_create_merge_tree_zookeeper",
         "00062_replicated_merge_tree_alter_zookeeper",
         /// Does not support renaming of multiple tables in single query
-        "00634_rename_view"
+        "00634_rename_view",
+        "00140_rename"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
