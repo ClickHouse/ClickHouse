@@ -345,7 +345,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
     }
     else if (const auto * literal = node->as<ASTLiteral>())
     {
-        // Check if it's always true or false.
+        /// Check if it's always true or false.
         if (literal->value.getType() == Field::Types::UInt64 && literal->value.get<UInt64>() == 0)
             return {result};
         else
