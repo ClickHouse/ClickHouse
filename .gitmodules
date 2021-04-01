@@ -223,4 +223,4 @@
 	url = https://github.com/ClickHouse-Extras/NuRaft.git
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
-	url = https://github.com/apache/datasketches-cpp.git
+	url = https://github.com/ClickHouse-Extras/datasketches-cpp.git
