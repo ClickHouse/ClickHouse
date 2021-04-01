@@ -1,5 +1,6 @@
 #include "PostgreSQLReplicaConnection.h"
-#include <Poco/Util/AbstractConfiguration.h>
+#include "PostgreSQLConnection.h"
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -15,8 +16,7 @@ PostgreSQLReplicaConnection::PostgreSQLReplicaConnection(
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         const size_t num_retries_)
-        : log(&Poco::Logger::get("PostgreSQLConnection"))
-        , num_retries(num_retries_)
+        : num_retries(num_retries_)
 {
     auto db = config.getString(config_prefix + ".db", "");
     auto host = config.getString(config_prefix + ".host", "");
@@ -41,33 +41,35 @@ PostgreSQLReplicaConnection::PostgreSQLReplicaConnection(
                 auto replica_user = config.getString(replica_name + ".user", user);
                 auto replica_password = config.getString(replica_name + ".password", password);
 
-                replicas[priority] = std::make_shared<PostgreSQLConnection>(db, replica_host, replica_port, replica_user, replica_password);
+                replicas[priority] = std::make_shared<PostgreSQLConnectionPool>(db, replica_host, replica_port, replica_user, replica_password);
             }
         }
     }
     else
     {
-        replicas[0] = std::make_shared<PostgreSQLConnection>(db, host, port, user, password);
+        replicas[0] = std::make_shared<PostgreSQLConnectionPool>(db, host, port, user, password);
     }
 }
 
 
 PostgreSQLReplicaConnection::PostgreSQLReplicaConnection(const PostgreSQLReplicaConnection & other)
-        : log(&Poco::Logger::get("PostgreSQLConnection"))
-        , replicas(other.replicas)
+        : replicas(other.replicas)
         , num_retries(other.num_retries)
 {
 }
 
 
-PostgreSQLConnection::ConnectionPtr PostgreSQLReplicaConnection::get()
+PostgreSQLConnectionHolderPtr PostgreSQLReplicaConnection::get()
 {
+    std::lock_guard lock(mutex);
+
     for (size_t i = 0; i < num_retries; ++i)
     {
         for (auto & replica : replicas)
         {
-            if (replica.second->tryConnect())
-                return replica.second->conn();
+            auto connection = replica.second->get();
+            if (connection->isConnected())
+                return connection;
         }
     }
 

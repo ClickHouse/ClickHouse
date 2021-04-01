@@ -82,7 +82,7 @@ void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDr
         db->waitDetachedTableNotInUse(uuid_to_wait);
 }
 
-BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
+BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 {
     DatabasePtr database;
     UUID table_to_wait_on = UUIDHelpers::Nil;
@@ -92,7 +92,7 @@ BlockIO InterpreterDropQuery::executeToTable(const ASTDropQuery & query)
     return res;
 }
 
-BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
+BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
@@ -101,7 +101,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
         if (context.tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
         else
-            table_id.database_name = context.getCurrentDatabase();
+            query.database = table_id.database_name = context.getCurrentDatabase();
     }
 
     if (query.temporary)
@@ -133,10 +133,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ASTDropQuery & query, Dat
                                        !is_drop_or_detach_database;
         if (is_replicated_ddl_query)
         {
-            if (query.kind == ASTDropQuery::Kind::Detach && !query.permanently)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "
-                                                             "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA");
-
             if (query.kind == ASTDropQuery::Kind::Detach)
                 context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             else if (query.kind == ASTDropQuery::Kind::Truncate)
@@ -216,7 +212,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     String database_name = context.resolveDatabase(database_name_);
 
     auto ddl_guard = (!no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name) : nullptr);
-
+    query_ptr->as<ASTDropQuery>()->database = database_name;
     DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
     bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();

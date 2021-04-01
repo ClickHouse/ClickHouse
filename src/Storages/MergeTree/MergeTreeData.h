@@ -544,13 +544,6 @@ public:
         const ASTPtr & new_settings,
         TableLockHolder & table_lock_holder);
 
-    /// Freezes all parts.
-    PartitionCommandsResultInfo freezeAll(
-        const String & with_name,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Context & context,
-        TableLockHolder & table_lock_holder);
-
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
     {
@@ -568,8 +561,32 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    PartitionCommandsResultInfo freezePartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
+    PartitionCommandsResultInfo freezePartition(
+        const ASTPtr & partition,
+        const StorageMetadataPtr & metadata_snapshot,
+        const String & with_name,
+        const Context & context,
+        TableLockHolder & table_lock_holder);
 
+    /// Freezes all parts.
+    PartitionCommandsResultInfo freezeAll(
+        const String & with_name,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Context & context,
+        TableLockHolder & table_lock_holder);
+
+    /// Unfreezes particular partition.
+    PartitionCommandsResultInfo unfreezePartition(
+        const ASTPtr & partition,
+        const String & backup_name,
+        const Context & context,
+        TableLockHolder & table_lock_holder);
+
+    /// Unfreezes all parts.
+    PartitionCommandsResultInfo unfreezeAll(
+        const String & backup_name,
+        const Context & context,
+        TableLockHolder & table_lock_holder);
 
 public:
     /// Moves partition to specified Disk
@@ -728,7 +745,7 @@ public:
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
     /// Get partition key expression on required columns
-    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key);
+    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key, const ExpressionActionsSettings & settings);
     /// Get column names required for partition key
     static Names getMinMaxColumnsNames(const KeyDescription & partition_key);
     /// Get column types required for partition key
@@ -876,6 +893,9 @@ protected:
         return {begin, end};
     }
 
+    std::optional<UInt64> totalRowsByPartitionPredicateImpl(
+        const SelectQueryInfo & query_info, const Context & context, const DataPartsVector & parts) const;
+
     static decltype(auto) getStateModifier(DataPartState state)
     {
         return [state] (const DataPartPtr & part) { part->setState(state); };
@@ -939,8 +959,9 @@ protected:
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Common part for |freezePartition()| and |freezeAll()|.
-    using MatcherFn = std::function<bool(const DataPartPtr &)>;
+    using MatcherFn = std::function<bool(const String &)>;
     PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context);
+    PartitionCommandsResultInfo unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, const Context & context);
 
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
@@ -1024,6 +1045,9 @@ private:
     // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
     mutable std::set<String> query_id_set;
     mutable std::mutex query_id_set_mutex;
+
+    // Get partition matcher for FREEZE / UNFREEZE queries.
+    MatcherFn getPartitionMatcher(const ASTPtr & partition, const Context & context) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

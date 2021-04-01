@@ -32,7 +32,14 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (db-generator)
     add_subdirectory (wal-dump)
     add_subdirectory (check-mysql-binlog)
-    add_subdirectory (memcpy-bench)
+
+    if (USE_NURAFT)
+        add_subdirectory (keeper-data-dumper)
+    endif ()
+
+    if (NOT OS_DARWIN)
+        add_subdirectory (memcpy-bench)
+    endif ()
 endif ()
 
 if (ENABLE_CODE_QUALITY)
