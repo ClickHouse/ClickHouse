@@ -34,7 +34,6 @@ endif ()
 target_link_libraries (mysqlxx
     PUBLIC
         common
-        clickhouse_parsers
     PRIVATE
         ${MYSQLCLIENT_LIBRARIES}
         ${ZLIB_LIBRARIES}
