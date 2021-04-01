@@ -41,7 +41,7 @@ struct ReplicatedMergeTreeLogEntryData
         REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
         MUTATE_PART,    /// Apply one or several mutations to the part.
         ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
-            };
+    };
 
     static String typeToString(Type type)
     {
