@@ -214,13 +214,6 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     endif ()
 endif()
 
-# Compress the debug section for binaries
-if (COMPILER_GCC OR COMPILER_CLANG)
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--compress-debug-sections=zlib")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections=zlib")
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -gz=zlib")
-endif ()
-
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
