@@ -26,7 +26,8 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -84,7 +85,7 @@ StorageMaterializedView::StorageMaterializedView(
     else if (attach_)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
-        target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
+        target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()), query.to_inner_uuid);
     }
     else
     {
@@ -93,6 +94,7 @@ StorageMaterializedView::StorageMaterializedView(
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
         manual_create_query->database = getStorageID().database_name;
         manual_create_query->table = generateInnerTableName(getStorageID());
+        manual_create_query->uuid = query.to_inner_uuid;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
@@ -127,7 +129,9 @@ Pipe StorageMaterializedView::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
+    return plan.convertToPipe(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 }
 
 void StorageMaterializedView::read(
@@ -407,32 +411,6 @@ Strings StorageMaterializedView::getDataPaths() const
     if (auto table = tryGetTargetTable())
         return table->getDataPaths();
     return {};
-}
-
-void StorageMaterializedView::checkTableCanBeDropped() const
-{
-    /// Don't drop the target table if it was created manually via 'TO inner_table' statement
-    if (!has_inner_table)
-        return;
-
-    auto target_table = tryGetTargetTable();
-    if (!target_table)
-        return;
-
-    target_table->checkTableCanBeDropped();
-}
-
-void StorageMaterializedView::checkPartitionCanBeDropped(const ASTPtr & partition)
-{
-    /// Don't drop the partition in target table if it was created manually via 'TO inner_table' statement
-    if (!has_inner_table)
-        return;
-
-    auto target_table = tryGetTargetTable();
-    if (!target_table)
-        return;
-
-    target_table->checkPartitionCanBeDropped(partition);
 }
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)

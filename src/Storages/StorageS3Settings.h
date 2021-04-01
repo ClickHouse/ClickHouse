@@ -14,24 +14,32 @@ class AbstractConfiguration;
 
 namespace DB
 {
-
 struct HttpHeader
 {
-    const String name;
-    const String value;
+    String name;
+    String value;
+
+    inline bool operator==(const HttpHeader & other) const { return name == other.name && value == other.value; }
 };
 
 using HeaderCollection = std::vector<HttpHeader>;
 
 struct S3AuthSettings
 {
-    const String access_key_id;
-    const String secret_access_key;
-    const String server_side_encryption_customer_key_base64;
+    String access_key_id;
+    String secret_access_key;
+    String server_side_encryption_customer_key_base64;
 
-    const HeaderCollection headers;
+    HeaderCollection headers;
 
     std::optional<bool> use_environment_credentials;
+
+    inline bool operator==(const S3AuthSettings & other) const
+    {
+        return access_key_id == other.access_key_id && secret_access_key == other.secret_access_key
+            && server_side_encryption_customer_key_base64 == other.server_side_encryption_customer_key_base64 && headers == other.headers
+            && use_environment_credentials == other.use_environment_credentials;
+    }
 };
 
 /// Settings for the StorageS3.

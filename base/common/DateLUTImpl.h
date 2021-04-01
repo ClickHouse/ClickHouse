@@ -63,7 +63,7 @@ private:
     template <typename T>
     friend inline LUTIndex operator+(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() + v) & date_lut_mask};
+        return LUTIndex{(index.toUnderType() + UInt32(v)) & date_lut_mask};
     }
 
     template <typename T>
@@ -80,7 +80,7 @@ private:
     template <typename T>
     friend inline LUTIndex operator-(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() - v) & date_lut_mask};
+        return LUTIndex{(index.toUnderType() - UInt32(v)) & date_lut_mask};
     }
 
     template <typename T>
@@ -97,7 +97,7 @@ private:
     template <typename T>
     friend inline LUTIndex operator*(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() * v) & date_lut_mask};
+        return LUTIndex{(index.toUnderType() * UInt32(v)) & date_lut_mask};
     }
 
     template <typename T>
@@ -109,13 +109,13 @@ private:
     template <typename T>
     friend inline LUTIndex operator/(const LUTIndex & index, const T v)
     {
-        return LUTIndex{(index.toUnderType() / v) & date_lut_mask};
+        return LUTIndex{(index.toUnderType() / UInt32(v)) & date_lut_mask};
     }
 
     template <typename T>
     friend inline LUTIndex operator/(const T v, const LUTIndex & index)
     {
-        return LUTIndex{(v / index.toUnderType()) & date_lut_mask};
+        return LUTIndex{(UInt32(v) / index.toUnderType()) & date_lut_mask};
     }
 
 public:
@@ -807,7 +807,14 @@ public:
             return toFirstDayNumOfYear(v);
 
         const LUTIndex i = toLUTIndex(v);
-        return toDayNum(years_lut[lut[i].year / years * years - DATE_LUT_MIN_YEAR]);
+
+        UInt16 year = lut[i].year / years * years;
+
+        /// For example, rounding down 1925 to 100 years will be 1900, but it's less than min supported year.
+        if (unlikely(year < DATE_LUT_MIN_YEAR))
+            year = DATE_LUT_MIN_YEAR;
+
+        return toDayNum(years_lut[year - DATE_LUT_MIN_YEAR]);
     }
 
     inline ExtendedDayNum toStartOfQuarterInterval(ExtendedDayNum d, UInt64 quarters) const
@@ -846,21 +853,57 @@ public:
     {
         if (hours == 1)
             return toStartOfHour(t);
+
+        /** We will round the hour number since the midnight.
+          * It may split the day into non-equal intervals.
+          * For example, if we will round to 11-hour interval,
+          * the day will be split to the intervals 00:00:00..10:59:59, 11:00:00..21:59:59, 22:00:00..23:59:59.
+          * In case of daylight saving time or other transitions,
+          * the intervals can be shortened or prolonged to the amount of transition.
+          */
+
         UInt64 seconds = hours * 3600;
 
-        t = roundDown(t, seconds);
+        const LUTIndex index = findIndex(t);
+        const Values & values = lut[index];
 
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return t;
+        time_t time = t - values.date;
+        if (time >= values.time_at_offset_change())
+        {
+            /// Align to new hour numbers before rounding.
+            time += values.amount_of_offset_change();
+            time = time / seconds * seconds;
 
-        /// TODO check if it's correct.
-        return toStartOfHour(t);
+            /// Should subtract the shift back but only if rounded time is not before shift.
+            if (time >= values.time_at_offset_change())
+            {
+                time -= values.amount_of_offset_change();
+
+                /// With cutoff at the time of the shift. Otherwise we may end up with something like 23:00 previous day.
+                if (time < values.time_at_offset_change())
+                    time = values.time_at_offset_change();
+            }
+        }
+        else
+        {
+            time = time / seconds * seconds;
+        }
+
+        return values.date + time;
     }
 
     inline time_t toStartOfMinuteInterval(time_t t, UInt64 minutes) const
     {
         if (minutes == 1)
             return toStartOfMinute(t);
+
+        /** In contrast to "toStartOfHourInterval" function above,
+          * the minute intervals are not aligned to the midnight.
+          * You will get unexpected results if for example, you round down to 60 minute interval
+          * and there was a time shift to 30 minutes.
+          *
+          * But this is not specified in docs and can be changed in future.
+          */
 
         UInt64 seconds = 60 * minutes;
         return roundDown(t, seconds);
@@ -906,12 +949,7 @@ public:
         if (time_offset >= lut[index].time_at_offset_change())
             time_offset -= lut[index].amount_of_offset_change();
 
-        UInt32 res = lut[index].date + time_offset;
-
-        if (unlikely(res > DATE_LUT_MAX))
-            return 0;
-
-        return res;
+        return lut[index].date + time_offset;
     }
 
     template <typename DateOrTime>
@@ -942,16 +980,79 @@ public:
     }
 
 
+    struct DateComponents
+    {
+        uint16_t year;
+        uint8_t month;
+        uint8_t day;
+    };
+
+    struct TimeComponents
+    {
+        uint8_t hour;
+        uint8_t minute;
+        uint8_t second;
+    };
+
+    struct DateTimeComponents
+    {
+        DateComponents date;
+        TimeComponents time;
+    };
+
+    inline DateComponents toDateComponents(time_t t) const
+    {
+        const Values & values = getValues(t);
+        return { values.year, values.month, values.day_of_month };
+    }
+
+    inline DateTimeComponents toDateTimeComponents(time_t t) const
+    {
+        const LUTIndex index = findIndex(t);
+        const Values & values = lut[index];
+
+        DateTimeComponents res;
+
+        res.date.year = values.year;
+        res.date.month = values.month;
+        res.date.day = values.day_of_month;
+
+        time_t time = t - values.date;
+        if (time >= values.time_at_offset_change())
+            time += values.amount_of_offset_change();
+
+        if (unlikely(time < 0))
+        {
+            res.time.second = 0;
+            res.time.minute = 0;
+            res.time.hour = 0;
+        }
+        else
+        {
+            res.time.second = time % 60;
+            res.time.minute = time / 60 % 60;
+            res.time.hour = time / 3600;
+        }
+
+        /// In case time was changed backwards at the start of next day, we will repeat the hour 23.
+        if (unlikely(res.time.hour > 23))
+            res.time.hour = 23;
+
+        return res;
+    }
+
+
     inline UInt64 toNumYYYYMMDDhhmmss(time_t t) const
     {
-        const Values & values = find(t);
+        DateTimeComponents components = toDateTimeComponents(t);
+
         return
-              toSecond(t)
-            + toMinute(t) * 100
-            + toHour(t) * 10000
-            + UInt64(values.day_of_month) * 1000000
-            + UInt64(values.month) * 100000000
-            + UInt64(values.year) * 10000000000;
+              components.time.second
+            + components.time.minute * 100
+            + components.time.hour * 10000
+            + UInt64(components.date.day) * 1000000
+            + UInt64(components.date.month) * 100000000
+            + UInt64(components.date.year) * 10000000000;
     }
 
     inline time_t YYYYMMDDhhmmssToTime(UInt64 num) const
@@ -970,16 +1071,19 @@ public:
 
     inline NO_SANITIZE_UNDEFINED time_t addDays(time_t t, Int64 delta) const
     {
-        LUTIndex index = findIndex(t);
-        time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
+        const LUTIndex index = findIndex(t);
+        const Values & values = lut[index];
 
-        index += delta;
-        index &= date_lut_mask;
+        time_t time = t - values.date;
+        if (time >= values.time_at_offset_change())
+            time += values.amount_of_offset_change();
 
-        if (time_offset >= lut[index].time_at_offset_change())
-            time_offset -= lut[index].amount_of_offset_change();
+        const LUTIndex new_index = index + delta;
 
-        return lut[index].date + time_offset;
+        if (time >= lut[new_index].time_at_offset_change())
+            time -= lut[new_index].amount_of_offset_change();
+
+        return lut[new_index].date + time;
     }
 
     inline NO_SANITIZE_UNDEFINED time_t addWeeks(time_t t, Int64 delta) const
@@ -1001,11 +1105,11 @@ public:
     }
 
     template <typename DateOrTime>
-    inline LUTIndex addMonthsIndex(DateOrTime v, Int64 delta) const
+    inline LUTIndex NO_SANITIZE_UNDEFINED addMonthsIndex(DateOrTime v, Int64 delta) const
     {
         const Values & values = lut[toLUTIndex(v)];
 
-        Int64 month = static_cast<Int64>(values.month) + delta;
+        Int64 month = values.month + delta;
 
         if (month > 0)
         {
@@ -1031,12 +1135,17 @@ public:
     {
         const auto result_day = addMonthsIndex(t, delta);
 
-        time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
+        const LUTIndex index = findIndex(t);
+        const Values & values = lut[index];
 
-        if (time_offset >= lut[result_day].time_at_offset_change())
-            time_offset -= lut[result_day].amount_of_offset_change();
+        time_t time = t - values.date;
+        if (time >= values.time_at_offset_change())
+            time += values.amount_of_offset_change();
 
-        return lut[result_day].date + time_offset;
+        if (time >= lut[result_day].time_at_offset_change())
+            time -= lut[result_day].amount_of_offset_change();
+
+        return lut[result_day].date + time;
     }
 
     inline ExtendedDayNum NO_SANITIZE_UNDEFINED addMonths(ExtendedDayNum d, Int64 delta) const
@@ -1075,12 +1184,17 @@ public:
     {
         auto result_day = addYearsIndex(t, delta);
 
-        time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
+        const LUTIndex index = findIndex(t);
+        const Values & values = lut[index];
 
-        if (time_offset >= lut[result_day].time_at_offset_change())
-            time_offset -= lut[result_day].amount_of_offset_change();
+        time_t time = t - values.date;
+        if (time >= values.time_at_offset_change())
+            time += values.amount_of_offset_change();
 
-        return lut[result_day].date + time_offset;
+        if (time >= lut[result_day].time_at_offset_change())
+            time -= lut[result_day].amount_of_offset_change();
+
+        return lut[result_day].date + time;
     }
 
     inline ExtendedDayNum addYears(ExtendedDayNum d, Int64 delta) const
@@ -1091,29 +1205,25 @@ public:
 
     inline std::string timeToString(time_t t) const
     {
-        const Values & values = getValues(t);
+        DateTimeComponents components = toDateTimeComponents(t);
 
         std::string s {"0000-00-00 00:00:00"};
 
-        s[0] += values.year / 1000;
-        s[1] += (values.year / 100) % 10;
-        s[2] += (values.year / 10) % 10;
-        s[3] += values.year % 10;
-        s[5] += values.month / 10;
-        s[6] += values.month % 10;
-        s[8] += values.day_of_month / 10;
-        s[9] += values.day_of_month % 10;
+        s[0] += components.date.year / 1000;
+        s[1] += (components.date.year / 100) % 10;
+        s[2] += (components.date.year / 10) % 10;
+        s[3] += components.date.year % 10;
+        s[5] += components.date.month / 10;
+        s[6] += components.date.month % 10;
+        s[8] += components.date.day / 10;
+        s[9] += components.date.day % 10;
 
-        auto hour = toHour(t);
-        auto minute = toMinute(t);
-        auto second = toSecond(t);
-
-        s[11] += hour / 10;
-        s[12] += hour % 10;
-        s[14] += minute / 10;
-        s[15] += minute % 10;
-        s[17] += second / 10;
-        s[18] += second % 10;
+        s[11] += components.time.hour / 10;
+        s[12] += components.time.hour % 10;
+        s[14] += components.time.minute / 10;
+        s[15] += components.time.minute % 10;
+        s[17] += components.time.second / 10;
+        s[18] += components.time.second % 10;
 
         return s;
     }
