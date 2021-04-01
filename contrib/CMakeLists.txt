@@ -215,15 +215,17 @@ if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
     set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
-    # Yes it is set globally, but this is not enough, since llvm will add -std=c++11 after default
-    # And c++2a cannot be used, due to ambiguous operator !=
-    if (COMPILER_GCC OR COMPILER_CLANG)
-        set (_CXX_STANDARD "gnu++17")
-    else()
-        set (_CXX_STANDARD "c++17")
-    endif()
-    set (LLVM_CXX_STD ${_CXX_STANDARD} CACHE STRING "" FORCE)
+
+    # Need to use C++17 since the compilation is not possible with C++20 currently, due to ambiguous operator != etc.
+    # LLVM project will set its default value for the -std=... but our global setting from CMake will override it.
+    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
+    set (CMAKE_CXX_STANDARD 17)
+
     add_subdirectory (llvm/llvm)
+
+    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
+    unset (CMAKE_CXX_STANDARD_bak)
+
     target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
@@ -280,7 +282,14 @@ if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
 endif()
 if (USE_CASSANDRA)
+    # Need to use C++17 since the compilation is not possible with C++20 currently.
+    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
+    set (CMAKE_CXX_STANDARD 17)
+
     add_subdirectory (cassandra)
+
+    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
+    unset (CMAKE_CXX_STANDARD_bak)
 endif()
 
 # Should go before:
