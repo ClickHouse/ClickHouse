@@ -167,7 +167,8 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
             self.context.parallel = parallel
         for i in range(100):
         # Feature(run=load("rbac.tests.syntax.feature", "feature"))
-            Feature(run=load("rbac.tests.privileges.feature", "feature"))
+            with Example(i):
+                Feature(run=load("rbac.tests.privileges.feature", "feature"))
         # Feature(run=load("rbac.tests.views.feature", "feature"))
 
 if main():
