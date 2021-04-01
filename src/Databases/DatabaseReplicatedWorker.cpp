@@ -125,7 +125,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         });
 
         if (!processed)
-            throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica,"
+            throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica, "
                             "most likely because replica is busy with previous queue entries");
     }
 
