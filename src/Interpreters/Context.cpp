@@ -29,6 +29,7 @@
 #include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControlManager.h>
@@ -338,6 +339,9 @@ struct ContextShared
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
+    ConfigurationPtr external_models_config;
+    ext::scope_guard models_repository_guard;
+
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
     String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
@@ -445,6 +449,7 @@ struct ContextShared
         system_logs.reset();
         embedded_dictionaries.reset();
         external_dictionaries_loader.reset();
+        models_repository_guard.reset();
         external_models_loader.reset();
         buffer_flush_schedule_pool.reset();
         schedule_pool.reset();
@@ -456,7 +461,6 @@ struct ContextShared
         trace_collector.reset();
         /// Stop zookeeper connection
         zookeeper.reset();
-
     }
 
     bool hasTraceCollector() const
@@ -1345,6 +1349,11 @@ ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
 const ExternalModelsLoader & Context::getExternalModelsLoader() const
 {
     std::lock_guard lock(shared->external_models_mutex);
+    return getExternalModelsLoaderUnlocked();
+}
+
+const ExternalModelsLoader & Context::getExternalModelsLoaderUnlocked() const
+{
     if (!shared->external_models_loader)
     {
         if (!this->global_context)
@@ -1358,6 +1367,20 @@ const ExternalModelsLoader & Context::getExternalModelsLoader() const
 ExternalModelsLoader & Context::getExternalModelsLoader()
 {
     return const_cast<ExternalModelsLoader &>(const_cast<const Context *>(this)->getExternalModelsLoader());
+}
+
+
+void Context::setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name)
+{
+    std::lock_guard lock(shared->external_models_mutex);
+
+    if (shared->external_models_config && isSameConfiguration(*config, *shared->external_models_config, config_name))
+        return;
+
+    shared->external_models_config = config;
+    shared->models_repository_guard.reset();
+    shared->models_repository_guard = getExternalModelsLoaderUnlocked().addConfigRepository(
+        std::make_unique<ExternalLoaderXMLConfigRepository>(*config, config_name));
 }
 
 
