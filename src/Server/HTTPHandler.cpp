@@ -472,7 +472,7 @@ void HTTPHandler::processQuery(
 
         session = context->acquireNamedSession(session_id, session_timeout, session_check == "1");
 
-        context = session->context;
+        context->copyFrom(session->context);  /// FIXME: maybe move this part to HandleRequest(), copyFrom() is used only here.
         context->setSessionContext(session->context);
     }
 
@@ -899,6 +899,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         HTMLForm params(request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
+        /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {

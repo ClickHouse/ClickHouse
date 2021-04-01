@@ -508,9 +508,7 @@ SharedContextHolder Context::createShared()
 
 ContextPtr Context::createCopy(const ContextConstPtr & other)
 {
-    auto res = std::shared_ptr<Context>(new Context);
-    *res = *other;
-    return res;
+    return std::shared_ptr<Context>(new Context(*other));
 }
 
 ContextPtr Context::createCopy(const ContextWeakConstPtr & other)
@@ -523,6 +521,11 @@ ContextPtr Context::createCopy(const ContextWeakConstPtr & other)
 ContextPtr Context::createCopy(const ContextPtr & other)
 {
     return createCopy(std::const_pointer_cast<const Context>(other));
+}
+
+void Context::copyFrom(const ContextPtr & other)
+{
+    *this = *other;
 }
 
 Context::~Context() = default;

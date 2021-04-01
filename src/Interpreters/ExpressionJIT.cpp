@@ -304,7 +304,7 @@ public:
     }
 };
 
-static void compileFunctionToLLVMByteCode(LLVMContextPtr context, const IFunctionBaseImpl & f)
+static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunctionBaseImpl & f)
 {
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
