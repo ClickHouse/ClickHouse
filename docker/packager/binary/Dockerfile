@@ -63,6 +63,8 @@ RUN apt-get update \
         ninja-build \
         ocl-icd-libopencl1 \
         opencl-headers \
+        pigz \
+        pixz \
         rename \
         tzdata \
         --yes --no-install-recommends
