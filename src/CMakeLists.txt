@@ -471,6 +471,10 @@ if (USE_LIBPQXX)
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${LIBPQXX_INCLUDE_DIR})
 endif()
 
+if (USE_DATASKETCHES)
+    target_include_directories (clickhouse_aggregate_functions SYSTEM BEFORE PRIVATE ${DATASKETCHES_INCLUDE_DIR})
+endif ()
+
 dbms_target_link_libraries(PRIVATE _boost_context)
 
 include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
