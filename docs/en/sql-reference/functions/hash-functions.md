@@ -440,7 +440,7 @@ SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3)
 
 ``` text
 ┌─MurmurHash3──────┬─type────────────┐
-│ 6�1�4"S5KT�~~q │ FixedString(16) │
+│ 6�1�4"S5KT�~~q | FixedString(16) │
 └──────────────────┴─────────────────┘
 ```
 
