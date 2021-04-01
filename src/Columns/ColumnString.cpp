@@ -536,21 +536,22 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-void ColumnString::getIndicesOfNonDefaultValues(Offsets & indices, size_t, size_t) const
+void ColumnString::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const
 {
-    for (size_t i = 0;  i < offsets.size(); ++i)
+    size_t to = limit && from + limit < size() ? from + limit : size();
+    for (size_t i = from; i < to; ++i)
         if (offsets[i] - offsets[i - 1] > 1)
             indices.push_back(i);
 }
 
-// size_t ColumnString::getNumberOfDefaultRows() const
-// {
-//     size_t res = 0;
-//     for (size_t i = 0; i < offsets.size(); ++i)
-//         res += (offsets[i] - offsets[i - 1] > 1);
+size_t ColumnString::getNumberOfDefaultRows(size_t step) const
+{
+    size_t res = 0;
+    for (size_t i = 0; i < offsets.size(); i += step)
+        res += (offsets[i] == offsets[i - 1] + 1);
 
-//     return res;
-// }
+    return res;
+}
 
 ColumnPtr ColumnString::compress() const
 {

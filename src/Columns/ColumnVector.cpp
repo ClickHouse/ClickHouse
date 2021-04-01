@@ -554,6 +554,19 @@ ColumnPtr ColumnVector<T>::compress() const
         });
 }
 
+template <typename T>
+ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows) const
+{
+    auto res = this->create();
+    auto & res_data = res->getData();
+
+    res_data.resize_fill(total_rows, data[0]);
+    for (size_t i = 0; i < offsets.size(); ++i)
+        res_data[offsets[i]] = data[i + 1];
+
+    return res;
+}
+
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;

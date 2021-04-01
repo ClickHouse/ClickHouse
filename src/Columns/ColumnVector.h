@@ -314,19 +314,7 @@ public:
                 offsets.push_back(i);
     }
 
-    void insertAtOffsetsFrom(const IColumn::Offsets & offsets, const IColumn & values, size_t total_rows_hint) override
-    {
-        const auto & values_data = assert_cast<const Self &>(values).getData();
-
-        ssize_t position = static_cast<ssize_t>(data.size()) - 1;
-        data.resize_fill(data.size() + total_rows_hint);
-
-        for (size_t i = 0; i < offsets.size(); ++i)
-        {
-            position += offsets[i] + 1;
-            data[position] = values_data[i];
-        }
-    }
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows) const override;
 
     size_t getNumberOfDefaultRows(size_t step) const override
     {
