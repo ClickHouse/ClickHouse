@@ -45,8 +45,6 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
     const auto requested_keys = extractor.extractAllKeys();
 
-    Field value;
-
     const DictionaryAttribute & attribute = dict_struct.getAttribute(attribute_name, result_type);
     DefaultValueProvider default_value_provider(attribute.null_value, default_values_column);
 
@@ -54,6 +52,7 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     key_to_fetched_index.reserve(requested_keys.size());
 
     auto fetched_from_storage = attribute.type->createColumn();
+
     size_t fetched_key_index = 0;
     size_t requested_attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
 
@@ -67,14 +66,9 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
 
     while (const auto block = stream->read())
     {
-        auto block_columns = block.getColumns();
-
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
-        {
-            block_key_columns.emplace_back(*block_columns.begin());
-            block_columns.erase(block_columns.begin());
-        }
+            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
 
         DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
         auto block_keys = block_keys_extractor.extractAllKeys();
@@ -85,7 +79,6 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
         for (size_t block_key_index = 0; block_key_index < block_keys.size(); ++block_key_index)
         {
             auto block_key = block_keys[block_key_index];
-
             key_to_fetched_index[block_key] = fetched_key_index;
             ++fetched_key_index;
         }
@@ -98,9 +91,9 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
     Field value_to_insert;
 
     size_t requested_keys_size = requested_keys.size();
+
     auto result = fetched_from_storage->cloneEmpty();
     result->reserve(requested_keys_size);
-
 
     for (size_t requested_key_index = 0; requested_key_index < requested_keys_size; ++requested_key_index)
     {
@@ -153,14 +146,9 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & 
 
     while (const auto block = stream->read())
     {
-        auto block_columns = block.getColumns();
-
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
-        {
-            block_key_columns.emplace_back(*block_columns.begin());
-            block_columns.erase(block_columns.begin());
-        }
+            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
 
         DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
         size_t block_keys_size = block_keys_extractor.getKeysSize();
