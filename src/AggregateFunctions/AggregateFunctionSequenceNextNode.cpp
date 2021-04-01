@@ -11,8 +11,9 @@
 namespace DB
 {
 
-constexpr size_t MAX_EVENTS_SIZE = 64;
-constexpr size_t MIN_REQUIRED_ARGS = 3;
+constexpr size_t max_events_size = 64;
+
+constexpr size_t min_required_args = 3;
 
 namespace ErrorCodes
 {
@@ -24,84 +25,72 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename T, SeqDirection Direction>
-inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl2(const DataTypePtr data_type, const DataTypes & argument_types, SeqBase base)
-{
-    if (base == HEAD)
-        return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, Direction, HEAD, MIN_REQUIRED_ARGS>>(data_type, argument_types);
-    else if (base == TAIL)
-        return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, Direction, TAIL, MIN_REQUIRED_ARGS>>(data_type, argument_types);
-    else if (base == FIRST_MATCH)
-        return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, Direction, FIRST_MATCH, MIN_REQUIRED_ARGS>>(data_type, argument_types);
-    else
-        return std::make_shared<SequenceNextNodeImpl<T, NodeString<MAX_EVENTS_SIZE>, Direction, LAST_MATCH, MIN_REQUIRED_ARGS>>(data_type, argument_types);
-}
-
 template <typename T>
-inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl1(const DataTypePtr data_type, const DataTypes & argument_types, SeqDirection direction, SeqBase base)
+inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
+    const DataTypePtr data_type, const DataTypes & argument_types, SequenceDirection direction, SequenceBase base)
 {
-    if (direction == FORWARD)
-        return createAggregateFunctionSequenceNodeImpl2<T, FORWARD>(data_type, argument_types, base);
-    else
-        return createAggregateFunctionSequenceNodeImpl2<T, BACKWARD>(data_type, argument_types, base);
+    return std::make_shared<SequenceNextNodeImpl<T, NodeString<max_events_size>>>(
+        data_type, argument_types, base, direction, min_required_args);
 }
 
 AggregateFunctionPtr
 createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_events, const DataTypes & argument_types, const Array & parameters)
 {
-    assert(max_events <= MAX_EVENTS_SIZE);
+    assert(max_events <= max_events_size);
 
     if (parameters.size() < 2)
-        throw Exception("Aggregate function " + name + " requires 2 parameters (direction, head)",
+        throw Exception("Aggregate function '" + name + "' requires 2 parameters (direction, head)",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    auto expected_param_type = Field::Types::Which::String;
+    if (parameters.at(0).getType() != expected_param_type || parameters.at(1).getType() != expected_param_type)
+        throw Exception("Aggregate function '" + name + "' requires 'String' parameters",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     String param_dir = parameters.at(0).safeGet<String>();
-    SeqDirection direction;
-    if (param_dir == "forward")
-        direction = FORWARD;
-    else if (param_dir == "backward")
-        direction = BACKWARD;
-    else
+    std::unordered_map<std::string, SequenceDirection> seq_dir_mapping{
+        {"forward", SequenceDirection::Forward},
+        {"backward", SequenceDirection::Backward},
+    };
+    if (!seq_dir_mapping.contains(param_dir))
         throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_dir, ErrorCodes::BAD_ARGUMENTS};
+    SequenceDirection direction = seq_dir_mapping[param_dir];
 
     String param_base = parameters.at(1).safeGet<String>();
-    SeqBase base;
-    if (param_base == "head")
-        base = HEAD;
-    else if (param_base == "tail")
-        base = TAIL;
-    else if (param_base == "first_match")
-        base = FIRST_MATCH;
-    else if (param_base == "last_match")
-        base = LAST_MATCH;
-    else
+    std::unordered_map<std::string, SequenceBase> seq_base_mapping{
+        {"head", SequenceBase::Head},
+        {"tail", SequenceBase::Tail},
+        {"first_match", SequenceBase::FirstMatch},
+        {"last_match", SequenceBase::LastMatch},
+    };
+    if (!seq_base_mapping.contains(param_base))
         throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_base, ErrorCodes::BAD_ARGUMENTS};
+    SequenceBase base = seq_base_mapping[param_base];
 
-    if (argument_types.size() < MIN_REQUIRED_ARGS)
-        throw Exception("Aggregate function " + name + " requires at least two arguments.",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    else if ((base == FIRST_MATCH || base == LAST_MATCH) && argument_types.size() < MIN_REQUIRED_ARGS + 1)
-        throw Exception("Aggregate function " + name + " requires at least three arguments when base is first_match or last_match.",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    else if (argument_types.size() > max_events + MIN_REQUIRED_ARGS)
-        throw Exception("Aggregate function " + name + " requires at most " +
-                            std::to_string(max_events + MIN_REQUIRED_ARGS) +
-                            " (timestamp, value_column, " +  std::to_string(max_events) + " events) arguments.",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (argument_types.size() < min_required_args)
+        throw Exception("Aggregate function " + name + " requires at least two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (const auto * cond_arg = argument_types[1].get())
-    {
-        if (!isUInt8(cond_arg))
-            throw Exception{"Illegal type " + cond_arg->getName() + " of argument 1 of aggregate function "
-                    + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-    }
+    bool is_base_match_type = base == SequenceBase::FirstMatch || base == SequenceBase::LastMatch;
+    if (is_base_match_type && argument_types.size() < min_required_args + 1)
+        throw Exception(
+            "Aggregate function " + name + " requires at least three arguments when base is first_match or last_match.",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (const auto i : ext::range(MIN_REQUIRED_ARGS, argument_types.size()))
+    if (argument_types.size() > max_events + min_required_args)
+        throw Exception(fmt::format(
+            "Aggregate function '{}' requires at most {} (timestamp, value_column, ...{} events) arguments.",
+                name, max_events + min_required_args, max_events), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    if (const auto * cond_arg = argument_types[1].get(); cond_arg && !isUInt8(cond_arg))
+        throw Exception("Illegal type " + cond_arg->getName() + " of argument 1 of aggregate function "
+                + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    for (const auto i : ext::range(min_required_args, argument_types.size()))
     {
         const auto * cond_arg = argument_types[i].get();
         if (!isUInt8(cond_arg))
-            throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) + " of aggregate function "
-                    + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(fmt::format(
+                "Illegal type '{}' of {} argument of aggregate function '{}', must be UInt8", cond_arg->getName(), i + 1, name),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     if (WhichDataType(argument_types[2].get()).idx != TypeIndex::String)
@@ -113,17 +102,17 @@ createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_events,
 
     WhichDataType timestamp_type(argument_types[0].get());
     if (timestamp_type.idx == TypeIndex::UInt8)
-        return createAggregateFunctionSequenceNodeImpl1<UInt8>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<UInt8>(data_type, argument_types, direction, base);
     if (timestamp_type.idx == TypeIndex::UInt16)
-        return createAggregateFunctionSequenceNodeImpl1<UInt16>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<UInt16>(data_type, argument_types, direction, base);
     if (timestamp_type.idx == TypeIndex::UInt32)
-        return createAggregateFunctionSequenceNodeImpl1<UInt32>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<UInt32>(data_type, argument_types, direction, base);
     if (timestamp_type.idx == TypeIndex::UInt64)
-        return createAggregateFunctionSequenceNodeImpl1<UInt64>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<UInt64>(data_type, argument_types, direction, base);
     if (timestamp_type.isDate())
-        return createAggregateFunctionSequenceNodeImpl1<DataTypeDate::FieldType>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<DataTypeDate::FieldType>(data_type, argument_types, direction, base);
     if (timestamp_type.isDateTime())
-        return createAggregateFunctionSequenceNodeImpl1<DataTypeDateTime::FieldType>(data_type, argument_types, direction, base);
+        return createAggregateFunctionSequenceNodeImpl<DataTypeDateTime::FieldType>(data_type, argument_types, direction, base);
 
     throw Exception{"Illegal type " + argument_types.front().get()->getName()
             + " of first argument of aggregate function " + name + ", must be Unsigned Number, Date, DateTime",
@@ -143,7 +132,7 @@ auto createAggregateFunctionSequenceNodeMaxArgs(UInt64 max_events)
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
-    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNodeMaxArgs(MAX_EVENTS_SIZE), properties });
+    factory.registerFunction("sequenceNextNode", { createAggregateFunctionSequenceNodeMaxArgs(max_events_size), properties });
     factory.registerFunction("sequenceFirstNode", { createAggregateFunctionSequenceNodeMaxArgs(0), properties });
 }
 
