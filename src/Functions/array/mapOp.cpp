@@ -6,7 +6,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include "Core/ColumnWithTypeAndName.h"
+#include <common/arithmeticOverflow.h>
+#include <Core/ColumnWithTypeAndName.h>
+
 
 namespace DB
 {
@@ -120,12 +122,6 @@ private:
         return res;
     }
 
-    template <typename T>
-    static inline auto NO_SANITIZE_UNDEFINED negate(T x)
-    {
-        return -x;
-    }
-
     template <typename KeyType, bool is_str_key, typename ValType>
     ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypeTuple & res_type) const
     {
@@ -178,14 +174,14 @@ private:
                     {
                         const auto [it, inserted] = summing_map.insert({key, value});
                         if (!inserted)
-                            it->second += value;
+                            it->second = common::addIgnoreOverflow(it->second, value);
                     }
                     else
                     {
                         static_assert(op_type == OpTypes::SUBTRACT);
-                        const auto [it, inserted] = summing_map.insert({key, first ? value : negate(value)});
+                        const auto [it, inserted] = summing_map.insert({key, first ? value : common::negateIgnoreOverflow(value)});
                         if (!inserted)
-                            it->second -= value;
+                            it->second = common::subIgnoreOverflow(it->second, value);
                     }
                 }
 
