@@ -159,7 +159,7 @@ Software Requirements Specification
 
 ### Extended Date Range
 
-**1698** `1698-01-01T00:00:00.000000` to **2377** `2377-12-31 23:59:59.99999`
+**1925** `1925-01-01T00:00:00.000000` to **2238** `2238-12-31 23:59:59.99999`
 
 ## Requirements
 
@@ -168,7 +168,7 @@ Software Requirements Specification
 ##### RQ.SRS-010.DateTime64.ExtendedRange
 version: 1.0
 
-[ClickHouse] SHALL support extended range for the [DateTime64] data type that includes dates from the year **1925** to **2377**.
+[ClickHouse] SHALL support extended range for the [DateTime64] data type that includes dates from the year **1925** to **2238**.
 
 ##### RQ.SRS-010.DateTime64.ExtendedRange.NormalRange.Start
 version: 1.0
@@ -236,7 +236,7 @@ version: 1.0
 ##### RQ.SRS-010.DateTime64.ExtendedRange.Start
 version: 1.0
 
-[ClickHouse] SHALL support extended range for the [DateTime64] data type that starts at `1698-01-01T00:00:00.000000`
+[ClickHouse] SHALL support extended range for the [DateTime64] data type that starts at `1925-01-01T00:00:00.000000`
 expressed using the [ISO 8601 format].
 
 ##### RQ.SRS-010.DateTime64.ExtendedRange.Start.BeforeEpochForTimeZone
@@ -248,7 +248,7 @@ when this time for the time zone is before the start of the [extended date range
 ##### RQ.SRS-010.DateTime64.ExtendedRange.End
 version: 1.0
 
-[ClickHouse] SHALL support extended range for the [DateTime64] data type that ends at `2377-12-31T23:59:59.999999`
+[ClickHouse] SHALL support extended range for the [DateTime64] data type that ends at `2238-12-31T23:59:59.999999`
 expressed using the [ISO 8601 format].
 
 ##### RQ.SRS-010.DateTime64.ExtendedRange.End.AfterEpochForTimeZone
