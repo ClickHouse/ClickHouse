@@ -230,7 +230,7 @@ def test_mysql_distributed(started_cluster):
     assert(result == 'host2\nhost3\nhost4\n')
 
     # test table function (all replicas are invalid except for one)
-    result = node2.query('''SELECT DISTINCT(name) FROM mysql(`mysql{7|8|9|3|6}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+    result = node2.query('''SELECT DISTINCT(name) FROM mysql(`mysql{9|3}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
     assert(result == 'host3\n')
 
     # Storage with with two shards, each has 2 replicas
