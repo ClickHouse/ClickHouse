@@ -440,14 +440,7 @@ def test_odbc_cyrillic_with_varchar(started_cluster):
     cursor.execute("INSERT INTO clickhouse.test_cyrillic VALUES ('Красивенько')")
 
     result = node1.query(''' SELECT * FROM test_cyrillic ORDER BY name''')
-
     assert(result == 'A-nice-word\nКрасивенько\n')
-
-    node1.query(''' INSERT INTO TABLE FUNCTION
-        odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_cyrillic')
-        VALUES ('Красивенько')''')
-
-    result = node1.query('''
-        SELECT name FROM odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_cyrillic') ''')
-    assert(result == 'A-nice-word\nКрасивенько\nКрасивенько\n')
+    result = node1.query(''' SELECT name FROM odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_cyrillic') ''')
+    assert(result == 'A-nice-word\nКрасивенько\n')
 
