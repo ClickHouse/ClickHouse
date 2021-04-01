@@ -59,6 +59,7 @@ toc_title: Adopters
 | <a href="https://www.idealista.com" class="favicon">Idealista</a> | Real Estate | Analytics | — | — | [Blog Post in English, April 2019](https://clickhouse.tech/blog/en/clickhouse-meetup-in-madrid-on-april-2-2019) |
 | <a href="https://www.infovista.com/" class="favicon">Infovista</a> | Networks | Analytics | — | — | [Slides in English, October 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup30/infovista.pdf) |
 | <a href="https://www.innogames.com" class="favicon">InnoGames</a> | Games | Metrics, Logging | — | — | [Slides in Russian, September 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup28/graphite_and_clickHouse.pdf) |
+| <a href="https://instabug.com/" class="favicon">Instabug</a> | APM Platform | Main product | — | — | [A quote from Co-Founder](https://altinity.com/) |
 | <a href="https://www.instana.com" class="favicon">Instana</a> | APM Platform | Main product | — | — | [Twitter post](https://twitter.com/mieldonkers/status/1248884119158882304) |
 | <a href="https://integros.com" class="favicon">Integros</a> | Platform for video services | Analytics | — | — | [Slides in Russian, May 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup22/strategies.pdf) |
 | <a href="https://ippon.tech" class="favicon">Ippon Technologies</a> | Technology Consulting | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=205) |
@@ -78,6 +79,7 @@ toc_title: Adopters
 | <a href="https://mux.com/" class="favicon">MUX</a> | Online Video | Video Analytics | — | — | [Talk in English, August 2019](https://altinity.com/presentations/2019/8/13/how-clickhouse-became-the-default-analytics-database-for-mux/) |
 | <a href="https://www.mgid.com/" class="favicon">MGID</a> | Ad network | Web-analytics | — | — | [Blog post in Russian, April 2020](http://gs-studio.com/news-about-it/32777----clickhouse---c) |
 | <a href="https://www.netskope.com/" class="favicon">Netskope</a> | Network Security | — | — | — | [Job advertisement, March 2021](https://www.mendeley.com/careers/job/senior-software-developer-backend-developer-1346348) |
+| <a href="https://niclabs.cl/" class="favicon">NIC Labs</a> | Network Monitoring | RaTA-DNS | — | — | [Blog post, March 2021](https://niclabs.cl/ratadns/2021/03/Clickhouse) |
 | <a href="https://getnoc.com/" class="favicon">NOC Project</a> | Network Monitoring | Analytics | Main Product | — | [Official Website](https://getnoc.com/features/big-data/) |
 | <a href="https://www.nuna.com/" class="favicon">Nuna Inc.</a> | Health Data Analytics | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=170) |
 | <a href="https://www.oneapm.com/" class="favicon">OneAPM</a> | Monitorings and Data Analysis | Main product | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/8.%20clickhouse在OneAPM的应用%20杜龙.pdf) |
@@ -98,6 +100,7 @@ toc_title: Adopters
 | <a href="https://rspamd.com/" class="favicon">Rspamd</a> | Antispam | Analytics | — | — | [Official Website](https://rspamd.com/doc/modules/clickhouse.html) |
 | <a href="https://rusiem.com/en" class="favicon">RuSIEM</a> | SIEM | Main Product | — | — | [Official Website](https://rusiem.com/en/products/architecture) |
 | <a href="https://www.s7.ru" class="favicon">S7 Airlines</a> | Airlines | Metrics, Logging | — | — | [Talk in Russian, March 2019](https://www.youtube.com/watch?v=nwG68klRpPg&t=15s) |
+| <a href="https://www.sberbank.com/index" class="favicon">Sber</a> | Banking, Fintech, Retail, Cloud, Media | — | — | — | [Job advertisement, March 2021](https://career.habr.com/vacancies/1000073536) |
 | <a href="https://www.scireum.de/" class="favicon">scireum GmbH</a> | e-Commerce | Main product | — | — | [Talk in German, February 2020](https://www.youtube.com/watch?v=7QWAn5RbyR4) |
 | <a href="https://segment.com/" class="favicon">Segment</a> | Data processing | Main product | 9 * i3en.3xlarge nodes 7.5TB NVME SSDs, 96GB Memory, 12 vCPUs | — | [Slides, 2019](https://slides.com/abraithwaite/segment-clickhouse) |
 | <a href="https://sembot.io/" class="favicon">sembot.io</a> | Shopping Ads | — | — | — | A comment on LinkedIn, 2020 |
@@ -119,6 +122,7 @@ toc_title: Adopters
 | <a href="https://www.tinybird.co/" class="favicon">Tinybird</a> | Real-time Data Products | Data processing | — | — | [Official website](https://www.tinybird.co/) |
 | <a href="https://trafficstars.com/" class="favicon">Traffic Stars</a> | AD network | — | — | — | [Slides in Russian, May 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup15/lightning/ninja.pdf) |
 | <a href="https://www.uber.com" class="favicon">Uber</a> | Taxi | Logging | — | — | [Slides, February 2020](https://presentations.clickhouse.tech/meetup40/uber.pdf) |
+| <a href="https://hello.utmstat.com/" class="favicon">UTMSTAT</a> | Analytics | Main product | — | — | [Blog post, June 2020](https://vc.ru/tribuna/133956-striming-dannyh-iz-servisa-skvoznoy-analitiki-v-clickhouse) |
 | <a href="https://vk.com" class="favicon">VKontakte</a> | Social Network | Statistics, Logging | — | — | [Slides in Russian, August 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup17/3_vk.pdf) |
 | <a href="https://www.vmware.com/" class="favicon">VMWare</a> | Cloud | VeloCloud, SDN | — | — | [Product documentation](https://docs.vmware.com/en/vRealize-Operations-Manager/8.3/com.vmware.vcom.metrics.doc/GUID-A9AD72E1-C948-4CA2-971B-919385AB3CA8.html) |
 | <a href="https://www.walmartlabs.com/" class="favicon">Walmart Labs</a> | Internet, Retail | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=144) |
@@ -133,6 +137,7 @@ toc_title: Adopters
 | <a href="https://cloud.yandex.ru/services/datalens" class="favicon">Yandex DataLens</a> | Business Intelligence | Main product | — | — | [Slides in Russian, December 2019](https://presentations.clickhouse.tech/meetup38/datalens.pdf) |
 | <a href="https://market.yandex.ru/" class="favicon">Yandex Market</a> | e-Commerce | Metrics, Logging | — | — | [Talk in Russian, January 2019](https://youtu.be/_l1qP0DyBcA?t=478) |
 | <a href="https://metrica.yandex.com" class="favicon">Yandex Metrica</a> | Web analytics | Main product | 630 servers in one cluster, 360 servers in another cluster, 1862 servers in one department | 133 PiB / 8.31 PiB / 120 trillion records | [Slides, February 2020](https://presentations.clickhouse.tech/meetup40/introduction/#13) |
+| <a href="https://www.yotascale.com/" class="favicon">Yotascale</a> | Cloud | Data pipeline | — | 2 bn records/day | [LinkedIn (Accomplishments)](https://www.linkedin.com/in/adilsaleem/) |
 | <a href="https://htc-cs.ru/" class="favicon">ЦВТ</a> | Software Development | Metrics, Logging | — | — | [Blog Post, March 2019, in Russian](https://vc.ru/dev/62715-kak-my-stroili-monitoring-na-prometheus-clickhouse-i-elk) |
 | <a href="https://mkb.ru/" class="favicon">МКБ</a> | Bank | Web-system monitoring | — | — | [Slides in Russian, September 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup28/mkb.pdf) |
 | <a href="https://cft.ru/" class="favicon">ЦФТ</a> | Banking, Financial products, Payments | — | — | — | [Meetup in Russian, April 2020](https://team.cft.ru/events/162) |
