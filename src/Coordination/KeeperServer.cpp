@@ -150,6 +150,13 @@ void KeeperServer::putRequest(const KeeperStorage::RequestForSession & request_f
 
 int64_t KeeperServer::getSessionID(int64_t session_timeout_ms)
 {
+    /// Just some sanity check. We don't want to make a lot of clients wait with lock.
+    if (active_session_id_requests > 10)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Too many concurrent SessionID requests already in flight");
+
+    ++active_session_id_requests;
+    SCOPE_EXIT({ --active_session_id_requests; });
+
     auto entry = nuraft::buffer::alloc(sizeof(int64_t));
     /// Just special session request
     nuraft::buffer_serializer bs(entry);
