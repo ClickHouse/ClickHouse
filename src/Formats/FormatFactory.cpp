@@ -422,6 +422,7 @@ void FormatFactory::markFormatAsColumnOriented(const String & name)
     auto & target = dict[name].is_column_oriented;
     if (target)
         throw Exception("FormatFactory: Format " + name + " is already marked as column oriented", ErrorCodes::LOGICAL_ERROR);
+    target = true;
 }
 
 
