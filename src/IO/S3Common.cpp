@@ -108,7 +108,7 @@ class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 public:
     /// See EC2MetadataClient.
 
-    AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
+    explicit AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration)
         : Aws::Internal::AWSHttpResourceClient(client_configuration)
         , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
     {
@@ -251,7 +251,7 @@ private:
 class AWSEC2InstanceProfileConfigLoader : public Aws::Config::AWSProfileConfigLoader
 {
 public:
-    AWSEC2InstanceProfileConfigLoader(const std::shared_ptr<AWSEC2MetadataClient> & client_, bool use_secure_pull_)
+    explicit AWSEC2InstanceProfileConfigLoader(const std::shared_ptr<AWSEC2MetadataClient> & client_, bool use_secure_pull_)
         : client(client_)
         , use_secure_pull(use_secure_pull_)
         , logger(&Poco::Logger::get("AWSEC2InstanceProfileConfigLoader"))
@@ -309,7 +309,7 @@ class AWSInstanceProfileCredentialsProvider : public Aws::Auth::AWSCredentialsPr
 public:
     /// See InstanceProfileCredentialsProvider.
 
-    AWSInstanceProfileCredentialsProvider(const std::shared_ptr<AWSEC2InstanceProfileConfigLoader> & config_loader)
+    explicit AWSInstanceProfileCredentialsProvider(const std::shared_ptr<AWSEC2InstanceProfileConfigLoader> & config_loader)
         : ec2_metadata_config_loader(config_loader)
         , load_frequency_ms(Aws::Auth::REFRESH_THRESHOLD)
         , logger(&Poco::Logger::get("AWSInstanceProfileCredentialsProvider"))
