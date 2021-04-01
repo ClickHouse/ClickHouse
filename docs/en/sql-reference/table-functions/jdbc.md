@@ -24,4 +24,3 @@ SELECT * FROM jdbc('mysql://localhost:3306/?user=root&password=root', 'schema', 
 SELECT * FROM jdbc('datasource://mysql-local', 'schema', 'table')
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/jdbc/) <!--hide-->

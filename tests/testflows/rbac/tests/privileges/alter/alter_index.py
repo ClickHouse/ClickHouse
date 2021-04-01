@@ -26,7 +26,7 @@ aliases = {
     "MATERIALIZE INDEX" : ["ALTER MATERIALIZE INDEX", "MATERIALIZE INDEX"],
     "CLEAR INDEX": ["ALTER CLEAR INDEX", "CLEAR INDEX"],
     "DROP INDEX": ["ALTER DROP INDEX", "DROP INDEX"],
-    "ALTER INDEX": ["ALTER INDEX", "INDEX"] # super-privilege
+    "ALTER INDEX": ["ALTER INDEX", "INDEX", "ALL"] # super-privilege
 }
 
 # Extra permutation is for 'ALTER INDEX' super-privilege
@@ -302,7 +302,6 @@ def check_drop_index_when_privilege_is_not_granted(table, user, node):
                     settings = [("user", user)], exitcode=exitcode, message=message)
 
 @TestScenario
-@Flags(TE)
 def user_with_some_privileges(self, table_type, node=None):
     """Check that user with any permutation of ALTER INDEX subprivileges is able
     to alter the table for privileges granted, and not for privileges not granted.
@@ -325,7 +324,6 @@ def user_with_some_privileges(self, table_type, node=None):
                     alter_index_privilege_handler(permutation, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex_Revoke("1.0"),
 )
@@ -355,7 +353,6 @@ def user_with_revoked_privileges(self, table_type, node=None):
                     alter_index_privilege_handler(0, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex_Grant("1.0"),
 )
@@ -385,7 +382,6 @@ def role_with_some_privileges(self, table_type, node=None):
                     alter_index_privilege_handler(permutation, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 def user_with_revoked_role(self, table_type, node=None):
     """Check that user with a role that has ALTER INDEX privilege on a table is unable to
     ALTER INDEX from that table after the role with privilege has been revoked from the user.
@@ -416,7 +412,6 @@ def user_with_revoked_role(self, table_type, node=None):
                     alter_index_privilege_handler(0, table_name, user_name, node)
 
 @TestScenario
-@Flags(TE)
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex_Cluster("1.0"),
 )
@@ -451,12 +446,13 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterIndex("1.0"),
-    RQ_SRS_006_RBAC_Privileges_AlterIndex_TableEngines("1.0")
+    RQ_SRS_006_RBAC_Privileges_AlterIndex_TableEngines("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
 ])
-@Flags(TE)
 @Name("alter index")
 def feature(self, node="clickhouse1", stress=None, parallel=None):
     self.context.node = self.context.cluster.node(node)

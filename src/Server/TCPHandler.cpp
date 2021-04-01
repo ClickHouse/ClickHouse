@@ -722,11 +722,11 @@ void TCPHandler::processTablesStatusRequest()
 
     /// For testing hedged requests
     const Settings & settings = query_context->getSettingsRef();
-    if (settings.sleep_in_send_tables_status)
+    if (settings.sleep_in_send_tables_status_ms.totalMilliseconds())
     {
         out->next();
-        std::chrono::seconds sec(settings.sleep_in_send_tables_status);
-        std::this_thread::sleep_for(sec);
+        std::chrono::milliseconds ms(settings.sleep_in_send_tables_status_ms.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
     }
 
     response.write(*out, client_tcp_protocol_version);
@@ -1415,11 +1415,11 @@ void TCPHandler::sendData(const Block & block)
 
     /// For testing hedged requests
     const Settings & settings = query_context->getSettingsRef();
-    if (block.rows() > 0 && settings.sleep_in_send_data)
+    if (block.rows() > 0 && settings.sleep_in_send_data_ms.totalMilliseconds())
     {
         out->next();
-        std::chrono::seconds sec(settings.sleep_in_send_data);
-        std::this_thread::sleep_for(sec);
+        std::chrono::milliseconds ms(settings.sleep_in_send_data_ms.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
     }
 
     state.block_out->write(block);

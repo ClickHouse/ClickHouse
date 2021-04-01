@@ -1,6 +1,6 @@
 ---
 toc_priority: 62
-toc_title: "\u041e\u0431\u0437\u043e\u0440\u0020\u0430\u0440\u0445\u0438\u0442\u0435\u043a\u0442\u0443\u0440\u044b\u0020\u0043\u006c\u0069\u0063\u006b\u0048\u006f\u0075\u0073\u0065"
+toc_title: "Обзор архитектуры ClickHouse"
 ---
 
 # Обзор архитектуры ClickHouse {#overview-of-clickhouse-architecture}
