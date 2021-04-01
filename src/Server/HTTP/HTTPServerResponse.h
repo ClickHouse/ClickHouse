@@ -62,7 +62,7 @@ public:
 
 private:
     Poco::Net::HTTPServerSession & session;
-    HTTPServerRequest * request;
+    HTTPServerRequest * request = nullptr;
     std::shared_ptr<std::ostream> stream;
     std::shared_ptr<std::ostream> header_stream;
 };
