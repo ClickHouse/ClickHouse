@@ -62,10 +62,10 @@ postgres=# insert into test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
 postgresql> select * from test;
- int_id | int_nullable | float | str  | float_nullable
---------+--------------+-------+------+----------------
-      1 |              |     2 | test |
-(1 row)
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+ (1 row)
 ```
 
 Получение данных в ClickHouse:
