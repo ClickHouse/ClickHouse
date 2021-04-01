@@ -406,6 +406,6 @@ select count() over (order by toInt64(number) range between unbounded preceding 
 select sum(a[length(a)])
 from (
     select groupArray(number) over (partition by modulo(number, 11)
-            order by modulo(number, 1111)) a
+            order by modulo(number, 1111), number) a
     from numbers_mt(10000)
 ) settings max_block_size = 7;
