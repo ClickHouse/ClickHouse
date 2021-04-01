@@ -30,7 +30,6 @@ private:
     ColumnsDescription getActualTableStructure(const Context & context) const override;
     void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
-    std::pair<std::string, UInt16> parsed_host_port;
     String remote_database_name;
     String remote_table_name;
     String user_name;

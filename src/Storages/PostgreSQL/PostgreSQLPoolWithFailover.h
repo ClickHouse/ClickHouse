@@ -11,6 +11,8 @@ namespace postgres
 class PoolWithFailover
 {
 
+using RemoteDescription = std::vector<std::pair<String, uint16_t>>;
+
 public:
     static constexpr inline auto POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES = 5;
     static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
@@ -22,8 +24,7 @@ public:
 
     PoolWithFailover(
         const std::string & database,
-        const std::vector<std::string> & hosts,
-        uint16_t port,
+        const RemoteDescription & addresses,
         const std::string & user,
         const std::string & password,
         size_t pool_size = POSTGRESQL_POOL_DEFAULT_SIZE,
