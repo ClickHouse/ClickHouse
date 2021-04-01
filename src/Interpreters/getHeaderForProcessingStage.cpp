@@ -1,9 +1,8 @@
-#include <DataStreams/OneBlockInputStream.h>
-#include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/IStorage.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
 {
@@ -14,7 +13,7 @@ namespace ErrorCodes
 }
 
 /// Rewrite original query removing joined tables from it
-bool removeJoin(ASTSelectQuery & select, const IdentifierMembershipCollector & membership_collector)
+bool removeJoin(ASTSelectQuery & select)
 {
     const auto & tables = select.tables();
     if (!tables || tables->children.size() < 2)
@@ -24,22 +23,8 @@ bool removeJoin(ASTSelectQuery & select, const IdentifierMembershipCollector & m
     if (!joined_table.table_join)
         return false;
 
-    /// We need to remove joined columns and related functions (taking in account aliases if any).
-    auto * select_list = select.select()->as<ASTExpressionList>();
-    if (select_list)
-    {
-        ASTs new_children;
-        for (const auto & elem : select_list->children)
-        {
-            auto table_no = membership_collector.getIdentsMembership(elem);
-            if (!table_no.has_value() || *table_no < 1)
-                new_children.push_back(elem);
-        }
-
-        select_list->children = std::move(new_children);
-    }
-
     /// The most simple temporary solution: leave only the first table in query.
+    /// TODO: we also need to remove joined columns and related functions (taking in account aliases if any).
     tables->children.resize(1);
     return true;
 }
@@ -81,8 +66,7 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::MAX:
         {
             auto query = query_info.query->clone();
-            auto & select = *query->as<ASTSelectQuery>();
-            removeJoin(select, IdentifierMembershipCollector{select, context});
+            removeJoin(*query->as<ASTSelectQuery>());
 
             auto stream = std::make_shared<OneBlockInputStream>(
                     metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID()));
