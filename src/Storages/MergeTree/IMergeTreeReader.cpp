@@ -190,7 +190,9 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
                 additional_columns, columns, metadata_snapshot->getColumns(), storage.global_context);
         if (dag)
         {
-            auto actions = std::make_shared<ExpressionActions>(std::move(dag));
+            auto actions = std::make_shared<
+                ExpressionActions>(std::move(dag),
+                ExpressionActionsSettings::fromSettings(storage.global_context.getSettingsRef()));
             actions->execute(additional_columns);
         }
 
@@ -229,8 +231,9 @@ NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & requ
     {
         auto subcolumn_name = required_column.getSubcolumnName();
         auto subcolumn_type = it->second->tryGetSubcolumnType(subcolumn_name);
+
         if (!subcolumn_type)
-            subcolumn_type = required_column.type;
+            return required_column;
 
         return {it->first, subcolumn_name, it->second, subcolumn_type};
     }

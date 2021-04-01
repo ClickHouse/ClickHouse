@@ -41,7 +41,7 @@ ColumnPtr ComplexKeyHashedDictionary::getColumn(
     const DataTypePtr & result_type,
     const Columns & key_columns,
     const DataTypes & key_types,
-    const ColumnPtr default_values_column) const
+    const ColumnPtr & default_values_column) const
 {
     dict_struct.validateKeyTypes(key_types);
 
@@ -338,7 +338,7 @@ void ComplexKeyHashedDictionary::calculateBytesAllocated()
 template <typename T>
 void ComplexKeyHashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+    attribute.null_values = T(null_value.get<T>());
     attribute.maps.emplace<ContainerType<T>>();
 }
 
@@ -450,7 +450,7 @@ bool ComplexKeyHashedDictionary::setAttributeValue(Attribute & attribute, const 
             }
         }
 
-        result = setAttributeValueImpl<AttributeType>(attribute, key, value.get<NearestFieldType<AttributeType>>());
+        result = setAttributeValueImpl<AttributeType>(attribute, key, value.get<AttributeType>());
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
@@ -563,7 +563,13 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute & att
 BlockInputStreamPtr ComplexKeyHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<UInt64>;
-    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getKeys(), column_names);
+    auto vector_keys = getKeys();
+
+    PaddedPODArray<StringRef> keys;
+    keys.reserve(vector_keys.size());
+    keys.assign(vector_keys.begin(), vector_keys.end());
+
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, keys, column_names);
 }
 
 void registerDictionaryComplexKeyHashed(DictionaryFactory & factory)

@@ -79,6 +79,7 @@ SRCS(
     LimitTransform.cpp
     Merges/Algorithms/AggregatingSortedAlgorithm.cpp
     Merges/Algorithms/CollapsingSortedAlgorithm.cpp
+    Merges/Algorithms/FinishAggregatingInOrderAlgorithm.cpp
     Merges/Algorithms/GraphiteRollupSortedAlgorithm.cpp
     Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.cpp
     Merges/Algorithms/IMergingAlgorithmWithSharedChunks.cpp
@@ -95,6 +96,7 @@ SRCS(
     QueryPlan/AddingDelayedSourceStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
+    QueryPlan/BuildQueryPipelineSettings.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
     QueryPlan/DistinctStep.cpp

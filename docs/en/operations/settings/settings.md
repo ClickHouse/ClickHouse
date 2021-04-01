@@ -769,6 +769,38 @@ Example:
 log_query_threads=1
 ```
 
+## log_comment {#settings-log-comment}
+
+Specifies the value for the `log_comment` field of the [system.query_log](../system-tables/query_log.md) table and comment text for the server log.
+
+It can be used to improve the readability of server logs. Additionally, it helps to select queries related to the test from the `system.query_log` after running [clickhouse-test](../../development/tests.md).
+
+Possible values:
+
+-   Any string no longer than [max_query_size](#settings-max_query_size). If length is exceeded, the server throws an exception.
+
+Default value: empty string.
+
+**Example**
+
+Query:
+
+``` sql
+SET log_comment = 'log_comment test', log_queries = 1;
+SELECT 1;
+SYSTEM FLUSH LOGS;
+SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 2;
+```
+
+Result:
+
+``` text
+┌─type────────┬─query─────┐
+│ QueryStart  │ SELECT 1; │
+│ QueryFinish │ SELECT 1; │
+└─────────────┴───────────┘
+```
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 The size of blocks (in a count of rows) to form for insertion into a table.
@@ -1097,14 +1129,25 @@ See the section “WITH TOTALS modifier”.
 
 ## max_parallel_replicas {#settings-max_parallel_replicas}
 
-The maximum number of replicas for each shard when executing a query. In limited circumstances, this can make a query faster by executing it on more servers. This setting is only useful for replicated tables with a sampling key. There are cases where performance will not improve or even worsen:
+The maximum number of replicas for each shard when executing a query.
 
-- the position of the sampling key in the partitioning key's order doesn't allow efficient range scans
-- adding a sampling key to the table makes filtering by other columns less efficient
-- the sampling key is an expression that is expensive to calculate
-- the cluster's latency distribution has a long tail, so that querying more servers increases the query's overall latency
+Possible values:
 
-In addition, this setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain conditions. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
+-   Positive integer.
+
+Default value: `1`.
+
+**Additional Info** 
+
+This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
+
+- The position of the sampling key in the partitioning key doesn't allow efficient range scans.
+- Adding a sampling key to the table makes filtering by other columns less efficient.
+- The sampling key is an expression that is expensive to calculate.
+- The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
+
+!!! warning "Warning"
+    This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
 
 ## compile {#compile}
 
@@ -1503,6 +1546,14 @@ FORMAT PrettyCompactMonoBlock
 
 Default value: 0
 
+## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
+
+Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
+
+Too many values may require significant amount for processing, while the benefit is doubtful, since if you have huge number of values in `IN (...)`, then most likely the query will be sent to all shards anyway.
+
+Default value: 1000
+
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
 Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
@@ -1871,6 +1922,53 @@ Possible values:
 -   1 — Insertion is done randomly among all available shards when no distributed key is given.
 
 Default value: `0`.
+
+## insert_shard_id {#insert_shard_id}
+
+If not `0`, specifies the shard of [Distributed](../../engines/table-engines/special/distributed.md#distributed) table into which the data will be inserted synchronously.
+
+If `insert_shard_id` value is incorrect, the server will throw an exception.
+
+To get the number of shards on `requested_cluster`, you can check server config or use this query:
+
+``` sql
+SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
+```
+
+Possible values:
+
+-   0 — Disabled.
+-   Any number from `1` to `shards_num` of corresponding [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE x AS system.numbers ENGINE = MergeTree ORDER BY number;
+CREATE TABLE x_dist AS x ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), x);
+INSERT INTO x_dist SELECT * FROM numbers(5) SETTINGS insert_shard_id = 1;
+SELECT * FROM x_dist ORDER BY number ASC;
+```
+
+Result:
+
+``` text
+┌─number─┐
+│      0 │
+│      0 │
+│      1 │
+│      1 │
+│      2 │
+│      2 │
+│      3 │
+│      3 │
+│      4 │
+│      4 │
+└────────┘
+```
 
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
@@ -2670,11 +2768,11 @@ Default value: `0`.
 
 ## engine_file_truncate_on_insert {#engine-file-truncate-on-insert}
 
-Enables or disables truncate before insert in file engine tables.
+Enables or disables truncate before insert in [File](../../engines/table-engines/special/file.md) engine tables.
 
 Possible values:
-- 0 — Disabled.
-- 1 — Enabled.
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` replaces existing content of the file with the new data.
 
 Default value: `0`.
 
@@ -2688,5 +2786,40 @@ Possible values:
 -   1 — Working with geo data types is enabled.
 
 Default value: `0`.
+
+## allow_experimental_live_view {#allow-experimental-live-view}
+
+Allows creation of experimental [live views](../../sql-reference/statements/create/view.md#live-view).
+
+Possible values:
+
+-   0 — Working with live views is disabled.
+-   1 — Working with live views is enabled.
+
+Default value: `0`.
+
+## live_view_heartbeat_interval {#live-view-heartbeat-interval}
+
+Sets the heartbeat interval in seconds to indicate [live view](../../sql-reference/statements/create/view.md#live-view) is alive .
+
+Default value: `15`.
+
+## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
+
+Sets the maximum number of inserted blocks after which mergeable blocks are dropped and query for [live view](../../sql-reference/statements/create/view.md#live-view) is re-executed.
+
+Default value: `64`.
+
+## temporary_live_view_timeout {#temporary-live-view-timeout}
+
+Sets the interval in seconds after which [live view](../../sql-reference/statements/create/view.md#live-view) with timeout is deleted.
+
+Default value: `5`.
+
+## periodic_live_view_refresh {#periodic-live-view-refresh}
+
+Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md#live-view) is forced to refresh.
+
+Default value: `60`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

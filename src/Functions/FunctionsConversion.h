@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/Serializations/SerializationDecimal.h>
 #include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -44,6 +45,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/toFixedString.h>
+#include <Functions/TransformDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
@@ -310,10 +312,15 @@ struct ToDateTimeImpl
         return time_zone.fromDayNum(DayNum(d));
     }
 
-    // no-op conversion from DateTime to DateTime, used in DateTime64 to DateTime conversion.
-    static inline UInt32 execute(UInt32 d, const DateLUTImpl & /*time_zone*/)
+    static inline UInt32 execute(UInt32 dt, const DateLUTImpl & /*time_zone*/)
     {
-        return d;
+        return dt;
+    }
+
+    // TODO: return UInt32 ???
+    static inline Int64 execute(Int64 dt64, const DateLUTImpl & /*time_zone*/)
+    {
+        return dt64;
     }
 };
 
@@ -329,6 +336,7 @@ struct ToDateTransform32Or64
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
+        // since converting to Date, no need in values outside of default LUT range.
         return (from < 0xFFFF)
             ? from
             : time_zone.toDayNum(std::min(time_t(from), time_t(0xFFFFFFFF)));
@@ -342,6 +350,7 @@ struct ToDateTransform32Or64Signed
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
+        // TODO: decide narrow or extended range based on FromType
         /// The function should be monotonic (better for query optimizations), so we saturate instead of overflow.
         if (from < 0)
             return 0;
@@ -447,35 +456,8 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime, N
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime, Name>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime, ToDateTimeTransform64Signed<Float64, UInt32>> {};
 
-
-/** Conversion of Date or DateTime to DateTime64: add zero sub-second part.
-  */
-struct ToDateTime64Transform
-{
-    static constexpr auto name = "toDateTime64";
-
-    const DateTime64::NativeType scale_multiplier = 1;
-
-    ToDateTime64Transform(UInt32 scale = 0)
-        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
-    {}
-
-    inline DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
-    {
-        const auto dt = ToDateTimeImpl::execute(d, time_zone);
-        return execute(dt, time_zone);
-    }
-
-    inline DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
-    {
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
-    }
-};
-
-template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
-    : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime64, ToDateTime64Transform> {};
-template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
-    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
+const time_t LUT_MIN_TIME = -1420070400l;       // 1925-01-01 UTC
+const time_t LUT_MAX_TIME = 9877248000l;        // 2282-12-31 UTC
 
 /** Conversion of numeric to DateTime64
   */
@@ -493,7 +475,7 @@ struct ToDateTime64TransformUnsigned
 
     inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        from = std::min(time_t(from), time_t(0xFFFFFFFF));
+        from = std::min<time_t>(from, LUT_MAX_TIME);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
 };
@@ -510,9 +492,8 @@ struct ToDateTime64TransformSigned
 
     inline NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        if (from < 0)
-            return 0;
-        from = std::min(time_t(from), time_t(0xFFFFFFFF));
+        from = std::max<time_t>(from, LUT_MIN_TIME);
+        from = std::min<time_t>(from, LUT_MAX_TIME);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
     }
 };
@@ -551,6 +532,7 @@ template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDateTime64,
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDateTime64, Name>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDateTime64, ToDateTime64TransformFloat<DataTypeFloat64, Float64>> {};
 
+
 /** Conversion of DateTime64 to Date or DateTime: discards fractional part.
  */
 template <typename Transform>
@@ -571,10 +553,41 @@ struct FromDateTime64Transform
     }
 };
 
+/** Conversion of DateTime64 to Date or DateTime: discards fractional part.
+ */
 template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
-    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, FromDateTime64Transform<ToDateImpl>> {};
+    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, TransformDateTime64<ToDateImpl>> {};
 template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDateTime, Name, ConvertDefaultBehaviorTag>
-    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, FromDateTime64Transform<ToDateTimeImpl>> {};
+    : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDateTime, TransformDateTime64<ToDateTimeImpl>> {};
+
+struct ToDateTime64Transform
+{
+    static constexpr auto name = "toDateTime64";
+
+    const DateTime64::NativeType scale_multiplier = 1;
+
+    ToDateTime64Transform(UInt32 scale = 0)
+        : scale_multiplier(DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale))
+    {}
+
+    inline DateTime64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
+    {
+        const auto dt = ToDateTimeImpl::execute(d, time_zone);
+        return execute(dt, time_zone);
+    }
+
+    inline DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
+    {
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+    }
+};
+
+/** Conversion of Date or DateTime to DateTime64: add zero sub-second part.
+  */
+template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
+    : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime64, ToDateTime64Transform> {};
+template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
+    : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
 
 
 /** Transformation of numbers, dates, datetimes to strings: through formatting.
@@ -658,7 +671,6 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
         const DateLUTImpl * time_zone = nullptr;
-
         /// For argument of DateTime type, second argument with time zone could be specified.
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
             time_zone = &extractTimeZoneFromFunctionArguments(arguments, 1, 0);
@@ -725,9 +737,10 @@ struct ConvertImplGenericToString
         WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
 
         FormatSettings format_settings;
+        auto serialization = type.getDefaultSerialization();
         for (size_t i = 0; i < size; ++i)
         {
-            type.serializeAsText(col_from, i, write_buffer, format_settings);
+            serialization->serializeText(col_from, i, write_buffer, format_settings);
             writeChar(0, write_buffer);
             offsets_to[i] = write_buffer.count();
         }
@@ -754,13 +767,17 @@ inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb
     x = tmp;
 }
 
+// NOTE: no need of extra overload of DateTime64, since readDateTimeText64 has different signature and that case is explicitly handled in the calling code.
 template <>
 inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
-    time_t tmp = 0;
-    readDateTimeText(tmp, rb, *time_zone);
-    x = tmp;
+    time_t time = 0;
+    readDateTimeText(time, rb, *time_zone);
+    if (time < 0)
+        time = 0;
+    x = time;
 }
+
 
 template <>
 inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
@@ -989,9 +1006,18 @@ struct ConvertThroughParsing
                 }
                 else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 {
-                    time_t res;
-                    parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                    vec_to[i] = res;
+                    if constexpr (to_datetime64)
+                    {
+                        DateTime64 res = 0;
+                        parseDateTime64BestEffortUS(res, vec_to.getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else
+                    {
+                        time_t res;
+                        parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
                 }
                 else
                 {
@@ -1002,7 +1028,7 @@ struct ConvertThroughParsing
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
-                        ToDataType::readText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
+                        SerializationDecimal<typename ToDataType::FieldType>::readText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
                     else
                         parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
                 }
@@ -1044,7 +1070,7 @@ struct ConvertThroughParsing
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
-                        parsed = ToDataType::tryReadText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
+                        parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
                     else
                         parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
                 }
@@ -1108,11 +1134,12 @@ struct ConvertImplGenericFromString
             size_t current_offset = 0;
 
             FormatSettings format_settings;
+            auto serialization = data_type_to.getDefaultSerialization();
             for (size_t i = 0; i < size; ++i)
             {
                 ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
 
-                data_type_to.deserializeAsWholeText(column_to, read_buffer, format_settings);
+                serialization->deserializeWholeText(column_to, read_buffer, format_settings);
 
                 if (!read_buffer.eof())
                     throwExceptionForIncompletelyParsedValue(read_buffer, result_type);
@@ -2774,12 +2801,16 @@ private:
                 auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
                 out_data.resize(size);
 
+                auto default_enum_value = result_type.getValues().front().second;
+
                 if (nullable_col)
                 {
                     for (const auto i : ext::range(0, size))
                     {
                         if (!nullable_col->isNullAt(i))
                             out_data[i] = result_type.getValue(col->getDataAt(i));
+                        else
+                            out_data[i] = default_enum_value;
                     }
                 }
                 else
