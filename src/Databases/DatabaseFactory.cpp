@@ -146,7 +146,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
                 /// Split into replicas if needed.
                 size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
-                auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses);
+                auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
                 auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, addresses, mysql_user_name, mysql_user_password);
 
                 mysql_database_settings->loadFromQueryContext(context);
@@ -250,7 +250,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         /// Split into replicas if needed.
         size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
-        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses);
+        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
 
         /// no connection is made here
         auto connection_pool = std::make_shared<postgres::PoolWithFailover>(

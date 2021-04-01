@@ -62,7 +62,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Conte
 
     /// Split into replicas if needed. 3306 is the default MySQL port number
     size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
-    auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses);
+    auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
     pool.emplace(remote_database_name, addresses, user_name, password);
 
     if (args.size() >= 6)

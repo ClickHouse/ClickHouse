@@ -238,7 +238,7 @@ void registerStorageMySQL(StorageFactory & factory)
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
         size_t max_addresses = args.context.getSettingsRef().storage_external_distributed_max_addresses;
 
-        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses);
+        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
         mysqlxx::PoolWithFailover pool(remote_database, addresses, username, password);
 
         bool replace_query = false;
