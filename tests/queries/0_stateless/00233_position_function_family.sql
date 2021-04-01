@@ -1,10 +1,27 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 select 1 = position('', '');
 select 1 = position('abc', '');
 select 0 = position('', 'abc');
 select 1 = position('abc', 'abc');
 select 2 = position('abc', 'bc');
 select 3 = position('abc', 'c');
+
+select 1 = position('', '', 0);
+select 1 = position('', '', 1);
+select 0 = position('', '', 2);
+select 1 = position('a', '', 1);
+select 2 = position('a', '', 2);
+select 0 = position('a', '', 3);
+
+select [1, 1, 2, 3, 4, 5, 0, 0, 0, 0] = groupArray(position('aaaa', '', number)) from numbers(10);
+select [1, 1, 2, 3, 4, 5, 0, 0, 0, 0] = groupArray(position(materialize('aaaa'), '', number)) from numbers(10);
+select [1, 1, 2, 3, 4, 5, 0, 0, 0, 0] = groupArray(position('aaaa', materialize(''), number)) from numbers(10);
+select [1, 1, 2, 3, 4, 5, 0, 0, 0, 0] = groupArray(position(materialize('aaaa'), materialize(''), number)) from numbers(10);
+
+select [1, 1, 2, 3, 4, 0, 0, 0, 0, 0] = groupArray(position('aaaa', 'a', number)) from numbers(10);
+select [1, 1, 2, 3, 4, 0, 0, 0, 0, 0] = groupArray(position(materialize('aaaa'), 'a', number)) from numbers(10);
+select [1, 1, 2, 3, 4, 0, 0, 0, 0, 0] = groupArray(position('aaaa', materialize('a'), number)) from numbers(10);
+select [1, 1, 2, 3, 4, 0, 0, 0, 0, 0] = groupArray(position(materialize('aaaa'), materialize('a'), number)) from numbers(10);
 
 select 1 = position(materialize(''), '');
 select 1 = position(materialize('abc'), '');
@@ -27,6 +44,16 @@ select 1 = position('абв', 'абв');
 select 3 = position('абв', 'бв');
 select 5 = position('абв', 'в');
 
+select 2 = position('abcabc', 'b', 0);
+select 2 = position('abcabc', 'b', 1);
+select 2 = position('abcabc', 'b', 2);
+select 5 = position('abcabc', 'b', 3);
+select 5 = position('abcabc', 'b', 4);
+select 5 = position('abcabc', 'b', 5);
+select 0 = position('abcabc', 'b', 6);
+select 2 = position('abcabc', 'bca', 0);
+select 0 = position('abcabc', 'bca', 3);
+
 select 1 = position(materialize(''), '');
 select 1 = position(materialize('абв'), '');
 select 0 = position(materialize(''), 'абв');
@@ -48,6 +75,14 @@ select 1 = positionUTF8('абв', 'абв');
 select 2 = positionUTF8('абв', 'бв');
 select 3 = positionUTF8('абв', 'в');
 
+select 3 = position('абвабв', 'б', 2);
+select 3 = position('абвабв', 'б', 3);
+select 3 = position('абвабв', 'бва', 2);
+select 9 = position('абвабв', 'б', 4);
+select 0 = position('абвабв', 'бва', 4);
+select 5 = position('абвабв', 'в', 0);
+select 11 = position('абвабв', 'в', 6);
+
 select 1 = positionUTF8(materialize(''), '');
 select 1 = positionUTF8(materialize('абв'), '');
 select 0 = positionUTF8(materialize(''), 'абв');
@@ -61,6 +96,51 @@ select 0 = positionUTF8(materialize(''), 'абв') from system.numbers limit 10;
 select 1 = positionUTF8(materialize('абв'), 'абв') from system.numbers limit 10;
 select 2 = positionUTF8(materialize('абв'), 'бв') from system.numbers limit 10;
 select 3 = positionUTF8(materialize('абв'), 'в') from system.numbers limit 10;
+
+select 2 = positionUTF8('абвабв', 'б', 0);
+select 2 = positionUTF8('абвабв', 'б', 1);
+select 2 = positionUTF8('абвабв', 'б', 2);
+select 5 = positionUTF8('абвабв', 'б', 3);
+select 5 = positionUTF8('абвабв', 'б', 4);
+select 5 = positionUTF8('абвабв', 'б', 5);
+select 0 = positionUTF8('абвабв', 'б', 6);
+select 2 = positionUTF8('абвабв', 'бва', 0);
+select 0 = positionUTF8('абвабв', 'бва', 3);
+
+select 2 = positionUTF8(materialize('абвабв'), 'б', 0) from system.numbers limit 10;
+select 2 = positionUTF8(materialize('абвабв'), 'б', 1) from system.numbers limit 10;
+select 2 = positionUTF8(materialize('абвабв'), 'б', 2) from system.numbers limit 10;
+select 5 = positionUTF8(materialize('абвабв'), 'б', 3) from system.numbers limit 10;
+select 5 = positionUTF8(materialize('абвабв'), 'б', 4) from system.numbers limit 10;
+select 5 = positionUTF8(materialize('абвабв'), 'б', 5) from system.numbers limit 10;
+select 0 = positionUTF8(materialize('абвабв'), 'б', 6) from system.numbers limit 10;
+select 2 = positionUTF8(materialize('абвабв'), 'бва', 0) from system.numbers limit 10;
+select 0 = positionUTF8(materialize('абвабв'), 'бва', 3) from system.numbers limit 10;
+
+select 2 = positionUTF8('абвабв', materialize('б'), 0) from system.numbers limit 10;
+select 2 = positionUTF8('абвабв', materialize('б'), 1) from system.numbers limit 10;
+select 2 = positionUTF8('абвабв', materialize('б'), 2) from system.numbers limit 10;
+select 5 = positionUTF8('абвабв', materialize('б'), 3) from system.numbers limit 10;
+select 5 = positionUTF8('абвабв', materialize('б'), 4) from system.numbers limit 10;
+select 5 = positionUTF8('абвабв', materialize('б'), 5) from system.numbers limit 10;
+select 0 = positionUTF8('абвабв', materialize('б'), 6) from system.numbers limit 10;
+select 2 = positionUTF8('абвабв', materialize('бва'), 0) from system.numbers limit 10;
+select 0 = positionUTF8('абвабв', materialize('бва'), 3) from system.numbers limit 10;
+
+select 2 = positionUTF8(materialize('абвабв'), materialize('б'), 0) from system.numbers limit 10;
+select 2 = positionUTF8(materialize('абвабв'), materialize('б'), 1) from system.numbers limit 10;
+select 2 = positionUTF8(materialize('абвабв'), materialize('б'), 2) from system.numbers limit 10;
+select 5 = positionUTF8(materialize('абвабв'), materialize('б'), 3) from system.numbers limit 10;
+select 5 = positionUTF8(materialize('абвабв'), materialize('б'), 4) from system.numbers limit 10;
+select 5 = positionUTF8(materialize('абвабв'), materialize('б'), 5) from system.numbers limit 10;
+select 0 = positionUTF8(materialize('абвабв'), materialize('б'), 6) from system.numbers limit 10;
+select 2 = positionUTF8(materialize('абвабв'), materialize('бва'), 0) from system.numbers limit 10;
+select 0 = positionUTF8(materialize('абвабв'), materialize('бва'), 3) from system.numbers limit 10;
+
+select [2, 2, 2, 5, 5, 5, 0, 0, 0, 0] = groupArray(positionUTF8(materialize('абвабв'), materialize('б'), number)) from numbers(10);
+select [2, 2, 2, 5, 5, 5, 0, 0, 0, 0] = groupArray(positionUTF8('абвабв', materialize('б'), number)) from numbers(10);
+select [2, 2, 2, 5, 5, 5, 0, 0, 0, 0] = groupArray(positionUTF8('абвабв', 'б', number)) from numbers(10);
+select [2, 2, 2, 5, 5, 5, 0, 0, 0, 0] = groupArray(positionUTF8(materialize('абвабв'), 'б', number)) from numbers(10);
 
 select 1 = positionCaseInsensitive('', '');
 select 1 = positionCaseInsensitive('abc', '');
@@ -82,6 +162,10 @@ select 0 = positionCaseInsensitive(materialize(''), 'aBc') from system.numbers l
 select 1 = positionCaseInsensitive(materialize('abc'), 'aBc') from system.numbers limit 10;
 select 2 = positionCaseInsensitive(materialize('abc'), 'Bc') from system.numbers limit 10;
 select 3 = positionCaseInsensitive(materialize('abc'), 'C') from system.numbers limit 10;
+
+select 6 = positionCaseInsensitive(materialize('abcabc'), 'C', 4);
+select 6 = positionCaseInsensitive(materialize('abcabc'), 'C', 4) from system.numbers limit 10;
+select 6 = positionCaseInsensitive(materialize('abcabc'), 'C', materialize(4)) from system.numbers limit 10;
 
 select 1 = positionCaseInsensitive('', '');
 select 1 = positionCaseInsensitive('абв', '');
@@ -124,6 +208,10 @@ select 0 = positionCaseInsensitiveUTF8(materialize(''), 'аБв') from system.nu
 select 1 = positionCaseInsensitiveUTF8(materialize('абв'), 'аБв') from system.numbers limit 10;
 select 2 = positionCaseInsensitiveUTF8(materialize('абв'), 'Бв') from system.numbers limit 10;
 select 3 = positionCaseInsensitiveUTF8(materialize('абв'), 'В') from system.numbers limit 10;
+
+select 6 = positionCaseInsensitiveUTF8(materialize('абвабв'), 'В', 4);
+select 6 = positionCaseInsensitiveUTF8(materialize('абвабв'), 'В', 4) from system.numbers limit 10;
+select 6 = positionCaseInsensitiveUTF8(materialize('абвабв'), 'В', materialize(4)) from system.numbers limit 10;
 
 select position('' as h, '' as n) = positionCaseInsensitive(h, n);
 select position('abc' as h, '' as n) = positionCaseInsensitive(n, n);

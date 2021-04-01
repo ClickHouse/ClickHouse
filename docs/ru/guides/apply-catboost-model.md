@@ -1,3 +1,8 @@
+---
+toc_priority: 41
+toc_title: "Применение модели CatBoost в ClickHouse"
+---
+
 # Применение модели CatBoost в ClickHouse {#applying-catboost-model-in-clickhouse}
 
 [CatBoost](https://catboost.ai) — открытая программная библиотека разработанная компанией [Яндекс](https://yandex.ru/company/) для машинного обучения, которая использует схему градиентного бустинга.
@@ -227,4 +232,4 @@ FROM
 ```
 
 !!! note "Примечание"
-    Подробнее про функции [avg()](../sql-reference/aggregate-functions/reference.md#agg_function-avg), [log()](../sql-reference/functions/math-functions.md).
+    Подробнее про функции [avg()](../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg), [log()](../sql-reference/functions/math-functions.md).

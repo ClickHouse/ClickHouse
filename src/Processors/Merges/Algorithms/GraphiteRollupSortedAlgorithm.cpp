@@ -157,12 +157,19 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
     {
         SortCursor current = queue.current();
 
-        StringRef next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->pos);
+        if (current->isLast() && skipLastRowFor(current->order))
+        {
+            /// Get the next block from the corresponding source, if there is one.
+            queue.removeTop();
+            return Status(current.impl->order);
+        }
+
+        StringRef next_path = current->all_columns[columns_definition.path_column_num]->getDataAt(current->getRow());
         bool new_path = is_first || next_path != current_group_path;
 
         is_first = false;
 
-        time_t next_row_time = current->all_columns[columns_definition.time_column_num]->getUInt(current->pos);
+        time_t next_row_time = current->all_columns[columns_definition.time_column_num]->getUInt(current->getRow());
         /// Is new key before rounding.
         bool is_new_key = new_path || next_row_time != current_time;
 
@@ -220,11 +227,11 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
         /// and for rows with same maximum version - only last row.
         if (is_new_key
             || current->all_columns[columns_definition.version_column_num]->compareAt(
-                current->pos, current_subgroup_newest_row.row_num,
+                current->getRow(), current_subgroup_newest_row.row_num,
                 *(*current_subgroup_newest_row.all_columns)[columns_definition.version_column_num],
                 /* nan_direction_hint = */ 1) >= 0)
         {
-            current_subgroup_newest_row.set(current, source_chunks[current.impl->order]);
+            current_subgroup_newest_row.set(current, sources[current.impl->order].chunk);
 
             /// Small hack: group and subgroups have the same path, so we can set current_group_path here instead of startNextGroup
             /// But since we keep in memory current_subgroup_newest_row's block, we could use StringRef for current_group_path and don't
@@ -256,7 +263,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 
 void GraphiteRollupSortedAlgorithm::startNextGroup(SortCursor & cursor, Graphite::RollupRule next_rule)
 {
-    merged_data.startNextGroup(cursor->all_columns, cursor->pos, next_rule, columns_definition);
+    merged_data.startNextGroup(cursor->all_columns, cursor->getRow(), next_rule, columns_definition);
 }
 
 void GraphiteRollupSortedAlgorithm::finishCurrentGroup()
@@ -301,7 +308,7 @@ void GraphiteRollupSortedAlgorithm::GraphiteRollupMergedData::insertRow(
     const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
     if (aggregate_state_created)
     {
-        aggregation_pattern->function->insertResultInto(place_for_aggregate_state.data(), *value_column);
+        aggregation_pattern->function->insertResultInto(place_for_aggregate_state.data(), *value_column, nullptr);
         aggregation_pattern->function->destroy(place_for_aggregate_state.data());
         aggregate_state_created = false;
     }

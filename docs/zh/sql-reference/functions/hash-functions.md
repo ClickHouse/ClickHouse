@@ -93,13 +93,13 @@ URL的层级与URLHierarchy中的层级相同。 此函数被用于Yandex.Metric
 接受UInt64类型的参数。返回Int32。
 有关更多信息，请参见链接：[JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2\_32,murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
+## murmurHash2_32,murmurHash2_64 {#murmurhash2-32-murmurhash2-64}
 
 计算字符串的MurmurHash2。
 接受一个String类型的参数。返回UInt64或UInt32。
 有关更多信息，请参阅链接：[MurmurHash2](https://github.com/aappleby/smhasher)
 
-## murmurHash3\_32,murmurHash3\_64,murmurHash3\_128 {#murmurhash3-32-murmurhash3-64-murmurhash3-128}
+## murmurHash3_32,murmurHash3_64,murmurHash3_128 {#murmurhash3-32-murmurhash3-64-murmurhash3-128}
 
 计算字符串的MurmurHash3。
 接受一个String类型的参数。返回UInt64或UInt32或FixedString(16)。

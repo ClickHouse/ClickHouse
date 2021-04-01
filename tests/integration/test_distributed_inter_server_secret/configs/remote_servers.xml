@@ -1,0 +1,26 @@
+<yandex>
+    <remote_servers>
+        <insecure>
+            <node>
+                <host>n1</host>
+                <port>9000</port>
+            </node>
+            <node>
+                <host>n2</host>
+                <port>9000</port>
+            </node>
+        </insecure>
+
+        <secure>
+            <secret>foo</secret>
+            <node>
+                <host>n1</host>
+                <port>9000</port>
+            </node>
+            <node>
+                <host>n2</host>
+                <port>9000</port>
+            </node>
+        </secure>
+    </remote_servers>
+</yandex>

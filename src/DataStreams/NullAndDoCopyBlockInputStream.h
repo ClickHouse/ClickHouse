@@ -21,19 +21,10 @@ class NullAndDoCopyBlockInputStream : public IBlockInputStream
 {
 public:
     NullAndDoCopyBlockInputStream(const BlockInputStreamPtr & input_, BlockOutputStreamPtr output_)
+        : input(std::move(input_))
+        , output(std::move(output_))
     {
-        input_streams.push_back(input_);
-        output_streams.push_back(output_);
-
-        for (auto & input_stream : input_streams)
-            children.push_back(input_stream);
-    }
-
-    NullAndDoCopyBlockInputStream(const BlockInputStreams & input_, BlockOutputStreams & output_)
-        : input_streams(input_), output_streams(output_)
-    {
-        for (auto & input_stream : input_)
-            children.push_back(input_stream);
+        children.push_back(input);
     }
 
     /// Suppress readPrefix and readSuffix, because they are called by copyData.
@@ -53,16 +44,13 @@ protected:
         /// If query was cancelled, it will be processed by child streams.
         /// Part of the data will be processed.
 
-        if (input_streams.size() == 1 && output_streams.size() == 1)
-            copyData(*input_streams.at(0), *output_streams.at(0));
-        else
-            copyData(input_streams, output_streams);
+        copyData(*input, *output);
         return Block();
     }
 
 private:
-    BlockInputStreams input_streams;
-    BlockOutputStreams output_streams;
+    BlockInputStreamPtr input;
+    BlockOutputStreamPtr output;
 };
 
 }

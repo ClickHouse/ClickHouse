@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 45
 toc_title: "\u5206\u5C42\u5B57\u5178"
 ---
@@ -27,7 +27,7 @@ ClickHouse支持分层字典与 [数字键](external-dicts-dict-structure.md#ext
 
 这种层次结构可以表示为下面的字典表。
 
-| region\_id | parent\_region | region\_name |
+| region_id | parent_region | region_name |
 |------------|----------------|--------------|
 | 1          | 0              | 俄罗斯       |
 | 2          | 1              | 莫斯科       |

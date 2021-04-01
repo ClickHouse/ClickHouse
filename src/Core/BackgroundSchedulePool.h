@@ -51,7 +51,7 @@ public:
     size_t getNumberOfThreads() const { return size; }
 
     /// thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
-    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric memory_metric_, const char *thread_name_);
+    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, const char *thread_name_);
     ~BackgroundSchedulePool();
 
 private:
@@ -85,7 +85,6 @@ private:
     ThreadGroupStatusPtr thread_group;
 
     CurrentMetrics::Metric tasks_metric;
-    CurrentMetrics::Metric memory_metric;
     std::string thread_name;
 
     void attachToThreadGroup();
@@ -102,7 +101,8 @@ public:
     bool schedule();
 
     /// Schedule for execution after specified delay.
-    bool scheduleAfter(size_t ms);
+    /// If overwrite is set then the task will be re-scheduled (if it was already scheduled, i.e. delayed == true).
+    bool scheduleAfter(size_t ms, bool overwrite = true);
 
     /// Further attempts to schedule become no-op. Will wait till the end of the current execution of the task.
     void deactivate();

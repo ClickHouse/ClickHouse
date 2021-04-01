@@ -5,13 +5,18 @@
 
 namespace DB
 {
+namespace
+{
 
 struct NameLike
 {
     static constexpr auto name = "like";
 };
 
-using FunctionLike = FunctionsStringSearch<MatchImpl<true>, NameLike>;
+using LikeImpl = MatchImpl</*SQL LIKE */ true, /*revert*/false>;
+using FunctionLike = FunctionsStringSearch<LikeImpl, NameLike>;
+
+}
 
 void registerFunctionLike(FunctionFactory & factory)
 {

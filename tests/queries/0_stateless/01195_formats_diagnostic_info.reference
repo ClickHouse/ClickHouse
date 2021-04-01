@@ -20,6 +20,7 @@ ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, ex
 ERROR: Tab found where line feed is expected. It's like your file has more columns than expected.
 ERROR: garbage after Decimal(18, 10): "Hello<LINE FEED>"
 Column 0,   name: t, type: DateTime,        ERROR: text "<LINE FEED>" is not like DateTime
+Unexpected NULL value
 
 CustomSeparated
 Column 2,   name: d, type: Decimal(18, 10), parsed text: "123456789"ERROR

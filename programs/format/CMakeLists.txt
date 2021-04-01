@@ -1,5 +1,14 @@
-set(CLICKHOUSE_FORMAT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/Format.cpp)
-set(CLICKHOUSE_FORMAT_LINK PRIVATE dbms clickhouse_common_io clickhouse_parsers ${Boost_PROGRAM_OPTIONS_LIBRARY})
-#set(CLICKHOUSE_FORMAT_INCLUDE SYSTEM PRIVATE ...)
+set (CLICKHOUSE_FORMAT_SOURCES Format.cpp)
+
+set (CLICKHOUSE_FORMAT_LINK
+    PRIVATE
+        boost::program_options
+        clickhouse_common_io
+        clickhouse_parsers
+        clickhouse_functions
+        clickhouse_aggregate_functions
+        clickhouse_table_functions
+        dbms
+)
 
 clickhouse_program_add(format)

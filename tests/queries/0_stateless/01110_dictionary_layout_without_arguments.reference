@@ -1,3 +1,3 @@
 World
-CREATE DICTIONARY db_for_dict.dict_with_hashed_layout\n(\n    `key1` UInt64, \n    `value` String\n)\nPRIMARY KEY key1\nSOURCE(CLICKHOUSE(HOST \'localhost\' PORT 9000 USER \'default\' TABLE \'table_for_dict\' DB \'db_for_dict\'))\nLIFETIME(MIN 1 MAX 10)\nLAYOUT(HASHED)
+CREATE DICTIONARY db_for_dict.dict_with_hashed_layout\n(\n    `key1` UInt64,\n    `value` String\n)\nPRIMARY KEY key1\nSOURCE(CLICKHOUSE(HOST \'localhost\' PORT tcpPort() USER \'default\' TABLE \'table_for_dict\' DB \'db_for_dict\'))\nLIFETIME(MIN 1 MAX 10)\nLAYOUT(HASHED)
 Hello

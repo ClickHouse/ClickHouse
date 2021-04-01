@@ -1,3 +1,9 @@
+---
+toc_priority: 28
+toc_title: "Визуальные интерфейсы от сторонних разработчиков"
+---
+
+
 # Визуальные интерфейсы от сторонних разработчиков {#vizualnye-interfeisy-ot-storonnikh-razrabotchikov}
 
 ## С открытым исходным кодом {#s-otkrytym-iskhodnym-kodom}
@@ -89,7 +95,19 @@
 
 [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) — специализированный инструмент для визуализации `system.trace_log` в виде [flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
-## Коммерческие {#kommercheskie}
+### clickhouse-plantuml {#clickhouse-plantuml}
+
+[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) — скрипт, генерирующий [PlantUML](https://plantuml.com/) диаграммы схем таблиц.
+
+### xeus-clickhouse {#xeus-clickhouse}
+
+[xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) — это ядро Jupyter для ClickHouse, которое поддерживает запрос ClickHouse-данных с использованием SQL в Jupyter.
+
+### MindsDB Studio {#mindsdb}
+
+[MindsDB](https://mindsdb.com/) — это продукт с открытым исходным кодом, реализующий слой искусственного интеллекта (Artificial Intelligence, AI) для различных СУБД, в том числе для ClickHouse. MindsDB облегчает процессы создания, обучения и развертывания современных моделей машинного обучения. Графический пользовательский интерфейс MindsDB Studio позволяет обучать новые модели на основе данных в БД, интерпретировать сделанные моделями прогнозы, выявлять потенциальные ошибки в данных, визуализировать и оценивать достоверность моделей с помощью функции Explainable AI, так чтобы вы могли быстрее адаптировать и настраивать ваши модели машинного обучения.
+
+## Коммерческие {#commercial}
 
 ### DataGrip {#datagrip}
 
@@ -132,7 +150,6 @@
 -   Подготовка данных и возможности ETL.
 -   Моделирование данных с помощью SQL для их реляционного отображения.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/gui/) <!--hide-->
 
 ### Looker {#looker}
 

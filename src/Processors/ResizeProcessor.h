@@ -7,10 +7,10 @@
 namespace DB
 {
 
-/** Has arbitary non zero number of inputs and arbitary non zero number of outputs.
+/** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
   * All of them have the same structure.
   *
-  * Pulls data from arbitary input (whenever it is ready) and pushes it to arbitary output (whenever is is not full).
+  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever is is not full).
   * Doesn't do any heavy calculations.
   * Doesn't preserve an order of data.
   *
@@ -128,6 +128,9 @@ private:
 
     std::vector<InputPortWithStatus> input_ports;
     std::vector<OutputPortWithStatus> output_ports;
+    /// This field contained chunks which were read for output which had became finished while reading was happening.
+    /// They will be pushed to any next waiting output.
+    std::vector<Port::Data> abandoned_chunks;
 };
 
 }

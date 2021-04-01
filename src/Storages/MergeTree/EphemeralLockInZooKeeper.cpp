@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <common/logger_useful.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -71,13 +72,13 @@ EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
 EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
     const String & block_numbers_path, const String & path_prefix, const String & temp_path,
     zkutil::ZooKeeper & zookeeper_)
-    : zookeeper(zookeeper_)
+    : zookeeper(&zookeeper_)
 {
     std::vector<String> holders;
     while (true)
     {
         Coordination::Stat partitions_stat;
-        Strings partitions = zookeeper.getChildren(block_numbers_path, &partitions_stat);
+        Strings partitions = zookeeper->getChildren(block_numbers_path, &partitions_stat);
 
         if (holders.size() < partitions.size())
         {
@@ -85,7 +86,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
             for (size_t i = 0; i < partitions.size() - holders.size(); ++i)
             {
                 String path = temp_path + "/abandonable_lock-";
-                holder_futures.push_back(zookeeper.asyncCreate(path, {}, zkutil::CreateMode::EphemeralSequential));
+                holder_futures.push_back(zookeeper->asyncCreate(path, {}, zkutil::CreateMode::EphemeralSequential));
             }
             for (auto & future : holder_futures)
             {
@@ -104,14 +105,13 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
         lock_ops.push_back(zkutil::makeCheckRequest(block_numbers_path, partitions_stat.version));
 
         Coordination::Responses lock_responses;
-        int rc = zookeeper.tryMulti(lock_ops, lock_responses);
-        if (rc == Coordination::ZBADVERSION)
+        Coordination::Error rc = zookeeper->tryMulti(lock_ops, lock_responses);
+        if (rc == Coordination::Error::ZBADVERSION)
         {
-            LOG_TRACE(&Logger::get("EphemeralLocksInAllPartitions"),
-                "Someone has inserted a block in a new partition while we were creating locks. Retry.");
+            LOG_TRACE(&Poco::Logger::get("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
             continue;
         }
-        else if (rc != Coordination::ZOK)
+        else if (rc != Coordination::Error::ZOK)
             throw Coordination::Exception(rc);
 
         for (size_t i = 0; i < partitions.size(); ++i)
@@ -132,13 +132,16 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
 
 void EphemeralLocksInAllPartitions::unlock()
 {
+    if (!zookeeper)
+        return;
+
     std::vector<zkutil::ZooKeeper::FutureMulti> futures;
     for (const auto & lock : locks)
     {
         Coordination::Requests unlock_ops;
         unlock_ops.emplace_back(zkutil::makeRemoveRequest(lock.path, -1));
         unlock_ops.emplace_back(zkutil::makeRemoveRequest(lock.holder_path, -1));
-        futures.push_back(zookeeper.asyncMulti(unlock_ops));
+        futures.push_back(zookeeper->asyncMulti(unlock_ops));
     }
 
     for (auto & future : futures)

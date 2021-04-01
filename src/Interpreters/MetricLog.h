@@ -18,6 +18,7 @@ namespace DB
 struct MetricLogElement
 {
     time_t event_time{};
+    Decimal64 event_time_microseconds{};
     UInt64 milliseconds{};
 
     std::vector<ProfileEvents::Count> profile_events;
@@ -25,7 +26,7 @@ struct MetricLogElement
 
     static std::string name() { return "MetricLog"; }
     static Block createBlock();
-    void appendToBlock(Block & block) const;
+    void appendToBlock(MutableColumns & columns) const;
 };
 
 

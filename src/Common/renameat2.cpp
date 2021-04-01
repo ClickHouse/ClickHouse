@@ -4,6 +4,7 @@
 
 #if defined(linux) || defined(__linux) || defined(__linux__)
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/syscall.h>
 #include <linux/fs.h>
 #include <sys/utsname.h>
@@ -47,18 +48,29 @@ static bool supportsRenameat2Impl()
 
 #if defined(__NR_renameat2)
 
-static void renameat2(const std::string & old_path, const std::string & new_path, int flags)
+static bool renameat2(const std::string & old_path, const std::string & new_path, int flags)
 {
+    if (!supportsRenameat2())
+        return false;
     if (old_path.empty() || new_path.empty())
         throw Exception("Cannot rename " + old_path + " to " + new_path + ": path is empty", ErrorCodes::LOGICAL_ERROR);
-    if (old_path[0] != '/' || new_path[0] != '/')
-        throw Exception("Cannot rename " + old_path + " to " + new_path + ": path is relative", ErrorCodes::LOGICAL_ERROR);
 
     /// int olddirfd (ignored for absolute oldpath), const char *oldpath,
     /// int newdirfd (ignored for absolute newpath), const char *newpath,
     /// unsigned int flags
-    if (0 == syscall(__NR_renameat2, 0, old_path.c_str(), 0, new_path.c_str(), flags))
-        return;
+    if (0 == syscall(__NR_renameat2, AT_FDCWD, old_path.c_str(), AT_FDCWD, new_path.c_str(), flags))
+        return true;
+
+    /// EINVAL means that filesystem does not support one of the flags.
+    /// It also may happen when running clickhouse in docker with Mac OS as a host OS.
+    /// supportsRenameat2() with uname is not enough in this case, because virtualized Linux kernel is used.
+    /// Other cases when EINVAL can be returned should never happen.
+    if (errno == EINVAL)
+        return false;
+    /// We should never get ENOSYS on Linux, because we check kernel version in supportsRenameat2Impl().
+    /// However, we can get in on WSL.
+    if (errno == ENOSYS)
+        return false;
 
     if (errno == EEXIST)
         throwFromErrno("Cannot rename " + old_path + " to " + new_path + " because the second path already exists", ErrorCodes::ATOMIC_RENAME_FAIL);
@@ -71,10 +83,9 @@ static void renameat2(const std::string & old_path, const std::string & new_path
 #define RENAME_NOREPLACE -1
 #define RENAME_EXCHANGE -1
 
-[[noreturn]]
-static void renameat2(const std::string &, const std::string &, int)
+static bool renameat2(const std::string &, const std::string &, int)
 {
-    throw Exception("Compiled without renameat2() support", ErrorCodes::UNSUPPORTED_METHOD);
+    return false;
 }
 
 #endif
@@ -105,18 +116,19 @@ bool supportsRenameat2()
 
 void renameNoReplace(const std::string & old_path, const std::string & new_path)
 {
-    if (supportsRenameat2())
-        renameat2(old_path, new_path, RENAME_NOREPLACE);
-    else
+    if (!renameat2(old_path, new_path, RENAME_NOREPLACE))
         renameNoReplaceFallback(old_path, new_path);
 }
 
 void renameExchange(const std::string & old_path, const std::string & new_path)
 {
-    if (supportsRenameat2())
-        renameat2(old_path, new_path, RENAME_EXCHANGE);
-    else
+    if (!renameat2(old_path, new_path, RENAME_EXCHANGE))
         renameExchangeFallback(old_path, new_path);
+}
+
+bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path)
+{
+    return renameat2(old_path, new_path, RENAME_EXCHANGE);
 }
 
 }

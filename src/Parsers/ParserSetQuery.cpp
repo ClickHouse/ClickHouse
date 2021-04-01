@@ -6,6 +6,7 @@
 #include <Parsers/ParserSetQuery.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -15,7 +16,7 @@ namespace DB
 /// Parse `name = value`.
 bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & pos, Expected & expected)
 {
-    ParserIdentifier name_p;
+    ParserCompoundIdentifier name_p;
     ParserLiteral value_p;
     ParserToken s_eq(TokenType::Equals);
 
@@ -28,7 +29,11 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
     if (!s_eq.ignore(pos, expected))
         return false;
 
-    if (!value_p.parse(pos, value, expected))
+    if (ParserKeyword("TRUE").ignore(pos, expected))
+        value = std::make_shared<ASTLiteral>(Field(UInt64(1)));
+    else if (ParserKeyword("FALSE").ignore(pos, expected))
+        value = std::make_shared<ASTLiteral>(Field(UInt64(0)));
+    else if (!value_p.parse(pos, value, expected))
         return false;
 
     tryGetIdentifierNameInto(name, change.name);

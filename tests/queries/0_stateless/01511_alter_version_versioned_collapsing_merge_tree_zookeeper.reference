@@ -1,0 +1,16 @@
+1	1	1	-1
+2	2	2	-1
+CREATE TABLE default.table_with_version_replicated_1\n(\n    `key` UInt64,\n    `value` String,\n    `version` UInt8,\n    `sign` Int8\n)\nENGINE = ReplicatedVersionedCollapsingMergeTree(\'/clickhouse/test_01511/t\', \'1\', sign, version)\nORDER BY key\nSETTINGS index_granularity = 8192
+1	1	1	-1
+2	2	2	-1
+CREATE TABLE default.table_with_version_replicated_1\n(\n    `key` UInt64,\n    `value` String,\n    `version` UInt32,\n    `sign` Int8\n)\nENGINE = ReplicatedVersionedCollapsingMergeTree(\'/clickhouse/test_01511/t\', \'1\', sign, version)\nORDER BY key\nSETTINGS index_granularity = 8192
+1	1	2	1
+2	2	2	-1
+1	1	2	1
+2	2	2	-1
+3	3	65555	1
+1	1	2	1
+2	2	2	-1
+CREATE TABLE default.table_with_version_replicated_2\n(\n    `key` UInt64,\n    `value` String,\n    `version` UInt32,\n    `sign` Int8\n)\nENGINE = ReplicatedVersionedCollapsingMergeTree(\'/clickhouse/test_01511/t\', \'2\', sign, version)\nORDER BY key\nSETTINGS index_granularity = 8192
+1	1	2	1
+2	2	2	-1

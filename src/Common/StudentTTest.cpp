@@ -153,7 +153,9 @@ std::pair<bool, std::string> StudentTTest::compareAndReport(size_t confidence_le
 
     double mean_confidence_interval = table_value * t_statistic;
 
-    std::stringstream ss;
+    std::stringstream ss;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ss.exceptions(std::ios::failbit);
+
     if (mean_difference > mean_confidence_interval && (mean_difference - mean_confidence_interval > 0.0001)) /// difference must be more than 0.0001, to take into account connection latency.
     {
         ss << "Difference at " << confidence_level[confidence_level_index] <<  "% confidence : ";

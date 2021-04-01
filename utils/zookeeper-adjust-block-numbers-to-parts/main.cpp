@@ -102,7 +102,7 @@ std::unordered_map<std::string, Int64> getPartitionsNeedAdjustingBlockNumbers(
         std::cout << "Shard: " << shard << std::endl;
         std::vector<std::string> use_tables = tables.empty() ? getAllTables(zk, root, shard) : removeNotExistingTables(zk, root, shard, tables);
 
-        for (auto table : use_tables)
+        for (const auto & table : use_tables)
         {
             std::cout << "\tTable: " << table << std::endl;
             std::string table_path = root + "/" + shard + "/" + table;
@@ -121,7 +121,7 @@ std::unordered_map<std::string, Int64> getPartitionsNeedAdjustingBlockNumbers(
                 continue;
             }
 
-            for (auto partition : partitions)
+            for (const auto & partition : partitions)
             {
                 try
                 {
@@ -199,7 +199,7 @@ void setCurrentBlockNumber(zkutil::ZooKeeper & zk, const std::string & path, Int
     create_ephemeral_nodes(1); /// Firstly try to create just a single node.
 
     /// Create other nodes in batches of 50 nodes.
-    while (current_block_number + 50 <= new_current_block_number)
+    while (current_block_number + 50 <= new_current_block_number) // NOLINT: clang-tidy thinks that the loop is infinite
         create_ephemeral_nodes(50);
 
     create_ephemeral_nodes(new_current_block_number - current_block_number);
@@ -279,7 +279,7 @@ try
 
     return 0;
 }
-catch (const Poco::Exception & e)
+catch (...)
 {
     std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
     throw;

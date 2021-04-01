@@ -1,22 +1,29 @@
-# Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S) {#decimalp-s-decimal32s-decimal64s-decimal128s}
+---
+toc_priority: 42
+toc_title: Decimal
+---
+
+# Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S) {#decimalp-s-decimal32s-decimal64s-decimal128s}
 
 Знаковые дробные числа с сохранением точности операций сложения, умножения и вычитания. Для деления осуществляется отбрасывание (не округление) знаков, не попадающих в младший десятичный разряд.
 
 ## Параметры {#parametry}
 
--   P - precision. Значение из диапазона \[ 1 : 38 \]. Определяет, сколько десятичных знаков (с учетом дробной части) может содержать число.
+-   P - precision. Значение из диапазона \[ 1 : 76 \]. Определяет, сколько десятичных знаков (с учетом дробной части) может содержать число.
 -   S - scale. Значение из диапазона \[ 0 : P \]. Определяет, сколько десятичных знаков содержится в дробной части числа.
 
 В зависимости от параметра P Decimal(P, S) является синонимом:
 - P из \[ 1 : 9 \] - для Decimal32(S)
 - P из \[ 10 : 18 \] - для Decimal64(S)
 - P из \[ 19 : 38 \] - для Decimal128(S)
+- P из \[ 39 : 76 \] - для Decimal256(S)
 
 ## Диапазоны Decimal {#diapazony-decimal}
 
 -   Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
 -   Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
 -   Decimal128(S) - ( -1 \* 10^(38 - S), 1 \* 10^(38 - S) )
+-   Decimal256(S) - ( -1 \* 10^(76 - S), 1 \* 10^(76 - S) )
 
 Например, Decimal32(4) содержит числа от -99999.9999 до 99999.9999 c шагом 0.0001.
 
@@ -32,6 +39,7 @@
 -   `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
 -   `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
 -   `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
+-   `Decimal256(S1) <op> Decimal<32|64|128>(S2) -> Decimal256(S)`
 
 Для размера дробной части (scale) результата действуют следующие правила:
 
@@ -76,7 +84,7 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 DB::Exception: Decimal math overflow.
 ```
 
-Проверка переполнения приводит к замедлению операций. При уверенности, что типа результата хватит для его записи проверку переполнения можно отключить настройкой decimal\_check\_overflow. В этом случае при переполнении вернется неверное значение:
+Проверка переполнения приводит к замедлению операций. При уверенности, что типа результата хватит для его записи проверку переполнения можно отключить настройкой decimal_check_overflow. В этом случае при переполнении вернется неверное значение:
 
 ``` sql
 SET decimal_check_overflow = 0;
@@ -99,4 +107,8 @@ SELECT toDecimal32(1, 8) < 100
 DB::Exception: Can't compare.
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/decimal/) <!--hide-->
+**Смотрите также**
+-   [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
+-   [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
+
+

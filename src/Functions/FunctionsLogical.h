@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunctionImpl.h>
@@ -36,9 +36,21 @@ namespace Ternary
 {
     using ResultType = UInt8;
 
-    static constexpr UInt8 False = 0;
-    static constexpr UInt8 True = -1;
-    static constexpr UInt8 Null = 1;
+    /** These carefully picked values magically work so bitwise "and", "or" on them
+      *  corresponds to the expected results in three-valued logic.
+      *
+      * False and True are represented by all-0 and all-1 bits, so all bitwise operations on them work as expected.
+      * Null is represented as single 1 bit. So, it is something in between False and True.
+      * And "or" works like maximum and "and" works like minimum:
+      *  "or" keeps True as is and lifts False with Null to Null.
+      *  "and" keeps False as is and downs True with Null to Null.
+      *
+      * This logic does not apply for "not" and "xor" - they work with default implementation for NULLs:
+      *  anything with NULL returns NULL, otherwise use conventional two-valued logic.
+      */
+    static constexpr UInt8 False = 0;   /// All zero bits.
+    static constexpr UInt8 True = -1;   /// All one bits.
+    static constexpr UInt8 Null = 1;    /// Single one bit.
 
     template <typename T>
     inline ResultType makeValue(T value)
@@ -61,8 +73,16 @@ struct AndImpl
     using ResultType = UInt8;
 
     static inline constexpr bool isSaturable() { return true; }
-    static inline constexpr bool isSaturatedValue(UInt8 a) { return a == Ternary::False; }
+
+    /// Final value in two-valued logic (no further operations with True, False will change this value)
+    static inline constexpr bool isSaturatedValue(bool a) { return !a; }
+
+    /// Final value in three-valued logic (no further operations with True, False, Null will change this value)
+    static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::False; }
+
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a & b; }
+
+    /// Will use three-valued logic for NULLs (see above) or default implementation (any operation with NULL returns NULL).
     static inline constexpr bool specialImplementationForNulls() { return true; }
 };
 
@@ -71,7 +91,8 @@ struct OrImpl
     using ResultType = UInt8;
 
     static inline constexpr bool isSaturable() { return true; }
-    static inline constexpr bool isSaturatedValue(UInt8 a) { return a == Ternary::True; }
+    static inline constexpr bool isSaturatedValue(bool a) { return a; }
+    static inline constexpr bool isSaturatedValueTernary(UInt8 a) { return a == Ternary::True; }
     static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a | b; }
     static inline constexpr bool specialImplementationForNulls() { return true; }
 };
@@ -82,7 +103,8 @@ struct XorImpl
 
     static inline constexpr bool isSaturable() { return false; }
     static inline constexpr bool isSaturatedValue(bool) { return false; }
-    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return !!a != !!b; }
+    static inline constexpr bool isSaturatedValueTernary(UInt8) { return false; }
+    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return a != b; }
     static inline constexpr bool specialImplementationForNulls() { return false; }
 
 #if USE_EMBEDDED_COMPILER
@@ -132,13 +154,15 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_index, size_t input_rows_count) override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes &) const override { return useDefaultImplementationForNulls(); }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
     {
+        assert(!types.empty() && !values.empty());
+
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (!Impl::isSaturable())
         {
@@ -193,7 +217,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override;
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
 
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes &) const override { return true; }

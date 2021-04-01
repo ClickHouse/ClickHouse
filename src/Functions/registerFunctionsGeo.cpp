@@ -10,9 +10,21 @@ class FunctionFactory;
 void registerFunctionGeoDistance(FunctionFactory & factory);
 void registerFunctionPointInEllipses(FunctionFactory & factory);
 void registerFunctionPointInPolygon(FunctionFactory & factory);
+void registerFunctionPolygonsIntersection(FunctionFactory & factory);
+void registerFunctionPolygonsUnion(FunctionFactory & factory);
+void registerFunctionPolygonArea(FunctionFactory & factory);
+void registerFunctionPolygonConvexHull(FunctionFactory & factory);
+void registerFunctionPolygonsSymDifference(FunctionFactory & factory);
+void registerFunctionPolygonsEquals(FunctionFactory & factory);
+void registerFunctionPolygonsDistance(FunctionFactory & factory);
+void registerFunctionPolygonsWithin(FunctionFactory & factory);
+void registerFunctionPolygonPerimeter(FunctionFactory & factory);
 void registerFunctionGeohashEncode(FunctionFactory & factory);
 void registerFunctionGeohashDecode(FunctionFactory & factory);
 void registerFunctionGeohashesInBox(FunctionFactory & factory);
+void registerFunctionWkt(FunctionFactory & factory);
+void registerFunctionReadWkt(FunctionFactory & factory);
+void registerFunctionSvg(FunctionFactory & factory);
 
 #if USE_H3
 void registerFunctionGeoToH3(FunctionFactory &);
@@ -36,9 +48,21 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionGeoDistance(factory);
     registerFunctionPointInEllipses(factory);
     registerFunctionPointInPolygon(factory);
+    registerFunctionPolygonsIntersection(factory);
+    registerFunctionPolygonsUnion(factory);
+    registerFunctionPolygonArea(factory);
+    registerFunctionPolygonConvexHull(factory);
+    registerFunctionPolygonsSymDifference(factory);
+    registerFunctionPolygonsEquals(factory);
+    registerFunctionPolygonsDistance(factory);
+    registerFunctionPolygonsWithin(factory);
+    registerFunctionPolygonPerimeter(factory);
     registerFunctionGeohashEncode(factory);
     registerFunctionGeohashDecode(factory);
     registerFunctionGeohashesInBox(factory);
+    registerFunctionWkt(factory);
+    registerFunctionReadWkt(factory);
+    registerFunctionSvg(factory);
 
 #if USE_H3
     registerFunctionGeoToH3(factory);

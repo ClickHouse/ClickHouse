@@ -84,18 +84,22 @@ private:
 StorageSystemZeros::StorageSystemZeros(const StorageID & table_id_, bool multithreaded_, std::optional<UInt64> limit_)
     : IStorage(table_id_), multithreaded(multithreaded_), limit(limit_)
 {
-    setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>()}}));
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(ColumnsDescription({{"zero", std::make_shared<DataTypeUInt8>()}}));
+    setInMemoryMetadata(storage_metadata);
+
 }
 
-Pipes StorageSystemZeros::read(
-        const Names & column_names,
-        const SelectQueryInfo &,
-        const Context & /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t max_block_size,
-        unsigned num_streams)
+Pipe StorageSystemZeros::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo &,
+    const Context & /*context*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    unsigned num_streams)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     bool use_multiple_streams = multithreaded;
 
@@ -108,8 +112,7 @@ Pipes StorageSystemZeros::read(
     if (!use_multiple_streams)
         num_streams = 1;
 
-    Pipes res;
-    res.reserve(num_streams);
+    Pipe res;
 
     ZerosStatePtr state;
 
@@ -123,7 +126,7 @@ Pipes StorageSystemZeros::read(
         if (limit && i == 0)
             source->addTotalRowsApprox(*limit);
 
-        res.emplace_back(std::move(source));
+        res.addSource(std::move(source));
     }
 
     return res;

@@ -1,0 +1,4 @@
+Nullable(Int32)	Int32	Nullable(Int32)	Int32
+CREATE TABLE default.data_null\n(\n    `a` Nullable(Int32),\n    `b` Int32,\n    `c` Nullable(Int32),\n    `d` Int32\n)\nENGINE = Memory
+Nullable(Int32)	Int32	Nullable(Int32)	Nullable(Int32)
+CREATE TABLE default.set_null\n(\n    `a` Nullable(Int32),\n    `b` Int32,\n    `c` Nullable(Int32),\n    `d` Nullable(Int32)\n)\nENGINE = Memory

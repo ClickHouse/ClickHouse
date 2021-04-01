@@ -1,8 +1,8 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 
 DROP DATABASE IF EXISTS database_for_dict;
 
-CREATE DATABASE database_for_dict Engine = Ordinary;
+CREATE DATABASE database_for_dict;
 
 SELECT '***date dict***';
 
@@ -28,7 +28,7 @@ CREATE DICTIONARY database_for_dict.dict1
   Tax Float64
 )
 PRIMARY KEY CountryID
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'date_table' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'date_table' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 1000)
 LAYOUT(RANGE_HASHED())
 RANGE(MIN StartDate MAX EndDate);
@@ -62,7 +62,7 @@ CREATE DICTIONARY database_for_dict.dict2
   Tax Float64
 )
 PRIMARY KEY CountryID
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'datetime_table' DB 'database_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'datetime_table' DB 'database_for_dict'))
 LIFETIME(MIN 1 MAX 1000)
 LAYOUT(RANGE_HASHED())
 RANGE(MIN StartDate MAX EndDate);
@@ -71,33 +71,6 @@ SELECT dictGetFloat64('database_for_dict.dict2', 'Tax', toUInt64(1), toDateTime(
 SELECT dictGetFloat64('database_for_dict.dict2', 'Tax', toUInt64(1), toDateTime('2019-05-29 00:00:00'));
 SELECT dictGetFloat64('database_for_dict.dict2', 'Tax', toUInt64(2), toDateTime('2019-05-29 00:00:00'));
 SELECT dictGetFloat64('database_for_dict.dict2', 'Tax', toUInt64(2), toDateTime('2019-05-31 00:00:00'));
-
-SELECT '***ip trie dict***';
-
-CREATE TABLE database_for_dict.table_ip_trie
-(
-    prefix String,
-    asn UInt32,
-    cca2 String
-)
-engine = TinyLog;
-
-INSERT INTO database_for_dict.table_ip_trie VALUES ('202.79.32.0/20', 17501, 'NP'), ('2620:0:870::/48', 3856, 'US'), ('2a02:6b8:1::/48', 13238, 'RU'), ('2001:db8::/32', 65536, 'ZZ');
-
-
-CREATE DICTIONARY database_for_dict.dict_ip_trie
-(
-  prefix String,
-  asn UInt32,
-  cca2 String
-)
-PRIMARY KEY prefix
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db 'database_for_dict' table 'table_ip_trie'))
-LAYOUT(IP_TRIE())
-LIFETIME(MIN 10 MAX 100);
-
-SELECT dictGetUInt32('database_for_dict.dict_ip_trie', 'asn', tuple(IPv4StringToNum('202.79.32.0')));
-SELECT dictGetString('database_for_dict.dict_ip_trie', 'cca2', tuple(IPv4StringToNum('202.79.32.0')));
 
 SELECT '***hierarchy dict***';
 
@@ -120,7 +93,7 @@ CREATE DICTIONARY database_for_dict.dictionary_with_hierarchy
     RegionName String
 )
 PRIMARY KEY RegionID
-SOURCE(CLICKHOUSE(host 'localhost' port 9000 user 'default' db 'database_for_dict' table 'table_with_hierarchy'))
+SOURCE(CLICKHOUSE(host 'localhost' port tcpPort() user 'default' db 'database_for_dict' table 'table_with_hierarchy'))
 LAYOUT(HASHED())
 LIFETIME(MIN 1 MAX 1000);
 

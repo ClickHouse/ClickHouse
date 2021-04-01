@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
+#include <Core/Names.h>
 #include <memory>
 
 namespace DB
@@ -10,56 +12,103 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+
+struct PrewhereInfo;
+using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+
+struct PrewhereDAGInfo;
+using PrewhereDAGInfoPtr = std::shared_ptr<PrewhereDAGInfo>;
+
+struct FilterInfo;
+using FilterInfoPtr = std::shared_ptr<FilterInfo>;
+
+struct FilterDAGInfo;
+using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
+
+struct InputOrderInfo;
+using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
+
+struct TreeRewriterResult;
+using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+
+class ReadInOrderOptimizer;
+using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
+
+class Cluster;
+using ClusterPtr = std::shared_ptr<Cluster>;
+
 struct PrewhereInfo
 {
     /// Actions which are executed in order to alias columns are used for prewhere actions.
     ExpressionActionsPtr alias_actions;
+    /// Actions for row level security filter. Applied separately before prewhere_actions.
+    /// This actions are separate because prewhere condition should not be executed over filtered rows.
+    ExpressionActionsPtr row_level_filter;
     /// Actions which are executed on block in order to get filter column for prewhere step.
     ExpressionActionsPtr prewhere_actions;
     /// Actions which are executed after reading from storage in order to remove unused columns.
     ExpressionActionsPtr remove_columns_actions;
+    String row_level_column_name;
+    String prewhere_column_name;
+    bool remove_prewhere_column = false;
+    bool need_filter = false;
+};
+
+/// Same as PrewhereInfo, but with ActionsDAG.
+struct PrewhereDAGInfo
+{
+    ActionsDAGPtr alias_actions;
+    ActionsDAGPtr row_level_filter_actions;
+    ActionsDAGPtr prewhere_actions;
+    ActionsDAGPtr remove_columns_actions;
+    String row_level_column_name;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
     bool need_filter = false;
 
-    PrewhereInfo() = default;
-    explicit PrewhereInfo(ExpressionActionsPtr prewhere_actions_, String prewhere_column_name_)
-        : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
+    PrewhereDAGInfo() = default;
+    explicit PrewhereDAGInfo(ActionsDAGPtr prewhere_actions_, String prewhere_column_name_)
+            : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
+
+    std::string dump() const;
 };
 
 /// Helper struct to store all the information about the filter expression.
 struct FilterInfo
 {
+    ExpressionActionsPtr alias_actions;
     ExpressionActionsPtr actions;
     String column_name;
     bool do_remove_column = false;
 };
 
-struct InputSortingInfo
+/// Same as FilterInfo, but with ActionsDAG.
+struct FilterDAGInfo
+{
+    ActionsDAGPtr actions;
+    String column_name;
+    bool do_remove_column = false;
+
+    std::string dump() const;
+};
+
+struct InputOrderInfo
 {
     SortDescription order_key_prefix_descr;
     int direction;
 
-    InputSortingInfo(const SortDescription & order_key_prefix_descr_, int direction_)
+    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_)
         : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
 
-    bool operator ==(const InputSortingInfo & other) const
+    bool operator ==(const InputOrderInfo & other) const
     {
         return order_key_prefix_descr == other.order_key_prefix_descr && direction == other.direction;
     }
 
-    bool operator !=(const InputSortingInfo & other) const { return !(*this == other); }
+    bool operator !=(const InputOrderInfo & other) const { return !(*this == other); }
 };
-
-using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
-using FilterInfoPtr = std::shared_ptr<FilterInfo>;
-using InputSortingInfoPtr = std::shared_ptr<const InputSortingInfo>;
-
-struct SyntaxAnalyzerResult;
-using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
-
-class ReadInOrderOptimizer;
-using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
 /** Query along with some additional data,
   *  that can be used during query processing
@@ -68,40 +117,23 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 struct SelectQueryInfo
 {
     ASTPtr query;
+    ASTPtr view_query; /// Optimized VIEW query
 
-    SyntaxAnalyzerResultPtr syntax_analyzer_result;
+    /// For optimize_skip_unused_shards.
+    /// Can be modified in getQueryProcessingStage()
+    ClusterPtr cluster;
+
+    TreeRewriterResultPtr syntax_analyzer_result;
 
     PrewhereInfoPtr prewhere_info;
 
-    ReadInOrderOptimizerPtr order_by_optimizer;
-    /// We can modify it while reading from storage
-    mutable InputSortingInfoPtr input_sorting_info;
+    ReadInOrderOptimizerPtr order_optimizer;
+    /// Can be modified while reading from storage
+    InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
-
-    /// Temporary flag is needed to support old pipeline with input streams.
-    /// If enabled, then pipeline returned by storage must be a tree.
-    /// Processors from the tree can't return ExpandPipeline status.
-    mutable bool force_tree_shaped_pipeline = false;
-};
-
-/// RAII class to enable force_tree_shaped_pipeline for SelectQueryInfo.
-/// Looks awful, but I hope it's temporary.
-struct ForceTreeShapedPipeline
-{
-    explicit ForceTreeShapedPipeline(const SelectQueryInfo & info_) : info(info_)
-    {
-        force_tree_shaped_pipeline = info.force_tree_shaped_pipeline;
-        info.force_tree_shaped_pipeline = true;
-    }
-
-    ~ForceTreeShapedPipeline() { info.force_tree_shaped_pipeline = force_tree_shaped_pipeline; }
-
-private:
-    bool force_tree_shaped_pipeline;
-    const SelectQueryInfo & info;
 };
 
 }

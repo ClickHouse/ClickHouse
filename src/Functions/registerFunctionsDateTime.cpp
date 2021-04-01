@@ -11,12 +11,14 @@ void registerFunctionToDayOfWeek(FunctionFactory &);
 void registerFunctionToDayOfYear(FunctionFactory &);
 void registerFunctionToHour(FunctionFactory &);
 void registerFunctionToMinute(FunctionFactory &);
+void registerFunctionToStartOfSecond(FunctionFactory &);
 void registerFunctionToSecond(FunctionFactory &);
 void registerFunctionToStartOfDay(FunctionFactory &);
 void registerFunctionToMonday(FunctionFactory &);
 void registerFunctionToISOWeek(FunctionFactory &);
 void registerFunctionToISOYear(FunctionFactory &);
 void registerFunctionToCustomWeek(FunctionFactory &);
+void registerFunctionToModifiedJulianDay(FunctionFactory &);
 void registerFunctionToStartOfMonth(FunctionFactory &);
 void registerFunctionToStartOfQuarter(FunctionFactory &);
 void registerFunctionToStartOfYear(FunctionFactory &);
@@ -64,6 +66,10 @@ void registerFunctionSubtractYears(FunctionFactory &);
 void registerFunctionDateDiff(FunctionFactory &);
 void registerFunctionToTimeZone(FunctionFactory &);
 void registerFunctionFormatDateTime(FunctionFactory &);
+void registerFunctionFromModifiedJulianDay(FunctionFactory &);
+void registerFunctionDateTrunc(FunctionFactory &);
+
+void registerFunctiontimezoneOffset(FunctionFactory &);
 
 void registerFunctionsDateTime(FunctionFactory & factory)
 {
@@ -81,9 +87,11 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionToISOWeek(factory);
     registerFunctionToISOYear(factory);
     registerFunctionToCustomWeek(factory);
+    registerFunctionToModifiedJulianDay(factory);
     registerFunctionToStartOfMonth(factory);
     registerFunctionToStartOfQuarter(factory);
     registerFunctionToStartOfYear(factory);
+    registerFunctionToStartOfSecond(factory);
     registerFunctionToStartOfMinute(factory);
     registerFunctionToStartOfFiveMinute(factory);
     registerFunctionToStartOfTenMinutes(factory);
@@ -128,6 +136,9 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionDateDiff(factory);
     registerFunctionToTimeZone(factory);
     registerFunctionFormatDateTime(factory);
+    registerFunctionFromModifiedJulianDay(factory);
+    registerFunctionDateTrunc(factory);
+    registerFunctiontimezoneOffset(factory);
 }
 
 }

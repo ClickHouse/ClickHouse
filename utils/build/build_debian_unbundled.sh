@@ -22,5 +22,5 @@ env TEST_RUN=1 \
     `# Use all possible contrib libs from system` \
     `# psmisc - killall` \
     `# gdb - symbol test in pbuilder` \
-    EXTRAPACKAGES="psmisc libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev libboost-regex-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libsparsehash-dev librdkafka-dev libpoco-dev unixodbc-dev libsparsehash-dev libgoogle-perftools-dev libzstd-dev libre2-dev libunwind-dev googletest libcctz-dev libcapnp-dev libjemalloc-dev libssl-dev libunwind-dev libgsasl7-dev libxml2-dev libbrotli-dev libhyperscan-dev rapidjson-dev $EXTRAPACKAGES" \
+    EXTRAPACKAGES="psmisc libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev libboost-regex-dev libboost-iostreams-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libsparsehash-dev librdkafka-dev libpoco-dev unixodbc-dev libsparsehash-dev libgoogle-perftools-dev libzstd-dev libre2-dev libunwind-dev googletest libcctz-dev libcapnp-dev libjemalloc-dev libssl-dev libcurl4-openssl-dev libunwind-dev libgsasl7-dev libxml2-dev libbrotli-dev libhyperscan-dev rapidjson-dev $EXTRAPACKAGES" \
     pdebuild --configfile $ROOT_DIR/debian/.pbuilderrc $PDEBUILD_OPT

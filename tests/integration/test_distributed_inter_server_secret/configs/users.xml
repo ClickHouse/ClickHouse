@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<yandex>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+
+        <nopass>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </nopass>
+
+        <pass>
+            <password>foo</password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </pass>
+    </users>
+
+    <quotas>
+        <default>
+        </default>
+    </quotas>
+</yandex>

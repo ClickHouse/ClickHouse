@@ -4,6 +4,7 @@
 #include <Common/PODArray.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsCommon.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -33,8 +34,14 @@ public:
     void insertDefault() override { ++s; }
     void popBack(size_t n) override { s -= n; }
     size_t byteSize() const override { return 0; }
+    size_t byteSizeAt(size_t) const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+    void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
+    {
+    }
+
+    bool hasEqualValues() const override { return true; }
 
     Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
     void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
@@ -61,11 +68,20 @@ public:
         return pos;
     }
 
+    const char * skipSerializedInArena(const char * pos) const override
+    {
+        return pos;
+    }
+
     void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override
     {
     }
 
     void updateWeakHash32(WeakHash32 & /*hash*/) const override
+    {
+    }
+
+    void updateHashFast(SipHash & /*hash*/) const override
     {
     }
 
@@ -106,6 +122,8 @@ public:
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
     }
+
+    void updatePermutation(bool, size_t, int, Permutation &, EqualRanges&) const override {}
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {

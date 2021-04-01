@@ -5,7 +5,7 @@ SELECT * FROM (SELECT perf_1.z AS z_1 FROM perf AS perf_1);
 
 SELECT sum(mul)/sqrt(sum(sqr_dif_1) * sum(sqr_dif_2)) AS z_r
 FROM(
-SELECT 
+SELECT
         (SELECT avg(z_1) AS z_1_avg, 
                 avg(z_2) AS z_2_avg
         FROM ( 

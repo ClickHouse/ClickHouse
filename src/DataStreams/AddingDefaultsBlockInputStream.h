@@ -1,12 +1,13 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-#include <Storages/ColumnDefault.h>
-#include <Interpreters/Context.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
 {
+
+class Context;
 
 /// Adds defaults to columns using BlockDelayedDefaults bitmask attached to Block by child InputStream.
 class AddingDefaultsBlockInputStream : public IBlockInputStream
@@ -14,7 +15,7 @@ class AddingDefaultsBlockInputStream : public IBlockInputStream
 public:
     AddingDefaultsBlockInputStream(
         const BlockInputStreamPtr & input,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         const Context & context_);
 
     String getName() const override { return "AddingDefaults"; }
@@ -25,6 +26,7 @@ protected:
 
 private:
     Block header;
+    const ColumnsDescription columns;
     const ColumnDefaults column_defaults;
     const Context & context;
 };

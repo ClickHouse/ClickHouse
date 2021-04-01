@@ -2,6 +2,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <Core/SortDescription.h>
+#include <Common/PODArray.h>
 
 namespace DB
 {
@@ -29,6 +30,23 @@ private:
     SortDescription description;
     UInt64 limit;
     RowsBeforeLimitCounterPtr read_rows;
+
+    /** threshold_block is using for saving columns from previously processed block.
+      * threshold_block_columns contains pointers to columns from threshold_block which used for comparison.
+      * That's all for PartialSort optimization
+      */
+    Block threshold_block;
+    ColumnRawPtrs threshold_block_columns;
+
+    /// This are just buffers which reserve memory to reduce the number of allocations.
+    PaddedPODArray<UInt64> rows_to_compare;
+    PaddedPODArray<Int8> compare_results;
+    IColumn::Filter filter;
+
+    /// If limit < min_limit_for_partial_sort_optimization, skip optimization with threshold_block.
+    /// Because for small LIMIT partial sorting may be very faster then additional work
+    /// which is made if optimization is enabled (comparison with threshold, filtering).
+    static constexpr size_t min_limit_for_partial_sort_optimization = 1500;
 };
 
 }

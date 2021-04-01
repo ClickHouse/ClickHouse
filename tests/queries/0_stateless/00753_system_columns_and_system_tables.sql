@@ -9,7 +9,8 @@ CREATE TABLE check_system_tables
   ) ENGINE = MergeTree()
     ORDER BY name1
     PARTITION BY name2
-    SAMPLE BY name1;
+    SAMPLE BY name1
+    SETTINGS min_bytes_for_wide_part = 0;
 
 SELECT name, partition_key, sorting_key, primary_key, sampling_key, storage_policy, total_rows
 FROM system.tables
@@ -84,6 +85,8 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tab
 DROP TABLE check_system_tables;
 
 SELECT 'Check total_bytes/total_rows for Buffer';
+DROP TABLE IF EXISTS check_system_tables;
+DROP TABLE IF EXISTS check_system_tables_null;
 CREATE TABLE check_system_tables_null (key UInt16) ENGINE = Null();
 CREATE TABLE check_system_tables (key UInt16) ENGINE = Buffer(
     currentDatabase(),
@@ -96,5 +99,30 @@ CREATE TABLE check_system_tables (key UInt16) ENGINE = Buffer(
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 INSERT INTO check_system_tables SELECT * FROM numbers_mt(50);
 SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+
+SELECT 'Check lifetime_bytes/lifetime_rows for Buffer';
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
+OPTIMIZE TABLE check_system_tables; -- flush
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables SELECT * FROM numbers_mt(50);
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
+OPTIMIZE TABLE check_system_tables; -- flush
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables SELECT * FROM numbers_mt(101); -- direct block write (due to min_rows exceeded)
+SELECT lifetime_bytes, lifetime_rows FROM system.tables WHERE name = 'check_system_tables';
 DROP TABLE check_system_tables;
 DROP TABLE check_system_tables_null;
+
+SELECT 'Check total_bytes/total_rows for Set';
+CREATE TABLE check_system_tables Engine=Set() AS SELECT * FROM numbers(50);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables SELECT number+50 FROM numbers(50);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+DROP TABLE check_system_tables;
+
+SELECT 'Check total_bytes/total_rows for Join';
+CREATE TABLE check_system_tables Engine=Join(ANY, LEFT, number) AS SELECT * FROM numbers(50);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables SELECT number+50 FROM numbers(50);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+DROP TABLE check_system_tables;

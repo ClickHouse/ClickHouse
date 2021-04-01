@@ -1,7 +1,7 @@
 #include "DNSCacheUpdater.h"
 #include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
-#include <Core/BackgroundSchedulePool.h>
+
 
 namespace DB
 {
@@ -21,8 +21,7 @@ void DNSCacheUpdater::run()
     /// Reload cluster config if IP of any host has been changed since last update.
     if (resolver.updateCache())
     {
-        LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"),
-            "IPs of some hosts have been changed. Will reload cluster config.");
+        LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "IPs of some hosts have been changed. Will reload cluster config.");
         try
         {
             context.reloadClusterConfig();
@@ -38,11 +37,12 @@ void DNSCacheUpdater::run()
       * - automatically throttle when DNS requests take longer time;
       * - add natural randomization on huge clusters - avoid sending all requests at the same moment of time from different servers.
       */
-    task_handle->scheduleAfter(update_period_seconds * 1000);
+    task_handle->scheduleAfter(size_t(update_period_seconds) * 1000);
 }
 
 void DNSCacheUpdater::start()
 {
+    LOG_INFO(&Poco::Logger::get("DNSCacheUpdater"), "Update period {} seconds", update_period_seconds);
     task_handle->activateAndSchedule();
 }
 

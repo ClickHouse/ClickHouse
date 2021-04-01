@@ -1,6 +1,6 @@
-CREATE TABLE default.table_for_alter\n(\n    `id` UInt64, \n    `Data` String\n)\nENGINE = MergeTree()\nORDER BY id\nSETTINGS index_granularity = 4096
-CREATE TABLE default.table_for_alter\n(\n    `id` UInt64, \n    `Data` String\n)\nENGINE = MergeTree()\nORDER BY id\nSETTINGS index_granularity = 4096, parts_to_throw_insert = 1, parts_to_delay_insert = 1
-CREATE TABLE default.table_for_alter\n(\n    `id` UInt64, \n    `Data` String\n)\nENGINE = MergeTree()\nORDER BY id\nSETTINGS index_granularity = 4096, parts_to_throw_insert = 100, parts_to_delay_insert = 100
+CREATE TABLE default.table_for_alter\n(\n    `id` UInt64,\n    `Data` String\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 4096
+CREATE TABLE default.table_for_alter\n(\n    `id` UInt64,\n    `Data` String\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 4096, parts_to_throw_insert = 1, parts_to_delay_insert = 1
+CREATE TABLE default.table_for_alter\n(\n    `id` UInt64,\n    `Data` String\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 4096, parts_to_throw_insert = 100, parts_to_delay_insert = 100
 2
-CREATE TABLE default.table_for_alter\n(\n    `id` UInt64, \n    `Data` String\n)\nENGINE = MergeTree()\nORDER BY id\nSETTINGS index_granularity = 4096, parts_to_throw_insert = 100, parts_to_delay_insert = 100, check_delay_period = 30
-CREATE TABLE default.table_for_alter\n(\n    `id` UInt64, \n    `Data` String, \n    `Data2` UInt64\n)\nENGINE = MergeTree()\nORDER BY id\nSETTINGS index_granularity = 4096, parts_to_throw_insert = 100, parts_to_delay_insert = 100, check_delay_period = 15
+CREATE TABLE default.table_for_alter\n(\n    `id` UInt64,\n    `Data` String\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 4096, parts_to_throw_insert = 100, parts_to_delay_insert = 100, check_delay_period = 30
+CREATE TABLE default.table_for_alter\n(\n    `id` UInt64,\n    `Data` String,\n    `Data2` UInt64\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 4096, parts_to_throw_insert = 100, parts_to_delay_insert = 100, check_delay_period = 15

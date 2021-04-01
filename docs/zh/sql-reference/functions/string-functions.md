@@ -1,6 +1,6 @@
 # 字符串函数 {#zi-fu-chuan-han-shu}
 
-## 空 {#string-functions-empty}
+## empty {#string-functions-empty}
 
 对于空字符串返回1，对于非空字符串返回0。
 结果类型是UInt8。
@@ -13,32 +13,32 @@
 结果类型是UInt8。
 该函数也适用于数组。
 
-## 长度 {#length}
+## length {#length}
 
 返回字符串的字节长度。
 结果类型是UInt64。
 该函数也适用于数组。
 
-## 长度8 {#lengthutf8}
+## lengthUTF8 {#lengthutf8}
 
 假定字符串以UTF-8编码组成的文本，返回此字符串的Unicode字符长度。如果传入的字符串不是UTF-8编码，则函数可能返回一个预期外的值（不会抛出异常）。
 结果类型是UInt64。
 
-## char\_length,CHAR\_LENGTH {#char-length-char-length}
+## char_length,CHAR_LENGTH {#char-length-char-length}
 
 假定字符串以UTF-8编码组成的文本，返回此字符串的Unicode字符长度。如果传入的字符串不是UTF-8编码，则函数可能返回一个预期外的值（不会抛出异常）。
 结果类型是UInt64。
 
-## 字符长度,字符长度 {#character-length-character-length}
+## character_length,CHARACTER_LENGTH {#character-length-character-length}
 
 假定字符串以UTF-8编码组成的文本，返回此字符串的Unicode字符长度。如果传入的字符串不是UTF-8编码，则函数可能返回一个预期外的值（不会抛出异常）。
 结果类型是UInt64。
 
-## 低一点 {#lower-lcase}
+## lower, lcase {#lower-lcase}
 
 将字符串中的ASCII转换为小写。
 
-## 上,ucase {#upper-ucase}
+## upper, ucase {#upper-ucase}
 
 将字符串中的ASCII转换为大写。
 
@@ -68,7 +68,7 @@
 
 参数：
 
--   input\_string — 任何一个[字符串](../../sql-reference/functions/string-functions.md)类型的对象。
+-   input_string — 任何一个[字符串](../../sql-reference/functions/string-functions.md)类型的对象。
 
 返回值： 有效的UTF-8字符串。
 
@@ -84,7 +84,7 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 └───────────────────────┘
 ```
 
-## 反向 {#reverse}
+## reverse {#reverse}
 
 反转字符串。
 
@@ -118,11 +118,11 @@ SELECT format('{} {}', 'Hello', 'World')
 
 与[concat](#concat-s1-s2)相同，区别在于，你需要保证concat(s1, s2, s3) -\> s4是单射的，它将用于GROUP BY的优化。
 
-## 子串(s,offset,length),mid(s,offset,length),substr(s,offset,length) {#substrings-offset-length-mids-offset-length-substrs-offset-length}
+## substring(s,offset,length),mid(s,offset,length),substr(s,offset,length) {#substrings-offset-length-mids-offset-length-substrs-offset-length}
 
 以字节为单位截取指定位置字符串，返回以’offset’位置为开头，长度为’length’的子串。’offset’从1开始（与标准SQL相同）。’offset’和’length’参数必须是常量。
 
-## substringf8(s,offset,length) {#substringutf8s-offset-length}
+## substringUTF8(s,offset,length) {#substringutf8s-offset-length}
 
 与’substring’相同，但其操作单位为Unicode字符，函数假设字符串是以UTF-8进行编码的文本。如果不是则可能返回一个预期外的结果（不会抛出异常）。
 
@@ -150,7 +150,7 @@ SELECT format('{} {}', 'Hello', 'World')
 
 返回是否以指定的后缀结尾。如果字符串以指定的后缀结束，则返回1，否则返回0。
 
-## 开始使用（s，前缀) {#startswiths-prefix}
+## startsWith（s，前缀) {#startswiths-prefix}
 
 返回是否以指定的前缀开头。如果字符串以指定的前缀开头，则返回1，否则返回0。
 

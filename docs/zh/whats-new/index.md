@@ -1,8 +1,8 @@
 ---
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
-toc_folder_title: "\u65B0\u589E\u5185\u5BB9"
-toc_priority: 72
+toc_folder_title: ClickHouse事迹
+toc_priority: 82
 ---
 
+# ClickHouse变更及改动? {#whats-new-in-clickhouse}
 
+对于已经发布的版本，有一个[roadmap](../whats-new/roadmap.md)和一个详细的[changelog](../whats-new/changelog/index.md)。

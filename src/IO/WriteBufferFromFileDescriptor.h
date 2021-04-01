@@ -44,6 +44,8 @@ public:
 
     off_t seek(off_t offset, int whence);
     void truncate(off_t length);
+
+    off_t size();
 };
 
 }

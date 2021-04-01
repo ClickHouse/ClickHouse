@@ -49,21 +49,15 @@ TEST(Processors, PortsNotConnected)
     processors.emplace_back(std::move(source));
     processors.emplace_back(std::move(sink));
 
-    auto exec = [&]()
+    try
     {
-
-        try
-        {
-            PipelineExecutor executor(processors);
-            executor.execute(1);
-        }
-        catch (DB::Exception & e)
-        {
-            std::cout << e.displayText() << std::endl;
-            ASSERT_TRUE(e.displayText().find("pipeline") != std::string::npos);
-            throw;
-        }
-    };
-
-    ASSERT_THROW(exec(), DB::Exception);
+        PipelineExecutor executor(processors);
+        executor.execute(1);
+        ASSERT_TRUE(false) << "Should have thrown.";
+    }
+    catch (DB::Exception & e)
+    {
+        std::cout << e.displayText() << std::endl;
+        ASSERT_TRUE(e.displayText().find("pipeline") != std::string::npos) << "Expected 'pipeline', got: " << e.displayText();
+    }
 }

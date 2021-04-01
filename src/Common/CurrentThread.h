@@ -32,7 +32,7 @@ class InternalTextLogsQueue;
 class CurrentThread
 {
 public:
-    /// Return true in case of successful initializaiton
+    /// Return true in case of successful initialization
     static bool isInitialized();
 
     /// Handler to current thread
@@ -45,6 +45,8 @@ public:
     static void attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue,
                                             LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
+
+    static void setFatalErrorCallback(std::function<void()> callback);
 
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats
     static void updatePerformanceCounters();
@@ -60,9 +62,6 @@ public:
 
     /// Call from master thread as soon as possible (e.g. when thread accepted connection)
     static void initializeQuery();
-
-    /// Sets query_context for current thread group
-    static void attachQueryContext(Context & query_context);
 
     /// You must call one of these methods when create a query child thread:
     /// Add current thread to a group associated with the thread group
@@ -97,6 +96,10 @@ public:
 
 private:
     static void defaultThreadDeleter();
+
+    /// Sets query_context for current thread group
+    /// Can by used only through QueryScope
+    static void attachQueryContext(Context & query_context);
 };
 
 }

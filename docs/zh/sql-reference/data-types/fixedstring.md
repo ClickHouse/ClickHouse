@@ -15,7 +15,7 @@
 可以有效存储在`FixedString`类型的列中的值的示例：
 
 -   二进制表示的IP地址（IPv6使用`FixedString(16)`）
--   语言代码（ru\_RU, en\_US … ）
+-   语言代码（ru_RU, en_US … ）
 -   货币代码（USD, RUB … ）
 -   二进制表示的哈希值（MD5使用`FixedString(16)`，SHA256使用`FixedString(32)`）
 

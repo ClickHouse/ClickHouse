@@ -4,7 +4,7 @@ SELECT toInt32(number) as x, roundDown(x, [e(), pi(), pi(), e()]) FROM system.nu
 SELECT number as x, roundDown(x, [6, 5, 4]) FROM system.numbers LIMIT 10;
 SELECT 1 as x, roundDown(x, [6, 5, 4]);
 
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 SELECT 1 as x, roundDown(x, []); -- { serverError 43 }
 SELECT 1 as x, roundDown(x, emptyArrayUInt8()); -- { serverError 44 }
 SELECT roundDown(number, [number]) FROM system.numbers LIMIT 10; -- { serverError 44 }

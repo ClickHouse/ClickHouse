@@ -1,3 +1,8 @@
+---
+toc_priority: 1
+toc_title: "Поставщики облачных услуг ClickHouse"
+---
+
 # Поставщики облачных услуг ClickHouse {#clickhouse-cloud-service-providers}
 
 !!! info "Инфо"
@@ -7,10 +12,20 @@
 
 [Yandex Managed Service for ClickHouse](https://cloud.yandex.ru/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) предоставляет следующие ключевые возможности:
 
--   Полностью управляемый сервис ZooKeeper для [репликации ClickHouse](../engines/table-engines/mergetree-family/replication.md)
--   Выбор типа хранилища
--   Реплики в разных зонах доступности
--   Шифрование и изоляция
--   Автоматизированное техническое обслуживание
+-   полностью управляемый сервис ZooKeeper для [репликации ClickHouse](../engines/table-engines/mergetree-family/replication.md)
+-   выбор типа хранилища
+-   реплики в разных зонах доступности
+-   шифрование и изоляция
+-   автоматизированное техническое обслуживание
 
-{## [Оригинальная статья](https://clickhouse.tech/docs/ru/commercial/cloud/) ##}
+## Altinity.Cloud {#altinity.cloud}
+
+[Altinity.Cloud](https://altinity.com/cloud-database/) — это полностью управляемый ClickHouse-as-a-Service для публичного облака Amazon.
+
+-   быстрое развертывание кластеров ClickHouse на ресурсах Amazon.
+-   легкое горизонтальное масштабирование также, как и вертикальное масштабирование узлов.
+-   изолированные виртуальные сети для каждого клиента с общедоступным эндпоинтом или пирингом VPC.
+-   настраиваемые типы и объемы хранилищ
+-   cross-az масштабирование для повышения производительности и обеспечения высокой доступности
+-   встроенный мониторинг и редактор SQL-запросов
+

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os
 import sys
 import signal
@@ -32,10 +32,10 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.send('CREATE LIVE VIEW test.lv WITH TIMEOUT AS SELECT sum(a) FROM test.mt')
     client1.expect(prompt)
     client1.send('WATCH test.lv')
+    client1.expect('_version')
     client1.expect(r'0.*1' + end_of_block)
     client2.send('INSERT INTO test.mt VALUES (1),(2),(3)')
     client1.expect(r'6.*2' + end_of_block)
-    client1.expect('Progress: 2.00 rows.*\)')
     # wait for heartbeat
     client1.expect('Progress: 2.00 rows.*\)')
     # send Ctrl-C
@@ -43,7 +43,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     match = client1.expect('(%s)|([#\$] )' % prompt)
     if match.groups()[1]:
         client1.send(client1.command)
-        client1.expect(prompt)    
+        client1.expect(prompt)
     client1.send('DROP TABLE test.lv')
     client1.expect(prompt)
     client1.send('DROP TABLE test.mt')

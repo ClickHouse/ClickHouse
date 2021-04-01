@@ -19,7 +19,7 @@ INSERT INTO set2 VALUES ('abc'), ('World');
 SELECT arrayJoin(['Hello', 'test', 'World', 'world', 'abc', 'xyz']) AS s WHERE s IN set2;
 
 DETACH TABLE set2;
-ATTACH TABLE set2 (x String) ENGINE = Set;
+ATTACH TABLE set2;
 
 SELECT arrayJoin(['Hello', 'test', 'World', 'world', 'abc', 'xyz']) AS s WHERE s IN set2;
 

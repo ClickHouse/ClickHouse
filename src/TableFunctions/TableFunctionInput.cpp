@@ -8,7 +8,6 @@
 #include <Common/typeid_cast.h>
 #include <Storages/StorageInput.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <boost/algorithm/string.hpp>
 #include "registerTableFunctions.h"
@@ -23,7 +22,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StoragePtr TableFunctionInput::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name) const
+void TableFunctionInput::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
     const auto * function = ast_function->as<ASTFunction>();
 
@@ -36,12 +35,18 @@ StoragePtr TableFunctionInput::executeImpl(const ASTPtr & ast_function, const Co
         throw Exception("Table function '" + getName() + "' requires exactly 1 argument: structure",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    String structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context)->as<ASTLiteral &>().value.safeGet<String>();
-    auto columns = parseColumnsListFromString(structure, context);
-    StoragePtr storage = StorageInput::create(StorageID(getDatabaseName(), table_name), columns);
+    structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context)->as<ASTLiteral &>().value.safeGet<String>();
+}
 
+ColumnsDescription TableFunctionInput::getActualTableStructure(const Context & context) const
+{
+    return parseColumnsListFromString(structure, context);
+}
+
+StoragePtr TableFunctionInput::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+{
+    auto storage = StorageInput::create(StorageID(getDatabaseName(), table_name), getActualTableStructure(context));
     storage->startup();
-
     return storage;
 }
 

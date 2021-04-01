@@ -1,0 +1,7 @@
+<yandex>
+    <metric_log remove="remove"/>
+    <query_masking_rules remove="remove"/>
+    <query_thread_log remove="remove"/>
+    <text_log remove="remove"/>
+    <trace_log remove="remove"/>
+</yandex>

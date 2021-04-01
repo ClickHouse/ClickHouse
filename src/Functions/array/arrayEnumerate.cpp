@@ -45,9 +45,9 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(arguments[0].column.get()))
         {
             const ColumnArray::Offsets & offsets = array->getOffsets();
 
@@ -63,11 +63,11 @@ public:
                 prev_off = off;
             }
 
-            block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), array->getOffsetsPtr());
+            return ColumnArray::create(std::move(res_nested), array->getOffsetsPtr());
         }
         else
         {
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + arguments[0].column->getName()
                     + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
         }

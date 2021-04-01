@@ -9,7 +9,10 @@
 #include <Common/Exception.h>
 #include <common/setTerminalEcho.h>
 #include <ext/scope_guard.h>
-#include <readpassphrase.h>
+
+#if !defined(ARCADIA_BUILD)
+#include <readpassphrase.h> // Y_IGNORE
+#endif
 
 namespace DB
 {
@@ -29,8 +32,10 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         "port", config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 
     default_database = config.getString("database", "");
+
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank
     user = config.getString("user", "default");
+
     bool password_prompt = false;
     if (config.getBool("ask-password", false))
     {
@@ -47,11 +52,14 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     }
     if (password_prompt)
     {
+#if !defined(ARCADIA_BUILD)
         std::string prompt{"Password for user (" + user + "): "};
         char buf[1000] = {};
-        if (auto result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+        if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
             password = result;
+#endif
     }
+
     compression = config.getBool("compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
     timeouts = ConnectionTimeouts(

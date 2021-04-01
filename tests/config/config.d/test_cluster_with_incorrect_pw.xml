@@ -1,0 +1,21 @@
+<yandex>
+    <remote_servers>
+        <test_cluster_with_incorrect_pw>
+             <shard>
+                 <internal_replication>true</internal_replication>
+                 <replica>
+                     <host>127.0.0.1</host>
+                     <port>9000</port>
+                     <!-- password is incorrect -->
+                     <password>foo</password>
+                 </replica>
+                 <replica>
+                     <host>127.0.0.2</host>
+                     <port>9000</port>
+                     <!-- password is incorrect -->
+                     <password>foo</password>
+                 </replica>
+             </shard>
+         </test_cluster_with_incorrect_pw>
+    </remote_servers>
+</yandex>

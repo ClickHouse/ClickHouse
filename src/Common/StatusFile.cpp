@@ -1,13 +1,12 @@
 #include "StatusFile.h"
 
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/file.h>
 #include <fcntl.h>
 #include <errno.h>
 
 #include <Poco/File.h>
 #include <common/logger_useful.h>
+#include <common/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
 #include <common/LocalDateTime.h>
 
@@ -29,8 +28,21 @@ namespace ErrorCodes
 }
 
 
-StatusFile::StatusFile(const std::string & path_)
-    : path(path_)
+StatusFile::FillFunction StatusFile::write_pid = [](WriteBuffer & out)
+{
+    out << getpid();
+};
+
+StatusFile::FillFunction StatusFile::write_full_info = [](WriteBuffer & out)
+{
+    out << "PID: " << getpid() << "\n"
+        << "Started at: " << LocalDateTime(time(nullptr)) << "\n"
+        << "Revision: " << ClickHouseRevision::getVersionRevision() << "\n";
+};
+
+
+StatusFile::StatusFile(std::string path_, FillFunction fill_)
+    : path(std::move(path_)), fill(std::move(fill_))
 {
     /// If file already exists. NOTE Minor race condition.
     if (Poco::File(path).exists())
@@ -43,9 +55,9 @@ StatusFile::StatusFile(const std::string & path_)
         }
 
         if (!contents.empty())
-            LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists - unclean restart. Contents:\n" << contents);
+            LOG_INFO(&Poco::Logger::get("StatusFile"), "Status file {} already exists - unclean restart. Contents:\n{}", path, contents);
         else
-            LOG_INFO(&Logger::get("StatusFile"), "Status file " << path << " already exists and is empty - probably unclean hardware restart.");
+            LOG_INFO(&Poco::Logger::get("StatusFile"), "Status file {} already exists and is empty - probably unclean hardware restart.", path);
     }
 
     fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
@@ -71,13 +83,8 @@ StatusFile::StatusFile(const std::string & path_)
             throwFromErrnoWithPath("Cannot lseek " + path, path, ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
         /// Write information about current server instance to the file.
-        {
-            WriteBufferFromFileDescriptor out(fd, 1024);
-            out
-                << "PID: " << getpid() << "\n"
-                << "Started at: " << LocalDateTime(time(nullptr)) << "\n"
-                << "Revision: " << ClickHouseRevision::get() << "\n";
-        }
+        WriteBufferFromFileDescriptor out(fd, 1024);
+        fill(out);
     }
     catch (...)
     {
@@ -90,10 +97,10 @@ StatusFile::StatusFile(const std::string & path_)
 StatusFile::~StatusFile()
 {
     if (0 != close(fd))
-        LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
+        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot close file {}, {}", path, errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
 
     if (0 != unlink(path.c_str()))
-        LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
+        LOG_ERROR(&Poco::Logger::get("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
 }
 
 }

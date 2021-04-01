@@ -1,15 +1,15 @@
 ---
 toc_priority: 66
-toc_title: How to Build ClickHouse on Linux for Mac OS X
+toc_title: Build on Linux for Mac OS X
 ---
 
 # How to Build ClickHouse on Linux for Mac OS X {#how-to-build-clickhouse-on-linux-for-mac-os-x}
 
-This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on OS X. This is intended for continuous integration checks that run on Linux servers. If you want to build ClickHouse directly on Mac OS X, then proceed with [another instruction](build-osx.md).
+This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on OS X. This is intended for continuous integration checks that run on Linux servers. If you want to build ClickHouse directly on Mac OS X, then proceed with [another instruction](../development/build-osx.md).
 
-The cross-build for Mac OS X is based on the [Build instructions](build.md), follow them first.
+The cross-build for Mac OS X is based on the [Build instructions](../development/build.md), follow them first.
 
-# Install Clang-8 {#install-clang-8}
+## Install Clang-8 {#install-clang-8}
 
 Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
 For example the commands for Bionic are like:
@@ -19,7 +19,7 @@ sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8
 sudo apt-get install clang-8
 ```
 
-# Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
+## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
 
 Let’s remember the path where we install `cctools` as ${CCTOOLS}
 
@@ -42,12 +42,12 @@ Also, we need to download macOS X SDK into the working tree.
 
 ``` bash
 cd ClickHouse
-wget 'https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz'
+wget 'https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz'
 mkdir -p build-darwin/cmake/toolchain/darwin-x86_64
-tar xJf MacOSX10.14.sdk.tar.xz -C build-darwin/cmake/toolchain/darwin-x86_64 --strip-components=1
+tar xJf MacOSX10.15.sdk.tar.xz -C build-darwin/cmake/toolchain/darwin-x86_64 --strip-components=1
 ```
 
-# Build ClickHouse {#build-clickhouse}
+## Build ClickHouse {#build-clickhouse}
 
 ``` bash
 cd ClickHouse

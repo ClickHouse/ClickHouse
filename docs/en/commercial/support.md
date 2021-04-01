@@ -7,10 +7,14 @@ toc_title: Support
 
 !!! info "Info"
     If you have launched a ClickHouse commercial support service, feel free to [open a pull-request](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/commercial/support.md) adding it to the following list.
+    
+## Yandex.Cloud
+
+ClickHouse worldwide support from the authors of ClickHouse. Supports on-premise and cloud deployments. Ask details on clickhouse-support@yandex-team.com
 
 ## Altinity {#altinity}
 
-[Service description](https://www.altinity.com/24x7-support)
+Altinity has offered enterprise ClickHouse support and services since 2017. Altinity customers range from Fortune 100 enterprises to startups. Visit [www.altinity.com](https://www.altinity.com/) for more information.
 
 ## Mafiree {#mafiree}
 

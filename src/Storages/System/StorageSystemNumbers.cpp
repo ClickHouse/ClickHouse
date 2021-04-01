@@ -2,7 +2,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/LimitBlockInputStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
@@ -118,18 +117,21 @@ private:
 StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_, bool even_distribution_)
     : IStorage(table_id), multithreaded(multithreaded_), even_distribution(even_distribution_), limit(limit_), offset(offset_)
 {
-    setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
+    setInMemoryMetadata(storage_metadata);
 }
 
-Pipes StorageSystemNumbers::read(
+Pipe StorageSystemNumbers::read(
     const Names & column_names,
-    const SelectQueryInfo &,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo &,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    check(column_names);
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     if (limit && *limit < max_block_size)
     {
@@ -140,8 +142,7 @@ Pipes StorageSystemNumbers::read(
     if (!multithreaded)
         num_streams = 1;
 
-    Pipes res;
-    res.reserve(num_streams);
+    Pipe pipe;
 
     if (num_streams > 1 && !even_distribution && *limit)
     {
@@ -149,9 +150,9 @@ Pipes StorageSystemNumbers::read(
         UInt64 max_counter = offset + *limit;
 
         for (size_t i = 0; i < num_streams; ++i)
-            res.emplace_back(std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter));
+            pipe.addSource(std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter));
 
-        return res;
+        return pipe;
     }
 
     for (size_t i = 0; i < num_streams; ++i)
@@ -161,17 +162,22 @@ Pipes StorageSystemNumbers::read(
         if (limit && i == 0)
             source->addTotalRowsApprox(*limit);
 
-        res.emplace_back(std::move(source));
-
-        if (limit)
-        {
-            /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
-            res.back().addSimpleTransform(std::make_shared<LimitTransform>(
-                    res.back().getHeader(), *limit * (i + 1) / num_streams - *limit * i / num_streams, 0));
-        }
+        pipe.addSource(std::move(source));
     }
 
-    return res;
+    if (limit)
+    {
+        size_t i = 0;
+        /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            ++i;
+            return std::make_shared<LimitTransform>(
+                header, *limit * i / num_streams - *limit * (i - 1) / num_streams, 0);
+        });
+    }
+
+    return pipe;
 }
 
 }

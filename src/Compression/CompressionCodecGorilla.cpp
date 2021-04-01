@@ -3,13 +3,13 @@
 #include <Compression/CompressionFactory.h>
 #include <common/unaligned.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
 
 #include <string.h>
 #include <algorithm>
-#include <cstdlib>
 #include <type_traits>
 
 #include <bitset>
@@ -19,8 +19,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CANNOT_COMPRESS;
-extern const int CANNOT_DECOMPRESS;
+    extern const int CANNOT_COMPRESS;
+    extern const int CANNOT_DECOMPRESS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -90,6 +91,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
     if (source_size % sizeof(T) != 0)
         throw Exception("Cannot compress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_COMPRESS);
     const char * source_end = source + source_size;
+    const char * dest_start = dest;
     const char * dest_end = dest + dest_size;
 
     const UInt32 items_count = source_size / sizeof(T);
@@ -145,7 +147,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     writer.flush();
 
-    return sizeof(items_count) + sizeof(prev_value) + writer.count() / 8;
+    return (dest - dest_start) + (writer.count() + 7) / 8;
 }
 
 template <typename T>
@@ -220,16 +222,18 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     }
 }
 
-UInt8 getDataBytesSize(DataTypePtr column_type)
+UInt8 getDataBytesSize(const IDataType * column_type)
 {
-    UInt8 delta_bytes_size = 1;
-    if (column_type && column_type->haveMaximumSizeOfValue())
-    {
-        size_t max_size = column_type->getSizeOfValueInMemory();
-        if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
-            delta_bytes_size = static_cast<UInt8>(max_size);
-    }
-    return delta_bytes_size;
+    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is not applicable for {} because the data type is not of fixed size",
+            column_type->getName());
+
+    size_t max_size = column_type->getSizeOfValueInMemory();
+    if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
+        return static_cast<UInt8>(max_size);
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+            column_type->getName());
 }
 
 }
@@ -238,6 +242,7 @@ UInt8 getDataBytesSize(DataTypePtr column_type)
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
+    setCodecDescription("Gorilla");
 }
 
 uint8_t CompressionCodecGorilla::getMethodByte() const
@@ -245,9 +250,10 @@ uint8_t CompressionCodecGorilla::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::Gorilla);
 }
 
-String CompressionCodecGorilla::getCodecDesc() const
+void CompressionCodecGorilla::updateHash(SipHash & hash) const
 {
-    return "Gorilla";
+    getCodecDesc()->updateTreeHash(hash);
+    hash.update(data_bytes_size);
 }
 
 UInt32 CompressionCodecGorilla::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -319,18 +325,17 @@ void CompressionCodecGorilla::doDecompressData(const char * source, UInt32 sourc
     }
 }
 
-void CompressionCodecGorilla::useInfoAboutType(DataTypePtr data_type)
-{
-    data_bytes_size = getDataBytesSize(data_type);
-}
-
 void registerCodecGorilla(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Gorilla);
-    factory.registerCompressionCodecWithType("Gorilla", method_code, [&](const ASTPtr &, DataTypePtr column_type) -> CompressionCodecPtr
+    factory.registerCompressionCodecWithType("Gorilla", method_code,
+        [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        UInt8 delta_bytes_size = getDataBytesSize(column_type);
-        return std::make_shared<CompressionCodecGorilla>(delta_bytes_size);
+        if (arguments)
+            throw Exception("Codec Gorilla does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
+
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
+        return std::make_shared<CompressionCodecGorilla>(data_bytes_size);
     });
 }
 }

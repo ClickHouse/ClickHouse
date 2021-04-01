@@ -12,7 +12,7 @@
 
 namespace DB
 {
-struct QuotaUsageInfo;
+struct QuotaUsage;
 
 
 /// Instances of `EnabledQuota` are used to track resource consumption.
@@ -23,11 +23,12 @@ public:
     {
         UUID user_id;
         String user_name;
-        std::vector<UUID> enabled_roles;
+        boost::container::flat_set<UUID> enabled_roles;
         Poco::Net::IPAddress client_address;
+        String forwarded_address;
         String client_key;
 
-        auto toTuple() const { return std::tie(user_id, enabled_roles, user_name, client_address, client_key); }
+        auto toTuple() const { return std::tie(user_id, enabled_roles, user_name, client_address, forwarded_address, client_key); }
         friend bool operator ==(const Params & lhs, const Params & rhs) { return lhs.toTuple() == rhs.toTuple(); }
         friend bool operator !=(const Params & lhs, const Params & rhs) { return !(lhs == rhs); }
         friend bool operator <(const Params & lhs, const Params & rhs) { return lhs.toTuple() < rhs.toTuple(); }
@@ -53,7 +54,7 @@ public:
     void checkExceeded(ResourceType resource_type) const;
 
     /// Returns the information about quota consumption.
-    QuotaUsageInfo getUsageInfo() const;
+    std::optional<QuotaUsage> getUsage() const;
 
     /// Returns an instance of EnabledQuota which is never exceeded.
     static std::shared_ptr<const EnabledQuota> getUnlimitedQuota();
@@ -65,17 +66,17 @@ private:
 
     const String & getUserName() const { return params.user_name; }
 
-    static constexpr size_t MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
+    static constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
 
     struct Interval
     {
         mutable std::atomic<ResourceAmount> used[MAX_RESOURCE_TYPE];
         ResourceAmount max[MAX_RESOURCE_TYPE];
-        std::chrono::seconds duration;
-        bool randomize_interval;
+        std::chrono::seconds duration = std::chrono::seconds::zero();
+        bool randomize_interval = false;
         mutable std::atomic<std::chrono::system_clock::duration> end_of_interval;
 
-        Interval() {}
+        Interval();
         Interval(const Interval & src) { *this = src; }
         Interval & operator =(const Interval & src);
     };
@@ -83,11 +84,11 @@ private:
     struct Intervals
     {
         std::vector<Interval> intervals;
-        UUID quota_id;
+        std::optional<UUID> quota_id;
         String quota_name;
         String quota_key;
 
-        QuotaUsageInfo getUsageInfo(std::chrono::system_clock::time_point current_time) const;
+        std::optional<QuotaUsage> getUsage(std::chrono::system_clock::time_point current_time) const;
     };
 
     struct Impl;

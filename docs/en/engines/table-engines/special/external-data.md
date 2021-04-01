@@ -1,11 +1,11 @@
 ---
-toc_priority: 34
-toc_title: External data
+toc_priority: 45
+toc_title: External Data
 ---
 
 # External Data for Query Processing {#external-data-for-query-processing}
 
-ClickHouse allows sending a server the data that is needed for processing a query, together with a SELECT query. This data is put in a temporary table (see the section “Temporary tables”) and can be used in the query (for example, in IN operators).
+ClickHouse allows sending a server the data that is needed for processing a query, together with a `SELECT` query. This data is put in a temporary table (see the section “Temporary tables”) and can be used in the query (for example, in `IN` operators).
 
 For example, if you have a text file with important user identifiers, you can upload it to the server along with a query that uses filtration by this list.
 
@@ -25,10 +25,10 @@ You may have multiple sections like this, for the number of tables being transmi
 **–file** – Path to the file with the table dump, or -, which refers to stdin.
 Only a single table can be retrieved from stdin.
 
-The following parameters are optional: **–name**– Name of the table. If omitted, \_data is used.
+The following parameters are optional: **–name**– Name of the table. If omitted, _data is used.
 **–format** – Data format in the file. If omitted, TabSeparated is used.
 
-One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named \_1, \_2, …
+One of the following parameters is required:**–types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, …
 **–structure**– The table structure in the format`UserID UInt64`, `URL String`. Defines the column names and types.
 
 The files specified in ‘file’ will be parsed by the format specified in ‘format’, using the data types specified in ‘types’ or ‘structure’. The table will be uploaded to the server and accessible there as a temporary table with the name in ‘name’.
@@ -46,7 +46,7 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/sync       1
 ```
 
-When using the HTTP interface, external data is passed in the multipart/form-data format. Each table is transmitted as a separate file. The table name is taken from the file name. The ‘query\_string’ is passed the parameters ‘name\_format’, ‘name\_types’, and ‘name\_structure’, where ‘name’ is the name of the table that these parameters correspond to. The meaning of the parameters is the same as when using the command-line client.
+When using the HTTP interface, external data is passed in the multipart/form-data format. Each table is transmitted as a separate file. The table name is taken from the file name. The `query_string` is passed the parameters `name_format`, `name_types`, and `name_structure`, where `name` is the name of the table that these parameters correspond to. The meaning of the parameters is the same as when using the command-line client.
 
 Example:
 

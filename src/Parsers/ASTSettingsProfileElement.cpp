@@ -1,6 +1,8 @@
 #include <Parsers/ASTSettingsProfileElement.h>
+#include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitors.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -31,7 +33,7 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
         return;
     }
 
-    settings.ostr << name;
+    formatSettingName(setting_name, settings.ostr);
 
     if (!value.isNull())
     {

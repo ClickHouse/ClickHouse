@@ -1,39 +1,38 @@
 #if __has_include(<mysql.h>)
+#include <errmsg.h>
 #include <mysql.h>
 #else
+#include <mysql/errmsg.h>
 #include <mysql/mysql.h>
 #endif
 
+#include <Poco/Logger.h>
+
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Query.h>
+#include <mysqlxx/Types.h>
 
 
 namespace mysqlxx
 {
 
-Query::Query(Connection * conn_, const std::string & query_string) : std::ostream(nullptr), conn(conn_)
+Query::Query(Connection * conn_, const std::string & query_string) : conn(conn_)
 {
     /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
-
-    init(&query_buf);
 
     if (!query_string.empty())
-    {
-        query_buf.str(query_string);
-        seekp(0, std::ios::end);
-    }
+        query_buf << query_string;
 
-    imbue(std::locale::classic());
+    query_buf.imbue(std::locale::classic());
 }
 
-Query::Query(const Query & other) : std::ostream(nullptr), conn(other.conn)
+Query::Query(const Query & other) : conn(other.conn)
 {
     /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
 
-    init(&query_buf);
-    imbue(std::locale::classic());
+    query_buf.imbue(std::locale::classic());
 
     *this << other.str();
 }
@@ -45,9 +44,7 @@ Query & Query::operator= (const Query & other)
 
     conn = other.conn;
 
-    seekp(0);
-    clear();
-    *this << other.str();
+    query_buf.str(other.str());
 
     return *this;
 }
@@ -59,16 +56,30 @@ Query::~Query()
 
 void Query::reset()
 {
-    seekp(0);
-    clear();
-    query_buf.str("");
+    query_buf.str({});
 }
 
 void Query::executeImpl()
 {
     std::string query_string = query_buf.str();
-    if (mysql_real_query(conn->getDriver(), query_string.data(), query_string.size()))
-        throw BadQuery(errorMessage(conn->getDriver()), mysql_errno(conn->getDriver()));
+
+    MYSQL* mysql_driver = conn->getDriver();
+
+    auto & logger = Poco::Logger::get("mysqlxx::Query");
+    logger.trace("Running MySQL query using connection %lu", mysql_thread_id(mysql_driver));
+    if (mysql_real_query(mysql_driver, query_string.data(), query_string.size()))
+    {
+        const auto err_no = mysql_errno(mysql_driver);
+        switch (err_no)
+        {
+        case CR_SERVER_GONE_ERROR:
+            [[fallthrough]];
+        case CR_SERVER_LOST:
+            throw ConnectionLost(errorMessage(mysql_driver), err_no);
+        default:
+            throw BadQuery(errorMessage(mysql_driver), err_no);
+        }
+    }
 }
 
 UseQueryResult Query::use()
@@ -79,16 +90,6 @@ UseQueryResult Query::use()
         onError(conn->getDriver());
 
     return UseQueryResult(res, conn, this);
-}
-
-StoreQueryResult Query::store()
-{
-    executeImpl();
-    MYSQL_RES * res = mysql_store_result(conn->getDriver());
-    if (!res)
-        checkError(conn->getDriver());
-
-    return StoreQueryResult(res, conn, this);
 }
 
 void Query::execute()

@@ -19,7 +19,7 @@ namespace ErrorCodes
 std::string getClusterName(const IAST & node)
 {
     if (const auto * ast_id = node.as<ASTIdentifier>())
-        return ast_id->name;
+        return ast_id->name();
 
     if (const auto * ast_lit = node.as<ASTLiteral>())
         return ast_lit->value.safeGet<String>();
@@ -46,7 +46,7 @@ std::string getClusterName(const IAST & node)
 }
 
 
-String getClusterNameAndMakeLiteral(ASTPtr & node)
+std::string getClusterNameAndMakeLiteral(ASTPtr & node)
 {
     String cluster_name = getClusterName(*node);
     node = std::make_shared<ASTLiteral>(cluster_name);

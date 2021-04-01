@@ -1,3 +1,10 @@
+---
+toc_folder_title: "Движки таблиц"
+toc_priority: 26
+toc_title: "Введение"
+---
+
+
 # Движки таблиц {#table_engines}
 
 Движок таблицы (тип таблицы) определяет:
@@ -53,7 +60,7 @@
 -   [Distributed](special/distributed.md#distributed)
 -   [MaterializedView](special/materializedview.md#materializedview)
 -   [Dictionary](special/dictionary.md#dictionary)
--   [Merge](special/merge.md#merge
+-   [Merge](special/merge.md#merge)
 -   [File](special/file.md#file)
 -   [Null](special/null.md#null)
 -   [Set](special/set.md#set)
@@ -73,4 +80,3 @@
 
 При создании таблицы со столбцом, имя которого совпадает с именем одного из виртуальных столбцов таблицы, виртуальный столбец становится недоступным. Не делайте так. Чтобы помочь избежать конфликтов, имена виртуальных столбцов обычно предваряются подчеркиванием.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/) <!--hide-->

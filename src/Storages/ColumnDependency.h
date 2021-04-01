@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/SipHash.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <unordered_set>
 
 namespace DB
@@ -9,7 +9,7 @@ namespace DB
 
 /// Represents dependency from other column.
 /// Used to determine, which columns we have to read, if we want to update some other column.
-/// Necessary, because table can have some depenendecies, which requires several columns for calculation.
+/// Necessary, because table can have some dependencies, which requires several columns for calculation.
 struct ColumnDependency
 {
     enum Kind : UInt8

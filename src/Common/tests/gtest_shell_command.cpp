@@ -1,5 +1,5 @@
 #include <iostream>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/ShellCommand.h>
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -62,6 +62,6 @@ TEST(ShellCommand, AutoWait)
         //command->wait(); // now automatic
     }
 
-    // std::cerr << "inspect me: ps auxwwf" << "\n";
+    // std::cerr << "inspect me: ps auxwwf\n";
     // std::this_thread::sleep_for(std::chrono::seconds(100));
 }

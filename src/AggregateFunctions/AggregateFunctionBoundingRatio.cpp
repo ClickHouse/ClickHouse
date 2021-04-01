@@ -31,7 +31,7 @@ AggregateFunctionPtr createAggregateFunctionRate(const std::string & name, const
 
 void registerAggregateFunctionRate(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("boundingRatio", createAggregateFunctionRate, AggregateFunctionFactory::CaseInsensitive);
+    factory.registerFunction("boundingRatio", createAggregateFunctionRate);
 }
 
 }

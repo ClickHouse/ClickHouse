@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <common/unaligned.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
@@ -19,8 +20,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int CANNOT_COMPRESS;
-extern const int CANNOT_DECOMPRESS;
+    extern const int CANNOT_COMPRESS;
+    extern const int CANNOT_DECOMPRESS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -152,7 +154,7 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
 template <typename ValueType>
 UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
-    // Since only unsinged int has granted 2-complement overflow handling,
+    // Since only unsigned int has granted 2-complement overflow handling,
     // we are doing math here only on unsigned types.
     // To simplify and booletproof code, we enforce ValueType to be unsigned too.
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
@@ -166,6 +168,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
         throw Exception("Cannot compress, data size " + toString(source_size)
                         + " is not aligned to " + toString(sizeof(ValueType)), ErrorCodes::CANNOT_COMPRESS);
     const char * source_end = source + source_size;
+    const char * dest_start = dest;
 
     const UInt32 items_count = source_size / sizeof(ValueType);
     unalignedStore<UInt32>(dest, items_count);
@@ -217,7 +220,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
             const SignedDeltaType signed_dd = static_cast<SignedDeltaType>(double_delta);
             const auto sign = signed_dd < 0;
 
-            // -1 shirnks dd down to fit into number of bits, and there can't be 0, so it is OK.
+            // -1 shrinks dd down to fit into number of bits, and there can't be 0, so it is OK.
             const auto abs_value = static_cast<UnsignedDeltaType>(std::abs(signed_dd) - 1);
             const auto write_spec = getDeltaWriteSpec(signed_dd);
 
@@ -229,7 +232,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 
     writer.flush();
 
-    return sizeof(items_count) + sizeof(prev_value) + sizeof(prev_delta) + writer.count() / 8;
+    return (dest - dest_start) + (writer.count() + 7) / 8;
 }
 
 template <typename ValueType>
@@ -237,7 +240,6 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
-    using SignedDeltaType = typename std::make_signed<UnsignedDeltaType>::type;
 
     const char * source_end = source + source_size;
 
@@ -286,12 +288,13 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         if (write_spec.data_bits != 0)
         {
             const UInt8 sign = reader.readBit();
-            SignedDeltaType signed_dd = static_cast<SignedDeltaType>(reader.readBits(write_spec.data_bits - 1) + 1);
+            double_delta = reader.readBits(write_spec.data_bits - 1) + 1;
             if (sign)
             {
-                signed_dd *= -1;
+                /// It's well defined for unsigned data types.
+                /// In contrast, it's undefined to do negation of the most negative signed number due to overflow.
+                double_delta = -double_delta;
             }
-            double_delta = static_cast<UnsignedDeltaType>(signed_dd);
         }
 
         const UnsignedDeltaType delta = double_delta + prev_delta;
@@ -304,16 +307,18 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     }
 }
 
-UInt8 getDataBytesSize(DataTypePtr column_type)
+UInt8 getDataBytesSize(const IDataType * column_type)
 {
-    UInt8 data_bytes_size = 1;
-    if (column_type && column_type->haveMaximumSizeOfValue())
-    {
-        size_t max_size = column_type->getSizeOfValueInMemory();
-        if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
-            data_bytes_size = static_cast<UInt8>(max_size);
-    }
-    return data_bytes_size;
+    if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta is not applicable for {} because the data type is not of fixed size",
+            column_type->getName());
+
+    size_t max_size = column_type->getSizeOfValueInMemory();
+    if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
+        return static_cast<UInt8>(max_size);
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+            column_type->getName());
 }
 
 }
@@ -322,6 +327,7 @@ UInt8 getDataBytesSize(DataTypePtr column_type)
 CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
+    setCodecDescription("DoubleDelta");
 }
 
 uint8_t CompressionCodecDoubleDelta::getMethodByte() const
@@ -329,9 +335,10 @@ uint8_t CompressionCodecDoubleDelta::getMethodByte() const
     return static_cast<uint8_t>(CompressionMethodByte::DoubleDelta);
 }
 
-String CompressionCodecDoubleDelta::getCodecDesc() const
+void CompressionCodecDoubleDelta::updateHash(SipHash & hash) const
 {
-    return "DoubleDelta";
+    getCodecDesc()->updateTreeHash(hash);
+    hash.update(data_bytes_size);
 }
 
 UInt32 CompressionCodecDoubleDelta::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -402,18 +409,17 @@ void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 s
     }
 }
 
-void CompressionCodecDoubleDelta::useInfoAboutType(DataTypePtr data_type)
-{
-    data_bytes_size = getDataBytesSize(data_type);
-}
-
 void registerCodecDoubleDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::DoubleDelta);
-    factory.registerCompressionCodecWithType("DoubleDelta", method_code, [&](const ASTPtr &, DataTypePtr column_type) -> CompressionCodecPtr
+    factory.registerCompressionCodecWithType("DoubleDelta", method_code,
+        [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        UInt8 delta_bytes_size = getDataBytesSize(column_type);
-        return std::make_shared<CompressionCodecDoubleDelta>(delta_bytes_size);
+        if (arguments)
+            throw Exception("Codec DoubleDelta does not accept any arguments", ErrorCodes::BAD_ARGUMENTS);
+
+        UInt8 data_bytes_size = column_type ? getDataBytesSize(column_type) : 0;
+        return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     });
 }
 }

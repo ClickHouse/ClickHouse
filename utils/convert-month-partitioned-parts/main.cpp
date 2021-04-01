@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -30,7 +31,7 @@ void run(String part_path, String date_column, String dest_path)
 {
     std::shared_ptr<IDisk> disk = std::make_shared<DiskLocal>("local", "/", 0);
     auto old_part_path = Poco::Path::forDirectory(part_path);
-    String old_part_name = old_part_path.directory(old_part_path.depth() - 1);
+    const String & old_part_name = old_part_path.directory(old_part_path.depth() - 1);
     String old_part_path_str = old_part_path.toString();
 
     auto part_info = MergeTreePartInfo::fromPartName(old_part_name, MergeTreeDataFormatVersion(0));
@@ -46,8 +47,9 @@ void run(String part_path, String date_column, String dest_path)
     DayNum max_date;
     MergeTreePartInfo::parseMinMaxDatesFromPartName(old_part_name, min_date, max_date);
 
-    UInt32 yyyymm = DateLUT::instance().toNumYYYYMM(min_date);
-    if (yyyymm != DateLUT::instance().toNumYYYYMM(max_date))
+    const auto & time_zone = DateLUT::instance();
+    UInt32 yyyymm = time_zone.toNumYYYYMM(min_date);
+    if (yyyymm != time_zone.toNumYYYYMM(max_date))
         throw Exception("Part " + old_part_name + " spans different months",
             ErrorCodes::BAD_DATA_PART_NAME);
 
@@ -96,6 +98,8 @@ void run(String part_path, String date_column, String dest_path)
     Poco::File(new_tmp_part_path_str + "checksums.txt").setWriteable();
     WriteBufferFromFile checksums_out(new_tmp_part_path_str + "checksums.txt", 4096);
     checksums.write(checksums_out);
+    checksums_in.close();
+    checksums_out.close();
 
     Poco::File(new_tmp_part_path).renameTo(new_part_path.toString());
 }

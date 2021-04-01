@@ -1,3 +1,8 @@
+---
+toc_priority: 31
+toc_title: "Синтаксис"
+---
+
 # Синтаксис {#sintaksis}
 
 В системе есть два вида парсеров: полноценный парсер SQL (recursive descent parser) и парсер форматов данных (быстрый потоковый парсер).
@@ -33,7 +38,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 -   Стандарту SQL. Например, применение любого из вариантов `SELECT`, `select` или `SeLeCt` не вызовет ошибки.
 -   Реализации в некоторых популярных DBMS (MySQL или Postgres). Например, `DateTime` и `datetime`.
 
-Зависимость от регистра для имён типов данных можно проверить в таблице `system.data_type_families`.
+Зависимость от регистра для имён типов данных можно проверить в таблице [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families).
 
 В отличие от стандарта SQL, все остальные ключевые слова, включая названия функций зависят от регистра.
 
@@ -95,7 +100,7 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 При обработке `NULL` есть множество особенностей. Например, если хотя бы один из аргументов операции сравнения — `NULL`, то результатом такой операции тоже будет `NULL`. Этим же свойством обладают операции умножения, сложения и пр. Подробнее читайте в документации на каждую операцию.
 
-В запросах можно проверить `NULL` с помощью операторов [IS NULL](operators.md#operator-is-null) и [IS NOT NULL](operators.md), а также соответствующих функций `isNull` и `isNotNull`.
+В запросах можно проверить `NULL` с помощью операторов [IS NULL](operators/index.md#operator-is-null) и [IS NOT NULL](operators/index.md), а также соответствующих функций `isNull` и `isNotNull`.
 
 ## Функции {#funktsii}
 
@@ -176,4 +181,3 @@ Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 Список выражений - одно выражение или несколько выражений через запятую.
 Функции и операторы, в свою очередь, в качестве аргументов, могут иметь произвольные выражения.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/syntax/) <!--hide-->

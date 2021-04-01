@@ -3,7 +3,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <Common/thread_local_rng.h>
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -16,6 +17,8 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
+namespace
+{
 
 /** Generate random string of specified length with printable ASCII characters, almost uniformly distributed.
   * First argument is length, other optional arguments are ignored and used to prevent common subexpression elimination to get different values.
@@ -54,14 +57,16 @@ public:
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnString::create();
         ColumnString::Chars & data_to = col_to->getChars();
         ColumnString::Offsets & offsets_to = col_to->getOffsets();
         offsets_to.resize(input_rows_count);
 
-        const IColumn & length_column = *block.getByPosition(arguments[0]).column;
+        pcg64_fast rng(randomSeed());
+
+        const IColumn & length_column = *arguments[0].column;
 
         IColumn::Offset offset = 0;
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
@@ -77,7 +82,7 @@ public:
             auto * data_to_ptr = data_to.data();    /// avoid assert on array indexing after end
             for (size_t pos = offset, end = offset + length; pos < end; pos += 4)    /// We have padding in column buffers that we can overwrite.
             {
-                UInt64 rand = thread_local_rng();
+                UInt64 rand = rng();
 
                 UInt16 rand1 = rand;
                 UInt16 rand2 = rand >> 16;
@@ -101,9 +106,11 @@ public:
             offset = next_offset;
         }
 
-        block.getByPosition(result).column = std::move(col_to);
+        return col_to;
     }
 };
+
+}
 
 void registerFunctionRandomPrintableASCII(FunctionFactory & factory)
 {

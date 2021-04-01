@@ -1,3 +1,9 @@
+---
+toc_priority: 46
+toc_title: UUID
+---
+
+
 # UUID {#uuid-data-type}
 
 Универсальный уникальный идентификатор (UUID) - это 16-байтовое число, используемое для идентификации записей. Подробнее про UUID читайте на [Википедии](https://en.wikipedia.org/wiki/Universally_unique_identifier).

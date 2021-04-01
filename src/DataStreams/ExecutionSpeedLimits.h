@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Timespan.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <DataStreams/SizeLimits.h>
 
 namespace DB

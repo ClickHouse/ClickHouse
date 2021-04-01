@@ -2,9 +2,11 @@
 
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeType.h>
+#include <Disks/IDisk.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -28,29 +30,29 @@ struct ReplicatedMergeTreeLogEntryData
 {
     enum Type
     {
-        EMPTY,          /// Not used.
-        GET_PART,       /// Get the part from another replica.
-        MERGE_PARTS,    /// Merge the parts.
-        DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
-        CLEAR_COLUMN,   /// NOTE: Deprecated. Drop specific column from specified partition.
-        CLEAR_INDEX,    /// NOTE: Deprecated. Drop specific index from specified partition.
-        REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
-        MUTATE_PART,    /// Apply one or several mutations to the part.
-        ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
+        EMPTY,             /// Not used.
+        GET_PART,          /// Get the part from another replica.
+        MERGE_PARTS,       /// Merge the parts.
+        DROP_RANGE,        /// Delete the parts in the specified partition in the specified number range.
+        CLEAR_COLUMN,      /// NOTE: Deprecated. Drop specific column from specified partition.
+        CLEAR_INDEX,       /// NOTE: Deprecated. Drop specific index from specified partition.
+        REPLACE_RANGE,     /// Drop certain range of partitions and replace them by new ones
+        MUTATE_PART,       /// Apply one or several mutations to the part.
+        ALTER_METADATA,    /// Apply alter modification according to global /metadata and /columns paths
     };
 
     static String typeToString(Type type)
     {
         switch (type)
         {
-            case ReplicatedMergeTreeLogEntryData::GET_PART:         return "GET_PART";
-            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:      return "MERGE_PARTS";
-            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
-            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
-            case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:      return "CLEAR_INDEX";
-            case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
-            case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
-            case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
+            case ReplicatedMergeTreeLogEntryData::GET_PART:          return "GET_PART";
+            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:       return "MERGE_PARTS";
+            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:        return "DROP_RANGE";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:      return "CLEAR_COLUMN";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:       return "CLEAR_INDEX";
+            case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:     return "REPLACE_RANGE";
+            case ReplicatedMergeTreeLogEntryData::MUTATE_PART:       return "MUTATE_PART";
+            case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:    return "ALTER_METADATA";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -76,15 +78,14 @@ struct ReplicatedMergeTreeLogEntryData
     MergeTreeDataPartType new_part_type;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
+    UUID new_part_uuid = UUIDHelpers::Nil;
 
     Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
+    Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
+    MergeType merge_type = MergeType::REGULAR;
     String column_name;
     String index_name;
-
-    /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
-    /// without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
-    bool force_ttl = false;
 
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
@@ -112,10 +113,10 @@ struct ReplicatedMergeTreeLogEntryData
     /// Version of metadata which will be set after this alter
     /// Also present in MUTATE_PART command, to track mutations
     /// required for complete alter execution.
-    int alter_version; /// May be equal to -1, if it's normal mutation, not metadata update.
+    int alter_version = -1; /// May be equal to -1, if it's normal mutation, not metadata update.
 
     /// only ALTER METADATA command
-    bool have_mutation; /// If this alter requires additional mutation step, for data update
+    bool have_mutation = false; /// If this alter requires additional mutation step, for data update
 
     String columns_str; /// New columns data corresponding to alter_version
     String metadata_str; /// New metadata corresponding to alter_version
@@ -161,6 +162,7 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.
+    bool removed_by_other_entry = false;
     /// These several fields are informational only (for viewing by the user using system tables).
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     size_t num_tries = 0;                 /// The number of attempts to perform the action (since the server started, including the running one).

@@ -1,3 +1,8 @@
+---
+toc_priority: 46
+toc_title: input
+---
+
 # input {#input}
 
 `input(structure)` - табличная функция, позволяющая эффективно преобразовывать и вставлять отправленные на сервер данные,
@@ -38,4 +43,3 @@ $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/input/) <!--hide-->

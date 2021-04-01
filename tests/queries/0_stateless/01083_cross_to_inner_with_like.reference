@@ -1,3 +1,21 @@
-SELECT \n    k, \n    r.k, \n    name\nFROM n\nALL INNER JOIN r ON k = r.k\nWHERE (k = r.k) AND (name = \'A\')
-SELECT \n    k, \n    r.k, \n    name\nFROM n\nALL INNER JOIN r ON k = r.k\nWHERE (k = r.k) AND (name LIKE \'A%\')
-SELECT \n    k, \n    r.k, \n    name\nFROM n\nALL INNER JOIN r ON k = r.k\nWHERE (k = r.k) AND (name NOT LIKE \'A%\')
+SELECT
+    k,
+    r.k,
+    name
+FROM n
+ALL INNER JOIN r ON k = r.k
+WHERE (k = r.k) AND (name = \'A\')
+SELECT
+    k,
+    r.k,
+    name
+FROM n
+ALL INNER JOIN r ON k = r.k
+WHERE (k = r.k) AND (name LIKE \'A%\')
+SELECT
+    k,
+    r.k,
+    name
+FROM n
+ALL INNER JOIN r ON k = r.k
+WHERE (k = r.k) AND (name NOT LIKE \'A%\')

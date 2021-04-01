@@ -1,16 +1,20 @@
-## system.table\_name {#system-tables_table-name}
+# system.table_name {#system-tables_table-name}
 
 Description.
 
 Columns:
 
--   `column_name` ([data\_type\_name](path/to/data_type.md)) — Description.
+-   `column_name` ([data_type_name](path/to/data_type.md)) — Description.
 
 **Example**
+
+Query:
 
 ``` sql
 SELECT * FROM system.table_name
 ```
+
+Result:
 
 ``` text
 Some output. It shouldn't be too long.

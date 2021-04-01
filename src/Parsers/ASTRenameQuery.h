@@ -4,6 +4,7 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -30,6 +31,8 @@ public:
     Elements elements;
 
     bool exchange{false};   /// For EXCHANGE TABLES
+    bool database{false};   /// For RENAME DATABASE
+    bool dictionary{false};   /// For RENAME DICTIONARY
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }
@@ -61,8 +64,24 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "")
-            << (exchange ? "EXCHANGE TABLES " : "RENAME TABLE ") << (settings.hilite ? hilite_none : "");
+        if (database)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "RENAME DATABASE " << (settings.hilite ? hilite_none : "");
+            settings.ostr << backQuoteIfNeed(elements.at(0).from.database);
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
+            settings.ostr << backQuoteIfNeed(elements.at(0).to.database);
+            formatOnCluster(settings);
+            return;
+        }
+
+        settings.ostr << (settings.hilite ? hilite_keyword : "");
+        if (exchange)
+            settings.ostr << "EXCHANGE TABLES ";
+        else if (dictionary)
+            settings.ostr << "RENAME DICTIONARY ";
+        else
+            settings.ostr << "RENAME TABLE ";
+        settings.ostr << (settings.hilite ? hilite_none : "");
 
         for (auto it = elements.cbegin(); it != elements.cend(); ++it)
         {

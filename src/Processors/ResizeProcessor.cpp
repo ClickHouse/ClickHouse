@@ -347,11 +347,16 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
 
         auto & waiting_output = output_ports[input_with_data.waiting_output];
 
-        if (waiting_output.status != OutputStatus::NeedData)
-            throw Exception("Invalid status for associated output.", ErrorCodes::LOGICAL_ERROR);
+        if (waiting_output.status == OutputStatus::NotActive)
+            throw Exception("Invalid status NotActive for associated output.", ErrorCodes::LOGICAL_ERROR);
 
-        waiting_output.port->pushData(input_with_data.port->pullData(/* set_not_needed = */ true));
-        waiting_output.status = OutputStatus::NotActive;
+        if (waiting_output.status != OutputStatus::Finished)
+        {
+            waiting_output.port->pushData(input_with_data.port->pullData(/* set_not_needed = */ true));
+            waiting_output.status = OutputStatus::NotActive;
+        }
+        else
+            abandoned_chunks.emplace_back(input_with_data.port->pullData(/* set_not_needed = */ true));
 
         if (input_with_data.port->isFinished())
         {
@@ -370,6 +375,18 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         return Status::Finished;
     }
 
+    /// Process abandoned chunks if any.
+    while (!abandoned_chunks.empty() && !waiting_outputs.empty())
+    {
+        auto & waiting_output = output_ports[waiting_outputs.front()];
+        waiting_outputs.pop();
+
+        waiting_output.port->pushData(std::move(abandoned_chunks.back()));
+        abandoned_chunks.pop_back();
+
+        waiting_output.status = OutputStatus::NotActive;
+    }
+
     /// Enable more inputs if needed.
     while (!disabled_input_ports.empty() && !waiting_outputs.empty())
     {
@@ -383,6 +400,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         waiting_outputs.pop();
     }
 
+    /// Close all other waiting for data outputs (there is no corresponding input for them).
     while (!waiting_outputs.empty())
     {
        auto & output = output_ports[waiting_outputs.front()];

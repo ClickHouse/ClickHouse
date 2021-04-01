@@ -1,7 +1,7 @@
 #pragma once
 
 #include <optional>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/IDisk.h>
 

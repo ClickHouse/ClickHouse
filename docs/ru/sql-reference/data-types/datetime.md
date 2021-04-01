@@ -1,3 +1,8 @@
+---
+toc_priority: 48
+toc_title: DateTime
+---
+
 # DateTime {#data_type-datetime}
 
 Позволяет хранить момент времени, который может быть представлен как календарная дата и время.
@@ -22,9 +27,9 @@ DateTime([timezone])
 
 Консольный клиент ClickHouse по умолчанию использует часовой пояс сервера, если для значения `DateTime` часовой пояс не был задан в явном виде при инициализации типа данных. Чтобы использовать часовой пояс клиента, запустите [clickhouse-client](../../interfaces/cli.md) с параметром `--use_client_time_zone`.
 
-ClickHouse отображает значения типа `DateTime` в формате `YYYY-MM-DD hh:mm:ss`. Отображение можно поменять с помощью функции [formatDateTime](../../sql-reference/data-types/datetime.md#formatdatetime).
+ClickHouse отображает значения в зависимости от значения параметра [date\_time\_output\_format](../../operations/settings/settings.md#settings-date_time_output_format). Текстовый формат по умолчанию `YYYY-MM-DD hh:mm:ss`. Кроме того, вы можете поменять отображение с помощью функции [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatdatetime).
 
-При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format).
+При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date_time_input_format](../../operations/settings/settings.md#settings-date_time_input_format).
 
 ## Примеры {#primery}
 
@@ -111,12 +116,13 @@ FROM dt
 
 ## See Also {#see-also}
 
--   [Функции преобразования типов](../../sql-reference/data-types/datetime.md)
--   [Функции для работы с датой и временем](../../sql-reference/data-types/datetime.md)
--   [Функции для работы с массивами](../../sql-reference/data-types/datetime.md)
--   [Настройка `date_time_input_format`](../../operations/settings/settings.md#settings-date_time_input_format)
--   [Конфигурационный параметр сервера `timezone`](../../sql-reference/data-types/datetime.md#server_configuration_parameters-timezone)
--   [Операторы для работы с датой и временем](../../sql-reference/data-types/datetime.md#operators-datetime)
+-   [Функции преобразования типов](../../sql-reference/functions/type-conversion-functions.md)
+-   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
+-   [Функции для работы с массивами](../../sql-reference/functions/array-functions.md)
+-   [Настройка `date_time_input_format`](../../operations/settings/settings/#settings-date_time_input_format)
+-   [Настройка `date_time_output_format`](../../operations/settings/settings/)
+-   [Конфигурационный параметр сервера `timezone`](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
+-   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)
 -   [Тип данных `Date`](date.md)
+-   [Тип данных `DateTime64`](datetime64.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/datetime/) <!--hide-->

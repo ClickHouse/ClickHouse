@@ -1,0 +1,12 @@
+CREATE TABLE test
+(
+    `a` Int64,
+    `b` NESTED(a Int64)
+)
+ENGINE = TinyLog
+CREATE TABLE test
+(
+    `a` Int64,
+    `b` TUPLE(a Int64)
+)
+ENGINE = TinyLog

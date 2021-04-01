@@ -18,17 +18,17 @@ public:
         const Block & header_,
         bool with_names_,
         bool with_types_,
-        FormatFactory::WriteCallback callback,
+        const RowOutputFormatParams & params_,
         const FormatSettings & format_settings_)
-        : TabSeparatedRowOutputFormat(out_, header_, with_names_, with_types_, callback, format_settings_)
+        : TabSeparatedRowOutputFormat(out_, header_, with_names_, with_types_, params_, format_settings_)
     {
     }
 
     String getName() const override { return "TabSeparatedRawRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override
     {
-        type.serializeAsText(column, row_num, out, format_settings);
+        serialization.serializeText(column, row_num, out, format_settings);
     }
 };
 

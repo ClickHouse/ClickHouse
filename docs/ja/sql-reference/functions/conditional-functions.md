@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 43
 toc_title: "\u6761\u4EF6\u4ED8\u304D "
 ---
@@ -9,7 +9,7 @@ toc_title: "\u6761\u4EF6\u4ED8\u304D "
 
 ## もし {#if}
 
-条件分岐を制御します。 と異なりほとんどのシステムclickhouse常に評価さの両方表現 `then` と `else`.
+条件分岐を制御します。 と異なりほとんどのシステムClickHouse常に評価さの両方表現 `then` と `else`.
 
 **構文**
 
@@ -17,7 +17,7 @@ toc_title: "\u6761\u4EF6\u4ED8\u304D "
 SELECT if(cond, then, else)
 ```
 
-条件の場合 `cond` ゼロ以外の値として評価し、式の結果を返します `then`、および式の結果 `else`、存在する場合は、スキップされます。 この `cond` ゼロまたは `NULL` その後の結果 `then` 式はスキップされる。 `else` 式が存在する場合は、その式が返されます。
+条件が `cond` ゼロ以外の値に評価され、式の結果を返します `then` 式の結果 `else`、存在する場合は、スキップされます。 もし `cond` ゼロまたは `NULL` の結果は `then` 式はスキップされ、 `else` expressionが存在する場合は、expressionが返されます。
 
 **パラメータ**
 
@@ -27,9 +27,9 @@ SELECT if(cond, then, else)
 
 **戻り値**
 
-関数が実行されます `then` と `else` 式とその結果を返します。 `cond` ゼロかどうかに終わった。
+この関数は実行されます `then` と `else` 式とは、条件かどうかに応じて、その結果を返します `cond` ゼロかどうかになってしまいました。
 
-**例えば**
+**例**
 
 クエリ:
 
@@ -59,9 +59,9 @@ SELECT if(0, plus(2, 2), plus(2, 6))
 └────────────┘
 ```
 
--   `then` と `else` 共通タイプが最も小さい。
+-   `then` と `else` 共通タイプが最も低い必要があります。
 
-**例えば:**
+**例:**
 
 これを取る `LEFT_RIGHT` テーブル:
 
@@ -95,27 +95,27 @@ WHERE isNotNull(left) AND isNotNull(right)
 └──────┴───────┴─────────────────────────────────────┘
 ```
 
-メモ: `NULL` この例では値は使用されません。 [条件のnull値](#null-values-in-conditionals) セクション。
+注: `NULL` この例では値は使用されません。 [条件付きのNULL値](#null-values-in-conditionals) セクション
 
 ## 三項演算子 {#ternary-operator}
 
-この作品と同じ `if` 機能。
+それは同じように働く `if` 機能。
 
 構文: `cond ? then : else`
 
-を返します `then` この `cond` true(ゼロより大きい)と評価され、それ以外の場合は `else`.
+ﾂづｩﾂ。 `then` もし `cond` true(ゼロより大きい)と評価されます。 `else`.
 
--   `cond` のタイプである必要があります `UInt8`、と `then` と `else` 共通タイプが最も小さい。
+-   `cond` の型でなければなりません `UInt8`,and `then` と `else` 共通タイプが最も低い必要があります。
 
--   `then` と `else` できる。 `NULL`
+-   `then` と `else` ことができます `NULL`
 
-**また見なさい**
+**も参照。**
 
 -   [ifNotFinite](other-functions.md#ifnotfinite).
 
 ## multif {#multiif}
 
-あなたが書くことができます [CASE](../operators.md#operator_case) クエリでよりコンパクトに演算子。
+あなたが書くことができます [CASE](../operators/index.md#operator_case) よりコンパクトにクエリ内の演算子。
 
 構文: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 
@@ -125,15 +125,15 @@ WHERE isNotNull(left) AND isNotNull(right)
 -   `then_N` — The result of the function when executed.
 -   `else` — The result of the function if none of the conditions is met.
 
-この関数は、 `2N+1` パラメータ。
+この関数は `2N+1` 変数。
 
 **戻り値**
 
-この関数は、いずれかの値を返します `then_N` または `else`、条件に応じて `cond_N`.
+関数は、次のいずれかの値を返します `then_N` または `else`、条件によって `cond_N`.
 
-**例えば**
+**例**
 
-再度を使用して `LEFT_RIGHT` テーブル。
+再び使用する `LEFT_RIGHT` テーブル。
 
 ``` sql
 SELECT
@@ -168,9 +168,9 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-## 条件のnull値 {#null-values-in-conditionals}
+## 条件付きのNULL値 {#null-values-in-conditionals}
 
-とき `NULL` 値は条件文に含まれ、結果は次のようになります `NULL`.
+とき `NULL` 値は条件に含まれ、結果も次のようになります `NULL`.
 
 ``` sql
 SELECT
@@ -184,9 +184,9 @@ SELECT
 └───────────────┴───────────────┴──────────────────┴────────────────────┘
 ```
 
-したがって、型が `Nullable`.
+その構築お問合せくの場合はタイプ `Nullable`.
 
-次の例は、equals条件を追加できないことを示しています `multiIf`.
+次の例では、equals条件の追加に失敗してこれを示します `multiIf`.
 
 ``` sql
 SELECT

@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS primary_key;
-CREATE TABLE primary_key (d Date DEFAULT today(), x Int8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/primary_key', 'r1', d, -x, 1);
+CREATE TABLE primary_key (d Date DEFAULT today(), x Int8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00215/primary_key', 'r1', d, -x, 1);
 
 INSERT INTO primary_key (x) VALUES (1), (2), (3);
 INSERT INTO primary_key (x) VALUES (1), (3), (2);

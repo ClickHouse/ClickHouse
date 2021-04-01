@@ -16,7 +16,7 @@ Returns an array of selected substrings. Empty substrings may be selected if the
 splitByChar(<separator>, <s>)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `separator` — The separator which should contain exactly one character. [String](../../sql-reference/data-types/string.md).
 -   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
@@ -53,7 +53,7 @@ Splits a string into substrings separated by a string. It uses a constant string
 splitByString(<separator>, <s>)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `separator` — The separator. [String](../../sql-reference/data-types/string.md).
 -   `s` — The string to split. [String](../../sql-reference/data-types/string.md).
@@ -111,4 +111,42 @@ SELECT alphaTokens('abca1abc')
 └─────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->
+## extractAllGroups(text, regexp) {#extractallgroups}
+
+Extracts all groups from non-overlapping substrings matched by a regular expression.
+
+**Syntax** 
+
+``` sql
+extractAllGroups(text, regexp) 
+```
+
+**Arguments** 
+
+-   `text` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+-   `regexp` — Regular expression. Constant. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+
+**Returned values**
+
+-   If the function finds at least one matching group, it returns `Array(Array(String))` column, clustered by group_id (1 to N, where N is number of capturing groups in `regexp`).
+
+-   If there is no matching group, returns an empty array.
+
+Type: [Array](../data-types/array.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT extractAllGroups('abc=123, 8="hkl"', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
+```
+
+Result:
+
+``` text
+┌─extractAllGroups('abc=123, 8="hkl"', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
+│ [['abc','123'],['8','"hkl"']]                                         │
+└───────────────────────────────────────────────────────────────────────┘
+```
+

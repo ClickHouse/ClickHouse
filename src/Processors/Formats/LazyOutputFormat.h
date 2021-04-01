@@ -8,8 +8,8 @@ namespace DB
 {
 
 /// LazyOutputFormat is used to retrieve ready data from executing pipeline.
-/// You can periodically call `getBlock` from separate thread.
-/// Used in TCPHandler.
+/// You can periodically call `getChunk` from separate thread.
+/// Used in PullingAsyncPipelineExecutor.
 class LazyOutputFormat : public IOutputFormat
 {
 
@@ -19,9 +19,9 @@ public:
 
     String getName() const override { return "LazyOutputFormat"; }
 
-    Block getBlock(UInt64 milliseconds = 0);
-    Block getTotals();
-    Block getExtremes();
+    Chunk getChunk(UInt64 milliseconds = 0);
+    Chunk getTotals();
+    Chunk getExtremes();
 
     bool isFinished() { return finished_processing && queue.size() == 0; }
 
@@ -36,6 +36,14 @@ public:
         queue.clear();
     }
 
+    void finalize() override
+    {
+        finished_processing = true;
+
+        /// In case we are waiting for result.
+        queue.emplace(Chunk());
+    }
+
 protected:
     void consume(Chunk chunk) override
     {
@@ -45,14 +53,6 @@ protected:
 
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
     void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
-
-    void finalize() override
-    {
-        finished_processing = true;
-
-        /// In case we are waiting for result.
-        queue.emplace(Chunk());
-    }
 
 private:
 

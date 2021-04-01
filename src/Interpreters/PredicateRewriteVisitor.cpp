@@ -17,8 +17,8 @@ namespace DB
 {
 
 PredicateRewriteVisitorData::PredicateRewriteVisitorData(
-    const Context & context_, const ASTs & predicates_, const Names & column_names_, bool optimize_final_)
-    : context(context_), predicates(predicates_), column_names(column_names_), optimize_final(optimize_final_)
+    const Context & context_, const ASTs & predicates_, Names && column_names_, bool optimize_final_, bool optimize_with_)
+    : context(context_), predicates(predicates_), column_names(column_names_), optimize_final(optimize_final_), optimize_with(optimize_with_)
 {
 }
 
@@ -26,11 +26,18 @@ void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_q
 {
     auto & internal_select_list = union_select_query.list_of_selects->children;
 
-    if (!internal_select_list.empty())
-        visitFirstInternalSelect(*internal_select_list[0]->as<ASTSelectQuery>(), internal_select_list[0]);
-
-    for (size_t index = 1; index < internal_select_list.size(); ++index)
-        visitOtherInternalSelect(*internal_select_list[index]->as<ASTSelectQuery>(), internal_select_list[index]);
+    for (size_t index = 0; index < internal_select_list.size(); ++index)
+    {
+        if (auto * child_union = internal_select_list[index]->as<ASTSelectWithUnionQuery>())
+            visit(*child_union, internal_select_list[index]);
+        else
+        {
+            if (index == 0)
+                visitFirstInternalSelect(*internal_select_list[0]->as<ASTSelectQuery>(), internal_select_list[0]);
+            else
+                visitOtherInternalSelect(*internal_select_list[index]->as<ASTSelectQuery>(), internal_select_list[index]);
+        }
+    }
 }
 
 void PredicateRewriteVisitorData::visitFirstInternalSelect(ASTSelectQuery & select_query, ASTPtr &)
@@ -76,7 +83,7 @@ static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTI
     }
 
     if (const auto alias = predicate->tryGetAlias(); !alias.empty())
-        predicate->setAlias("");
+        predicate->setAlias({});
 
     if (ASTIdentifier * identifier = predicate->as<ASTIdentifier>())
         identifiers.emplace_back(identifier);
@@ -85,9 +92,10 @@ static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTI
 bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, const Names & outer_columns, const Names & inner_columns)
 {
     if ((!optimize_final && subquery.final())
-        || subquery.with() || subquery.withFill()
+        || (!optimize_with && subquery.with())
+        || subquery.withFill()
         || subquery.limitBy() || subquery.limitLength()
-        || hasStatefulFunction(subquery.select(), context))
+        || hasNonRewritableFunction(subquery.select(), context))
         return false;
 
     for (const auto & predicate : predicates)

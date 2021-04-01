@@ -100,7 +100,7 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
 
         /// Append a row from queue.
         for (size_t i = 0; i < num_columns; ++i)
-            merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
+            merged_columns[i]->insertFrom(*current->all_columns[i], current->getRow());
 
         ++total_merged_rows;
         ++merged_rows;
@@ -285,7 +285,9 @@ IProcessor::Status SortingTransform::prepareGenerate()
 
     if (output.isFinished())
     {
-        inputs.front().close();
+        for (auto & input : inputs)
+            input.close();
+
         return Status::Finished;
     }
 

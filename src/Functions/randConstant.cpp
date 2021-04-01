@@ -9,6 +9,9 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
+
 template <typename ToType, typename Name>
 class ExecutableFunctionRandomConstant : public IExecutableFunctionImpl
 {
@@ -19,9 +22,9 @@ public:
 
 bool useDefaultImplementationForNulls() const override { return false; }
 
-    void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
+        return DataTypeNumber<ToType>().createColumnConst(input_rows_count, value);
     }
 
 private:
@@ -44,12 +47,12 @@ public:
         return argument_types;
     }
 
-    const DataTypePtr & getReturnType() const override
+    const DataTypePtr & getResultType() const override
     {
         return return_type;
     }
 
-    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionRandomConstant<ToType, Name>>(value);
     }
@@ -76,20 +79,20 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    void checkNumberOfArgumentsIfVariadic(size_t number_of_arguments) const override
-    {
-        if (number_of_arguments > 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(number_of_arguments) + ", should be 0 or 1.",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    }
-
     static FunctionOverloadResolverImplPtr create(const Context &)
     {
         return std::make_unique<RandomConstantOverloadResolver<ToType, Name>>();
     }
 
-    DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeNumber<ToType>>(); }
+    DataTypePtr getReturnType(const DataTypes & data_types) const override
+    {
+        size_t number_of_arguments = data_types.size();
+        if (number_of_arguments > 1)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(number_of_arguments) + ", should be 0 or 1.",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        return std::make_shared<DataTypeNumber<ToType>>();
+    }
 
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
@@ -99,16 +102,18 @@ public:
             argument_types.emplace_back(arguments.back().type);
 
         typename ColumnVector<ToType>::Container vec_to(1);
-        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
+
+        TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(ToType));
         ToType value = vec_to[0];
 
         return std::make_unique<FunctionBaseRandomConstant<ToType, Name>>(value, argument_types, return_type);
     }
 };
 
-
 struct NameRandConstant { static constexpr auto name = "randConstant"; };
 using FunctionBuilderRandConstant = RandomConstantOverloadResolver<UInt32, NameRandConstant>;
+
+}
 
 void registerFunctionRandConstant(FunctionFactory & factory)
 {

@@ -3,7 +3,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Core/Types.h>
 #include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -31,7 +30,7 @@ try
             DB::writeIntText(i, deflating_buf);
             DB::writeChar('\t', deflating_buf);
         }
-        deflating_buf.finish();
+        deflating_buf.finalize();
 
         stopwatch.stop();
         std::cout << "Writing done. Elapsed: " << stopwatch.elapsedSeconds() << " s."

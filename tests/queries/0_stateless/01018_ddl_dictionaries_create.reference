@@ -1,14 +1,14 @@
 =DICTIONARY in Ordinary DB
-CREATE DICTIONARY ordinary_db.dict1\n(\n    `key_column` UInt64 DEFAULT 0, \n    `second_column` UInt8 DEFAULT 1, \n    `third_column` String DEFAULT \'qqq\'\n)\nPRIMARY KEY key_column\nSOURCE(CLICKHOUSE(HOST \'localhost\' PORT 9000 USER \'default\' TABLE \'table_for_dict\' PASSWORD \'\' DB \'database_for_dict\'))\nLIFETIME(MIN 1 MAX 10)\nLAYOUT(FLAT())
+CREATE DICTIONARY db_01018.dict1\n(\n    `key_column` UInt64 DEFAULT 0,\n    `second_column` UInt8 DEFAULT 1,\n    `third_column` String DEFAULT \'qqq\'\n)\nPRIMARY KEY key_column\nSOURCE(CLICKHOUSE(HOST \'localhost\' PORT tcpPort() USER \'default\' TABLE \'table_for_dict\' PASSWORD \'\' DB \'database_for_dict_01018\'))\nLIFETIME(MIN 1 MAX 10)\nLAYOUT(FLAT())
 dict1
 1
-ordinary_db	dict1
+db_01018	dict1
 ==DETACH DICTIONARY
 0
 ==ATTACH DICTIONARY
 dict1
 1
-ordinary_db	dict1
+db_01018	dict1
 ==DROP DICTIONARY
 0
 =DICTIONARY in Memory DB

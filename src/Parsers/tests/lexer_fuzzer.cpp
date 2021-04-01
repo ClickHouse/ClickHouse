@@ -1,7 +1,6 @@
 #include <map>
 #include <Parsers/Lexer.h>
-#include <Parsers/TokenIterator.h>
-#include <Core/Types.h>
+#include <common/types.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>

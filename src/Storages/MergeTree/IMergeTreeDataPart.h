@@ -4,7 +4,7 @@
 
 #include <Core/Row.h>
 #include <Core/Block.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -16,11 +16,16 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Columns/IColumn.h>
 
 #include <Poco/Path.h>
 
 #include <shared_mutex>
+
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
 
 namespace DB
 {
@@ -31,8 +36,14 @@ struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
+class IVolume;
+using VolumePtr = std::shared_ptr<IVolume>;
+
 class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
+class MarkCache;
+class UncompressedCache;
+
 
 namespace ErrorCodes
 {
@@ -42,6 +53,7 @@ namespace ErrorCodes
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
+    static constexpr auto DATA_FILE_EXTENSION = ".bin";
 
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
@@ -51,7 +63,7 @@ public:
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
-    using NameToPosition = std::unordered_map<std::string, size_t>;
+    using NameToNumber = std::unordered_map<std::string, size_t>;
 
     using Type = MergeTreeDataPartType;
 
@@ -60,19 +72,20 @@ public:
         const MergeTreeData & storage_,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DiskPtr & disk,
+        const VolumePtr & volume,
         const std::optional<String> & relative_path,
         Type part_type_);
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
         const String & name_,
-        const DiskPtr & disk,
+        const VolumePtr & volume,
         const std::optional<String> & relative_path,
         Type part_type_);
 
     virtual MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns_,
+        const StorageMetadataPtr & metadata_snapshot,
         const MarkRanges & mark_ranges,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
@@ -82,6 +95,7 @@ public:
 
     virtual MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
@@ -103,6 +117,7 @@ public:
     virtual ~IMergeTreeDataPart();
 
     using ColumnToSize = std::map<std::string, UInt64>;
+    /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const;
 
     Type getType() const { return part_type; }
@@ -113,9 +128,10 @@ public:
 
     const NamesAndTypesList & getColumns() const { return columns; }
 
+    /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove() const;
+    void remove(bool keep_s3 = false) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -128,21 +144,23 @@ public:
     String getNewName(const MergeTreePartInfo & new_part_info) const;
 
     /// Returns column position in part structure or std::nullopt if it's missing in part.
+    ///
+    /// NOTE: Doesn't take column renames into account, if some column renames
+    /// take place, you must take original name of column for this part from
+    /// storage and pass it to this method.
     std::optional<size_t> getColumnPosition(const String & column_name) const;
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinumumCompressedSize() const;
+    String getColumnNameWithMinimumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
-    /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
-    DayNum getMinDate() const;
-    DayNum getMaxDate() const;
+    /// If the partition key includes date column (a common case), this function will return min and max values for that column.
+    std::pair<DayNum, DayNum> getMinMaxDate() const;
 
-    /// otherwise, if the partition key includes dateTime column (also a common case), these functions will return min and max values for this column.
-    time_t getMinTime() const;
-    time_t getMaxTime() const;
+    /// otherwise, if the partition key includes dateTime column (also a common case), this function will return min and max values for that column.
+    std::pair<time_t, time_t> getMinMaxTime() const;
 
     bool isEmpty() const { return rows_count == 0; }
 
@@ -151,8 +169,15 @@ public:
     String name;
     MergeTreePartInfo info;
 
-    DiskPtr disk;
+    /// Part unique identifier.
+    /// The intention is to use it for identifying cases where the same part is
+    /// processed by multiple shards.
+    UUID uuid = UUIDHelpers::Nil;
 
+    VolumePtr volume;
+
+    /// A directory path (relative to storage's path) where part data is actually stored
+    /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
@@ -179,7 +204,7 @@ public:
      * Possible state transitions:
      * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
      * Precommitted -> Outdated:    we could not to add a part to active set and doing a rollback (for example it is duplicated part)
-     * Precommitted -> Commited:    we successfully committed a part to active dataset
+     * Precommitted -> Committed:    we successfully committed a part to active dataset
      * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
      * Outdated -> Deleting:        a cleaner selected this part for deletion
      * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
@@ -201,7 +226,8 @@ public:
     TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
-    mutable State state{State::Temporary};
+    void setState(State new_state) const;
+    State getState() const;
 
     /// Returns name of state
     static String stateToString(State state);
@@ -273,6 +299,8 @@ public:
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
+    CompressionCodecPtr default_codec;
+
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -282,22 +310,71 @@ public:
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
 
     size_t getFileSizeOrZero(const String & file_name) const;
+
+    /// Returns path to part dir relatively to disk mount point
     String getFullRelativePath() const;
+
+    /// Returns full path to part dir
     String getFullPath() const;
-    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
+
+    /// Moves a part to detached/ directory and adds prefix to its name
     void renameToDetached(const String & prefix) const;
-    void makeCloneInDetached(const String & prefix) const;
 
-    /// Makes full clone of part in detached/ on another disk
-    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
+    /// Makes checks and move part to new directory
+    /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
 
-    /// Checks that .bin and .mrk files exist
-    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
+    /// Makes clone of a part in detached/ directory via hard links
+    virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
+    /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
+    void makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
+
+    /// Checks that .bin and .mrk files exist.
+    ///
+    /// NOTE: Doesn't take column renames into account, if some column renames
+    /// take place, you must take original name of column for this part from
+    /// storage and pass it to this method.
+    virtual bool hasColumnFiles(const NameAndTypePair & /* column */) const { return false; }
+
+    /// Returns true if this part shall participate in merges according to
+    /// settings of given storage policy.
+    bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
+
+    /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
     void calculateColumnsSizesOnDisk();
 
+    String getRelativePathForPrefix(const String & prefix) const;
+
+
+    /// Return set of metadat file names without checksums. For example,
+    /// columns.txt or checksums.txt itself.
+    NameSet getFileNamesWithoutChecksums() const;
+
+    /// File with compression codec name which was used to compress part columns
+    /// by default. Some columns may have their own compression codecs, but
+    /// default will be stored in this file.
+    static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
+
+    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
+
+    static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
+
+    /// Checks that all TTLs (table min/max, column ttls, so on) for part
+    /// calculated. Part without calculated TTL may exist if TTL was added after
+    /// part creation (using alter query with materialize_ttl setting).
+    bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
+
+    /// Returns serialization for column according to files in which column is written in part.
+    SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
+
+    /// Return some uniq string for file
+    /// Required for distinguish different copies of the same part on S3
+    String getUniqueId() const;
+
 protected:
+
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
 
@@ -308,27 +385,32 @@ protected:
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
 
-    /// Columns description. Cannot be changed, after part initialiation.
+    /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
     const Type part_type;
 
     void removeIfNeeded();
 
-    virtual void checkConsistency(bool require_part_metadata) const = 0;
+    virtual void checkConsistency(bool require_part_metadata) const;
     void checkConsistencyBase() const;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
-    virtual void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
+    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
+
+    String getRelativePathForDetachedPart(const String & prefix) const;
 
 private:
     /// In compact parts order of columns is necessary
-    NameToPosition column_name_to_position;
+    NameToNumber column_name_to_position;
+
+    /// Reads part unique identifier (if exists) from uuid.txt
+    void loadUUID();
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
-    /// If checksums.txt exists, reads files' checksums (and sizes) from it
+    /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
 
     /// Loads marks index granularity into memory
@@ -341,18 +423,29 @@ private:
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
 
-    /// Loads ttl infos in json format from file ttl.txt. If file doesn`t exists assigns ttl infos with all zeros
+    /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
 
-    String getRelativePathForDetachedPart(const String & prefix) const;
+    /// Load default compression codec from file default_compression_codec.txt
+    /// if it not exists tries to deduce codec from compressed column without
+    /// any specifial compression.
+    void loadDefaultCompressionCodec();
+
+    /// Found column without specific compression and return codec
+    /// for this column with default parameters.
+    CompressionCodecPtr detectDefaultCompressionCodec() const;
+
+    mutable State state{State::Temporary};
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+using MergeTreeMutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
+bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 
 }

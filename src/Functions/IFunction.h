@@ -3,7 +3,7 @@
 #include <memory>
 
 #include <Core/Names.h>
-#include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
 
@@ -34,18 +34,19 @@ class Field;
 
 /// The simplest executable object.
 /// Motivation:
-///  * Prepare something heavy once before main execution loop instead of doing it for each block.
+///  * Prepare something heavy once before main execution loop instead of doing it for each columns.
 ///  * Provide const interface for IFunctionBase (later).
 ///  * Create one executable function per thread to use caches without synchronization (later).
 class IExecutableFunction
 {
 public:
+
     virtual ~IExecutableFunction() = default;
 
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run) = 0;
+    virtual ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const = 0;
 
     virtual void createLowCardinalityResultCache(size_t cache_size) = 0;
 };
@@ -66,16 +67,15 @@ public:
     virtual String getName() const = 0;
 
     virtual const DataTypes & getArgumentTypes() const = 0;
-    virtual const DataTypePtr & getReturnType() const = 0;
+    virtual const DataTypePtr & getResultType() const = 0;
 
     /// Do preparations and return executable.
-    /// sample_block should contain data types of arguments and values of constants, if relevant.
-    virtual ExecutableFunctionPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
+    /// sample_columns should contain data types of arguments and values of constants, if relevant.
+    virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
-    /// TODO: make const
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run = false)
+    virtual ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run = false) const
     {
-        return prepare(block, arguments, result)->execute(block, arguments, result, input_rows_count, dry_run);
+        return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -110,7 +110,7 @@ public:
       * There is no need to implement function if it has zero arguments.
       * Must return ColumnConst with single row or nullptr.
       */
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
+    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*columns*/) const { return nullptr; }
 
     /** Function is called "injective" if it returns different result for different values of arguments.
       * Example: hex, negate, tuple...
@@ -132,9 +132,13 @@ public:
       *  as it returns 'nan' for many different representation of NaNs.
       * But we assume, that it is injective. This could be documented as implementation-specific behaviour.
       *
-      * sample_block should contain data types of arguments and values of constants, if relevant.
+      * sample_columns should contain data types of arguments and values of constants, if relevant.
+      * NOTE: to check is function injective with any arguments, you can pass
+      *       empty columns as sample_columns (since most of the time function will
+      *       ignore it anyway, and creating arguments just for checking is
+      *       function injective or not is overkill).
       */
-    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
+    virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
 
     /** Function is called "deterministic", if it returns same result for same values of arguments.
       * Most of functions are deterministic. Notable counterexample is rand().
@@ -189,7 +193,7 @@ public:
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const = 0;
     virtual bool isDeterministicInScopeOfQuery() const = 0;
-    virtual bool isInjective(const Block &) const = 0;
+    virtual bool isInjective(const ColumnsWithTypeAndName &) const = 0;
 
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const = 0;
@@ -221,9 +225,9 @@ public:
 using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 
-/** Return ColumnNullable of src, with null map as OR-ed null maps of args columns in blocks.
+/** Return ColumnNullable of src, with null map as OR-ed null maps of args columns.
   * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
   */
-ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count);
+ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count);
 
 }

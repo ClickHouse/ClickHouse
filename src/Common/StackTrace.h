@@ -1,5 +1,7 @@
 #pragma once
 
+#include <common/types.h>
+
 #include <string>
 #include <vector>
 #include <array>
@@ -23,25 +25,48 @@ struct NoCapture
 class StackTrace
 {
 public:
-    static constexpr size_t capacity = 32;
-    using Frames = std::array<void *, capacity>;
+    struct Frame
+    {
+        const void * virtual_addr = nullptr;
+        void * physical_addr = nullptr;
+        std::optional<std::string> symbol;
+        std::optional<std::string> object;
+        std::optional<std::string> file;
+        std::optional<UInt64> line;
+    };
+
+    static constexpr size_t capacity =
+#ifndef NDEBUG
+        /* The stacks are normally larger in debug version due to less inlining.
+         *
+         * NOTE: it cannot be larger then 56 right now, since otherwise it will
+         * not fit into minimal PIPE_BUF (512) in TraceCollector.
+         */
+        56
+#else
+        32
+#endif
+        ;
+    using FramePointers = std::array<void *, capacity>;
+    using Frames = std::array<Frame, capacity>;
 
     /// Tries to capture stack trace
     StackTrace();
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
-    StackTrace(const ucontext_t & signal_context);
+    explicit StackTrace(const ucontext_t & signal_context);
 
     /// Creates empty object for deferred initialization
-    StackTrace(NoCapture);
+    explicit StackTrace(NoCapture);
 
     size_t getSize() const;
     size_t getOffset() const;
-    const Frames & getFrames() const;
+    const FramePointers & getFramePointers() const;
     std::string toString() const;
 
-    static std::string toString(void ** frames, size_t offset, size_t size);
+    static std::string toString(void ** frame_pointers, size_t offset, size_t size);
+    static void symbolize(const FramePointers & frame_pointers, size_t offset, size_t size, StackTrace::Frames & frames);
 
     void toStringEveryLine(std::function<void(const std::string &)> callback) const;
 
@@ -50,7 +75,7 @@ protected:
 
     size_t size = 0;
     size_t offset = 0;  /// How many frames to skip while displaying.
-    Frames frames{};
+    FramePointers frame_pointers{};
 };
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);

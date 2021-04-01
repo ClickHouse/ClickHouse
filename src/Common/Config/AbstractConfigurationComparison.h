@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 
 namespace Poco::Util
 {
@@ -12,6 +12,11 @@ namespace DB
     /// Returns true if two configurations contains the same keys and values.
     bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left,
                              const Poco::Util::AbstractConfiguration & right);
+
+    /// Returns true if the specified subview of the two configurations contains the same keys and values.
+    bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left,
+                             const Poco::Util::AbstractConfiguration & right,
+                             const String & key);
 
     /// Returns true if specified subviews of the two configurations contains the same keys and values.
     bool isSameConfiguration(const Poco::Util::AbstractConfiguration & left, const String & left_key,

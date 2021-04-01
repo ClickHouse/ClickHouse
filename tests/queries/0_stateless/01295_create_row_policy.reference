@@ -1,0 +1,35 @@
+-- default
+CREATE ROW POLICY p1_01295 ON db.table
+-- same as default
+CREATE ROW POLICY p2_01295 ON db.table
+CREATE ROW POLICY p3_01295 ON db.table
+-- rename
+CREATE ROW POLICY p2_01295_renamed ON db.table
+-- filter
+CREATE ROW POLICY p1_01295 ON db.table FOR SELECT USING (a < b) AND (c > d)
+CREATE ROW POLICY p2_01295 ON db.table AS restrictive FOR SELECT USING id = currentUser()
+CREATE ROW POLICY p3_01295 ON db.table FOR SELECT USING 1
+CREATE ROW POLICY p1_01295 ON db.table AS restrictive FOR SELECT USING 0
+-- to roles
+CREATE ROW POLICY p1_01295 ON db.table
+CREATE ROW POLICY p2_01295 ON db.table TO ALL
+CREATE ROW POLICY p3_01295 ON db.table TO r1_01295
+CREATE ROW POLICY p4_01295 ON db.table TO u1_01295
+CREATE ROW POLICY p5_01295 ON db.table TO r1_01295, u1_01295
+CREATE ROW POLICY p6_01295 ON db.table TO ALL EXCEPT r1_01295
+CREATE ROW POLICY p7_01295 ON db.table TO ALL EXCEPT r1_01295, u1_01295
+CREATE ROW POLICY p1_01295 ON db.table TO u1_01295
+CREATE ROW POLICY p2_01295 ON db.table
+-- multiple policies in one command
+CREATE ROW POLICY p1_01295 ON db.table FOR SELECT USING 1
+CREATE ROW POLICY p2_01295 ON db.table FOR SELECT USING 1
+CREATE ROW POLICY p3_01295 ON db.table TO u1_01295
+CREATE ROW POLICY p3_01295 ON db2.table2 TO u1_01295
+CREATE ROW POLICY p4_01295 ON db.table FOR SELECT USING a = b
+CREATE ROW POLICY p5_01295 ON db2.table2 FOR SELECT USING a = b
+CREATE ROW POLICY p1_01295 ON db.table FOR SELECT USING 1 TO ALL
+CREATE ROW POLICY p2_01295 ON db.table FOR SELECT USING 1 TO ALL
+-- system.row_policies
+p1_01295 ON db.table	p1_01295	db	table	local directory	(a < b) AND (c > d)	0	0	[]	[]
+p2_01295 ON db.table	p2_01295	db	table	local directory	id = currentUser()	1	0	['u1_01295']	[]
+p3_01295 ON db.table	p3_01295	db	table	local directory	1	0	1	[]	['r1_01295']

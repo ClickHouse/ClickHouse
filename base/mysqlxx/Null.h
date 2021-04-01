@@ -27,7 +27,7 @@ public:
     Null() : is_null(true) {}
     Null(const Null<T> &) = default;
     Null(Null<T> &&) noexcept = default;
-    Null(NullType data) : is_null(true) {}
+    Null(NullType) : is_null(true) {}
     explicit Null(const T & data_) : data(data_), is_null(false) {}
 
     operator T & ()
@@ -47,7 +47,7 @@ public:
     Null<T> & operator= (Null<T> &&) noexcept = default;
     Null<T> & operator= (const Null<T> &) = default;
     Null<T> & operator= (const T & data_) { is_null = false; data = data_; return *this; }
-    Null<T> & operator= (const NullType other) { is_null = true; data = T(); return *this; }
+    Null<T> & operator= (const NullType) { is_null = true; data = T(); return *this; }
 
     bool isNull() const { return is_null; }
 
@@ -57,7 +57,7 @@ public:
             || (is_null == other.is_null && data < other.data);
     }
 
-    bool operator< (const NullType other) const { return false; }
+    bool operator< (const NullType) const { return false; }
 
     bool operator== (const Null<T> & other) const
     {
@@ -69,14 +69,14 @@ public:
         return !is_null && data == other;
     }
 
-    bool operator== (const NullType other) const { return is_null; }
+    bool operator== (const NullType) const { return is_null; }
 
     bool operator!= (const Null<T> & other) const
     {
         return !(*this == other);
     }
 
-    bool operator!= (const NullType other) const { return !is_null; }
+    bool operator!= (const NullType) const { return !is_null; }
 
     bool operator!= (const T & other) const
     {

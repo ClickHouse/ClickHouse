@@ -14,7 +14,8 @@ public:
         MergeTreeIndexPtr index_,
         MergeTreeData::DataPartPtr part_,
         size_t marks_count_,
-        const MarkRanges & all_mark_ranges_);
+        const MarkRanges & all_mark_ranges_,
+        MergeTreeReaderSettings settings);
 
     void seek(size_t mark);
 

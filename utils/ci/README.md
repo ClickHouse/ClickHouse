@@ -1,4 +1,4 @@
-## Build and test ClickHouse on various plaforms
+## Build and test ClickHouse on various platforms
 
 Quick and dirty scripts.
 

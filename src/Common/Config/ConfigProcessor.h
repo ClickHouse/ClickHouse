@@ -97,7 +97,7 @@ public:
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
     void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
 
-    /// Set path of main config.xml. It will be cutted from all configs placed to preprocessed_configs/
+    /// Set path of main config.xml. It will be cut from all configs placed to preprocessed_configs/
     static void setConfigPath(const std::string & config_path);
 
 public:
@@ -116,7 +116,7 @@ private:
 
     bool throw_on_bad_incl;
 
-    Logger * log;
+    Poco::Logger * log;
     Poco::AutoPtr<Poco::Channel> channel_ptr;
 
     Substitutions substitutions;

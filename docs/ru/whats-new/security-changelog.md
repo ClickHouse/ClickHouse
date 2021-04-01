@@ -1,3 +1,8 @@
+---
+toc_priority: 76
+toc_title: Security Changelog
+---
+
 # Security Changelog {#security-changelog}
 
 ## Исправлено в релизе 19.14.3.3, 2019-09-10 {#ispravleno-v-relize-19-14-3-3-2019-09-10}
@@ -48,7 +53,7 @@ unixODBC позволял указать путь для подключения 
 
 ### CVE-2018-14668 {#cve-2018-14668}
 
-Табличная функция «remote» допускала произвольные символы в полях «user», «password» и «default\_database», что позволяло производить атаки класса Cross Protocol Request Forgery.
+Табличная функция «remote» допускала произвольные символы в полях «user», «password» и «default_database», что позволяло производить атаки класса Cross Protocol Request Forgery.
 
 Обнаружено благодаря: Андрею Красичкову из Службы Информационной Безопасности Яндекса
 
@@ -68,4 +73,3 @@ unixODBC позволял указать путь для подключения 
 
 Обнаружено благодаря: the UK’s National Cyber Security Centre (NCSC)
 
-{## [Оригинальная статья](https://clickhouse.tech/docs/ru/security_changelog/) ##}

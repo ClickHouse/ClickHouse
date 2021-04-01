@@ -41,9 +41,9 @@ if (USE_INTERNAL_POCO_LIBRARY)
     add_library (Poco::Data ALIAS _poco_data)
 
     if (COMPILER_GCC)
-        target_compile_options (_poco_data PUBLIC -Wno-deprecated-copy)
+        target_compile_options (_poco_data PRIVATE -Wno-deprecated-copy)
     endif ()
-    target_include_directories (_poco_data PUBLIC ${LIBRARY_DIR}/Data/include)
+    target_include_directories (_poco_data SYSTEM PUBLIC ${LIBRARY_DIR}/Data/include)
     target_link_libraries (_poco_data PUBLIC Poco::Foundation)
 else ()
     # NOTE: don't know why, but the GLOBAL is required here.

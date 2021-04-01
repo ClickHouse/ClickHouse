@@ -1,50 +1,32 @@
 (function () {
-    var logo_text = $('#logo-text');
-    if (logo_text.length) {
-        var name = logo_text.attr('alt').trim().toLowerCase();
-        var feedback_address = name + '-feedback' + '@yandex-team.com';
-        var feedback_email = $('#feedback_email');
-        feedback_email.attr('href', 'mailto:' + feedback_address);
-        feedback_email.html(feedback_address);
-    }
-
+    Sentry.init({
+        dsn: 'https://2b95b52c943f4ad99baccab7a9048e4d@o388870.ingest.sentry.io/5246103',
+        environment: window.location.hostname === 'clickhouse.tech' ? 'prod' : 'test'
+    });
     $(document).click(function (event) {
         var target = $(event.target);
         var target_id = target.attr('id');
         var selector = target.attr('href');
         var is_tab = target.attr('role') === 'tab';
         var is_collapse = target.attr('data-toggle') === 'collapse';
+        var is_rating = target.attr('role') === 'rating';
         var navbar_toggle = $('#navbar-toggle');
-
         navbar_toggle.collapse('hide');
         $('.algolia-autocomplete .ds-dropdown-menu').hide();
-
         if (target_id && target_id.startsWith('logo-')) {
             selector = '#';
-        }
-
-        if (selector && selector.startsWith('#') && !is_tab && !is_collapse) {
-            event.preventDefault();
-            var dst = window.location.href.replace(window.location.hash, '');
-            var offset = 0;
-
-            if (selector !== '#') {
-                offset = $(selector).offset().top - $('#top-nav').height() * 1.5;
-                dst += selector;
-            }
-            $('html, body').animate({
-                scrollTop: offset
-            }, 500);
-            window.history.replaceState('', document.title, dst);
         }
     });
 
     var top_nav = $('#top-nav.sticky-top');
     if (window.location.hash.length > 1 && top_nav.length) {
-        var offset = $(window.location.hash).offset().top - top_nav.height() * 1.5;
-        $('html, body').animate({
-            scrollTop: offset
-        }, 70);
+        var hash_destination = $(window.location.hash);
+        if (hash_destination.length) {
+            var offset = hash_destination.offset().top - top_nav.height() * 1.5;
+            $('html, body').animate({
+                scrollTop: offset
+            }, 70);
+        }
     }
 
     $('img').each(function() {
@@ -72,7 +54,9 @@
         }
 
         $('pre').each(function(_, element) {
-           $(element).prepend('<img src="/images/mkdocs/copy.svg" class="code-copy btn float-right m-0 p-0" />');
+           $(element).prepend(
+               '<img src="/images/mkdocs/copy.svg" alt="Copy" title="Copy" class="code-copy btn float-right m-0 p-0" />'
+           );
         });
 
         $('.code-copy').each(function(_, element) {
@@ -82,6 +66,13 @@
            })
         });
     }
+
+    $('#feedback_email, .feedback-email').each(function() {
+        var name = window.location.host.substring(0, 10)
+        var feedback_address = name + '-feedback' + '@yandex-team.com';
+        $(this).attr('href', 'mailto:' + feedback_address);
+        $(this).html(feedback_address);
+    });
 
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {

@@ -1,8 +1,13 @@
+---
+toc_priority: 44
+toc_title: "Требования"
+---
+
 # Требования {#trebovaniia}
 
 ## Процессор {#protsessor}
 
-В случае установки из готовых deb-пакетов используйте процессоры с архитектурой x86\_64 и поддержкой инструкций SSE 4.2. Для запуска ClickHouse на процессорах без поддержки SSE 4.2 или на процессорах с архитектурой AArch64 и PowerPC64LE необходимо собирать ClickHouse из исходников.
+В случае установки из готовых deb-пакетов используйте процессоры с архитектурой x86_64 и поддержкой инструкций SSE 4.2. Для запуска ClickHouse на процессорах без поддержки SSE 4.2 или на процессорах с архитектурой AArch64 и PowerPC64LE необходимо собирать ClickHouse из исходников.
 
 ClickHouse реализует параллельную обработку данных и использует все доступные аппаратные ресурсы. При выборе процессора учитывайте, что ClickHouse работает более эффективно в конфигурациях с большим количеством ядер, но с более низкой тактовой частотой, чем в конфигурациях с меньшим количеством ядер и более высокой тактовой частотой. Например, 16 ядер с 2600 MHz предпочтительнее, чем 8 ядер с 3600 MHz.
 
@@ -17,9 +22,9 @@ ClickHouse реализует параллельную обработку дан
 -   Сложности запросов.
 -   Объёма данных, обрабатываемых в запросах.
 
-Для расчета объёма RAM необходимо оценить размер промежуточных данных для операций [GROUP BY](../sql-reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select.md#select-distinct), [JOIN](../sql-reference/statements/select.md#select-join) а также других операций, которыми вы пользуетесь.
+Для расчета объёма RAM необходимо оценить размер промежуточных данных для операций [GROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct), [JOIN](../sql-reference/statements/select/join.md#select-join) а также других операций, которыми вы пользуетесь.
 
-ClickHouse может использовать внешнюю память для промежуточных данных. Подробнее смотрите в разделе [GROUP BY во внешней памяти](../sql-reference/statements/select.md#select-group-by-in-external-memory).
+ClickHouse может использовать внешнюю память для промежуточных данных. Подробнее смотрите в разделе [GROUP BY во внешней памяти](../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
 
 ## Файл подкачки {#fail-podkachki}
 

@@ -1,6 +1,6 @@
 ---
 machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 39
 toc_title: "\u5185\u90E8\u5B57\u5178"
 ---
@@ -39,7 +39,7 @@ Geobase从文本文件加载。
 `regions_names_*.txt`：TabSeparated（无标题），列:
 
 -   地区ID (`UInt32`)
--   地区名称 (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+-   地区名称 (`String`) — Can't contain tabs or line feeds, even escaped ones.
 
 平面阵列用于存储在RAM中。 出于这个原因，Id不应该超过一百万。
 

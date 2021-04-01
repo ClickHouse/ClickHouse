@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionNull.h>
 #include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include "registerAggregateFunctions.h"
 
@@ -13,6 +14,9 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
+
+namespace
+{
 
 class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinator
 {
@@ -31,7 +35,10 @@ public:
     }
 
     AggregateFunctionPtr transformAggregateFunction(
-        const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params) const override
+        const AggregateFunctionPtr & nested_function,
+        const AggregateFunctionProperties & properties,
+        const DataTypes & arguments,
+        const Array & params) const override
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
@@ -49,38 +56,73 @@ public:
         }
 
         if (!has_nullable_types)
-            throw Exception("Aggregate function combinator 'Null' requires at least one argument to be Nullable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (nested_function)
-            if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params))
-                return adapter;
-
-        /// Special case for 'count' function. It could be called with Nullable arguments
-        /// - that means - count number of calls, when all arguments are not NULL.
-        if (nested_function && nested_function->getName() == "count")
-            return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0], params);
+            throw Exception("Aggregate function combinator 'Null' requires at least one argument to be Nullable",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (has_null_types)
-            return std::make_shared<AggregateFunctionNothing>(arguments, params);
+        {
+            /// Currently the only functions that returns not-NULL on all NULL arguments are count and uniq, and they returns UInt64.
+            if (properties.returns_default_when_only_null)
+                return std::make_shared<AggregateFunctionNothing>(DataTypes{
+                    std::make_shared<DataTypeUInt64>()}, params);
+            else
+                return std::make_shared<AggregateFunctionNothing>(DataTypes{
+                    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())}, params);
+        }
 
-        bool return_type_is_nullable = nested_function->getReturnType()->canBeInsideNullable();
+        assert(nested_function);
+
+        if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params, properties))
+            return adapter;
+
+        /// If applied to aggregate function with -State combinator, we apply -Null combinator to it's nested_function instead of itself.
+        /// Because Nullable AggregateFunctionState does not make sense and ruins the logic of managing aggregate function states.
+
+        if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(nested_function.get()))
+        {
+            auto transformed_nested_function = transformAggregateFunction(function_state->getNestedFunction(), properties, arguments, params);
+
+            return std::make_shared<AggregateFunctionState>(
+                transformed_nested_function,
+                transformed_nested_function->getArgumentTypes(),
+                transformed_nested_function->getParameters());
+        }
+
+        bool return_type_is_nullable = !properties.returns_default_when_only_null && nested_function->getReturnType()->canBeInsideNullable();
+        bool serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
         if (arguments.size() == 1)
         {
             if (return_type_is_nullable)
-                return std::make_shared<AggregateFunctionNullUnary<true>>(nested_function, arguments, params);
+            {
+                return std::make_shared<AggregateFunctionNullUnary<true, true>>(nested_function, arguments, params);
+            }
             else
-                return std::make_shared<AggregateFunctionNullUnary<false>>(nested_function, arguments, params);
+            {
+                if (serialize_flag)
+                    return std::make_shared<AggregateFunctionNullUnary<false, true>>(nested_function, arguments, params);
+                else
+                    return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
+            }
         }
         else
         {
             if (return_type_is_nullable)
-                return std::make_shared<AggregateFunctionNullVariadic<true, true>>(nested_function, arguments, params);
+            {
+                return std::make_shared<AggregateFunctionNullVariadic<true, true, true>>(nested_function, arguments, params);
+            }
             else
-                return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
+            {
+                if (serialize_flag)
+                    return std::make_shared<AggregateFunctionNullVariadic<false, true, true>>(nested_function, arguments, params);
+                else
+                    return std::make_shared<AggregateFunctionNullVariadic<false, true, false>>(nested_function, arguments, params);
+            }
         }
     }
 };
+
+}
 
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory)
 {

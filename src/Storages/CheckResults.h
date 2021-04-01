@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <vector>
 
 namespace DB
@@ -9,7 +9,7 @@ namespace DB
 /// Result of CHECK TABLE query for single part of table
 struct CheckResult
 {
-    /// Part name for merge tree or file name for simplier tables
+    /// Part name for merge tree or file name for simpler tables
     String fs_path;
     /// Does check passed
     bool success = false;
