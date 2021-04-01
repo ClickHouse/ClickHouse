@@ -9,7 +9,7 @@ namespace DB
 struct NameVisitParamExtractUInt   { static constexpr auto name = "visitParamExtractUInt"; };
 using FunctionVisitParamExtractUInt = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<UInt64>>, NameVisitParamExtractUInt>;
 
-struct NameSimpleJSONExtractUInt   { static constexpr auto name = "SimpleJSONExtractUInt"; };
+struct NameSimpleJSONExtractUInt   { static constexpr auto name = "simpleJSONExtractUInt"; };
 using FunctionSimpleJSONExtractUInt = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<UInt64>>, NameSimpleJSONExtractUInt>;
 
 
