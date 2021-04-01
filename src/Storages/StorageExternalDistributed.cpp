@@ -50,15 +50,15 @@ StorageExternalDistributed::StorageExternalDistributed(
     /// For each shard pass replicas description into storage, replicas are managed by storage's PoolWithFailover.
     for (const auto & shard_description : shards_descriptions)
     {
-        auto addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses);
         StoragePtr shard;
 
         switch (table_engine)
         {
 #if USE_MYSQL
-
             case ExternalStorageEngine::MySQL:
             {
+                auto addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 3306);
+
                 mysqlxx::PoolWithFailover pool(
                     remote_database,
                     addresses,
@@ -80,6 +80,8 @@ StorageExternalDistributed::StorageExternalDistributed(
 
             case ExternalStorageEngine::PostgreSQL:
             {
+                auto addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
+
                 postgres::PoolWithFailover pool(
                     remote_database,
                     addresses,
