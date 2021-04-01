@@ -131,36 +131,6 @@ std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
     return members;
 }
 
-std::optional<size_t> getIdentMembership(const ASTIdentifier & ident, const std::vector<TableWithColumnNamesAndTypes> & tables)
-{
-    std::optional<size_t> table_pos = IdentifierSemantic::getMembership(ident);
-    if (table_pos)
-        return table_pos;
-    return IdentifierSemantic::chooseTableColumnMatch(ident, tables, true);
-}
-
-std::optional<size_t> getIdentsMembership(const ASTPtr ast,
-                                          const std::vector<TableWithColumnNamesAndTypes> & tables,
-                                          const Aliases & aliases)
-{
-    auto idents = IdentifiersCollector::collect(ast);
-
-    std::optional<size_t> result;
-    for (const auto * ident : idents)
-    {
-        /// Moving expressions that use column aliases is not supported.
-        if (ident->isShort() && aliases.count(ident->shortName()))
-            return {};
-        const auto pos = getIdentMembership(*ident, tables);
-        if (!pos)
-            return {};
-        if (result && *pos != *result)
-            return {};
-        result = pos;
-    }
-    return result;
-}
-
 bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
 {
     if (node->as<ASTFunction>())
@@ -193,8 +163,8 @@ std::map<size_t, std::vector<ASTPtr>> moveExpressionToJoinOn(
 
             /// Check if the identifiers are from different joined tables.
             /// If it's a self joint, tables should have aliases.
-            auto left_table_pos = getIdentsMembership(func->arguments->children[0], tables, aliases);
-            auto right_table_pos = getIdentsMembership(func->arguments->children[1], tables, aliases);
+            auto left_table_pos = IdentifierSemantic::getIdentsMembership(func->arguments->children[0], tables, aliases);
+            auto right_table_pos = IdentifierSemantic::getIdentsMembership(func->arguments->children[1], tables, aliases);
 
             /// Identifiers from different table move to JOIN ON
             if (left_table_pos && right_table_pos && *left_table_pos != *right_table_pos)
