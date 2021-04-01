@@ -27,6 +27,11 @@ configure_file (Common/config.h.in ${CONFIG_COMMON})
 configure_file (Common/config_version.h.in ${CONFIG_VERSION})
 configure_file (Core/config_core.h.in ${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h)
 
+if (USE_DEBUG_HELPERS)
+    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/base -include ${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
+endif ()
+
 if (COMPILER_GCC)
     # If we leave this optimization enabled, gcc-7 replaces a pair of SSE intrinsics (16 byte load, store) with a call to memcpy.
     # It leads to slow code. This is compiler bug. It looks like this:
@@ -465,6 +470,10 @@ if (USE_LIBPQXX)
     dbms_target_link_libraries(PUBLIC ${LIBPQXX_LIBRARY})
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${LIBPQXX_INCLUDE_DIR})
 endif()
+
+if (USE_DATASKETCHES)
+    target_include_directories (clickhouse_aggregate_functions SYSTEM BEFORE PRIVATE ${DATASKETCHES_INCLUDE_DIR})
+endif ()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 
