@@ -773,7 +773,7 @@ private:
             2. If column is already nullable we merge column null map with null map that we get from dict has.
           */
 
-        auto dict_has_arguments = filterAttributesForDictHas(arguments);
+        auto dict_has_arguments = filterAttributeNameArgumentForDictHas(arguments);
         auto is_key_in_dictionary_column = dictionary_has_func_impl.executeImpl(dict_has_arguments, std::make_shared<DataTypeUInt8>(), input_rows_count);
         auto is_key_in_dictionary_column_mutable = is_key_in_dictionary_column->assumeMutable();
         ColumnVector<UInt8> & is_key_in_dictionary_column_typed = assert_cast<ColumnVector<UInt8> &>(*is_key_in_dictionary_column_mutable);
@@ -839,14 +839,15 @@ private:
             null_map[i] = null_map[i] || null_map_to_add[i];
     }
 
-    static ColumnsWithTypeAndName filterAttributesForDictHas(const ColumnsWithTypeAndName & arguments)
+    static ColumnsWithTypeAndName filterAttributeNameArgumentForDictHas(const ColumnsWithTypeAndName & arguments)
     {
         ColumnsWithTypeAndName dict_has_arguments;
         dict_has_arguments.reserve(arguments.size() - 1);
+        size_t attribute_name_argument_index = 1;
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (i == 1)
+            if (i == attribute_name_argument_index)
                 continue;
 
             dict_has_arguments.emplace_back(arguments[i]);
