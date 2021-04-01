@@ -1,6 +1,7 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/SortCursor.h>
+#include <ext/range.h>
 
 namespace DB
 {
@@ -93,26 +94,19 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         ++cur_block_size;
     }
 
-    ssize_t mid = 0;
-    ssize_t high = 0;
-    ssize_t low = -1;
 
     /// Will split block into segments with the same key
     while (key_end != rows)
     {
-        high = rows;
-
         /// Find the first position of new (not current) key in current chunk
-        while (high - low > 1)
-        {
-            mid = (low + high) / 2;
-            if (!less(res_key_columns, key_columns, cur_block_size - 1, mid, group_by_description))
-                low = mid;
-            else
-                high = mid;
-        }
+        auto indices = ext::range(key_begin, rows);
+        auto it = std::upper_bound(indices.begin(), indices.end(), cur_block_size - 1,
+            [&](size_t lhs_row, size_t rhs_row)
+            {
+                return less(res_key_columns, key_columns, lhs_row, rhs_row, group_by_description);
+            });
 
-        key_end = high;
+        key_end = (it == indices.end() ? rows : *it);
 
         /// Add data to aggr. state if interval is not empty. Empty when haven't found current key in new block.
         if (key_begin != key_end)
@@ -121,7 +115,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         /// We finalize last key aggregation state if a new key found.
         if (key_end != rows)
         {
-            params->aggregator.addToAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
+            params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
 
             /// If res_block_size is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.
             if (cur_block_size == res_block_size)
@@ -165,7 +159,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         }
 
         key_begin = key_end;
-        low = key_end;
     }
 
     block_end_reached = false;
@@ -244,7 +237,7 @@ void AggregatingInOrderTransform::generate()
 {
     if (cur_block_size && is_consume_finished)
     {
-        params->aggregator.addToAggregateColumnsWithSingleKey(variants, res_aggregate_columns);
+        params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
         variants.without_key = nullptr;
     }
 

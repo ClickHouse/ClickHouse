@@ -1220,7 +1220,7 @@ Block Aggregator::prepareBlockAndFill(
     return res;
 }
 
-void Aggregator::addToAggregateColumnsWithSingleKey(
+void Aggregator::addSingleKeyToAggregateColumns(
     const AggregatedDataVariants & data_variants,
     MutableColumns & aggregate_columns)
 {
