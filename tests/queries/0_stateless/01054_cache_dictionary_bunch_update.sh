@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="create database if not exists test_01054;"
 $CLICKHOUSE_CLIENT --query="drop table if exists test_01054.ints;"
@@ -16,7 +17,7 @@ $CLICKHOUSE_CLIENT --query="insert into test_01054.ints values (3, 3, 3, 3, 3, 3
 
 function thread1()
 {
-  for attempt_thread1 in {1..100}
+  for _ in {1..100}
   do
     RAND_NUMBER_THREAD1=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD1));"
@@ -26,7 +27,7 @@ function thread1()
 
 function thread2()
 {
-  for attempt_thread2 in {1..100}
+  for _ in {1..100}
   do
     RAND_NUMBER_THREAD2=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD2));"
@@ -36,7 +37,7 @@ function thread2()
 
 function thread3()
 {
-  for attempt_thread3 in {1..100}
+  for _ in {1..100}
   do
     RAND_NUMBER_THREAD3=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD3));"
@@ -46,7 +47,7 @@ function thread3()
 
 function thread4()
 {
-  for attempt_thread4 in {1..100}
+  for _ in {1..100}
   do
     RAND_NUMBER_THREAD4=$($CLICKHOUSE_CLIENT --query="SELECT rand() % 100;")
     $CLICKHOUSE_CLIENT --query="select dictGet('one_cell_cache_ints', 'i8', toUInt64($RAND_NUMBER_THREAD4));"
@@ -72,3 +73,4 @@ wait
 echo OK
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE if exists test_01054.ints"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE test_01054"

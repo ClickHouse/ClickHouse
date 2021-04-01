@@ -1,8 +1,8 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
+
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Common/typeid_cast.h>
-#include <Core/Defines.h>
 
 
 namespace DB
@@ -25,10 +25,21 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
     for (size_t i = 0; i < parameters.size(); ++i)
     {
         const auto * literal = parameters[i]->as<ASTLiteral>();
+
+        ASTPtr func_literal;
+        if (!literal)
+            if (const auto * func = parameters[i]->as<ASTFunction>())
+                if ((func_literal = func->toLiteral()))
+                    literal = func_literal->as<ASTLiteral>();
+
         if (!literal)
         {
-            throw Exception("Parameters to aggregate functions must be literals" + (error_context.empty() ? "" : " (in " + error_context +")"),
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
+            throw Exception(
+                ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS,
+                "Parameters to aggregate functions must be literals. "
+                "Got parameter '{}'{}",
+                parameters[i]->formatForErrorMessage(),
+                (error_context.empty() ? "" : " (in " + error_context +")"));
         }
 
         params_row[i] = literal->value;

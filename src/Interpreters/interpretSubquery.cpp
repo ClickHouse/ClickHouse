@@ -12,6 +12,7 @@
 
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -89,14 +90,14 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         {
             auto * query_context = const_cast<Context *>(&context.getQueryContext());
             const auto & storage = query_context->executeTableFunction(table_expression);
-            columns = storage->getColumns().getOrdinary();
+            columns = storage->getInMemoryMetadataPtr()->getColumns().getOrdinary();
             select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression)); // XXX: const_cast should be avoided!
         }
         else
         {
             auto table_id = context.resolveStorageID(table_expression);
-            const auto & storage = DatabaseCatalog::instance().getTable(table_id);
-            columns = storage->getColumns().getOrdinary();
+            const auto & storage = DatabaseCatalog::instance().getTable(table_id, context);
+            columns = storage->getInMemoryMetadataPtr()->getColumns().getOrdinary();
             select_query->replaceDatabaseAndTable(table_id);
         }
 

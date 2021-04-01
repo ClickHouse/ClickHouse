@@ -85,6 +85,15 @@ def html_to_amp(content):
                 tag.attrs['width'] = '640'
             if not tag.attrs.get('height'):
                 tag.attrs['height'] = '320'
+        if tag.name == 'iframe':
+            tag.name = 'amp-iframe'
+            tag.attrs['layout'] = 'responsive'
+            del tag.attrs['alt']
+            del tag.attrs['allowfullscreen']
+            if not tag.attrs.get('width'):
+                tag.attrs['width'] = '640'
+            if not tag.attrs.get('height'):
+                tag.attrs['height'] = '320'
         elif tag.name == 'a':
             href = tag.attrs.get('href')
             if href:

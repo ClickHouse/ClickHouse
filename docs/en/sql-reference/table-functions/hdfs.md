@@ -5,7 +5,7 @@ toc_title: hdfs
 
 # hdfs {#hdfs}
 
-Creates a table from files in HDFS. This table function is similar to [url](url.md) and [file](file.md) ones.
+Creates a table from files in HDFS. This table function is similar to [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) ones.
 
 ``` sql
 hdfs(URI, format, structure)
@@ -53,14 +53,14 @@ Constructions with `{}` are similar to the [remote table function](../../sql-ref
 
 1.  Suppose that we have several files with following URIs on HDFS:
 
--   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
--   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
--   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
--   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
--   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
--   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
 
-1.  Query the amount of rows in these files:
+2.  Query the amount of rows in these files:
 
 <!-- -->
 
@@ -69,7 +69,7 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
 ```
 
-1.  Query the amount of rows in all files of these two directories:
+3.  Query the amount of rows in all files of these two directories:
 
 <!-- -->
 
@@ -97,6 +97,5 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 **See Also**
 
--   [Virtual columns](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
+-   [Virtual columns](../../engines/table-engines/index.md#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/hdfs/) <!--hide-->

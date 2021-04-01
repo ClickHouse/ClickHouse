@@ -5,7 +5,7 @@ toc_title: ReplacingMergeTree
 
 # ReplacingMergeTree {#replacingmergetree}
 
-The engine differs from [MergeTree](mergetree.md#table_engines-mergetree) in that it removes duplicate entries with the same primary key value (or more accurately, with the same [sorting key](mergetree.md) value).
+The engine differs from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) in that it removes duplicate entries with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
 Data deduplication occurs only during a merge. Merging occurs in the background at an unknown time, so you can’t plan for it. Some of the data may remain unprocessed. Although you can run an unscheduled merge using the `OPTIMIZE` query, don’t count on using it, because the `OPTIMIZE` query will read and write a large amount of data.
 
@@ -27,20 +27,23 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../../sql-reference/statements/create.md).
+For a description of request parameters, see [statement description](../../../sql-reference/statements/create/table.md).
+
+!!! note "Attention"
+    Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
 
 **ReplacingMergeTree Parameters**
 
 -   `ver` — column with version. Type `UInt*`, `Date` or `DateTime`. Optional parameter.
 
-    When merging, `ReplacingMergeTree` from all the rows with the same primary key leaves only one:
+    When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
-    -   Last in the selection, if `ver` not set.
+    -   The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
     -   With the maximum version, if `ver` specified.
 
 **Query clauses**
 
-When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
+When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 

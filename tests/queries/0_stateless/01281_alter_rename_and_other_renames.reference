@@ -1,0 +1,24 @@
+CREATE TABLE default.rename_table_multiple\n(\n    `key` Int32,\n    `value1_string` String,\n    `value2` Int32\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+key	value1_string	value2
+1	2	3
+CREATE TABLE default.rename_table_multiple\n(\n    `key` Int32,\n    `value1_string` String,\n    `value2_old` Int32,\n    `value2` Int64 DEFAULT 7\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+key	value1_string	value2_old	value2
+1	2	3	7
+4	5	6	7
+CREATE TABLE default.rename_table_multiple\n(\n    `key` Int32,\n    `value1_string` String,\n    `value2_old` Int64 DEFAULT 7\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+key	value1_string	value2_old
+1	2	7
+4	5	7
+7	8	10
+CREATE TABLE default.rename_table_multiple_compact\n(\n    `key` Int32,\n    `value1_string` String,\n    `value2` Int32\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS min_rows_for_wide_part = 100000, index_granularity = 8192
+key	value1_string	value2
+1	2	3
+CREATE TABLE default.rename_table_multiple_compact\n(\n    `key` Int32,\n    `value1_string` String,\n    `value2_old` Int32,\n    `value2` Int64 DEFAULT 7\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS min_rows_for_wide_part = 100000, index_granularity = 8192
+key	value1_string	value2_old	value2
+1	2	3	7
+4	5	6	7
+CREATE TABLE default.rename_table_multiple_compact\n(\n    `key` Int32,\n    `value1_string` String,\n    `value2_old` Int64 DEFAULT 7\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS min_rows_for_wide_part = 100000, index_granularity = 8192
+key	value1_string	value2_old
+1	2	7
+4	5	7
+7	8	10

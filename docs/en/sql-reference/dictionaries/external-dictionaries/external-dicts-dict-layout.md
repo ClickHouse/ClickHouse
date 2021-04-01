@@ -7,7 +7,7 @@ toc_title: Storing Dictionaries in Memory
 
 There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex\_key\_hashed](#complex-key-hashed). which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed). which provide optimal processing speed.
 
 Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section “[cache](#cache)”.
 
@@ -39,7 +39,7 @@ The configuration looks like this:
 </yandex>
 ```
 
-Corresponding [DDL-query](../../statements/create.md#create-dictionary-query):
+Corresponding [DDL-query](../../../sql-reference/statements/create/dictionary.md):
 
 ``` sql
 CREATE DICTIONARY (...)
@@ -52,13 +52,17 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
--   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
 -   [cache](#cache)
+-   [ssd_cache](#ssd-cache)
 -   [direct](#direct)
--   [range\_hashed](#range-hashed)
--   [complex\_key\_hashed](#complex-key-hashed)
--   [complex\_key\_cache](#complex-key-cache)
--   [ip\_trie](#ip-trie)
+-   [range_hashed](#range-hashed)
+-   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_cache](#complex-key-cache)
+-   [ssd_cache](#ssd-cache)
+-   [ssd_complex_key_cache](#complex-key-ssd-cache)
+-   [complex_key_direct](#complex-key-direct)
+-   [ip_trie](#ip-trie)
 
 ### flat {#flat}
 
@@ -88,6 +92,8 @@ LAYOUT(FLAT())
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 
+The hash table will be preallocated (this will make dictionary load faster), if the is approx number of total rows is known, this is supported only if the source is `clickhouse` without any `<where>` (since in case of `<where>` you can filter out too much rows and the dictionary will allocate too much memory, that will not be used eventually).
+
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 Configuration example:
@@ -104,9 +110,11 @@ or
 LAYOUT(HASHED())
 ```
 
-### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
+
+It will be also preallocated so as `hashed`, note that it is even more significant for `sparse_hashed`.
 
 Configuration example:
 
@@ -120,9 +128,9 @@ Configuration example:
 LAYOUT(SPARSE_HASHED())
 ```
 
-### complex\_key\_hashed {#complex-key-hashed}
+### complex_key_hashed {#complex-key-hashed}
 
-This type of storage is for use with composite [keys](external-dicts-dict-structure.md). Similar to `hashed`.
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `hashed`.
 
 Configuration example:
 
@@ -136,7 +144,7 @@ Configuration example:
 LAYOUT(COMPLEX_KEY_HASHED())
 ```
 
-### range\_hashed {#range-hashed}
+### range_hashed {#range-hashed}
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
@@ -156,7 +164,7 @@ Example: The table contains discounts for each advertiser in the format:
 +---------|-------------|-------------|------+
 ```
 
-To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external-dicts-dict-structure.md). These elements must contain elements `name` and`type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
+To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). These elements must contain elements `name` and`type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
 
 Example:
 
@@ -200,8 +208,8 @@ This function returns the value for the specified `id`s and the date range that 
 Details of the algorithm:
 
 -   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
--   If there are overlapping ranges, you can use any.
--   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01 or 2039-01-01), the range is left open. The range can be open on both sides.
+-   If there are overlapping ranges, it returns value for any (random) range.
+-   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01), the range is open. The range can be open on both sides.
 
 Configuration example:
 
@@ -257,12 +265,12 @@ The dictionary is stored in a cache that has a fixed number of cells. These cell
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
 
-For cache dictionaries, the expiration [lifetime](external-dicts-dict-lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used, and it is re-requested the next time it needs to be used.
+For cache dictionaries, the expiration [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used, and it is re-requested the next time it needs to be used.
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the `system.dictionaries` table.
 
 To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
 
-Supported [sources](external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
+Supported [sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md): MySQL, ClickHouse, executable, HTTP.
 
 Example of settings:
 
@@ -291,9 +299,41 @@ Set a large enough cache size. You need to experiment to select the number of ce
 !!! warning "Warning"
     Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 
-### complex\_key\_cache {#complex-key-cache}
+### complex_key_cache {#complex-key-cache}
 
-This type of storage is for use with composite [keys](external-dicts-dict-structure.md). Similar to `cache`.
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `cache`.
+
+### ssd_cache {#ssd-cache}
+
+Similar to `cache`, but stores data on SSD and index in RAM.
+
+``` xml
+<layout>
+    <ssd_cache>
+        <!-- Size of elementary read block in bytes. Recommended to be equal to SSD's page size. -->
+        <block_size>4096</block_size>
+        <!-- Max cache file size in bytes. -->
+        <file_size>16777216</file_size>
+        <!-- Size of RAM buffer in bytes for reading elements from SSD. -->
+        <read_buffer_size>131072</read_buffer_size>
+        <!-- Size of RAM buffer in bytes for aggregating elements before flushing to SSD. -->
+        <write_buffer_size>1048576</write_buffer_size>
+        <!-- Path where cache file will be stored. -->
+        <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
+    </ssd_cache>
+</layout>
+```
+
+or
+
+``` sql
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict))
+```
+
+### complex_key_ssd_cache {#complex-key-ssd-cache}
+
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `ssd_cache`.
 
 ### direct {#direct}
 
@@ -301,7 +341,7 @@ The dictionary is not stored in memory and directly goes to the source during th
 
 The dictionary key has the `UInt64` type.
 
-All types of [sources](external-dicts-dict-sources.md), except local files, are supported.
+All types of [sources](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), except local files, are supported.
 
 Configuration example:
 
@@ -317,7 +357,11 @@ or
 LAYOUT(DIRECT())
 ```
 
-### ip\_trie {#ip-trie}
+### complex_key_direct {#complex-key-direct}
+
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to `direct`.
+
+### ip_trie {#ip-trie}
 
 This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
 
@@ -360,6 +404,14 @@ Example:
             <null_value>??</null_value>
     </attribute>
     ...
+</structure>
+<layout>
+    <ip_trie>
+        <!-- Key attribute `prefix` can be retrieved via dictGetString. -->
+        <!-- This option increases memory usage. -->
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
 ```
 
 or
@@ -389,6 +441,5 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
-Data is stored in a `trie`. It must completely fit into RAM.
+Data must completely fit into RAM.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

@@ -8,7 +8,7 @@
 
 #include <common/logger_useful.h>
 
-#include <DataStreams/IBlockStream_fwd.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -134,7 +134,7 @@ public:
                   * (for example, the connection is broken for distributed query processing)
                   * - then do not care.
                   */
-                LOG_ERROR(log, "Exception while cancelling " << input->getName());
+                LOG_ERROR(log, "Exception while cancelling {}", input->getName());
             }
         }
     }
@@ -327,7 +327,7 @@ private:
       * - the queue (just processed source will be processed the next time later than the rest)
       * - stack (just processed source will be processed as soon as possible).
       *
-      * The stack is better than the queue when you need to do work on reading one source more consequentially,
+      * The stack is better than the queue when you need to do work on reading one source more consequently,
       *  and theoretically, this allows you to achieve more consequent/consistent reads from the disk.
       *
       * But when using the stack, there is a problem with distributed query processing:
@@ -359,7 +359,7 @@ private:
     /// Wait for the completion of all threads.
     std::atomic<bool> joined_threads { false };
 
-    Logger * log = &Logger::get("ParallelInputsProcessor");
+    Poco::Logger * log = &Poco::Logger::get("ParallelInputsProcessor");
 };
 
 

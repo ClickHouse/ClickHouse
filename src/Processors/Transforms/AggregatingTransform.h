@@ -8,6 +8,15 @@
 namespace DB
 {
 
+class AggregatedArenasChunkInfo : public ChunkInfo
+{
+public:
+    Arenas arenas;
+    AggregatedArenasChunkInfo(Arenas arenas_)
+        : arenas(std::move(arenas_))
+    {}
+};
+
 class AggregatedChunkInfo : public ChunkInfo
 {
 public:
@@ -28,6 +37,8 @@ struct AggregatingTransformParams
         : params(params_), aggregator(params), final(final_) {}
 
     Block getHeader() const { return aggregator.getHeader(final); }
+
+    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
 };
 
 struct ManyAggregatedData
@@ -88,10 +99,16 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Logger * log = &Logger::get("AggregatingTransform");
+    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
+
+    /** Used if there is a limit on the maximum number of rows in the aggregation,
+     *   and if group_by_overflow_mode == ANY.
+     *  In this case, new keys are not added to the set, but aggregation is performed only by
+     *   keys that have already managed to get into the set.
+     */
     bool no_more_keys = false;
 
     ManyAggregatedDataPtr many_data;
@@ -116,5 +133,7 @@ private:
 
     void initGenerate();
 };
+
+Chunk convertToChunk(const Block & block);
 
 }

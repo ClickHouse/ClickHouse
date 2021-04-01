@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import os
 import sys
 
@@ -27,14 +27,14 @@ with client(name='client1>', log=log) as client1:
     client1.send('CREATE LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt')
     client1.expect(prompt)
 
-
-    with http_client({'method':'GET', 'url':'/?allow_experimental_live_view=1&query=WATCH%20test.lv'}, name='client2>', log=log) as client2:
-        client2.expect('.*0\t1\n')
-        client1.send('INSERT INTO test.mt VALUES (1),(2),(3)')
+    try:
+        with http_client({'method':'GET', 'url':'/?allow_experimental_live_view=1&query=WATCH%20test.lv'}, name='client2>', log=log) as client2:
+            client2.expect('.*0\t1\n')
+            client1.send('INSERT INTO test.mt VALUES (1),(2),(3)')
+            client1.expect(prompt)
+            client2.expect('.*6\t2\n')
+    finally:
+        client1.send('DROP TABLE test.lv')
         client1.expect(prompt)
-        client2.expect('.*6\t2\n')
-
-    client1.send('DROP TABLE test.lv')
-    client1.expect(prompt)
-    client1.send('DROP TABLE test.mt')
-    client1.expect(prompt)
+        client1.send('DROP TABLE test.mt')
+        client1.expect(prompt)

@@ -8,21 +8,24 @@
 
 namespace DB
 {
-class ASTExtendedRoleSet;
+class ASTUserNamesWithHost;
+class ASTRolesOrUsersSet;
 class ASTSettingsProfileElements;
 
 /** CREATE USER [IF NOT EXISTS | OR REPLACE] name
-  *     [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
+  *     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}}|{WITH ldap SERVER 'server_name'}|{WITH kerberos [REALM 'realm']}]
   *     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *     [DEFAULT ROLE role [,...]]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+  *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
   *
   * ALTER USER [IF EXISTS] name
-  *      [RENAME TO new_name]
-  *      [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
-  *      [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-  *      [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
-  *      [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+  *     [RENAME TO new_name]
+  *     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}}|{WITH ldap SERVER 'server_name'}|{WITH kerberos [REALM 'realm']}]
+  *     [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+  *     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+  *     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
   */
 class ASTCreateUserQuery : public IAST, public ASTQueryWithOnCluster
 {
@@ -34,18 +37,19 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    String name;
+    std::shared_ptr<ASTUserNamesWithHost> names;
     String new_name;
 
     std::optional<Authentication> authentication;
+    bool show_password = true; /// formatImpl() will show the password or hash.
 
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
 
-    std::shared_ptr<ASTExtendedRoleSet> default_roles;
-
+    std::shared_ptr<ASTRolesOrUsersSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
+    std::shared_ptr<ASTRolesOrUsersSet> grantees;
 
     String getID(char) const override;
     ASTPtr clone() const override;

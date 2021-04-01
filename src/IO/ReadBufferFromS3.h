@@ -33,7 +33,7 @@ private:
     Aws::S3::Model::GetObjectResult read_result;
     std::unique_ptr<ReadBuffer> impl;
 
-    Logger * log = &Logger::get("ReadBufferFromS3");
+    Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
 
 public:
     explicit ReadBufferFromS3(

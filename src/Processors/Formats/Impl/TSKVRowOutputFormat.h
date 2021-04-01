@@ -14,11 +14,11 @@ namespace DB
 class TSKVRowOutputFormat: public TabSeparatedRowOutputFormat
 {
 public:
-    TSKVRowOutputFormat(WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & format_settings);
+    TSKVRowOutputFormat(WriteBuffer & out_, const Block & header, const RowOutputFormatParams & params_, const FormatSettings & format_settings);
 
     String getName() const override { return "TSKVRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeRowEndDelimiter() override;
 
 protected:

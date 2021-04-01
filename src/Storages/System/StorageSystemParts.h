@@ -19,8 +19,9 @@ public:
     std::string getName() const override { return "SystemParts"; }
 
 protected:
-    explicit StorageSystemParts(const std::string & name_);
-    void processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column) override;
+    explicit StorageSystemParts(const StorageID & table_id_);
+    void processNextStorage(
+        MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) override;
 };
 
 }

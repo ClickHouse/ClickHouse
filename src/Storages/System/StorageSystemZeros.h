@@ -20,13 +20,14 @@ class StorageSystemZeros final : public ext::shared_ptr_helper<StorageSystemZero
 public:
     std::string getName() const override { return "SystemZeros"; }
 
-    Pipes read(
-            const Names & column_names,
-            const SelectQueryInfo & query_info,
-            const Context & context,
-            QueryProcessingStage::Enum processed_stage,
-            size_t max_block_size,
-            unsigned num_streams) override;
+    Pipe read(
+        const Names & column_names,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
 
     bool hasEvenlyDistributedRead() const override { return true; }
 

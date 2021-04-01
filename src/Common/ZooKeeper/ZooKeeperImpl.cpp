@@ -2,14 +2,12 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
-
+#include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-
-#include <Poco/Exception.h>
-#include <Poco/Net/NetException.h>
+#include <common/logger_useful.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -20,11 +18,6 @@
 #endif
 
 #include <array>
-
-
-/// ZooKeeper has 1 MB node size and serialization limit by default,
-/// but it can be raised up, so we have a slightly larger limit on our side.
-#define MAX_STRING_OR_ARRAY_SIZE (1 << 28)  /// 256 MiB
 
 
 namespace ProfileEvents
@@ -52,13 +45,6 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperWatch;
 }
 
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int SUPPORT_IS_DISABLED;
-    }
-}
 
 /** ZooKeeper wire protocol.
 
@@ -120,7 +106,7 @@ int32_t err                          \x00\x00\x00\x00
 Client sends requests. For example, create persistent node '/hello' with value 'world'.
 
 int32_t request_length \x00\x00\x00\x3a
-int32_t xid            \x5a\xad\x72\x3f      Arbitary number. Used for identification of requests/responses.
+int32_t xid            \x5a\xad\x72\x3f      Arbitrary number. Used for identification of requests/responses.
                                          libzookeeper uses unix timestamp for first xid and then autoincrement to that value.
 int32_t op_num         \x00\x00\x00\x01      ZOO_CREATE_OP 1
 int32_t path_length    \x00\x00\x00\x06
@@ -276,130 +262,6 @@ namespace Coordination
 
 using namespace DB;
 
-
-/// Assuming we are at little endian.
-
-static void write(int64_t x, WriteBuffer & out)
-{
-    x = __builtin_bswap64(x);
-    writeBinary(x, out);
-}
-
-static void write(int32_t x, WriteBuffer & out)
-{
-    x = __builtin_bswap32(x);
-    writeBinary(x, out);
-}
-
-static void write(bool x, WriteBuffer & out)
-{
-    writeBinary(x, out);
-}
-
-static void write(const String & s, WriteBuffer & out)
-{
-    write(int32_t(s.size()), out);
-    out.write(s.data(), s.size());
-}
-
-template <size_t N> void write(std::array<char, N> s, WriteBuffer & out)
-{
-    write(int32_t(N), out);
-    out.write(s.data(), N);
-}
-
-template <typename T> void write(const std::vector<T> & arr, WriteBuffer & out)
-{
-    write(int32_t(arr.size()), out);
-    for (const auto & elem : arr)
-        write(elem, out);
-}
-
-static void write(const ACL & acl, WriteBuffer & out)
-{
-    write(acl.permissions, out);
-    write(acl.scheme, out);
-    write(acl.id, out);
-}
-
-
-static void read(int64_t & x, ReadBuffer & in)
-{
-    readBinary(x, in);
-    x = __builtin_bswap64(x);
-}
-
-static void read(int32_t & x, ReadBuffer & in)
-{
-    readBinary(x, in);
-    x = __builtin_bswap32(x);
-}
-
-static void read(bool & x, ReadBuffer & in)
-{
-    readBinary(x, in);
-}
-
-static void read(String & s, ReadBuffer & in)
-{
-    int32_t size = 0;
-    read(size, in);
-
-    if (size == -1)
-    {
-        /// It means that zookeeper node has NULL value. We will treat it like empty string.
-        s.clear();
-        return;
-    }
-
-    if (size < 0)
-        throw Exception("Negative size while reading string from ZooKeeper", ZMARSHALLINGERROR);
-
-    if (size > MAX_STRING_OR_ARRAY_SIZE)
-        throw Exception("Too large string size while reading from ZooKeeper", ZMARSHALLINGERROR);
-
-    s.resize(size);
-    in.read(s.data(), size);
-}
-
-template <size_t N> void read(std::array<char, N> & s, ReadBuffer & in)
-{
-    int32_t size = 0;
-    read(size, in);
-    if (size != N)
-        throw Exception("Unexpected array size while reading from ZooKeeper", ZMARSHALLINGERROR);
-    in.read(s.data(), N);
-}
-
-static void read(Stat & stat, ReadBuffer & in)
-{
-    read(stat.czxid, in);
-    read(stat.mzxid, in);
-    read(stat.ctime, in);
-    read(stat.mtime, in);
-    read(stat.version, in);
-    read(stat.cversion, in);
-    read(stat.aversion, in);
-    read(stat.ephemeralOwner, in);
-    read(stat.dataLength, in);
-    read(stat.numChildren, in);
-    read(stat.pzxid, in);
-}
-
-template <typename T> void read(std::vector<T> & arr, ReadBuffer & in)
-{
-    int32_t size = 0;
-    read(size, in);
-    if (size < 0)
-        throw Exception("Negative size while reading array from ZooKeeper", ZMARSHALLINGERROR);
-    if (size > MAX_STRING_OR_ARRAY_SIZE)
-        throw Exception("Too large array size while reading from ZooKeeper", ZMARSHALLINGERROR);
-    arr.resize(size);
-    for (auto & elem : arr)
-        read(elem, in);
-}
-
-
 template <typename T>
 void ZooKeeper::write(const T & x)
 {
@@ -412,405 +274,16 @@ void ZooKeeper::read(T & x)
     Coordination::read(x, *in);
 }
 
-
-void ZooKeeperRequest::write(WriteBuffer & out) const
+static void removeRootPath(String & path, const String & root_path)
 {
-    /// Excessive copy to calculate length.
-    WriteBufferFromOwnString buf;
-    Coordination::write(xid, buf);
-    Coordination::write(getOpNum(), buf);
-    writeImpl(buf);
-    Coordination::write(buf.str(), out);
-    out.next();
+    if (root_path.empty())
+        return;
+
+    if (path.size() <= root_path.size())
+        throw Exception("Received path is not longer than root_path", Error::ZDATAINCONSISTENCY);
+
+    path = path.substr(root_path.size());
 }
-
-
-struct ZooKeeperResponse : virtual Response
-{
-    virtual ~ZooKeeperResponse() = default;
-    virtual void readImpl(ReadBuffer &) = 0;
-};
-
-
-struct ZooKeeperHeartbeatRequest final : ZooKeeperRequest
-{
-    String getPath() const override { return {}; }
-    ZooKeeper::OpNum getOpNum() const override { return 11; }
-    void writeImpl(WriteBuffer &) const override {}
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperHeartbeatResponse final : ZooKeeperResponse
-{
-    void readImpl(ReadBuffer &) override {}
-};
-
-struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override
-    {
-        Coordination::read(type, in);
-        Coordination::read(state, in);
-        Coordination::read(path, in);
-    }
-};
-
-struct ZooKeeperAuthRequest final : ZooKeeperRequest
-{
-    int32_t type = 0;   /// ignored by the server
-    String scheme;
-    String data;
-
-    String getPath() const override { return {}; }
-    ZooKeeper::OpNum getOpNum() const override { return 100; }
-    void writeImpl(WriteBuffer & out) const override
-    {
-        Coordination::write(type, out);
-        Coordination::write(scheme, out);
-        Coordination::write(data, out);
-    }
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperAuthResponse final : ZooKeeperResponse
-{
-    void readImpl(ReadBuffer &) override {}
-};
-
-struct ZooKeeperCloseRequest final : ZooKeeperRequest
-{
-    String getPath() const override { return {}; }
-    ZooKeeper::OpNum getOpNum() const override { return -11; }
-    void writeImpl(WriteBuffer &) const override {}
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperCloseResponse final : ZooKeeperResponse
-{
-    void readImpl(ReadBuffer &) override
-    {
-        throw Exception("Received response for close request", ZRUNTIMEINCONSISTENCY);
-    }
-};
-
-struct ZooKeeperCreateRequest final : CreateRequest, ZooKeeperRequest
-{
-    ZooKeeperCreateRequest() = default;
-    explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
-
-    ZooKeeper::OpNum getOpNum() const override { return 1; }
-    void writeImpl(WriteBuffer & out) const override
-    {
-        Coordination::write(path, out);
-        Coordination::write(data, out);
-        Coordination::write(acls, out);
-
-        int32_t flags = 0;
-
-        if (is_ephemeral)
-            flags |= 1;
-        if (is_sequential)
-            flags |= 2;
-
-        Coordination::write(flags, out);
-    }
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override
-    {
-        Coordination::read(path_created, in);
-    }
-};
-
-struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
-{
-    ZooKeeperRemoveRequest() = default;
-    explicit ZooKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
-
-    ZooKeeper::OpNum getOpNum() const override { return 2; }
-    void writeImpl(WriteBuffer & out) const override
-    {
-        Coordination::write(path, out);
-        Coordination::write(version, out);
-    }
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperRemoveResponse final : RemoveResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer &) override {}
-};
-
-struct ZooKeeperExistsRequest final : ExistsRequest, ZooKeeperRequest
-{
-    ZooKeeper::OpNum getOpNum() const override { return 3; }
-    void writeImpl(WriteBuffer & out) const override
-    {
-        Coordination::write(path, out);
-        Coordination::write(has_watch, out);
-    }
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperExistsResponse final : ExistsResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override
-    {
-        Coordination::read(stat, in);
-    }
-};
-
-struct ZooKeeperGetRequest final : GetRequest, ZooKeeperRequest
-{
-    ZooKeeper::OpNum getOpNum() const override { return 4; }
-    void writeImpl(WriteBuffer & out) const override
-    {
-        Coordination::write(path, out);
-        Coordination::write(has_watch, out);
-    }
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperGetResponse final : GetResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override
-    {
-        Coordination::read(data, in);
-        Coordination::read(stat, in);
-    }
-};
-
-struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
-{
-    ZooKeeperSetRequest() = default;
-    explicit ZooKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
-
-    ZooKeeper::OpNum getOpNum() const override { return 5; }
-    void writeImpl(WriteBuffer & out) const override
-    {
-        Coordination::write(path, out);
-        Coordination::write(data, out);
-        Coordination::write(version, out);
-    }
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperSetResponse final : SetResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override
-    {
-        Coordination::read(stat, in);
-    }
-};
-
-struct ZooKeeperListRequest final : ListRequest, ZooKeeperRequest
-{
-    ZooKeeper::OpNum getOpNum() const override { return 12; }
-    void writeImpl(WriteBuffer & out) const override
-    {
-        Coordination::write(path, out);
-        Coordination::write(has_watch, out);
-    }
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperListResponse final : ListResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override
-    {
-        Coordination::read(names, in);
-        Coordination::read(stat, in);
-    }
-};
-
-struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
-{
-    ZooKeeperCheckRequest() = default;
-    explicit ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
-
-    ZooKeeper::OpNum getOpNum() const override { return 13; }
-    void writeImpl(WriteBuffer & out) const override
-    {
-        Coordination::write(path, out);
-        Coordination::write(version, out);
-    }
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperCheckResponse final : CheckResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer &) override {}
-};
-
-/// This response may be received only as an element of responses in MultiResponse.
-struct ZooKeeperErrorResponse final : ErrorResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override
-    {
-        int32_t read_error;
-        Coordination::read(read_error, in);
-
-        if (read_error != error)
-            throw Exception("Error code in ErrorResponse (" + toString(read_error) + ") doesn't match error code in header (" + toString(error) + ")",
-                ZMARSHALLINGERROR);
-    }
-};
-
-struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
-{
-    ZooKeeper::OpNum getOpNum() const override { return 14; }
-
-    ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls)
-    {
-        /// Convert nested Requests to ZooKeeperRequests.
-        /// Note that deep copy is required to avoid modifying path in presence of chroot prefix.
-        requests.reserve(generic_requests.size());
-
-        for (const auto & generic_request : generic_requests)
-        {
-            if (const auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
-            {
-                auto create = std::make_shared<ZooKeeperCreateRequest>(*concrete_request_create);
-                if (create->acls.empty())
-                    create->acls = default_acls;
-                requests.push_back(create);
-            }
-            else if (const auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
-            {
-                requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
-            }
-            else if (const auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
-            {
-                requests.push_back(std::make_shared<ZooKeeperSetRequest>(*concrete_request_set));
-            }
-            else if (const auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
-            {
-                requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request_check));
-            }
-            else
-                throw Exception("Illegal command as part of multi ZooKeeper request", ZBADARGUMENTS);
-        }
-    }
-
-    void writeImpl(WriteBuffer & out) const override
-    {
-        for (const auto & request : requests)
-        {
-            const auto & zk_request = dynamic_cast<const ZooKeeperRequest &>(*request);
-
-            bool done = false;
-            int32_t error = -1;
-
-            Coordination::write(zk_request.getOpNum(), out);
-            Coordination::write(done, out);
-            Coordination::write(error, out);
-
-            zk_request.writeImpl(out);
-        }
-
-        ZooKeeper::OpNum op_num = -1;
-        bool done = true;
-        int32_t error = -1;
-
-        Coordination::write(op_num, out);
-        Coordination::write(done, out);
-        Coordination::write(error, out);
-    }
-
-    ZooKeeperResponsePtr makeResponse() const override;
-};
-
-struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
-{
-    explicit ZooKeeperMultiResponse(const Requests & requests)
-    {
-        responses.reserve(requests.size());
-
-        for (const auto & request : requests)
-            responses.emplace_back(dynamic_cast<const ZooKeeperRequest &>(*request).makeResponse());
-    }
-
-    void readImpl(ReadBuffer & in) override
-    {
-        for (auto & response : responses)
-        {
-            ZooKeeper::OpNum op_num;
-            bool done;
-            int32_t op_error;
-
-            Coordination::read(op_num, in);
-            Coordination::read(done, in);
-            Coordination::read(op_error, in);
-
-            if (done)
-                throw Exception("Not enough results received for multi transaction", ZMARSHALLINGERROR);
-
-            /// op_num == -1 is special for multi transaction.
-            /// For unknown reason, error code is duplicated in header and in response body.
-
-            if (op_num == -1)
-                response = std::make_shared<ZooKeeperErrorResponse>();
-
-            if (op_error)
-            {
-                response->error = op_error;
-
-                /// Set error for whole transaction.
-                /// If some operations fail, ZK send global error as zero and then send details about each operation.
-                /// It will set error code for first failed operation and it will set special "runtime inconsistency" code for other operations.
-                if (!error && op_error != ZRUNTIMEINCONSISTENCY)
-                    error = op_error;
-            }
-
-            if (!op_error || op_num == -1)
-                dynamic_cast<ZooKeeperResponse &>(*response).readImpl(in);
-        }
-
-        /// Footer.
-        {
-            ZooKeeper::OpNum op_num;
-            bool done;
-            int32_t error_read;
-
-            Coordination::read(op_num, in);
-            Coordination::read(done, in);
-            Coordination::read(error_read, in);
-
-            if (!done)
-                throw Exception("Too many results received for multi transaction", ZMARSHALLINGERROR);
-            if (op_num != -1)
-                throw Exception("Unexpected op_num received at the end of results for multi transaction", ZMARSHALLINGERROR);
-            if (error_read != -1)
-                throw Exception("Unexpected error value received at the end of results for multi transaction", ZMARSHALLINGERROR);
-        }
-    }
-};
-
-
-ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return std::make_shared<ZooKeeperHeartbeatResponse>(); }
-ZooKeeperResponsePtr ZooKeeperAuthRequest::makeResponse() const { return std::make_shared<ZooKeeperAuthResponse>(); }
-ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const { return std::make_shared<ZooKeeperCreateResponse>(); }
-ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const { return std::make_shared<ZooKeeperRemoveResponse>(); }
-ZooKeeperResponsePtr ZooKeeperExistsRequest::makeResponse() const { return std::make_shared<ZooKeeperExistsResponse>(); }
-ZooKeeperResponsePtr ZooKeeperGetRequest::makeResponse() const { return std::make_shared<ZooKeeperGetResponse>(); }
-ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return std::make_shared<ZooKeeperSetResponse>(); }
-ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return std::make_shared<ZooKeeperListResponse>(); }
-ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const { return std::make_shared<ZooKeeperCheckResponse>(); }
-ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const { return std::make_shared<ZooKeeperMultiResponse>(requests); }
-ZooKeeperResponsePtr ZooKeeperCloseRequest::makeResponse() const { return std::make_shared<ZooKeeperCloseResponse>(); }
-
-
-static constexpr int32_t protocol_version = 0;
-
-static constexpr ZooKeeper::XID watch_xid = -1;
-static constexpr ZooKeeper::XID ping_xid = -2;
-static constexpr ZooKeeper::XID auth_xid = -4;
-
-static constexpr ZooKeeper::XID close_xid = 0x7FFFFFFF;
-
 
 ZooKeeper::~ZooKeeper()
 {
@@ -883,7 +356,7 @@ void ZooKeeper::connect(
     Poco::Timespan connection_timeout)
 {
     if (nodes.empty())
-        throw Exception("No nodes passed to ZooKeeper constructor", ZBADARGUMENTS);
+        throw Exception("No nodes passed to ZooKeeper constructor", Error::ZBADARGUMENTS);
 
     static constexpr size_t num_tries = 3;
     bool connected = false;
@@ -901,7 +374,8 @@ void ZooKeeper::connect(
 #if USE_SSL
                     socket = Poco::Net::SecureStreamSocket();
 #else
-                    throw Exception{"Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+                    throw Poco::Exception(
+                        "Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.");
 #endif
                 }
                 else
@@ -970,7 +444,7 @@ void ZooKeeper::connect(
         }
 
         message << fail_reasons.str() << "\n";
-        throw Exception(message.str(), ZCONNECTIONLOSS);
+        throw Exception(message.str(), Error::ZCONNECTIONLOSS);
     }
 }
 
@@ -985,7 +459,7 @@ void ZooKeeper::sendHandshake()
     std::array<char, passwd_len> passwd {};
 
     write(handshake_length);
-    write(protocol_version);
+    write(ZOOKEEPER_PROTOCOL_VERSION);
     write(last_zxid_seen);
     write(timeout);
     write(previous_session_id);
@@ -1000,16 +474,15 @@ void ZooKeeper::receiveHandshake()
     int32_t handshake_length;
     int32_t protocol_version_read;
     int32_t timeout;
-    constexpr int32_t passwd_len = 16;
-    std::array<char, passwd_len> passwd;
+    std::array<char, PASSWORD_LENGTH> passwd;
 
     read(handshake_length);
-    if (handshake_length != 36)
-        throw Exception("Unexpected handshake length received: " + toString(handshake_length), ZMARSHALLINGERROR);
+    if (handshake_length != SERVER_HANDSHAKE_LENGTH)
+        throw Exception("Unexpected handshake length received: " + DB::toString(handshake_length), Error::ZMARSHALLINGERROR);
 
     read(protocol_version_read);
-    if (protocol_version_read != protocol_version)
-        throw Exception("Unexpected protocol version: " + toString(protocol_version_read), ZMARSHALLINGERROR);
+    if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
+        throw Exception("Unexpected protocol version: " + DB::toString(protocol_version_read), Error::ZMARSHALLINGERROR);
 
     read(timeout);
     if (timeout != session_timeout.totalMilliseconds())
@@ -1026,13 +499,13 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     ZooKeeperAuthRequest request;
     request.scheme = scheme;
     request.data = data;
-    request.xid = auth_xid;
+    request.xid = AUTH_XID;
     request.write(*out);
 
     int32_t length;
     XID read_xid;
     int64_t zxid;
-    int32_t err;
+    Error err;
 
     read(length);
     size_t count_before_event = in->count();
@@ -1040,18 +513,18 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     read(zxid);
     read(err);
 
-    if (read_xid != auth_xid)
-        throw Exception("Unexpected event received in reply to auth request: " + toString(read_xid),
-            ZMARSHALLINGERROR);
+    if (read_xid != AUTH_XID)
+        throw Exception("Unexpected event received in reply to auth request: " + DB::toString(read_xid),
+            Error::ZMARSHALLINGERROR);
 
     int32_t actual_length = in->count() - count_before_event;
     if (length != actual_length)
-        throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length),
-            ZMARSHALLINGERROR);
+        throw Exception("Response length doesn't match. Expected: " + DB::toString(length) + ", actual: " + DB::toString(actual_length),
+            Error::ZMARSHALLINGERROR);
 
-    if (err)
-        throw Exception("Error received in reply to auth request. Code: " + toString(err) + ". Message: " + String(errorMessage(err)),
-            ZMARSHALLINGERROR);
+    if (err != Error::ZOK)
+        throw Exception("Error received in reply to auth request. Code: " + DB::toString(int32_t(err)) + ". Message: " + String(errorMessage(err)),
+            Error::ZMARSHALLINGERROR);
 }
 
 
@@ -1083,7 +556,7 @@ void ZooKeeper::sendThread()
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
-                    if (info.request->xid != close_xid)
+                    if (info.request->xid != CLOSE_XID)
                     {
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
                         std::lock_guard lock(operations_mutex);
@@ -1094,19 +567,20 @@ void ZooKeeper::sendThread()
                     {
                         info.request->has_watch = true;
                         CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
-                        std::lock_guard lock(watches_mutex);
-                        watches[info.request->getPath()].emplace_back(std::move(info.watch));
                     }
 
                     if (expired)
+                    {
                         break;
+                    }
 
                     info.request->addRootPath(root_path);
 
                     info.request->probably_sent = true;
                     info.request->write(*out);
 
-                    if (info.request->xid == close_xid)
+                    /// We sent close request, exit
+                    if (info.request->xid == CLOSE_XID)
                         break;
                 }
             }
@@ -1116,7 +590,7 @@ void ZooKeeper::sendThread()
                 prev_heartbeat_time = clock::now();
 
                 ZooKeeperHeartbeatRequest request;
-                request.xid = ping_xid;
+                request.xid = PING_XID;
                 request.write(*out);
             }
 
@@ -1154,7 +628,7 @@ void ZooKeeper::receiveThread()
                     earliest_operation = operations.begin()->second;
                     auto earliest_operation_deadline = earliest_operation->time + std::chrono::microseconds(operation_timeout.totalMicroseconds());
                     if (now > earliest_operation_deadline)
-                        throw Exception("Operation timeout (deadline already expired) for path: " + earliest_operation->request->getPath(), ZOPERATIONTIMEOUT);
+                        throw Exception("Operation timeout (deadline already expired) for path: " + earliest_operation->request->getPath(), Error::ZOPERATIONTIMEOUT);
                     max_wait = std::chrono::duration_cast<std::chrono::microseconds>(earliest_operation_deadline - now).count();
                 }
             }
@@ -1170,10 +644,12 @@ void ZooKeeper::receiveThread()
             else
             {
                 if (earliest_operation)
-                    throw Exception("Operation timeout (no response) for path: " + earliest_operation->request->getPath(), ZOPERATIONTIMEOUT);
+                {
+                    throw Exception("Operation timeout (no response) for request " + toString(earliest_operation->request->getOpNum()) + " for path: " + earliest_operation->request->getPath(), Error::ZOPERATIONTIMEOUT);
+                }
                 waited += max_wait;
                 if (waited >= session_timeout.totalMicroseconds())
-                    throw Exception("Nothing is received in session timeout", ZOPERATIONTIMEOUT);
+                    throw Exception("Nothing is received in session timeout", Error::ZOPERATIONTIMEOUT);
 
             }
 
@@ -1193,7 +669,7 @@ void ZooKeeper::receiveEvent()
     int32_t length;
     XID xid;
     int64_t zxid;
-    int32_t err;
+    Error err;
 
     read(length);
     size_t count_before_event = in->count();
@@ -1204,14 +680,14 @@ void ZooKeeper::receiveEvent()
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
 
-    if (xid == ping_xid)
+    if (xid == PING_XID)
     {
-        if (err)
-            throw Exception("Received error in heartbeat response: " + String(errorMessage(err)), ZRUNTIMEINCONSISTENCY);
+        if (err != Error::ZOK)
+            throw Exception("Received error in heartbeat response: " + String(errorMessage(err)), Error::ZRUNTIMEINCONSISTENCY);
 
         response = std::make_shared<ZooKeeperHeartbeatResponse>();
     }
-    else if (xid == watch_xid)
+    else if (xid == WATCH_XID)
     {
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
         response = std::make_shared<ZooKeeperWatchResponse>();
@@ -1252,7 +728,7 @@ void ZooKeeper::receiveEvent()
 
             auto it = operations.find(xid);
             if (it == operations.end())
-                throw Exception("Received response for unknown xid", ZRUNTIMEINCONSISTENCY);
+                throw Exception("Received response for unknown xid " + DB::toString(xid), Error::ZRUNTIMEINCONSISTENCY);
 
             /// After this point, we must invoke callback, that we've grabbed from 'operations'.
             /// Invariant: all callbacks are invoked either in case of success or in case of error.
@@ -1272,17 +748,42 @@ void ZooKeeper::receiveEvent()
         if (!response)
             response = request_info.request->makeResponse();
 
-        if (err)
+        if (err != Error::ZOK)
+        {
             response->error = err;
+        }
         else
         {
             response->readImpl(*in);
             response->removeRootPath(root_path);
         }
+        /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
+        /// The watch shouldn't be set if the node does not exist and it will never exist like sequential ephemeral nodes.
+        /// By using getData() instead of exists(), a watch won't be set if the node doesn't exist.
+        if (request_info.watch)
+        {
+            bool add_watch = false;
+            /// 3 indicates the ZooKeeperExistsRequest.
+            // For exists, we set the watch on both node exist and nonexist case.
+            // For other case like getData, we only set the watch when node exists.
+            if (request_info.request->getOpNum() == OpNum::Exists)
+                add_watch = (response->error == Error::ZOK || response->error == Error::ZNONODE);
+            else
+                add_watch = response->error == Error::ZOK;
+
+            if (add_watch)
+            {
+                /// The key of wathces should exclude the root_path
+                String req_path = request_info.request->getPath();
+                removeRootPath(req_path, root_path);
+                std::lock_guard lock(watches_mutex);
+                watches[req_path].emplace_back(std::move(request_info.watch));
+            }
+        }
 
         int32_t actual_length = in->count() - count_before_event;
         if (length != actual_length)
-            throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length), ZMARSHALLINGERROR);
+            throw Exception("Response length doesn't match. Expected: " + DB::toString(length) + ", actual: " + DB::toString(actual_length), Error::ZMARSHALLINGERROR);
     }
     catch (...)
     {
@@ -1294,7 +795,7 @@ void ZooKeeper::receiveEvent()
 
         /// In case we cannot read the response, we should indicate it as the error of that type
         ///  when the user cannot assume whether the request was processed or not.
-        response->error = ZCONNECTIONLOSS;
+        response->error = Error::ZCONNECTIONLOSS;
         if (request_info.callback)
             request_info.callback(*response);
 
@@ -1310,21 +811,25 @@ void ZooKeeper::receiveEvent()
 
 void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
+    /// If some thread (send/receive) already finalizing session don't try to do it
+    if (finalization_started.exchange(true))
+        return;
+
+    auto expire_session_if_not_expired = [&]
     {
         std::lock_guard lock(push_request_mutex);
-
-        if (expired)
-            return;
-        expired = true;
-    }
-
-    active_session_metric_increment.destroy();
+        if (!expired)
+        {
+            expired = true;
+            active_session_metric_increment.destroy();
+        }
+    };
 
     try
     {
         if (!error_send)
         {
-            /// Send close event. This also signals sending thread to wakeup and then stop.
+            /// Send close event. This also signals sending thread to stop.
             try
             {
                 close();
@@ -1332,11 +837,17 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             catch (...)
             {
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
+                /// Just mark session expired in case of error on close request, otherwise sendThread may not stop.
+                expire_session_if_not_expired();
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
 
+            /// Send thread will exit after sending close request or on expired flag
             send_thread.join();
         }
+
+        /// Set expired flag after we sent close event
+        expire_session_if_not_expired();
 
         try
         {
@@ -1361,8 +872,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 ResponsePtr response = request_info.request->makeResponse();
 
                 response->error = request_info.request->probably_sent
-                    ? ZCONNECTIONLOSS
-                    : ZSESSIONEXPIRED;
+                    ? Error::ZCONNECTIONLOSS
+                    : Error::ZSESSIONEXPIRED;
 
                 if (request_info.callback)
                 {
@@ -1390,7 +901,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 WatchResponse response;
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
-                response.error = ZSESSIONEXPIRED;
+                response.error = Error::ZSESSIONEXPIRED;
 
                 for (auto & callback : path_watches.second)
                 {
@@ -1421,7 +932,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 ResponsePtr response = info.request->makeResponse();
                 if (response)
                 {
-                    response->error = ZSESSIONEXPIRED;
+                    response->error = Error::ZSESSIONEXPIRED;
                     try
                     {
                         info.callback(*response);
@@ -1437,7 +948,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 WatchResponse response;
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
-                response.error = ZSESSIONEXPIRED;
+                response.error = Error::ZSESSIONEXPIRED;
                 try
                 {
                     info.watch(response);
@@ -1465,10 +976,10 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         if (!info.request->xid)
         {
             info.request->xid = next_xid.fetch_add(1);
-            if (info.request->xid == close_xid)
-                throw Exception("xid equal to close_xid", ZSESSIONEXPIRED);
+            if (info.request->xid == CLOSE_XID)
+                throw Exception("xid equal to close_xid", Error::ZSESSIONEXPIRED);
             if (info.request->xid < 0)
-                throw Exception("XID overflow", ZSESSIONEXPIRED);
+                throw Exception("XID overflow", Error::ZSESSIONEXPIRED);
         }
 
         /// We must serialize 'pushRequest' and 'finalize' (from sendThread, receiveThread) calls
@@ -1478,10 +989,10 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         std::lock_guard lock(push_request_mutex);
 
         if (expired)
-            throw Exception("Session expired", ZSESSIONEXPIRED);
+            throw Exception("Session expired", Error::ZSESSIONEXPIRED);
 
         if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
-            throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
+            throw Exception("Cannot push request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
     }
     catch (...)
     {
@@ -1645,16 +1156,15 @@ void ZooKeeper::multi(
 void ZooKeeper::close()
 {
     ZooKeeperCloseRequest request;
-    request.xid = close_xid;
+    request.xid = CLOSE_XID;
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
 
     if (!requests_queue.tryPush(std::move(request_info), operation_timeout.totalMilliseconds()))
-        throw Exception("Cannot push close request to queue within operation timeout", ZOPERATIONTIMEOUT);
+        throw Exception("Cannot push close request to queue within operation timeout", Error::ZOPERATIONTIMEOUT);
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperClose);
 }
-
 
 }

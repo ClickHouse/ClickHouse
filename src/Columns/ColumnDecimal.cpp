@@ -6,11 +6,15 @@
 #include <Common/HashTable/Hash.h>
 
 #include <common/unaligned.h>
+#include <common/sort.h>
+#include <ext/scope_guard.h>
+
 
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnCompressed.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -27,6 +31,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+template class DecimalPaddedPODArray<Decimal32>;
+template class DecimalPaddedPODArray<Decimal64>;
+template class DecimalPaddedPODArray<Decimal128>;
+template class DecimalPaddedPODArray<Decimal256>;
+template class DecimalPaddedPODArray<DateTime64>;
+
 template <typename T>
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
 {
@@ -37,6 +47,21 @@ int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) c
     if (scale == other.scale)
         return a > b ? 1 : (a < b ? -1 : 0);
     return decimalLess<T>(b, a, other.scale, scale) ? 1 : (decimalLess<T>(a, b, scale, other.scale) ? -1 : 0);
+}
+
+template <typename T>
+void ColumnDecimal<T>::compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                                     PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                                     int direction, int nan_direction_hint) const
+{
+    return this->template doCompareColumn<ColumnDecimal<T>>(static_cast<const Self &>(rhs), rhs_row_num, row_indexes,
+                                                         compare_results, direction, nan_direction_hint);
+}
+
+template <typename T>
+bool ColumnDecimal<T>::hasEqualValues() const
+{
+    return this->template hasEqualValuesImpl<ColumnDecimal<T>>();
 }
 
 template <typename T>
@@ -55,17 +80,24 @@ const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 }
 
 template <typename T>
-UInt64 ColumnDecimal<T>::get64(size_t n) const
+const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
+{
+    return pos + sizeof(T);
+}
+
+template <typename T>
+UInt64 ColumnDecimal<T>::get64([[maybe_unused]] size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
         throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
-    return static_cast<typename T::NativeType>(data[n]);
+    else
+        return static_cast<NativeT>(data[n]);
 }
 
 template <typename T>
 void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    hash.update(data[n]);
+    hash.update(data[n].value);
 }
 
 template <typename T>
@@ -90,6 +122,12 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
 }
 
 template <typename T>
+void ColumnDecimal<T>::updateHashFast(SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
+}
+
+template <typename T>
 void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn::Permutation & res) const
 {
 #if 1 /// TODO: perf test
@@ -106,6 +144,87 @@ void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn:
 #endif
 
     permutation(reverse, limit, res);
+}
+
+template <typename T>
+void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
+{
+    if (equal_ranges.empty())
+        return;
+
+    if (limit >= data.size() || limit >= equal_ranges.back().second)
+        limit = 0;
+
+    size_t number_of_ranges = equal_ranges.size();
+    if (limit)
+        --number_of_ranges;
+
+    EqualRanges new_ranges;
+    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
+    {
+        const auto& [first, last] = equal_ranges[i];
+        if (reverse)
+            std::sort(res.begin() + first, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] > data[b]; });
+        else
+            std::sort(res.begin() + first, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] < data[b]; });
+
+        auto new_first = first;
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (data[res[new_first]] != data[res[j]])
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+
+        if (reverse)
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] > data[b]; });
+        else
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last,
+                [this](size_t a, size_t b) { return data[a] < data[b]; });
+        auto new_first = first;
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (data[res[new_first]] != data[res[j]])
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (data[res[new_first]] == data[res[j]])
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+            new_ranges.emplace_back(new_first, new_last);
+    }
 }
 
 template <typename T>
@@ -135,6 +254,7 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
+
         memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
         if (size > count)
@@ -167,6 +287,7 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
+
     memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
@@ -239,12 +360,36 @@ void ColumnDecimal<T>::gather(ColumnGathererStream & gatherer)
 }
 
 template <typename T>
+ColumnPtr ColumnDecimal<T>::compress() const
+{
+    size_t source_size = data.size() * sizeof(T);
+
+    /// Don't compress small blocks.
+    if (source_size < 4096) /// A wild guess.
+        return ColumnCompressed::wrap(this->getPtr());
+
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
+
+    if (!compressed)
+        return ColumnCompressed::wrap(this->getPtr());
+
+    return ColumnCompressed::create(data.size(), compressed->size(),
+        [compressed = std::move(compressed), column_size = data.size(), scale = this->scale]
+        {
+            auto res = ColumnDecimal<T>::create(column_size, scale);
+            ColumnCompressed::decompressBuffer(
+                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+            return res;
+        });
+}
+
+template <typename T>
 void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
     if (data.empty())
     {
-        min = NearestFieldType<T>(0, scale);
-        max = NearestFieldType<T>(0, scale);
+        min = NearestFieldType<T>(T(0), scale);
+        max = NearestFieldType<T>(T(0), scale);
         return;
     }
 
@@ -266,4 +411,7 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
+template class ColumnDecimal<Decimal256>;
+template class ColumnDecimal<DateTime64>;
+
 }

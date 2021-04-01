@@ -13,7 +13,7 @@ class ASTSettingsProfileElement : public IAST
 {
 public:
     String parent_profile;
-    String name;
+    String setting_name;
     Field value;
     Field min_value;
     Field max_value;
@@ -21,7 +21,7 @@ public:
     bool id_mode = false;  /// If true then `parent_profile` keeps UUID, not a name.
     bool use_inherit_keyword = false;  /// If true then this element is a part of ASTCreateSettingsProfileQuery.
 
-    bool empty() const { return parent_profile.empty() && name.empty(); }
+    bool empty() const { return parent_profile.empty() && setting_name.empty(); }
 
     String getID(char) const override { return "SettingsProfileElement"; }
     ASTPtr clone() const override { return std::make_shared<ASTSettingsProfileElement>(*this); }

@@ -1,5 +1,6 @@
 #include <Client/MultiplexedConnections.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/Operators.h>
 #include <Common/thread_local_rng.h>
 
 
@@ -94,7 +95,7 @@ void MultiplexedConnections::sendQuery(
     const String & query,
     const String & query_id,
     UInt64 stage,
-    const ClientInfo * client_info,
+    const ClientInfo & client_info,
     bool with_pending_data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -126,23 +127,38 @@ void MultiplexedConnections::sendQuery(
         {
             modified_settings.parallel_replica_offset = i;
             replica_states[i].connection->sendQuery(timeouts, query, query_id,
-                                                    stage, &modified_settings, client_info, with_pending_data);
+                stage, &modified_settings, &client_info, with_pending_data);
         }
     }
     else
     {
         /// Use single replica.
-        replica_states[0].connection->sendQuery(timeouts, query, query_id, stage,
-                                                &modified_settings, client_info, with_pending_data);
+        replica_states[0].connection->sendQuery(timeouts, query, query_id,
+                stage, &modified_settings, &client_info, with_pending_data);
     }
 
     sent_query = true;
 }
 
+void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (sent_query)
+        throw Exception("Cannot send uuids after query is sent.", ErrorCodes::LOGICAL_ERROR);
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendIgnoredPartUUIDs(uuids);
+    }
+}
+
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    Packet packet = receivePacketUnlocked();
+    Packet packet = receivePacketUnlocked({});
     return packet;
 }
 
@@ -190,10 +206,11 @@ Packet MultiplexedConnections::drain()
 
     while (hasActiveConnections())
     {
-        Packet packet = receivePacketUnlocked();
+        Packet packet = receivePacketUnlocked({});
 
         switch (packet.type)
         {
+            case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
@@ -222,21 +239,21 @@ std::string MultiplexedConnections::dumpAddresses() const
 std::string MultiplexedConnections::dumpAddressesUnlocked() const
 {
     bool is_first = true;
-    std::ostringstream os;
+    WriteBufferFromOwnString buf;
     for (const ReplicaState & state : replica_states)
     {
         const Connection * connection = state.connection;
         if (connection)
         {
-            os << (is_first ? "" : "; ") << connection->getDescription();
+            buf << (is_first ? "" : "; ") << connection->getDescription();
             is_first = false;
         }
     }
 
-    return os.str();
+    return buf.str();
 }
 
-Packet MultiplexedConnections::receivePacketUnlocked()
+Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
     if (!sent_query)
         throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
@@ -248,10 +265,15 @@ Packet MultiplexedConnections::receivePacketUnlocked()
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    Packet packet = current_connection->receivePacket();
+    Packet packet;
+    {
+        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        packet = current_connection->receivePacket();
+    }
 
     switch (packet.type)
     {
+        case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:
         case Protocol::Server::Progress:
         case Protocol::Server::ProfileInfo:

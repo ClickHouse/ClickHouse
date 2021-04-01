@@ -5,7 +5,8 @@
 
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 function read_numbers_func()
 {
@@ -17,14 +18,16 @@ function read_numbers_func()
 
 function show_processes_func()
 {
-    sleep 0.1;
-    
-    # These two system metrics for the generating query above are guaranteed to be nonzero when ProcFS is mounted at /proc
-    $CLICKHOUSE_CLIENT -q "
-        SELECT count() > 0 FROM system.processes\
-        WHERE has(ProfileEvents.Names, 'OSCPUVirtualTimeMicroseconds') AND has(ProfileEvents.Names, 'OSReadChars')\
-        SETTINGS max_threads = 1
-    ";
+    while true; do
+        sleep 0.1;
+
+        # These two system metrics for the generating query above are guaranteed to be nonzero when ProcFS is mounted at /proc
+        $CLICKHOUSE_CLIENT -q "
+            SELECT count() > 0 FROM system.processes\
+            WHERE has(ProfileEvents.Names, 'OSCPUVirtualTimeMicroseconds') AND has(ProfileEvents.Names, 'OSReadChars')\
+            SETTINGS max_threads = 1
+        " | grep '1' && break;
+    done
 }
 
 

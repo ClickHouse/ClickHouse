@@ -1,19 +1,125 @@
-SELECT \n    k, \n    v, \n    d, \n    i\nFROM \n(\n    SELECT \n        t.1 AS k, \n        t.2 AS v, \n        runningDifference(v) AS d, \n        runningDifference(cityHash64(t.1)) AS i\n    FROM \n    (\n        SELECT arrayJoin([(\'a\', 1), (\'a\', 2), (\'a\', 3), (\'b\', 11), (\'b\', 13), (\'b\', 15)]) AS t\n    )\n)\nWHERE i = 0
+SELECT
+    k,
+    v,
+    d,
+    i
+FROM 
+(
+    SELECT
+        t.1 AS k,
+        t.2 AS v,
+        runningDifference(v) AS d,
+        runningDifference(cityHash64(t.1)) AS i
+    FROM 
+    (
+        SELECT arrayJoin([(\'a\', 1), (\'a\', 2), (\'a\', 3), (\'b\', 11), (\'b\', 13), (\'b\', 15)]) AS t
+    )
+)
+WHERE i = 0
 a	1	0	0
 a	2	1	0
 a	3	1	0
 b	13	2	0
 b	15	2	0
-SELECT \n    co, \n    co2, \n    co3, \n    num\nFROM \n(\n    SELECT \n        co, \n        co2, \n        co3, \n        count() AS num\n    FROM \n    (\n        SELECT \n            1 AS co, \n            2 AS co2, \n            3 AS co3\n    )\n    GROUP BY \n        co, \n        co2, \n        co3\n        WITH CUBE\n    HAVING (co != 0) AND (co2 != 2)\n)\nWHERE (co != 0) AND (co2 != 2)
+SELECT
+    co,
+    co2,
+    co3,
+    num
+FROM 
+(
+    SELECT
+        co,
+        co2,
+        co3,
+        count() AS num
+    FROM 
+    (
+        SELECT
+            1 AS co,
+            2 AS co2,
+            3 AS co3
+    )
+    GROUP BY
+        co,
+        co2,
+        co3
+        WITH CUBE
+    HAVING (co2 != 2) AND (co != 0)
+)
+WHERE (co != 0) AND (co2 != 2)
 1	0	3	1
 1	0	0	1
-SELECT alias AS name\nFROM \n(\n    SELECT name AS alias\n    FROM system.settings\n    WHERE alias = \'enable_optimize_predicate_expression\'\n)\nANY INNER JOIN \n(\n    SELECT name\n    FROM system.settings\n) USING (name)\nWHERE name = \'enable_optimize_predicate_expression\'
+SELECT alias AS name
+FROM 
+(
+    SELECT name AS alias
+    FROM system.settings
+    WHERE alias = \'enable_optimize_predicate_expression\'
+)
+ANY INNER JOIN 
+(
+    SELECT name
+    FROM system.settings
+) USING (name)
+WHERE name = \'enable_optimize_predicate_expression\'
 enable_optimize_predicate_expression
 1	val11	val21	val31
-SELECT ccc\nFROM \n(\n    SELECT 1 AS ccc\n    WHERE 0\n    UNION ALL\n    SELECT ccc\n    FROM \n    (\n        SELECT 2 AS ccc\n    )\n    ANY INNER JOIN \n    (\n        SELECT 2 AS ccc\n    ) USING (ccc)\n    WHERE ccc > 1\n)\nWHERE ccc > 1
+SELECT ccc
+FROM 
+(
+    SELECT 1 AS ccc
+    WHERE 0
+    UNION ALL
+    SELECT ccc
+    FROM 
+    (
+        SELECT 2 AS ccc
+    )
+    ANY INNER JOIN 
+    (
+        SELECT 2 AS ccc
+    ) USING (ccc)
+    WHERE ccc > 1
+)
+WHERE ccc > 1
 2
-SELECT \n    ts, \n    id, \n    id_b, \n    b.ts, \n    b.id, \n    id_c\nFROM \n(\n    SELECT \n        ts, \n        id, \n        id_b\n    FROM A\n    WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')\n) AS a\nALL LEFT JOIN B AS b ON b.id = id_b\nWHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
-SELECT \n    ts AS `--a.ts`, \n    id AS `--a.id`, \n    id_b AS `--a.id_b`, \n    b.ts AS `--b.ts`, \n    b.id AS `--b.id`, \n    id_c AS `--b.id_c`\nFROM \n(\n    SELECT \n        ts, \n        id, \n        id_b\n    FROM A\n    WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')\n) AS a\nALL LEFT JOIN B AS b ON `--b.id` = `--a.id_b`\nWHERE `--a.ts` <= toDateTime(\'1970-01-01 03:00:00\')
+SELECT
+    ts,
+    id,
+    id_b,
+    b.ts,
+    b.id,
+    id_c
+FROM 
+(
+    SELECT
+        ts,
+        id,
+        id_b
+    FROM A
+    WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
+) AS a
+ALL LEFT JOIN B AS b ON b.id = id_b
+WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
+SELECT
+    ts AS `--a.ts`,
+    id AS `--a.id`,
+    id_b AS `--a.id_b`,
+    b.ts AS `--b.ts`,
+    b.id AS `--b.id`,
+    id_c AS `--b.id_c`
+FROM 
+(
+    SELECT
+        ts,
+        id,
+        id_b
+    FROM A
+    WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
+) AS a
+ALL LEFT JOIN B AS b ON `--b.id` = `--a.id_b`
+WHERE `--a.ts` <= toDateTime(\'1970-01-01 03:00:00\')
 2	3
 3	4
 4	5
@@ -22,7 +128,33 @@ SELECT \n    ts AS `--a.ts`, \n    id AS `--a.id`, \n    id_b AS `--a.id_b`, \n 
 4	0
 2	3
 4	5
-SELECT dummy\nFROM \n(\n    SELECT dummy\n    FROM system.one\n    WHERE arrayMap(x -> (x + 1), [dummy]) = [1]\n)\nWHERE arrayMap(x -> (x + 1), [dummy]) = [1]
+SELECT dummy
+FROM 
+(
+    SELECT dummy
+    FROM system.one
+    WHERE arrayMap(x -> (x + 1), [dummy]) = [1]
+)
+WHERE arrayMap(x -> (x + 1), [dummy]) = [1]
 0
-SELECT \n    id, \n    value, \n    value_1\nFROM \n(\n    SELECT \n        1 AS id, \n        2 AS value\n)\nALL INNER JOIN \n(\n    SELECT \n        1 AS id, \n        3 AS value_1\n) USING (id)\nWHERE arrayMap(x -> ((x + value) + value_1), [1]) = [6]
+SELECT
+    id,
+    value,
+    value_1
+FROM 
+(
+    SELECT
+        1 AS id,
+        2 AS value
+)
+ALL INNER JOIN 
+(
+    SELECT
+        1 AS id,
+        3 AS value_1
+) USING (id)
+WHERE arrayMap(x -> ((x + value) + value_1), [1]) = [6]
 1	2	3
+SELECT dummy
+FROM system.one
+WHERE (dummy > 0) AND (dummy < 0)

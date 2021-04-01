@@ -2,8 +2,12 @@
 #include <ext/size.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+#include "ClickHouseDictionarySource.h"
 #include <Core/Defines.h>
-
+#include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 namespace
 {
@@ -32,17 +36,14 @@ namespace ErrorCodes
 
 
 HashedDictionary::HashedDictionary(
-    const std::string & database_,
-    const std::string & name_,
+    const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_,
     bool sparse_,
     BlockPtr saved_block_)
-    : database(database_)
-    , name(name_)
-    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -59,12 +60,13 @@ HashedDictionary::HashedDictionary(
 void HashedDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
+    DictionaryDefaultValueExtractor<UInt64> extractor(null_value);
 
     getItemsImpl<UInt64, UInt64>(
         *hierarchical_attribute,
         ids,
         [&](const size_t row, const UInt64 value) { out[row] = value; },
-        [&](const size_t) { return null_value; });
+        extractor);
 }
 
 
@@ -127,183 +129,105 @@ void HashedDictionary::isInConstantVector(const Key child_id, const PaddedPODArr
     isInImpl(child_id, ancestor_ids, out);
 }
 
-
-#define DECLARE(TYPE) \
-    void HashedDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) \
-        const \
-    { \
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        const auto null_value = std::get<TYPE>(attribute.null_values); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return null_value; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void HashedDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
+ColumnPtr HashedDictionary::getColumn(
+    const std::string & attribute_name,
+    const DataTypePtr & result_type,
+    const Columns & key_columns,
+    const DataTypes &,
+    const ColumnPtr & default_values_column) const
 {
+    ColumnPtr result;
+
+    PaddedPODArray<Key> backup_storage;
+    const auto & ids = getColumnVectorData(this, key_columns.front(), backup_storage);
+
+    auto size = ids.size();
+
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
 
-    const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
+    auto type_call = [&](const auto & dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
 
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return null_value; });
+        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
+        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, size);
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto * out = column.get();
+
+            getItemsImpl<StringRef, StringRef>(
+                attribute,
+                ids,
+                [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
+                default_value_extractor);
+        }
+        else
+        {
+            auto & out = column->getData();
+
+            getItemsImpl<AttributeType, AttributeType>(
+                attribute,
+                ids,
+                [&](const size_t row, const auto value) { return out[row] = value; },
+                default_value_extractor);
+        }
+
+        result = std::move(column);
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    if (attribute.nullable_set)
+    {
+        ColumnUInt8::MutablePtr col_null_map_to = ColumnUInt8::create(size, false);
+        ColumnUInt8::Container& vec_null_map_to = col_null_map_to->getData();
+
+        for (size_t row = 0; row < ids.size(); ++row)
+        {
+            auto id = ids[row];
+
+            if (attribute.nullable_set->find(id) != nullptr)
+                vec_null_map_to[row] = true;
+        }
+
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
+    }
+
+    return result;
 }
 
-#define DECLARE(TYPE) \
-    void HashedDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
-
-void HashedDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
+ColumnUInt8::Ptr HashedDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
-    const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    PaddedPODArray<Key> backup_storage;
+    const auto& ids = getColumnVectorData(this, key_columns.front(), backup_storage);
 
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t row) { return def->getDataAt(row); });
-}
+    size_t ids_count = ext::size(ids);
 
-#define DECLARE(TYPE) \
-    void HashedDictionary::get##TYPE( \
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, ResultArrayType<TYPE> & out) const \
-    { \
-        const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
-\
-        getItemsImpl<TYPE, TYPE>( \
-            attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
-    }
-DECLARE(UInt8)
-DECLARE(UInt16)
-DECLARE(UInt32)
-DECLARE(UInt64)
-DECLARE(UInt128)
-DECLARE(Int8)
-DECLARE(Int16)
-DECLARE(Int32)
-DECLARE(Int64)
-DECLARE(Float32)
-DECLARE(Float64)
-DECLARE(Decimal32)
-DECLARE(Decimal64)
-DECLARE(Decimal128)
-#undef DECLARE
+    auto result = ColumnUInt8::create(ext::size(ids));
+    auto& out = result->getData();
 
-void HashedDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
-{
-    const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
-
-    getItemsImpl<StringRef, StringRef>(
-        attribute,
-        ids,
-        [&](const size_t, const StringRef value) { out->insertData(value.data, value.size); },
-        [&](const size_t) { return StringRef{def}; });
-}
-
-void HashedDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
-{
     const auto & attribute = attributes.front();
 
-    switch (attribute.type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            has<UInt8>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            has<UInt16>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            has<UInt32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            has<UInt64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            has<UInt128>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            has<Int8>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            has<Int16>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            has<Int32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            has<Int64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            has<Float32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            has<Float64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utString:
-            has<StringRef>(attribute, ids, out);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        has<AttributeType>(attribute, ids, out);
+    };
 
-        case AttributeUnderlyingType::utDecimal32:
-            has<Decimal32>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            has<Decimal64>(attribute, ids, out);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            has<Decimal128>(attribute, ids, out);
-            break;
-    }
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    query_count.fetch_add(ids_count, std::memory_order_relaxed);
+
+    return result;
 }
 
 void HashedDictionary::createAttributes()
@@ -314,7 +238,7 @@ void HashedDictionary::createAttributes()
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+        attributes.push_back(createAttribute(attribute, attribute.null_value));
 
         if (attribute.hierarchical)
         {
@@ -409,7 +333,51 @@ void HashedDictionary::updateData()
     }
 
     if (saved_block)
+    {
+        resize(saved_block->rows());
         blockToAttributes(*saved_block.get());
+    }
+}
+
+template <typename T>
+void HashedDictionary::resize(Attribute & attribute, size_t added_rows)
+{
+    if (!sparse)
+    {
+        const auto & map_ref = std::get<CollectionPtrType<T>>(attribute.maps);
+        added_rows += map_ref->size();
+        map_ref->reserve(added_rows);
+    }
+    else
+    {
+        const auto & map_ref = std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps);
+        added_rows += map_ref->size();
+        map_ref->resize(added_rows);
+    }
+}
+
+template <>
+void HashedDictionary::resize<String>(Attribute & attribute, size_t added_rows)
+{
+    resize<StringRef>(attribute, added_rows);
+}
+
+void HashedDictionary::resize(size_t added_rows)
+{
+    if (!added_rows)
+        return;
+
+    for (auto & attribute : attributes)
+    {
+        auto type_call = [&](const auto & dictionary_attribute_type)
+        {
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
+            resize<AttributeType>(attribute, added_rows);
+        };
+
+        callOnDictionaryAttributeType(attribute.type, type_call);
+    }
 }
 
 void HashedDictionary::loadData()
@@ -417,10 +385,14 @@ void HashedDictionary::loadData()
     if (!source_ptr->hasUpdateField())
     {
         auto stream = source_ptr->loadAll();
+
         stream->readPrefix();
 
         while (const auto block = stream->read())
+        {
+            resize(block.rows());
             blockToAttributes(block);
+        }
 
         stream->readSuffix();
     }
@@ -452,166 +424,100 @@ void HashedDictionary::addAttributeSize(const Attribute & attribute)
     }
 }
 
+template <>
+void HashedDictionary::addAttributeSize<String>(const Attribute & attribute)
+{
+    addAttributeSize<StringRef>(attribute);
+    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+}
+
 void HashedDictionary::calculateBytesAllocated()
 {
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
     for (const auto & attribute : attributes)
     {
-        switch (attribute.type)
+        auto type_call = [&](const auto & dictionary_attribute_type)
         {
-            case AttributeUnderlyingType::utUInt8:
-                addAttributeSize<UInt8>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt16:
-                addAttributeSize<UInt16>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt32:
-                addAttributeSize<UInt32>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt64:
-                addAttributeSize<UInt64>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt128:
-                addAttributeSize<UInt128>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt8:
-                addAttributeSize<Int8>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt16:
-                addAttributeSize<Int16>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt32:
-                addAttributeSize<Int32>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt64:
-                addAttributeSize<Int64>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat32:
-                addAttributeSize<Float32>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat64:
-                addAttributeSize<Float64>(attribute);
-                break;
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
+            addAttributeSize<AttributeType>(attribute);
+        };
 
-            case AttributeUnderlyingType::utDecimal32:
-                addAttributeSize<Decimal32>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal64:
-                addAttributeSize<Decimal64>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal128:
-                addAttributeSize<Decimal128>(attribute);
-                break;
-
-            case AttributeUnderlyingType::utString:
-            {
-                addAttributeSize<StringRef>(attribute);
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-
-                break;
-            }
-        }
+        callOnDictionaryAttributeType(attribute.type, type_call);
     }
 }
 
 template <typename T>
 void HashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+    attribute.null_values = T(null_value.get<T>());
     if (!sparse)
         attribute.maps = std::make_unique<CollectionType<T>>();
     else
         attribute.sparse_maps = std::make_unique<SparseCollectionType<T>>();
 }
 
-HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+template <>
+void HashedDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
 {
-    Attribute attr{type, {}, {}, {}, {}};
+    attribute.string_arena = std::make_unique<Arena>();
+    const String & string = null_value.get<String>();
+    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
 
-    switch (type)
+    if (!sparse)
+        attribute.maps = std::make_unique<CollectionType<StringRef>>();
+    else
+        attribute.sparse_maps = std::make_unique<SparseCollectionType<StringRef>>();
+}
+
+HashedDictionary::Attribute HashedDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
+{
+    auto nullable_set = attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
+    Attribute attr{attribute.underlying_type, std::move(nullable_set), {}, {}, {}, {}};
+
+    auto type_call = [&, this](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            createAttributeImpl<UInt8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            createAttributeImpl<UInt16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            createAttributeImpl<UInt32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            createAttributeImpl<UInt64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            createAttributeImpl<UInt128>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            createAttributeImpl<Int8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            createAttributeImpl<Int16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            createAttributeImpl<Int32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            createAttributeImpl<Int64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            createAttributeImpl<Float32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            createAttributeImpl<Float64>(attr, null_value);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        createAttributeImpl<AttributeType>(attr, null_value);
+    };
 
-        case AttributeUnderlyingType::utDecimal32:
-            createAttributeImpl<Decimal32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            createAttributeImpl<Decimal64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            createAttributeImpl<Decimal128>(attr, null_value);
-            break;
-
-        case AttributeUnderlyingType::utString:
-        {
-            attr.null_values = null_value.get<String>();
-            if (!sparse)
-                attr.maps = std::make_unique<CollectionType<StringRef>>();
-            else
-                attr.sparse_maps = std::make_unique<SparseCollectionType<StringRef>>();
-            attr.string_arena = std::make_unique<Arena>();
-            break;
-        }
-    }
+    callOnDictionaryAttributeType(attribute.underlying_type, type_call);
 
     return attr;
 }
 
 
-template <typename OutputType, typename AttrType, typename ValueSetter, typename DefaultGetter>
+template <typename AttributeType, typename OutputType, typename MapType, typename ValueSetter, typename DefaultValueExtractor>
 void HashedDictionary::getItemsAttrImpl(
-    const AttrType & attr, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+    const MapType & attr,
+    const PaddedPODArray<Key> & ids,
+    ValueSetter && set_value,
+    DefaultValueExtractor & default_value_extractor) const
 {
     const auto rows = ext::size(ids);
 
     for (const auto i : ext::range(0, rows))
     {
         const auto it = attr.find(ids[i]);
-        set_value(i, it != attr.end() ? static_cast<OutputType>(second(*it)) : get_default(i));
+        set_value(i, it != attr.end() ? static_cast<OutputType>(second(*it)) : default_value_extractor[i]);
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
 }
-template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void HashedDictionary::getItemsImpl(
-    const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const
+    const Attribute & attribute,
+    const PaddedPODArray<Key> & ids,
+    ValueSetter && set_value,
+    DefaultValueExtractor & default_value_extractor) const
 {
     if (!sparse)
-        return getItemsAttrImpl<OutputType>(*std::get<CollectionPtrType<AttributeType>>(attribute.maps), ids, set_value, get_default);
-    return getItemsAttrImpl<OutputType>(*std::get<SparseCollectionPtrType<AttributeType>>(attribute.sparse_maps), ids, set_value, get_default);
+        return getItemsAttrImpl<AttributeType, OutputType>(*std::get<CollectionPtrType<AttributeType>>(attribute.maps), ids, set_value, default_value_extractor);
+    return getItemsAttrImpl<AttributeType, OutputType>(*std::get<SparseCollectionPtrType<AttributeType>>(attribute.sparse_maps), ids, set_value, default_value_extractor);
 }
 
 
@@ -630,58 +536,41 @@ bool HashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id
     }
 }
 
+template <>
+bool HashedDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String value)
+{
+    const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
+    return setAttributeValueImpl<StringRef>(attribute, id, StringRef{string_in_arena, value.size()});
+}
+
 bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
 {
-    switch (attribute.type)
+    bool result = false;
+
+    auto type_call = [&, this](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            return setAttributeValueImpl<UInt8>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt16:
-            return setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt32:
-            return setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt64:
-            return setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>());
-        case AttributeUnderlyingType::utUInt128:
-            return setAttributeValueImpl<UInt128>(attribute, id, value.get<UInt128>());
-        case AttributeUnderlyingType::utInt8:
-            return setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::utInt16:
-            return setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::utInt32:
-            return setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::utInt64:
-            return setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>());
-        case AttributeUnderlyingType::utFloat32:
-            return setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>());
-        case AttributeUnderlyingType::utFloat64:
-            return setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>());
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
 
-        case AttributeUnderlyingType::utDecimal32:
-            return setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>());
-        case AttributeUnderlyingType::utDecimal64:
-            return setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>());
-        case AttributeUnderlyingType::utDecimal128:
-            return setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>());
-
-        case AttributeUnderlyingType::utString:
+        if (attribute.nullable_set)
         {
-            const auto & string = value.get<String>();
-            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            if (!sparse)
+            if (value.isNull())
             {
-                auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
-                return map.insert({id, StringRef{string_in_arena, string.size()}}).second;
+                result = attribute.nullable_set->insert(id).second;
+                return;
             }
             else
             {
-                auto & map = *std::get<SparseCollectionPtrType<StringRef>>(attribute.sparse_maps);
-                return map.insert({id, StringRef{string_in_arena, string.size()}}).second;
+                attribute.nullable_set->erase(id);
             }
         }
-    }
 
-    throw Exception{"Invalid attribute type", ErrorCodes::BAD_ARGUMENTS};
+        result = setAttributeValueImpl<AttributeType>(attribute, id, value.get<AttributeType>());
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    return result;
 }
 
 const HashedDictionary::Attribute & HashedDictionary::getAttribute(const std::string & attribute_name) const
@@ -700,9 +589,18 @@ void HashedDictionary::has(const Attribute & attribute, const PaddedPODArray<Key
     const auto rows = ext::size(ids);
 
     for (const auto i : ext::range(0, rows))
+    {
         out[i] = attr.find(ids[i]) != nullptr;
 
-    query_count.fetch_add(rows, std::memory_order_relaxed);
+        if (attribute.nullable_set && !out[i])
+            out[i] = attribute.nullable_set->find(ids[i]) != nullptr;
+    }
+}
+
+template <>
+void HashedDictionary::has<String>(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
+{
+    has<StringRef>(attribute, ids, out);
 }
 
 template <typename T, typename AttrType>
@@ -723,50 +621,39 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute &
     return getIdsAttrImpl<T>(*std::get<SparseCollectionPtrType<T>>(attribute.sparse_maps));
 }
 
+template <>
+PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds<String>(const Attribute & attribute) const
+{
+    return getIds<StringRef>(attribute);
+}
+
 PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
 {
     const auto & attribute = attributes.front();
+    PaddedPODArray<HashedDictionary::Key> result;
 
-    switch (attribute.type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            return getIds<UInt8>(attribute);
-        case AttributeUnderlyingType::utUInt16:
-            return getIds<UInt16>(attribute);
-        case AttributeUnderlyingType::utUInt32:
-            return getIds<UInt32>(attribute);
-        case AttributeUnderlyingType::utUInt64:
-            return getIds<UInt64>(attribute);
-        case AttributeUnderlyingType::utUInt128:
-            return getIds<UInt128>(attribute);
-        case AttributeUnderlyingType::utInt8:
-            return getIds<Int8>(attribute);
-        case AttributeUnderlyingType::utInt16:
-            return getIds<Int16>(attribute);
-        case AttributeUnderlyingType::utInt32:
-            return getIds<Int32>(attribute);
-        case AttributeUnderlyingType::utInt64:
-            return getIds<Int64>(attribute);
-        case AttributeUnderlyingType::utFloat32:
-            return getIds<Float32>(attribute);
-        case AttributeUnderlyingType::utFloat64:
-            return getIds<Float64>(attribute);
-        case AttributeUnderlyingType::utString:
-            return getIds<StringRef>(attribute);
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        /// TODO: Check if order is satisfied
+        result = getIds<AttributeType>(attribute);
 
-        case AttributeUnderlyingType::utDecimal32:
-            return getIds<Decimal32>(attribute);
-        case AttributeUnderlyingType::utDecimal64:
-            return getIds<Decimal64>(attribute);
-        case AttributeUnderlyingType::utDecimal128:
-            return getIds<Decimal128>(attribute);
-    }
-    return PaddedPODArray<Key>();
+        if (attribute.nullable_set)
+        {
+            for (const auto& value: *attribute.nullable_set)
+                result.push_back(value.getKey());
+        }
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    return result;
 }
 
 BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<HashedDictionary, Key>;
+    using BlockInputStreamType = DictionaryBlockInputStream<Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);
 }
 
@@ -788,11 +675,10 @@ void registerDictionaryHashed(DictionaryFactory & factory)
                                   "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
 
-        const String database = config.getString(config_prefix + ".database", "");
-        const String name = config.getString(config_prefix + ".name");
+        const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<HashedDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
+        return std::make_unique<HashedDictionary>(dict_id, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
     };
     using namespace std::placeholders;
     factory.registerLayout("hashed",

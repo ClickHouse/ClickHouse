@@ -2,6 +2,7 @@
 #include <Processors/ISource.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Common/Stopwatch.h>
+#include <DataStreams/StreamLocalLimits.h>
 
 namespace DB
 {
@@ -13,11 +14,11 @@ class ISourceWithProgress : public ISource
 public:
     using ISource::ISource;
 
-    using LocalLimits = IBlockInputStream::LocalLimits;
-    using LimitsMode = IBlockInputStream::LimitsMode;
-
     /// Set limitations that checked on each chunk.
-    virtual void setLimits(const LocalLimits & limits_) = 0;
+    virtual void setLimits(const StreamLocalLimits & limits_) = 0;
+
+    /// Set limitations that checked on each chunk for distributed queries on leaf nodes.
+    virtual void setLeafLimits(const SizeLimits & leaf_limits_) = 0;
 
     /// Set the quota. If you set a quota on the amount of raw data,
     /// then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
@@ -44,11 +45,11 @@ class SourceWithProgress : public ISourceWithProgress
 {
 public:
     using ISourceWithProgress::ISourceWithProgress;
+    /// If enable_auto_progress flag is set, progress() will be automatically called on each generated chunk.
+    SourceWithProgress(Block header, bool enable_auto_progress);
 
-    using LocalLimits = IBlockInputStream::LocalLimits;
-    using LimitsMode = IBlockInputStream::LimitsMode;
-
-    void setLimits(const LocalLimits & limits_) final { limits = limits_; }
+    void setLimits(const StreamLocalLimits & limits_) final { limits = limits_; }
+    void setLeafLimits(const SizeLimits & leaf_limits_) final {leaf_limits = leaf_limits_; }
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) final { quota = quota_; }
     void setProcessListElement(QueryStatus * elem) final { process_list_elem = elem; }
     void setProgressCallback(const ProgressCallback & callback) final { progress_callback = callback; }
@@ -61,7 +62,8 @@ protected:
     void work() override;
 
 private:
-    LocalLimits limits;
+    StreamLocalLimits limits;
+    SizeLimits leaf_limits;
     std::shared_ptr<const EnabledQuota> quota;
     ProgressCallback progress_callback;
     QueryStatus * process_list_elem = nullptr;
@@ -76,6 +78,9 @@ private:
     /// This flag checks if progress() was manually called at generate() call.
     /// If not, it will be called for chunk after generate() was finished.
     bool was_progress_called = false;
+
+    /// If enabled, progress() will be automatically called on each generated chunk.
+    bool auto_progress = true;
 };
 
 }

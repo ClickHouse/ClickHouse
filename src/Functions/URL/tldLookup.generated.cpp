@@ -48875,7 +48875,7 @@ const char * TopLevelDomainLookupHash::isValid(const char * str, size_t len)
            "",
            "",
            "",
-           "myshopblocks.com",
+           "myshopcolumnss.com",
            "blogspot.bj",
            "",
            "",

@@ -1,7 +1,6 @@
 #include <string>
 
 #include <iostream>
-#include <fstream>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
@@ -39,13 +38,14 @@ try
 
     FormatSettings format_settings;
 
-    RowInputFormatParams params{DEFAULT_INSERT_BLOCK_SIZE, 0, 0, []{}};
+    RowInputFormatParams in_params{DEFAULT_INSERT_BLOCK_SIZE, 0, 0};
+    RowOutputFormatParams out_params{[](const Columns & /* columns */, size_t /* row */){}};
 
-    InputFormatPtr input_format = std::make_shared<TabSeparatedRowInputFormat>(sample, in_buf, params, false, false, format_settings);
+    InputFormatPtr input_format = std::make_shared<TabSeparatedRowInputFormat>(sample, in_buf, in_params, false, false, format_settings);
     BlockInputStreamPtr block_input = std::make_shared<InputStreamFromInputFormat>(std::move(input_format));
 
     BlockOutputStreamPtr block_output = std::make_shared<OutputStreamToOutputFormat>(
-        std::make_shared<TabSeparatedRowOutputFormat>(out_buf, sample, false, false, [](const Columns & /* columns */, size_t /* row */){}, format_settings));
+        std::make_shared<TabSeparatedRowOutputFormat>(out_buf, sample, false, false, out_params, format_settings));
 
     copyData(*block_input, *block_output);
     return 0;

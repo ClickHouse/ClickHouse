@@ -11,9 +11,9 @@ ClickHouse provides a native command-line client: `clickhouse-client`. The clien
 
 ``` bash
 $ clickhouse-client
-ClickHouse client version 19.17.1.1579 (official build).
+ClickHouse client version 20.13.1.5273 (official build).
 Connecting to localhost:9000 as user default.
-Connected to ClickHouse server version 19.17.1 revision 54428.
+Connected to ClickHouse server version 20.13.1 revision 54442.
 
 :)
 ```
@@ -57,7 +57,7 @@ The command line is based on ‘replxx’ (similar to ‘readline’). In other 
 
 By default, the format used is PrettyCompact. You can change the format in the FORMAT clause of the query, or by specifying `\G` at the end of the query, using the `--format` or `--vertical` argument in the command line, or using the client configuration file.
 
-To exit the client, press Ctrl+D (or Ctrl+C), or enter one of the following instead of a query: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
+To exit the client, press Ctrl+D, or enter one of the following instead of a query: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
 
 When processing a query, the client shows:
 
@@ -87,12 +87,13 @@ Format a query as usual, then place the values that you want to pass from the ap
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Data type](../sql-reference/data-types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql-reference/data-types/int-uint.md) types).
+-   `data type` — [Data type](../sql-reference/data-types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql-reference/data-types/int-uint.md) types). It's also possible to pass table, database, column names as a parameter, in that case you would need to use `Identifier` as a data type.
 
 #### Example {#example}
 
 ``` bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --query "SELECT {col:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
 ## Configuring {#interfaces_cli_configuration}
@@ -109,21 +110,25 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 
 ### Command Line Options {#command-line-options}
 
--   `--host, -h` -– The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.
+-   `--host, -h` – The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.
 -   `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
 -   `--user, -u` – The username. Default value: default.
 -   `--password` – The password. Default value: empty string.
--   `--query, -q` – The query to process when using non-interactive mode.
+-   `--query, -q` – The query to process when using non-interactive mode. You must specify either `query` or `queries-file` option.
+-   `--queries-file, -qf` – file path with queries to execute. You must specify either `query` or `queries-file` option.
 -   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
 -   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 -   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
 -   `--format, -f` – Use the specified default format to output the result.
--   `--vertical, -E` – If specified, use the Vertical format by default to output the result. This is the same as ‘–format=Vertical’. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
+-   `--vertical, -E` – If specified, use the [Vertical format](../interfaces/formats.md#vertical) by default to output the result. This is the same as `–format=Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
 -   `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
 -   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 -   `--config-file` – The name of the configuration file.
 -   `--secure` – If specified, will connect to server over secure connection.
+-   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+
+Since version 20.5, `clickhouse-client` has automatic syntax highlighting (always enabled).
 
 ### Configuration Files {#configuration_files}
 

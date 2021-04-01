@@ -1,5 +1,4 @@
 #include <signal.h>
-#include <time.h>
 #include <sys/time.h>
 #if defined(OS_LINUX)
 #   include <sys/sysinfo.h>
@@ -8,11 +7,10 @@
 
 #include <random>
 
-#include <common/defines.h>
 #include <common/sleep.h>
-#include <common/getThreadId.h>
 
 #include <IO/ReadHelpers.h>
+#include <common/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -199,6 +197,7 @@ static void injection(
 
 void ThreadFuzzer::signalHandler(int)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     auto saved_errno = errno;
 
     auto & fuzzer = ThreadFuzzer::instance();

@@ -12,11 +12,10 @@ public:
 
     uint8_t getMethodByte() const override;
 
-    String getCodecDesc() const override;
-
-    void useInfoAboutType(DataTypePtr data_type) override;
+    void updateHash(SipHash & hash) const override;
 
 protected:
+
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
@@ -29,8 +28,5 @@ protected:
 private:
     UInt8 delta_bytes_size;
 };
-
-class CompressionCodecFactory;
-void registerCodecDelta(CompressionCodecFactory & factory);
 
 }

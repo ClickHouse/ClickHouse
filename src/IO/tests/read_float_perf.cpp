@@ -3,7 +3,7 @@
 #include <iostream>
 #include <fstream>
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <IO/readFloatText.h>
@@ -12,7 +12,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Compression/CompressedReadBuffer.h>
-
 
 /** How to test:
 
@@ -39,7 +38,6 @@ $ for i in {1..10}; do echo $i; time ./read_float_perf 2 < numbers$i.tsv; done
 
 using namespace DB;
 
-
 template <typename T, void F(T&, ReadBuffer&)>
 void NO_INLINE loop(ReadBuffer & in, WriteBuffer & out)
 {
@@ -56,7 +54,8 @@ void NO_INLINE loop(ReadBuffer & in, WriteBuffer & out)
     }
 
     watch.stop();
-    out << "Read in " << watch.elapsedSeconds() << " sec, " << formatReadableSizeWithBinarySuffix(in.count() / watch.elapsedSeconds()) << "/sec, result = " << sum << "\n";
+    out << "Read in " << watch.elapsedSeconds() << " sec, "
+        << formatReadableSizeWithBinarySuffix(in.count() / watch.elapsedSeconds()) << "/sec, result = " << sum << "\n";
 }
 
 

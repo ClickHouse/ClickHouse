@@ -1,6 +1,6 @@
-## INSERT {#insert}
+## INSERT INTO 语句 {#insert}
 
-INSERT查询主要用于向系统中添加数据.
+INSERT INTO 语句主要用于向系统中添加数据.
 
 查询的基本格式:
 
@@ -8,12 +8,56 @@ INSERT查询主要用于向系统中添加数据.
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-您可以在查询中指定插入的列的列表，如：`[(c1, c2, c3)]`。对于存在于表结构中但不存在于插入列表中的列，它们将会按照如下方式填充数据：
+您可以在查询中指定要插入的列的列表，如：`[(c1, c2, c3)]`。您还可以使用列[匹配器](../../sql-reference/statements/select/index.md#asterisk)的表达式，例如`*`和/或[修饰符](../../sql-reference/statements/select/index.md#select-modifiers)，例如 [APPLY](../../sql-reference/statements/select/index.md#apply-modifier)， [EXCEPT](../../sql-reference/statements/select/index.md#apply-modifier)， [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier)。
+
+例如，考虑该表:
+
+``` sql
+SHOW CREATE insert_select_testtable;
+```
+
+```text
+CREATE TABLE insert_select_testtable
+(
+    `a` Int8,
+    `b` String,
+    `c` Int8
+)
+ENGINE = MergeTree()
+ORDER BY a
+```
+
+``` sql
+INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
+```
+
+如果要在除了'b'列以外的所有列中插入数据，您需要传递和括号中选择的列数一样多的值:
+
+``` sql
+INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
+```
+
+``` sql
+SELECT * FROM insert_select_testtable;
+```
+
+```
+┌─a─┬─b─┬─c─┐
+│ 2 │   │ 2 │
+└───┴───┴───┘
+┌─a─┬─b─┬─c─┐
+│ 1 │ a │ 1 │
+└───┴───┴───┘
+```
+
+在这个示例中，我们看到插入的第二行的`a`和`c`列的值由传递的值填充，而`b`列由默认值填充。
+
+对于存在于表结构中但不存在于插入列表中的列，它们将会按照如下方式填充数据：
 
 -   如果存在`DEFAULT`表达式，根据`DEFAULT`表达式计算被填充的值。
 -   如果没有定义`DEFAULT`表达式，则填充零或空字符串。
 
-如果 [strict\_insert\_defaults=1](../../operations/settings/settings.md)，你必须在查询中列出所有没有定义`DEFAULT`表达式的列。
+如果 [strict_insert_defaults=1](../../operations/settings/settings.md)，你必须在查询中列出所有没有定义`DEFAULT`表达式的列。
 
 数据可以以ClickHouse支持的任何 [输入输出格式](../../interfaces/formats.md#formats) 传递给INSERT。格式的名称必须显示的指定在查询中：
 

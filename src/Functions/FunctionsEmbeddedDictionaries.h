@@ -183,17 +183,17 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
 
         if (arguments.size() == 2)
         {
-            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
 
             if (!key_col)
-                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+                throw Exception("Illegal column " + arguments[1].column->getName()
                     + " of second ('point of view') argument of function " + name
                     + ". Must be constant string.",
                     ErrorCodes::ILLEGAL_COLUMN);
@@ -203,7 +203,7 @@ public:
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get()))
         {
             auto col_to = ColumnVector<T>::create();
 
@@ -215,10 +215,10 @@ public:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from[i], dict);
 
-            block.getByPosition(result).column = std::move(col_to);
+            return col_to;
         }
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + arguments[0].column->getName()
                     + " of first argument of function " + name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -279,17 +279,17 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
 
         if (arguments.size() == 3)
         {
-            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[2]).column.get());
+            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
 
             if (!key_col)
-                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
+                throw Exception("Illegal column " + arguments[2].column->getName()
                 + " of third ('point of view') argument of function " + name
                 + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -299,10 +299,10 @@ public:
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-        const ColumnVector<T> * col_vec1 = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get());
-        const ColumnVector<T> * col_vec2 = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[1]).column.get());
-        const ColumnConst * col_const1 = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get());
-        const ColumnConst * col_const2 = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[1]).column.get());
+        const ColumnVector<T> * col_vec1 = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get());
+        const ColumnVector<T> * col_vec2 = checkAndGetColumn<ColumnVector<T>>(arguments[1].column.get());
+        const ColumnConst * col_const1 = checkAndGetColumnConst<ColumnVector<T>>(arguments[0].column.get());
+        const ColumnConst * col_const2 = checkAndGetColumnConst<ColumnVector<T>>(arguments[1].column.get());
 
         if (col_vec1 && col_vec2)
         {
@@ -317,7 +317,7 @@ public:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from1[i], vec_from2[i], dict);
 
-            block.getByPosition(result).column = std::move(col_to);
+            return col_to;
         }
         else if (col_vec1 && col_const2)
         {
@@ -332,7 +332,7 @@ public:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from1[i], const_from2, dict);
 
-            block.getByPosition(result).column = std::move(col_to);
+            return col_to;
         }
         else if (col_const1 && col_vec2)
         {
@@ -347,16 +347,16 @@ public:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(const_from1, vec_from2[i], dict);
 
-            block.getByPosition(result).column = std::move(col_to);
+            return col_to;
         }
         else if (col_const1 && col_const2)
         {
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_const1->size(),
+            return DataTypeUInt8().createColumnConst(col_const1->size(),
                 toField(Transform::apply(col_const1->template getValue<T>(), col_const2->template getValue<T>(), dict)));
         }
         else
-            throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
-                    + " and " + block.getByPosition(arguments[1]).column->getName()
+            throw Exception("Illegal columns " + arguments[0].column->getName()
+                    + " and " + arguments[1].column->getName()
                     + " of arguments of function " + name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -415,17 +415,17 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
 
         if (arguments.size() == 2)
         {
-            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
 
             if (!key_col)
-                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+                throw Exception("Illegal column " + arguments[1].column->getName()
                 + " of second ('point of view') argument of function " + name
                 + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -435,7 +435,7 @@ public:
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get()))
         {
             auto col_values = ColumnVector<T>::create();
             auto col_offsets = ColumnArray::ColumnOffsets::create();
@@ -459,10 +459,10 @@ public:
                 res_offsets[i] = res_values.size();
             }
 
-            block.getByPosition(result).column = ColumnArray::create(std::move(col_values), std::move(col_offsets));
+            return ColumnArray::create(std::move(col_values), std::move(col_offsets));
         }
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + arguments[0].column->getName()
                 + " of first argument of function " + name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -593,7 +593,7 @@ public:
 
     /// For the purpose of query optimization, we assume this function to be injective
     ///  even in face of fact that there are many different cities named Moscow.
-    bool isInjective(const Block &) const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -620,24 +620,24 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         RegionsNames::Language language = RegionsNames::Language::ru;
 
         /// If the result language is specified
         if (arguments.size() == 2)
         {
-            if (const ColumnConst * col_language = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get()))
+            if (const ColumnConst * col_language = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
                 language = RegionsNames::getLanguageEnum(col_language->getValue<String>());
             else
-                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+                throw Exception("Illegal column " + arguments[1].column->getName()
                         + " of the second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
 
         const RegionsNames & dict = *owned_dict;
 
-        if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
+        if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(arguments[0].column.get()))
         {
             auto col_to = ColumnString::create();
 
@@ -649,10 +649,10 @@ public:
                 col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
             }
 
-            block.getByPosition(result).column = std::move(col_to);
+            return col_to;
         }
         else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + arguments[0].column->getName()
                     + " of the first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }

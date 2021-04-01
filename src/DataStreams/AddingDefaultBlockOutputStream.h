@@ -2,13 +2,16 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <Columns/ColumnConst.h>
-#include <Storages/ColumnDefault.h>
-#include <Interpreters/Context.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
 {
 
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+class Context;
 
 /** This stream adds three types of columns into block
   * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)
@@ -22,13 +25,8 @@ public:
     AddingDefaultBlockOutputStream(
         const BlockOutputStreamPtr & output_,
         const Block & header_,
-        const Block & output_block_,
-        const ColumnDefaults & column_defaults_,
-        const Context & context_)
-        : output(output_), header(header_), output_block(output_block_),
-          column_defaults(column_defaults_), context(context_)
-    {
-    }
+        const ColumnsDescription & columns_,
+        const Context & context_);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
@@ -41,10 +39,7 @@ public:
 private:
     BlockOutputStreamPtr output;
     const Block header;
-    /// Blocks after this stream should have this structure
-    const Block output_block;
-    const ColumnDefaults column_defaults;
-    const Context & context;
+    ExpressionActionsPtr adding_defaults_actions;
 };
 
 

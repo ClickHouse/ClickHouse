@@ -27,9 +27,6 @@ struct RowInputFormatParams
     UInt64 allow_errors_num;
     Float64 allow_errors_ratio;
 
-    using ReadCallback = std::function<void()>;
-    ReadCallback callback;
-
     Poco::Timespan max_execution_time = 0;
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 };
@@ -37,19 +34,13 @@ struct RowInputFormatParams
 bool isParseError(int code);
 bool checkTimeLimit(const RowInputFormatParams & params, const Stopwatch & stopwatch);
 
-///Row oriented input format: reads data row by row.
+/// Row oriented input format: reads data row by row.
 class IRowInputFormat : public IInputFormat
 {
 public:
     using Params = RowInputFormatParams;
 
-    IRowInputFormat(
-        Block header,
-        ReadBuffer & in_,
-        Params params_)
-        : IInputFormat(std::move(header), in_), params(params_)
-    {
-    }
+    IRowInputFormat(Block header, ReadBuffer & in_, Params params_);
 
     Chunk generate() override;
 
@@ -78,6 +69,8 @@ protected:
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
     size_t getTotalRows() const { return total_rows; }
+
+    Serializations serializations;
 
 private:
     Params params;

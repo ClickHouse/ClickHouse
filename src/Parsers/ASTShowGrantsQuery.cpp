@@ -1,5 +1,7 @@
 #include <Parsers/ASTShowGrantsQuery.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -21,8 +23,15 @@ void ASTShowGrantsQuery::formatQueryImpl(const FormatSettings & settings, Format
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "SHOW GRANTS"
                   << (settings.hilite ? hilite_none : "");
 
-    if (!current_user)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR " << (settings.hilite ? hilite_none : "")
-                      << backQuoteIfNeed(name);
+    if (for_roles->current_user && !for_roles->all && for_roles->names.empty() && for_roles->except_names.empty()
+        && !for_roles->except_current_user)
+    {
+    }
+    else
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FOR "
+                      << (settings.hilite ? hilite_none : "");
+        for_roles->format(settings);
+    }
 }
 }

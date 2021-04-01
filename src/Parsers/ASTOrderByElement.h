@@ -23,20 +23,6 @@ public:
     ASTPtr fill_to;
     ASTPtr fill_step;
 
-    ASTOrderByElement(
-        const int direction_, const int nulls_direction_, const bool nulls_direction_was_explicitly_specified_,
-        ASTPtr & collation_, const bool with_fill_, ASTPtr & fill_from_, ASTPtr & fill_to_, ASTPtr & fill_step_)
-        : direction(direction_)
-        , nulls_direction(nulls_direction_)
-        , nulls_direction_was_explicitly_specified(nulls_direction_was_explicitly_specified_)
-        , collation(collation_)
-        , with_fill(with_fill_)
-        , fill_from(fill_from_)
-        , fill_to(fill_to_)
-        , fill_step(fill_step_)
-    {
-    }
-
     String getID(char) const override { return "OrderByElement"; }
 
     ASTPtr clone() const override
@@ -45,6 +31,8 @@ public:
         clone->cloneChildren();
         return clone;
     }
+
+    void updateTreeHashImpl(SipHash & hash_state) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

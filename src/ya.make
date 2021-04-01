@@ -1,3 +1,5 @@
+OWNER(g:clickhouse)
+
 LIBRARY()
 
 PEERDIR(
@@ -7,6 +9,7 @@ PEERDIR(
     clickhouse/src/Columns
     clickhouse/src/Common
     clickhouse/src/Compression
+    clickhouse/src/Coordination
     clickhouse/src/Core
     clickhouse/src/Databases
     clickhouse/src/DataStreams
@@ -19,6 +22,7 @@ PEERDIR(
     clickhouse/src/IO
     clickhouse/src/Parsers
     clickhouse/src/Processors
+    clickhouse/src/Server
     clickhouse/src/Storages
     clickhouse/src/TableFunctions
 )

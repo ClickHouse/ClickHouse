@@ -3,8 +3,8 @@ SET replication_alter_partitions_sync = 2;
 DROP TABLE IF EXISTS attach_r1;
 DROP TABLE IF EXISTS attach_r2;
 
-CREATE TABLE attach_r1 (d Date) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/01/attach', 'r1', d, d, 8192);
-CREATE TABLE attach_r2 (d Date) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/01/attach', 'r2', d, d, 8192);
+CREATE TABLE attach_r1 (d Date) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00236/01/attach', 'r1', d, d, 8192);
+CREATE TABLE attach_r2 (d Date) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00236/01/attach', 'r2', d, d, 8192);
 
 INSERT INTO attach_r1 VALUES ('2014-01-01'), ('2014-02-01'), ('2014-03-01');
 

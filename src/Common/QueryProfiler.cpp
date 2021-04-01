@@ -5,9 +5,9 @@
 #include <Common/StackTrace.h>
 #include <Common/TraceCollector.h>
 #include <Common/thread_local_rng.h>
-#include <common/StringRef.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
+#include <common/errnoToString.h>
 
 #include <random>
 
@@ -79,7 +79,7 @@ namespace ErrorCodes
 
 template <typename ProfilerImpl>
 QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const int clock_type, UInt32 period, const int pause_signal_)
-    : log(&Logger::get("QueryProfiler"))
+    : log(&Poco::Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
 #if USE_UNWIND
@@ -165,10 +165,10 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
 #if USE_UNWIND
     if (timer_id != nullptr && timer_delete(timer_id))
-        LOG_ERROR(log, "Failed to delete query profiler timer " + errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+        LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
 
     if (previous_handler != nullptr && sigaction(pause_signal, previous_handler, nullptr))
-        LOG_ERROR(log, "Failed to restore signal handler after query profiler " + errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
+        LOG_ERROR(log, "Failed to restore signal handler after query profiler {}", errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
 #endif
 }
 
@@ -176,11 +176,12 @@ template class QueryProfilerBase<QueryProfilerReal>;
 template class QueryProfilerBase<QueryProfilerCpu>;
 
 QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period)
-    : QueryProfilerBase(thread_id, CLOCK_REALTIME, period, SIGUSR1)
+    : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, SIGUSR1)
 {}
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::Real, sig, info, context);
 }
 
@@ -190,6 +191,7 @@ QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
 
 void QueryProfilerCpu::signalHandler(int sig, siginfo_t * info, void * context)
 {
+    DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::CPU, sig, info, context);
 }
 

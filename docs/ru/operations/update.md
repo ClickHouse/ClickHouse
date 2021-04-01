@@ -1,3 +1,8 @@
+---
+toc_priority: 47
+toc_title: "Обновление ClickHouse"
+---
+
 # Обновление ClickHouse {#obnovlenie-clickhouse}
 
 Если ClickHouse установлен с помощью deb-пакетов, выполните следующие команды на сервере:

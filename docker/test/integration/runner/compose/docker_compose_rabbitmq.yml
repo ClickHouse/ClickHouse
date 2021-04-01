@@ -1,0 +1,12 @@
+version: '2.3'
+
+services:
+    rabbitmq1:
+        image: rabbitmq:3-management
+        hostname: rabbitmq1
+        ports:
+            - "5672:5672"
+            - "15672:15672"
+        environment:
+            RABBITMQ_DEFAULT_USER: "root"
+            RABBITMQ_DEFAULT_PASS: "clickhouse"

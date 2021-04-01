@@ -40,6 +40,13 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
     {
         SortCursor current = queue.current();
 
+        if (current->isLast() && skipLastRowFor(current->order))
+        {
+            /// Get the next block from the corresponding source, if there is one.
+            queue.removeTop();
+            return Status(current.impl->order);
+        }
+
         RowRef current_row;
         setRowRef(current_row, current);
 
@@ -66,7 +73,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (version_column_number == -1
             || selected_row.empty()
             || current->all_columns[version_column_number]->compareAt(
-                current->pos, selected_row.row_num,
+                current->getRow(), selected_row.row_num,
                 *(*selected_row.all_columns)[version_column_number],
                 /* nan_direction_hint = */ 1) >= 0)
         {

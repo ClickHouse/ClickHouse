@@ -1,11 +1,12 @@
 #pragma once
 
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <common/sort.h>
 
 
 namespace DB
@@ -31,6 +32,8 @@ namespace ErrorCodes
   * - a histogram (that is, value -> number), consisting of two parts
   * -- for values from 0 to 1023 - in increments of 1;
   * -- for values from 1024 to 30,000 - in increments of 16;
+  *
+  * NOTE: 64-bit integer weight can overflow, see also QantileExactWeighted.h::get()
   */
 
 #define TINY_MAX_ELEMS 31
@@ -137,7 +140,7 @@ namespace detail
         using Array = PODArray<UInt16, 128>;
         mutable Array elems;    /// mutable because array sorting is not considered a state change.
 
-        QuantileTimingMedium() {}
+        QuantileTimingMedium() = default;
         QuantileTimingMedium(const UInt16 * begin, const UInt16 * end) : elems(begin, end) {}
 
         void insert(UInt64 x)
@@ -167,7 +170,7 @@ namespace detail
             buf.readStrict(reinterpret_cast<char *>(elems.data()), size * sizeof(elems[0]));
         }
 
-        UInt16 get(double level) const
+        UInt16 get(double level)
         {
             UInt16 quantile = 0;
 
@@ -178,8 +181,8 @@ namespace detail
                     : (elems.size() - 1);
 
                 /// Sorting an array will not be considered a violation of constancy.
-                auto & array = const_cast<Array &>(elems);
-                std::nth_element(array.begin(), array.begin() + n, array.end());
+                auto & array = elems;
+                nth_element(array.begin(), array.begin() + n, array.end());
                 quantile = array[n];
             }
 
@@ -187,10 +190,10 @@ namespace detail
         }
 
         template <typename ResultType>
-        void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
+        void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result)
         {
             size_t prev_n = 0;
-            auto & array = const_cast<Array &>(elems);
+            auto & array = elems;
             for (size_t i = 0; i < size; ++i)
             {
                 auto level_index = levels_permutation[i];
@@ -200,7 +203,7 @@ namespace detail
                     ? level * elems.size()
                     : (elems.size() - 1);
 
-                std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+                nth_element(array.begin() + prev_n, array.begin() + n, array.end());
 
                 result[level_index] = array[n];
                 prev_n = n;
@@ -208,14 +211,14 @@ namespace detail
         }
 
         /// Same, but in the case of an empty state, NaN is returned.
-        float getFloat(double level) const
+        float getFloat(double level)
         {
             return !elems.empty()
                 ? get(level)
                 : std::numeric_limits<float>::quiet_NaN();
         }
 
-        void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result) const
+        void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result)
         {
             if (!elems.empty())
                 getMany(levels, levels_permutation, size, result);
@@ -271,7 +274,7 @@ namespace detail
             }
 
         public:
-            Iterator(const QuantileTimingLarge & parent)
+            explicit Iterator(const QuantileTimingLarge & parent)
                 : begin(parent.count_small), pos(begin), end(&parent.count_big[BIG_SIZE])
             {
                 adjust();
@@ -395,9 +398,9 @@ namespace detail
         /// Get the value of the `level` quantile. The level must be between 0 and 1.
         UInt16 get(double level) const
         {
-            UInt64 pos = std::ceil(count * level);
+            double pos = std::ceil(count * level);
 
-            UInt64 accumulated = 0;
+            double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())
@@ -418,12 +421,12 @@ namespace detail
         template <typename ResultType>
         void getMany(const double * levels, const size_t * indices, size_t size, ResultType * result) const
         {
-            const auto indices_end = indices + size;
-            auto index = indices;
+            const auto * indices_end = indices + size;
+            const auto * index = indices;
 
-            UInt64 pos = std::ceil(count * levels[*index]);
+            double pos = std::ceil(count * levels[*index]);
 
-            UInt64 accumulated = 0;
+            double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())
@@ -707,7 +710,7 @@ public:
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
-    UInt16 get(double level) const
+    UInt16 get(double level)
     {
         Kind kind = which();
 
@@ -728,7 +731,7 @@ public:
 
     /// Get the size values of the quantiles of the `levels` levels. Record `size` results starting with `result` address.
     template <typename ResultType>
-    void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
+    void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result)
     {
         Kind kind = which();
 
@@ -748,14 +751,14 @@ public:
     }
 
     /// The same, but in the case of an empty state, NaN is returned.
-    float getFloat(double level) const
+    float getFloat(double level)
     {
         return tiny.count
             ? get(level)
             : std::numeric_limits<float>::quiet_NaN();
     }
 
-    void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result) const
+    void getManyFloat(const double * levels, const size_t * levels_permutation, size_t size, float * result)
     {
         if (tiny.count)
             getMany(levels, levels_permutation, size, result);

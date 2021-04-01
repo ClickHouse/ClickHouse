@@ -1,0 +1,136 @@
+SELECT DISTINCT number
+FROM numbers(1)
+SELECT number
+FROM 
+(
+    SELECT DISTINCT number
+    FROM numbers(1)
+)
+SELECT DISTINCT number * 2
+FROM 
+(
+    SELECT DISTINCT
+        number * 2,
+        number
+    FROM numbers(1)
+)
+SELECT number
+FROM 
+(
+    SELECT DISTINCT number * 2 AS number
+    FROM numbers(1)
+)
+SELECT
+    b,
+    a
+FROM 
+(
+    SELECT DISTINCT
+        number % 2 AS a,
+        number % 3 AS b
+    FROM numbers(100)
+)
+SELECT DISTINCT a
+FROM 
+(
+    SELECT DISTINCT
+        number % 2 AS a,
+        number % 3 AS b
+    FROM numbers(100)
+)
+SELECT a
+FROM 
+(
+    SELECT DISTINCT a
+    FROM 
+    (
+        SELECT DISTINCT
+            number % 2 AS a,
+            number % 3 AS b
+        FROM numbers(100)
+    )
+)
+SELECT DISTINCT a
+FROM 
+(
+    SELECT
+        a,
+        b
+    FROM 
+    (
+        SELECT DISTINCT
+            number % 2 AS a,
+            number % 3 AS b
+        FROM numbers(100)
+    )
+)
+SELECT
+    a,
+    b
+FROM 
+(
+    SELECT
+        b,
+        a
+    FROM 
+    (
+        SELECT DISTINCT
+            number AS a,
+            number AS b
+        FROM numbers(1)
+    )
+)
+SELECT
+    a,
+    b
+FROM 
+(
+    SELECT
+        b,
+        a,
+        a + b
+    FROM 
+    (
+        SELECT DISTINCT
+            number % 2 AS a,
+            number % 3 AS b
+        FROM numbers(100)
+    )
+)
+SELECT DISTINCT a
+FROM 
+(
+    SELECT a
+    FROM 
+    (
+        SELECT DISTINCT
+            number % 2 AS a,
+            number % 3 AS b
+        FROM numbers(100)
+    )
+)
+SELECT DISTINCT number
+FROM 
+(
+    SELECT DISTINCT number
+    FROM numbers(1)
+) AS t1
+CROSS JOIN numbers(2) AS t2
+SELECT number
+FROM 
+(
+    SELECT DISTINCT number
+    FROM numbers(1) AS t1
+    CROSS JOIN numbers(2) AS t2
+)
+SELECT DISTINCT number
+FROM 
+(
+    SELECT DISTINCT number
+    FROM numbers(1)
+    UNION ALL
+    SELECT DISTINCT number
+    FROM numbers(2)
+)
+0
+1

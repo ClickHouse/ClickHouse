@@ -1,0 +1,17 @@
+codecov:
+  max_report_age: "off"
+  strict_yaml_branch: "master"
+
+ignore:
+  - "contrib"
+  - "docs"
+  - "benchmark"
+  - "tests"
+  - "docker"
+  - "debian"
+  - "cmake"
+
+comment: false
+
+github_checks:
+  annotations: false

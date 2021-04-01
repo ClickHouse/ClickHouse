@@ -1,6 +1,5 @@
 set send_logs_level = 'error';
 set extremes = 1;
--- set experimental_use_processors=0;
 
 select * from remote('127.0.0.1', numbers(2));
 select '-';
@@ -53,3 +52,5 @@ drop table if exists shard_1.num2_01232;
 drop table if exists distr;
 drop table if exists distr2;
 
+drop database shard_0;
+drop database shard_1;

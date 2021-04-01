@@ -1,6 +1,8 @@
 #pragma once
 
 #include <unordered_map>
+#include <string>
+#include <memory>
 
 
 namespace DB
@@ -9,7 +11,10 @@ namespace DB
 class Block;
 class Context;
 class NamesAndTypesList;
-struct ColumnDefault;
+class ColumnsDescription;
+
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 /** Adds three types of columns into block
   * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)
@@ -17,10 +22,10 @@ struct ColumnDefault;
   * 3. Columns that materialized from other columns (materialized columns)
   * All three types of columns are materialized (not constants).
   */
-Block addMissingDefaults(
-    const Block & block,
+ActionsDAGPtr addMissingDefaults(
+    const Block & header,
     const NamesAndTypesList & required_columns,
-    const std::unordered_map<std::string, ColumnDefault> & column_defaults,
+    const ColumnsDescription & columns,
     const Context & context);
 
 }

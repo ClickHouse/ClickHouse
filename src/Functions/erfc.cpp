@@ -3,9 +3,13 @@
 
 namespace DB
 {
+namespace
+{
 
 struct ErfcName { static constexpr auto name = "erfc"; };
 using FunctionErfc = FunctionMathUnary<UnaryFunctionPlain<ErfcName, std::erfc>>;
+
+}
 
 void registerFunctionErfc(FunctionFactory & factory)
 {

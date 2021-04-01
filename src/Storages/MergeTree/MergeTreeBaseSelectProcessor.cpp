@@ -6,6 +6,8 @@
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeUUID.h>
 
 
 namespace DB
@@ -20,6 +22,7 @@ namespace ErrorCodes
 MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     Block header,
     const MergeTreeData & storage_,
+    const StorageMetadataPtr & metadata_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
@@ -27,16 +30,16 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
     const Names & virt_column_names_)
-:
-    SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_)),
-    storage(storage_),
-    prewhere_info(prewhere_info_),
-    max_block_size_rows(max_block_size_rows_),
-    preferred_block_size_bytes(preferred_block_size_bytes_),
-    preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_),
-    reader_settings(reader_settings_),
-    use_uncompressed_cache(use_uncompressed_cache_),
-    virt_column_names(virt_column_names_)
+    : SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_))
+    , storage(storage_)
+    , metadata_snapshot(metadata_snapshot_)
+    , prewhere_info(prewhere_info_)
+    , max_block_size_rows(max_block_size_rows_)
+    , preferred_block_size_bytes(preferred_block_size_bytes_)
+    , preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_)
+    , reader_settings(reader_settings_)
+    , use_uncompressed_cache(use_uncompressed_cache_)
+    , virt_column_names(virt_column_names_)
 {
     header_without_virtual_columns = getPort().getHeader();
 
@@ -203,6 +206,7 @@ namespace
 
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
+        virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
     };
 }
 
@@ -239,6 +243,16 @@ static void injectVirtualColumnsImpl(size_t rows, VirtualColumnsInserter & inser
 
                 inserter.insertUInt64Column(column, virtual_column_name);
             }
+            else if (virtual_column_name == "_part_uuid")
+            {
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeUUID().createColumnConst(rows, task->data_part->uuid)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeUUID().createColumn();
+
+                inserter.insertUUIDColumn(column, virtual_column_name);
+            }
             else if (virtual_column_name == "_partition_id")
             {
                 ColumnPtr column;
@@ -269,6 +283,11 @@ namespace
             block.insert({column, std::make_shared<DataTypeUInt64>(), name});
         }
 
+        void insertUUIDColumn(const ColumnPtr & column, const String & name) final
+        {
+            block.insert({column, std::make_shared<DataTypeUUID>(), name});
+        }
+
         Block & block;
     };
 
@@ -286,6 +305,10 @@ namespace
             columns.push_back(column);
         }
 
+        void insertUUIDColumn(const ColumnPtr & column, const String &) final
+        {
+            columns.push_back(column);
+        }
         Columns & columns;
     };
 }
@@ -314,18 +337,36 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
         if (prewhere_info->alias_actions)
             prewhere_info->alias_actions->execute(block);
 
-        prewhere_info->prewhere_actions->execute(block);
+        if (prewhere_info->row_level_filter)
+        {
+            prewhere_info->row_level_filter->execute(block);
+            auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
+            if (!row_level_column.type->canBeUsedInBooleanContext())
+            {
+                throw Exception("Invalid type for filter in PREWHERE: " + row_level_column.type->getName(),
+                    ErrorCodes::LOGICAL_ERROR);
+            }
+
+            block.erase(prewhere_info->row_level_column_name);
+        }
+
+        if (prewhere_info->prewhere_actions)
+            prewhere_info->prewhere_actions->execute(block);
+
+        auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
+        if (!prewhere_column.type->canBeUsedInBooleanContext())
+        {
+            throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
+                ErrorCodes::LOGICAL_ERROR);
+        }
+
         if (prewhere_info->remove_prewhere_column)
             block.erase(prewhere_info->prewhere_column_name);
         else
         {
             auto & ctn = block.getByName(prewhere_info->prewhere_column_name);
-            ctn.type = std::make_shared<DataTypeUInt8>();
             ctn.column = ctn.type->createColumnConst(block.rows(), 1u)->convertToFullColumnIfConst();
         }
-
-        if (!block)
-            block.insert({nullptr, std::make_shared<DataTypeNothing>(), "_nothing"});
     }
 }
 

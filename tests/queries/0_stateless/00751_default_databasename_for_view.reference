@@ -1,15 +1,15 @@
 CREATE MATERIALIZED VIEW test_00751.t_mv_00751
 (
-    `date` Date, 
-    `platform` Enum8('a' = 0, 'b' = 1), 
+    `date` Date,
+    `platform` Enum8('a' = 0, 'b' = 1),
     `app` Enum8('a' = 0, 'b' = 1)
 )
 ENGINE = MergeTree
 ORDER BY date
 SETTINGS index_granularity = 8192 AS
-SELECT 
-    date, 
-    platform, 
+SELECT
+    date,
+    platform,
     app
 FROM test_00751.t_00751
 WHERE (app = 

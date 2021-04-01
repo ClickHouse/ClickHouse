@@ -30,7 +30,7 @@ template
     typename Cell,
     typename Hash,
     typename Grower,
-    typename Allocator,    /// TODO WithStackMemory
+    typename Allocator,
     typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>,
     size_t BITS_FOR_BUCKET = 8
 >

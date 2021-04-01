@@ -20,10 +20,6 @@ SELECT sum(a), sum(b), sum(c), sumWithOverflow(a), sumWithOverflow(b), sumWithOv
 SELECT sum(a+1), sum(b+1), sum(c+1), sumWithOverflow(a+1), sumWithOverflow(b+1), sumWithOverflow(c+1) FROM decimal;
 SELECT sum(a-1), sum(b-1), sum(c-1), sumWithOverflow(a-1), sumWithOverflow(b-1), sumWithOverflow(c-1) FROM decimal;
 
-SELECT avg(a), avg(b), avg(c) FROM decimal;
-SELECT avg(a), avg(b), avg(c) FROM decimal WHERE a > 0;
-SELECT avg(a), avg(b), avg(c) FROM decimal WHERE a < 0;
-
 SELECT (uniq(a), uniq(b), uniq(c)),
     (uniqCombined(a), uniqCombined(b), uniqCombined(c)),
     (uniqCombined(17)(a), uniqCombined(17)(b), uniqCombined(17)(c)),
@@ -62,6 +58,30 @@ SELECT quantileExact(1.0)(a), quantileExact(1.0)(b), quantileExact(1.0)(c) FROM 
 SELECT quantilesExact(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(a) FROM decimal;
 SELECT quantilesExact(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(b) FROM decimal;
 SELECT quantilesExact(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(c) FROM decimal;
+
+SELECT medianExactLow(a), medianExactLow(b), medianExactLow(c) as x, toTypeName(x) FROM decimal;
+SELECT quantileExactLow(a), quantileExactLow(b), quantileExactLow(c) as x, toTypeName(x) FROM decimal WHERE a < 0;
+SELECT quantileExactLow(0.0)(a), quantileExactLow(0.0)(b), quantileExactLow(0.0)(c) FROM decimal WHERE a >= 0;
+SELECT quantileExactLow(0.2)(a), quantileExactLow(0.2)(b), quantileExactLow(0.2)(c) FROM decimal WHERE a >= 0;
+SELECT quantileExactLow(0.4)(a), quantileExactLow(0.4)(b), quantileExactLow(0.4)(c) FROM decimal WHERE a >= 0;
+SELECT quantileExactLow(0.6)(a), quantileExactLow(0.6)(b), quantileExactLow(0.6)(c) FROM decimal WHERE a >= 0;
+SELECT quantileExactLow(0.8)(a), quantileExactLow(0.8)(b), quantileExactLow(0.8)(c) FROM decimal WHERE a >= 0;
+SELECT quantileExactLow(1.0)(a), quantileExactLow(1.0)(b), quantileExactLow(1.0)(c) FROM decimal WHERE a >= 0;
+SELECT quantilesExactLow(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(a) FROM decimal;
+SELECT quantilesExactLow(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(b) FROM decimal;
+SELECT quantilesExactLow(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(c) FROM decimal;
+
+SELECT medianExactHigh(a), medianExactHigh(b), medianExactHigh(c) as x, toTypeName(x) FROM decimal;
+SELECT quantileExactHigh(a), quantileExactHigh(b), quantileExactHigh(c) as x, toTypeName(x) FROM decimal WHERE a < 0;
+SELECT quantileExactHigh(0.0)(a), quantileExactHigh(0.0)(b), quantileExactHigh(0.0)(c) FROM decimal WHERE a >= 0;
+SELECT quantileExactHigh(0.2)(a), quantileExactHigh(0.2)(b), quantileExactHigh(0.2)(c) FROM decimal WHERE a >= 0;
+SELECT quantileExactHigh(0.4)(a), quantileExactHigh(0.4)(b), quantileExactHigh(0.4)(c) FROM decimal WHERE a >= 0;
+SELECT quantileExactHigh(0.6)(a), quantileExactHigh(0.6)(b), quantileExactHigh(0.6)(c) FROM decimal WHERE a >= 0;
+SELECT quantileExactHigh(0.8)(a), quantileExactHigh(0.8)(b), quantileExactHigh(0.8)(c) FROM decimal WHERE a >= 0;
+SELECT quantileExactHigh(1.0)(a), quantileExactHigh(1.0)(b), quantileExactHigh(1.0)(c) FROM decimal WHERE a >= 0;
+SELECT quantilesExactHigh(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(a) FROM decimal;
+SELECT quantilesExactHigh(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(b) FROM decimal;
+SELECT quantilesExactHigh(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(c) FROM decimal;
 
 SELECT medianExactWeighted(a, 1), medianExactWeighted(b, 2), medianExactWeighted(c, 3) as x, toTypeName(x) FROM decimal;
 SELECT quantileExactWeighted(a, 1), quantileExactWeighted(b, 2), quantileExactWeighted(c, 3) as x, toTypeName(x) FROM decimal WHERE a < 0;

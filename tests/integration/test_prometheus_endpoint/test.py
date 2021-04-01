@@ -1,14 +1,15 @@
-from __future__ import print_function
-import pytest
+
 
 import re
-import requests
 import time
 
+import pytest
+import requests
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=['configs/prom_conf.xml'])
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -66,7 +67,6 @@ def get_and_check_metrics(retries):
 
 
 def test_prometheus_endpoint(start_cluster):
-
     metrics_dict = get_and_check_metrics(10)
     assert metrics_dict['ClickHouseProfileEvents_Query'] >= 0
     prev_query_count = metrics_dict['ClickHouseProfileEvents_Query']

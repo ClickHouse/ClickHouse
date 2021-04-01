@@ -6,9 +6,9 @@
 namespace DB
 {
 
-struct AsteriskSemantic;
-struct AsteriskSemanticImpl;
-
+/** SELECT * is expanded to all visible columns of the source table.
+  * Optional transformers can be attached to further manipulate these expanded columns.
+  */
 class ASTAsterisk : public IAST
 {
 public:
@@ -18,11 +18,6 @@ public:
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-
-private:
-    std::shared_ptr<AsteriskSemanticImpl> semantic; /// pimpl
-
-    friend struct AsteriskSemantic;
 };
 
 }

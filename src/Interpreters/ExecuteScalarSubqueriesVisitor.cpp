@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTWithElement.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/misc.h>
@@ -19,6 +20,8 @@
 #include <Columns/ColumnTuple.h>
 
 #include <IO/WriteHelpers.h>
+
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 namespace DB
 {
@@ -38,6 +41,10 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
 
     /// Don't descend into subqueries in FROM section
     if (node->as<ASTTableExpression>())
+        return false;
+
+    /// Do not go to subqueries defined in with statement
+    if (node->as<ASTWithElement>())
         return false;
 
     if (node->as<ASTSelectQuery>())
@@ -88,32 +95,61 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         subquery_context.setSettings(subquery_settings);
 
         ASTPtr subquery_select = subquery.children.at(0);
-        BlockIO res = InterpreterSelectWithUnionQuery(
-                subquery_select, subquery_context, SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1)).execute();
 
+        auto options = SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1, true);
+        options.analyze(data.only_analyze);
+
+        auto interpreter = InterpreterSelectWithUnionQuery(subquery_select, subquery_context, options);
         Block block;
-        try
-        {
-            block = res.in->read();
 
-            if (!block)
+        if (data.only_analyze)
+        {
+            /// If query is only analyzed, then constants are not correct.
+            block = interpreter.getSampleBlock();
+            for (auto & column : block)
             {
-                /// Interpret subquery with empty result as Null literal
-                auto ast_new = std::make_unique<ASTLiteral>(Null());
-                ast_new->setAlias(ast->tryGetAlias());
-                ast = std::move(ast_new);
-                return;
+                if (column.column->empty())
+                {
+                    auto mut_col = column.column->cloneEmpty();
+                    mut_col->insertDefault();
+                    column.column = std::move(mut_col);
+                }
             }
-
-            if (block.rows() != 1 || res.in->read())
-                throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
         }
-        catch (const Exception & e)
+        else
         {
-            if (e.code() == ErrorCodes::TOO_MANY_ROWS)
-                throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-            else
-                throw;
+            auto io = interpreter.execute();
+
+            try
+            {
+                PullingAsyncPipelineExecutor executor(io.pipeline);
+                while (block.rows() == 0 && executor.pull(block));
+
+                if (block.rows() == 0)
+                {
+                    /// Interpret subquery with empty result as Null literal
+                    auto ast_new = std::make_unique<ASTLiteral>(Null());
+                    ast_new->setAlias(ast->tryGetAlias());
+                    ast = std::move(ast_new);
+                    return;
+                }
+
+                if (block.rows() != 1)
+                    throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+
+                Block tmp_block;
+                while (tmp_block.rows() == 0 && executor.pull(tmp_block));
+
+                if (tmp_block.rows() != 0)
+                    throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::TOO_MANY_ROWS)
+                    throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+                else
+                    throw;
+            }
         }
 
         block = materializeBlock(block);
@@ -134,12 +170,22 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     const Settings & settings = data.context.getSettingsRef();
 
     // Always convert to literals when there is no query context.
-    if (!settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar) || !data.context.hasQueryContext())
+    if (data.only_analyze || !settings.enable_scalar_subquery_optimization || worthConvertingToLiteral(scalar) || !data.context.hasQueryContext())
     {
         auto lit = std::make_unique<ASTLiteral>((*scalar.safeGetByPosition(0).column)[0]);
         lit->alias = subquery.alias;
         lit->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
         ast = addTypeConversionToAST(std::move(lit), scalar.safeGetByPosition(0).type->getName());
+
+        /// If only analyze was requested the expression is not suitable for constant folding, disable it.
+        if (data.only_analyze)
+        {
+            ast->as<ASTFunction>()->alias.clear();
+            auto func = makeASTFunction("identity", std::move(ast));
+            func->alias = subquery.alias;
+            func->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
+            ast = std::move(func);
+        }
     }
     else
     {
@@ -155,10 +201,10 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
     /// Don't descend into subqueries in arguments of IN operator.
-    /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
+    /// But if an argument is not subquery, then deeper may be scalar subqueries and we need to descend in them.
 
     std::vector<ASTPtr *> out;
-    if (functionIsInOrGlobalInOperator(func.name))
+    if (checkFunctionIsInOrGlobalInOperator(func))
     {
         for (auto & child : ast->children)
         {

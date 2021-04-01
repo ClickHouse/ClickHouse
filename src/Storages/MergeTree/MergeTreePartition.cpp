@@ -26,7 +26,7 @@ static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & di
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    return getID(storage.partition_key_sample);
+    return getID(storage.getInMemoryMetadataPtr()->getPartitionKey().sample_block);
 }
 
 /// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
@@ -89,7 +89,9 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
 
 void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const
 {
-    size_t key_size = storage.partition_key_sample.columns();
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
+    size_t key_size = partition_key_sample.columns();
 
     if (key_size == 0)
     {
@@ -97,10 +99,10 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     }
     else if (key_size == 1)
     {
-        const DataTypePtr & type = storage.partition_key_sample.getByPosition(0).type;
+        const DataTypePtr & type = partition_key_sample.getByPosition(0).type;
         auto column = type->createColumn();
         column->insert(value[0]);
-        type->serializeAsText(*column, 0, out, format_settings);
+        type->getDefaultSerialization()->serializeText(*column, 0, out, format_settings);
     }
     else
     {
@@ -108,34 +110,38 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
         Columns columns;
         for (size_t i = 0; i < key_size; ++i)
         {
-            const auto & type = storage.partition_key_sample.getByPosition(i).type;
+            const auto & type = partition_key_sample.getByPosition(i).type;
             types.push_back(type);
             auto column = type->createColumn();
             column->insert(value[i]);
             columns.push_back(std::move(column));
         }
 
-        DataTypeTuple tuple_type(types);
+        auto tuple_serialization = DataTypeTuple(types).getDefaultSerialization();
         auto tuple_column = ColumnTuple::create(columns);
-        tuple_type.serializeText(*tuple_column, 0, out, format_settings);
+        tuple_serialization->serializeText(*tuple_column, 0, out, format_settings);
     }
 }
 
 void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path)
 {
-    if (!storage.partition_key_expr)
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    if (!metadata_snapshot->hasPartitionKey())
         return;
 
+    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     auto partition_file_path = part_path + "partition.dat";
     auto file = openForReading(disk, partition_file_path);
-    value.resize(storage.partition_key_sample.columns());
-    for (size_t i = 0; i < storage.partition_key_sample.columns(); ++i)
-        storage.partition_key_sample.getByPosition(i).type->deserializeBinary(value[i], *file);
+    value.resize(partition_key_sample.columns());
+    for (size_t i = 0; i < partition_key_sample.columns(); ++i)
+        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file);
 }
 
 void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
-    store(storage.partition_key_sample, disk, part_path, checksums);
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
+    store(partition_key_sample, disk, part_path, checksums);
 }
 
 void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
@@ -146,10 +152,29 @@ void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr
     auto out = disk->writeFile(part_path + "partition.dat");
     HashingWriteBuffer out_hashing(*out);
     for (size_t i = 0; i < value.size(); ++i)
-        partition_key_sample.getByPosition(i).type->serializeBinary(value[i], out_hashing);
+        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], out_hashing);
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();
+    out->finalize();
+}
+
+void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row)
+{
+    if (!metadata_snapshot->hasPartitionKey())
+        return;
+
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    partition_key.expression->execute(block);
+    size_t partition_columns_num = partition_key.sample_block.columns();
+    value.resize(partition_columns_num);
+
+    for (size_t i = 0; i < partition_columns_num; ++i)
+    {
+        const auto & column_name = partition_key.sample_block.getByPosition(i).name;
+        const auto & partition_column = block.getByName(column_name).column;
+        partition_column->get(row, value[i]);
+    }
 }
 
 }

@@ -1,14 +1,14 @@
 #include "DiskHDFS.h"
 
-#include "DiskFactory.h"
+#include <Storages/HDFS/ReadBufferFromFile.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/HDFS/WriteBufferFromHDFS.h>
 
+#include "DiskFactory.h"
 #include <random>
 #include <utility>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromHDFS.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromHDFS.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
 #include <Interpreters/Context.h>

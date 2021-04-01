@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <string>
+#include <memory>
 
 
 namespace DB
@@ -10,13 +11,17 @@ namespace DB
 class Block;
 class Context;
 class NamesAndTypesList;
-struct ColumnDefault;
+class ColumnsDescription;
 
-/// Adds missing defaults to block according to required_columns
-/// using column_defaults map
-void evaluateMissingDefaults(Block & block,
+class ActionsDAG;
+using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
+
+/// Create actions which adds missing defaults to block according to required_columns using columns description.
+/// Return nullptr if no actions required.
+ActionsDAGPtr evaluateMissingDefaults(
+    const Block & header,
     const NamesAndTypesList & required_columns,
-    const std::unordered_map<std::string, ColumnDefault> & column_defaults,
+    const ColumnsDescription & columns,
     const Context & context, bool save_unneeded_columns = true);
 
 /// Tries to convert columns in block to required_columns

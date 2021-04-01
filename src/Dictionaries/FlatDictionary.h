@@ -3,36 +3,36 @@
 #include <atomic>
 #include <variant>
 #include <vector>
+#include <optional>
+
+#include <Common/HashTable/HashSet.h>
+#include <Common/Arena.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <Common/Arena.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/IDataType.h>
 #include <Core/Block.h>
 #include <ext/range.h>
 #include <ext/size.h>
+
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
-using BlockPtr = std::shared_ptr<Block>;
 
 class FlatDictionary final : public IDictionary
 {
 public:
     FlatDictionary(
-        const std::string & database_,
-        const std::string & name_,
+        const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_,
         BlockPtr saved_block_ = nullptr);
-
-    const std::string & getDatabase() const override { return database; }
-    const std::string & getName() const override { return name; }
-    const std::string & getFullName() const override { return full_name; }
 
     std::string getTypeName() const override { return "Flat"; }
 
@@ -48,7 +48,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(database, name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
+        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -71,76 +71,16 @@ public:
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
-    template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
 
-#define DECLARE(TYPE) \
-    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
+    ColumnPtr getColumn(
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const ColumnPtr & default_values_column) const override;
 
-    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
-
-#define DECLARE(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<TYPE> & def, \
-        ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void
-    getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out)
-        const;
-
-#define DECLARE(TYPE) \
-    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const;
-    DECLARE(UInt8)
-    DECLARE(UInt16)
-    DECLARE(UInt32)
-    DECLARE(UInt64)
-    DECLARE(UInt128)
-    DECLARE(Int8)
-    DECLARE(Int16)
-    DECLARE(Int32)
-    DECLARE(Int64)
-    DECLARE(Float32)
-    DECLARE(Float64)
-    DECLARE(Decimal32)
-    DECLARE(Decimal64)
-    DECLARE(Decimal128)
-#undef DECLARE
-
-    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
-
-    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -148,9 +88,13 @@ private:
     template <typename Value>
     using ContainerType = PaddedPODArray<Value>;
 
+    using NullableSet = HashSet<Key, DefaultHash<Key>>;
+
     struct Attribute final
     {
         AttributeUnderlyingType type;
+        std::optional<NullableSet> nullable_set;
+
         std::variant<
             UInt8,
             UInt16,
@@ -185,6 +129,7 @@ private:
             ContainerType<Float64>,
             ContainerType<StringRef>>
             arrays;
+
         std::unique_ptr<Arena> string_arena;
     };
 
@@ -199,13 +144,16 @@ private:
     void calculateBytesAllocated();
 
     template <typename T>
-    void createAttributeImpl(Attribute & attribute, const Field & null_value);
+    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    static Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
-        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
+        const Attribute & attribute,
+        const PaddedPODArray<Key> & ids,
+        ValueSetter && set_value,
+        DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
     void resize(Attribute & attribute, const Key id);
@@ -217,17 +165,11 @@ private:
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
-    template <typename T>
-    void has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const;
-
     template <typename ChildType, typename AncestorType>
     void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
     PaddedPODArray<Key> getIds() const;
 
-    const std::string database;
-    const std::string name;
-    const std::string full_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

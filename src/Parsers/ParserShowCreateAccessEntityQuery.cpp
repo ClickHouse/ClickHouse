@@ -2,87 +2,171 @@
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/ParserRowPolicyName.h>
+#include <Parsers/ASTRowPolicyName.h>
 #include <Parsers/parseUserName.h>
+#include <Parsers/parseDatabaseAndTableName.h>
+#include <ext/range.h>
 #include <assert.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
+namespace
+{
+    using EntityType = IAccessEntity::Type;
+    using EntityTypeInfo = IAccessEntity::TypeInfo;
+
+    bool parseEntityType(IParserBase::Pos & pos, Expected & expected, EntityType & type, bool & plural)
+    {
+        for (auto i : ext::range(EntityType::MAX))
+        {
+            const auto & type_info = EntityTypeInfo::get(i);
+            if (ParserKeyword{type_info.name.c_str()}.ignore(pos, expected)
+                || (!type_info.alias.empty() && ParserKeyword{type_info.alias.c_str()}.ignore(pos, expected)))
+            {
+                type = i;
+                plural = false;
+                return true;
+            }
+        }
+
+        for (auto i : ext::range(EntityType::MAX))
+        {
+            const auto & type_info = EntityTypeInfo::get(i);
+            if (ParserKeyword{type_info.plural_name.c_str()}.ignore(pos, expected)
+                || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias.c_str()}.ignore(pos, expected)))
+            {
+                type = i;
+                plural = true;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, bool & any_database, String & table, bool & any_table)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"ON"}.ignore(pos, expected)
+                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, any_database, table, any_table);
+        });
+    }
+}
+
+
 bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     if (!ParserKeyword{"SHOW CREATE"}.ignore(pos, expected))
         return false;
 
-    using Kind = ASTShowCreateAccessEntityQuery::Kind;
-    Kind kind;
-    if (ParserKeyword{"USER"}.ignore(pos, expected))
-        kind = Kind::USER;
-    else if (ParserKeyword{"QUOTA"}.ignore(pos, expected))
-        kind = Kind::QUOTA;
-    else if (ParserKeyword{"POLICY"}.ignore(pos, expected) || ParserKeyword{"ROW POLICY"}.ignore(pos, expected))
-        kind = Kind::ROW_POLICY;
-    else if (ParserKeyword{"ROLE"}.ignore(pos, expected))
-        kind = Kind::ROLE;
-    else if (ParserKeyword{"SETTINGS PROFILE"}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
-        kind = Kind::SETTINGS_PROFILE;
-    else
+    EntityType type;
+    bool plural;
+    if (!parseEntityType(pos, expected, type, plural))
         return false;
 
-    String name;
+    Strings names;
+    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    bool all = false;
     bool current_quota = false;
     bool current_user = false;
-    RowPolicy::FullNameParts row_policy_name;
+    String short_name;
+    std::optional<std::pair<String, String>> database_and_table_name;
 
-    if (kind == Kind::USER)
+    switch (type)
     {
-        if (!parseUserNameOrCurrentUserTag(pos, expected, name, current_user))
-            current_user = true;
-    }
-    else if (kind == Kind::ROLE)
-    {
-        if (!parseRoleName(pos, expected, name))
-            return false;
-    }
-    else if (kind == Kind::ROW_POLICY)
-    {
-        String & database = row_policy_name.database;
-        String & table_name = row_policy_name.table_name;
-        String & policy_name = row_policy_name.policy_name;
-        if (!parseIdentifierOrStringLiteral(pos, expected, policy_name) || !ParserKeyword{"ON"}.ignore(pos, expected)
-            || !parseDatabaseAndTableName(pos, expected, database, table_name))
-            return false;
-    }
-    else if (kind == Kind::QUOTA)
-    {
-        if (ParserKeyword{"CURRENT"}.ignore(pos, expected))
+        case EntityType::USER:
         {
-            /// SHOW CREATE QUOTA CURRENT
-            current_quota = true;
+            if (parseCurrentUserTag(pos, expected))
+                current_user = true;
+            else if (parseUserNames(pos, expected, names))
+            {
+            }
+            else if (plural)
+                all = true;
+            else
+                current_user = true;
+            break;
         }
-        else if (parseIdentifierOrStringLiteral(pos, expected, name))
+        case EntityType::ROLE:
         {
-            /// SHOW CREATE QUOTA name
+            if (parseRoleNames(pos, expected, names))
+            {
+            }
+            else if (plural)
+                all = true;
+            else
+                return false;
+            break;
         }
-        else
+        case EntityType::ROW_POLICY:
         {
-            /// SHOW CREATE QUOTA
-            current_quota = true;
+            ASTPtr ast;
+            String database, table_name;
+            bool any_database, any_table;
+            if (ParserRowPolicyNames{}.parse(pos, ast, expected))
+                row_policy_names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(ast);
+            else if (parseOnDBAndTableName(pos, expected, database, any_database, table_name, any_table))
+            {
+                if (any_database)
+                    all = true;
+                else
+                    database_and_table_name.emplace(database, table_name);
+            }
+            else if (parseIdentifierOrStringLiteral(pos, expected, short_name))
+            {
+            }
+            else if (plural)
+                all = true;
+            else
+                return false;
+            break;
         }
-    }
-    else if (kind == Kind::SETTINGS_PROFILE)
-    {
-        if (!parseIdentifierOrStringLiteral(pos, expected, name))
-            return false;
+        case EntityType::SETTINGS_PROFILE:
+        {
+            if (parseIdentifiersOrStringLiterals(pos, expected, names))
+            {
+            }
+            else if (plural)
+                all = true;
+            else
+                return false;
+            break;
+        }
+        case EntityType::QUOTA:
+        {
+            if (parseIdentifiersOrStringLiterals(pos, expected, names))
+            {
+            }
+            else if (plural)
+                all = true;
+            else
+                current_quota = true;
+            break;
+        }
+        case EntityType::MAX:
+            throw Exception("Type " + toString(type) + " is not implemented in SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    auto query = std::make_shared<ASTShowCreateAccessEntityQuery>(kind);
+    auto query = std::make_shared<ASTShowCreateAccessEntityQuery>();
     node = query;
 
-    query->name = std::move(name);
+    query->type = type;
+    query->names = std::move(names);
     query->current_quota = current_quota;
     query->current_user = current_user;
-    query->row_policy_name = std::move(row_policy_name);
+    query->row_policy_names = std::move(row_policy_names);
+    query->all = all;
+    query->short_name = std::move(short_name);
+    query->database_and_table_name = std::move(database_and_table_name);
 
     return true;
 }

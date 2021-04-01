@@ -5,11 +5,13 @@
 #if USE_HDFS
 
 #include <TableFunctions/ITableFunctionFileLike.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+class Context;
+
 /* hdfs(name_node_ip:name_node_port, format, structure) - creates a temporary storage from hdfs file
  *
  */
@@ -24,9 +26,11 @@ public:
 
 private:
     StoragePtr getStorage(
-        const String & source, const String & format, const ColumnsDescription & columns, Context & global_context, const std::string & table_name, const String & compression_method) const override;
+        const String & source, const String & format_, const ColumnsDescription & columns, Context & global_context,
+        const std::string & table_name, const String & compression_method_) const override;
     const char * getStorageTypeName() const override { return "HDFS"; }
 };
+
 }
 
 #endif

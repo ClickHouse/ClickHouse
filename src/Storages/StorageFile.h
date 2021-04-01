@@ -24,9 +24,10 @@ class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public ISt
 public:
     std::string getName() const override { return "File"; }
 
-    Pipes read(
+    Pipe read(
         const Names & column_names,
-        const SelectQueryInfo & query_info,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
@@ -34,25 +35,34 @@ public:
 
     BlockOutputStreamPtr write(
         const ASTPtr & query,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
         const Context & context) override;
 
-    void truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &) override;
+    void truncate(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /* metadata_snapshot */,
+        const Context & /* context */,
+        TableExclusiveLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
+    bool storesDataOnDisk() const override;
     Strings getDataPaths() const override;
 
     struct CommonArguments
     {
-        const StorageID & table_id;
-        const std::string & format_name;
-        const std::string & compression_method;
+        StorageID table_id;
+        std::string format_name;
+        std::optional<FormatSettings> format_settings;
+        std::string compression_method;
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const Context & context;
     };
 
     NamesAndTypesList getVirtuals() const override;
+
+    static Strings getPathsList(const String & table_path, const String & user_files_path, const Context & context);
 
 protected:
     friend class StorageFileSource;
@@ -71,6 +81,11 @@ private:
     explicit StorageFile(CommonArguments args);
 
     std::string format_name;
+    // We use format settings from global context + CREATE query for File table
+    // function -- in this case, format_settings is set.
+    // For `file` table function, we use format settings from current user context,
+    // in this case, format_settings is not set.
+    std::optional<FormatSettings> format_settings;
 
     int table_fd = -1;
     String compression_method;
@@ -83,9 +98,9 @@ private:
     std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
     off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
 
-    mutable std::shared_mutex rwlock;
+    mutable std::shared_timed_mutex rwlock;
 
-    Logger * log = &Logger::get("StorageFile");
+    Poco::Logger * log = &Poco::Logger::get("StorageFile");
 };
 
 }

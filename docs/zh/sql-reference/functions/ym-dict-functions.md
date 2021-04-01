@@ -10,12 +10,12 @@ ClickHouse支持同时使用多个备选地理基（区域层次结构），以�
 
 该 ‘clickhouse-server’ config指定具有区域层次结构的文件::`<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>`
 
-除了这个文件，它还搜索附近有\_符号和任何后缀附加到名称（文件扩展名之前）的文件。
+除了这个文件，它还搜索附近有_符号和任何后缀附加到名称（文件扩展名之前）的文件。
 例如，它还会找到该文件 `/opt/geo/regions_hierarchy_ua.txt`，如果存在。
 
 `ua` 被称为字典键。 对于没有后缀的字典，键是空字符串。
 
-所有字典都在运行时重新加载（每隔一定数量的秒重新加载一次，如builtin\_dictionaries\_reload\_interval config参数中定义，或默认情况下每小时一次）。 但是，可用字典列表在服务器启动时定义一次。
+所有字典都在运行时重新加载（每隔一定数量的秒重新加载一次，如builtin_dictionaries_reload_interval config参数中定义，或默认情况下每小时一次）。 但是，可用字典列表在服务器启动时定义一次。
 
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 示例:

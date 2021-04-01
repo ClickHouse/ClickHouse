@@ -43,6 +43,7 @@ private:
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
     const char * getFamilyName() const override { return "FixedString"; }
+    TypeIndex getDataType() const override { return TypeIndex::FixedString; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -54,6 +55,11 @@ public:
     size_t byteSize() const override
     {
         return chars.size() + sizeof(n);
+    }
+
+    size_t byteSizeAt(size_t) const override
+    {
+        return n;
     }
 
     size_t allocatedBytes() const override
@@ -68,12 +74,12 @@ public:
 
     Field operator[](size_t index) const override
     {
-        return String(reinterpret_cast<const char *>(&chars[n * index]), n);
+        return Field{&chars[n * index], n};
     }
 
     void get(size_t index, Field & res) const override
     {
-        res.assignString(reinterpret_cast<const char *>(&chars[n * index]), n);
+        res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
     StringRef getDataAt(size_t index) const override
@@ -106,9 +112,13 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
     void updateWeakHash32(WeakHash32 & hash) const override;
+
+    void updateHashFast(SipHash & hash) const override;
 
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
@@ -116,7 +126,22 @@ public:
         return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
 
+    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                       PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                       int direction, int nan_direction_hint) const override
+    {
+        return doCompareColumn<ColumnFixedString>(assert_cast<const ColumnFixedString &>(rhs), rhs_row_num, row_indexes,
+                                               compare_results, direction, nan_direction_hint);
+    }
+
+    bool hasEqualValues() const override
+    {
+        return hasEqualValuesImpl<ColumnFixedString>();
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+
+    void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_range) const override;
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
@@ -137,6 +162,8 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    ColumnPtr compress() const override;
 
     void reserve(size_t size) override
     {
@@ -165,6 +192,5 @@ public:
 
     size_t getN() const { return n; }
 };
-
 
 }

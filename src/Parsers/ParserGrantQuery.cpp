@@ -1,17 +1,21 @@
 #include <Parsers/ParserGrantQuery.h>
 #include <Parsers/ASTGrantQuery.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExtendedRoleSet.h>
-#include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ParserExtendedRoleSet.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserRolesOrUsersSet.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int INVALID_GRANT;
     extern const int SYNTAX_ERROR;
 }
 
@@ -66,15 +70,13 @@ namespace
             if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
                 return false;
 
+            ASTPtr ast;
+            if (!ParserList{std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
+                return false;
+
             Strings res_columns;
-            do
-            {
-                ASTPtr column_ast;
-                if (!ParserIdentifier().parse(pos, column_ast, expected))
-                    return false;
-                res_columns.emplace_back(getIdentifierName(column_ast));
-            }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+            for (const auto & child : ast->children)
+                res_columns.emplace_back(getIdentifierName(child));
 
             if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
                 return false;
@@ -84,98 +86,49 @@ namespace
         });
     }
 
-
-    bool parseDatabaseAndTableNameOrMaybeAsterisks(
-        IParser::Pos & pos, Expected & expected, String & database_name, bool & any_database, String & table_name, bool & any_table)
+    bool parseAccessFlagsWithColumns(IParser::Pos & pos, Expected & expected,
+                                     std::vector<std::pair<AccessFlags, Strings>> & access_and_columns)
     {
-        return IParserBase::wrapParseImpl(pos, [&]
+        std::vector<std::pair<AccessFlags, Strings>> res;
+
+        auto parse_access_and_columns = [&]
         {
-            ASTPtr ast[2];
-            if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-            {
-                if (ParserToken{TokenType::Dot}.ignore(pos, expected))
-                {
-                    if (!ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-                        return false;
-
-                    /// *.* (any table in any database)
-                    any_database = true;
-                    database_name.clear();
-                    any_table = true;
-                    table_name.clear();
-                    return true;
-                }
-
-                /// * (any table in the current database)
-                any_database = false;
-                database_name.clear();
-                any_table = true;
-                table_name.clear();
-                return true;
-            }
-
-            if (!ParserIdentifier().parse(pos, ast[0], expected))
+            AccessFlags access_flags;
+            if (!parseAccessFlags(pos, expected, access_flags))
                 return false;
 
-            if (ParserToken{TokenType::Dot}.ignore(pos, expected))
-            {
-                if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-                {
-                    /// <database_name>.*
-                    any_database = false;
-                    database_name = getIdentifierName(ast[0]);
-                    any_table = true;
-                    table_name.clear();
-                    return true;
-                }
-
-                if (!ParserIdentifier().parse(pos, ast[1], expected))
-                    return false;
-
-                /// <database_name>.<table_name>
-                any_database = false;
-                database_name = getIdentifierName(ast[0]);
-                any_table = false;
-                table_name = getIdentifierName(ast[1]);
-                return true;
-            }
-
-            /// <table_name>  - the current database, specified table
-            any_database = false;
-            database_name.clear();
-            any_table = false;
-            table_name = getIdentifierName(ast[0]);
+            Strings columns;
+            parseColumnNames(pos, expected, columns);
+            res.emplace_back(access_flags, std::move(columns));
             return true;
-        });
+        };
+
+        if (!ParserList::parseUtil(pos, expected, parse_access_and_columns, false))
+            return false;
+
+        access_and_columns = std::move(res);
+        return true;
     }
 
 
-    bool parseAccessRightsElements(IParser::Pos & pos, Expected & expected, AccessRightsElements & elements)
+    bool parseElementsWithoutOptions(IParser::Pos & pos, Expected & expected, AccessRightsElements & elements)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             AccessRightsElements res_elements;
-            do
+
+            auto parse_around_on = [&]
             {
                 std::vector<std::pair<AccessFlags, Strings>> access_and_columns;
-                do
-                {
-                    AccessFlags access_flags;
-                    if (!parseAccessFlags(pos, expected, access_flags))
-                        return false;
-
-                    Strings columns;
-                    parseColumnNames(pos, expected, columns);
-                    access_and_columns.emplace_back(access_flags, std::move(columns));
-                }
-                while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+                if (!parseAccessFlagsWithColumns(pos, expected, access_and_columns))
+                    return false;
 
                 if (!ParserKeyword{"ON"}.ignore(pos, expected))
                     return false;
 
                 String database_name, table_name;
                 bool any_database = false, any_table = false;
-                if (!parseDatabaseAndTableNameOrMaybeAsterisks(pos, expected, database_name, any_database, table_name, any_table))
+                if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, any_database, table_name, any_table))
                     return false;
 
                 for (auto & [access_flags, columns] : access_and_columns)
@@ -190,8 +143,12 @@ namespace
                     element.table = table_name;
                     res_elements.emplace_back(std::move(element));
                 }
-            }
-            while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+
+                return true;
+            };
+
+            if (!ParserList::parseUtil(pos, expected, parse_around_on, false))
+                return false;
 
             elements = std::move(res_elements);
             return true;
@@ -199,41 +156,62 @@ namespace
     }
 
 
-    bool parseRoles(IParser::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
+    void eraseNonGrantable(AccessRightsElements & elements)
+    {
+        boost::range::remove_erase_if(elements, [](AccessRightsElement & element)
+        {
+            if (element.empty())
+                return true;
+            auto old_flags = element.access_flags;
+            element.eraseNonGrantable();
+            if (!element.empty())
+                return false;
+
+            if (!element.any_column)
+                throw Exception(old_flags.toString() + " cannot be granted on the column level", ErrorCodes::INVALID_GRANT);
+            else if (!element.any_table)
+                throw Exception(old_flags.toString() + " cannot be granted on the table level", ErrorCodes::INVALID_GRANT);
+            else if (!element.any_database)
+                throw Exception(old_flags.toString() + " cannot be granted on the database level", ErrorCodes::INVALID_GRANT);
+            else
+                throw Exception(old_flags.toString() + " cannot be granted", ErrorCodes::INVALID_GRANT);
+        });
+    }
+
+
+    bool parseRoles(IParser::Pos & pos, Expected & expected, bool is_revoke, bool id_mode, std::shared_ptr<ASTRolesOrUsersSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
+            ParserRolesOrUsersSet roles_p;
+            roles_p.allowRoles().useIDMode(id_mode);
+            if (is_revoke)
+                roles_p.allowAll();
+
             ASTPtr ast;
-            if (!ParserExtendedRoleSet{}.enableAllKeyword(false).enableCurrentUserKeyword(false).useIDMode(id_mode).parse(pos, ast, expected))
+            if (!roles_p.parse(pos, ast, expected))
                 return false;
 
-            roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
+            roles = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
             return true;
         });
     }
 
 
-    bool parseToRoles(IParser::Pos & pos, Expected & expected, ASTGrantQuery::Kind kind, std::shared_ptr<ASTExtendedRoleSet> & to_roles)
+    bool parseToGrantees(IParser::Pos & pos, Expected & expected, bool is_revoke, std::shared_ptr<ASTRolesOrUsersSet> & grantees)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            using Kind = ASTGrantQuery::Kind;
-            if (kind == Kind::GRANT)
-            {
-                if (!ParserKeyword{"TO"}.ignore(pos, expected))
-                    return false;
-            }
-            else
-            {
-                if (!ParserKeyword{"FROM"}.ignore(pos, expected))
-                    return false;
-            }
-
-            ASTPtr ast;
-            if (!ParserExtendedRoleSet{}.enableAllKeyword(kind == Kind::REVOKE).parse(pos, ast, expected))
+            if (!ParserKeyword{is_revoke ? "FROM" : "TO"}.ignore(pos, expected))
                 return false;
 
-            to_roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
+            ASTPtr ast;
+            ParserRolesOrUsersSet roles_p;
+            roles_p.allowRoles().allowUsers().allowCurrentUser().allowAll(is_revoke);
+            if (!roles_p.parse(pos, ast, expected))
+                return false;
+
+            grantees = typeid_cast<std::shared_ptr<ASTRolesOrUsersSet>>(ast);
             return true;
         });
     }
@@ -250,21 +228,13 @@ namespace
 
 bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    bool attach = false;
-    if (attach_mode)
-    {
-        if (!ParserKeyword{"ATTACH"}.ignore(pos, expected))
-            return false;
-        attach = true;
-    }
+    if (attach_mode && !ParserKeyword{"ATTACH"}.ignore(pos, expected))
+        return false;
 
-    using Kind = ASTGrantQuery::Kind;
-    Kind kind;
-    if (ParserKeyword{"GRANT"}.ignore(pos, expected))
-        kind = Kind::GRANT;
-    else if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
-        kind = Kind::REVOKE;
-    else
+    bool is_revoke = false;
+    if (ParserKeyword{"REVOKE"}.ignore(pos, expected))
+        is_revoke = true;
+    else if (!ParserKeyword{"GRANT"}.ignore(pos, expected))
         return false;
 
     String cluster;
@@ -273,7 +243,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     bool grant_option = false;
     bool admin_option = false;
-    if (kind == Kind::REVOKE)
+    if (is_revoke)
     {
         if (ParserKeyword{"GRANT OPTION FOR"}.ignore(pos, expected))
             grant_option = true;
@@ -282,21 +252,21 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     AccessRightsElements elements;
-    std::shared_ptr<ASTExtendedRoleSet> roles;
-    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, attach, roles))
+    std::shared_ptr<ASTRolesOrUsersSet> roles;
+    if (!parseElementsWithoutOptions(pos, expected, elements) && !parseRoles(pos, expected, is_revoke, attach_mode, roles))
         return false;
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    std::shared_ptr<ASTExtendedRoleSet> to_roles;
-    if (!parseToRoles(pos, expected, kind, to_roles))
+    std::shared_ptr<ASTRolesOrUsersSet> grantees;
+    if (!parseToGrantees(pos, expected, is_revoke, grantees))
         return false;
 
     if (cluster.empty())
         parseOnCluster(pos, expected, cluster);
 
-    if (kind == Kind::GRANT)
+    if (!is_revoke)
     {
         if (ParserKeyword{"WITH GRANT OPTION"}.ignore(pos, expected))
             grant_option = true;
@@ -312,16 +282,24 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (admin_option && !elements.empty())
         throw Exception("ADMIN OPTION should be specified for roles", ErrorCodes::SYNTAX_ERROR);
 
+    if (grant_option)
+    {
+        for (auto & element : elements)
+            element.grant_option = true;
+    }
+
+    if (!is_revoke)
+        eraseNonGrantable(elements);
+
     auto query = std::make_shared<ASTGrantQuery>();
     node = query;
 
-    query->kind = kind;
-    query->attach = attach;
+    query->is_revoke = is_revoke;
+    query->attach_mode = attach_mode;
     query->cluster = std::move(cluster);
     query->access_rights_elements = std::move(elements);
     query->roles = std::move(roles);
-    query->to_roles = std::move(to_roles);
-    query->grant_option = grant_option;
+    query->grantees = std::move(grantees);
     query->admin_option = admin_option;
 
     return true;

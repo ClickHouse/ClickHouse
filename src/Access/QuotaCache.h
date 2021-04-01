@@ -23,11 +23,12 @@ public:
     std::shared_ptr<const EnabledQuota> getEnabledQuota(
         const UUID & user_id,
         const String & user_name,
-        const std::vector<UUID> & enabled_roles,
+        const boost::container::flat_set<UUID> & enabled_roles,
         const Poco::Net::IPAddress & address,
+        const String & forwarded_address,
         const String & client_key);
 
-    std::vector<QuotaUsageInfo> getUsageInfo() const;
+    std::vector<QuotaUsage> getAllQuotasUsage() const;
 
 private:
     using Interval = EnabledQuota::Interval;
@@ -45,7 +46,7 @@ private:
 
         QuotaPtr quota;
         UUID quota_id;
-        const ExtendedRoleSet * roles = nullptr;
+        const RolesOrUsersSet * roles = nullptr;
         std::unordered_map<String /* quota key */, boost::shared_ptr<const Intervals>> key_to_intervals;
     };
 

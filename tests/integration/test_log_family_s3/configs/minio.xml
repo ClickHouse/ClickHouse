@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<yandex>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+                <send_object_metadata>true</send_object_metadata>
+            </s3>
+        </disks>
+    </storage_configuration>
+</yandex>

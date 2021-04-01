@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Aliases.h"
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -12,7 +13,9 @@ namespace ErrorCodes
 struct TaskCluster
 {
     TaskCluster(const String & task_zookeeper_path_, const String & default_local_database_)
-            : task_zookeeper_path(task_zookeeper_path_), default_local_database(default_local_database_) {}
+            : task_zookeeper_path(task_zookeeper_path_)
+            , default_local_database(default_local_database_)
+    {}
 
     void loadTasks(const Poco::Util::AbstractConfiguration & config, const String & base_key = "");
 
@@ -95,6 +98,7 @@ inline void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfigurat
     set_default_value(settings_pull.max_block_size, 8192UL);
     set_default_value(settings_pull.preferred_block_size_bytes, 0);
     set_default_value(settings_push.insert_distributed_timeout, 0);
+    set_default_value(settings_push.replication_alter_partitions_sync, 2);
 }
 
 }

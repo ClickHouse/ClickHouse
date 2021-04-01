@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <Core/TypeListNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
+#include <Common/SipHash.h>
 #include <ext/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
@@ -31,7 +32,7 @@
 #include <iterator>
 #include <cmath>
 #include <algorithm>
-#include <IO/WriteBufferFromString.h>
+
 
 namespace DB
 {
@@ -178,9 +179,9 @@ private:
     {
         inner,                                  /// The cell is completely inside polygon.
         outer,                                  /// The cell is completely outside of polygon.
-        singleLine,                             /// The cell is splitted to inner/outer part by a single line.
-        pairOfLinesSingleConvexPolygon,         /// The cell is splitted to inner/outer part by a polyline of two sections and inner part is convex.
-        pairOfLinesSingleNonConvexPolygons,     /// The cell is splitted to inner/outer part by a polyline of two sections and inner part is non convex.
+        singleLine,                             /// The cell is split to inner/outer part by a single line.
+        pairOfLinesSingleConvexPolygon,         /// The cell is split to inner/outer part by a polyline of two sections and inner part is convex.
+        pairOfLinesSingleNonConvexPolygons,     /// The cell is split to inner/outer part by a polyline of two sections and inner part is non convex.
         pairOfLinesDifferentPolygons,           /// The cell is spliited by two lines to three different parts.
         complexPolygon                          /// Generic case.
     };
@@ -314,7 +315,7 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
     if (has_empty_bound)
         return;
 
-    cells.assign(grid_size * grid_size, {});
+    cells.assign(size_t(grid_size) * grid_size, {});
 
     const Point & min_corner = box.min_corner();
 
@@ -355,6 +356,9 @@ template <typename CoordinateType>
 bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, CoordinateType y) const
 {
     if (has_empty_bound)
+        return false;
+
+    if (std::isnan(x) || std::isnan(y))
         return false;
 
     CoordinateType float_row = (y + y_shift) * y_scale;
@@ -615,7 +619,7 @@ struct CallPointInPolygon<>
 };
 
 template <typename PointInPolygonImpl>
-ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
+NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
     using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
     return Impl::call(x, y, impl);
@@ -623,30 +627,27 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
 
 
 template <typename Polygon>
-std::string serialize(Polygon && polygon)
+UInt128 sipHash128(Polygon && polygon)
 {
-    WriteBufferFromOwnString buffer;
+    SipHash hash;
 
-    using RingType = typename std::decay_t<Polygon>::ring_type;
-
-    auto serializeRing = [&buffer](const RingType & ring)
+    auto hash_ring = [&hash](const auto & ring)
     {
-        writeBinary(ring.size(), buffer);
-        for (const auto & point : ring)
-        {
-            writeBinary(point.x(), buffer);
-            writeBinary(point.y(), buffer);
-        }
+        UInt32 size = ring.size();
+        hash.update(size);
+        hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
     };
 
-    serializeRing(polygon.outer());
+    hash_ring(polygon.outer());
 
     const auto & inners = polygon.inners();
-    writeBinary(inners.size(), buffer);
+    hash.update(inners.size());
     for (auto & inner : inners)
-        serializeRing(inner);
+        hash_ring(inner);
 
-    return buffer.str();
+    UInt128 res;
+    hash.get128(res.low, res.high);
+    return res;
 }
 
 }

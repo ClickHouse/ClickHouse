@@ -1,13 +1,11 @@
-import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
-
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/log_conf.xml'])
 node2 = cluster.add_instance('node2', main_configs=['configs/log_conf.xml'])
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -32,4 +30,5 @@ def start_cluster():
 
 
 def test_remote(start_cluster):
-    assert node1.query("SELECT 1 FROM remote('node{1,2}', default.test_table) WHERE (APIKey = 137715) AND (CustomAttributeId IN (45, 66)) AND (ProfileIDHash != 0) LIMIT 1") == ""
+    assert node1.query(
+        "SELECT 1 FROM remote('node{1,2}', default.test_table) WHERE (APIKey = 137715) AND (CustomAttributeId IN (45, 66)) AND (ProfileIDHash != 0) LIMIT 1") == ""

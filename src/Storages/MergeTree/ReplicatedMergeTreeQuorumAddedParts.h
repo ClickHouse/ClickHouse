@@ -80,7 +80,7 @@ struct ReplicatedMergeTreeQuorumAddedParts
         return parts_in_quorum;
     }
 
-    /// Read blocks when node in ZooKeeper suppors multiple partitions.
+    /// Read blocks when node in ZooKeeper supports multiple partitions.
     PartitionIdToPartName readV2(ReadBuffer & in)
     {
         assertString("parts count: ", in);

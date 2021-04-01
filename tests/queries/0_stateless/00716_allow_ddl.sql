@@ -1,4 +1,4 @@
-SET send_logs_level = 'none';
+SET send_logs_level = 'fatal';
 SET allow_ddl = 0;
 
 CREATE DATABASE some_db; -- { serverError 392 } 

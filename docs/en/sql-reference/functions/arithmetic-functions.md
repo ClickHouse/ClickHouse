@@ -1,5 +1,5 @@
 ---
-toc_priority: 35
+toc_priority: 34
 toc_title: Arithmetic
 ---
 
@@ -53,16 +53,16 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 
 Differs from ‘intDiv’ in that it returns zero when dividing by zero or when dividing a minimal negative number by minus one.
 
-## modulo(a, b), a % b operator {#moduloa-b-a-b-operator}
+## modulo(a, b), a % b operator {#modulo}
 
 Calculates the remainder after division.
 If arguments are floating-point numbers, they are pre-converted to integers by dropping the decimal portion.
 The remainder is taken in the same sense as in C++. Truncated division is used for negative numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
-## moduloOrZero(a, b) {#moduloorzeroa-b}
+## moduloOrZero(a, b) {#modulo-or-zero}
 
-Differs from ‘modulo’ in that it returns zero when the divisor is zero.
+Differs from [modulo](#modulo) in that it returns zero when the divisor is zero.
 
 ## negate(a), -a operator {#negatea-a-operator}
 
@@ -82,4 +82,3 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 Returns the least common multiple of the numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

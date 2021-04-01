@@ -1,4 +1,3 @@
-#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionDateOrDateTimeToSomething.h>
@@ -13,6 +12,8 @@ using FunctionToYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToYearI
 void registerFunctionToYear(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToYear>();
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToYear>("YEAR", FunctionFactory::CaseInsensitive);
 }
 
 }

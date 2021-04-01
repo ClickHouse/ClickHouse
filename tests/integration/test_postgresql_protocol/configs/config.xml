@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+ <yandex>
+     <logger>
+         <level>trace</level>
+         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+         <size>1000M</size>
+         <count>10</count>
+     </logger>
+
+     <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
+     <openSSL>
+         <server> <!-- Used for https server AND secure tcp port -->
+             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
+             <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
+             <!-- openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 -->
+             <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
+             <verificationMode>none</verificationMode>
+             <loadDefaultCAFile>true</loadDefaultCAFile>
+             <cacheSessions>true</cacheSessions>
+             <disableProtocols>sslv2,sslv3</disableProtocols>
+             <preferServerCiphers>true</preferServerCiphers>
+         </server>
+     </openSSL>
+
+     <tcp_port>9000</tcp_port>
+     <postgresql_port>5433</postgresql_port>
+     <listen_host>127.0.0.1</listen_host>
+
+     <max_concurrent_queries>500</max_concurrent_queries>
+     <mark_cache_size>5368709120</mark_cache_size>
+     <path>./clickhouse/</path>
+     <users_config>users.xml</users_config>
+ </yandex>

@@ -14,11 +14,6 @@ static bool operator==(const IDataType & left, const IDataType & right)
     return left.equals(right);
 }
 
-std::ostream & operator<<(std::ostream & ostr, const IDataType & dt)
-{
-    return ostr << dt.getName();
-}
-
 }
 
 using namespace DB;
@@ -31,7 +26,7 @@ static auto typeFromString(const std::string & str)
 
 static auto typesFromString(const std::string & str)
 {
-    std::istringstream data_types_stream(str);
+    std::istringstream data_types_stream(str);      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     DataTypes data_types;
     std::string data_type;
     while (data_types_stream >> data_type)
@@ -91,7 +86,7 @@ TEST_P(LeastSuperTypeTest, getLeastSupertype)
 
 class MostSubtypeTest : public TypeTest {};
 
-TEST_P(MostSubtypeTest, getLeastSupertype)
+TEST_P(MostSubtypeTest, getMostSubtype)
 {
     if (this->expected_type)
     {
@@ -129,9 +124,7 @@ INSTANTIATE_TEST_SUITE_P(data_type,
             {"Date DateTime64(3)", "DateTime64(3)"},
             {"DateTime DateTime64(3)", "DateTime64(3)"},
             {"DateTime DateTime64(0)", "DateTime64(0)"},
-            {"DateTime64(9) DateTime64(3)", "DateTime64(3)"},
-            {"DateTime DateTime64(12)", "DateTime64(8)"},
-            {"Date DateTime64(15)", "DateTime64(13)"},
+            {"DateTime64(9) DateTime64(3)", "DateTime64(9)"},
 
             {"String FixedString(32) FixedString(8)", "String"},
 

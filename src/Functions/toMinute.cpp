@@ -1,4 +1,3 @@
-#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionDateOrDateTimeToSomething.h>
@@ -13,6 +12,8 @@ using FunctionToMinute = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMinu
 void registerFunctionToMinute(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToMinute>();
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToMinute>("MINUTE", FunctionFactory::CaseInsensitive);
 }
 
 }

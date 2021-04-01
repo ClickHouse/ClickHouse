@@ -36,5 +36,6 @@ def test_protobuf_format_input(started_cluster):
 def test_protobuf_format_output(started_cluster):
     create_simple_table()
     instance.query("INSERT INTO test.simple VALUES (1, 'abc'), (2, 'def')");
-    assert instance.http_query("SELECT * FROM test.simple FORMAT Protobuf SETTINGS format_schema='simple:KeyValuePair'") == \
+    assert instance.http_query(
+        "SELECT * FROM test.simple FORMAT Protobuf SETTINGS format_schema='simple:KeyValuePair'") == \
            "\x07\x08\x01\x12\x03abc\x07\x08\x02\x12\x03def"

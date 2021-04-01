@@ -20,11 +20,11 @@ The `FixedString` type is efficient when data has the length of precisely `N` by
 Examples of the values that can be efficiently stored in `FixedString`-typed columns:
 
 -   The binary representation of IP addresses (`FixedString(16)` for IPv6).
--   Language codes (ru\_RU, en\_US … ).
+-   Language codes (ru_RU, en_US … ).
 -   Currency codes (USD, RUB … ).
 -   Binary representation of hashes (`FixedString(16)` for MD5, `FixedString(32)` for SHA256).
 
-To store UUID values, use the [UUID](uuid.md) data type.
+To store UUID values, use the [UUID](../../sql-reference/data-types/uuid.md) data type.
 
 When inserting the data, ClickHouse:
 

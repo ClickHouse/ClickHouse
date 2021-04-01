@@ -3,7 +3,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -13,6 +12,7 @@
 
 namespace DB
 {
+class Context;
 
 /// Builds reverse polish notation
 template <typename RPNElement>
@@ -31,7 +31,7 @@ public:
           */
         block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
-        /// Trasform WHERE section to Reverse Polish notation
+        /// Transform WHERE section to Reverse Polish notation
         const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
         if (select.where())
         {

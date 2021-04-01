@@ -3,16 +3,25 @@
 #include <limits>
 #include <algorithm>
 #include <climits>
-#include <sstream>
 #include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/PODArray.h>
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
 #include <pcg_random.hpp>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 
 /// Implementing the Reservoir Sampling algorithm. Incrementally selects from the added objects a random subset of the sample_count size.
 /// Can approximately get quantiles.
@@ -122,12 +131,12 @@ public:
         size_t left_index = static_cast<size_t>(index);
         size_t right_index = left_index + 1;
         if (right_index == samples.size())
-            return samples[left_index];
+            return static_cast<double>(samples[left_index]);
 
         double left_coef = right_index - index;
         double right_coef = index - left_index;
 
-        return samples[left_index] * left_coef + samples[right_index] * right_coef;
+        return static_cast<double>(samples[left_index]) * left_coef + static_cast<double>(samples[right_index]) * right_coef;
     }
 
     void merge(const ReservoirSampler<T, OnEmpty> & b)
@@ -151,12 +160,25 @@ public:
         }
         else
         {
-            randomShuffle(samples);
+            /// Replace every element in our reservoir to the b's reservoir
+            /// with the probability of b.total_values / (a.total_values + b.total_values)
+            /// Do it more roughly than true random sampling to save performance.
+
             total_values += b.total_values;
-            for (size_t i = 0; i < sample_count; ++i)
+
+            /// Will replace every frequency'th element in a to element from b.
+            double frequency = static_cast<double>(total_values) / b.total_values;
+
+            /// When frequency is too low, replace just one random element with the corresponding probability.
+            if (frequency * 2 >= sample_count)
             {
-                UInt64 rnd = genRandom(total_values);
-                if (rnd < b.total_values)
+                UInt64 rnd = genRandom(frequency);
+                if (rnd < sample_count)
+                    samples[rnd] = b.samples[rnd];
+            }
+            else
+            {
+                for (double i = 0; i < sample_count; i += frequency)
                     samples[i] = b.samples[i];
             }
         }
@@ -170,8 +192,8 @@ public:
 
         std::string rng_string;
         DB::readStringBinary(rng_string, buf);
-        std::istringstream rng_stream(rng_string);
-        rng_stream >> rng;
+        DB::ReadBufferFromString rng_buf(rng_string);
+        rng_buf >> rng;
 
         for (size_t i = 0; i < samples.size(); ++i)
             DB::readBinary(samples[i], buf);
@@ -184,18 +206,15 @@ public:
         DB::writeIntBinary<size_t>(sample_count, buf);
         DB::writeIntBinary<size_t>(total_values, buf);
 
-        std::ostringstream rng_stream;
-        rng_stream << rng;
-        DB::writeStringBinary(rng_stream.str(), buf);
+        DB::WriteBufferFromOwnString rng_buf;
+        rng_buf << rng;
+        DB::writeStringBinary(rng_buf.str(), buf);
 
         for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
             DB::writeBinary(samples[i], buf);
     }
 
 private:
-    friend void qdigest_test(int normal_size, UInt64 value_limit, const std::vector<UInt64> & values, int queries_count, bool verbose);
-    friend void rs_perf_test();
-
     /// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
     using Array = DB::PODArrayWithStackMemory<T, 64>;
 
@@ -215,15 +234,6 @@ private:
             return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(rng.max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
-    void randomShuffle(Array & v)
-    {
-        for (size_t i = 1; i < v.size(); ++i)
-        {
-            size_t j = genRandom(i + 1);
-            std::swap(v[i], v[j]);
-        }
-    }
-
     void sortIfNeeded()
     {
         if (sorted)
@@ -236,7 +246,7 @@ private:
     ResultType onEmpty() const
     {
         if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
-            throw Poco::Exception("Quantile of empty ReservoirSampler");
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Quantile of empty ReservoirSampler");
         else
             return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
     }

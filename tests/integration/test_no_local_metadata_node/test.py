@@ -1,10 +1,10 @@
-import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -47,7 +47,7 @@ def test_table_start_without_metadata(start_cluster):
 
     node1.query("DETACH TABLE test")
 
-    zk_cli.set("/clickhouse/table/test_table/replicas/1/metadata", "")
+    zk_cli.set("/clickhouse/table/test_table/replicas/1/metadata", b"")
 
     node1.query("ATTACH TABLE test")
 

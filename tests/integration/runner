@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #-*- coding: utf-8 -*-
 import subprocess
 import os
@@ -14,9 +14,22 @@ DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../"))
 CURRENT_WORK_DIR = os.getcwd()
 CONTAINER_NAME = "clickhouse_integration_tests"
 
+CONFIG_DIR_IN_REPO = "programs/server"
+INTERGATION_DIR_IN_REPO = "tests/integration"
+SRC_DIR_IN_REPO = "src"
+
 DIND_INTEGRATION_TESTS_IMAGE_NAME = "yandex/clickhouse-integration-tests-runner"
 
 def check_args_and_update_paths(args):
+    if args.clickhouse_root:
+        if not os.path.isabs(args.clickhouse_root):
+            CLICKHOUSE_ROOT = os.path.abspath(args.clickhouse_root)
+        else:
+            CLICKHOUSE_ROOT = args.clickhouse_root
+    else:
+        logging.info("ClickHouse root is not set. Will use {}".format(DEFAULT_CLICKHOUSE_ROOT))
+        CLICKHOUSE_ROOT = DEFAULT_CLICKHOUSE_ROOT
+
     if not os.path.isabs(args.binary):
         args.binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.binary))
 
@@ -25,21 +38,55 @@ def check_args_and_update_paths(args):
     elif not os.path.isabs(args.bridge_binary):
         args.bridge_binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.bridge_binary))
 
-    if not os.path.isabs(args.configs_dir):
-        args.configs_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.configs_dir))
+    if args.base_configs_dir:
+        if not os.path.isabs(args.base_configs_dir):
+            args.base_configs_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.base_configs_dir))
+    else:
+        args.base_configs_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, CONFIG_DIR_IN_REPO))
+        logging.info("Base configs dir is not set. Will use {}".format(args.base_configs_dir))
 
-    if not os.path.isabs(args.clickhouse_root):
-        args.clickhouse_root = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.clickhouse_root))
+    if args.cases_dir:
+        if not os.path.isabs(args.cases_dir):
+            args.cases_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.cases_dir))
+    else:
+        args.cases_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, INTERGATION_DIR_IN_REPO))
+        logging.info("Cases dir is not set. Will use {}".format(args.cases_dir))
 
-    for path in [args.binary, args.configs_dir, args.clickhouse_root]:
+    if args.src_dir:
+        if not os.path.isabs(args.src_dir):
+            args.src_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.src_dir))
+    else:
+        args.src_dir = os.path.abspath(os.path.join(CLICKHOUSE_ROOT, SRC_DIR_IN_REPO))
+        logging.info("src dir is not set. Will use {}".format(args.src_dir))
+
+    logging.info("base_configs_dir: {},  binary: {}, cases_dir: {} ".format(args.base_configs_dir, args.binary, args.cases_dir))
+
+    for path in [args.binary, args.bridge_binary, args.base_configs_dir, args.cases_dir, CLICKHOUSE_ROOT]:
         if not os.path.exists(path):
-            raise Exception("Path {} doesn't exists".format(path))
+            raise Exception("Path {} doesn't exist".format(path))
+
+    if not os.path.exists(os.path.join(args.base_configs_dir, "config.xml")):
+        raise Exception("No configs.xml in {}".format(args.base_configs_dir))
+
+    if not os.path.exists(os.path.join(args.base_configs_dir, "users.xml")):
+        raise Exception("No users.xml in {}".format(args.base_configs_dir))
 
 def docker_kill_handler_handler(signum, frame):
     subprocess.check_call('docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(name=CONTAINER_NAME), shell=True)
     raise KeyboardInterrupt("Killed by Ctrl+C")
 
 signal.signal(signal.SIGINT, docker_kill_handler_handler)
+
+# Integration tests runner should allow to run tests on several versions of ClickHouse.
+# Integration tests should be portable.
+# To run integration tests following artfacts should be sufficient:
+#   - clickhouse binaries (env CLICKHOUSE_TESTS_SERVER_BIN_PATH or --binary arg)
+#   - clickhouse default configs(config.xml, users.xml) from same version as binary (env CLICKHOUSE_TESTS_BASE_CONFIG_DIR or --base-configs-dir arg)
+#   - odbc bridge binary (env CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH or --bridge-binary arg)
+#   - tests/integration directory with all test cases and configs (env CLICKHOUSE_TESTS_INTEGRATION_PATH or --cases-dir)
+#
+# 1) --clickhouse-root is only used to determine other paths on default places
+# 2) path of runner script is used to determine paths for trivial case, when we run it from repository
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
@@ -48,7 +95,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--binary",
         default=os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", os.environ.get("CLICKHOUSE_TESTS_CLIENT_BIN_PATH", "/usr/bin/clickhouse")),
-        help="Path to clickhouse binary")
+        help="Path to clickhouse binary. For example /usr/bin/clickhouse")
 
     parser.add_argument(
         "--bridge-binary",
@@ -56,14 +103,23 @@ if __name__ == "__main__":
         help="Path to clickhouse-odbc-bridge binary. Defaults to clickhouse-odbc-bridge in the same dir as clickhouse.")
 
     parser.add_argument(
-        "--configs-dir",
-        default=os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", os.path.join(DEFAULT_CLICKHOUSE_ROOT, "programs/server")),
-        help="Path to clickhouse configs directory")
+        "--base-configs-dir",
+        default=os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR"),
+        help="Path to clickhouse base configs directory with config.xml/users.xml")
+
+    parser.add_argument(
+        "--cases-dir",
+        default=os.environ.get("CLICKHOUSE_TESTS_INTEGRATION_PATH"),
+        help="Path to integration tests cases and configs directory. For example tests/integration in repository")
+
+    parser.add_argument(
+        "--src-dir",
+        default=os.environ.get("CLICKHOUSE_SRC_DIR"),
+        help="Path to the 'src' directory in repository. Used to provide schemas (e.g. *.proto) for some tests when those schemas are located in the 'src' directory")
 
     parser.add_argument(
         "--clickhouse-root",
-        default=DEFAULT_CLICKHOUSE_ROOT,
-        help="Path to repository root folder")
+        help="Path to repository root folder. Used to take configuration from repository default paths.")
 
     parser.add_argument(
         "--command",
@@ -76,6 +132,16 @@ if __name__ == "__main__":
         default=False,
         help="Don't use net host in parent docker container")
 
+    parser.add_argument(
+        "--docker-image-version",
+        default="latest",
+        help="Version of docker image which runner will use to run tests")
+
+    parser.add_argument(
+        "--docker-compose-images-tags",
+        action="append",
+        help="Set non-default tags for images used in docker compose recipes(yandex/my_container:my_tag)")
+
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
     args = parser.parse_args()
@@ -85,6 +151,28 @@ if __name__ == "__main__":
     net = ""
     if not args.disable_net_host:
         net = "--net=host"
+
+    env_tags = ""
+
+    if args.docker_compose_images_tags is not None:
+        for img_tag in args.docker_compose_images_tags:
+            [image, tag] = img_tag.split(":")
+            if image == "yandex/clickhouse-mysql-golang-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-mysql-java-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-mysql-js-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_JS_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-mysql-php-client":
+                env_tags += "-e {}={} ".format("DOCKER_MYSQL_PHP_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-postgresql-java-client":
+                env_tags += "-e {}={} ".format("DOCKER_POSTGRESQL_JAVA_CLIENT_TAG", tag)
+            elif image == "yandex/clickhouse-integration-test":
+                env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
+            elif image == "yandex/clickhouse-kerberos-kdc":
+                env_tags += "-e {}={}".format("DOCKER_KERBEROS_KDC_TAG", tag)
+            else:
+                logging.info("Unknown image {}".format(image))
 
     # create named volume which will be used inside to store images and other docker related files,
     # to avoid redownloading it every time
@@ -98,18 +186,22 @@ if __name__ == "__main__":
         tty = "-it"
 
     cmd = "docker run {net} {tty} --rm --name {name} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
-        --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse --volume={name}_volume:/var/lib/docker -e PYTEST_OPTS='{opts}' {img} {command}".format(
+        --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
+        --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
+        --volume={name}_volume:/var/lib/docker {env_tags} -e PYTEST_OPTS='{opts}' {img} {command}".format(
         net=net,
         tty=tty,
         bin=args.binary,
         bridge_bin=args.bridge_binary,
-        cfg=args.configs_dir,
-        pth=args.clickhouse_root,
+        base_cfg=args.base_configs_dir,
+        cases_dir=args.cases_dir,
+        src_dir=args.src_dir,
+        env_tags=env_tags,
         opts=' '.join(args.pytest_args),
-        img=DIND_INTEGRATION_TESTS_IMAGE_NAME,
+        img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,
         command=args.command
     )
 
-    print("Running pytest container as: '" + cmd + "'.")
+    print(("Running pytest container as: '" + cmd + "'."))
     subprocess.check_call(cmd, shell=True)

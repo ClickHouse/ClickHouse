@@ -26,6 +26,15 @@ struct ConnectionFailed : public Exception
 };
 
 
+/// Connection to MySQL server was lost
+struct ConnectionLost : public Exception
+{
+    ConnectionLost(const std::string & msg, int code = 0) : Exception(msg, code) {}
+    const char * name() const throw() override { return "mysqlxx::ConnectionLost"; }
+    const char * className() const throw() override { return "mysqlxx::ConnectionLost"; }
+};
+
+
 /// Erroneous query.
 struct BadQuery : public Exception
 {
@@ -48,6 +57,6 @@ std::string errorMessage(MYSQL * driver);
 
 /// For internal need of library.
 void checkError(MYSQL * driver);
-void onError(MYSQL * driver);
+[[noreturn]] void onError(MYSQL * driver);
 
 }

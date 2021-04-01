@@ -1,3 +1,8 @@
+---
+toc_priority: 63
+toc_title: "Функции для работы с Nullable-аргументами"
+---
+
 # Функции для работы с Nullable-аргументами {#funktsii-dlia-raboty-s-nullable-argumentami}
 
 ## isNull {#isnull}
@@ -8,7 +13,9 @@
 isNull(x)
 ```
 
-**Параметры**
+Синоним: `ISNULL`.
+
+**Аргументы**
 
 -   `x` — значение с не составным типом данных.
 
@@ -31,7 +38,7 @@ isNull(x)
 Запрос
 
 ``` sql
-SELECT x FROM t_null WHERE isNull(y)
+SELECT x FROM t_null WHERE isNull(y);
 ```
 
 ``` text
@@ -48,7 +55,7 @@ SELECT x FROM t_null WHERE isNull(y)
 isNotNull(x)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — значение с не составным типом данных.
 
@@ -71,7 +78,7 @@ isNotNull(x)
 Запрос
 
 ``` sql
-SELECT x FROM t_null WHERE isNotNull(y)
+SELECT x FROM t_null WHERE isNotNull(y);
 ```
 
 ``` text
@@ -88,7 +95,7 @@ SELECT x FROM t_null WHERE isNotNull(y)
 coalesce(x,...)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   Произвольное количество параметров не составного типа. Все параметры должны быть совместимы по типу данных.
 
@@ -113,7 +120,7 @@ coalesce(x,...)
 Получим из адресной книги первый доступный способ связаться с клиентом:
 
 ``` sql
-SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
+SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook;
 ```
 
 ``` text
@@ -131,7 +138,7 @@ SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 ifNull(x,alt)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — значение для проверки на `NULL`,
 -   `alt` — значение, которое функция вернёт, если `x` — `NULL`.
@@ -144,7 +151,7 @@ ifNull(x,alt)
 **Пример**
 
 ``` sql
-SELECT ifNull('a', 'b')
+SELECT ifNull('a', 'b');
 ```
 
 ``` text
@@ -154,7 +161,7 @@ SELECT ifNull('a', 'b')
 ```
 
 ``` sql
-SELECT ifNull(NULL, 'b')
+SELECT ifNull(NULL, 'b');
 ```
 
 ``` text
@@ -171,7 +178,7 @@ SELECT ifNull(NULL, 'b')
 nullIf(x, y)
 ```
 
-**Параметры**
+**Аргументы**
 
 `x`, `y` — значения для сравнивания. Они должны быть совместимых типов, иначе ClickHouse сгенерирует исключение.
 
@@ -183,7 +190,7 @@ nullIf(x, y)
 **Пример**
 
 ``` sql
-SELECT nullIf(1, 1)
+SELECT nullIf(1, 1);
 ```
 
 ``` text
@@ -193,7 +200,7 @@ SELECT nullIf(1, 1)
 ```
 
 ``` sql
-SELECT nullIf(1, 2)
+SELECT nullIf(1, 2);
 ```
 
 ``` text
@@ -210,7 +217,7 @@ SELECT nullIf(1, 2)
 assumeNotNull(x)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — исходное значение.
 
@@ -224,7 +231,7 @@ assumeNotNull(x)
 Рассмотрим таблицу `t_null`.
 
 ``` sql
-SHOW CREATE TABLE t_null
+SHOW CREATE TABLE t_null;
 ```
 
 ``` text
@@ -243,7 +250,7 @@ SHOW CREATE TABLE t_null
 Применим функцию `assumeNotNull` к столбцу `y`.
 
 ``` sql
-SELECT assumeNotNull(y) FROM t_null
+SELECT assumeNotNull(y) FROM t_null;
 ```
 
 ``` text
@@ -254,7 +261,7 @@ SELECT assumeNotNull(y) FROM t_null
 ```
 
 ``` sql
-SELECT toTypeName(assumeNotNull(y)) FROM t_null
+SELECT toTypeName(assumeNotNull(y)) FROM t_null;
 ```
 
 ``` text
@@ -272,7 +279,7 @@ SELECT toTypeName(assumeNotNull(y)) FROM t_null
 toNullable(x)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `x` — значение произвольного не составного типа.
 
@@ -283,7 +290,7 @@ toNullable(x)
 **Пример**
 
 ``` sql
-SELECT toTypeName(10)
+SELECT toTypeName(10);
 ```
 
 ``` text
@@ -293,7 +300,7 @@ SELECT toTypeName(10)
 ```
 
 ``` sql
-SELECT toTypeName(toNullable(10))
+SELECT toTypeName(toNullable(10));
 ```
 
 ``` text
@@ -302,4 +309,3 @@ SELECT toTypeName(toNullable(10))
 └────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/functions_for_nulls/) <!--hide-->

@@ -110,7 +110,9 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & n
 
 void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("groupUniqArray", createAggregateFunctionGroupUniqArray);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
+
+    factory.registerFunction("groupUniqArray", { createAggregateFunctionGroupUniqArray, properties });
 }
 
 }

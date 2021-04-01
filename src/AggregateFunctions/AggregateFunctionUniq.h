@@ -13,6 +13,7 @@
 
 #include <Interpreters/AggregationCommon.h>
 
+#include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
 #include <Common/CombinedCardinalityEstimator.h>
@@ -130,30 +131,20 @@ namespace detail
   */
 template <typename T> struct AggregateFunctionUniqTraits
 {
-    static UInt64 hash(T x) { return x; }
-};
-
-template <> struct AggregateFunctionUniqTraits<UInt128>
-{
-    static UInt64 hash(UInt128 x)
+    static UInt64 hash(T x)
     {
-        return sipHash64(x);
-    }
-};
-
-template <> struct AggregateFunctionUniqTraits<Float32>
-{
-    static UInt64 hash(Float32 x)
-    {
-        return ext::bit_cast<UInt64>(x);
-    }
-};
-
-template <> struct AggregateFunctionUniqTraits<Float64>
-{
-    static UInt64 hash(Float64 x)
-    {
-        return ext::bit_cast<UInt64>(x);
+        if constexpr (std::is_same_v<T, UInt128>)
+        {
+            return sipHash64(x);
+        }
+        else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
+        {
+            return ext::bit_cast<UInt64>(x);
+        }
+        else if constexpr (sizeof(T) <= sizeof(UInt64))
+            return x;
+        else
+            return DefaultHash64<T>(x);
     }
 };
 
@@ -220,27 +211,27 @@ public:
     }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
-    void ALWAYS_INLINE add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         detail::OneAdder<T, Data>::add(this->data(place), *columns[0], row_num);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).set.read(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
@@ -274,27 +265,28 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).set.insert(typename Data::Set::value_type(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
+        this->data(place).set.insert(typename Data::Set::value_type(
+            UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).set.read(buf);
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }

@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 
+
 namespace DB
 {
 
@@ -20,6 +21,9 @@ extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+namespace
+{
 
 class FunctionGeohashesInBox : public IFunction
 {
@@ -58,24 +62,39 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     template <typename LonAndLatType, typename PrecisionType>
-    void execute(const IColumn * lon_min_column,
-                    const IColumn * lat_min_column,
-                    const IColumn * lon_max_column,
-                    const IColumn * lat_max_column,
-                    const IColumn * precision_column,
-                    ColumnPtr & result)
+    void execute(
+        const IColumn * lon_min_column,
+        const IColumn * lat_min_column,
+        const IColumn * lon_max_column,
+        const IColumn * lat_max_column,
+        const IColumn * precision_column,
+        ColumnPtr & result,
+        size_t input_rows_count) const
     {
         static constexpr size_t max_array_size = 10'000'000;
+
+        const auto * lon_min_const = typeid_cast<const ColumnConst *>(lon_min_column);
+        const auto * lat_min_const = typeid_cast<const ColumnConst *>(lat_min_column);
+        const auto * lon_max_const = typeid_cast<const ColumnConst *>(lon_max_column);
+        const auto * lat_max_const = typeid_cast<const ColumnConst *>(lat_max_column);
+        const auto * precision_const = typeid_cast<const ColumnConst *>(precision_column);
+
+        if (lon_min_const)
+            lon_min_column = &lon_min_const->getDataColumn();
+        if (lat_min_const)
+            lat_min_column = &lat_min_const->getDataColumn();
+        if (lon_max_const)
+            lon_max_column = &lon_max_const->getDataColumn();
+        if (lat_max_const)
+            lat_max_column = &lat_max_const->getDataColumn();
+        if (precision_const)
+            precision_column = &precision_const->getDataColumn();
 
         const auto * lon_min = checkAndGetColumn<ColumnVector<LonAndLatType>>(lon_min_column);
         const auto * lat_min = checkAndGetColumn<ColumnVector<LonAndLatType>>(lat_min_column);
         const auto * lon_max = checkAndGetColumn<ColumnVector<LonAndLatType>>(lon_max_column);
         const auto * lat_max = checkAndGetColumn<ColumnVector<LonAndLatType>>(lat_max_column);
-        auto * precision = checkAndGetColumn<ColumnVector<PrecisionType>>(precision_column);
-        if (precision == nullptr)
-        {
-            precision = checkAndGetColumnConstData<ColumnVector<PrecisionType>>(precision_column);
-        }
+        const auto * precision = checkAndGetColumn<ColumnVector<PrecisionType>>(precision_column);
 
         if (!lon_min || !lat_min || !lon_max || !lat_max || !precision)
         {
@@ -87,24 +106,24 @@ public:
                             ErrorCodes::LOGICAL_ERROR);
         }
 
-        const size_t total_rows = lat_min->size();
-
         auto col_res = ColumnArray::create(ColumnString::create());
         ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
         ColumnArray::Offsets & res_offsets = col_res->getOffsets();
         ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
-        for (size_t row = 0; row < total_rows; ++row)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const Float64 lon_min_value = lon_min->getElement(row);
-            const Float64 lat_min_value = lat_min->getElement(row);
-            const Float64 lon_max_value = lon_max->getElement(row);
-            const Float64 lat_max_value = lat_max->getElement(row);
+            const Float64 lon_min_value = lon_min->getElement(lon_min_const ? 0 : row);
+            const Float64 lat_min_value = lat_min->getElement(lat_min_const ? 0 : row);
+            const Float64 lon_max_value = lon_max->getElement(lon_max_const ? 0 : row);
+            const Float64 lat_max_value = lat_max->getElement(lat_max_const ? 0 : row);
+            const PrecisionType precision_value = precision->getElement(precision_const ? 0 : row);
 
             const auto prepared_args = geohashesInBoxPrepare(
-                        lon_min_value, lat_min_value, lon_max_value, lat_max_value,
-                        precision->getElement(row % precision->size()));
+                lon_min_value, lat_min_value, lon_max_value, lat_max_value,
+                precision_value);
+
             if (prepared_args.items_count > max_array_size)
             {
                 throw Exception(getName() + " would produce " + std::to_string(prepared_args.items_count) +
@@ -120,12 +139,11 @@ public:
             // Actually write geohashes into preallocated buffer.
             geohashesInBox(prepared_args, out);
 
-            for (UInt8 i = 1; i <= prepared_args.items_count ; ++i)
-            {
+            for (UInt64 i = 1; i <= prepared_args.items_count ; ++i)
                 res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
-            }
-            res_offsets.push_back((res_offsets.empty() ? 0 : res_offsets.back()) + prepared_args.items_count);
+            res_offsets.push_back(res_offsets.back() + prepared_args.items_count);
         }
+
         if (!res_strings_offsets.empty() && res_strings_offsets.back() != res_strings_chars.size())
         {
             throw Exception("String column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
@@ -133,7 +151,7 @@ public:
 
         if (!res_offsets.empty() && res_offsets.back() != res_strings.size())
         {
-            throw Exception("Arrary column size mismatch (internal logical error)" +
+            throw Exception("Array column size mismatch (internal logical error)" +
                             std::to_string(res_offsets.back()) + " != " + std::to_string(res_strings.size()),
                             ErrorCodes::LOGICAL_ERROR);
         }
@@ -141,25 +159,25 @@ public:
         result = std::move(col_res);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const IColumn * lon_min = block.getByPosition(arguments[0]).column.get();
-        const IColumn * lat_min = block.getByPosition(arguments[1]).column.get();
-        const IColumn * lon_max = block.getByPosition(arguments[2]).column.get();
-        const IColumn * lat_max = block.getByPosition(arguments[3]).column.get();
-        const IColumn * prec =    block.getByPosition(arguments[4]).column.get();
-        ColumnPtr & res = block.getByPosition(result).column;
+        const IColumn * lon_min = arguments[0].column.get();
+        const IColumn * lat_min = arguments[1].column.get();
+        const IColumn * lon_max = arguments[2].column.get();
+        const IColumn * lat_max = arguments[3].column.get();
+        const IColumn * precision = arguments[4].column.get();
+        ColumnPtr res;
 
         if (checkColumn<ColumnVector<Float32>>(lon_min))
-        {
-            execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, prec, res);
-        }
+            execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
         else
-        {
-            execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, prec, res);
-        }
+            execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
+
+        return res;
     }
 };
+
+}
 
 void registerFunctionGeohashesInBox(FunctionFactory & factory)
 {

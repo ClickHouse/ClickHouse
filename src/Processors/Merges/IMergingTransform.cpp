@@ -1,4 +1,5 @@
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/Transforms/SelectorInfo.h>
 
 namespace DB
 {
@@ -86,7 +87,7 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
             continue;
         }
 
-        state.init_chunks[i] = std::move(chunk);
+        state.init_chunks[i].set(std::move(chunk));
         input_states[i].is_initialized = true;
     }
 
@@ -135,7 +136,6 @@ IProcessor::Status IMergingTransformBase::prepare()
 
     if (state.is_finished)
     {
-
         if (is_port_full)
             return Status::PortFull;
 
@@ -158,11 +158,11 @@ IProcessor::Status IMergingTransformBase::prepare()
             if (!input.hasData())
                 return Status::NeedData;
 
-            auto chunk = input.pull();
-            if (!chunk.hasRows() && !input.isFinished())
+            state.input_chunk.set(input.pull());
+            if (!state.input_chunk.chunk.hasRows() && !input.isFinished())
                 return Status::NeedData;
 
-            state.input_chunk = std::move(chunk);
+            state.has_input = true;
         }
 
         state.need_data = false;
@@ -173,5 +173,69 @@ IProcessor::Status IMergingTransformBase::prepare()
 
     return Status::Ready;
 }
+
+static void filterChunk(IMergingAlgorithm::Input & input, size_t selector_position)
+{
+    if (!input.chunk.getChunkInfo())
+        throw Exception("IMergingTransformBase expected ChunkInfo for input chunk", ErrorCodes::LOGICAL_ERROR);
+
+    const auto * chunk_info = typeid_cast<const SelectorInfo *>(input.chunk.getChunkInfo().get());
+    if (!chunk_info)
+        throw Exception("IMergingTransformBase expected SelectorInfo for input chunk", ErrorCodes::LOGICAL_ERROR);
+
+    const auto & selector = chunk_info->selector;
+
+    IColumn::Filter filter;
+    filter.resize_fill(selector.size());
+
+    size_t num_rows = input.chunk.getNumRows();
+    auto columns = input.chunk.detachColumns();
+
+    size_t num_result_rows = 0;
+
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        if (selector[row] == selector_position)
+        {
+            ++num_result_rows;
+            filter[row] = 1;
+        }
+    }
+
+    if (!filter.empty() && filter.back() == 0)
+    {
+        filter.back() = 1;
+        ++num_result_rows;
+        input.skip_last_row = true;
+    }
+
+    for (auto & column : columns)
+        column = column->filter(filter, num_result_rows);
+
+    input.chunk.clear();
+    input.chunk.setColumns(std::move(columns), num_result_rows);
+}
+
+void IMergingTransformBase::filterChunks()
+{
+    if (state.selector_position < 0)
+        return;
+
+    if (!state.init_chunks.empty())
+    {
+        for (size_t i = 0; i < input_states.size(); ++i)
+        {
+            auto & input = state.init_chunks[i];
+            if (!input.chunk)
+                continue;
+
+            filterChunk(input, state.selector_position);
+        }
+    }
+
+    if (state.has_input)
+        filterChunk(state.input_chunk, state.selector_position);
+}
+
 
 }

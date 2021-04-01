@@ -34,10 +34,12 @@ protected:
     bool finished = false;
     bool finalized = false;
 
-    /// Flush data on each consumed chunk. This is intented for interactive applications to output data as soon as it's ready.
+    /// Flush data on each consumed chunk. This is intended for interactive applications to output data as soon as it's ready.
     bool auto_flush = false;
 
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
+
+    friend class ParallelFormattingOutputFormat;
 
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
@@ -79,6 +81,16 @@ public:
 
     void setTotals(const Block & totals) { consumeTotals(Chunk(totals.getColumns(), totals.rows())); }
     void setExtremes(const Block & extremes) { consumeExtremes(Chunk(extremes.getColumns(), extremes.rows())); }
+
+    size_t getResultRows() const { return result_rows; }
+    size_t getResultBytes() const { return result_bytes; }
+
+private:
+    /// Counters for consumed chunks. Are used for QueryLog.
+    size_t result_rows = 0;
+    size_t result_bytes = 0;
+
+    bool prefix_written = false;
 };
 }
 

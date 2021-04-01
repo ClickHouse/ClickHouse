@@ -44,6 +44,21 @@ Functions have the following behaviors:
 
 Functions can’t change the values of their arguments – any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
 
+## Higher-order functions, `->` operator and lambda(params, expr) function {#higher-order-functions}
+
+Higher-order functions can only accept lambda functions as their functional argument. To pass a lambda function to a higher-order function use `->` operator. The left side of the arrow has a formal parameter, which is any ID, or multiple formal parameters – any IDs in a tuple. The right side of the arrow has an expression that can use these formal parameters, as well as any table columns.
+
+Examples: 
+
+```
+x -> 2 * x
+str -> str != Referer
+```
+
+A lambda function that accepts multiple arguments can also be passed to a higher-order function. In this case, the higher-order function is passed several arrays of identical length that these arguments will correspond to.
+
+For some functions the first argument (the lambda function) can be omitted. In this case, identical mapping is assumed.
+
 ## Error Handling {#error-handling}
 
 Some functions might throw an exception if the data is invalid. In this case, the query is canceled and an error text is returned to the client. For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.
@@ -69,4 +84,3 @@ Another example is the `hostName` function, which returns the name of the server
 
 If a function in a query is performed on the requestor server, but you need to perform it on remote servers, you can wrap it in an ‘any’ aggregate function or add it to a key in `GROUP BY`.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/) <!--hide-->

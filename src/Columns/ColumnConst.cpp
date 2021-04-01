@@ -2,10 +2,15 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+
+#include <common/defines.h>
+
+#if defined(MEMORY_SANITIZER)
+    #include <sanitizer/msan_interface.h>
+#endif
 
 
 namespace DB
@@ -27,6 +32,15 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
     if (data->size() != 1)
         throw Exception("Incorrect size of nested column in constructor of ColumnConst: " + toString(data->size()) + ", must be 1.",
             ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    /// Check that the value is initialized. We do it earlier, before it will be used, to ease debugging.
+#if defined(MEMORY_SANITIZER)
+    if (data->isFixedAndContiguous())
+    {
+        StringRef value = data->getDataAt(0);
+        __msan_check_mem_is_initialized(value.data, value.size);
+    }
+#endif
 }
 
 ColumnPtr ColumnConst::convertToFullColumn() const
@@ -106,6 +120,10 @@ void ColumnConst::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_d
         res[i] = i;
 }
 
+void ColumnConst::updatePermutation(bool, size_t, int, Permutation &, EqualRanges &) const
+{
+}
+
 void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
 {
     if (hash.getData().size() != s)
@@ -118,6 +136,14 @@ void ColumnConst::updateWeakHash32(WeakHash32 & hash) const
 
     for (auto & value : hash.getData())
         value = intHashCRC32(data_hash, value);
+}
+
+void ColumnConst::compareColumn(
+    const IColumn & rhs, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> & compare_results, int, int nan_direction_hint)
+    const
+{
+    Int8 res = compareAt(1, 1, rhs, nan_direction_hint);
+    std::fill(compare_results.begin(), compare_results.end(), res);
 }
 
 }

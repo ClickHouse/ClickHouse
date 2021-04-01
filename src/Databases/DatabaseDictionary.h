@@ -22,18 +22,18 @@ namespace DB
 class DatabaseDictionary final : public IDatabase
 {
 public:
-    DatabaseDictionary(const String & name_, const Context & global_context);
+    DatabaseDictionary(const String & name_, const Context & context_);
 
     String getEngineName() const override
     {
         return "Dictionary";
     }
 
-    bool isTableExist(const String & table_name) const override;
+    bool isTableExist(const String & table_name, const Context & context) const override;
 
-    StoragePtr tryGetTable(const String & table_name) const override;
+    StoragePtr tryGetTable(const String & table_name, const Context & context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
 
     bool empty() const override;
 
@@ -44,11 +44,9 @@ public:
     void shutdown() override;
 
 protected:
-    ASTPtr getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const override;
+    ASTPtr getCreateTableQueryImpl(const String & table_name, const Context & context, bool throw_on_error) const override;
 
 private:
-    mutable std::mutex mutex;
-
     Poco::Logger * log;
     const Context & global_context;
 

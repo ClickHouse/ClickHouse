@@ -5,6 +5,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/Aliases.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
@@ -26,12 +27,15 @@ public:
     struct Data
     {
         TableJoin & analyzed_join;
-        const TableWithColumnNames & left_table;
-        const TableWithColumnNames & right_table;
+        const TableWithColumnNamesAndTypes & left_table;
+        const TableWithColumnNamesAndTypes & right_table;
         const Aliases & aliases;
         const bool is_asof{false};
+        ASTTableJoin::Kind kind;
         ASTPtr asof_left_key{};
         ASTPtr asof_right_key{};
+        ASTPtr new_on_expression{};
+        ASTPtr new_where_conditions{};
         bool has_some{false};
 
         void addJoinKeys(const ASTPtr & left_ast, const ASTPtr & right_ast, const std::pair<size_t, size_t> & table_no);
@@ -49,8 +53,7 @@ public:
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
         if (auto * func = node->as<ASTFunction>())
-            if (func->name == "equals")
-                return false;
+            return func->name == "and";
         return true;
     }
 
@@ -58,11 +61,9 @@ private:
     static void visit(const ASTFunction & func, const ASTPtr & ast, Data & data);
 
     static void getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out);
-    static std::pair<size_t, size_t> getTableNumbers(const ASTPtr & expr, const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
+    static std::pair<size_t, size_t> getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases);
     static size_t getTableForIdentifiers(std::vector<const ASTIdentifier *> & identifiers, const Data & data);
-
-    [[noreturn]] static void throwSyntaxException(const String & msg);
 };
 
 /// Parse JOIN ON expression and collect ASTs for joined columns.

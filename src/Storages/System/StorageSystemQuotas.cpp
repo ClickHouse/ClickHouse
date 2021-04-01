@@ -3,10 +3,12 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/Quota.h>
 #include <Access/AccessFlags.h>
@@ -17,11 +19,18 @@ namespace DB
 {
 namespace
 {
+    using KeyType = Quota::KeyType;
+    using KeyTypeInfo = Quota::KeyTypeInfo;
+
     DataTypeEnum8::Values getKeyTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto key_type : ext::range_with_static_cast<Quota::KeyType>(Quota::MAX_KEY_TYPE))
-            enum_values.push_back({Quota::getNameOfKeyType(key_type), static_cast<UInt8>(key_type)});
+        for (auto key_type : ext::range(KeyType::MAX))
+        {
+            const auto & type_info = KeyTypeInfo::get(key_type);
+            if ((key_type != KeyType::NONE) && type_info.base_types.empty())
+                enum_values.push_back({type_info.name, static_cast<Int8>(key_type)});
+        }
         return enum_values;
     }
 }
@@ -32,23 +41,13 @@ NamesAndTypesList StorageSystemQuotas::getNamesAndTypes()
     NamesAndTypesList names_and_types{
         {"name", std::make_shared<DataTypeString>()},
         {"id", std::make_shared<DataTypeUUID>()},
-        {"source", std::make_shared<DataTypeString>()},
-        {"key_type", std::make_shared<DataTypeEnum8>(getKeyTypeEnumValues())},
-        {"roles", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"intervals.duration", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
-        {"intervals.randomize_interval", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())}};
-
-    for (auto resource_type : ext::range_with_static_cast<Quota::ResourceType>(Quota::MAX_RESOURCE_TYPE))
-    {
-        DataTypePtr data_type;
-        if (resource_type == Quota::EXECUTION_TIME)
-            data_type = std::make_shared<DataTypeFloat64>();
-        else
-            data_type = std::make_shared<DataTypeUInt64>();
-
-        String column_name = String("intervals.max_") + Quota::resourceTypeToColumnName(resource_type);
-        names_and_types.push_back({column_name, std::make_shared<DataTypeArray>(data_type)});
-    }
+        {"storage", std::make_shared<DataTypeString>()},
+        {"keys", std::make_shared<DataTypeArray>(std::make_shared<DataTypeEnum8>(getKeyTypeEnumValues()))},
+        {"durations", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>())},
+        {"apply_to_all", std::make_shared<DataTypeUInt8>()},
+        {"apply_to_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
+    };
     return names_and_types;
 }
 
@@ -56,61 +55,70 @@ NamesAndTypesList StorageSystemQuotas::getNamesAndTypes()
 void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
     context.checkAccess(AccessType::SHOW_QUOTAS);
-
-    size_t i = 0;
-    auto & name_column = *res_columns[i++];
-    auto & id_column = *res_columns[i++];
-    auto & storage_name_column = *res_columns[i++];
-    auto & key_type_column = *res_columns[i++];
-    auto & roles_data = assert_cast<ColumnArray &>(*res_columns[i]).getData();
-    auto & roles_offsets = assert_cast<ColumnArray &>(*res_columns[i++]).getOffsets();
-    auto & durations_data = assert_cast<ColumnArray &>(*res_columns[i]).getData();
-    auto & durations_offsets = assert_cast<ColumnArray &>(*res_columns[i++]).getOffsets();
-    auto & randomize_intervals_data = assert_cast<ColumnArray &>(*res_columns[i]).getData();
-    auto & randomize_intervals_offsets = assert_cast<ColumnArray &>(*res_columns[i++]).getOffsets();
-    IColumn * limits_data[Quota::MAX_RESOURCE_TYPE];
-    ColumnArray::Offsets * limits_offsets[Quota::MAX_RESOURCE_TYPE];
-    for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-    {
-        limits_data[resource_type] = &assert_cast<ColumnArray &>(*res_columns[i]).getData();
-        limits_offsets[resource_type] = &assert_cast<ColumnArray &>(*res_columns[i++]).getOffsets();
-    }
-
     const auto & access_control = context.getAccessControlManager();
+    std::vector<UUID> ids = access_control.findAll<Quota>();
+
+    size_t column_index = 0;
+    auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
+    auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
+    auto & column_key_types = assert_cast<ColumnInt8 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData()).getData();
+    auto & column_key_types_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_durations = assert_cast<ColumnUInt32 &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData()).getData();
+    auto & column_durations_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_apply_to_all = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
+    auto & column_apply_to_list = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
+    auto & column_apply_to_list_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_apply_to_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
+    auto & column_apply_to_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+
+    auto add_row = [&](const String & name,
+                       const UUID & id,
+                       const String & storage_name,
+                       const std::vector<Quota::Limits> & all_limits,
+                       KeyType key_type,
+                       const RolesOrUsersSet & apply_to)
+    {
+        column_name.insertData(name.data(), name.length());
+        column_id.push_back(id);
+        column_storage.insertData(storage_name.data(), storage_name.length());
+
+        if (key_type != KeyType::NONE)
+        {
+            const auto & type_info = KeyTypeInfo::get(key_type);
+            for (auto base_type : type_info.base_types)
+                column_key_types.push_back(static_cast<Int8>(base_type));
+            if (type_info.base_types.empty())
+                column_key_types.push_back(static_cast<Int8>(key_type));
+        }
+        column_key_types_offsets.push_back(column_key_types.size());
+
+        for (const auto & limits : all_limits)
+            column_durations.push_back(std::chrono::duration_cast<std::chrono::seconds>(limits.duration).count());
+        column_durations_offsets.push_back(column_durations.size());
+
+        auto apply_to_ast = apply_to.toASTWithNames(access_control);
+        column_apply_to_all.push_back(apply_to_ast->all);
+
+        for (const auto & role_name : apply_to_ast->names)
+            column_apply_to_list.insertData(role_name.data(), role_name.length());
+        column_apply_to_list_offsets.push_back(column_apply_to_list.size());
+
+        for (const auto & role_name : apply_to_ast->except_names)
+            column_apply_to_except.insertData(role_name.data(), role_name.length());
+        column_apply_to_except_offsets.push_back(column_apply_to_except.size());
+    };
+
     for (const auto & id : access_control.findAll<Quota>())
     {
         auto quota = access_control.tryRead<Quota>(id);
         if (!quota)
             continue;
-        const auto * storage = access_control.findStorage(id);
-        String storage_name = storage ? storage->getStorageName() : "";
+        auto storage = access_control.findStorage(id);
+        if (!storage)
+            continue;
 
-        name_column.insert(quota->getName());
-        id_column.insert(id);
-        storage_name_column.insert(storage_name);
-        key_type_column.insert(static_cast<UInt8>(quota->key_type));
-
-        for (const String & role : quota->to_roles.toStringsWithNames(access_control))
-            roles_data.insert(role);
-        roles_offsets.push_back(roles_data.size());
-
-        for (const auto & limits : quota->all_limits)
-        {
-            durations_data.insert(std::chrono::seconds{limits.duration}.count());
-            randomize_intervals_data.insert(static_cast<UInt8>(limits.randomize_interval));
-            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-            {
-                if (resource_type == Quota::EXECUTION_TIME)
-                    limits_data[resource_type]->insert(Quota::executionTimeToSeconds(limits.max[resource_type]));
-                else
-                    limits_data[resource_type]->insert(limits.max[resource_type]);
-            }
-        }
-
-        durations_offsets.push_back(durations_data.size());
-        randomize_intervals_offsets.push_back(randomize_intervals_data.size());
-        for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-            limits_offsets[resource_type]->push_back(limits_data[resource_type]->size());
+        add_row(quota->getName(), id, storage->getStorageName(), quota->all_limits, quota->key_type, quota->to_roles);
     }
 }
 }

@@ -1,4 +1,9 @@
-# 星型基准测试 {#star-schema-benchmark}
+---
+toc_priority: 16
+toc_title: Star Schema Benchmark
+---
+
+# Star Schema Benchmark {#star-schema-benchmark}
 
 编译 dbgen:
 
@@ -10,6 +15,9 @@ $ make
 
 开始生成数据：
 
+!!! warning "注意"
+    使用`-s 100`dbgen将生成6亿行数据(67GB), 如果使用`-s 1000`它会生成60亿行数据(这需要很多时间))
+
 ``` bash
 $ ./dbgen -s 1000 -T c
 $ ./dbgen -s 1000 -T l
@@ -18,7 +26,7 @@ $ ./dbgen -s 1000 -T s
 $ ./dbgen -s 1000 -T d
 ```
 
-在ClickHouse中创建表结构：
+在ClickHouse中创建数据表：
 
 ``` sql
 CREATE TABLE customer
@@ -92,7 +100,7 @@ $ clickhouse-client --query "INSERT INTO supplier FORMAT CSV" < supplier.tbl
 $ clickhouse-client --query "INSERT INTO lineorder FORMAT CSV" < lineorder.tbl
 ```
 
-将«星型模型»转换为非规范化的«平面模型»：
+将`star schema`转换为`flat schema`：
 
 ``` sql
 SET max_memory_usage = 20000000000, allow_experimental_multiple_joins_emulation = 1;

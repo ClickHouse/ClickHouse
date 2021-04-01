@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Query (EXISTS | SHOW CREATE) [TABLE|DICTIONARY] [db.]name [FORMAT format]
+/** Query (EXISTS | SHOW CREATE) [DATABASE|TABLE|DICTIONARY] [db.]name [FORMAT format]
   */
 class ParserTablePropertiesQuery : public IParserBase
 {

@@ -2,10 +2,13 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ClusterProxy/IStreamFactory.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
+
+using Scalars = std::map<String, Block>;
 
 namespace ClusterProxy
 {
@@ -34,9 +37,12 @@ public:
     void createForShard(
         const Cluster::ShardInfo & shard_info,
         const String & query, const ASTPtr & query_ast,
-        const Context & context, const ThrottlerPtr & throttler,
+        const std::shared_ptr<Context> & context_ptr, const ThrottlerPtr & throttler,
         const SelectQueryInfo & query_info,
-        Pipes & res) override;
+        std::vector<QueryPlanPtr> & plans,
+        Pipes & remote_pipes,
+        Pipes & delayed_pipes,
+        Poco::Logger * log) override;
 
 private:
     const Block header;

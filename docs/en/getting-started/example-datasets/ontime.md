@@ -1,5 +1,5 @@
 ---
-toc_priority: 15
+toc_priority: 21
 toc_title: OnTime
 ---
 
@@ -15,16 +15,8 @@ This dataset can be obtained in two ways:
 Downloading data:
 
 ``` bash
-for s in `seq 1987 2018`
-do
-for m in `seq 1 12`
-do
-wget https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_${s}_${m}.zip
-done
-done
+echo https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_{1987..2021}_{1..12}.zip | xargs -P10 wget --no-check-certificate --continue
 ```
-
-(from https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
 
 Creating a table:
 
@@ -145,16 +137,18 @@ ORDER BY (Carrier, FlightDate)
 SETTINGS index_granularity = 8192;
 ```
 
-Loading data:
+Loading data with multiple threads:
 
 ``` bash
-$ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
+ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | sed 's/\.00//g' | clickhouse-client --input_format_with_names_use_header=0 --query='INSERT INTO ontime FORMAT CSVWithNames'"
 ```
+
+(if you will have memory shortage or other issues on your server, remove the `-P $(nproc)` part)
 
 ## Download of Prepared Partitions {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
@@ -397,6 +391,8 @@ GROUP BY OriginCityName
 ORDER BY c DESC
 LIMIT 10;
 ```
+
+You can also play with the data in Playground, [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIERheU9mV2VlaywgY291bnQoKikgQVMgYwpGUk9NIG9udGltZQpXSEVSRSBZZWFyPj0yMDAwIEFORCBZZWFyPD0yMDA4CkdST1VQIEJZIERheU9mV2VlawpPUkRFUiBCWSBjIERFU0M7Cg==).
 
 This performance test was created by Vadim Tkachenko. See:
 

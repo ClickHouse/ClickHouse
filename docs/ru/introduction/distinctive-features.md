@@ -1,3 +1,8 @@
+---
+toc_priority: 4
+toc_title: "Отличительные возможности ClickHouse"
+---
+
 # Отличительные возможности ClickHouse {#otlichitelnye-vozmozhnosti-clickhouse}
 
 ## По-настоящему столбцовая СУБД {#po-nastoiashchemu-stolbtsovaia-subd}
@@ -68,4 +73,3 @@ ClickHouse предоставляет различные способы разм
 3.  Разреженный индекс делает ClickHouse плохо пригодным для точечных чтений одиночных строк по своим
     ключам.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/distinctive_features/) <!--hide-->

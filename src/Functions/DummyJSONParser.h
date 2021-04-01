@@ -1,8 +1,7 @@
 #pragma once
 
-#include <common/StringRef.h>
 #include <Common/Exception.h>
-#include <Core/Types.h>
+#include <common/types.h>
 
 namespace DB
 {
@@ -15,43 +14,87 @@ namespace ErrorCodes
 /// It can't do anything useful and just throws an exception.
 struct DummyJSONParser
 {
-    static constexpr bool need_preallocate = false;
-    void preallocate(size_t) {}
+    class Array;
+    class Object;
 
-    bool parse(const StringRef &) { throw Exception{"Functions JSON* are not supported without AVX2", ErrorCodes::NOT_IMPLEMENTED}; }
+    /// References an element in a JSON document, representing a JSON null, boolean, string, number,
+    /// array or object.
+    class Element
+    {
+    public:
+        Element() {}
+        bool isInt64() const { return false; }
+        bool isUInt64() const { return false; }
+        bool isDouble() const { return false; }
+        bool isString() const { return false; }
+        bool isArray() const { return false; }
+        bool isObject() const { return false; }
+        bool isBool() const { return false; }
+        bool isNull() const { return false; }
 
-    using Iterator = std::nullptr_t;
-    Iterator getRoot() const { return nullptr; }
+        Int64 getInt64() const { return 0; }
+        UInt64 getUInt64() const { return 0; }
+        double getDouble() const { return 0; }
+        bool getBool() const { return false; }
+        std::string_view getString() const { return {}; }
+        Array getArray() const { return {}; }
+        Object getObject() const { return {}; }
+    };
 
-    static bool isInt64(const Iterator &) { return false; }
-    static bool isUInt64(const Iterator &) { return false; }
-    static bool isDouble(const Iterator &) { return false; }
-    static bool isString(const Iterator &) { return false; }
-    static bool isArray(const Iterator &) { return false; }
-    static bool isObject(const Iterator &) { return false; }
-    static bool isBool(const Iterator &) { return false; }
-    static bool isNull(const Iterator &) { return true; }
+    /// References an array in a JSON document.
+    class Array
+    {
+    public:
+        class Iterator
+        {
+        public:
+            Element operator*() const { return {}; }
+            Iterator & operator++() { return *this; }
+            Iterator operator++(int) { return *this; }
+            friend bool operator==(const Iterator &, const Iterator &) { return true; }
+            friend bool operator!=(const Iterator &, const Iterator &) { return false; }
+        };
 
-    static Int64 getInt64(const Iterator &) { return 0; }
-    static UInt64 getUInt64(const Iterator &) { return 0; }
-    static double getDouble(const Iterator &) { return 0; }
-    static bool getBool(const Iterator &) { return false; }
-    static StringRef getString(const Iterator &) { return {}; }
+        Iterator begin() const { return {}; }
+        Iterator end() const { return {}; }
+        size_t size() const { return 0; }
+        Element operator[](size_t) const { return {}; }
+    };
 
-    static size_t sizeOfArray(const Iterator &) { return 0; }
-    static bool firstArrayElement(Iterator &) { return false; }
-    static bool arrayElementByIndex(Iterator &, size_t) { return false; }
-    static bool nextArrayElement(Iterator &) { return false; }
+    using KeyValuePair = std::pair<std::string_view, Element>;
 
-    static size_t sizeOfObject(const Iterator &) { return 0; }
-    static bool firstObjectMember(Iterator &) { return false; }
-    static bool firstObjectMember(Iterator &, StringRef &) { return false; }
-    static bool objectMemberByIndex(Iterator &, size_t) { return false; }
-    static bool objectMemberByName(Iterator &, const StringRef &) { return false; }
-    static bool nextObjectMember(Iterator &) { return false; }
-    static bool nextObjectMember(Iterator &, StringRef &) { return false; }
-    static bool isObjectMember(const Iterator &) { return false; }
-    static StringRef getKey(const Iterator &) { return {}; }
+    /// References an object in a JSON document.
+    class Object
+    {
+    public:
+        class Iterator
+        {
+        public:
+            KeyValuePair operator*() const { return {}; }
+            Iterator & operator++() { return *this; }
+            Iterator operator++(int) { return *this; }
+            friend bool operator==(const Iterator &, const Iterator &) { return true; }
+            friend bool operator!=(const Iterator &, const Iterator &) { return false; }
+        };
+
+        Iterator begin() const { return {}; }
+        Iterator end() const { return {}; }
+        size_t size() const { return 0; }
+        bool find(const std::string_view &, Element &) const { return false; }
+
+#if 0
+        /// Optional: Provides access to an object's element by index.
+        KeyValuePair operator[](size_t) const { return {}; }
+#endif
+    };
+
+    /// Parses a JSON document, returns the reference to its root element if succeeded.
+    bool parse(const std::string_view &, Element &) { throw Exception{"Functions JSON* are not supported", ErrorCodes::NOT_IMPLEMENTED}; }
+
+#if 0
+    /// Optional: Allocates memory to parse JSON documents faster.
+    void reserve(size_t max_size);
+#endif
 };
 
 }

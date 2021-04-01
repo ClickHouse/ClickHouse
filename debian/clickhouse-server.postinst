@@ -2,6 +2,7 @@
 set -e
 # set -x
 
+PROGRAM=clickhouse-server
 CLICKHOUSE_USER=${CLICKHOUSE_USER:=clickhouse}
 CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP:=${CLICKHOUSE_USER}}
 # Please note that we don't support paths with whitespaces. This is rather ignorant.
@@ -12,6 +13,7 @@ CLICKHOUSE_BINDIR=${CLICKHOUSE_BINDIR:=/usr/bin}
 CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM:=clickhouse}
 EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
+CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
 
 [ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule
 [ -f /etc/default/clickhouse ] && . /etc/default/clickhouse
@@ -41,105 +43,5 @@ if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
         fi
     fi
 
-    # Make sure the administrative user exists
-    if ! getent passwd ${CLICKHOUSE_USER} > /dev/null; then
-        if [ -n "$not_deb_os" ]; then
-            useradd -r -s /bin/false --home-dir /nonexistent ${CLICKHOUSE_USER} > /dev/null
-        else
-            adduser --system --disabled-login --no-create-home --home /nonexistent \
-                --shell /bin/false --group --gecos "ClickHouse server" ${CLICKHOUSE_USER} > /dev/null
-        fi
-    fi
-
-    # if the user was created manually, make sure the group is there as well
-    if ! getent group ${CLICKHOUSE_GROUP} > /dev/null; then
-        groupadd -r ${CLICKHOUSE_GROUP} > /dev/null
-    fi
-
-    # make sure user is in the correct group
-    if ! id -Gn ${CLICKHOUSE_USER} | grep -qw ${CLICKHOUSE_USER}; then
-        usermod -a -G ${CLICKHOUSE_GROUP} ${CLICKHOUSE_USER} > /dev/null
-    fi
-
-    # check validity of user and group
-    if [ "`id -u ${CLICKHOUSE_USER}`" -eq 0 ]; then
-        echo "The ${CLICKHOUSE_USER} system user must not have uid 0 (root).
-Please fix this and reinstall this package." >&2
-        exit 1
-    fi
-
-    if [ "`id -g ${CLICKHOUSE_GROUP}`" -eq 0 ]; then
-        echo "The ${CLICKHOUSE_USER} system user must not have root as primary group.
-Please fix this and reinstall this package." >&2
-        exit 1
-    fi
-
-    if [ -x "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG" ] && [ -f "$CLICKHOUSE_CONFIG" ]; then
-        if [ -z "$SHELL" ]; then
-            SHELL="/bin/sh"
-        fi
-        CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path") ||:
-        echo "Path to data directory in ${CLICKHOUSE_CONFIG}: ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
-    fi
-    CLICKHOUSE_DATADIR_FROM_CONFIG=${CLICKHOUSE_DATADIR_FROM_CONFIG:=$CLICKHOUSE_DATADIR}
-
-    if [ ! -d ${CLICKHOUSE_DATADIR_FROM_CONFIG} ]; then
-        mkdir -p ${CLICKHOUSE_DATADIR_FROM_CONFIG}
-        chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_FROM_CONFIG}
-        chmod 700 ${CLICKHOUSE_DATADIR_FROM_CONFIG}
-    fi
-
-    if [ -d ${CLICKHOUSE_CONFDIR} ]; then
-        mkdir -p ${CLICKHOUSE_CONFDIR}/users.d
-        mkdir -p ${CLICKHOUSE_CONFDIR}/config.d
-        rm -fv ${CLICKHOUSE_CONFDIR}/*-preprocessed.xml ||:
-    fi
-
-    [ -e ${CLICKHOUSE_CONFDIR}/preprocessed ] || ln -s ${CLICKHOUSE_DATADIR_FROM_CONFIG}/preprocessed_configs ${CLICKHOUSE_CONFDIR}/preprocessed ||:
-
-    if [ ! -d ${CLICKHOUSE_LOGDIR} ]; then
-        mkdir -p ${CLICKHOUSE_LOGDIR}
-        chown root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
-        # Allow everyone to read logs, root and clickhouse to read-write
-        chmod 775 ${CLICKHOUSE_LOGDIR}
-    fi
-
-    # Set net_admin capabilities to support introspection of "taskstats" performance metrics from the kernel
-    #  and ipc_lock capabilities to allow mlock of clickhouse binary.
-
-    # 1. Check that "setcap" tool exists.
-    # 2. Check that an arbitrary program with installed capabilities can run.
-    # 3. Set the capabilities.
-
-    # The second is important for Docker and systemd-nspawn.
-    # When the container has no capabilities,
-    #  but the executable file inside the container has capabilities,
-    #  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
-
-    TMPFILE=/tmp/test_setcap.sh
-
-    command -v setcap >/dev/null \
-        && echo > $TMPFILE && chmod a+x $TMPFILE && $TMPFILE && setcap "cap_net_admin,cap_ipc_lock,cap_sys_nice+ep" $TMPFILE && $TMPFILE && rm $TMPFILE \
-        && setcap "cap_net_admin,cap_ipc_lock,cap_sys_nice+ep" "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
-        || echo "Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary. This is optional. Taskstats accounting will be disabled. To enable taskstats accounting you may add the required capability later manually."
-
-    # Clean old dynamic compilation results
-    if [ -d "${CLICKHOUSE_DATADIR_FROM_CONFIG}/build" ]; then
-        rm -f ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.cpp ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.so ||:
-    fi
-
-    if [ -f /usr/share/debconf/confmodule ]; then
-        db_get clickhouse-server/default-password
-        defaultpassword="$RET"
-        if [ -n "$defaultpassword" ]; then
-            echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
-            chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
-            chmod 600 ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
-        fi
-
-        # everything went well, so now let's reset the password
-        db_set clickhouse-server/default-password ""
-        # ... done with debconf here
-        db_stop
-    fi
+    ${CLICKHOUSE_GENERIC_PROGRAM} install --user "${CLICKHOUSE_USER}" --group "${CLICKHOUSE_GROUP}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}" --log-path "${CLICKHOUSE_LOGDIR}" --data-path "${CLICKHOUSE_DATADIR}"
 fi

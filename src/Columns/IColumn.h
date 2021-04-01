@@ -9,7 +9,7 @@
 
 
 class SipHash;
-
+class Collator;
 
 namespace DB
 {
@@ -18,12 +18,23 @@ namespace ErrorCodes
 {
     extern const int CANNOT_GET_SIZE_OF_FIELD;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_COLLATION;
 }
 
 class Arena;
 class ColumnGathererStream;
 class Field;
 class WeakHash32;
+
+class ISerialization;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+
+
+/*
+ * Represents a set of equal ranges in previous column to perform sorting in current column.
+ * Used in sorting by tuples.
+ * */
+using EqualRanges = std::vector<std::pair<size_t, size_t> >;
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -43,6 +54,9 @@ public:
 
     /// Name of a Column kind, without parameters (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
+
+    /// Type of data that column contains. It's an underlying type: UInt16 for Date, UInt32 for DateTime, so on.
+    virtual TypeIndex getDataType() const = 0;
 
     /** If column isn't constant, returns itself.
       * If column is constant, transforms constant to full column (if column type allows such transform) and return it.
@@ -196,6 +210,10 @@ public:
     /// Returns pointer to the position after the read data.
     virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
+    /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
+    /// Returns a pointer to the position after the deserialized data.
+    virtual const char * skipSerializedInArena(const char *) const = 0;
+
     /// Update state of hash function with value of n-th element.
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
     ///  passed bytes to hash must identify sequence of values unambiguously.
@@ -206,6 +224,9 @@ public:
     /// WeakHash32 must have the same size as column.
     virtual void updateWeakHash32(WeakHash32 & hash) const = 0;
 
+    /// Update state of hash with all column.
+    virtual void updateHashFast(SipHash & hash) const = 0;
+
     /** Removes elements that don't match the filter.
       * Is used in WHERE and HAVING operations.
       * If result_size_hint > 0, then makes advance reserve(result_size_hint) for the result column;
@@ -215,7 +236,7 @@ public:
     using Filter = PaddedPODArray<UInt8>;
     virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
-    /// Permutes elements using specified permutation. Is used in sortings.
+    /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
     using Permutation = PaddedPODArray<size_t>;
     virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
@@ -226,7 +247,7 @@ public:
 
     /** Compares (*this)[n] and rhs[m]. Column rhs should have the same type.
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
-      * Is used in sortings.
+      * Is used in sorting.
       *
       * If one of element's value is NaN or NULLs, then:
       * - if nan_direction_hint == -1, NaN and NULLs are considered as least than everything other;
@@ -237,6 +258,24 @@ public:
       */
     virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
 
+    /// Equivalent to compareAt, but collator is used to compare values.
+    virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
+    {
+        throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing it.", ErrorCodes::BAD_COLLATION);
+    }
+
+    /// Compare the whole column with single value from rhs column.
+    /// If row_indexes is nullptr, it's ignored. Otherwise, it is a set of rows to compare.
+    /// compare_results[i] will be equal to compareAt(row_indexes[i], rhs_row_num, rhs, nan_direction_hint) * direction
+    /// row_indexes (if not ignored) will contain row numbers for which compare result is 0
+    /// see compareImpl for default implementation.
+    virtual void compareColumn(const IColumn & rhs, size_t rhs_row_num,
+                               PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                               int direction, int nan_direction_hint) const = 0;
+
+    /// Check if all elements in the column have equal values. Return true if column is empty.
+    virtual bool hasEqualValues() const = 0;
+
     /** Returns a permutation that sorts elements of this column,
       *  i.e. perm[i]-th element of source column should be i-th element of sorted column.
       * reverse - reverse ordering (acsending).
@@ -244,6 +283,28 @@ public:
       * nan_direction_hint - see above.
       */
     virtual void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const = 0;
+
+    /*in updatePermutation we pass the current permutation and the intervals at which it should be sorted
+     * Then for each interval separately (except for the last one, if there is a limit)
+     * We sort it based on data about the current column, and find all the intervals within this
+     * interval that had the same values in this column. we can't tell about these values in what order they
+     * should have been, we form a new array with intervals that need to be sorted
+     * If there is a limit, then for the last interval we do partial sorting and all that is described above,
+     * but in addition we still find all the elements equal to the largest sorted, they will also need to be sorted.
+     */
+    virtual void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const = 0;
+
+    /** Equivalent to getPermutation and updatePermutation but collator is used to compare values.
+      * Supported for String, LowCardinality(String), Nullable(String) and for Array and Tuple, containing them.
+      */
+    virtual void getPermutationWithCollation(const Collator &, bool, size_t, int, Permutation &) const
+    {
+        throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
+    }
+    virtual void updatePermutationWithCollation(const Collator &, bool, size_t, int, Permutation &, EqualRanges&) const
+    {
+        throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
+    }
 
     /** Copies each element according offsets parameter.
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
@@ -282,6 +343,9 @@ public:
     /// Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined.
     virtual size_t byteSize() const = 0;
 
+    /// Size of single value in memory (for accounting purposes)
+    virtual size_t byteSizeAt(size_t /*n*/) const = 0;
+
     /// Size of memory, allocated for column.
     /// This is greater or equals to byteSize due to memory reservation in containers.
     /// Zero, if could not be determined.
@@ -303,11 +367,27 @@ public:
         throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-
-    MutablePtr mutate() const &&
+    /// Compress column in memory to some representation that allows to decompress it back.
+    /// Return itself if compression is not applicable for this column type.
+    virtual Ptr compress() const
     {
-        MutablePtr res = shallowMutate();
-        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = std::move(*subcolumn).mutate(); });
+        /// No compression by default.
+        return getPtr();
+    }
+
+    /// If it's CompressedColumn, decompress it and return.
+    /// Otherwise return itself.
+    virtual Ptr decompress() const
+    {
+        return getPtr();
+    }
+
+
+    static MutablePtr mutate(Ptr ptr)
+    {
+        MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
+        ptr.reset(); /// Reset use_count to 1.
+        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
         return res;
     }
 
@@ -358,7 +438,6 @@ public:
     virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
-    /// Implies isFixedAndContiguous.
     virtual bool isNumeric() const { return false; }
 
     /// If the only value column can contain is NULL.
@@ -370,6 +449,7 @@ public:
 
     virtual bool lowCardinality() const { return false; }
 
+    virtual bool isCollationSupported() const { return false; }
 
     virtual ~IColumn() = default;
     IColumn() = default;
@@ -385,6 +465,21 @@ protected:
     /// In derived classes (that use final keyword), implement scatter method as call to scatterImpl.
     template <typename Derived>
     std::vector<MutablePtr> scatterImpl(ColumnIndex num_columns, const Selector & selector) const;
+
+    template <typename Derived, bool reversed, bool use_indexes>
+    void compareImpl(const Derived & rhs, size_t rhs_row_num,
+                     PaddedPODArray<UInt64> * row_indexes,
+                     PaddedPODArray<Int8> & compare_results,
+                     int nan_direction_hint) const;
+
+    template <typename Derived>
+    void doCompareColumn(const Derived & rhs, size_t rhs_row_num,
+                         PaddedPODArray<UInt64> * row_indexes,
+                         PaddedPODArray<Int8> & compare_results,
+                         int direction, int nan_direction_hint) const;
+
+    template <typename Derived>
+    bool hasEqualValuesImpl() const;
 };
 
 using ColumnPtr = IColumn::Ptr;
@@ -393,7 +488,7 @@ using Columns = std::vector<ColumnPtr>;
 using MutableColumns = std::vector<MutableColumnPtr>;
 
 using ColumnRawPtrs = std::vector<const IColumn *>;
-//using MutableColumnRawPtrs = std::vector<IColumn *>;
+
 
 template <typename ... Args>
 struct IsMutableColumns;

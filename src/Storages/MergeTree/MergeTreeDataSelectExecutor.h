@@ -4,6 +4,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 
 
 namespace DB
@@ -24,84 +25,123 @@ public:
       */
     using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
-    Pipes read(
+    QueryPlanPtr read(
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         UInt64 max_block_size,
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
-    Pipes readFromParts(
+    QueryPlanPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         const Context & context,
         UInt64 max_block_size,
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
+
+    /// Construct a sample block consisting only of possible virtual columns for part pruning.
+    static Block getSampleBlockWithVirtualPartColumns();
+
+    /// Fill in values of possible virtual columns for part pruning.
+    static void fillBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, Block & block);
 
 private:
     const MergeTreeData & data;
 
-    Logger * log;
+    Poco::Logger * log;
 
-    Pipes spreadMarkRangesAmongStreams(
+    QueryPlanPtr spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
         const Names & virt_columns,
         const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings) const;
+        const MergeTreeReaderSettings & reader_settings,
+        const String & query_id) const;
 
-    Pipes spreadMarkRangesAmongStreamsWithOrder(
+    /// out_projection - save projection only with columns, requested to read
+    QueryPlanPtr spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
         size_t num_streams,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
-        const ExpressionActionsPtr & sorting_key_prefix_expr,
+        const ActionsDAGPtr & sorting_key_prefix_expr,
         const Names & virt_columns,
         const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings) const;
+        const MergeTreeReaderSettings & reader_settings,
+        ActionsDAGPtr & out_projection,
+        const String & query_id) const;
 
-    Pipes spreadMarkRangesAmongStreamsFinal(
+    QueryPlanPtr spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
+        size_t num_streams,
         const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
         UInt64 max_block_size,
         bool use_uncompressed_cache,
         const SelectQueryInfo & query_info,
         const Names & virt_columns,
         const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings) const;
+        const MergeTreeReaderSettings & reader_settings,
+        ActionsDAGPtr & out_projection,
+        const String & query_id) const;
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     size_t getApproximateTotalRowsToRead(
         const MergeTreeData::DataPartsVector & parts,
+        const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const Settings & settings) const;
 
-    /// Create the expression "Sign == 1".
-    void createPositiveSignCondition(
-        ExpressionActionsPtr & out_expression,
-        String & out_column,
-        const Context & context) const;
-
-    MarkRanges markRangesFromPKRange(
+    static MarkRanges markRangesFromPKRange(
         const MergeTreeData::DataPartPtr & part,
+        const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
-        const Settings & settings) const;
+        const Settings & settings,
+        Poco::Logger * log);
 
-    MarkRanges filterMarksUsingIndex(
-        MergeTreeIndexPtr index,
+    static MarkRanges filterMarksUsingIndex(
+        MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
-        const Settings & settings) const;
+        const Settings & settings,
+        const MergeTreeReaderSettings & reader_settings,
+        size_t & total_granules,
+        size_t & granules_dropped,
+        Poco::Logger * log);
+
+    /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
+    ///  as well as `max_block_number_to_read`.
+    static void selectPartsToRead(
+        MergeTreeData::DataPartsVector & parts,
+        const std::unordered_set<String> & part_values,
+        const std::optional<KeyCondition> & minmax_idx_condition,
+        const DataTypes & minmax_columns_types,
+        std::optional<PartitionPruner> & partition_pruner,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read);
+
+    /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
+    void selectPartsToReadWithUUIDFilter(
+        MergeTreeData::DataPartsVector & parts,
+        const std::unordered_set<String> & part_values,
+        const std::optional<KeyCondition> & minmax_idx_condition,
+        const DataTypes & minmax_columns_types,
+        std::optional<PartitionPruner> & partition_pruner,
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        const Context & query_context) const;
 };
 
 }

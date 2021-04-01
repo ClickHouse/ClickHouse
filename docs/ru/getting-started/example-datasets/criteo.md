@@ -1,3 +1,8 @@
+---
+toc_priority: 18
+toc_title: "Терабайт логов кликов от Criteo"
+---
+
 # Терабайт логов кликов от Criteo {#terabait-logov-klikov-ot-criteo}
 
 Скачайте данные с http://labs.criteo.com/downloads/download-terabyte-click-logs/
@@ -71,4 +76,3 @@ INSERT INTO criteo SELECT date, clicked, int1, int2, int3, int4, int5, int6, int
 DROP TABLE criteo_log;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/criteo/) <!--hide-->

@@ -1,5 +1,6 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Common/quoteString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -12,7 +13,9 @@ ASTPtr ASTColumnDeclaration::clone() const
 
     if (type)
     {
-        res->type = type;
+        // Type may be an ASTFunction (e.g. `create table t (a Decimal(9,0))`),
+        // so we have to clone it properly as well.
+        res->type = type->clone();
         res->children.push_back(res->type);
     }
 
@@ -47,16 +50,23 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
 {
     frame.need_parens = false;
 
-    if (!settings.one_line)
-        settings.ostr << settings.nl_or_ws << std::string(4 * frame.indent, ' ');
-
     /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
     settings.ostr << backQuote(name);
 
     if (type)
     {
         settings.ostr << ' ';
-        type->formatImpl(settings, state, frame);
+
+        FormatStateStacked type_frame = frame;
+        type_frame.indent = 0;
+
+        type->formatImpl(settings, state, type_frame);
+    }
+
+    if (null_modifier)
+    {
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "")
+                      << (*null_modifier ? "" : "NOT ") << "NULL" << (settings.hilite ? hilite_none : "");
     }
 
     if (default_expression)

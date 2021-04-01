@@ -15,24 +15,24 @@ function download
     mkdir left right db0 ||:
 
     "$script_dir/download.sh" ||: &
-    cp -vP "$repo_dir"/../build-gcc9-rel/programs/clickhouse* right &
-    cp -vP "$repo_dir"/../build-clang10-rel/programs/clickhouse* left &
+    cp -nvP "$repo_dir"/../build-gcc9-rel/programs/clickhouse* left &
+    cp -nvP "$repo_dir"/../build-clang10-rel/programs/clickhouse* right &
     wait
 }
 
 function configure
 {
     # Test files
-    cp -av "$repo_dir/tests/performance" right
-    cp -av "$repo_dir/tests/performance" left
+    cp -nav "$repo_dir/tests/performance" right
+    cp -nav "$repo_dir/tests/performance" left
 
     # Configs
-    cp -av "$script_dir/config" right
-    cp -av "$script_dir/config" left
-    cp -av "$repo_dir"/programs/server/config* right/config
-    cp -av "$repo_dir"/programs/server/user* right/config
-    cp -av "$repo_dir"/programs/server/config* left/config
-    cp -av "$repo_dir"/programs/server/user* left/config
+    cp -nav "$script_dir/config" right
+    cp -nav "$script_dir/config" left
+    cp -nav "$repo_dir"/programs/server/config* right/config
+    cp -nav "$repo_dir"/programs/server/user* right/config
+    cp -nav "$repo_dir"/programs/server/config* left/config
+    cp -nav "$repo_dir"/programs/server/user* left/config
 
     tree left
 }

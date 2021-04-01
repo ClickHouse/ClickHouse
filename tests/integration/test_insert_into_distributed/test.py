@@ -1,10 +1,9 @@
-import pytest
 import time
 
+import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
-
 
 cluster = ClickHouseCluster(__file__)
 
@@ -12,7 +11,7 @@ instance_test_reconnect = cluster.add_instance('instance_test_reconnect', main_c
 instance_test_inserts_batching = cluster.add_instance(
     'instance_test_inserts_batching',
     main_configs=['configs/remote_servers.xml'], user_configs=['configs/enable_distributed_inserts_batching.xml'])
-remote = cluster.add_instance('remote', user_configs=['configs/forbid_background_merges.xml'])
+remote = cluster.add_instance('remote', main_configs=['configs/forbid_background_merges.xml'])
 
 instance_test_inserts_local_cluster = cluster.add_instance(
     'instance_test_inserts_local_cluster',
@@ -23,6 +22,7 @@ node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'
 
 shard1 = cluster.add_instance('shard1', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 shard2 = cluster.add_instance('shard2', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -36,10 +36,11 @@ CREATE TABLE distributed (x UInt32) ENGINE = Distributed('test_cluster', 'defaul
 
         remote.query("CREATE TABLE local2 (d Date, x UInt32, s String) ENGINE = MergeTree(d, x, 8192)")
         instance_test_inserts_batching.query('''
-CREATE TABLE distributed (d Date, x UInt32) ENGINE = Distributed('test_cluster', 'default', 'local2')
+CREATE TABLE distributed (d Date, x UInt32) ENGINE = Distributed('test_cluster', 'default', 'local2') SETTINGS fsync_after_insert=1, fsync_directories=1
 ''')
 
-        instance_test_inserts_local_cluster.query("CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)")
+        instance_test_inserts_local_cluster.query(
+            "CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)")
         instance_test_inserts_local_cluster.query('''
 CREATE TABLE distributed_on_local (d Date, x UInt32) ENGINE = Distributed('test_local_cluster', 'default', 'local')
 ''')
@@ -73,8 +74,6 @@ CREATE TABLE table_function (n UInt8, s String) ENGINE = MergeTree() ORDER BY n'
 
         node2.query('''
 CREATE TABLE table_function (n UInt8, s String) ENGINE = MergeTree() ORDER BY n''')
-
-
 
         yield cluster
 
@@ -162,6 +161,7 @@ def test_inserts_local(started_cluster):
     time.sleep(0.5)
     assert instance.query("SELECT count(*) FROM local").strip() == '1'
 
+
 def test_prefer_localhost_replica(started_cluster):
     test_query = "SELECT * FROM distributed ORDER BY id"
 
@@ -174,13 +174,13 @@ def test_prefer_localhost_replica(started_cluster):
 2017-06-17\t22
 '''
 
-    expected_from_node2 =  '''\
+    expected_from_node2 = '''\
 2017-06-17\t11
 2017-06-17\t22
 2017-06-17\t44
 '''
 
-    expected_from_node1 =  '''\
+    expected_from_node1 = '''\
 2017-06-17\t11
 2017-06-17\t22
 2017-06-17\t33
@@ -204,7 +204,9 @@ def test_prefer_localhost_replica(started_cluster):
     assert TSV(node2.query(test_query)) == TSV(expected_from_node2)
 
     # Now query is sent to node1, as it higher in order
-    assert TSV(node2.query(test_query + " SETTINGS load_balancing='in_order', prefer_localhost_replica=0")) == TSV(expected_from_node1)
+    assert TSV(node2.query(test_query + " SETTINGS load_balancing='in_order', prefer_localhost_replica=0")) == TSV(
+        expected_from_node1)
+
 
 def test_inserts_low_cardinality(started_cluster):
     instance = shard1
@@ -212,6 +214,9 @@ def test_inserts_low_cardinality(started_cluster):
     time.sleep(0.5)
     assert instance.query("SELECT count(*) FROM low_cardinality_all").strip() == '1'
 
+
 def test_table_function(started_cluster):
-    node1.query("insert into table function cluster('shard_with_local_replica', 'default', 'table_function') select number, concat('str_', toString(number)) from numbers(100000)")
-    assert node1.query("select count() from cluster('shard_with_local_replica', 'default', 'table_function')").rstrip() == '100000'
+    node1.query(
+        "insert into table function cluster('shard_with_local_replica', 'default', 'table_function') select number, concat('str_', toString(number)) from numbers(100000)")
+    assert node1.query(
+        "select count() from cluster('shard_with_local_replica', 'default', 'table_function')").rstrip() == '100000'

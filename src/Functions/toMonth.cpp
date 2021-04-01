@@ -1,4 +1,3 @@
-#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionDateOrDateTimeToSomething.h>
@@ -13,6 +12,8 @@ using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMonth
 void registerFunctionToMonth(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToMonth>();
+    /// MysQL compatibility alias.
+    factory.registerFunction<FunctionToMonth>("MONTH", FunctionFactory::CaseInsensitive);
 }
 
 }

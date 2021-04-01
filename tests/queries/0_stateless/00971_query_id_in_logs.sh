@@ -3,7 +3,8 @@
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=trace
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 set -e
 

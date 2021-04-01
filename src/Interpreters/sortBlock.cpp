@@ -2,6 +2,8 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -86,8 +88,7 @@ struct PartialSortingLessWithCollation
             }
             else if (isCollationRequired(elem.description))
             {
-                const ColumnString & column_string = assert_cast<const ColumnString &>(*elem.column);
-                res = column_string.compareAtWithCollation(a, b, *elem.column, *elem.description.collator);
+                res = elem.column->compareAtWithCollation(a, b, *elem.column, elem.description.nulls_direction, *elem.description.collator);
             }
             else
                 res = elem.column->compareAt(a, b, *elem.column, elem.description.nulls_direction);
@@ -106,11 +107,9 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     if (!block)
         return;
 
-
     /// If only one column to sort by
     if (description.size() == 1)
     {
-
         IColumn::Permutation perm;
         bool reverse = description[0].direction == -1;
 
@@ -121,17 +120,19 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         bool is_column_const = false;
         if (isCollationRequired(description[0]))
         {
-            /// it it's real string column, than we need sort
-            if (const ColumnString * column_string = checkAndGetColumn<ColumnString>(column))
-                column_string->getPermutationWithCollation(*description[0].collator, reverse, limit, perm);
-            else if (checkAndGetColumnConstData<ColumnString>(column))
+            if (!column->isCollationSupported())
+                throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
+
+            if (isColumnConst(*column))
                 is_column_const = true;
             else
-                throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
-
+                column->getPermutationWithCollation(*description[0].collator, reverse, limit, description[0].nulls_direction, perm);
         }
         else if (!isColumnConst(*column))
-            column->getPermutation(reverse, limit, description[0].nulls_direction, perm);
+        {
+            int nan_direction_hint = description[0].nulls_direction;
+            column->getPermutation(reverse, limit, nan_direction_hint, perm);
+        }
         else
             /// we don't need to do anything with const column
             is_column_const = true;
@@ -161,8 +162,8 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             const IColumn * column = columns_with_sort_desc[i].column;
             if (isCollationRequired(description[i]))
             {
-                if (!checkAndGetColumn<ColumnString>(column) && !checkAndGetColumnConstData<ColumnString>(column))
-                    throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
+                if (!column->isCollationSupported())
+                    throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
 
                 need_collation = true;
             }
@@ -170,28 +171,51 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 
         if (need_collation)
         {
-            PartialSortingLessWithCollation less_with_collation(columns_with_sort_desc);
+            EqualRanges ranges;
+            ranges.emplace_back(0, perm.size());
+            for (const auto & column : columns_with_sort_desc)
+            {
+                while (!ranges.empty() && limit && limit <= ranges.back().first)
+                    ranges.pop_back();
 
-            if (limit)
-                std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less_with_collation);
-            else
-                pdqsort(perm.begin(), perm.end(), less_with_collation);
+                if (ranges.empty())
+                    break;
+
+                if (column.column_const)
+                    continue;
+
+                if (isCollationRequired(column.description))
+                {
+                    column.column->updatePermutationWithCollation(
+                        *column.description.collator, column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
+                }
+                else
+                {
+                    column.column->updatePermutation(
+                        column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
+                }
+            }
         }
         else
         {
-            PartialSortingLess less(columns_with_sort_desc);
+            EqualRanges ranges;
+            ranges.emplace_back(0, perm.size());
+            for (const auto & column : columns_with_sort_desc)
+            {
+                while (!ranges.empty() && limit && limit <= ranges.back().first)
+                    ranges.pop_back();
 
-            if (limit)
-                std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less);
-            else
-                pdqsort(perm.begin(), perm.end(), less);
+                if (ranges.empty())
+                    break;
+
+                column.column->updatePermutation(
+                    column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
+            }
         }
 
         size_t columns = block.columns();
         for (size_t i = 0; i < columns; ++i)
-        {
             block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
-        }
     }
 }
 

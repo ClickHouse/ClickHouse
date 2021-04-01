@@ -26,6 +26,7 @@ namespace DB
         extern const int LOGICAL_ERROR;
         extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
         extern const int INTERNAL_REDIS_ERROR;
+        extern const int UNKNOWN_TYPE;
     }
 
 
@@ -98,11 +99,20 @@ namespace DB
                     assert_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(string_value).getDayNum());
                     break;
                 case ValueType::vtDateTime:
-                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(string_value)));
+                {
+                    ReadBufferFromString in(string_value);
+                    time_t time = 0;
+                    readDateTimeText(time, in);
+                    if (time < 0)
+                        time = 0;
+                    assert_cast<ColumnUInt32 &>(column).insertValue(time);
                     break;
+                }
                 case ValueType::vtUUID:
                     assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(string_value));
                     break;
+                default:
+                    throw Exception("Value of unsupported type:" + column.getName(), ErrorCodes::UNKNOWN_TYPE);
             }
         }
     }

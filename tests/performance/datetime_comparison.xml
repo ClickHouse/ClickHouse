@@ -1,0 +1,5 @@
+<test>
+    <query>SELECT count() FROM numbers(1000000000) WHERE materialize(now()) > toString(toDateTime('2020-09-30 00:00:00'))</query>
+    <query>SELECT count() FROM numbers(1000000000) WHERE materialize(now()) > toUInt32(toDateTime('2020-09-30 00:00:00'))</query>
+    <query>SELECT count() FROM numbers(1000000000) WHERE materialize(now()) > toDateTime('2020-09-30 00:00:00')</query>
+</test>

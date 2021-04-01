@@ -46,20 +46,15 @@ private:
         return getLeastSupertype(types);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         size_t num_arguments = arguments.size();
         if (1 == num_arguments)
-        {
-            block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
-            return;
-        }
-
-        auto result_type = block.getByPosition(result).type;
+            return arguments[0].column;
 
         Columns converted_columns(num_arguments);
         for (size_t arg = 0; arg < num_arguments; ++arg)
-            converted_columns[arg] = castColumn(block.getByPosition(arguments[arg]), result_type)->convertToFullColumnIfConst();
+            converted_columns[arg] = castColumn(arguments[arg], result_type)->convertToFullColumnIfConst();
 
         auto result_column = result_type->createColumn();
         result_column->reserve(input_rows_count);
@@ -86,7 +81,7 @@ private:
             result_column->insertFrom(*converted_columns[best_arg], row_num);
         }
 
-        block.getByPosition(result).column = std::move(result_column);
+        return result_column;
     }
 };
 

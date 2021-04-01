@@ -1,4 +1,5 @@
 SET allow_experimental_live_view = 1;
+SET insert_distributed_sync = 1;
 
 DROP TABLE IF EXISTS lv;
 DROP TABLE IF EXISTS visits;
@@ -17,3 +18,4 @@ SELECT * FROM lv;
 DROP TABLE visits;
 DROP TABLE visits_layer;
 
+DROP TABLE lv;

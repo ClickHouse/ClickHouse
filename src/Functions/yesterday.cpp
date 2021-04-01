@@ -18,9 +18,9 @@ public:
 
     String getName() const override { return "yesterday"; }
 
-    void execute(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
+    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        block.getByPosition(result).column = DataTypeDate().createColumnConst(input_rows_count, day_value);
+        return DataTypeDate().createColumnConst(input_rows_count, day_value);
     }
 
 private:
@@ -40,12 +40,12 @@ public:
         return argument_types;
     }
 
-    const DataTypePtr & getReturnType() const override
+    const DataTypePtr & getResultType() const override
     {
         return return_type;
     }
 
-    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionYesterday>(day_value);
     }

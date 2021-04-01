@@ -18,6 +18,7 @@ class MergeTreeReverseSelectProcessor : public MergeTreeBaseSelectProcessor
 public:
     MergeTreeReverseSelectProcessor(
         const MergeTreeData & storage,
+        const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData::DataPartPtr & owned_data_part,
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
@@ -69,7 +70,7 @@ private:
 
     Chunks chunks;
 
-    Logger * log = &Logger::get("MergeTreeReverseSelectProcessor");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeReverseSelectProcessor");
 };
 
 }

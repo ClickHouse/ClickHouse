@@ -31,33 +31,37 @@ private:
     using ResultColumnType = ColumnVector<typename Method::ResultType>;
 
     template <typename T>
-    bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
+    ColumnPtr executeNumber(const ColumnsWithTypeAndName & arguments) const
     {
-        return executeNumberNumber<T, UInt8>(block, arguments, result)
-            || executeNumberNumber<T, UInt16>(block, arguments, result)
-            || executeNumberNumber<T, UInt32>(block, arguments, result)
-            || executeNumberNumber<T, UInt64>(block, arguments, result)
-            || executeNumberNumber<T, Int8>(block, arguments, result)
-            || executeNumberNumber<T, Int16>(block, arguments, result)
-            || executeNumberNumber<T, Int32>(block, arguments, result)
-            || executeNumberNumber<T, Int64>(block, arguments, result)
-            || executeNumberNumber<T, Float32>(block, arguments, result)
-            || executeNumberNumber<T, Float64>(block, arguments, result);
+        ColumnPtr res;
+        if (   (res = executeNumberNumber<T, UInt8>(arguments))
+            || (res = executeNumberNumber<T, UInt16>(arguments))
+            || (res = executeNumberNumber<T, UInt32>(arguments))
+            || (res = executeNumberNumber<T, UInt64>(arguments))
+            || (res = executeNumberNumber<T, Int8>(arguments))
+            || (res = executeNumberNumber<T, Int16>(arguments))
+            || (res = executeNumberNumber<T, Int32>(arguments))
+            || (res = executeNumberNumber<T, Int64>(arguments))
+            || (res = executeNumberNumber<T, Float32>(arguments))
+            || (res = executeNumberNumber<T, Float64>(arguments)))
+            return res;
+
+       return nullptr;
     }
 
 
     template <typename T, typename U>
-    bool executeNumberNumber(Block & block, const ColumnNumbers & arguments, size_t result)
+    ColumnPtr executeNumberNumber(const ColumnsWithTypeAndName & arguments) const
     {
-        ColumnPtr col1 = block.getByPosition(arguments[0]).column->convertToFullColumnIfConst();
-        ColumnPtr col2 = block.getByPosition(arguments[1]).column->convertToFullColumnIfConst();
+        ColumnPtr col1 = arguments[0].column->convertToFullColumnIfConst();
+        ColumnPtr col2 = arguments[1].column->convertToFullColumnIfConst();
         if (!col1 || !col2)
-            return false;
+            return nullptr;
 
         const ColumnArray * col_array1 = checkAndGetColumn<ColumnArray>(col1.get());
         const ColumnArray * col_array2 = checkAndGetColumn<ColumnArray>(col2.get());
         if (!col_array1 || !col_array2)
-            return false;
+            return nullptr;
 
         if (!col_array1->hasEqualOffsets(*col_array2))
             throw Exception("Array arguments for function " + getName() + " must have equal sizes", ErrorCodes::BAD_ARGUMENTS);
@@ -65,7 +69,7 @@ private:
         const ColumnVector<T> * col_nested1 = checkAndGetColumn<ColumnVector<T>>(col_array1->getData());
         const ColumnVector<U> * col_nested2 = checkAndGetColumn<ColumnVector<U>>(col_array2->getData());
         if (!col_nested1 || !col_nested2)
-            return false;
+            return nullptr;
 
         auto col_res = ResultColumnType::create();
 
@@ -75,8 +79,7 @@ private:
             col_array1->getOffsets(),
             col_res->getData());
 
-        block.getByPosition(result).column = std::move(col_res);
-        return true;
+        return col_res;
     }
 
     template <typename T, typename U>
@@ -112,7 +115,7 @@ public:
             if (!array_type)
                 throw Exception("All arguments for function " + getName() + " must be an array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            auto & nested_type = array_type->getNestedType();
+            const auto & nested_type = array_type->getNestedType();
             if (!isNativeNumber(nested_type) && !isEnum(nested_type))
                 throw Exception(
                     getName() + " cannot process values of type " + nested_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -123,21 +126,26 @@ public:
         return Method::getReturnType(nested_types[0], nested_types[1]);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
     {
-        if (!(executeNumber<UInt8>(block, arguments, result)
-            || executeNumber<UInt16>(block, arguments, result)
-              || executeNumber<UInt32>(block, arguments, result)
-              || executeNumber<UInt64>(block, arguments, result)
-              || executeNumber<Int8>(block, arguments, result)
-              || executeNumber<Int16>(block, arguments, result)
-              || executeNumber<Int32>(block, arguments, result)
-              || executeNumber<Int64>(block, arguments, result)
-              || executeNumber<Float32>(block, arguments, result)
-              || executeNumber<Float64>(block, arguments, result)))
-            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function "
-                                + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN};
+        ColumnPtr res;
+        if (!((res = executeNumber<UInt8>(arguments))
+            || (res = executeNumber<UInt16>(arguments))
+            || (res = executeNumber<UInt32>(arguments))
+            || (res = executeNumber<UInt64>(arguments))
+            || (res = executeNumber<Int8>(arguments))
+            || (res = executeNumber<Int16>(arguments))
+            || (res = executeNumber<Int32>(arguments))
+            || (res = executeNumber<Int64>(arguments))
+            || (res = executeNumber<Float32>(arguments))
+            || (res = executeNumber<Float64>(arguments))))
+            throw Exception
+            {
+                "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN
+            };
+
+        return res;
     }
 };
 

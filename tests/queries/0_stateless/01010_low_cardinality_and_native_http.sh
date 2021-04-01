@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 
 $CLICKHOUSE_CLIENT --query="drop table if exists tab_str";
@@ -19,3 +20,6 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=select+x+from+tab_str_lc+format+
 
 $CLICKHOUSE_CLIENT --query="select '----'";
 $CLICKHOUSE_CLIENT --query="select x from tab_str";
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE tab_str"
+$CLICKHOUSE_CLIENT -q "DROP TABLE tab_str_lc"

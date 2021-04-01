@@ -24,7 +24,8 @@ public:
         const std::string & path_to_settings,
         const std::string & config_prefix,
         const Block & sample_block_,
-        const Context & context);
+        const Context & context,
+        const std::string & default_database);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
@@ -47,18 +48,22 @@ public:
 
     std::string toString() const override;
 
+    /// Used for detection whether the hashtable should be preallocated
+    /// (since if there is WHERE then it can filter out too much)
+    bool hasWhere() const { return !where.empty(); }
+
 private:
     std::string getUpdateFieldAndDate();
 
-    BlockInputStreamPtr createStreamForSelectiveLoad(const std::string & query);
+    BlockInputStreamPtr createStreamForQuery(const String & query);
 
     std::string doInvalidateQuery(const std::string & request) const;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
+    const bool secure;
     const std::string host;
     const UInt16 port;
-    const bool secure;
     const std::string user;
     const std::string password;
     const std::string db;

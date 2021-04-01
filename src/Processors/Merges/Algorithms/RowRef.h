@@ -63,7 +63,7 @@ public:
             free_chunks.push_back(i);
     }
 
-    SharedChunkPtr alloc(Chunk && chunk)
+    SharedChunkPtr alloc(Chunk & chunk)
     {
         if (free_chunks.empty())
             throw Exception("Not enough space in SharedChunkAllocator. "
@@ -72,7 +72,7 @@ public:
         auto pos = free_chunks.back();
         free_chunks.pop_back();
 
-        chunks[pos] = std::move(chunk);
+        chunks[pos].swap(chunk);
         chunks[pos].position = pos;
         chunks[pos].allocator = this;
 
@@ -83,9 +83,7 @@ public:
     {
         if (free_chunks.size() != chunks.size())
         {
-            LOG_ERROR(&Logger::get("SharedChunkAllocator"),
-                      "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: "
-                              << StackTrace().toString());
+            LOG_ERROR(&Poco::Logger::get("SharedChunkAllocator"), "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: {}", StackTrace().toString());
 
             return;
         }
@@ -102,17 +100,10 @@ private:
             /// This may happen if allocator was removed before chunks.
             /// Log message and exit, because we don't want to throw exception in destructor.
 
-            LOG_ERROR(&Logger::get("SharedChunkAllocator"),
-                    "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: "
-                    << StackTrace().toString());
+            LOG_ERROR(&Poco::Logger::get("SharedChunkAllocator"), "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: {}", StackTrace().toString());
 
             return;
         }
-
-        /// Release memory. It is not obligatory.
-        ptr->clear();
-        ptr->all_columns.clear();
-        ptr->sort_columns.clear();
 
         free_chunks.push_back(ptr->position);
     }
@@ -145,7 +136,7 @@ struct RowRef
     {
         sort_columns = cursor.impl->sort_columns.data();
         num_columns = cursor.impl->sort_columns.size();
-        row_num = cursor.impl->pos;
+        row_num = cursor.impl->getRow();
     }
 
     static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
@@ -201,7 +192,7 @@ struct RowRefWithOwnedChunk
     void set(SortCursor & cursor, SharedChunkPtr chunk)
     {
         owned_chunk = std::move(chunk);
-        row_num = cursor.impl->pos;
+        row_num = cursor.impl->getRow();
         all_columns = &owned_chunk->all_columns;
         sort_columns = &owned_chunk->sort_columns;
     }

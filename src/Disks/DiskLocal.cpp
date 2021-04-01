@@ -5,18 +5,25 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
+#include <Disks/LocalDirectorySyncGuard.h>
 
 #include <IO/createReadBufferFromFileBase.h>
-#include <IO/createWriteBufferFromFileBase.h>
+#include <common/logger_useful.h>
+#include <unistd.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
+    extern const int INCORRECT_DISK_INDEX;
+    extern const int CANNOT_TRUNCATE_FILE;
+    extern const int CANNOT_UNLINK;
+    extern const int CANNOT_RMDIR;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -34,7 +41,9 @@ public:
 
     UInt64 getSize() const override { return size; }
 
-    DiskPtr getDisk() const override { return disk; }
+    DiskPtr getDisk(size_t i) const override;
+
+    Disks getDisks() const override { return {disk}; }
 
     void update(UInt64 new_size) override;
 
@@ -87,7 +96,7 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     std::lock_guard lock(DiskLocal::reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Logger::get("DiskLocal"), "Reserving 0 bytes on disk " << backQuote(name));
+        LOG_DEBUG(&Poco::Logger::get("DiskLocal"), "Reserving 0 bytes on disk {}", backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -96,10 +105,8 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
-        LOG_DEBUG(
-            &Logger::get("DiskLocal"),
-            "Reserving " << formatReadableSizeWithBinarySuffix(bytes) << " on disk " << backQuote(name) << ", having unreserved "
-                         << formatReadableSizeWithBinarySuffix(unreserved_space) << ".");
+        LOG_DEBUG(&Poco::Logger::get("DiskLocal"), "Reserving {} on disk {}, having unreserved {}.",
+            ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
         return true;
@@ -211,27 +218,39 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
         from_file.renameTo(to_file.path());
 }
 
-void DiskLocal::copyFile(const String & from_path, const String & to_path)
-{
-    Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
-}
-
 std::unique_ptr<ReadBufferFromFileBase>
-DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
+DiskLocal::readFile(
+    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
 {
-    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, buf_size);
+    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return createWriteBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, buf_size, flags);
+    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
 }
 
-void DiskLocal::remove(const String & path)
+void DiskLocal::removeFile(const String & path)
 {
-    Poco::File(disk_path + path).remove(false);
+    auto fs_path = disk_path + path;
+    if (0 != unlink(fs_path.c_str()))
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
+}
+
+void DiskLocal::removeFileIfExists(const String & path)
+{
+    auto fs_path = disk_path + path;
+    if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
+}
+
+void DiskLocal::removeDirectory(const String & path)
+{
+    auto fs_path = disk_path + path;
+    if (0 != rmdir(fs_path.c_str()))
+        throwFromErrnoWithPath("Cannot rmdir " + fs_path, fs_path, ErrorCodes::CANNOT_RMDIR);
 }
 
 void DiskLocal::removeRecursive(const String & path)
@@ -259,6 +278,13 @@ void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
     DB::createHardLink(disk_path + src_path, disk_path + dst_path);
 }
 
+void DiskLocal::truncateFile(const String & path, size_t size)
+{
+    int res = truncate((disk_path + path).c_str(), size);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot truncate file " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
+}
+
 void DiskLocal::createFile(const String & path)
 {
     Poco::File(disk_path + path).createFile();
@@ -282,6 +308,20 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
 
+SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
+{
+    return std::make_unique<LocalDirectorySyncGuard>(disk_path + path);
+}
+
+DiskPtr DiskLocalReservation::getDisk(size_t i) const
+{
+    if (i != 0)
+    {
+        throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+    }
+    return disk;
+}
+
 void DiskLocalReservation::update(UInt64 new_size)
 {
     std::lock_guard lock(DiskLocal::reservation_mutex);
@@ -299,7 +339,7 @@ DiskLocalReservation::~DiskLocalReservation()
         if (disk->reserved_bytes < size)
         {
             disk->reserved_bytes = 0;
-            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservations size for disk '" + disk->getName() + "'.");
+            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
         }
         else
         {
@@ -307,7 +347,7 @@ DiskLocalReservation::~DiskLocalReservation()
         }
 
         if (disk->reservation_count == 0)
-            LOG_ERROR(&Logger::get("DiskLocal"), "Unbalanced reservation count for disk '" + disk->getName() + "'.");
+            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
         else
             --disk->reservation_count;
     }

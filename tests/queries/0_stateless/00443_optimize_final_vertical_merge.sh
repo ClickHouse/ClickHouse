@@ -3,15 +3,15 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/../shell_config.sh
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
-db="test"
 table="optimize_me_finally"
-name="$db.$table"
+name="$CLICKHOUSE_DATABASE.$table"
 res_rows=1500000 # >= vertical_merge_algorithm_min_rows_to_activate
 
 function get_num_parts {
-    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE active AND database='$db' AND table='$table'"
+    $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.parts WHERE active AND database='$CLICKHOUSE_DATABASE' AND table='$table'"
 }
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $name"
@@ -43,13 +43,13 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO $name (date, Sign, ki) SELECT
 toDate(0) AS date,
 toInt8(1) AS Sign,
 toUInt64(0) AS ki
-FROM system.numbers LIMIT 9000"
+FROM system.numbers LIMIT 9000" --server_logs_file=/dev/null
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO $name (date, Sign, ki) SELECT
 toDate(0) AS date,
 toInt8(1) AS Sign,
 number AS ki
-FROM system.numbers LIMIT 9000, 9000"
+FROM system.numbers LIMIT 9000, 9000" --server_logs_file=/dev/null
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO $name SELECT
 toDate(0) AS date,
@@ -68,9 +68,9 @@ number AS di09,
 number AS di10,
 [number, number+1] AS \`n.i\`,
 [hex(number), hex(number+1)] AS \`n.s\`
-FROM system.numbers LIMIT $res_rows"
+FROM system.numbers LIMIT $res_rows" --server_logs_file=/dev/null
 
-while [[ `get_num_parts` -ne 1 ]] ; do $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE $name PARTITION 197001" --server_logs_file=/dev/null; done
+while [[ $(get_num_parts) -ne 1 ]] ; do $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE $name PARTITION 197001" --server_logs_file=/dev/null; done
 
 $CLICKHOUSE_CLIENT -q "ALTER TABLE $name ADD COLUMN n.a Array(String)"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE $name ADD COLUMN da Array(String) DEFAULT ['def']"
@@ -83,8 +83,8 @@ $CLICKHOUSE_CLIENT -q "ALTER TABLE $name MODIFY COLUMN da Array(String) DEFAULT 
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(Sign), sum(ki = di05), sum(hex(ki) = ds), sum(ki = n.i[1]), sum([hex(ki), hex(ki+1)] = n.s) FROM $name"
 $CLICKHOUSE_CLIENT -q "SELECT groupUniqArray(da), groupUniqArray(n.a) FROM $name"
 
-hash_src=`$CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT cityHash64(groupArray(ki)) FROM $name"`
-hash_ref=`$CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT cityHash64(groupArray(ki)) FROM (SELECT number as ki FROM system.numbers LIMIT $res_rows)"`
+hash_src=$($CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT cityHash64(groupArray(ki)) FROM $name")
+hash_ref=$($CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT cityHash64(groupArray(ki)) FROM (SELECT number as ki FROM system.numbers LIMIT $res_rows)")
 echo $(( $hash_src - $hash_ref ))
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $name"

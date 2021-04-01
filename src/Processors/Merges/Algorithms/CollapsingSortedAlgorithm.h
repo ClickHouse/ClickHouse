@@ -31,10 +31,11 @@ public:
         size_t num_inputs,
         SortDescription description_,
         const String & sign_column,
+        bool only_positive_sign_, /// For select final. Skip rows with sum(sign) < 0.
         size_t max_block_size,
-        WriteBuffer * out_row_sources_buf_,
-        bool use_average_block_sizes,
-        Logger * log_);
+        Poco::Logger * log_,
+        WriteBuffer * out_row_sources_buf_ = nullptr,
+        bool use_average_block_sizes = false);
 
     Status merge() override;
 
@@ -42,6 +43,7 @@ private:
     MergedData merged_data;
 
     const size_t sign_column_number;
+    const bool only_positive_sign;
 
     static constexpr size_t max_row_refs = 4; /// first_negative, last_positive, last, current.
     RowRef first_negative_row;
@@ -60,11 +62,15 @@ private:
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
     size_t count_incorrect_data = 0;    /// To prevent too many error messages from writing to the log.
-    Logger * log;
+    Poco::Logger * log;
 
     void reportIncorrectData();
     void insertRow(RowRef & row);
-    void insertRows();
+
+    /// Insert ready rows into merged_data. We may want to insert 0, 1 or 2 rows.
+    /// It may happen that 2 rows is going to be inserted and, but merged data has free space only for 1 row.
+    /// In this case, Chunk with ready is pulled from merged_data before the second insertion.
+    std::optional<Chunk> insertRows();
 };
 
 }
