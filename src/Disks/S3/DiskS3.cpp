@@ -52,7 +52,7 @@ namespace
         if (!response.IsSuccess())
         {
             const auto & err = response.GetError();
-            throw Exception(err.GetMessage(), static_cast<int>(err.GetErrorType()));
+            throw Exception(err.GetMessage() + ", after retry exception", static_cast<int>(err.GetErrorType()));
         }
     }
 
@@ -652,7 +652,24 @@ void DiskS3::remove(const String & path)
                 Aws::S3::Model::DeleteObjectRequest request;
                 request.SetBucket(bucket);
                 request.SetKey(s3_root_path + s3_object_path);
-                throwIfError(client->DeleteObject(request));
+
+                int retry = 8;
+                long sleep = 10;
+                while (retry > 0)
+                {
+                    try
+                    {
+                        throwIfError(client->DeleteObject(request));
+                        retry = 0;
+                    }
+                    catch (Exception &)
+                    {
+                        if (--retry == 0)
+                            throw;
+                        Poco::Thread::sleep(sleep);
+                        sleep *= 2;
+                    }
+                }
             }
         }
         else /// In other case decrement number of references, save metadata and delete file.
