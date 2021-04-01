@@ -34,17 +34,37 @@ if [ "$NUM_TRIES" -gt "1" ]; then
 
     # simpliest way to forward env variables to server
     sudo -E -u clickhouse /usr/bin/clickhouse-server --config /etc/clickhouse-server/config.xml --daemon
-    sleep 5
 else
-    service clickhouse-server start && sleep 5
+    service clickhouse-server start
 fi
 
-if grep -q -- "--use-skip-list" /usr/bin/clickhouse-test; then
-    SKIP_LIST_OPT="--use-skip-list"
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+
+    sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server1/config.xml --daemon \
+    -- --path /var/lib/clickhouse1/ --logger.stderr /var/log/clickhouse-server/stderr1.log \
+    --logger.log /var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server1.err.log \
+    --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
+    --mysql_port 19004 \
+    --keeper_server.tcp_port 19181 --keeper_server.server_id 2 \
+    --macros.replica r2   # It doesn't work :(
+
+    sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server2/config.xml --daemon \
+    -- --path /var/lib/clickhouse2/ --logger.stderr /var/log/clickhouse-server/stderr2.log \
+    --logger.log /var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server2.err.log \
+    --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
+    --mysql_port 29004 \
+    --keeper_server.tcp_port 29181 --keeper_server.server_id 3 \
+    --macros.shard s2   # It doesn't work :(
+
+    MAX_RUN_TIME=$((MAX_RUN_TIME < 9000 ? MAX_RUN_TIME : 9000))  # min(MAX_RUN_TIME, 2.5 hours)
+    MAX_RUN_TIME=$((MAX_RUN_TIME != 0 ? MAX_RUN_TIME : 9000))    # set to 2.5 hours if 0 (unlimited)
 fi
+
+sleep 5
 
 function run_tests()
 {
+    set -x
     # We can have several additional options so we path them as array because it's
     # more idiologically correct.
     read -ra ADDITIONAL_OPTIONS <<< "${ADDITIONAL_OPTIONS:-}"
@@ -63,8 +83,7 @@ function run_tests()
     fi
 
     clickhouse-test --testname --shard --zookeeper --hung-check --print-time \
-            --test-runs "$NUM_TRIES" \
-            "$SKIP_LIST_OPT" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+            --use-skip-list --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a test_output/test_result.txt
 }
@@ -88,3 +107,10 @@ if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
 fi
 tar -chf /test_output/text_log_dump.tar /var/lib/clickhouse/data/system/text_log ||:
 tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
+
+if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
+    pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
+    mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
+    mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
+fi
