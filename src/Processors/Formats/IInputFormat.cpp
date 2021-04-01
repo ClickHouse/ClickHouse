@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 IInputFormat::IInputFormat(Block header, ReadBuffer & in_)
     : ISource(std::move(header)), in(in_)
 {
