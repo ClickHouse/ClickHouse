@@ -64,6 +64,8 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"Settings.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"Settings.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+
+        {"current_database", std::make_shared<DataTypeString>()},
     };
 }
 
@@ -149,6 +151,8 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Contex
                 column_settings_values->insertDefault();
             }
         }
+
+        res_columns[i++]->insert(process.current_database);
     }
 }
 

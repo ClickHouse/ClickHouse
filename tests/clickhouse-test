@@ -108,7 +108,7 @@ def remove_control_characters(s):
 
 def get_db_engine(args, database_name):
     if args.replicated_database:
-        return " ENGINE=Replicated('/test/clickhouse/db/{}', 's1', 'r1')".format(database_name)
+        return " ON CLUSTER test_cluster_database_replicated ENGINE=Replicated('/test/clickhouse/db/{}', '{{shard}}', '{{replica}}')".format(database_name)
     if args.db_engine:
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
@@ -180,7 +180,10 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
         try:
-            clickhouse_proc_create.communicate(("DROP DATABASE " + database), timeout=seconds_left)
+            drop_database_query = "DROP DATABASE " + database
+            if args.replicated_database:
+                drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+            clickhouse_proc_create.communicate((drop_database_query), timeout=seconds_left)
         except TimeoutExpired:
             # kill test process because it can also hung
             if proc.returncode is None:
@@ -201,6 +204,9 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
     if not args.show_db_name:
         os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
+    if args.replicated_database:
+        os.system("LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {file}".format(file=stdout_file))
+        os.system("LC_ALL=C sed -i -e 's|auto_{{replica}}||g' {file}".format(file=stdout_file))
 
     stdout = open(stdout_file, 'rb').read() if os.path.exists(stdout_file) else b''
     stdout = str(stdout, errors='replace', encoding='utf-8')
@@ -216,8 +222,12 @@ def need_retry(stderr):
 
 def get_processlist(args):
     try:
+        query = b"SHOW PROCESSLIST FORMAT Vertical"
+        if args.replicated_database:
+            query = b"SELECT materialize((hostName(), tcpPort())) as host, * " \
+                    b"FROM clusterAllReplicas('r', system.processes) WHERE query NOT LIKE '%system.processes%' FORMAT Vertical"
         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        (stdout, _) = clickhouse_proc.communicate((b"SHOW PROCESSLIST FORMAT Vertical"), timeout=20)
+        (stdout, _) = clickhouse_proc.communicate((query), timeout=20)
         return False, stdout.decode('utf-8')
     except Exception as ex:
         print("Exception", ex)
@@ -849,6 +859,8 @@ def main(args):
     if total_tests_run == 0:
         print("No tests were run.")
         sys.exit(1)
+    else:
+        print("All tests have finished.")
 
     sys.exit(exit_code)
 
