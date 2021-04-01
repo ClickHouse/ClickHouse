@@ -80,7 +80,7 @@ def test_load_dictionaries(started_cluster):
     create_dict(table_name)
     dict_name = 'dict0'
 
-    node1.query("SYSTEM RELOAD DICTIONARIES")
+    node1.query("SYSTEM RELOAD DICTIONARY {}".format(dict_name))
     assert node1.query("SELECT count() FROM `test`.`dict_table_{}`".format(table_name)).rstrip() == '10000'
     assert node1.query("SELECT dictGetUInt32('{}', 'id', toUInt64(0))".format(dict_name)) == '0\n'
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(9999))".format(dict_name)) == '9999\n'
@@ -125,6 +125,7 @@ def test_invalidate_query(started_cluster):
 
     node1.query("DROP TABLE IF EXISTS {}".format(table_name))
     node1.query("DROP DICTIONARY IF EXISTS {}".format(dict_name))
+    cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
 
 
 def test_dictionary_with_replicas(started_cluster):

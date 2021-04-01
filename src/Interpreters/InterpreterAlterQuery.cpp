@@ -48,6 +48,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     context.checkAccess(getRequiredAccess());
     auto table_id = context.resolveStorageID(alter, Context::ResolveOrdinary);
+    query_ptr->as<ASTAlterQuery &>().database = table_id.database_name;
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
@@ -299,7 +300,9 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::FREEZE_PARTITION: [[fallthrough]];
-        case ASTAlterCommand::FREEZE_ALL:
+        case ASTAlterCommand::FREEZE_ALL: [[fallthrough]];
+        case ASTAlterCommand::UNFREEZE_PARTITION: [[fallthrough]];
+        case ASTAlterCommand::UNFREEZE_ALL:
         {
             required_access.emplace_back(AccessType::ALTER_FREEZE_PARTITION, database, table);
             break;

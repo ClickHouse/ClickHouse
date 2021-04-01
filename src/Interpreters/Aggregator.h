@@ -1111,21 +1111,13 @@ protected:
 
     /// Specialization for a particular value no_more_keys.
     template <bool no_more_keys, typename Method>
-    void executeImplCase(
+    void executeImplBatch(
         Method & method,
         typename Method::State & state,
         Arena * aggregates_pool,
         size_t rows,
         AggregateFunctionInstruction * aggregate_instructions,
         AggregateDataPtr overflow_row) const;
-
-    template <typename Method>
-    void executeImplBatch(
-        Method & method,
-        typename Method::State & state,
-        Arena * aggregates_pool,
-        size_t rows,
-        AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// For case when there are no keys (all aggregate into one row).
     static void executeWithoutKeyImpl(

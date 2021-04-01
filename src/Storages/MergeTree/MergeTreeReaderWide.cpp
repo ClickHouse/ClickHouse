@@ -72,7 +72,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         /// If append is true, then the value will be equal to nullptr and will be used only to
         /// check that the offsets column has been already read.
         OffsetColumns offset_columns;
-        std::unordered_map<String, IDataType::SubstreamsCache> caches;
+        std::unordered_map<String, ISerialization::SubstreamsCache> caches;
 
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
@@ -137,9 +137,9 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
 void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
-    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path, const IDataType & /* substream_type */)
+    ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        String stream_name = IDataType::getFileNameForStream(name_and_type, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
         if (streams.count(stream_name))
             return;
@@ -160,25 +160,26 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
             profile_callback, clock_type));
     };
 
-    IDataType::SubstreamPath substream_path;
-    name_and_type.type->enumerateStreams(callback, substream_path);
+    auto serialization = data_part->getSerializationForColumn(name_and_type);
+    serialization->enumerateStreams(callback);
+    serializations.emplace(name_and_type.name, std::move(serialization));
 }
 
 
 void MergeTreeReaderWide::readData(
     const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-    IDataType::SubstreamsCache & cache)
+    ISerialization::SubstreamsCache & cache)
 {
-    auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
+    auto get_stream_getter = [&](bool stream_for_prefix) -> ISerialization::InputStreamGetter
     {
-        return [&, stream_for_prefix](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
+        return [&, stream_for_prefix](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
         {
             /// If substream have already been read.
-            if (cache.count(IDataType::getSubcolumnNameForStream(substream_path)))
+            if (cache.count(ISerialization::getSubcolumnNameForStream(substream_path)))
                 return nullptr;
 
-            String stream_name = IDataType::getFileNameForStream(name_and_type, substream_path);
+            String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
 
             auto it = streams.find(stream_name);
             if (it == streams.end())
@@ -199,19 +200,23 @@ void MergeTreeReaderWide::readData(
     };
 
     double & avg_value_size_hint = avg_value_size_hints[name_and_type.name];
-    IDataType::DeserializeBinaryBulkSettings deserialize_settings;
+    ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.avg_value_size_hint = avg_value_size_hint;
 
-    if (deserialize_binary_bulk_state_map.count(name_and_type.name) == 0)
+    const auto & name = name_and_type.name;
+    auto serialization = serializations[name];
+
+    if (deserialize_binary_bulk_state_map.count(name) == 0)
     {
         deserialize_settings.getter = get_stream_getter(true);
-        name_and_type.type->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name_and_type.name]);
+        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
     }
 
     deserialize_settings.getter = get_stream_getter(false);
     deserialize_settings.continuous_reading = continue_reading;
-    auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
-    name_and_type.type->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+    auto & deserialize_state = deserialize_binary_bulk_state_map[name];
+
+    serializations[name]->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
     IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
 }
 

@@ -22,7 +22,7 @@ public:
     explicit ExpressionStep(const DataStream & input_stream_, ActionsDAGPtr actions_dag_);
     String getName() const override { return "Expression"; }
 
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings) override;
 
     void updateInputStream(DataStream input_stream, bool keep_header);
 
@@ -43,7 +43,7 @@ public:
     explicit JoinStep(const DataStream & input_stream_, JoinPtr join_);
     String getName() const override { return "Join"; }
 
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     JoinPtr join;
