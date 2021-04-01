@@ -42,24 +42,6 @@ namespace ErrorCodes
 namespace
 {
 
-const std::unordered_set<String> possibly_injective_function_names
-{
-        "dictGet",
-        "dictGetString",
-        "dictGetUInt8",
-        "dictGetUInt16",
-        "dictGetUInt32",
-        "dictGetUInt64",
-        "dictGetInt8",
-        "dictGetInt16",
-        "dictGetInt32",
-        "dictGetInt64",
-        "dictGetFloat32",
-        "dictGetFloat64",
-        "dictGetDate",
-        "dictGetDateTime"
-};
-
 /** You can not completely remove GROUP BY. Because if there were no aggregate functions, then it turns out that there will be no aggregation.
   * Instead, leave `GROUP BY const`.
   * Next, see deleting the constants in the analyzeAggregation method.
@@ -115,34 +97,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
         if (const auto * function = group_exprs[i]->as<ASTFunction>())
         {
             /// assert function is injective
-            if (possibly_injective_function_names.count(function->name))
-            {
-                /// do not handle semantic errors here
-                if (function->arguments->children.size() < 2)
-                {
-                    ++i;
-                    continue;
-                }
-
-                const auto * dict_name_ast = function->arguments->children[0]->as<ASTLiteral>();
-                const auto * attr_name_ast = function->arguments->children[1]->as<ASTLiteral>();
-                if (!dict_name_ast || !attr_name_ast)
-                {
-                    ++i;
-                    continue;
-                }
-
-                const auto & dict_name = dict_name_ast->value.safeGet<String>();
-                const auto & attr_name = attr_name_ast->value.safeGet<String>();
-
-                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name, context);
-                if (!dict_ptr->isInjective(attr_name))
-                {
-                    ++i;
-                    continue;
-                }
-            }
-            else if (!function_factory.get(function->name, context)->isInjective({}))
+            if (!function_factory.get(function->name, context)->isInjective({}))
             {
                 ++i;
                 continue;
