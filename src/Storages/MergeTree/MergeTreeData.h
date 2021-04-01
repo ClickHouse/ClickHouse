@@ -890,6 +890,9 @@ protected:
         return {begin, end};
     }
 
+    std::optional<UInt64> totalRowsByPartitionPredicateImpl(
+        const SelectQueryInfo & query_info, ContextPtr context, const DataPartsVector & parts) const;
+
     static decltype(auto) getStateModifier(DataPartState state)
     {
         return [state] (const DataPartPtr & part) { part->setState(state); };

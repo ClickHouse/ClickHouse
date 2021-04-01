@@ -4116,17 +4116,9 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & set
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, local_context, true /* strict */);
-    if (partition_pruner.isUseless())
-        return {};
-    size_t res = 0;
-    foreachCommittedParts([&](auto & part)
-    {
-        if (!partition_pruner.canBePruned(part))
-            res += part->rows_count;
-    }, local_context->getSettingsRef().select_sequential_consistency);
-    return res;
+    DataPartsVector parts;
+    foreachCommittedParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef().select_sequential_consistency);
+    return totalRowsByPartitionPredicateImpl(query_info, local_context, parts);
 }
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Settings & settings) const

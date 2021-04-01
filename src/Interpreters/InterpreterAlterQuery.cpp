@@ -50,6 +50,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     getContext()->checkAccess(getRequiredAccess());
     auto table_id = getContext()->resolveStorageID(alter, Context::ResolveOrdinary);
+    query_ptr->as<ASTAlterQuery &>().database = table_id.database_name;
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get())

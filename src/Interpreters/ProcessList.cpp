@@ -451,7 +451,10 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     }
 
     if (get_settings && getContext())
+    {
         res.query_settings = std::make_shared<Settings>(getContext()->getSettings());
+        res.current_database = getContext()->getCurrentDatabase();
+    }
 
     return res;
 }
