@@ -238,9 +238,8 @@ void registerStorageMySQL(StorageFactory & factory)
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
         size_t max_addresses = args.context.getSettingsRef().storage_external_distributed_max_addresses;
 
-        const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
-        auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
-        mysqlxx::PoolWithFailover pool(remote_database, hosts, remote_port, username, password);
+        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses);
+        mysqlxx::PoolWithFailover pool(remote_database, addresses, username, password);
 
         bool replace_query = false;
         std::string on_duplicate_clause;

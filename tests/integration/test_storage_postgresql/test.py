@@ -248,45 +248,45 @@ def test_postgres_distributed(started_cluster):
         cursors[i].execute('CREATE TABLE test_replicas (id Integer, name Text)')
         cursors[i].execute("""INSERT INTO test_replicas select i, 'host{}' from generate_series(0, 99) as t(i);""".format(i + 1));
 
-    # Storage with with 3 replicas
+    # test multiple ports parsing
+    result = node2.query('''SELECT DISTINCT(name) FROM postgresql(`postgres{1|2|3}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
+    assert(result == 'host1\n' or result == 'host2\n' or result == 'host3\n')
+    result = node2.query('''SELECT DISTINCT(name) FROM postgresql(`postgres2:5431|postgres3:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
+    assert(result == 'host3\n' or result == 'host2\n')
+
+    # Create storage with with 3 replicas
     node2.query('''
         CREATE TABLE test_replicas
         (id UInt32, name String)
         ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
 
-    # check all replicas are traversed
+    # Check all replicas are traversed
     query = "SELECT name FROM ("
     for i in range (3):
         query += "SELECT name FROM test_replicas UNION DISTINCT "
     query += "SELECT name FROM test_replicas) ORDER BY name"
-
     result = node2.query(query)
     assert(result == 'host2\nhost3\nhost4\n')
 
-    # test table function (all replicas are invalid except for one)
-    result = node2.query('''SELECT DISTINCT(name) FROM postgresql(`postgres{9|3}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
-    assert(result == 'host3\n')
-
-    # Storage with with two two shards, each has 2 replicas
+    # Create storage with with two two shards, each has 2 replicas
     node2.query('''
         CREATE TABLE test_shards
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = ExternalDistributed('PostgreSQL', `postgres{1|2|3}:5432,postgres{4|5}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
+        ENGINE = ExternalDistributed('PostgreSQL', `postgres{1|2}:5432,postgres{3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
 
     # Check only one replica in each shard is used
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
-    assert(result == 'host1\nhost4\n')
+    assert(result == 'host1\nhost3\n')
 
-    # check all replicas are traversed
+    # Check all replicas are traversed
     query = "SELECT name FROM ("
     for i in range (3):
         query += "SELECT name FROM test_shards UNION DISTINCT "
     query += "SELECT name FROM test_shards) ORDER BY name"
-
     result = node2.query(query)
     assert(result == 'host1\nhost2\nhost3\nhost4\n')
 
-    # disconnect postgres1
+    # Disconnect postgres1
     started_cluster.pause_container('postgres1')
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
     assert(result == 'host2\nhost4\n' or result == 'host3\nhost4\n')

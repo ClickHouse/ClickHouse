@@ -2,6 +2,7 @@
 #include "PostgreSQLConnection.h"
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -57,8 +58,7 @@ PoolWithFailover::PoolWithFailover(
 
 PoolWithFailover::PoolWithFailover(
         const std::string & database,
-        const std::vector<std::string> & hosts,
-        uint16_t port,
+        const RemoteDescription & addresses,
         const std::string & user,
         const std::string & password,
         size_t pool_size,
@@ -66,11 +66,11 @@ PoolWithFailover::PoolWithFailover(
         size_t max_tries_)
     : max_tries(max_tries_)
 {
-    for (const auto & host : hosts)
+    /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
+    for (const auto & [host, port] : addresses)
     {
-        /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
-        replicas_with_priority[0].emplace_back(
-            std::make_shared<ConnectionPool>(database, host, port, user, password, pool_size, pool_wait_timeout));
+        LOG_DEBUG(&Poco::Logger::get("PostgreSQLPoolWithFailover"), "Adding address host: {}, port: {} to connection pool", host, port);
+        replicas_with_priority[0].emplace_back(std::make_shared<ConnectionPool>(database, host, port, user, password, pool_size, pool_wait_timeout));
     }
 }
 

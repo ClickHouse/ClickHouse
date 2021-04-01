@@ -134,22 +134,20 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         ASTs & arguments = engine->arguments->children;
         arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
 
-        const auto & host_name_and_port = safeGetLiteralValue<String>(arguments[0], engine_name);
+        const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
         const auto & mysql_database_name = safeGetLiteralValue<String>(arguments[1], engine_name);
         const auto & mysql_user_name = safeGetLiteralValue<String>(arguments[2], engine_name);
         const auto & mysql_user_password = safeGetLiteralValue<String>(arguments[3], engine_name);
 
         try
         {
-            const auto & [remote_host_name, remote_port] = parseAddress(host_name_and_port, 3306);
-
             if (engine_name == "MySQL")
             {
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
                 /// Split into replicas if needed.
                 size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
-                auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
-                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, hosts, remote_port, mysql_user_name, mysql_user_password);
+                auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses);
+                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, addresses, mysql_user_name, mysql_user_password);
 
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
@@ -158,6 +156,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                     context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_database_settings), std::move(mysql_pool));
             }
 
+            const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
             MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
             auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password);
 
@@ -249,16 +248,14 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (engine->arguments->children.size() == 5)
             use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
 
-        const auto & [remote_host_name, remote_port] = parseAddress(host_port, 5432);
         /// Split into replicas if needed.
         size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
-        auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
+        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses);
 
         /// no connection is made here
         auto connection_pool = std::make_shared<postgres::PoolWithFailover>(
             postgres_database_name,
-            hosts,
-            remote_port,
+            addresses,
             username, password,
             context.getSettingsRef().postgresql_connection_pool_size,
             context.getSettingsRef().postgresql_connection_pool_wait_timeout);

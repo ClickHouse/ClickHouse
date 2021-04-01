@@ -45,17 +45,12 @@ StorageExternalDistributed::StorageExternalDistributed(
     setInMemoryMetadata(storage_metadata);
 
     size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
-    UInt16 default_port = context.getSettingsRef().storage_external_distributed_default_port;
-    /// Split into shards
     std::vector<String> shards_descriptions = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
     /// For each shard pass replicas description into storage, replicas are managed by storage's PoolWithFailover.
     for (const auto & shard_description : shards_descriptions)
     {
-        /// Parse shard description like host-{01..02}-{1|2|3}:port, into host_description_pattern (host-01-{1..2}-{1|2|3}) and port
-        const auto & [remote_host_name, remote_port] = parseAddress(shard_description, default_port);
-        auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
-
+        auto addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses);
         StoragePtr shard;
 
         switch (table_engine)
@@ -66,8 +61,7 @@ StorageExternalDistributed::StorageExternalDistributed(
             {
                 mysqlxx::PoolWithFailover pool(
                     remote_database,
-                    hosts,
-                    remote_port,
+                    addresses,
                     username, password);
 
                 shard = StorageMySQL::create(
@@ -88,8 +82,7 @@ StorageExternalDistributed::StorageExternalDistributed(
             {
                 postgres::PoolWithFailover pool(
                     remote_database,
-                    hosts,
-                    remote_port,
+                    addresses,
                     username, password,
                     context.getSettingsRef().postgresql_connection_pool_size,
                     context.getSettingsRef().postgresql_connection_pool_wait_timeout);

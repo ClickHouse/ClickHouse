@@ -307,25 +307,22 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
 
         auto host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        /// Split into replicas if needed.
+        size_t max_addresses = args.context.getSettingsRef().storage_external_distributed_max_addresses;
+        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses);
 
         const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-        size_t max_addresses = args.context.getSettingsRef().storage_external_distributed_max_addresses;
 
         String remote_table_schema;
         if (engine_args.size() == 6)
             remote_table_schema = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
-        /// Split into replicas if needed.
-        const auto & [remote_host_name, remote_port] = parseAddress(host_port, 5432);
-        auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
-
         postgres::PoolWithFailover pool(
             remote_database,
-            hosts,
-            remote_port,
+            addresses,
             username,
             password,
             args.context.getSettingsRef().postgresql_connection_pool_size,

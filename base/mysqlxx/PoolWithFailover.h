@@ -83,6 +83,7 @@ namespace mysqlxx
 
     public:
         using Entry = Pool::Entry;
+        using RemoteDescription = std::vector<std::pair<std::string, uint16_t>>;
 
         /**
          * * Mysql dictionary sourse related params:
@@ -111,8 +112,7 @@ namespace mysqlxx
 
         PoolWithFailover(
             const std::string & database,
-            const std::vector<std::string> & hosts,
-            uint16_t port,
+            const RemoteDescription & addresses,
             const std::string & user,
             const std::string & password,
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);

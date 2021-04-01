@@ -60,11 +60,10 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Conte
     user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
     password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
-    const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
-    /// Split into replicas if needed.
+    /// Split into replicas if needed. 3306 is the default MySQL port number
     size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
-    auto hosts = parseRemoteDescription(remote_host_name, 0, remote_host_name.size(), '|', max_addresses);
-    pool.emplace(remote_database_name, hosts, remote_port, user_name, password);
+    auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses);
+    pool.emplace(remote_database_name, addresses, user_name, password);
 
     if (args.size() >= 6)
         replace_query = args[5]->as<ASTLiteral &>().value.safeGet<UInt64>() > 0;
@@ -75,9 +74,6 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, const Conte
         throw Exception(
             "Only one of 'replace_query' and 'on_duplicate_clause' can be specified, or none of them",
             ErrorCodes::BAD_ARGUMENTS);
-
-    /// 3306 is the default MySQL port number
-    parsed_host_port = parseAddress(host_port, 3306);
 }
 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(const Context & context) const
