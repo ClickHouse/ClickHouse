@@ -280,7 +280,7 @@ public:
     }
 
     void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const override;
-    // size_t getNumberOfDefaultRows() const override;
+    size_t getNumberOfDefaultRows(size_t step) const override;
 
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }

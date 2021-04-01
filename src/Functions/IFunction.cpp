@@ -501,7 +501,15 @@ ColumnPtr ExecutableFunctionAdaptor::execute(const ColumnsWithTypeAndName & argu
                 columns_without_sparse[i].column = columns_without_sparse[i].column->cloneResized(values_size);
             }
 
-            auto res = executeWithoutSparseColumns(columns_without_sparse, result_type, input_rows_count, dry_run);
+            auto res = executeWithoutSparseColumns(columns_without_sparse, result_type, values_size, dry_run);
+
+            /// If default of sparse column was changed after execution of function, convert to full column.
+            if (res->compareAt(0, 0, *arg_with_sparse.column, 0) != 0)
+            {
+                const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
+                return res->createWithOffsets(offsets_data, input_rows_count);
+            }
+
             return ColumnSparse::create(res, sparse_offsets, input_rows_count);
         }
 

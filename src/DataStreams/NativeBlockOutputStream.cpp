@@ -119,9 +119,7 @@ void NativeBlockOutputStream::write(const Block & block)
 
         writeStringBinary(type_name, ostr);
 
-        std::cerr << "column before: " << column.column->dumpStructure() << "\n";
         column.column = column.column->convertToFullColumnIfSparse();
-        std::cerr << "column after: " << column.column->dumpStructure() << "\n";
 
         /// TODO: add revision
         auto serialization = column.type->getSerialization(*column.column);

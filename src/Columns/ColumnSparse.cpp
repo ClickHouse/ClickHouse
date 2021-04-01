@@ -77,25 +77,8 @@ StringRef ColumnSparse::getDataAt(size_t n) const
 
 ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
 {
-    auto res = values->cloneEmpty();
-    const auto & offsets_data = getOffsetsData();
-    size_t current_offset = 0;
-    for (size_t i = 0; i < offsets_data.size(); ++i)
-    {
-        size_t offsets_diff = offsets_data[i] - current_offset;
-        current_offset = offsets_data[i];
-        if (offsets_diff > 1)
-            res->insertManyFrom(*values, 0, offsets_diff - 1);
-        res->insertFrom(*values, i + 1);
-    }
-
-    size_t offsets_diff = _size - current_offset;
-    if(offsets_diff > 1)
-        res->insertManyFrom(*values, 0, offsets_diff - 1);
-
-    return res;
+    return values->createWithOffsets(getOffsetsData(), _size);
 }
-
 
 void ColumnSparse::insertData(const char * pos, size_t length)
 {

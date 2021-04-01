@@ -72,6 +72,9 @@ size_t deserializeOffsetsPositionIndependent(IColumn::Offsets & offsets,
         return limit;
     }
 
+    /// TODO:
+    offsets.reserve(limit / 10); /// TODO
+
     size_t total_rows = state.num_trailing_defaults;
     if (state.has_value_after_defaults)
     {

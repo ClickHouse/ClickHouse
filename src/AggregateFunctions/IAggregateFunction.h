@@ -350,7 +350,8 @@ public:
         for (size_t i = 1; i < values->size(); ++i)
             static_cast<const Derived *>(this)->add(place, &values, i, arena);
 
-        static_cast<const Derived *>(this)->addManyDefaults(column_sparse.getNumberOfDefaults());
+        for (size_t i = 0; i < column_sparse.getNumberOfDefaults(); ++i)
+            static_cast<const Derived *>(this)->add(place, &values, 0, arena);
     }
 
     void addBatchSinglePlaceNotNull(

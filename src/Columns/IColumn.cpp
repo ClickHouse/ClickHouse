@@ -30,15 +30,28 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
-void IColumn::insertAtOffsetsFrom(const Offsets & offsets, const IColumn & values, size_t)
+ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, size_t total_rows) const
 {
-    assert(offsets.size() == values.size());
+    auto res = cloneEmpty();
+    res->reserve(total_rows);
+
+    size_t current_offset = 0;
     for (size_t i = 0; i < offsets.size(); ++i)
     {
-        if (offsets[i])
-            insertManyDefaults(offsets[i]);
-        insertFrom(values, i);
+        size_t offsets_diff = offsets[i] - current_offset;
+        current_offset = offsets[i];
+
+        if (offsets_diff > 1)
+            res->insertManyFrom(*this, 0, offsets_diff - 1);
+
+        res->insertFrom(*this, i + 1);
     }
+
+    size_t offsets_diff = total_rows - current_offset;
+    if(offsets_diff > 1)
+        res->insertManyFrom(*this, 0, offsets_diff - 1);
+
+    return res;
 }
 
 bool isColumnNullable(const IColumn & column)
