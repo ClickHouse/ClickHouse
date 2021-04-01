@@ -264,7 +264,7 @@ def test_postgres_distributed(started_cluster):
     assert(result == 'host2\nhost3\nhost4\n')
 
     # test table function (all replicas are invalid except for one)
-    result = node2.query('''SELECT DISTINCT(name) FROM postgresql(`postgres{7|8|9|3|6}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
+    result = node2.query('''SELECT DISTINCT(name) FROM postgresql(`postgres{9|3}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword'); ''')
     assert(result == 'host3\n')
 
     # Storage with with two two shards, each has 2 replicas
