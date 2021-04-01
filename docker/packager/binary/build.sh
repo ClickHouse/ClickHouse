@@ -11,8 +11,9 @@ tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolc
 mkdir -p build/cmake/toolchain/freebsd-x86_64
 tar xJf freebsd-11.3-toolchain.tar.xz -C build/cmake/toolchain/freebsd-x86_64 --strip-components=1
 
-# Uncomment to debug ccache
-export CCACHE_LOGFILE=/output/ccache.log
+# Uncomment to debug ccache. Don't put ccache log in /output right away, or it
+# will be confusingly packed into the "performance" package.
+export CCACHE_LOGFILE=/build/ccache.log
 export CCACHE_DEBUG=1
 
 mkdir -p build/build_docker
@@ -26,7 +27,7 @@ read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-ninja $NINJA_FLAGS clickhouse-bundle
+ninja $NINJA_FLAGS --verbose clickhouse-bundle
 
 ccache --show-stats ||:
 
@@ -73,23 +74,21 @@ then
     cp ../programs/server/config.xml /output/config
     cp ../programs/server/users.xml /output/config
     cp -r --dereference ../programs/server/config.d /output/config
-    tar -czvf "$COMBINED_OUTPUT.tgz" /output
+    tar -czvf -I pixz "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output
 fi
 
 if [ "${CCACHE_DEBUG:-}" == "1" ]
 then
-    mkdir /output/ccache
-    find . -name '*.ccache-*' -print -exec mv '{}' /output/ccache \;
-    tar -czvf "/output/ccache.tgz" /output/ccache
-    rm -rf /output/ccache
+    find . -name '*.ccache-*' -print0
+        | tar -czf -I pixz /output/ccache-debug.tgz -null -T -
 fi
 
-if ! [ -z "$CCACHE_LOGFILE" ]
+if [ -n "$CCACHE_LOGFILE" ]
 then
     # Compress the log as well, or else the CI will try to compress all log
     # files in place, and will fail because this directory is not writable.
-    gzip "$CCACHE_LOGFILE"
+    tar -czvf -I pixz /output/ccache.log.tgz "$CCACHE_LOGFILE"
 fi
 
