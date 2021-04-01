@@ -271,7 +271,7 @@ std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const C
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "PolygonDictionary input point component must not be NaN");
 
-        if (isinf(x) || isinf(y))
+        if (std::isinf(x) || std::isinf(y))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "PolygonDictionary input point component must not be infinite");
 
