@@ -125,62 +125,44 @@ public:
         }
         arrays.emplace_back(arguments.back());
 
-        if (! column_first_array->getData().empty())
+        MutableColumnPtr result = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
+        size_t arr_cursor = 0;
+        for (size_t irow = 0; irow < column_first_array->size(); ++irow) // for each row of result
         {
-            size_t arr_cursor = 0;
-            MutableColumnPtr result = arguments.back().column->convertToFullColumnIfConst()->cloneEmpty();
-            for (size_t irow = 0; irow < column_first_array->size(); ++irow) // for each row of result
+            // Make accumulator column for this row
+            ColumnWithTypeAndName accumulator_column = arguments.back();
+            ColumnPtr acc(accumulator_column.column->cut(irow, 1));
+            auto accumulator = ColumnWithTypeAndName(acc,
+                                                     accumulator_column.type,
+                                                     accumulator_column.name);
+            ColumnPtr res(acc);
+            size_t const arr_next = column_first_array->getOffsets()[irow]; // when we do folding
+            for (size_t iter = 0; arr_cursor < arr_next; ++iter, ++arr_cursor)
             {
-                // Make accumulator column for this row
-                ColumnWithTypeAndName accumulator_column = arguments.back();
-                ColumnPtr acc(accumulator_column.column->cut(irow, 1));
-                auto accumulator = ColumnWithTypeAndName(acc,
-                                                         accumulator_column.type,
-                                                         accumulator_column.name);
-                ColumnPtr res(acc);
-                size_t const arr_next = column_first_array->getOffsets()[irow]; // when we do folding
-                for (size_t iter = 0; arr_cursor < arr_next; ++iter, ++arr_cursor)
+                // Make slice of input arrays and accumulator for lambda
+                ColumnsWithTypeAndName iter_arrays;
+                iter_arrays.reserve(arrays.size() + 1);
+                for (size_t icolumn = 0; icolumn < arrays.size() - 1; ++icolumn)
                 {
-                    // Make slice of input arrays and accumulator for lambda
-                    ColumnsWithTypeAndName iter_arrays;
-                    iter_arrays.reserve(arrays.size() + 1);
-                    for (size_t icolumn = 0; icolumn < arrays.size() - 1; ++icolumn)
-                    {
-                        auto const & arr = arrays[icolumn];
-                        iter_arrays.emplace_back(ColumnWithTypeAndName(arr.column->cut(arr_cursor, 1),
-                                                                       arr.type,
-                                                                       arr.name));
-                    }
-                    iter_arrays.emplace_back(accumulator);
-                    // Calculate function on arguments
-                    auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(ColumnArray::Offsets(column_first_array->getOffsets().size(), 1)));
-                    auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
-                    replicated_column_function->appendArguments(iter_arrays);
-                    auto lambda_result = replicated_column_function->reduce().column;
-                    if (lambda_result->lowCardinality())
-                        lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
-                    res = lambda_result->empty() ? lambda_result : lambda_result->cut(0, 1); // TODO recheck this
-                    accumulator.column = res;
+                    auto const & arr = arrays[icolumn];
+                    iter_arrays.emplace_back(ColumnWithTypeAndName(arr.column->cut(arr_cursor, 1),
+                                                                   arr.type,
+                                                                   arr.name));
                 }
-                result->insert((*res)[0]);
+                iter_arrays.emplace_back(accumulator);
+                // Calculate function on arguments
+                auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(ColumnArray::Offsets(column_first_array->getOffsets().size(), 1)));
+                auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
+                replicated_column_function->appendArguments(iter_arrays);
+                auto lambda_result = replicated_column_function->reduce().column;
+                if (lambda_result->lowCardinality())
+                    lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
+                res = lambda_result->empty() ? lambda_result : lambda_result->cut(0, 1); // TODO recheck this
+                accumulator.column = res;
             }
-            return result;
+            result->insert((*res)[0]);
         }
-        else
-        {
-            // TODO: for what this branch is needed?
-            // empty function
-            //
-            /// Put all the necessary columns multiplied by the sizes of arrays into the columns.
-            auto replicated_column_function_ptr = IColumn::mutate(column_function->replicate(column_first_array->getOffsets()));
-            auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
-            replicated_column_function->appendArguments(arrays);
-            auto lambda_result = replicated_column_function->reduce().column;
-            if (lambda_result->lowCardinality())
-                lambda_result = lambda_result->convertToFullColumnIfLowCardinality();
-            // return lambda_result->empty() ? lambda_result : lambda_result->cut(0, 1); // TODO recheck this
-            return lambda_result; // TODO recheck this
-        }
+        return result;
     }
 };
 
