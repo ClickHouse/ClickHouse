@@ -2628,9 +2628,6 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInf
 {
     auto lock = lockParts();
 
-    for (const auto& i : data_parts_by_info)
-        LOG_TRACE(log, "EPart {}", i->getNameWithState());
-
     auto it = data_parts_by_info.find(part_info);
     if (it == data_parts_by_info.end())
         return nullptr;

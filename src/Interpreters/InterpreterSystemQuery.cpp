@@ -462,7 +462,8 @@ Strings InterpreterSystemQuery::movePartsToNewTableDetachedFolder(
             const UInt64 part_size = parts_sizes_col.getUInt(i);
 
             const ReservationPtr reservation = storage.reserveSpace(part_size);
-            const String part_target_path = reservation->getDisk()->getPath() + "detached/" + part_path.toString();
+            const String part_target_path = storage.getFullPathOnDisk(reservation->getDisk()) +
+                "detached/" + part_name.toString();
 
             std::error_code error;
             std::filesystem::rename(part_path.toString(), part_target_path, error);
@@ -530,7 +531,7 @@ void InterpreterSystemQuery::restoreReplica()
     /// 1. Create a new replicated table out of current one (CREATE TABLE new AS old).
     /// If the server failed after this step, the old temporary table won't be lost in mem so the query re-run could
     /// succeed (need of IF NOT EXISTS).
-    executeQuery(fmt::format("CREATE TABLE {0}.{1} AS {0}.{2} IF NOT EXISTS", db_name, new_table_name, old_table_name),
+    executeQuery(fmt::format("CREATE TABLE IF NOT EXISTS {0}.{1} AS {0}.{2}", db_name, new_table_name, old_table_name),
         context, true);
 
     LOG_DEBUG(log, "Created a new replicated table " + db_name + "." + new_table_name);
@@ -543,39 +544,32 @@ void InterpreterSystemQuery::restoreReplica()
     const Strings parts_names = movePartsToNewTableDetachedFolder(db_name, old_table_name, new_table_name);
 
     for (const String& part_name : parts_names)
-    {
-        executeQuery(fmt::format("ALTER TABLE {}.{} ATTACH PART {}", db_name, new_table_name, part_name),
+        executeQuery(fmt::format("ALTER TABLE {}.{} ATTACH PART '{}'", db_name, new_table_name, part_name),
             context, true);
-
-        LOG_TRACE(log, "Attached part {0}", part_name);
-    }
 
     LOG_DEBUG(log, "Moved and attached all parts from {0}.{1} to {0}.{2}", db_name, old_table_name, new_table_name);
 
-    /// 4. Rename tables (RENAME TABLE new TO old, old TO new).
+    /// 4. Rename tables (RENAME TABLE new TO old_, old TO new, old_ TO old).
+    // TODO RENAME old TO new, new TO old  not working somehow
     executeQuery(
-        fmt::format("RENAME TABLE {0}.{1} TO {0}.{2}, {0}.{2} TO {0}.{1}", db_name, new_table_name, old_table_name),
+        fmt::format("RENAME TABLE {0}.{1} TO {2}_, {0}.{2} TO {1}, {0}.{2}_ TO {2}",
+            db_name, new_table_name, old_table_name),
         context, true);
 
     LOG_DEBUG(log, "Renamed tables {0}.{1} <=> {0}.{2}", db_name, old_table_name, new_table_name);
 
-    /// 5. Detach old table (DETACH TABLE old).
-    executeQuery(fmt::format("DETACH TABLE {}.{}", db_name, old_table_name), context, true);
-    LOG_DEBUG(log, "Detached table {}.{}", db_name, old_table_name);
+    /// 5. Detach old table (DETACH TABLE new).
+    executeQuery(fmt::format("DETACH TABLE {}.{}", db_name, new_table_name), context, true);
+    LOG_DEBUG(log, "Detached table {}.{}", db_name, new_table_name);
 
     /// 6. Delete information about the old table, so it wouldn't be attached after server restart.
-    const String old_table_metadata_file = db->getObjectMetadataPath(old_table_name);
+    const String old_table_metadata_file = db->getObjectMetadataPath(new_table_name);
 
-    std::error_code file_delete_error;
+    if (auto ec = std::error_code{}; !std::filesystem::remove(old_table_metadata_file, ec))
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Error removing file {}: {}",
+            old_table_metadata_file, ec.message());
 
-    if (std::filesystem::remove(old_table_metadata_file, file_delete_error))
-    {
-        LOG_DEBUG(log, "Removed table {}.{} metadata at {}", db_name, old_table_name, old_table_metadata_file);
-        return;
-    }
-
-    throw Exception(ErrorCodes::SYSTEM_ERROR, "Error removing file {}: {}",
-        old_table_metadata_file, file_delete_error.message());
+    LOG_DEBUG(log, "Removed table {}.{} metadata at {}", db_name, new_table_name, old_table_metadata_file);
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context, bool need_ddl_guard)
