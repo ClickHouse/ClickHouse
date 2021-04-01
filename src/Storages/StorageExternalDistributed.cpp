@@ -46,6 +46,7 @@ StorageExternalDistributed::StorageExternalDistributed(
 
     size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
     std::vector<String> shards_descriptions = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
+    std::vector<std::pair<std::string, UInt16>> addresses;
 
     /// For each shard pass replicas description into storage, replicas are managed by storage's PoolWithFailover.
     for (const auto & shard_description : shards_descriptions)
@@ -57,7 +58,7 @@ StorageExternalDistributed::StorageExternalDistributed(
 #if USE_MYSQL
             case ExternalStorageEngine::MySQL:
             {
-                auto addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 3306);
+                addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 3306);
 
                 mysqlxx::PoolWithFailover pool(
                     remote_database,
@@ -80,7 +81,7 @@ StorageExternalDistributed::StorageExternalDistributed(
 
             case ExternalStorageEngine::PostgreSQL:
             {
-                auto addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
+                addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
 
                 postgres::PoolWithFailover pool(
                     remote_database,
