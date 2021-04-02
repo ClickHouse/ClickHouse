@@ -35,23 +35,13 @@ void MergeTreeBlockOutputStream::write(const Block & block)
         if (!part)
             continue;
 
-        if (auto & deduplication_log = storage.getDeduplicationLog())
+        if (storage.renameTempPartAndAdd(part, &storage.increment, nullptr, storage.getDeduplicationLog()))
         {
-            String block_id = part->getZeroLevelPartBlockID();
-            auto res = deduplication_log->addPart(block_id, part);
-            if (!res.second)
-            {
-                LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
-                continue;
-            }
+            PartLog::addNewPart(storage.global_context, part, watch.elapsed());
+
+            /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
+            storage.background_executor.triggerTask();
         }
-
-        storage.renameTempPartAndAdd(part, &storage.increment);
-
-        PartLog::addNewPart(storage.global_context, part, watch.elapsed());
-
-        /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-        storage.background_executor.triggerTask();
     }
 }
 

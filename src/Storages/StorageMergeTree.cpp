@@ -98,7 +98,7 @@ StorageMergeTree::StorageMergeTree(
     if (settings->non_replicated_deduplication_window != 0)
     {
         std::string path = getDataPaths()[0] + "/deduplication_logs";
-        deduplication_log.emplace(path, settings->non_replicated_deduplication_window, format_version);
+        deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version);
         deduplication_log->load();
     }
 }
@@ -1220,7 +1220,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool
         if (deduplication_log)
         {
             for (const auto & part : parts_to_remove)
-                deduplication_log->dropPart(part);
+                deduplication_log->dropPart(part->info);
         }
 
         if (detach)
