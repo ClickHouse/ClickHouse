@@ -93,6 +93,13 @@ StorageMergeTree::StorageMergeTree(
     increment.set(getMaxBlockNumber());
 
     loadMutations();
+
+    if (storage_settings->non_replicated_deduplication_window != 0)
+    {
+        std::string path = getDataPaths()[0] + "/deduplication_logs";
+        deduplication_log.emplace(path, storage_settings->non_replicated_deduplication_window, format_version);
+        deduplication_log->load();
+    }
 }
 
 
@@ -1207,6 +1214,12 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool
                 LOG_INFO(log, "Detaching {}", part->relative_path);
                 part->makeCloneInDetached("", metadata_snapshot);
             }
+        }
+
+        if (deduplication_log)
+        {
+            for (const auto & part : parts_to_remove)
+                deduplication_log->dropPart(part);
         }
 
         if (detach)

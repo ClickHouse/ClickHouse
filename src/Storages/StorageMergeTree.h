@@ -12,6 +12,8 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
+
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
@@ -93,6 +95,8 @@ public:
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
     std::optional<JobAndPool> getDataProcessingJob() override;
+
+    std::optional<MergeTreeDeduplicationLog> getDeduplicationLog() const { return deduplication_log; }
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -104,6 +108,8 @@ private:
     MergeTreeDataMergerMutator merger_mutator;
     BackgroundJobsExecutor background_executor;
     BackgroundMovesExecutor background_moves_executor;
+
+    std::optional<MergeTreeDeduplicationLog> deduplication_log;
 
     /// For block numbers.
     SimpleIncrement increment;
