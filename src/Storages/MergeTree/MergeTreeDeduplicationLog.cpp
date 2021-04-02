@@ -13,12 +13,14 @@ namespace DB
 namespace
 {
 
+/// Deduplication operation part was dropped or added
 enum class MergeTreeDeduplicationOp : uint8_t
 {
     ADD = 1,
     DROP = 2,
 };
 
+/// Record for deduplication on disk
 struct MergeTreeDeduplicationLogRecord
 {
     MergeTreeDeduplicationOp operation;
@@ -93,7 +95,7 @@ void MergeTreeDeduplicationLog::load()
         existing_logs[log_number] = {path, 0};
     }
 
-    /// Order important
+    /// Order important, we load history from the begging to the end
     for (auto & [log_number, desc] : existing_logs)
     {
         try
@@ -107,7 +109,10 @@ void MergeTreeDeduplicationLog::load()
         }
     }
 
+    /// Start new log, drop previous
     rotateAndDropIfNeeded();
+
+    /// Can happen in case we have unfinished log
     if (!current_writer)
         current_writer = std::make_unique<WriteBufferFromFile>(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
 }
@@ -147,19 +152,24 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
 {
     size_t current_sum = 0;
     size_t remove_from_value = 0;
+    /// Go from end to the beginning
     for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend(); ++itr)
     {
-        auto & description = itr->second;
         if (current_sum > deduplication_window)
         {
+            /// We have more logs than required, all older files (including current) can be dropped
             remove_from_value = itr->first;
             break;
         }
+
+        auto & description = itr->second;
         current_sum += description.entries_count;
     }
 
+    /// If we found some logs to drop
     if (remove_from_value != 0)
     {
+        /// Go from beginning to the end and drop all outdated logs
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
@@ -174,18 +184,19 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
 
 void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
 {
+    /// If we don't have logs at all or already have enough records in current
     if (existing_logs.empty() || existing_logs[current_log_number].entries_count >= rotate_interval)
     {
         rotate();
         dropOutdatedLogs();
     }
-
 }
 
 std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std::string & block_id, const MergeTreePartInfo & part_info)
 {
     std::lock_guard lock(state_mutex);
 
+    /// If we alredy have this block let's deduplicate it
     if (deduplication_map.contains(block_id))
     {
         auto info = deduplication_map.get(block_id);
@@ -194,14 +205,18 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
 
     assert(current_writer != nullptr);
 
+    /// Create new record
     MergeTreeDeduplicationLogRecord record;
     record.operation = MergeTreeDeduplicationOp::ADD;
     record.part_name = part_info.getPartName();
     record.block_id = block_id;
+    /// Write it to disk
     writeRecord(record, *current_writer);
+    /// We have one more record in current log
     existing_logs[current_log_number].entries_count++;
-
+    /// Add to deduplication map
     deduplication_map.insert(record.block_id, part_info);
+    /// Rotate and drop old logs if needed
     rotateAndDropIfNeeded();
 
     return std::make_pair(part_info, true);
@@ -213,20 +228,29 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 
     assert(current_writer != nullptr);
 
-    for (auto itr = deduplication_map.begin(); itr != deduplication_map.end();)
+    for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
         const auto & part_info = itr->value;
+        /// Part is covered by dropped part, let's remove it from
+        /// deduplication history
         if (drop_part_info.contains(part_info))
         {
+            /// Create drop record
             MergeTreeDeduplicationLogRecord record;
             record.operation = MergeTreeDeduplicationOp::DROP;
             record.part_name = part_info.getPartName();
             record.block_id = itr->key;
+            /// Write it to disk
             writeRecord(record, *current_writer);
-
+            /// We have one more record on disk
             existing_logs[current_log_number].entries_count++;
+
+            /// Increment itr before erase, otherwise it will invalidated
             ++itr;
+            /// Remove block_id from in-memory table
             deduplication_map.erase(record.block_id);
+
+            /// Rotate and drop old logs if needed
             rotateAndDropIfNeeded();
         }
         else
