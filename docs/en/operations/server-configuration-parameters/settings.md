@@ -100,6 +100,11 @@ Default value: `1073741824` (1 GB).
     <size_limit>1073741824</size_limit>
 </core_dump> 
 ```
+## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
+
+Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignore.
+
+Default value: `480` (8 minute).
 
 ## default_database {#default-database}
 
