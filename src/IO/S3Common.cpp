@@ -119,9 +119,7 @@ public:
     AWSEC2MetadataClient& operator =(const AWSEC2MetadataClient && rhs) = delete;
     AWSEC2MetadataClient(const AWSEC2MetadataClient && rhs) = delete;
 
-    virtual ~AWSEC2MetadataClient() override
-    {
-    }
+    virtual ~AWSEC2MetadataClient() override = default;
 
     using Aws::Internal::AWSHttpResourceClient::GetResource;
 
@@ -130,7 +128,7 @@ public:
         return GetResource(endpoint.c_str(), resource_path, nullptr/*authToken*/);
     }
 
-    virtual Aws::String GetDefaultCredentials() const
+    virtual Aws::String getDefaultCredentials() const
     {
         String credentials_string;
         {
@@ -154,7 +152,7 @@ public:
         LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} returned credential string {}.",
                 EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_credentials_string);
 
-        if (security_credentials.size() == 0)
+        if (security_credentials.empty())
         {
             LOG_WARNING(logger, "Initial call to EC2MetadataService to get credentials failed.");
             return {};
@@ -166,7 +164,7 @@ public:
         return GetResource(ss.str().c_str());
     }
 
-    static Aws::String AWSComputeUserAgentString()
+    static Aws::String awsComputeUserAgentString()
     {
         Aws::StringStream ss;
         ss << "aws-sdk-cpp/" << Aws::Version::GetVersionString() << " " << Aws::OSVersionInfo::ComputeOSVersionString()
@@ -174,9 +172,9 @@ public:
         return ss.str();
     }
 
-    virtual Aws::String GetDefaultCredentialsSecurely() const
+    virtual Aws::String getDefaultCredentialsSecurely() const
     {
-        String user_agent_string = AWSComputeUserAgentString();
+        String user_agent_string = awsComputeUserAgentString();
         String new_token;
 
         {
@@ -200,7 +198,7 @@ public:
             else if (result.GetResponseCode() != Aws::Http::HttpResponseCode::OK || new_token.empty())
             {
                 LOG_TRACE(logger, "Calling EC2MetadataService to get token failed, falling back to less secure way.");
-                return GetDefaultCredentials();
+                return getDefaultCredentials();
             }
             token = new_token;
         }
@@ -219,7 +217,7 @@ public:
         LOG_DEBUG(logger, "Calling EC2MetadataService resource, {} with token returned profile string {}.",
                 EC2_SECURITY_CREDENTIALS_RESOURCE, trimmed_profile_string);
 
-        if (security_credentials.size() == 0)
+        if (security_credentials.empty())
         {
             LOG_WARNING(logger, "Calling EC2Metadataservice to get profiles failed.");
             return {};
@@ -236,7 +234,7 @@ public:
         return GetResourceWithAWSWebServiceResult(credentials_request).GetPayload();
     }
 
-    virtual Aws::String GetCurrentRegion() const
+    virtual Aws::String getCurrentRegion() const
     {
         return Aws::Region::AWS_GLOBAL;
     }
@@ -258,14 +256,12 @@ public:
     {
     }
 
-    virtual ~AWSEC2InstanceProfileConfigLoader() override
-    {
-    }
+    virtual ~AWSEC2InstanceProfileConfigLoader() override = default;
 
 protected:
     virtual bool LoadInternal() override
     {
-        auto credentials_str = use_secure_pull ? client->GetDefaultCredentialsSecurely() : client->GetDefaultCredentials();
+        auto credentials_str = use_secure_pull ? client->getDefaultCredentialsSecurely() : client->getDefaultCredentials();
 
         /// See EC2InstanceProfileConfigLoader.
         if (credentials_str.empty())
@@ -286,7 +282,7 @@ protected:
         secret_key = credentials_view.GetString("SecretAccessKey");
         token = credentials_view.GetString("Token");
 
-        auto region = client->GetCurrentRegion();
+        auto region = client->getCurrentRegion();
 
         Aws::Config::Profile profile;
         profile.SetCredentials(Aws::Auth::AWSCredentials(access_key, secret_key, token));
@@ -319,13 +315,13 @@ public:
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override
     {
-        RefreshIfExpired();
+        refreshIfExpired();
         Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-        auto profileIter = ec2_metadata_config_loader->GetProfiles().find(Aws::Config::INSTANCE_PROFILE_KEY);
+        auto profile_it = ec2_metadata_config_loader->GetProfiles().find(Aws::Config::INSTANCE_PROFILE_KEY);
 
-        if (profileIter != ec2_metadata_config_loader->GetProfiles().end())
+        if (profile_it != ec2_metadata_config_loader->GetProfiles().end())
         {
-            return profileIter->second.GetCredentials();
+            return profile_it->second.GetCredentials();
         }
 
         return Aws::Auth::AWSCredentials();
@@ -340,7 +336,7 @@ protected:
     }
 
 private:
-    void RefreshIfExpired()
+    void refreshIfExpired()
     {
         LOG_DEBUG(logger, "Checking if latest credential pull has expired.");
         Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
@@ -358,7 +354,7 @@ private:
     }
 
     std::shared_ptr<AWSEC2InstanceProfileConfigLoader> ec2_metadata_config_loader;
-    long load_frequency_ms;
+    Int64 load_frequency_ms;
     Poco::Logger * logger;
 };
 
