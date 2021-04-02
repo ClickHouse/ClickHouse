@@ -19,6 +19,10 @@ struct SelectQueryDescription
     /// validates query.
     static SelectQueryDescription getSelectQueryFromASTForMatView(const ASTPtr & select, const Context & context);
 
+    /// Parse description from select query for aggregating engine. Also
+    /// validates query.
+    static SelectQueryDescription getSelectQueryFromASTForAggr(const ASTPtr & select);
+
     SelectQueryDescription() = default;
     SelectQueryDescription(const SelectQueryDescription & other);
     SelectQueryDescription & operator=(const SelectQueryDescription & other);

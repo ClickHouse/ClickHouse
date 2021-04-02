@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -149,15 +150,28 @@ private:
 };
 
 
-StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
+StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query)
     : IStorage(table_id_), data(std::make_unique<const Blocks>())
 {
     // TODO: this table must be created with original write structure, and aggregated read structure
     // TODO: also i should add metadata to indicate that aggregation is not needed in this case.
 
+    LOG_DEBUG(&Poco::Logger::get("Arthur"), "create engine with query={}", serializeAST(query));
+
+    if (!query.select)
+        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
+
+    if (query.select->list_of_selects->children.size() != 1)
+        throw Exception("UNION is not supported for AggregatingMemory", ErrorCodes::INCORRECT_QUERY);
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
+
+    // TODO: check GROUP BY inside this func
+    auto select = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
+    storage_metadata.setSelectQuery(select);
+
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -302,7 +316,7 @@ void registerStorageAggregatingMemory(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageAggregatingMemory::create(args.table_id, args.columns, args.constraints);
+        return StorageAggregatingMemory::create(args.table_id, args.columns, args.constraints, args.query);
     },
     {
         .supports_parallel_insert = true,

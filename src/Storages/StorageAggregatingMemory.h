@@ -64,7 +64,7 @@ private:
     std::atomic<size_t> total_size_rows = 0;
 
 protected:
-    StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
+    StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query);
 };
 
 }
