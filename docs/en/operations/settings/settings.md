@@ -2804,8 +2804,8 @@ Sets the `SHOW TABLE` query display.
 
 Possible values:
 
--   0 — The query will be display without table UUID.
--   1 — The query will be display with table UUID.
+-   0 — The query will be displayed without table UUID.
+-   1 — The query will be displayed with table UUID.
 
 Default value: `0`.
 
