@@ -2099,6 +2099,10 @@ bool MergeTreeData::renameTempPartAndReplace(
         return false;
     }
 
+    /// Deduplication log used only from non-replicated MergeTree. Replicated
+    /// tables have their own mechanism. We try to deduplicated at such deep
+    /// level, because only here we know real part name which is required for
+    /// deduplication.
     if (deduplication_log)
     {
         String block_id = part->getZeroLevelPartBlockID();
