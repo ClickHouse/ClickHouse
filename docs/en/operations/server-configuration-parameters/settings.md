@@ -141,7 +141,7 @@ The path to the table in ZooKeeper.
 **Example**
 
 ``` xml
-<default_replica_name>/clickhouse/tables/{uuid}/{replica}</default_replica_name>
+<default_replica_name>{replica}</default_replica_name>
 ```
 
 ## dictionaries_config {#server_configuration_parameters-dictionaries_config}
