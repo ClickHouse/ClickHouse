@@ -32,7 +32,7 @@ On `DROP TABLE` no data is removed, database `Atomic` just marks table as droppe
 
 `RENAME` queries are performed without changing UUID and moving table data. These queries do not wait for the completion of queries using the table and will be executed instantly.
 
-### DELETE/DETACH {#delete-detach}
+### DROP/DETACH {#drop-detach}
 
 `DELETE` and `DETACH` queries are executed asynchronously — waits for the running `SELECT` queries to finish but is invisible to the new queries.
 You also can specify `NO DELAY` or `SYNC` mode. See [database_atomic_delay_before_drop_table_sec](../../operations/settings/settings.md#database_atomic_delay_before_drop_table_sec), [database_atomic_wait_for_drop_and_detach_synchronously](../../operations/settings/settings.md#database_atomic_wait_for_drop_and_detach_synchronously) settings.
