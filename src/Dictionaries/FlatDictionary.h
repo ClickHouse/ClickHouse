@@ -32,7 +32,7 @@ public:
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_,
-        BlockPtr saved_block_ = nullptr);
+        BlockPtr previously_loaded_block_ = nullptr);
 
     std::string getTypeName() const override { return "Flat"; }
 
@@ -48,7 +48,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
+        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, previously_loaded_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -133,7 +133,7 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<StringRef>>
-            arrays;
+            container;
 
         std::unique_ptr<Arena> string_arena;
     };
@@ -142,9 +142,6 @@ private:
     void blockToAttributes(const Block & block);
     void updateData();
     void loadData();
-
-    template <typename T>
-    void addAttributeSize(const Attribute & attribute);
 
     void calculateBytesAllocated();
 
@@ -156,41 +153,32 @@ private:
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
-        const PaddedPODArray<UInt64> & ids,
+        const PaddedPODArray<UInt64> & keys,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
-    void resize(Attribute & attribute, const UInt64 id);
+    void resize(Attribute & attribute, UInt64 key);
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const UInt64 id, const T & value);
+    void setAttributeValueImpl(Attribute & attribute, UInt64 key, const T & value);
 
-    void setAttributeValue(Attribute & attribute, const UInt64 id, const Field & value);
-
-    const Attribute & getAttribute(const std::string & attribute_name) const;
-
-    template <typename ChildType, typename AncestorType>
-    void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
-
-    PaddedPODArray<UInt64> getIds() const;
+    void setAttributeValue(Attribute & attribute, UInt64 key, const Field & value);
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const bool require_nonempty;
 
-    std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
-    std::vector<bool> loaded_ids;
+    std::vector<bool> loaded_keys;
 
     size_t bytes_allocated = 0;
     size_t element_count = 0;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
 
-    /// TODO: Remove
-    BlockPtr saved_block;
+    BlockPtr previously_loaded_block;
 };
 
 }
