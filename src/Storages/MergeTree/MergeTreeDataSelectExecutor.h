@@ -44,6 +44,12 @@ public:
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
+    /// Construct a sample block consisting only of possible virtual columns for part pruning.
+    static Block getSampleBlockWithVirtualPartColumns();
+
+    /// Fill in values of possible virtual columns for part pruning.
+    static void fillBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, Block & block);
+
 private:
     const MergeTreeData & data;
 
@@ -119,18 +125,20 @@ private:
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
-    void selectPartsToRead(
+    static void selectPartsToRead(
         MergeTreeData::DataPartsVector & parts,
         const std::unordered_set<String> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
+        const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read) const;
+        const PartitionIdToMaxBlock * max_block_numbers_to_read);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
     void selectPartsToReadWithUUIDFilter(
         MergeTreeData::DataPartsVector & parts,
         const std::unordered_set<String> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
+        const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         const Context & query_context) const;

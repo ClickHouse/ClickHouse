@@ -99,9 +99,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
 {
-    loop = std::make_unique<uv_loop_t>();
-    uv_loop_init(loop.get());
-    event_handler = std::make_shared<RabbitMQHandler>(loop.get(), log);
+    event_handler = std::make_shared<RabbitMQHandler>(loop.getLoop(), log);
     restoreConnection(false);
 
     StorageInMemoryMetadata storage_metadata;
@@ -482,7 +480,7 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
         /* Connection is not closed immediately (firstly, all pending operations are completed, and then
          * an AMQP closing-handshake is  performed). But cannot open a new connection until previous one is properly closed
          */
-        while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
+        while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
             event_handler->iterateLoop();
 
         /// This will force immediate closure if not yet closed
@@ -498,7 +496,7 @@ bool StorageRabbitMQ::restoreConnection(bool reconnecting)
                 AMQP::Login(login_password.first, login_password.second), vhost));
 
     cnt_retries = 0;
-    while (!connection->ready() && !stream_cancelled && ++cnt_retries != RETRIES_MAX)
+    while (!connection->ready() && !stream_cancelled && cnt_retries++ != RETRIES_MAX)
     {
         event_handler->iterateLoop();
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
@@ -653,7 +651,7 @@ void StorageRabbitMQ::shutdown()
     connection->close();
 
     size_t cnt_retries = 0;
-    while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
+    while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
         event_handler->iterateLoop();
 
     /// Should actually force closure, if not yet closed, but it generates distracting error logs

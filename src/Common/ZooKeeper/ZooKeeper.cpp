@@ -44,7 +44,7 @@ static void check(Coordination::Error code, const std::string & path)
 }
 
 
-void ZooKeeper::init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
+void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
                      int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_)
 {
     log = &Poco::Logger::get("ZooKeeper");
@@ -60,13 +60,16 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
         if (hosts.empty())
             throw KeeperException("No hosts passed to ZooKeeper constructor.", Coordination::Error::ZBADARGUMENTS);
 
-        std::vector<std::string> hosts_strings;
-        splitInto<','>(hosts_strings, hosts);
         Coordination::ZooKeeper::Nodes nodes;
-        nodes.reserve(hosts_strings.size());
+        nodes.reserve(hosts.size());
+
+        Strings shuffled_hosts = hosts;
+        /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
+        pcg64 generator(randomSeed());
+        std::shuffle(shuffled_hosts.begin(), shuffled_hosts.end(), generator);
 
         bool dns_error = false;
-        for (auto & host_string : hosts_strings)
+        for (auto & host_string : shuffled_hosts)
         {
             try
             {
@@ -109,9 +112,9 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
 
         if (chroot.empty())
-            LOG_TRACE(log, "Initialized, hosts: {}", hosts);
+            LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(hosts, ","));
         else
-            LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", hosts, chroot);
+            LOG_TRACE(log, "Initialized, hosts: {}, chroot: {}", fmt::join(hosts, ","), chroot);
     }
     else if (implementation == "testkeeper")
     {
@@ -128,7 +131,16 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
         throw KeeperException("Zookeeper root doesn't exist. You should create root node " + chroot + " before start.", Coordination::Error::ZNONODE);
 }
 
-ZooKeeper::ZooKeeper(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
+ZooKeeper::ZooKeeper(const std::string & hosts_string, const std::string & identity_, int32_t session_timeout_ms_,
+                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
+{
+    Strings hosts_strings;
+    splitInto<','>(hosts_strings, hosts_string);
+
+    init(implementation_, hosts_strings, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
+}
+
+ZooKeeper::ZooKeeper(const Strings & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
                      int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
 {
     init(implementation_, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
@@ -141,8 +153,6 @@ struct ZooKeeperArgs
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_name, keys);
 
-        std::vector<std::string> hosts_strings;
-
         session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
         operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
         implementation = "zookeeper";
@@ -150,7 +160,7 @@ struct ZooKeeperArgs
         {
             if (startsWith(key, "node"))
             {
-                hosts_strings.push_back(
+                hosts.push_back(
                         (config.getBool(config_name + "." + key + ".secure", false) ? "secure://" : "") +
                         config.getString(config_name + "." + key + ".host") + ":"
                         + config.getString(config_name + "." + key + ".port", "2181")
@@ -180,17 +190,6 @@ struct ZooKeeperArgs
                 throw KeeperException(std::string("Unknown key ") + key + " in config file", Coordination::Error::ZBADARGUMENTS);
         }
 
-        /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        pcg64 generator(randomSeed());
-        std::shuffle(hosts_strings.begin(), hosts_strings.end(), generator);
-
-        for (auto & host : hosts_strings)
-        {
-            if (!hosts.empty())
-                hosts += ',';
-            hosts += host;
-        }
-
         if (!chroot.empty())
         {
             if (chroot.front() != '/')
@@ -200,7 +199,7 @@ struct ZooKeeperArgs
         }
     }
 
-    std::string hosts;
+    Strings hosts;
     std::string identity;
     int session_timeout_ms;
     int operation_timeout_ms;
@@ -922,6 +921,10 @@ Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & re
     }
 }
 
+void ZooKeeper::finalize()
+{
+    impl->finalize();
+}
 
 size_t KeeperMultiException::getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {
@@ -1000,4 +1003,5 @@ Coordination::RequestPtr makeCheckRequest(const std::string & path, int version)
     request->version = version;
     return request;
 }
+
 }

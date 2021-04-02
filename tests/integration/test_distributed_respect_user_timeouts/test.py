@@ -78,6 +78,7 @@ def _check_exception(exception, expected_tries=3):
         expected_lines = (
             'Code: 209, ' + EXCEPTION_NETWORK + EXCEPTION_TIMEOUT,
             'Code: 209, ' + EXCEPTION_NETWORK + EXCEPTION_CONNECT,
+            EXCEPTION_TIMEOUT,
         )
 
         assert any(line.startswith(expected) for expected in expected_lines), \

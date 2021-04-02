@@ -1,5 +1,5 @@
 ---
-toc_priority: 6
+toc_priority: 10
 toc_title: RabbitMQ
 ---
 
@@ -163,3 +163,5 @@ Example:
 -   `_redelivered` - `redelivered` flag of the message.
 -   `_message_id` - messageID of the received message; non-empty if was set, when message was published.
 -   `_timestamp` - timestamp of the received message; non-empty if was set, when message was published.
+
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/rabbitmq/) <!--hide-->

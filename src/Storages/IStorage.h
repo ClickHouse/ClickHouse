@@ -57,6 +57,8 @@ struct StreamLocalLimits;
 class EnabledQuota;
 struct SelectQueryInfo;
 
+using NameDependencies = std::unordered_map<String, std::vector<String>>;
+
 struct ColumnSize
 {
     size_t marks = 0;
@@ -173,8 +175,10 @@ public:
     virtual NamesAndTypesList getVirtuals() const;
 
     Names getAllRegisteredNames() const override;
-protected:
 
+    NameDependencies getDependentViewsByColumn(const Context & context) const;
+
+protected:
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
@@ -362,7 +366,12 @@ public:
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
       */
-    virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const;
+    virtual void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const;
+
+    /**
+      * Checks that mutation commands can be applied to storage.
+      */
+    virtual void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const;
 
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.

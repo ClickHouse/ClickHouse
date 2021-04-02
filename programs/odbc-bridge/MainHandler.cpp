@@ -176,7 +176,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             std::string query = params.get("query");
             LOG_TRACE(log, "Query: {}", query);
 
-            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStream(format, out, *sample_block, context);
+            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, context);
             auto pool = getPool(connection_string);
             ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
             copyData(inp, *writer);
@@ -187,9 +187,27 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         auto message = getCurrentExceptionMessage(true);
         response.setStatusAndReason(
                 Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, because of too soon response sending
-        writeStringBinary(message, out);
-        tryLogCurrentException(log);
 
+        try
+        {
+            writeStringBinary(message, out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+
+        tryLogCurrentException(log);
+    }
+
+    try
+    {
+        out.finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
 }
 

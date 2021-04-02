@@ -34,7 +34,7 @@ std::string readInvalidateQuery(IBlockInputStream & block_input_stream)
 
     WriteBufferFromOwnString out;
     auto & column_type = block.getByPosition(0);
-    column_type.type->serializeAsTextQuoted(*column_type.column->convertToFullColumnIfConst(), 0, out, FormatSettings());
+    column_type.type->getDefaultSerialization()->serializeTextQuoted(*column_type.column->convertToFullColumnIfConst(), 0, out, FormatSettings());
 
     while ((block = block_input_stream.read()))
         if (block.rows() > 0)
