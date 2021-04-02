@@ -293,7 +293,7 @@ String MergeTreeDataPartChecksums::getTotalChecksumHex() const
 {
     SipHash hash_of_all_files;
 
-    for (auto && [name, checksum] : files)
+    for (const auto & [name, checksum] : files)
     {
         updateHash(hash_of_all_files, name);
         hash_of_all_files.update(checksum.file_hash);
