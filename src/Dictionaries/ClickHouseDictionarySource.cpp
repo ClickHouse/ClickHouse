@@ -72,7 +72,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
     , query_builder{dict_struct, db, "", table, where, IdentifierQuotingStyle::Backticks}
     , sample_block{sample_block_}
-    , context(context_)
+    , context(Context::createCopy(context_))
     , is_local{isLocalAddress({host, port}, getPortFromContext(context_, secure))}
     , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password)}
     , load_all_query{query_builder.composeLoadAllQuery()}
