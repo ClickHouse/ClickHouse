@@ -59,17 +59,8 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
+        return dict_struct.getAttribute(attribute_name).injective;
     }
-
-    bool hasHierarchy() const override { return hierarchical_attribute; }
-
-    void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
-
-    void isInVectorVector(
-        const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
-    void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
-    void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
     DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
 
@@ -82,13 +73,27 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
+    bool hasHierarchy() const override { return dict_struct.hierarchical_attribute_index.has_value(); }
+
+    ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & key_type) const override;
+
+    ColumnUInt8::Ptr isInHierarchy(
+        ColumnPtr key_column,
+        ColumnPtr in_key_column,
+        const DataTypePtr & key_type) const override;
+
+    ColumnPtr getDescendants(
+        ColumnPtr key_column,
+        const DataTypePtr & key_type,
+        size_t level) const override;
+
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     template <typename Value>
     using ContainerType = PaddedPODArray<Value>;
 
-    using NullableSet = HashSet<Key, DefaultHash<Key>>;
+    using NullableSet = HashSet<UInt64, DefaultHash<UInt64>>;
 
     struct Attribute final
     {
@@ -151,24 +156,24 @@ private:
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
+        const PaddedPODArray<UInt64> & ids,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename T>
-    void resize(Attribute & attribute, const Key id);
+    void resize(Attribute & attribute, const UInt64 id);
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const Key id, const T & value);
+    void setAttributeValueImpl(Attribute & attribute, const UInt64 id, const T & value);
 
-    void setAttributeValue(Attribute & attribute, const Key id, const Field & value);
+    void setAttributeValue(Attribute & attribute, const UInt64 id, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
     template <typename ChildType, typename AncestorType>
     void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
-    PaddedPODArray<Key> getIds() const;
+    PaddedPODArray<UInt64> getIds() const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -177,7 +182,6 @@ private:
 
     std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
-    const Attribute * hierarchical_attribute = nullptr;
     std::vector<bool> loaded_ids;
 
     size_t bytes_allocated = 0;
@@ -185,6 +189,7 @@ private:
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
 
+    /// TODO: Remove
     BlockPtr saved_block;
 };
 
