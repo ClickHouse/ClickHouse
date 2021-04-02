@@ -66,13 +66,18 @@ createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_events,
         throw Exception{"Aggregate function " + name + " doesn't support a parameter: " + param_base, ErrorCodes::BAD_ARGUMENTS};
     SequenceBase base = seq_base_mapping[param_base];
 
+    if ((base == SequenceBase::Head && direction == SequenceDirection::Backward) ||
+        (base == SequenceBase::Tail && direction == SequenceDirection::Forward))
+        throw Exception(fmt::format(
+            "Invalid argument combination of '{}' with '{}'", param_base, param_dir), ErrorCodes::BAD_ARGUMENTS);
+
     if (argument_types.size() < min_required_args)
-        throw Exception("Aggregate function " + name + " requires at least two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception("Aggregate function " + name + " requires at least " + toString(min_required_args) + " arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     bool is_base_match_type = base == SequenceBase::FirstMatch || base == SequenceBase::LastMatch;
     if (is_base_match_type && argument_types.size() < min_required_args + 1)
         throw Exception(
-            "Aggregate function " + name + " requires at least three arguments when base is first_match or last_match.",
+            "Aggregate function " + name + " requires at least " + toString(min_required_args + 1) + " arguments when base is first_match or last_match.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (argument_types.size() > max_events + min_required_args)
