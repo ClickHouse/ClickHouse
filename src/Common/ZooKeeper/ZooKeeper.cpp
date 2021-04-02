@@ -241,15 +241,15 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
     Coordination::Error code = Coordination::Error::ZOK;
     Poco::Event event;
 
-    auto callback = [&](const Coordination::ListResponse & response)
+    auto callback = [&](Coordination::ListResponse response)
     {
         SCOPE_EXIT(event.set());
         code = response.error;
         if (code == Coordination::Error::ZOK)
         {
-            res = response.names;
+            res = std::move(response.names);
             if (stat)
-                *stat = response.stat;
+                *stat = std::move(response.stat);
         }
     };
 
@@ -301,12 +301,12 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
     Coordination::Error code = Coordination::Error::ZOK;
     Poco::Event event;
 
-    auto callback = [&](const Coordination::CreateResponse & response)
+    auto callback = [&](Coordination::CreateResponse response)
     {
         SCOPE_EXIT(event.set());
         code = response.error;
         if (code == Coordination::Error::ZOK)
-            path_created = response.path_created;
+            path_created = std::move(response.path_created);
     };
 
     impl->create(path, data, mode & 1, mode & 2, {}, callback);  /// TODO better mode
@@ -369,7 +369,7 @@ Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t vers
     Coordination::Error code = Coordination::Error::ZOK;
     Poco::Event event;
 
-    auto callback = [&](const Coordination::RemoveResponse & response)
+    auto callback = [&](Coordination::RemoveResponse response)
     {
         SCOPE_EXIT(event.set());
         if (response.error != Coordination::Error::ZOK)
@@ -402,12 +402,12 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
     Coordination::Error code = Coordination::Error::ZOK;
     Poco::Event event;
 
-    auto callback = [&](const Coordination::ExistsResponse & response)
+    auto callback = [&](Coordination::ExistsResponse response)
     {
         SCOPE_EXIT(event.set());
         code = response.error;
         if (code == Coordination::Error::ZOK && stat)
-            *stat = response.stat;
+            *stat = std::move(response.stat);
     };
 
     impl->exists(path, callback, watch_callback);
@@ -434,15 +434,15 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
     Coordination::Error code = Coordination::Error::ZOK;
     Poco::Event event;
 
-    auto callback = [&](const Coordination::GetResponse & response)
+    auto callback = [&](Coordination::GetResponse response)
     {
         SCOPE_EXIT(event.set());
         code = response.error;
         if (code == Coordination::Error::ZOK)
         {
-            res = response.data;
+            res = std::move(response.data);
             if (stat)
-                *stat = response.stat;
+                *stat = std::move(response.stat);
         }
     };
 
@@ -506,12 +506,12 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
     Coordination::Error code = Coordination::Error::ZOK;
     Poco::Event event;
 
-    auto callback = [&](const Coordination::SetResponse & response)
+    auto callback = [&](Coordination::SetResponse response)
     {
         SCOPE_EXIT(event.set());
         code = response.error;
         if (code == Coordination::Error::ZOK && stat)
-            *stat = response.stat;
+            *stat = std::move(response.stat);
     };
 
     impl->set(path, data, version, callback);
@@ -740,12 +740,12 @@ std::future<Coordination::CreateResponse> ZooKeeper::asyncCreate(const std::stri
     auto promise = std::make_shared<std::promise<Coordination::CreateResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::CreateResponse & response) mutable
+    auto callback = [promise, path](Coordination::CreateResponse response) mutable
     {
         if (response.error != Coordination::Error::ZOK)
             promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
-            promise->set_value(response);
+            promise->set_value(std::move(response));
     };
 
     impl->create(path, data, mode & 1, mode & 2, {}, std::move(callback));
@@ -758,12 +758,12 @@ std::future<Coordination::GetResponse> ZooKeeper::asyncGet(const std::string & p
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::GetResponse & response) mutable
+    auto callback = [promise, path](Coordination::GetResponse response) mutable
     {
         if (response.error != Coordination::Error::ZOK)
             promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
-            promise->set_value(response);
+            promise->set_value(std::move(response));
     };
 
     impl->get(path, std::move(callback), {});
@@ -776,12 +776,12 @@ std::future<Coordination::GetResponse> ZooKeeper::asyncTryGet(const std::string 
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::GetResponse & response) mutable
+    auto callback = [promise, path](Coordination::GetResponse response) mutable
     {
         if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
             promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
-            promise->set_value(response);
+            promise->set_value(std::move(response));
     };
 
     impl->get(path, std::move(callback), {});
@@ -793,12 +793,12 @@ std::future<Coordination::ExistsResponse> ZooKeeper::asyncExists(const std::stri
     auto promise = std::make_shared<std::promise<Coordination::ExistsResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::ExistsResponse & response) mutable
+    auto callback = [promise, path](Coordination::ExistsResponse response) mutable
     {
         if (response.error != Coordination::Error::ZOK && response.error != Coordination::Error::ZNONODE)
             promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
-            promise->set_value(response);
+            promise->set_value(std::move(response));
     };
 
     impl->exists(path, std::move(callback), {});
@@ -810,12 +810,12 @@ std::future<Coordination::SetResponse> ZooKeeper::asyncSet(const std::string & p
     auto promise = std::make_shared<std::promise<Coordination::SetResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::SetResponse & response) mutable
+    auto callback = [promise, path](Coordination::SetResponse response) mutable
     {
         if (response.error != Coordination::Error::ZOK)
             promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
-            promise->set_value(response);
+            promise->set_value(std::move(response));
     };
 
     impl->set(path, data, version, std::move(callback));
@@ -827,12 +827,12 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncGetChildren(const std::s
     auto promise = std::make_shared<std::promise<Coordination::ListResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::ListResponse & response) mutable
+    auto callback = [promise, path](Coordination::ListResponse response) mutable
     {
         if (response.error != Coordination::Error::ZOK)
             promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
-            promise->set_value(response);
+            promise->set_value(std::move(response));
     };
 
     impl->list(path, std::move(callback), {});
@@ -844,12 +844,12 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncRemove(const std::stri
     auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::RemoveResponse & response) mutable
+    auto callback = [promise, path](Coordination::RemoveResponse response) mutable
     {
         if (response.error != Coordination::Error::ZOK)
             promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         else
-            promise->set_value(response);
+            promise->set_value(std::move(response));
     };
 
     impl->remove(path, version, std::move(callback));
@@ -861,7 +861,7 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemove(const std::s
     auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise, path](const Coordination::RemoveResponse & response) mutable
+    auto callback = [promise, path](Coordination::RemoveResponse response) mutable
     {
         if (response.error != Coordination::Error::ZOK
             && response.error != Coordination::Error::ZNONODE
@@ -871,7 +871,7 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemove(const std::s
             promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
         }
         else
-            promise->set_value(response);
+            promise->set_value(std::move(response));
     };
 
     impl->remove(path, version, std::move(callback));
