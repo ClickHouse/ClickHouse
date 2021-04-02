@@ -81,12 +81,15 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     set (RLIMIT_DATA 5000000000)
     # set VIRT (RLIMIT_AS) to 10G (DATA*10)
     set (RLIMIT_AS 10000000000)
+    # set CPU time limit to 600 seconds
+    set (RLIMIT_CPU 600)
     # gcc10/gcc10/clang -fsanitize=memory is too heavy
     if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
        set (RLIMIT_AS   20000000000)
        set (RLIMIT_DATA 20000000000)
+       set (RLIMIT_CPU 1200)
     endif()
-    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --verbose --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=600 ${CMAKE_CXX_COMPILER_LAUNCHER})
+    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --verbose --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
