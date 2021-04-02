@@ -70,7 +70,8 @@ void registerFunctionErrorCodeToName(FunctionFactory &);
 void registerFunctionTcpPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
 void registerFunctionFile(FunctionFactory & factory);
-void registerFunctionConnectionID(FunctionFactory & factory);
+void registerFunctionConnectionId(FunctionFactory & factory);
+void registerFunctionPartitionId(FunctionFactory & factory);
 void registerFunctionIsIPAddressContainedIn(FunctionFactory &);
 
 #if USE_ICU
@@ -142,7 +143,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionTcpPort(factory);
     registerFunctionByteSize(factory);
     registerFunctionFile(factory);
-    registerFunctionConnectionID(factory);
+    registerFunctionConnectionId(factory);
+    registerFunctionPartitionId(factory);
     registerFunctionIsIPAddressContainedIn(factory);
 
 #if USE_ICU
