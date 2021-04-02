@@ -9,7 +9,7 @@ namespace QueryPlanOptimizations
 {
 
 /// This is the main function which optimizes the whole QueryPlan tree.
-void optimizeTree(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void optimizeTree(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Optimization is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
@@ -38,14 +38,19 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes);
 /// Replace chain `FilterStep -> ExpressionStep` to single FilterStep
 size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &);
 
+/// Move FilterStep down if possible.
+/// May split FilterStep and push down only part of it.
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 4> optimizations =
+    static const std::array<Optimization, 5> optimizations =
     {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin"},
         {tryPushDownLimit, "pushDownLimit"},
         {trySplitFilter, "splitFilter"},
         {tryMergeExpressions, "mergeExpressions"},
+        {tryPushDownFilter, "pushDownFilter"},
      }};
 
     return optimizations;

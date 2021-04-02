@@ -1645,7 +1645,7 @@ private:
 
     static inline void applyCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst_lower, UInt8 * __restrict dst_upper, UInt8 bits_to_keep)
     {
-        __m128i mask = _mm_loadu_si128(reinterpret_cast<const __m128i *>(getCIDRMaskIPv6(bits_to_keep)));
+        __m128i mask = _mm_loadu_si128(reinterpret_cast<const __m128i *>(getCIDRMaskIPv6(bits_to_keep).data()));
         __m128i lower = _mm_and_si128(_mm_loadu_si128(reinterpret_cast<const __m128i *>(src)), mask);
         _mm_storeu_si128(reinterpret_cast<__m128i *>(dst_lower), lower);
 
@@ -1659,7 +1659,7 @@ private:
     /// NOTE IPv6 is stored in memory in big endian format that makes some difficulties.
     static void applyCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst_lower, UInt8 * __restrict dst_upper, UInt8 bits_to_keep)
     {
-        const auto * mask = getCIDRMaskIPv6(bits_to_keep);
+        const auto & mask = getCIDRMaskIPv6(bits_to_keep);
 
         for (size_t i = 0; i < 16; ++i)
         {

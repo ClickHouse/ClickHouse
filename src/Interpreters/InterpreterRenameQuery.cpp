@@ -3,14 +3,20 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/AccessRightsElement.h>
+#include <Common/typeid_cast.h>
+#include <Databases/DatabaseReplicated.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_)
     : query_ptr(query_ptr_), context(context_)
@@ -61,10 +67,10 @@ BlockIO InterpreterRenameQuery::execute()
     if (rename.database)
         return executeToDatabase(rename, descriptions);
     else
-        return executeToTables(rename, descriptions);
+        return executeToTables(rename, descriptions, table_guards);
 }
 
-BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions)
+BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards)
 {
     auto & database_catalog = DatabaseCatalog::instance();
 
@@ -73,13 +79,29 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         if (!rename.exchange)
             database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name), context);
 
-        database_catalog.getDatabase(elem.from_database_name)->renameTable(
+        DatabasePtr database = database_catalog.getDatabase(elem.from_database_name);
+        if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+        {
+            if (1 < descriptions.size())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Database {} is Replicated, "
+                                "it does not support renaming of multiple tables in single query.", elem.from_database_name);
+
+            UniqueTableName from(elem.from_database_name, elem.from_table_name);
+            UniqueTableName to(elem.to_database_name, elem.to_table_name);
+            ddl_guards[from]->releaseTableLock();
+            ddl_guards[to]->releaseTableLock();
+            return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, context);
+        }
+        else
+        {
+            database->renameTable(
                 context,
                 elem.from_table_name,
                 *database_catalog.getDatabase(elem.to_database_name),
                 elem.to_table_name,
                 rename.exchange,
                 rename.dictionary);
+        }
     }
 
     return {};

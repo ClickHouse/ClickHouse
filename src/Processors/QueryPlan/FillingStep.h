@@ -13,9 +13,11 @@ public:
 
     String getName() const override { return "Filling"; }
 
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(FormatSettings & settings) const override;
+
+    const SortDescription & getSortDescription() const { return sort_description; }
 
 private:
     SortDescription sort_description;

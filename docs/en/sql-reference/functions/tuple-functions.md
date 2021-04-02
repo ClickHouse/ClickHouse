@@ -47,7 +47,7 @@ You can use the `EXCEPT` expression to skip columns as a result of the query.
 
 **Arguments**
 
--   `x` - A `tuple` function, column, or tuple of elements. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `x` — A `tuple` function, column, or tuple of elements. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Returned value**
 
@@ -111,4 +111,55 @@ Result:
 
 -   [Tuple](../../sql-reference/data-types/tuple.md)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/tuple-functions/) <!--hide-->
+## tupleHammingDistance {#tuplehammingdistance}
+
+Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between two tuples of the same size.
+
+**Syntax**
+
+``` sql
+tupleHammingDistance(tuple1, tuple2)
+```
+
+**Arguments**
+
+-   `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple2` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
+
+Tuples should have the same type of the elements.
+
+**Returned value**
+
+-   The Hamming distance.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT tupleHammingDistance((1, 2, 3), (3, 2, 1)) AS HammingDistance;
+```
+
+Result:
+
+``` text
+┌─HammingDistance─┐
+│               2 │
+└─────────────────┘
+```
+
+Can be used with [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) functions for detection of semi-duplicate strings:
+
+``` sql
+SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) as HammingDistance FROM (SELECT 'Clickhouse is a column-oriented database management system for online analytical processing of queries.' AS string);
+```
+
+Result:
+
+``` text
+┌─HammingDistance─┐
+│               2 │
+└─────────────────┘
+```

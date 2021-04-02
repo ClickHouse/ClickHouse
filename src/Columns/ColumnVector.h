@@ -154,6 +154,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -205,6 +207,11 @@ public:
                                                     compare_results, direction, nan_direction_hint);
     }
 
+    bool hasEqualValues() const override
+    {
+        return this->template hasEqualValuesImpl<Self>();
+    }
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
     void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges& equal_range) const override;
@@ -254,7 +261,7 @@ public:
 
     void insert(const Field & x) override
     {
-        data.push_back(DB::get<NearestFieldType<T>>(x));
+        data.push_back(DB::get<T>(x));
     }
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -297,6 +304,8 @@ public:
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
+
+    ColumnPtr compress() const override;
 
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);

@@ -66,7 +66,6 @@ Result:
 
 -   [Map(key, value)](../../sql-reference/data-types/map.md) data type
 
-
 ## mapAdd {#function-mapadd}
 
 Collect all the keys and sum corresponding values.
@@ -172,6 +171,131 @@ Result:
 ┌─res──────────────────────────┬─type──────────────────────────────┐
 │ ([1,2,3,4,5],[11,22,0,44,0]) │ Tuple(Array(UInt8), Array(UInt8)) │
 └──────────────────────────────┴───────────────────────────────────┘
+```
+
+## mapContains {#mapcontains}
+
+Determines  whether the `map` contains the `key` parameter.
+
+**Syntax**
+
+``` sql
+mapContains(map, key)
+```
+
+**Parameters** 
+
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).
+-   `key` — Key. Type matches the type of keys of `map` parameter.
+
+**Returned value**
+
+-   `1` if `map` contains `key`, `0` if not.
+
+Type: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapContains(a, 'name') FROM test;
+
+```
+
+Result:
+
+```text
+┌─mapContains(a, 'name')─┐
+│                      1 │
+│                      0 │
+└────────────────────────┘
+```
+
+## mapKeys {#mapkeys}
+
+Returns all keys from the `map` parameter.
+
+**Syntax**
+
+```sql
+mapKeys(map)
+```
+
+**Parameters**
+
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).
+
+**Returned value**
+
+-   Array containing all keys from the `map`.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapKeys(a) FROM test;
+```
+
+Result:
+
+```text
+┌─mapKeys(a)────────────┐
+│ ['name','age']        │
+│ ['number','position'] │
+└───────────────────────┘
+```
+
+## mapValues {#mapvalues}
+
+Returns all values from the `map` parameter.
+
+**Syntax**
+
+```sql
+mapKeys(map)
+```
+
+**Parameters**
+
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).
+
+**Returned value**
+
+-   Array containing all the values from `map`.
+
+Type: [Array](../../sql-reference/data-types/array.md).
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'name':'eleven','age':'11'}), ({'number':'twelve','position':'6.0'});
+
+SELECT mapValues(a) FROM test;
+```
+
+Result:
+
+```text
+┌─mapValues(a)─────┐
+│ ['eleven','11']  │
+│ ['twelve','6.0'] │
+└──────────────────┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->

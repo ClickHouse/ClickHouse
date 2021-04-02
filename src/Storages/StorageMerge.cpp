@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PREWHERE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SAMPLING_NOT_SUPPORTED;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
 namespace
@@ -218,8 +219,8 @@ Pipe StorageMerge::read(
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
-    StorageListWithLocks selected_tables = getSelectedTables(
-        query_info.query, has_table_virtual_column, context.getCurrentQueryId(), context.getSettingsRef());
+    StorageListWithLocks selected_tables
+        = getSelectedTables(query_info, has_table_virtual_column, context.getCurrentQueryId(), context.getSettingsRef());
 
     if (selected_tables.empty())
         /// FIXME: do we support sampling in this case?
@@ -365,7 +366,9 @@ Pipe StorageMerge::createSources(
             column.column = column.type->createColumnConst(0, Field(table_name));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
-            auto adding_column_actions = std::make_shared<ExpressionActions>(std::move(adding_column_dag));
+            auto adding_column_actions = std::make_shared<ExpressionActions>(
+                std::move(adding_column_dag),
+                ExpressionActionsSettings::fromContext(*modified_context));
 
             pipe.addSimpleTransform([&](const Block & stream_header)
             {
@@ -406,8 +409,9 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 
 
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
-        const ASTPtr & query, bool has_virtual_column, const String & query_id, const Settings & settings) const
+        const SelectQueryInfo & query_info, bool has_virtual_column, const String & query_id, const Settings & settings) const
 {
+    const ASTPtr & query = query_info.query;
     StorageListWithLocks selected_tables;
     DatabaseTablesIteratorPtr iterator = getDatabaseIterator(global_context);
 
@@ -435,7 +439,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
     if (has_virtual_column)
     {
         Block virtual_columns_block = Block{ColumnWithTypeAndName(std::move(virtual_column), std::make_shared<DataTypeString>(), "_table")};
-        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, global_context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, global_context);
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list
@@ -472,8 +476,9 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const Context & cont
 }
 
 
-void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const
+void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
 {
+    auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -481,6 +486,17 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Se
             throw Exception(
                 "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
                 ErrorCodes::NOT_IMPLEMENTED);
+        if (command.type == AlterCommand::Type::DROP_COLUMN)
+        {
+            const auto & deps_mv = name_deps[command.column_name];
+            if (!deps_mv.empty())
+            {
+                throw Exception(
+                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                        + toString(deps_mv),
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+            }
+        }
     }
 }
 
@@ -509,7 +525,7 @@ void StorageMerge::convertingSourceStream(
             pipe.getHeader().getColumnsWithTypeAndName(),
             header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
-    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag);
+    auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, ExpressionActionsSettings::fromContext(context));
 
     pipe.addSimpleTransform([&](const Block & stream_header)
     {

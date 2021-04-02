@@ -9,12 +9,26 @@ namespace DB
 
 class LoggerWrapper : public nuraft::logger
 {
+private:
+
+    static inline const std::unordered_map<LogsLevel, Poco::Message::Priority> LEVELS =
+    {
+        {LogsLevel::trace, Poco::Message::Priority::PRIO_TRACE},
+        {LogsLevel::debug, Poco::Message::Priority::PRIO_DEBUG},
+        {LogsLevel::information, Poco::Message::PRIO_INFORMATION},
+        {LogsLevel::warning, Poco::Message::PRIO_WARNING},
+        {LogsLevel::error, Poco::Message::PRIO_ERROR},
+        {LogsLevel::fatal, Poco::Message::PRIO_FATAL}
+    };
+    static inline const int LEVEL_MAX = static_cast<int>(LogsLevel::trace);
+    static inline const int LEVEL_MIN = static_cast<int>(LogsLevel::none);
+
 public:
     LoggerWrapper(const std::string & name, LogsLevel level_)
         : log(&Poco::Logger::get(name))
-        , level(static_cast<int>(level_))
+        , level(level_)
     {
-        log->setLevel(level);
+        log->setLevel(static_cast<int>(LEVELS.at(level)));
     }
 
     void put_details(
@@ -24,24 +38,26 @@ public:
         size_t /* line_number */,
         const std::string & msg) override
     {
-        LOG_IMPL(log, static_cast<DB::LogsLevel>(level_), static_cast<Poco::Message::Priority>(level_), msg);
+        LogsLevel db_level = static_cast<LogsLevel>(level_);
+        LOG_IMPL(log, db_level, LEVELS.at(db_level), msg);
     }
 
     void set_level(int level_) override
     {
-        level_ = std::min(6, std::max(1, level_));
-        log->setLevel(level_);
-        level = level_;
+        level_ = std::min(LEVEL_MAX, std::max(LEVEL_MIN, level_));
+        level = static_cast<LogsLevel>(level_);
+        log->setLevel(static_cast<int>(LEVELS.at(level)));
     }
 
     int get_level() override
     {
-        return level;
+        LogsLevel lvl = level;
+        return static_cast<int>(lvl);
     }
 
 private:
     Poco::Logger * log;
-    std::atomic<int> level;
+    std::atomic<LogsLevel> level;
 };
 
 }
