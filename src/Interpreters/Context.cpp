@@ -1374,11 +1374,11 @@ void Context::setExternalModelsConfig(const ConfigurationPtr & config, const std
 {
     std::lock_guard lock(shared->external_models_mutex);
 
-    if (shared->external_models_config && isSameConfiguration(*config, *shared->external_models_config, config_name))
+    if (shared->external_models_config && isSameConfigurationWithMultipleKeys(*config, *shared->external_models_config, "", config_name))
         return;
 
     shared->external_models_config = config;
-    shared->models_repository_guard.reset();
+    shared->models_repository_guard .reset();
     shared->models_repository_guard = getExternalModelsLoaderUnlocked().addConfigRepository(
         std::make_unique<ExternalLoaderXMLConfigRepository>(*config, config_name));
 }
