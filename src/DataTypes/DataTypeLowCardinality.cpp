@@ -50,7 +50,7 @@ DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
                         + dictionary_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
-void DataTypeLowCardinality::enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeLowCardinality::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::DictionaryKeys);
     dictionary_type->enumerateStreams(callback, path);
@@ -243,7 +243,7 @@ static DeserializeStateLowCardinality * checkAndGetLowCardinalityDeserializeStat
     return low_cardinality_state;
 }
 
-void DataTypeLowCardinality::serializeBinaryBulkStatePrefixImpl(
+void DataTypeLowCardinality::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -263,7 +263,7 @@ void DataTypeLowCardinality::serializeBinaryBulkStatePrefixImpl(
     state = std::make_shared<SerializeStateLowCardinality>(key_version);
 }
 
-void DataTypeLowCardinality::serializeBinaryBulkStateSuffixImpl(
+void DataTypeLowCardinality::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -289,7 +289,7 @@ void DataTypeLowCardinality::serializeBinaryBulkStateSuffixImpl(
     }
 }
 
-void DataTypeLowCardinality::deserializeBinaryBulkStatePrefixImpl(
+void DataTypeLowCardinality::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -482,7 +482,7 @@ namespace
     }
 }
 
-void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreamsImpl(
+void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -579,12 +579,11 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreamsImpl(
     index_version.getDataType()->serializeBinaryBulk(*positions, *indexes_stream, 0, num_rows);
 }
 
-void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreamsImpl(
+void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsCache * /* cache */) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
     ColumnLowCardinality & low_cardinality_column = typeid_cast<ColumnLowCardinality &>(column);
 
@@ -808,6 +807,31 @@ void DataTypeLowCardinality::serializeTextXML(const IColumn & column, size_t row
     serializeImpl(column, row_num, &IDataType::serializeAsTextXML, ostr, settings);
 }
 
+void DataTypeLowCardinality::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    serializeImpl(column, row_num, &IDataType::serializeProtobuf, protobuf, value_index);
+}
+
+void DataTypeLowCardinality::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    if (allow_add_row)
+    {
+        deserializeImpl(column, &IDataType::deserializeProtobuf, protobuf, true, row_added);
+        return;
+    }
+
+    row_added = false;
+    auto & low_cardinality_column= getColumnLowCardinality(column);
+    auto  nested_column = low_cardinality_column.getDictionary().getNestedColumn();
+    auto temp_column = nested_column->cloneEmpty();
+    size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(low_cardinality_column.size() - 1);
+    temp_column->insertFrom(*nested_column, unique_row_number);
+    bool dummy;
+    dictionary_type.get()->deserializeProtobuf(*temp_column, protobuf, false, dummy);
+    low_cardinality_column.popBack(1);
+    low_cardinality_column.insertFromFullColumn(*temp_column, 0);
+}
+
 template <typename... Params, typename... Args>
 void DataTypeLowCardinality::serializeImpl(
     const IColumn & column, size_t row_num, DataTypeLowCardinality::SerializeFunctionPtr<Params...> func, Args &&... args) const
@@ -860,17 +884,15 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&keys_type))
         type = nullable_type->getNestedType().get();
 
-    WhichDataType which(type);
-
-    if (which.isString())
+    if (isString(type))
         return creator(static_cast<ColumnString *>(nullptr));
-    else if (which.isFixedString())
+    if (isFixedString(type))
         return creator(static_cast<ColumnFixedString *>(nullptr));
-    else if (which.isDate())
+    if (typeid_cast<const DataTypeDate *>(type))
         return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
-    else if (which.isDateTime())
+    if (typeid_cast<const DataTypeDateTime *>(type))
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
-    else if (which.isInt() || which.isUInt() || which.isFloat())
+    if (isColumnedAsNumber(type))
     {
         MutableColumnUniquePtr column;
         TypeListNativeNumbers::forEach(CreateColumnVector(column, *type, creator));

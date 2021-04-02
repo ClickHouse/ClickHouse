@@ -36,12 +36,6 @@ void registerTableFunctions()
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);
 #endif
-
-#if USE_LIBPQXX
-    registerTableFunctionPostgreSQL(factory);
-#endif
-
-    registerTableFunctionDictionary(factory);
 }
 
 }

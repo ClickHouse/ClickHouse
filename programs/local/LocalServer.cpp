@@ -240,7 +240,7 @@ try
 
     /// Skip networking
 
-    /// Sets external authenticators config (LDAP, Kerberos).
+    /// Sets external authenticators config (LDAP).
     global_context->setExternalAuthenticatorsConfig(config());
 
     setupUsers();
@@ -260,11 +260,6 @@ try
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
 
-    /// A cache for mmapped files.
-    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
-    if (mmap_cache_size)
-        global_context->setMMappedFileCache(mmap_cache_size);
-
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
@@ -278,10 +273,9 @@ try
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(*global_context);
 
-    if (config().has("path"))
+    String path = global_context->getPath();
+    if (!path.empty())
     {
-        String path = global_context->getPath();
-
         /// Lock path directory before read
         status.emplace(path + "status", StatusFile::write_full_info);
 

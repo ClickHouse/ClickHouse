@@ -181,7 +181,6 @@ QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::Real, sig, info, context);
 }
 
@@ -191,7 +190,6 @@ QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
 
 void QueryProfilerCpu::signalHandler(int sig, siginfo_t * info, void * context)
 {
-    DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::CPU, sig, info, context);
 }
 

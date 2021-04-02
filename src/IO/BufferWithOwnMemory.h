@@ -35,10 +35,10 @@ struct Memory : boost::noncopyable, Allocator
     char * m_data = nullptr;
     size_t alignment = 0;
 
-    Memory() = default;
+    Memory() {}
 
     /// If alignment != 0, then allocate memory aligned to specified value.
-    explicit Memory(size_t size_, size_t alignment_ = 0) : m_capacity(size_), m_size(m_capacity), alignment(alignment_)
+    Memory(size_t size_, size_t alignment_ = 0) : m_capacity(size_), m_size(m_capacity), alignment(alignment_)
     {
         alloc();
     }
@@ -140,7 +140,7 @@ protected:
     Memory<> memory;
 public:
     /// If non-nullptr 'existing_memory' is passed, then buffer will not create its own memory and will use existing_memory without ownership.
-    explicit BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
+    BufferWithOwnMemory(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
         : Base(nullptr, 0), memory(existing_memory ? 0 : size, alignment)
     {
         Base::set(existing_memory ? existing_memory : memory.data(), size);

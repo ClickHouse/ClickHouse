@@ -4,7 +4,7 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
 #include <boost/range/algorithm/sort.hpp>
@@ -49,7 +49,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
 
     if (!query.cluster.empty())
     {
-        query.replaceCurrentUserTag(context.getUserName());
+        query.replaceCurrentUserTagWithName(context.getUserName());
         return executeDDLQueryOnCluster(query_ptr, context);
     }
 
@@ -58,7 +58,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     if (query.roles)
         roles_from_query = RolesOrUsersSet{*query.roles, access_control, context.getUserID()};
 
-    query.replaceEmptyDatabase(context.getCurrentDatabase());
+    query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
 
     if (query.alter)
     {

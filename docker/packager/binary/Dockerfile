@@ -14,11 +14,7 @@ RUN apt-get update \
         lsb-release \
         wget \
         --yes --no-install-recommends --verbose-versions \
-    && cat /etc/resolv.conf \
-    && echo "nameserver 1.1.1.1" >> /etc/resolv.conf \
-    && nslookup -debug apt.llvm.org \
-    && ping -c1 apt.llvm.org \
-    && wget -nv --retry-connrefused --tries=10 -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
+    && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
     && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
@@ -97,7 +93,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && rm -rf cctools-port
 
 # Download toolchain for Darwin
-RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
+RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
 
 # Download toolchain for ARM
 # It contains all required headers and libraries. Note that it's named as "gcc" but actually we are using clang for cross compiling.

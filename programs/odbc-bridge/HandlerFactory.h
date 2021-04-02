@@ -1,17 +1,16 @@
 #pragma once
-
 #include <Interpreters/Context.h>
-#include <Server/HTTP/HTTPRequestHandlerFactory.h>
+#include <Poco/Logger.h>
+#include <Poco/Net/HTTPRequestHandler.h>
+#include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include "MainHandler.h"
 #include "ColumnInfoHandler.h"
 #include "IdentifierQuoteHandler.h"
-#include "MainHandler.h"
 #include "SchemaAllowedHandler.h"
-
-#include <Poco/Logger.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <Poco/Data/SessionPool.h>
+    #include <Poco/Data/SessionPool.h>
 #pragma GCC diagnostic pop
 
 
@@ -20,7 +19,7 @@ namespace DB
 /** Factory for '/ping', '/', '/columns_info', '/identifier_quote', '/schema_allowed' handlers.
   * Also stores Session pools for ODBC connections
   */
-class HandlerFactory : public HTTPRequestHandlerFactory
+class HandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
 public:
     HandlerFactory(const std::string & name_, size_t keep_alive_timeout_, Context & context_)
@@ -29,7 +28,7 @@ public:
         pool_map = std::make_shared<ODBCHandler::PoolMap>();
     }
 
-    std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override;
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override;
 
 private:
     Poco::Logger * log;
