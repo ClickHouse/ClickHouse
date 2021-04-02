@@ -71,6 +71,7 @@ namespace ProfileEvents
     extern const Event RejectedInserts;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
+    extern const Event DuplicatedInsertedBlocks;
 }
 
 namespace CurrentMetrics
