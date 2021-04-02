@@ -30,10 +30,7 @@ On `DROP TABLE` no data is removed, database `Atomic` just marks table as droppe
 
 ### RENAME TABLE {#rename-table}
 
-`RENAME` queries are performed without changing UUID and moving table data. 
-
-!!! note "Note"
-    `RENAME` and `DROP` are execute without IStorage-level RWLocks. These queries do not wait for the completion of queries using the table and will be executed instantly. Data deletion occurs asynchronously in a background thread.
+`RENAME` queries are performed without changing UUID and moving table data. These queries do not wait for the completion of queries using the table and will be executed instantly.
 
 ### DELETE/DETACH {#delete-detach}
 
