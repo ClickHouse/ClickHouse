@@ -30,7 +30,7 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
 ### DROP/DETACH TABLE {#drop-detach-table}
 
 При выполнении запроса `DROP TABLE` никакие данные не удаляются. Таблица помечается как удаленная, метаданные перемещаются в папку `/clickhouse_path/metadata_dropped/` и база данных уведомляет фоновый поток. Задержка перед окончательным удалением данных задается настройкой [database_atomic_delay_before_drop_table_sec](../../operations/server-configuration-parameters/settings.md#database_atomic_delay_before_drop_table_sec).
-Вы можете задать синхронный режим определяя модификатор `SYNC`. Используйте для этого настройку [database_atomic_wait_for_drop_and_detach_synchronously](../../operations/settings/settings.md#database_atomic_wait_for_drop_and_detach_synchronously). В этом случае запрос `DROP` ждет завершения `SELECT`, `INSERT` и других запросов, которые используют таблицу. Таблица будет фактически удалена, когда она не будет использоваться.
+Вы можете задать синхронный режим, определяя модификатор `SYNC`. Используйте для этого настройку [database_atomic_wait_for_drop_and_detach_synchronously](../../operations/settings/settings.md#database_atomic_wait_for_drop_and_detach_synchronously). В этом случае запрос `DROP` ждет завершения `SELECT`, `INSERT` и других запросов, которые используют таблицу. Таблица будет фактически удалена, когда она не будет использоваться.
 
 ### EXCHANGE TABLES {#exchange-tables}
 
