@@ -96,8 +96,15 @@ void MergeTreeDeduplicationLog::load()
     /// Order important
     for (auto & [log_number, desc] : existing_logs)
     {
-        desc.entries_count = loadSingleLog(desc.path);
-        current_log_number = log_number;
+        try
+        {
+            desc.entries_count = loadSingleLog(desc.path);
+            current_log_number = log_number;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Error while loading MergeTree deduplication log on path " + desc.path);
+        }
     }
 
     rotateAndDropIfNeeded();
