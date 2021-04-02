@@ -117,7 +117,7 @@ namespace
             case ValueType::vtDecimal256:
             {
                 ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
-                data_type.deserializeAsWholeText(column, buffer, FormatSettings{});
+                data_type.getDefaultSerialization()->deserializeWholeText(column, buffer, FormatSettings{});
                 break;
             }
             case ValueType::vtFixedString:

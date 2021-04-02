@@ -253,12 +253,20 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
 @pytest.mark.timeout(240)
 def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
     instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'tsv',
                      rabbitmq_format = 'TSV',
+                     rabbitmq_queue_base = 'tsv',
                      rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.rabbitmq;
         ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
@@ -272,13 +280,11 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
 
     for message in messages:
         channel.basic_publish(exchange='tsv', routing_key='', body=message)
-
     connection.close()
-    time.sleep(1)
 
     result = ''
     while True:
-        result += instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
+        result = instance.query('SELECT * FROM test.view ORDER BY key')
         if rabbitmq_check_result(result):
             break
 

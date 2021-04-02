@@ -3,7 +3,7 @@ toc_priority: 8
 toc_title: PostgreSQL
 ---
 
-# PosgtreSQL {#postgresql}
+# PostgreSQL {#postgresql}
 
 Движок PostgreSQL позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом PostgreSQL сервере.
 
