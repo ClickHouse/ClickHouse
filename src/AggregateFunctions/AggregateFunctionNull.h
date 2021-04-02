@@ -276,28 +276,6 @@ public:
         this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
-    {
-        if constexpr (result_is_nullable)
-        {
-            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
-            if (this->getFlag(place))
-            {
-                this->nested_function->insertResultInto(this->nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(0);
-            }
-            else
-            {
-                to_concrete.insertDefault();
-            }
-        }
-        else
-        {
-            this->nested_function->insertResultInto(this->nestedPlace(place), to, arena);
-        }
-    }
-
-
 private:
     enum { MAX_ARGS = 8 };
     size_t number_of_arguments = 0;
