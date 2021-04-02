@@ -641,6 +641,7 @@
         "01542_dictionary_load_exception_race",
         "01545_system_errors", // looks at the difference of values in system.errors
         "01560_optimize_on_insert_zookeeper",
+        "01563_distributed_query_finish", // looks at system.errors which is global
         "01575_disable_detach_table_of_dictionary",
         "01593_concurrent_alter_mutations_kill",
         "01593_concurrent_alter_mutations_kill_many_replicas",
@@ -667,6 +668,7 @@
         "01702_system_query_log", // Runs many global system queries
         "01715_background_checker_blather_zookeeper",
         "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01722_long_brotli_http_compression_json_format", // it is broken in some unimaginable way with the genius error "cannot write to ofstream", not sure how to debug this
         "01747_alter_partition_key_enum_zookeeper",
         "01748_dictionary_table_dot", // creates database
         "01760_polygon_dictionaries",
