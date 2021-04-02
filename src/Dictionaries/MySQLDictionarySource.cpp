@@ -119,7 +119,7 @@ std::string MySQLDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-BlockInputStreamPtr MySQLDictionarySource::loadBase(const String & query)
+BlockInputStreamPtr MySQLDictionarySource::loadFromQuery(const String & query)
 {
     return std::make_shared<MySQLWithFailoverBlockInputStream>(
             pool, query, sample_block, max_block_size, close_connection, false, max_tries_for_mysql_block_input_stream);
@@ -131,7 +131,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadAll()
     last_modification = getLastModification(connection, false);
 
     LOG_TRACE(log, load_all_query);
-    return loadBase(load_all_query);
+    return loadFromQuery(load_all_query);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
@@ -141,21 +141,21 @@ BlockInputStreamPtr MySQLDictionarySource::loadUpdatedAll()
 
     std::string load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, load_update_query);
-    return loadBase(load_update_query);
+    return loadFromQuery(load_update_query);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return loadBase(query);
+    return loadFromQuery(query);
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return loadBase(query);
+    return loadFromQuery(query);
 }
 
 bool MySQLDictionarySource::isModified() const

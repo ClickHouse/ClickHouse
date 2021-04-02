@@ -70,7 +70,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
 
     /// Split into replicas if needed. 5432 is a default postgresql port.
     const auto & host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
+    size_t max_addresses = context.getSettingsRef().glob_expansion_max_elements;
     auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
 
     remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();

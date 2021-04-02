@@ -145,7 +145,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             {
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
                 /// Split into replicas if needed.
-                size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
+                size_t max_addresses = context.getSettingsRef().glob_expansion_max_elements;
                 auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
                 auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, addresses, mysql_user_name, mysql_user_password);
 
@@ -249,7 +249,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
 
         /// Split into replicas if needed.
-        size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
+        size_t max_addresses = context.getSettingsRef().glob_expansion_max_elements;
         auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
 
         /// no connection is made here
