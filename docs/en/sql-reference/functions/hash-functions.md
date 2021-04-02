@@ -486,7 +486,7 @@ Result:
 
 ## ngramSimHash {#ngramsimhash}
 
-Splits a string in ASCII into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
+Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
@@ -503,7 +503,7 @@ ngramSimHash(string[, ngramsize])
 
 **Returned value**
 
--   Hashed string.
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -525,7 +525,7 @@ Result:
 
 ## ngramSimHashCaseInsensitive {#ngramsimhashcaseinsensitive}
 
-Splits a string in ASCII into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
+Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
@@ -542,7 +542,7 @@ ngramSimHashCaseInsensitive(string[, ngramsize])
 
 **Returned value**
 
--   Hashed string.
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -564,7 +564,7 @@ Result:
 
 ## ngramSimHashUTF8 {#ngramsimhashutf8}
 
-Splits a string in UTF-8 into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
+Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
@@ -581,7 +581,7 @@ ngramSimHashUTF8(string[, ngramsize])
 
 **Returned value**
 
--   Hashed string.
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -603,7 +603,7 @@ Result:
 
 ## ngramSimHashCaseInsensitiveUTF8 {#ngramsimhashcaseinsensitiveutf8}
 
-Splits a string in UTF-8 into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
+Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
@@ -620,7 +620,7 @@ ngramSimHashCaseInsensitiveUTF8(string[, ngramsize])
 
 **Returned value**
 
--   Hashed string.
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -642,7 +642,7 @@ Result:
 
 ## wordShingleSimHash {#wordshinglesimhash}
 
-Splits a string in ASCII into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
+Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
@@ -659,7 +659,7 @@ wordShingleSimHash(string[, shinglesize])
 
 **Returned value**
 
--   Hashed string.
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -681,7 +681,7 @@ Result:
 
 ## wordShingleSimHashCaseInsensitive {#wordshinglesimhashcaseinsensitive}
 
-Splits a string in ASCII into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
+Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
@@ -698,7 +698,7 @@ wordShingleSimHashCaseInsensitive(string[, shinglesize])
 
 **Returned value**
 
--   Hashed string.
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -720,7 +720,7 @@ Result:
 
 ## wordShingleSimHashUTF8 {#wordshinglesimhashutf8}
 
-Splits a string in UTF-8 into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
+Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
@@ -737,7 +737,7 @@ wordShingleSimHashUTF8(string[, shinglesize])
 
 **Returned value**
 
--   Hashed string.
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -759,7 +759,7 @@ Result:
 
 ## wordShingleSimHashCaseInsensitiveUTF8 {#wordshinglesimhashcaseinsensitiveutf8}
 
-Splits a string in UTF-8 into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
+Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [bitHammingDistance](../../sql-reference/functions/bit-functions.md#bithammingdistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 
@@ -776,7 +776,7 @@ wordShingleSimHashCaseInsensitiveUTF8(string[, shinglesize])
 
 **Returned value**
 
--   Hashed string.
+-   Hash value.
 
 Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
@@ -798,7 +798,7 @@ Result:
 
 ## ngramMinHash {#ngramminhash}
 
-Splits a string in ASCII into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
+Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
@@ -838,7 +838,7 @@ Result:
 
 ## ngramMinHashCaseInsensitive {#ngramminhashcaseinsensitive}
 
-Splits a string in ASCII into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
+Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
@@ -878,7 +878,7 @@ Result:
 
 ## ngramMinHashUTF8 {#ngramminhashutf8}
 
-Splits a string in UTF-8 into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
+Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
@@ -918,7 +918,7 @@ Result:
 
 ## ngramMinHashCaseInsensitiveUTF8 {#ngramminhashcaseinsensitiveutf8}
 
-Splits a string in UTF-8 into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
+Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash values for each n-gram. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
@@ -958,7 +958,7 @@ Result:
 
 ## ngramMinHashArg {#ngramminhasharg}
 
-Splits a string in ASCII into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHash](#ngramminhash) function with the same input. Is case sensitive.
+Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHash](#ngramminhash) function with the same input. Is case sensitive.
 
 **Syntax**
 
@@ -996,7 +996,7 @@ Result:
 
 ## ngramMinHashArgCaseInsensitive {#ngramminhashargcaseinsensitive}
 
-Splits a string in ASCII into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitive](#ngramminhashcaseinsensitive) function with the same input. Is case insensitive.
+Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitive](#ngramminhashcaseinsensitive) function with the same input. Is case insensitive.
 
 **Syntax**
 
@@ -1034,7 +1034,7 @@ Result:
 
 ## ngramMinHashArgUTF8 {#ngramminhashargutf8}
 
-Splits a string in UTF-8 into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashUTF8](#ngramminhashutf8) function with the same input. Is case sensitive.
+Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashUTF8](#ngramminhashutf8) function with the same input. Is case sensitive.
 
 **Syntax**
 
@@ -1072,7 +1072,7 @@ Result:
 
 ## ngramMinHashArgCaseInsensitiveUTF8 {#ngramminhashargcaseinsensitiveutf8}
 
-Splits a string in UTF-8 into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
+Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-grams with minimum and maximum hashes, calculated by the [ngramMinHashCaseInsensitiveUTF8](#ngramminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
 
 **Syntax**
 
@@ -1110,7 +1110,7 @@ Result:
 
 ## wordShingleMinHash {#wordshingleminhash}
 
-Splits a string in ASCII into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
+Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
@@ -1150,7 +1150,7 @@ Result:
 
 ## wordShingleMinHashCaseInsensitive {#wordshingleminhashcaseinsensitive}
 
-Splits a string in ASCII into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
+Splits a ASCII string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
@@ -1190,7 +1190,7 @@ Result:
 
 ## wordShingleMinHashUTF8 {#wordshingleminhashutf8}
 
-Splits a string in UTF-8 into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
+Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case sensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
@@ -1230,7 +1230,7 @@ Result:
 
 ## wordShingleMinHashCaseInsensitiveUTF8 {#wordshingleminhashcaseinsensitiveutf8}
 
-Splits a string in UTF-8 into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
+Splits a UTF-8 string into parts (shingles) of `shinglesize` words and calculates hash values for each word shingle. Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash. Returns a tuple with these hashes. Is case insensitive.
 
 Can be used for detection of semi-duplicate strings with [tupleHammingDistance](../../sql-reference/functions/tuple-functions.md#tuplehammingdistance). For two strings: if one of the returned hashes is the same for both strings, we think that those strings are the same.
 
@@ -1270,7 +1270,7 @@ Result:
 
 ## wordShingleMinHashArg {#wordshingleminhasharg}
 
-Splits a string in ASCII into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordshingleMinHash](#wordshingleminhash) function with the same input. Is case sensitive.
+Splits a ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordshingleMinHash](#wordshingleminhash) function with the same input. Is case sensitive.
 
 **Syntax**
 
@@ -1308,7 +1308,7 @@ Result:
 
 ## wordShingleMinHashArgCaseInsensitive {#wordshingleminhashargcaseinsensitive}
 
-Splits a string in ASCII into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashCaseInsensitive](#wordshingleminhashcaseinsensitive) function with the same input. Is case insensitive.
+Splits a ASCII string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashCaseInsensitive](#wordshingleminhashcaseinsensitive) function with the same input. Is case insensitive.
 
 **Syntax**
 
@@ -1346,7 +1346,7 @@ Result:
 
 ## wordShingleMinHashArgUTF8 {#wordshingleminhashargutf8}
 
-Splits a string in UTF-8 into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashUTF8](#wordshingleminhashutf8) function with the same input. Is case sensitive.
+Splits a UTF-8 string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashUTF8](#wordshingleminhashutf8) function with the same input. Is case sensitive.
 
 **Syntax**
 
@@ -1384,7 +1384,7 @@ Result:
 
 ## wordShingleMinHashArgCaseInsensitiveUTF8 {#wordshingleminhashargcaseinsensitiveutf8}
 
-Splits a string in UTF-8 into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashCaseInsensitiveUTF8](#wordshingleminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
+Splits a UTF-8 string into parts (shingles) of `shinglesize` words each and returns the shingles with minimum and maximum word hashes, calculated by the [wordShingleMinHashCaseInsensitiveUTF8](#wordshingleminhashcaseinsensitiveutf8) function with the same input. Is case insensitive.
 
 **Syntax**
 

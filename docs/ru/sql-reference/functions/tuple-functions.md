@@ -126,7 +126,7 @@ tupleHammingDistance(tuple1, tuple2)
 -   `tuple1` — первый кортеж. [Tuple](../../sql-reference/data-types/tuple.md).
 -   `tuple2` — второй кортеж. [Tuple](../../sql-reference/data-types/tuple.md).
 
-Кортежи должны иметь одинаковый тип элементов.
+Кортежи должны иметь одинаковый размер и тип элементов.
 
 **Возвращаемое значение**
 
