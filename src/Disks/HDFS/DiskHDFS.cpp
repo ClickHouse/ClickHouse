@@ -4,14 +4,12 @@
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include "ReadIndirectBufferFromHDFS.h"
 #include "WriteIndirectBufferFromHDFS.h"
+#include "DiskHDFSReservation.h"
+#include "DiskHDFSDirectoryIterator.h"
 
 #include <random>
 #include <utility>
 #include <memory>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/WriteHelpers.h>
 #include <Poco/File.h>
 #include <Interpreters/Context.h>
 #include <Common/checkStackSize.h>
@@ -19,9 +17,7 @@
 #include <Common/quoteString.h>
 #include <Common/filesystemHelpers.h>
 #include <common/logger_useful.h>
-
 #include <Common/thread_local_rng.h>
-#include "HDFSHelpers.h"
 
 
 namespace DB

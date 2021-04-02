@@ -1,6 +1,7 @@
 #pragma once
+
 #include <IO/WriteBufferFromFile.h>
-#include "HDFSHelpers.h"
+#include "DiskHDFSMetadata.h"
 
 
 namespace DB

@@ -5,6 +5,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <hdfs/hdfs.h>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -107,6 +108,8 @@ public:
     std::mutex copying_mutex;
 
 private:
+    String getRandomName() { return toString(UUIDHelpers::generateV4()); }
+
     bool tryReserve(UInt64 bytes);
     void remove(const String & path);
 
