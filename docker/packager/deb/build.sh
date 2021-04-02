@@ -2,8 +2,13 @@
 
 set -x -e
 
+# Uncomment to debug ccache.
+export CCACHE_LOGFILE=/build/ccache.log
+export CCACHE_DEBUG=1
+
 ccache --show-stats ||:
 ccache --zero-stats ||:
+
 read -ra ALIEN_PKGS <<< "${ALIEN_PKGS:-}"
 build/release --no-pbuilder "${ALIEN_PKGS[@]}" | ts '%Y-%m-%d %H:%M:%S'
 mv /*.deb /output
@@ -24,3 +29,16 @@ then
 fi
 ccache --show-stats ||:
 ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
+
+if [ "${CCACHE_DEBUG:-}" == "1" ]
+then
+    find /build -name '*.ccache-*' -print0 \
+        | tar -c -I pixz -f /output/ccache-debug.txz --null -T -
+fi
+
+if [ -n "$CCACHE_LOGFILE" ]
+then
+    # Compress the log as well, or else the CI will try to compress all log
+    # files in place, and will fail because this directory is not writable.
+    tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
+fi
