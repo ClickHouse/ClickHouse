@@ -94,10 +94,11 @@ StorageMergeTree::StorageMergeTree(
 
     loadMutations();
 
-    if (storage_settings->non_replicated_deduplication_window != 0)
+    auto settings = getSettings();
+    if (settings->non_replicated_deduplication_window != 0)
     {
         std::string path = getDataPaths()[0] + "/deduplication_logs";
-        deduplication_log.emplace(path, storage_settings->non_replicated_deduplication_window, format_version);
+        deduplication_log.emplace(path, settings->non_replicated_deduplication_window, format_version);
         deduplication_log->load();
     }
 }

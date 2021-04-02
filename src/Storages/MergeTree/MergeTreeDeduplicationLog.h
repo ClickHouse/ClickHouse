@@ -24,22 +24,22 @@ private:
         V value;
     };
     using Queue = std::list<ListNode>;
-    using IndexMap = std::unordered_map<StringRef, typename List::iterator, StringRefHash>;
+    using IndexMap = std::unordered_map<StringRef, typename Queue::iterator, StringRefHash>;
 
     Queue queue;
     IndexMap map;
     const size_t max_size;
 public:
-    using iterator = typename List::iterator;
-    using const_iterator = typename List::const_iterator;
-    using reverse_iterator = typename List::reverse_iterator;
-    using const_reverse_iterator = typename List::const_reverse_iterator;
+    using iterator = typename Queue::iterator;
+    using const_iterator = typename Queue::const_iterator;
+    using reverse_iterator = typename Queue::reverse_iterator;
+    using const_reverse_iterator = typename Queue::const_reverse_iterator;
 
     explicit LimitedOrderedHashMap(size_t max_size_)
         : max_size(max_size_)
     {}
 
-    bool contains(const std::string & key, const V & value) const
+    bool contains(const std::string & key) const
     {
         return map.find(key) != map.end();
     }
@@ -134,7 +134,7 @@ private:
     void rotate();
     void dropOutdatedLogs();
     void rotateAndDropIfNeeded();
-    size_t loadSingleLog(const std::string & path) const;
+    size_t loadSingleLog(const std::string & path);
 };
 
 }

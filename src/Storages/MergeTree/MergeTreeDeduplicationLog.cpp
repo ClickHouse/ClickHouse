@@ -3,6 +3,8 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -27,9 +29,9 @@ void writeRecord(const MergeTreeDeduplicationLogRecord & record, WriteBuffer & o
 {
     writeIntText(static_cast<uint8_t>(record.operation), out);
     writeChar(' ', out);
-    writeStringBinary(record.part_name);
+    writeStringBinary(record.part_name, out);
     writeChar(' ', out);
-    writeStringBinary(record.block_id);
+    writeStringBinary(record.block_id, out);
     writeChar('\n', out);
 }
 
@@ -133,19 +135,28 @@ void MergeTreeDeduplicationLog::rotate()
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
 {
     size_t current_sum = 0;
-    for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend();)
+    size_t remove_from_value = 0;
+    for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend(); ++itr)
     {
         auto & description = itr->second;
         if (current_sum > deduplication_window)
         {
-            std::filesystem::remove(description.path);
-            itr = existing_logs.erase(itr);
+            //std::filesystem::remove(description.path);
+            //itr = existing_logs.erase(itr);
+            remove_from_value = itr->first;
+            break;
         }
-        else
+        current_sum += description.entries_count;
+        ++itr;
+    }
+
+    if (remove_from_value != 0)
+    {
+        for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
-            current_sum += description.entries_count;
         }
     }
+
 }
 
 void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()

@@ -96,7 +96,7 @@ public:
 
     std::optional<JobAndPool> getDataProcessingJob() override;
 
-    std::optional<MergeTreeDeduplicationLog> getDeduplicationLog() const { return deduplication_log; }
+    std::optional<MergeTreeDeduplicationLog> & getDeduplicationLog() { return deduplication_log; }
 private:
 
     /// Mutex and condvar for synchronous mutations wait
