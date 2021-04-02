@@ -1222,7 +1222,7 @@ Block Aggregator::prepareBlockAndFill(
 
 void Aggregator::addSingleKeyToAggregateColumns(
     const AggregatedDataVariants & data_variants,
-    MutableColumns & aggregate_columns)
+    MutableColumns & aggregate_columns) const
 {
     const auto & data = data_variants.without_key;
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -1234,7 +1234,7 @@ void Aggregator::addSingleKeyToAggregateColumns(
 
 void Aggregator::addArenasToAggregateColumns(
     const AggregatedDataVariants & data_variants,
-    MutableColumns & aggregate_columns)
+    MutableColumns & aggregate_columns) const
 {
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
@@ -1248,7 +1248,7 @@ void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
     AggregatedDataVariants & data_variants,
     Columns & key_columns,
     size_t key_row,
-    MutableColumns & final_key_columns)
+    MutableColumns & final_key_columns) const
 {
     AggregateDataPtr place = data_variants.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
     createAggregateStates(place);
