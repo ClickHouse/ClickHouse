@@ -119,7 +119,7 @@ public:
 private:
     const Context & context;
 
-    static void normalize(ASTPtr & query, Aliases & aliases, const Settings & settings);
+    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, const Settings & settings);
 };
 
 }
