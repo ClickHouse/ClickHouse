@@ -44,7 +44,7 @@ StorageExternalDistributed::StorageExternalDistributed(
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 
-    size_t max_addresses = context.getSettingsRef().storage_external_distributed_max_addresses;
+    size_t max_addresses = context.getSettingsRef().glob_expansion_max_elements;
     std::vector<String> shards_descriptions = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
     std::vector<std::pair<std::string, UInt16>> addresses;
 

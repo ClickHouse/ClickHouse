@@ -49,8 +49,6 @@ public:
 
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    BlockInputStreamPtr loadBase(const String & query);
-
     bool isModified() const override;
 
     bool supportsSelectiveLoad() const override;
@@ -62,6 +60,8 @@ public:
     std::string toString() const override;
 
 private:
+    BlockInputStreamPtr loadFromQuery(const String & query);
+
     std::string getUpdateFieldAndDate();
 
     static std::string quoteForLike(const std::string s);

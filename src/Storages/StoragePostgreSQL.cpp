@@ -308,7 +308,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 
         auto host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         /// Split into replicas if needed.
-        size_t max_addresses = args.context.getSettingsRef().storage_external_distributed_max_addresses;
+        size_t max_addresses = args.context.getSettingsRef().glob_expansion_max_elements;
         auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
 
         const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
