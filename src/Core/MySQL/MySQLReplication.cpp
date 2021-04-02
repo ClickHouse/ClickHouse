@@ -17,7 +17,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace MySQLReplication
@@ -421,8 +420,8 @@ namespace MySQLReplication
                         UInt32 i24 = 0;
                         payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
-                        const DayNum date_day_number(DateLUT::instance().makeDayNum(
-                            static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f)).toUnderType());
+                        DayNum date_day_number = DateLUT::instance().makeDayNum(
+                            static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f));
 
                         row.push_back(Field(date_day_number.toUnderType()));
                         break;
@@ -444,7 +443,7 @@ namespace MySQLReplication
                             row.push_back(Field{UInt32(date_time)});
                         else
                         {
-                            DB::DecimalUtils::DecimalComponents<DateTime64> components{
+                            DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{
                                 static_cast<DateTime64::NativeType>(date_time), 0};
 
                             components.fractional = fsp;
@@ -463,7 +462,7 @@ namespace MySQLReplication
                             row.push_back(Field{sec});
                         else
                         {
-                            DB::DecimalUtils::DecimalComponents<DateTime64> components{
+                            DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{
                                 static_cast<DateTime64::NativeType>(sec), 0};
 
                             components.fractional = fsp;
@@ -476,11 +475,11 @@ namespace MySQLReplication
                     {
                         const auto & dispatch = [](const size_t & precision, const size_t & scale, const auto & function) -> Field
                         {
-                            if (precision <= DecimalUtils::max_precision<Decimal32>)
+                            if (precision <= DecimalUtils::maxPrecision<Decimal32>())
                                 return Field(function(precision, scale, Decimal32()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal64>)
+                            else if (precision <= DecimalUtils::maxPrecision<Decimal64>())
                                 return Field(function(precision, scale, Decimal64()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal128>)
+                            else if (precision <= DecimalUtils::maxPrecision<Decimal128>())
                                 return Field(function(precision, scale, Decimal128()));
 
                             return Field(function(precision, scale, Decimal256()));
@@ -741,7 +740,7 @@ namespace MySQLReplication
         switch (header)
         {
             case PACKET_EOF:
-                throw ReplicationError("Master maybe lost", ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw ReplicationError("Master maybe lost", ErrorCodes::UNKNOWN_EXCEPTION);
             case PACKET_ERR:
                 ERRPacket err;
                 err.readPayloadWithUnpacked(payload);

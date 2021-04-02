@@ -34,14 +34,6 @@ void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
     factory.registerFunction("any", { createAggregateFunctionAny, properties });
     factory.registerFunction("anyLast", { createAggregateFunctionAnyLast, properties });
     factory.registerFunction("anyHeavy", { createAggregateFunctionAnyHeavy, properties });
-
-    // Synonyms for use as window functions.
-    factory.registerFunction("first_value",
-        { createAggregateFunctionAny, properties },
-        AggregateFunctionFactory::CaseInsensitive);
-    factory.registerFunction("last_value",
-        { createAggregateFunctionAnyLast, properties },
-        AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

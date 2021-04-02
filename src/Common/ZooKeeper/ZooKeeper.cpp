@@ -601,7 +601,7 @@ void ZooKeeper::removeChildren(const std::string & path)
 }
 
 
-void ZooKeeper::removeChildrenRecursive(const std::string & path, const String & keep_child_node)
+void ZooKeeper::removeChildrenRecursive(const std::string & path)
 {
     Strings children = getChildren(path);
     while (!children.empty())
@@ -610,15 +610,14 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             removeChildrenRecursive(path + "/" + children.back());
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
-                ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
+            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
             children.pop_back();
         }
         multi(ops);
     }
 }
 
-void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const String & keep_child_node)
+void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
 {
     Strings children;
     if (tryGetChildren(path, children) != Coordination::Error::ZOK)
@@ -629,14 +628,14 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         Strings batch;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            String child_path = path + "/" + children.back();
-            tryRemoveChildrenRecursive(child_path);
-            if (likely(keep_child_node.empty() || keep_child_node != children.back()))
-            {
-                batch.push_back(child_path);
-                ops.emplace_back(zkutil::makeRemoveRequest(child_path, -1));
-            }
+            batch.push_back(path + "/" + children.back());
             children.pop_back();
+            tryRemoveChildrenRecursive(batch.back());
+
+            Coordination::RemoveRequest request;
+            request.path = batch.back();
+
+            ops.emplace_back(std::make_shared<Coordination::RemoveRequest>(std::move(request)));
         }
 
         /// Try to remove the children with a faster method - in bulk. If this fails,

@@ -11,7 +11,6 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -297,9 +296,7 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto pipeline = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(*context),
-        BuildQueryPipelineSettings::fromContext(*context));
+    auto pipeline = query_plan.buildQueryPipeline();
 
     res.pipeline = std::move(*pipeline);
     res.pipeline.addInterpreterContext(context);

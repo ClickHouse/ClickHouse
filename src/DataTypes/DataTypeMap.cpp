@@ -29,7 +29,6 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_READ_MAP_FROM_TEXT;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -39,8 +38,6 @@ DataTypeMap::DataTypeMap(const DataTypes & elems_)
     key_type = elems_[0];
     value_type = elems_[1];
 
-    assertKeyType();
-
     nested = std::make_shared<DataTypeArray>(
         std::make_shared<DataTypeTuple>(DataTypes{key_type, value_type}, Names{"keys", "values"}));
 }
@@ -48,19 +45,7 @@ DataTypeMap::DataTypeMap(const DataTypes & elems_)
 DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & value_type_)
     : key_type(key_type_), value_type(value_type_)
     , nested(std::make_shared<DataTypeArray>(
-        std::make_shared<DataTypeTuple>(DataTypes{key_type_, value_type_}, Names{"keys", "values"})))
-{
-    assertKeyType();
-}
-
-void DataTypeMap::assertKeyType() const
-{
-    if (!key_type->isValueRepresentedByInteger() && !isStringOrFixedString(*key_type) && !WhichDataType(key_type).isNothing())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Type of Map key must be a type, that can be represented by integer or string,"
-            " but {} given", key_type->getName());
-}
-
+        std::make_shared<DataTypeTuple>(DataTypes{key_type_, value_type_}, Names{"keys", "values"}))) {}
 
 std::string DataTypeMap::doGetName() const
 {
@@ -349,6 +334,16 @@ void DataTypeMap::deserializeBinaryBulkWithMultipleStreamsImpl(
 {
     auto & column_map = assert_cast<ColumnMap &>(column);
     nested->deserializeBinaryBulkWithMultipleStreams(column_map.getNestedColumnPtr(), limit, settings, state, cache);
+}
+
+void DataTypeMap::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    nested->serializeProtobuf(extractNestedColumn(column), row_num, protobuf, value_index);
+}
+
+void DataTypeMap::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    nested->deserializeProtobuf(extractNestedColumn(column), protobuf, allow_add_row, row_added);
 }
 
 MutableColumnPtr DataTypeMap::createColumn() const

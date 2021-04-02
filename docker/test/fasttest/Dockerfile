@@ -47,7 +47,6 @@ RUN apt-get update \
         expect \
         fakeroot \
         git \
-        gdb \
         gperf \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \

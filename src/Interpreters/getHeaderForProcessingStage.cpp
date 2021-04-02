@@ -44,19 +44,9 @@ Block getHeaderForProcessingStage(
             Block header = metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
             if (query_info.prewhere_info)
             {
-                auto & prewhere_info = *query_info.prewhere_info;
-
-                if (prewhere_info.row_level_filter)
-                {
-                    prewhere_info.row_level_filter->execute(header);
-                    header.erase(prewhere_info.row_level_column_name);
-                }
-
-                if (prewhere_info.prewhere_actions)
-                    prewhere_info.prewhere_actions->execute(header);
-
-                if (prewhere_info.remove_prewhere_column)
-                    header.erase(prewhere_info.prewhere_column_name);
+                query_info.prewhere_info->prewhere_actions->execute(header);
+                if (query_info.prewhere_info->remove_prewhere_column)
+                    header.erase(query_info.prewhere_info->prewhere_column_name);
             }
             return header;
         }

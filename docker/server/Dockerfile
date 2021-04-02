@@ -1,7 +1,7 @@
 FROM ubuntu:20.04
 
 ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=21.4.1.*
+ARG version=21.2.8.*
 ARG gosu_ver=1.10
 
 # user/group precreated explicitly with fixed uid/gid on purpose.
@@ -32,7 +32,6 @@ RUN groupadd -r clickhouse --gid=101 \
             clickhouse-server=$version \
             locales \
             wget \
-            tzdata \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

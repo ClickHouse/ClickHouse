@@ -9,10 +9,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/localBackup.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
 #include <common/JSON.h>
 #include <common/logger_useful.h>
@@ -37,7 +35,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int DIRECTORY_ALREADY_EXISTS;
@@ -333,48 +330,39 @@ IMergeTreeDataPart::State IMergeTreeDataPart::getState() const
 }
 
 
-std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
+DayNum IMergeTreeDataPart::getMinDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
-    {
-        const auto & hyperrectangle = minmax_idx.hyperrectangle[storage.minmax_idx_date_column_pos];
-        return {DayNum(hyperrectangle.left.get<UInt64>()), DayNum(hyperrectangle.right.get<UInt64>())};
-    }
+        return DayNum(minmax_idx.hyperrectangle[storage.minmax_idx_date_column_pos].left.get<UInt64>());
     else
-        return {};
+        return DayNum();
 }
 
-std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
+
+DayNum IMergeTreeDataPart::getMaxDate() const
+{
+    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
+        return DayNum(minmax_idx.hyperrectangle[storage.minmax_idx_date_column_pos].right.get<UInt64>());
+    else
+        return DayNum();
+}
+
+time_t IMergeTreeDataPart::getMinTime() const
 {
     if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
-    {
-        const auto & hyperrectangle = minmax_idx.hyperrectangle[storage.minmax_idx_time_column_pos];
-
-        /// The case of DateTime
-        if (hyperrectangle.left.getType() == Field::Types::UInt64)
-        {
-            assert(hyperrectangle.right.getType() == Field::Types::UInt64);
-            return {hyperrectangle.left.get<UInt64>(), hyperrectangle.right.get<UInt64>()};
-        }
-        /// The case of DateTime64
-        else if (hyperrectangle.left.getType() == Field::Types::Decimal64)
-        {
-            assert(hyperrectangle.right.getType() == Field::Types::Decimal64);
-
-            auto left = hyperrectangle.left.get<DecimalField<Decimal64>>();
-            auto right = hyperrectangle.right.get<DecimalField<Decimal64>>();
-
-            assert(left.getScale() == right.getScale());
-
-            return { left.getValue() / left.getScaleMultiplier(), right.getValue() / right.getScaleMultiplier() };
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part minmax index by time is neither DateTime or DateTime64");
-    }
+        return minmax_idx.hyperrectangle[storage.minmax_idx_time_column_pos].left.get<UInt64>();
     else
-        return {};
+        return 0;
 }
 
+
+time_t IMergeTreeDataPart::getMaxTime() const
+{
+    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
+        return minmax_idx.hyperrectangle[storage.minmax_idx_time_column_pos].right.get<UInt64>();
+    else
+        return 0;
+}
 
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 {
@@ -416,7 +404,7 @@ void IMergeTreeDataPart::removeIfNeeded()
                 }
             }
 
-            remove(false);
+            remove();
 
             if (state == State::DeleteOnDestroy)
             {
@@ -946,8 +934,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::COMPACT)
-            throw Exception("No columns.txt in part " + name + ", expected path " + path + " on drive " + volume->getDisk()->getName(),
-                ErrorCodes::NO_FILE_IN_DATA_PART);
+            throw Exception("No columns.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         /// If there is no file with a list of columns, write it down.
         for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAllPhysical())
@@ -1022,18 +1009,16 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     }
 
     volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
-    volume->getDisk()->moveDirectory(from, to);
+    volume->getDisk()->moveFile(from, to);
     relative_path = new_relative_path;
 
     SyncGuardPtr sync_guard;
     if (storage.getSettings()->fsync_part_directory)
         sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
-
-    storage.lockSharedData(*this);
 }
 
 
-void IMergeTreeDataPart::remove(bool keep_s3) const
+void IMergeTreeDataPart::remove() const
 {
     if (!isStoredOnDisk())
         return;
@@ -1063,7 +1048,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 
         try
         {
-            volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
+            volume->getDisk()->removeRecursive(to + "/");
         }
         catch (...)
         {
@@ -1074,7 +1059,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 
     try
     {
-        volume->getDisk()->moveDirectory(from, to);
+        volume->getDisk()->moveFile(from, to);
     }
     catch (const Poco::FileNotFoundException &)
     {
@@ -1086,7 +1071,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     if (checksums.empty())
     {
         /// If the part is not completely written, we cannot use fast path by listing files.
-        volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
+        volume->getDisk()->removeRecursive(to + "/");
     }
     else
     {
@@ -1099,16 +1084,16 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                volume->getDisk()->removeSharedFile(to + "/" + file, keep_s3);
+                volume->getDisk()->removeFile(to + "/" + file);
     #if !__clang__
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                volume->getDisk()->removeSharedFile(to + "/" + file, keep_s3);
+                volume->getDisk()->removeFile(to + "/" + file);
 
-            volume->getDisk()->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_s3);
-            volume->getDisk()->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_s3);
+            volume->getDisk()->removeFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+            volume->getDisk()->removeFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
             volume->getDisk()->removeDirectory(to);
         }
@@ -1118,7 +1103,7 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(volume->getDisk(), to), getCurrentExceptionMessage(false));
 
-            volume->getDisk()->removeSharedRecursive(to + "/", keep_s3);
+            volume->getDisk()->removeRecursive(to + "/");
         }
     }
 }
@@ -1183,6 +1168,7 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
         disk->removeRecursive(path_to_clone + relative_path + '/');
     }
     disk->createDirectories(path_to_clone);
+
     volume->getDisk()->copy(getFullRelativePath(), disk, path_to_clone);
     volume->getDisk()->removeFileIfExists(path_to_clone + '/' + DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
@@ -1304,34 +1290,7 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
             return false;
     }
 
-    for (const auto & group_by_desc : metadata_snapshot->getGroupByTTLs())
-    {
-        if (!ttl_infos.group_by_ttl.count(group_by_desc.result_column))
-            return false;
-    }
-
-    for (const auto & rows_where_desc : metadata_snapshot->getRowsWhereTTLs())
-    {
-        if (!ttl_infos.rows_where_ttl.count(rows_where_desc.result_column))
-            return false;
-    }
-
     return true;
-}
-
-String IMergeTreeDataPart::getUniqueId() const
-{
-    String id;
-
-    auto disk = volume->getDisk();
-
-    if (disk->getType() == DB::DiskType::Type::S3)
-        id = disk->getUniqueId(getFullRelativePath() + "checksums.txt");
-
-    if (id.empty())
-        throw Exception("Can't get unique S3 object", ErrorCodes::LOGICAL_ERROR);
-
-    return id;
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
@@ -1350,4 +1309,3 @@ bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
 }
 
 }
-

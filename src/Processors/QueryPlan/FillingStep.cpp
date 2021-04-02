@@ -35,7 +35,7 @@ FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_
         throw Exception("FillingStep expects single input", ErrorCodes::LOGICAL_ERROR);
 }
 
-void FillingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void FillingStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {

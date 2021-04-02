@@ -110,7 +110,8 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         data->thread = ThreadFromGlobalPool(std::move(func));
     }
 
-    data->rethrowExceptionIfHas();
+    if (data->has_exception)
+        std::rethrow_exception(std::move(data->exception));
 
     bool is_execution_finished = lazy_format ? lazy_format->isFinished()
                                              : data->is_finished.load();
