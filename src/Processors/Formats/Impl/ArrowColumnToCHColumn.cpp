@@ -561,7 +561,7 @@ namespace DB
 
             std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[header_column.name];
             arrow::Type::type arrow_type = arrow_column->type()->id();
-            arrow::Type::type list_nested_type;
+            std::shared_ptr<arrow::DataType> list_nested_type;
 
             // TODO: check if a column is const?
             if (!column_type->isNullable() && arrow_column->null_count())
@@ -584,10 +584,10 @@ namespace DB
             else if (arrow_type == arrow::Type::LIST)
             {
                 const auto * list_type = static_cast<arrow::ListType *>(arrow_column->type().get());
-                list_nested_type = list_type->value_type()->id();
+                list_nested_type = list_type->value_type();
 
                 if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
-                                                                 [=](auto && elem) { return elem.first == list_nested_type; });
+                                                                 [=](auto && elem) { return elem.first == list_nested_type->id(); });
                     internal_type_it != arrow_type_to_internal_type.end())
                 {
                     array_nested_type = DataTypeFactory::instance().get(internal_type_it->second);
@@ -646,8 +646,8 @@ namespace DB
                     fillColumnWithDecimalData(arrow_column, read_column /*, internal_nested_type*/);
                     break;
                 case arrow::Type::LIST:
-                    if (array_nested_type) {
-                        switch (list_nested_type)
+                    if (array_nested_type && list_nested_type) {
+                        switch (list_nested_type->id())
                         {
                             case arrow::Type::STRING:
                             case arrow::Type::BINARY:
