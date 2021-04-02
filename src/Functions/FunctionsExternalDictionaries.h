@@ -28,16 +28,6 @@
 
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
-
-#include <Dictionaries/FlatDictionary.h>
-#include <Dictionaries/HashedDictionary.h>
-#include <Dictionaries/CacheDictionary.h>
-#include <Dictionaries/ComplexKeyHashedDictionary.h>
-#include <Dictionaries/RangeHashedDictionary.h>
-#include <Dictionaries/IPAddressDictionary.h>
-#include <Dictionaries/PolygonDictionaryImplementations.h>
-#include <Dictionaries/DirectDictionary.h>
-
 #include <ext/range.h>
 
 #include <type_traits>
@@ -49,7 +39,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNSUPPORTED_METHOD;
-    extern const int UNKNOWN_TYPE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
@@ -77,7 +66,7 @@ class FunctionDictHelper
 public:
     explicit FunctionDictHelper(const Context & context_) : context(context_) {}
 
-    std::shared_ptr<const IDictionaryBase> getDictionary(const String & dictionary_name)
+    std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
         auto dict = context.getExternalDictionariesLoader().getDictionary(dictionary_name, context);
 
@@ -90,9 +79,13 @@ public:
         return dict;
     }
 
-    std::shared_ptr<const IDictionaryBase> getDictionary(const ColumnWithTypeAndName & column)
+    std::shared_ptr<const IDictionary> getDictionary(const ColumnPtr & column)
     {
-        const auto * dict_name_col = checkAndGetColumnConst<ColumnString>(column.column.get());
+        const auto * dict_name_col = checkAndGetColumnConst<ColumnString>(column.get());
+
+        if (!dict_name_col)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected const String column");
+
         return getDictionary(dict_name_col->getValue<String>());
     }
 
@@ -187,7 +180,7 @@ private:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dictionary = helper.getDictionary(arguments[0]);
+        auto dictionary = helper.getDictionary(arguments[0].column);
         auto dictionary_key_type = dictionary->getKeyType();
 
         const ColumnWithTypeAndName & key_column_with_type = arguments[1];
@@ -727,12 +720,16 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of first argument of function ({}). Expected String. Actual type ({})",
+                getName(),
+                arguments[0]->getName());
 
         if (!WhichDataType(arguments[1]).isUInt64())
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of second argument of function ({}). Expected UInt64. Actual type ({})",
+                getName(),
+                arguments[1]->getName());
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
@@ -744,109 +741,15 @@ private:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dict = helper.getDictionary(arguments[0]);
-        ColumnPtr res;
+        auto dictionary = helper.getDictionary(arguments[0].column);
 
-        /// TODO: Rewrite this
-        if (!((res = executeDispatch<FlatDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<DirectDictionary<DictionaryKeyType::simple>>(arguments, result_type, dict))
-            || (res = executeDispatch<HashedDictionary>(arguments, result_type, dict))
-            || (res = executeDispatch<CacheDictionary<DictionaryKeyType::simple>>(arguments, result_type, dict))))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+        if (!dictionary->hasHierarchy())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Dictionary ({}) does not support hierarchy",
+                dictionary->getFullName());
 
-        return res;
-    }
-
-    template <typename DictionaryType>
-    ColumnPtr executeDispatch(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
-    {
-        const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
-        if (!dict)
-            return nullptr;
-
-        if (!dict->hasHierarchy())
-            throw Exception{"Dictionary does not have a hierarchy", ErrorCodes::UNSUPPORTED_METHOD};
-
-        const auto get_hierarchies = [&] (const PaddedPODArray<UInt64> & in, PaddedPODArray<UInt64> & out, PaddedPODArray<UInt64> & offsets)
-        {
-            const auto size = in.size();
-
-            /// copy of `in` array
-            auto in_array = std::make_unique<PaddedPODArray<UInt64>>(std::begin(in), std::end(in));
-            /// used for storing and handling result of ::toParent call
-            auto out_array = std::make_unique<PaddedPODArray<UInt64>>(size);
-            /// resulting hierarchies
-            std::vector<std::vector<IDictionary::Key>> hierarchies(size);    /// TODO Bad code, poor performance.
-
-            /// total number of non-zero elements, used for allocating all the required memory upfront
-            size_t total_count = 0;
-
-            while (true)
-            {
-                auto all_zeroes = true;
-
-                /// erase zeroed identifiers, store non-zeroed ones
-                for (const auto i : ext::range(0, size))
-                {
-                    const auto id = (*in_array)[i];
-                    if (0 == id)
-                        continue;
-
-
-                    auto & hierarchy = hierarchies[i];
-
-                    /// Checking for loop
-                    if (std::find(std::begin(hierarchy), std::end(hierarchy), id) != std::end(hierarchy))
-                        continue;
-
-                    all_zeroes = false;
-                    /// place id at it's corresponding place
-                    hierarchy.push_back(id);
-
-                    ++total_count;
-                }
-
-                if (all_zeroes)
-                    break;
-
-                /// translate all non-zero identifiers at once
-                dict->toParent(*in_array, *out_array);
-
-                /// we're going to use the `in_array` from this iteration as `out_array` on the next one
-                std::swap(in_array, out_array);
-            }
-
-            out.reserve(total_count);
-            offsets.resize(size);
-
-            for (const auto i : ext::range(0, size))
-            {
-                const auto & ids = hierarchies[i];
-                out.insert_assume_reserved(std::begin(ids), std::end(ids));
-                offsets[i] = out.size();
-            }
-        };
-
-        const auto * id_col_untyped = arguments[1].column.get();
-        if (const auto * id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
-        {
-            const auto & in = id_col->getData();
-            auto backend = ColumnUInt64::create();
-            auto offsets = ColumnArray::ColumnOffsets::create();
-            get_hierarchies(in, backend->getData(), offsets->getData());
-            return ColumnArray::create(std::move(backend), std::move(offsets));
-        }
-        else if (const auto * id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(id_col_untyped))
-        {
-            const PaddedPODArray<UInt64> in(1, id_col_const->getValue<UInt64>());
-            auto backend = ColumnUInt64::create();
-            auto offsets = ColumnArray::ColumnOffsets::create();
-            get_hierarchies(in, backend->getData(), offsets->getData());
-            auto array = ColumnArray::create(std::move(backend), std::move(offsets));
-            return result_type->createColumnConst(id_col_const->size(), (*array)[0].get<Array>());
-        }
-        else
-            throw Exception{"Second argument of function " + getName() + " must be UInt64", ErrorCodes::ILLEGAL_COLUMN};
+        ColumnPtr result = dictionary->getHierarchy(arguments[1].column, std::make_shared<DataTypeUInt64>());
+        return result;
     }
 
     mutable FunctionDictHelper helper;
@@ -877,16 +780,22 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of first argument of function ({}). Expected String. Actual type ({})",
+                getName(),
+                arguments[0]->getName());
 
         if (!WhichDataType(arguments[1]).isUInt64())
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of second argument of function ({}). Expected UInt64. Actual type ({})",
+                getName(),
+                arguments[1]->getName());
 
         if (!WhichDataType(arguments[2]).isUInt64())
-            throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
-                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of third argument of function ({}). Expected UInt64. Actual type ({})",
+                getName(),
+                arguments[2]->getName());
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -898,105 +807,163 @@ private:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dict = helper.getDictionary(arguments[0]);
+        auto dict = helper.getDictionary(arguments[0].column);
 
-        ColumnPtr res;
-        if (!((res = executeDispatch<FlatDictionary>(arguments, dict))
-            || (res = executeDispatch<DirectDictionary<DictionaryKeyType::simple>>(arguments, dict))
-            || (res = executeDispatch<HashedDictionary>(arguments, dict))
-            || (res = executeDispatch<CacheDictionary<DictionaryKeyType::simple>>(arguments, dict))))
-            throw Exception{"Unsupported dictionary type " + dict->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
+        if (!dict->hasHierarchy())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Dictionary ({}) does not support hierarchy", dict->getFullName());
+
+        ColumnPtr res = dict->isInHierarchy(arguments[1].column, arguments[2].column, std::make_shared<DataTypeUInt64>());
 
         return res;
     }
 
-    template <typename DictionaryType>
-    ColumnPtr executeDispatch(const ColumnsWithTypeAndName & arguments, const std::shared_ptr<const IDictionaryBase> & dict_ptr) const
+    mutable FunctionDictHelper helper;
+};
+
+class FunctionDictGetChildren final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetChildren";
+
+    static FunctionPtr create(const Context & context)
     {
-        const auto * dict = typeid_cast<const DictionaryType *>(dict_ptr.get());
-        if (!dict)
-            return nullptr;
-
-        if (!dict->hasHierarchy())
-            throw Exception{"Dictionary does not have a hierarchy", ErrorCodes::UNSUPPORTED_METHOD};
-
-        const auto * child_id_col_untyped = arguments[1].column.get();
-        const auto * ancestor_id_col_untyped = arguments[2].column.get();
-
-        if (const auto * child_id_col = checkAndGetColumn<ColumnUInt64>(child_id_col_untyped))
-            return execute(dict, child_id_col, ancestor_id_col_untyped);
-        else if (const auto * child_id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(child_id_col_untyped))
-            return execute(dict, child_id_col_const, ancestor_id_col_untyped);
-        else
-            throw Exception{"Illegal column " + child_id_col_untyped->getName()
-                + " of second argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+        return std::make_shared<FunctionDictGetChildren>(context);
     }
 
-    template <typename DictionaryType>
-    ColumnPtr execute(const DictionaryType * dict,
-                 const ColumnUInt64 * child_id_col, const IColumn * ancestor_id_col_untyped) const
+    explicit FunctionDictGetChildren(const Context & context_)
+        : helper(context_) {}
+
+    String getName() const override { return name; }
+
+private:
+    size_t getNumberOfArguments() const override { return 2; }
+
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
+    bool isDeterministic() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (const auto * ancestor_id_col = checkAndGetColumn<ColumnUInt64>(ancestor_id_col_untyped))
-        {
-            auto out = ColumnUInt8::create();
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of first argument of function ({}). Expected String. Actual type ({})",
+                getName(),
+                arguments[0]->getName());
 
-            const auto & child_ids = child_id_col->getData();
-            const auto & ancestor_ids = ancestor_id_col->getData();
-            auto & data = out->getData();
-            const auto size = child_id_col->size();
-            data.resize(size);
+        if (!WhichDataType(arguments[1]).isUInt64())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of second argument of function ({}). Expected UInt64. Actual type ({})",
+                getName(),
+                arguments[1]->getName());
 
-            dict->isInVectorVector(child_ids, ancestor_ids, data);
-            return out;
-        }
-        else if (const auto * ancestor_id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(ancestor_id_col_untyped))
-        {
-            auto out = ColumnUInt8::create();
-
-            const auto & child_ids = child_id_col->getData();
-            const auto ancestor_id = ancestor_id_col_const->getValue<UInt64>();
-            auto & data = out->getData();
-            const auto size = child_id_col->size();
-            data.resize(size);
-
-            dict->isInVectorConstant(child_ids, ancestor_id, data);
-            return out;
-        }
-        else
-        {
-            throw Exception{"Illegal column " + ancestor_id_col_untyped->getName()
-                + " of third argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
-        }
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    template <typename DictionaryType>
-    ColumnPtr execute(const DictionaryType * dict, const ColumnConst * child_id_col, const IColumn * ancestor_id_col_untyped) const
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        if (const auto * ancestor_id_col = checkAndGetColumn<ColumnUInt64>(ancestor_id_col_untyped))
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        auto dictionary = helper.getDictionary(arguments[0].column);
+
+        if (!dictionary->hasHierarchy())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Dictionary ({}) does not support hierarchy",
+                dictionary->getFullName());
+
+        ColumnPtr result = dictionary->getDescendants(arguments[1].column, std::make_shared<DataTypeUInt64>(), 1);
+
+        return result;
+    }
+
+    mutable FunctionDictHelper helper;
+};
+
+class FunctionDictGetDescendants final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetDescendants";
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionDictGetDescendants>(context);
+    }
+
+    explicit FunctionDictGetDescendants(const Context & context_)
+        : helper(context_) {}
+
+    String getName() const override { return name; }
+
+private:
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override { return true; }
+
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
+    bool isDeterministic() const override { return false; }
+
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        size_t arguments_size = arguments.size();
+        if (arguments_size < 2 || arguments_size > 3)
         {
-            auto out = ColumnUInt8::create();
-
-            const auto child_id = child_id_col->getValue<UInt64>();
-            const auto & ancestor_ids = ancestor_id_col->getData();
-            auto & data = out->getData();
-            const auto size = child_id_col->size();
-            data.resize(size);
-
-            dict->isInConstantVector(child_id, ancestor_ids, data);
-            return out;
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Illegal arguments size of function ({}). Expects 2 or 3 arguments size. Actual size ({})",
+                getName(),
+                arguments_size);
         }
-        else if (const auto * ancestor_id_col_const = checkAndGetColumnConst<ColumnVector<UInt64>>(ancestor_id_col_untyped))
+
+        if (!isString(arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of first argument of function ({}). Expected const String. Actual type ({})",
+                getName(),
+                arguments[0]->getName());
+
+        if (!WhichDataType(arguments[1]).isUInt64())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of second argument of function ({}). Expected UInt64. Actual type ({})",
+                getName(),
+                arguments[1]->getName());
+
+        if (arguments.size() == 3 && !isUnsignedInteger(arguments[2]))
         {
-            const auto child_id = child_id_col->getValue<UInt64>();
-            const auto ancestor_id = ancestor_id_col_const->getValue<UInt64>();
-            UInt8 res = 0;
-
-            dict->isInConstantConstant(child_id, ancestor_id, res);
-            return DataTypeUInt8().createColumnConst(child_id_col->size(), res);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of third argument of function ({}). Expected const unsigned integer. Actual type ({})",
+                getName(),
+                arguments[2]->getName());
         }
-        else
-            throw Exception{"Illegal column " + ancestor_id_col_untyped->getName()
-                + " of third argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        auto dictionary = helper.getDictionary(arguments[0].column);
+
+        size_t level = 0;
+
+        if (arguments.size() == 3)
+        {
+            if (!isColumnConst(*arguments[2].column))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type of third argument of function ({}). Expected const unsigned integer.",
+                    getName());
+
+            level = static_cast<size_t>(arguments[2].column->get64(0));
+        }
+
+        if (!dictionary->hasHierarchy())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Dictionary ({}) does not support hierarchy",
+                dictionary->getFullName());
+
+        ColumnPtr res = dictionary->getDescendants(arguments[1].column, std::make_shared<DataTypeUInt64>(), level);
+
+        return res;
     }
 
     mutable FunctionDictHelper helper;

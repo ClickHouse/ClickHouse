@@ -195,7 +195,7 @@ IPAddressDictionary::IPAddressDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : IDictionaryBase(dict_id_)
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -804,9 +804,6 @@ static auto keyViewGetter()
 
 BlockInputStreamPtr IPAddressDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<UInt64>;
-
-
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
 
     auto get_keys = [is_ipv4](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
@@ -827,12 +824,12 @@ BlockInputStreamPtr IPAddressDictionary::getBlockInputStream(const Names & colum
     if (is_ipv4)
     {
         auto get_view = keyViewGetter<ColumnVector<UInt32>, true>();
-        return std::make_shared<BlockInputStreamType>(
+        return std::make_shared<DictionaryBlockInputStream>(
             shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
     }
 
     auto get_view = keyViewGetter<ColumnFixedString, false>();
-    return std::make_shared<BlockInputStreamType>(
+    return std::make_shared<DictionaryBlockInputStream>(
         shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
 }
 
