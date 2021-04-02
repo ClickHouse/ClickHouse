@@ -111,7 +111,7 @@ public:
         size_t deduplication_window_,
         const MergeTreeDataFormatVersion & format_version_);
 
-    std::pair<MergeTreePartInfo, bool> addPart(const std::string block_id, const MergeTreeData::MutableDataPartPtr & part);
+    std::pair<MergeTreePartInfo, bool> addPart(const std::string & block_id, const MergeTreeData::MutableDataPartPtr & part);
     std::pair<MergeTreePartInfo, bool> addPart(const MergeTreeData::MutableDataPartPtr & part);
     void dropPart(const MergeTreeData::DataPartPtr & part);
     void dropPartition(const std::string & partition_id);
