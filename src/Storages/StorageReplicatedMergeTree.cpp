@@ -59,6 +59,7 @@
 
 #include <ext/range.h>
 #include <ext/scope_guard.h>
+#include "Storages/MergeTree/MergeTreeReaderCompact.h"
 
 #include <ctime>
 #include <thread>
@@ -1353,6 +1354,48 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
         getSettings()->use_minimalistic_checksums_in_zookeeper);
 }
 
+MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry& entry) const
+{
+    const MergeTreePartInfo actual_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+    const String part_new_name = actual_part_info.getPartName();
+
+    for (const DiskPtr & disk : getStoragePolicy()->getDisks())
+        for (const auto it = disk->iterateDirectory(relative_data_path + "detached/"); it->isValid(); it->next())
+        {
+            MergeTreePartInfo part_info;
+
+            if (!MergeTreePartInfo::tryParsePartName(it->name(), &part_info, format_version) ||
+                part_info.partition_id != actual_part_info.partition_id)
+                continue;
+
+            const String part_old_name = part_info.getPartName();
+            const String part_path = "detached/" + part_old_name;
+
+            const VolumePtr volume = std::make_shared<SingleDiskVolume>("volume_" + part_old_name, disk);
+
+            /// actual_part_info is more recent than part_info so we use it
+            MergeTreeData::MutableDataPartPtr part = createPart(part_new_name, actual_part_info, volume, part_path);
+
+            try
+            {
+                part->loadColumnsChecksumsIndexes(true, true);
+            }
+            catch (const Exception&)
+            {
+                /// This method throws if the part data is corrupted or partly missing. In this case, we simply don't
+                /// process the part.
+                continue;
+            }
+
+            if (entry.part_checksum == part->checksums.getTotalChecksumHex())
+            {
+                part->modification_time = disk->getLastModified(part->getFullRelativePath()).epochTime();
+                return part;
+            }
+        }
+
+    return {};
+}
 
 bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 {
@@ -1368,32 +1411,54 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
         return true;
     }
 
-    if (entry.type == LogEntry::GET_PART ||
-        entry.type == LogEntry::MERGE_PARTS ||
-        entry.type == LogEntry::MUTATE_PART)
+    const bool is_get_or_attach = entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART;
+
+    if (is_get_or_attach || entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
     {
         /// If we already have this part or a part covering it, we do not need to do anything.
         /// The part may be still in the PreCommitted -> Committed transition so we first search
         /// among PreCommitted parts to definitely find the desired part if it exists.
         DataPartPtr existing_part = getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreCommitted});
+
         if (!existing_part)
             existing_part = getActiveContainingPart(entry.new_part_name);
 
-        /// Even if the part is locally, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
+        /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
         if (existing_part && getZooKeeper()->exists(replica_path + "/parts/" + existing_part->name))
         {
-            if (!(entry.type == LogEntry::GET_PART && entry.source_replica == replica_name))
-            {
-                LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.", entry.new_part_name, existing_part->name);
-            }
+            if (!is_get_or_attach || entry.source_replica != replica_name)
+                LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.",
+                    entry.new_part_name, existing_part->name);
+
             return true;
         }
     }
 
-    if (entry.type == LogEntry::GET_PART && entry.source_replica == replica_name)
+    if (entry.type == LogEntry::ATTACH_PART)
+    {
+        if (MutableDataPartPtr part = attachPartHelperFoundValidPart(entry); part)
+        {
+            LOG_TRACE(log, "Found valid part to attach from local data, preparing the transaction");
+
+            Transaction transaction(*this);
+
+            renameTempPartAndReplace(part, nullptr, &transaction);
+            checkPartChecksumsAndCommit(transaction, part);
+
+            writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
+                part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr);
+
+            return true;
+        }
+
+        LOG_TRACE(log, "Didn't find part with the correct checksums, will fetch it from other replica");
+    }
+
+    if (is_get_or_attach && entry.source_replica == replica_name)
         LOG_WARNING(log, "Part {} from own log doesn't exist.", entry.new_part_name);
 
-    /// Perhaps we don't need this part, because during write with quorum, the quorum has failed (see below about `/quorum/failed_parts`).
+    /// Perhaps we don't need this part, because during write with quorum, the quorum has failed
+    /// (see below about `/quorum/failed_parts`).
     if (entry.quorum && getZooKeeper()->exists(zookeeper_path + "/quorum/failed_parts/" + entry.new_part_name))
     {
         LOG_DEBUG(log, "Skipping action for part {} because quorum for that part was failed.", entry.new_part_name);
@@ -1401,28 +1466,28 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     }
 
     bool do_fetch = false;
-    if (entry.type == LogEntry::GET_PART)
+
+    switch (entry.type)
     {
-        do_fetch = true;
-    }
-    else if (entry.type == LogEntry::MERGE_PARTS)
-    {
-        /// Sometimes it's better to fetch merged part instead of merge
-        /// For example when we don't have all source parts for merge
-        do_fetch = !tryExecuteMerge(entry);
-    }
-    else if (entry.type == LogEntry::MUTATE_PART)
-    {
-        /// Sometimes it's better to fetch mutated part instead of merge
-        do_fetch = !tryExecutePartMutation(entry);
-    }
-    else if (entry.type == LogEntry::ALTER_METADATA)
-    {
-        return executeMetadataAlter(entry);
-    }
-    else
-    {
-        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)), ErrorCodes::LOGICAL_ERROR);
+        case LogEntry::ATTACH_PART:
+            /// We surely don't have this part locally as we've checked it before, so download it.
+            [[fallthrough]];
+        case LogEntry::GET_PART:
+            do_fetch = true;
+            break;
+        case LogEntry::MERGE_PARTS:
+            /// Sometimes it's better to fetch the merged part instead of merging,
+            /// e.g when we don't have all the source parts.
+            do_fetch = !tryExecuteMerge(entry);
+            break;
+        case LogEntry::MUTATE_PART:
+            /// Sometimes it's better to fetch mutated part instead of merging.
+            do_fetch = !tryExecutePartMutation(entry);
+            break;
+        case LogEntry::ALTER_METADATA:
+            return executeMetadataAlter(entry);
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected log entry type: {}", static_cast<int>(entry.type));
     }
 
     if (do_fetch)
@@ -1433,7 +1498,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
 bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 {
-    LOG_TRACE(log, "Executing log entry to merge parts {} to {}", boost::algorithm::join(entry.source_parts, ", "), entry.new_part_name);
+    LOG_TRACE(log, "Executing log entry to merge parts {} to {}",
+        fmt::join(entry.source_parts, ", "), entry.new_part_name);
 
     const auto storage_settings_ptr = getSettings();
 
@@ -1458,6 +1524,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     /// instead of doing exactly the same merge cluster-wise
     std::optional<String> replica_to_execute_merge;
     bool replica_to_execute_merge_picked = false;
+
     if (merge_strategy_picker.shouldMergeOnSingleReplica(entry))
     {
         replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
@@ -1465,16 +1532,21 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
         if (replica_to_execute_merge)
         {
-            LOG_DEBUG(log, "Prefer fetching part {} from replica {} due execute_merges_on_single_replica_time_threshold", entry.new_part_name, replica_to_execute_merge.value());
+            LOG_DEBUG(log,
+                "Prefer fetching part {} from replica {} due to execute_merges_on_single_replica_time_threshold",
+                entry.new_part_name, replica_to_execute_merge.value());
+
             return false;
         }
     }
 
     DataPartsVector parts;
     bool have_all_parts = true;
+
     for (const String & name : entry.source_parts)
     {
         DataPartPtr part = getActiveContainingPart(name);
+
         if (!part)
         {
             have_all_parts = false;
@@ -1557,8 +1629,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     if (storage_settings_ptr->allow_s3_zero_copy_replication)
     {
-        auto disk = reserved_space->getDisk();
-        if (disk->getType() == DB::DiskType::Type::S3)
+        if (auto disk = reserved_space->getDisk(); disk->getType() == DB::DiskType::Type::S3)
         {
             if (merge_strategy_picker.shouldMergeOnSingleReplicaS3Shared(entry))
             {
@@ -1567,7 +1638,9 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
                 if (replica_to_execute_merge)
                 {
-                    LOG_DEBUG(log, "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold", entry.new_part_name, replica_to_execute_merge.value());
+                    LOG_DEBUG(log,
+                        "Prefer fetching part {} from replica {} due s3_execute_merges_on_single_replica_time_threshold",
+                        entry.new_part_name, replica_to_execute_merge.value());
                     return false;
                 }
             }
@@ -1579,8 +1652,10 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         global_context.getMergeList().bookMergeWithTTL();
 
     auto table_id = getStorageID();
+
     /// Add merge to list
-    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(table_id.database_name, table_id.table_name, future_merged_part);
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(
+        table_id.database_name, table_id.table_name, future_merged_part);
 
     Transaction transaction(*this);
     MutableDataPartPtr part;
@@ -1614,7 +1689,16 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
                 ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
-                LOG_ERROR(log, "{}. Data after merge is not byte-identical to data on another replicas. There could be several reasons: 1. Using newer version of compression library after server update. 2. Using another compression method. 3. Non-deterministic compression algorithm (highly unlikely). 4. Non-deterministic merge algorithm due to logical error in code. 5. Data corruption in memory due to bug in code. 6. Data corruption in memory due to hardware issue. 7. Manual modification of source data after server startup. 8. Manual modification of checksums stored in ZooKeeper. 9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas. We will download merged part from replica to force byte-identical result.", getCurrentExceptionMessage(false));
+                LOG_ERROR(log,
+                    "{}. Data after merge is not byte-identical to data on another replicas. There could be several"
+                    " reasons: 1. Using newer version of compression library after server update. 2. Using another"
+                    " compression method. 3. Non-deterministic compression algorithm (highly unlikely). 4."
+                    " Non-deterministic merge algorithm due to logical error in code. 5. Data corruption in memory due"
+                    " to bug in code. 6. Data corruption in memory due to hardware issue. 7. Manual modification of"
+                    " source data after server startup. 8. Manual modification of checksums stored in ZooKeeper. 9."
+                    " Part format related settings like 'enable_mixed_granularity_parts' are different on different"
+                    " replicas. We will download merged part from replica to force byte-identical result.",
+                    getCurrentExceptionMessage(false));
 
                 write_part_log(ExecutionStatus::fromCurrentException());
 
@@ -1778,21 +1862,18 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
     const auto storage_settings_ptr = getSettings();
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
-    if (storage_settings_ptr->replicated_max_parallel_fetches && total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
-    {
-        throw Exception("Too many total fetches from replicas, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches.toString(),
-            ErrorCodes::TOO_MANY_FETCHES);
-    }
+    if (storage_settings_ptr->replicated_max_parallel_fetches &&
+        total_fetches >= storage_settings_ptr->replicated_max_parallel_fetches)
+        throw Exception(ErrorCodes::TOO_MANY_FETCHES, "Too many total fetches from replicas, maximum: {} ",
+            storage_settings_ptr->replicated_max_parallel_fetches.toString());
 
     ++total_fetches;
     SCOPE_EXIT({--total_fetches;});
 
     if (storage_settings_ptr->replicated_max_parallel_fetches_for_table
         && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
-    {
-        throw Exception("Too many fetches from replicas for table, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString(),
-            ErrorCodes::TOO_MANY_FETCHES);
-    }
+        throw Exception(ErrorCodes::TOO_MANY_FETCHES, "Too many fetches from replicas for table, maximum: {}",
+            storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString());
 
     ++current_table_fetches;
     SCOPE_EXIT({--current_table_fetches;});
@@ -3279,11 +3360,15 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
     /// Select replicas in uniformly random order.
     std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
 
+    LOG_TRACE(log, "Candidate replicas: {}", replicas.size());
+
     for (const String & replica : replicas)
     {
-        /// We don't interested in ourself.
+        /// We aren't interested in ourself.
         if (replica == replica_name)
             continue;
+
+        LOG_TRACE(log, "Candidate replica: {}", replica);
 
         if (checkReplicaHavePart(replica, part_name) &&
             (!active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active")))
@@ -3670,6 +3755,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     String interserver_scheme;
     std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
+
     if (part_to_clone)
     {
         get_part = [&, part_to_clone]()
@@ -4756,13 +4842,20 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
     PartsTemporaryRename renamed_parts(*this, "detached/");
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
 
-    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false);   /// TODO Allow to use quorum here.
+    /// TODO Allow to use quorum here.
+    ReplicatedMergeTreeBlockOutputStream output(*this, metadata_snapshot, 0, 0, 0, false, false, false,
+        /*is_attach*/true);
+
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        String old_name = loaded_parts[i]->name;
+        const String old_name = loaded_parts[i]->name;
+
         output.writeExistingPart(loaded_parts[i]);
+
         renamed_parts.old_and_new_names[i].first.clear();
+
         LOG_DEBUG(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
+
         results.push_back(PartitionCommandResultInfo{
             .partition_id = loaded_parts[i]->info.partition_id,
             .part_name = loaded_parts[i]->name,
