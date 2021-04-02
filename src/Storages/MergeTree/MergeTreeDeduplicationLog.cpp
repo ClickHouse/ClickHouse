@@ -141,19 +141,21 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         auto & description = itr->second;
         if (current_sum > deduplication_window)
         {
-            //std::filesystem::remove(description.path);
-            //itr = existing_logs.erase(itr);
             remove_from_value = itr->first;
             break;
         }
         current_sum += description.entries_count;
-        ++itr;
     }
 
     if (remove_from_value != 0)
     {
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
+            size_t number = itr->first;
+            std::filesystem::remove(itr->second.path);
+            itr = existing_logs.erase(itr);
+            if (remove_from_value == number)
+                break;
         }
     }
 
@@ -173,7 +175,7 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
     std::lock_guard lock(state_mutex);
 
     if (deduplication_map.contains(block_id))
-        return std::make_pair(deduplication_map->get(block_id), false);
+        return std::make_pair(deduplication_map.get(block_id), false);
 
     assert(current_writer != nullptr);
     MergeTreeDeduplicationLogRecord record;
@@ -201,15 +203,16 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreeData::DataPartPtr & part
 
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); ++itr)
     {
-        const auto & part_info = itr->second;
-        if (part.contains(part_info))
+        const auto & part_info = itr->value;
+        if (part->info.contains(part_info))
         {
+            MergeTreeDeduplicationLogRecord record;
             record.operation = MergeTreeDeduplicationOp::DROP;
             record.part_name = part_info.getPartName();
-            record.block_id = itr->first;
+            record.block_id = itr->key;
             writeRecord(record, *current_writer);
             existing_logs[current_log_number].entries_count++;
-            deduplication_map.erase(itr->first);
+            deduplication_map.erase(itr->key);
             rotateAndDropIfNeeded();
         }
     }
@@ -222,14 +225,15 @@ void MergeTreeDeduplicationLog::dropPartition(const std::string & partition_id)
 
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); ++itr)
     {
-        const auto & part_info = itr->second;
+        const auto & part_info = itr->value;
         if (part_info.partition_id == partition_id)
         {
+            MergeTreeDeduplicationLogRecord record;
             record.operation = MergeTreeDeduplicationOp::DROP;
             record.part_name = part_info.getPartName();
-            record.block_id = itr->first;
+            record.block_id = itr->key;
             writeRecord(record, *current_writer);
-            deduplication_map.erase(itr->first);
+            deduplication_map.erase(itr->key);
             existing_logs[current_log_number].entries_count++;
 
             rotateAndDropIfNeeded();
