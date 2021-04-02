@@ -268,6 +268,10 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const TableJ
         {
             if (table_join.rightBecomeNullable(col.type))
                 JoinCommon::convertColumnToNullable(col);
+
+            /// In case of arrayJoin it can be not one row
+            if (col.column->size() != 1)
+                col.column = col.column->cloneResized(1);
         }
 
         for (size_t i = 0; i < totals_without_keys.columns(); ++i)
