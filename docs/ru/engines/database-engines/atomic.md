@@ -18,7 +18,7 @@ toc_title: Atomic
 ### UUID {#table-uuid}
 
 Каждая таблица в базе данных `Atomic` имеет уникальный [UUID](../../sql-reference/data-types/uuid.md) и хранит данные в папке `/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/`, где `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` - это UUID таблицы.
-Обычно UUID генерируется автоматически, но пользователь также может явно указать UUID в момент создания таблицы (однако, это не рекомендуется). Для отображения UUID в запросе `SHOW CREATE` вы можете использовать настройку [show_table_uuid_in_table_create_query_if_not_nil](../../operations/settings/settings.md#show_table_uuid_in_table_create_query_if_not_nil). Результат выполнения в таком случае будет иметь вид:
+Обычно UUID генерируется автоматически, но пользователь также может явно указать UUID в момент создания таблицы (однако это не рекомендуется). Для отображения UUID в запросе `SHOW CREATE` вы можете использовать настройку [show_table_uuid_in_table_create_query_if_not_nil](../../operations/settings/settings.md#show_table_uuid_in_table_create_query_if_not_nil). Результат выполнения в таком случае будет иметь вид:
 
 ```sql
 CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE = ...;
