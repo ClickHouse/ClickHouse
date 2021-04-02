@@ -426,55 +426,29 @@ BlockIO InterpreterSystemQuery::execute()
 }
 
 
-Strings InterpreterSystemQuery::movePartsToNewTableDetachedFolder(
-    const String& db_name, const String& old_table_name, const String& new_table_name)
+Strings InterpreterSystemQuery::movePartsToNewTableDetachedFolder(const String& db_name, const String& new_table_name)
 {
     Strings parts_names;
 
     auto new_table_ptr = DatabaseCatalog::instance().getTable({db_name, new_table_name}, context);
     auto& storage = *static_cast<StorageReplicatedMergeTree*>(new_table_ptr.get());
 
-    BlockIO table_parts = executeQuery(fmt::format(
-        "SELECT name, path, bytes FROM system.parts WHERE database = '{}' AND table = '{}' AND active",
-            db_name, old_table_name),
-        context, true);
+    const auto active_parts = storage.getDataPartsVector();
+    parts_names.reserve(active_parts.size());
 
-    PullingPipelineExecutor parts_executor(table_parts.pipeline);
-
-    const size_t name_index = parts_executor.getHeader().getPositionByName("name");
-    const size_t path_index = parts_executor.getHeader().getPositionByName("path");
-    const size_t bytes_index = parts_executor.getHeader().getPositionByName("bytes");
-
-    Chunk data_chunk{};
-
-    while (parts_executor.pull(data_chunk))
+    for (const auto& part : active_parts)
     {
-        const auto& parts_names_col = *checkAndGetColumn<ColumnString>(data_chunk.getColumns()[name_index].get());
-        const auto& parts_paths_col = *checkAndGetColumn<ColumnString>(data_chunk.getColumns()[path_index].get());
-        const auto& parts_sizes_col = *checkAndGetColumn<ColumnUInt64>(data_chunk.getColumns()[bytes_index].get());
+        const ReservationPtr reservation = storage.reserveSpace(part->getBytesOnDisk());
+        const String part_target_path = storage.getFullPathOnDisk(reservation->getDisk()) + "detached/" + part->name;
 
-        parts_names.reserve(parts_names.size() + parts_names_col.size());
+        std::error_code error;
+        std::filesystem::rename(part->getFullPath(), part_target_path, error);
 
-        for (size_t i = 0; i < parts_names_col.size(); ++i)
-        {
-            const StringRef part_name = parts_names_col.getDataAt(i);
-            const StringRef part_path = parts_paths_col.getDataAt(i);
-            const UInt64 part_size = parts_sizes_col.getUInt(i);
+        if (error)
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Error moving part from {} to {}: {}",
+                part->getFullPath(), part_target_path, error.message());
 
-            const ReservationPtr reservation = storage.reserveSpace(part_size);
-            const String part_target_path = storage.getFullPathOnDisk(reservation->getDisk()) +
-                "detached/" + part_name.toString();
-
-            std::error_code error;
-            std::filesystem::rename(part_path.toString(), part_target_path, error);
-
-            if (error)
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Error moving part from {} to {}: {}",
-                    part_path.toString(), part_target_path, error.message());
-
-            parts_names.emplace_back(part_name.data, part_name.size);
-            LOG_TRACE(log, "Moved part {} from {} to {}", part_name.toString(), part_path.toString(), part_target_path);
-        }
+        parts_names.emplace_back(part->name);
     }
 
     return parts_names;
@@ -482,6 +456,17 @@ Strings InterpreterSystemQuery::movePartsToNewTableDetachedFolder(
 
 void InterpreterSystemQuery::restoreReplica()
 {
+    /**
+     * This query should be:
+     * - idempotent on non-existent or invalid table invocation (i.e. throwing).
+     * - re-invokable (i.e. when the server failed while processing RESTORE REPLICA query).
+     *   The server should correctly restore the replica regardless of the step where the last invocation failed.
+     *
+     * So no random may be used.
+     * NOTE: The integration test, checking the re-invocation, kills server after finding certain messages in log,
+     * so, if changing the latter, also change the test (test_restore_replica).
+     */
+
     context.checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
     auto [db, table] = DatabaseCatalog::instance().getDatabaseAndTable(table_id, context);
@@ -505,9 +490,8 @@ void InterpreterSystemQuery::restoreReplica()
     /// If there exists the path zk_path + /replicas/ *, we have at least one working replica,
     /// no need to restore anything.
     const String& zk_root_path = status.zookeeper_path;
-    const String replica_zk_path = zk_root_path + "/replicas";
 
-    if (zookeeper->exists(replica_zk_path))
+    if (const String replica_zk_path = zk_root_path + "/replicas"; zookeeper->exists(replica_zk_path))
     {
         Strings replicas_present;
         zookeeper->tryGetChildren(replica_zk_path, replicas_present);
@@ -521,46 +505,40 @@ void InterpreterSystemQuery::restoreReplica()
     const String& db_name = table_id.database_name;
     const String& old_table_name = table_id.table_name;
 
-    /// The server may fail at any step of processing the query, so there can't be any random in a new table name,
-    /// so you can't use a random number generator although it's faster.
     const std::hash<String> table_name_hash;
     const String new_table_name = fmt::format("{}_tmp_{}", old_table_name, table_name_hash(old_table_name));
 
-    LOG_DEBUG(log, "Restoring {}.{}, zk root path at {}", db_name, old_table_name, zk_root_path);
+    LOG_DEBUG(log, "Started restoring {}.{}, zk root path at {}", db_name, old_table_name, zk_root_path);
 
-    /// 1. Create a new replicated table out of current one (CREATE TABLE new AS old).
+    /// 1.
     /// If the server failed after this step, the old temporary table won't be lost in mem so the query re-run could
     /// succeed (need of IF NOT EXISTS).
     executeQuery(fmt::format("CREATE TABLE IF NOT EXISTS {0}.{1} AS {0}.{2}", db_name, new_table_name, old_table_name),
         context, true);
 
-    LOG_DEBUG(log, "Created a new replicated table " + db_name + "." + new_table_name);
+    LOG_DEBUG(log, "Created a new replicated table {}.{}", db_name, new_table_name);
 
-    /// 2. Stop replica fetches for the old table (SYSTEM STOP FETCHES old)
+    /// 2.
     executeQuery(fmt::format("SYSTEM STOP FETCHES {}.{}", db_name, old_table_name), context, true);
     LOG_DEBUG(log, "Stopped replica fetches for {}.{}", db_name, old_table_name);
 
-    /// 3.0 Execute ALTER ... ATTACH to register parts in new table and send data to ZooKeeper.
-    const Strings parts_names = movePartsToNewTableDetachedFolder(db_name, old_table_name, new_table_name);
-
-    for (const String& part_name : parts_names)
+    /// 3. Register parts in new table and send data to ZooKeeper.
+    for (const String& part_name : movePartsToNewTableDetachedFolder(db_name, new_table_name))
         executeQuery(fmt::format("ALTER TABLE {}.{} ATTACH PART '{}'", db_name, new_table_name, part_name),
             context, true);
 
     LOG_DEBUG(log, "Moved and attached all parts from {0}.{1} to {0}.{2}", db_name, old_table_name, new_table_name);
 
-    /// 4. Rename tables (RENAME TABLE new TO old_, old TO new, old_ TO old).
-    // TODO RENAME old TO new, new TO old  not working somehow
+    /// 4.
     executeQuery(
-        fmt::format("RENAME TABLE {0}.{1} TO {2}_, {0}.{2} TO {1}, {0}.{2}_ TO {2}",
-            db_name, new_table_name, old_table_name),
+        fmt::format("EXCHANGE TABLES {0}.{1} AND {0}.{2}", db_name, new_table_name, old_table_name),
         context, true);
 
     LOG_DEBUG(log, "Renamed tables {0}.{1} <=> {0}.{2}", db_name, old_table_name, new_table_name);
 
-    /// 5. Detach old table (DETACH TABLE new).
+    /// 5.
     executeQuery(fmt::format("DETACH TABLE {}.{}", db_name, new_table_name), context, true);
-    LOG_DEBUG(log, "Detached table {}.{}", db_name, new_table_name);
+    LOG_DEBUG(log, "Detached old table {}.{}", db_name, new_table_name);
 
     /// 6. Delete information about the old table, so it wouldn't be attached after server restart.
     const String old_table_metadata_file = db->getObjectMetadataPath(new_table_name);
@@ -569,7 +547,7 @@ void InterpreterSystemQuery::restoreReplica()
         throw Exception(ErrorCodes::SYSTEM_ERROR, "Error removing file {}: {}",
             old_table_metadata_file, ec.message());
 
-    LOG_DEBUG(log, "Removed table {}.{} metadata at {}", db_name, new_table_name, old_table_metadata_file);
+    LOG_DEBUG(log, "Removed old table {}.{} metadata at {}", db_name, new_table_name, old_table_metadata_file);
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context, bool need_ddl_guard)

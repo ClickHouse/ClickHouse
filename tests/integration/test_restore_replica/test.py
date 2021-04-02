@@ -22,6 +22,16 @@ node_1 = cluster.add_instance('replica1', with_zookeeper=True, main_configs=conf
 node_2 = cluster.add_instance('replica2', with_zookeeper=True, main_configs=configs)
 node_3 = cluster.add_instance('replica3', with_zookeeper=True, main_configs=configs)
 
+query_steps_log = [
+    "Started restoring",
+    "Created a new replicated table",
+    "Stopped replica fetches for",
+    "Moved and attached all parts from",
+    "Renamed tables",
+    "Detached old table",
+    "Removed old table"
+]
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
