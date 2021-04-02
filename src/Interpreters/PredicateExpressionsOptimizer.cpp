@@ -146,7 +146,7 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
                 break;  /// Skip left and right table optimization
 
             is_rewrite_tables |= tryRewritePredicatesToTable(tables_element[table_pos], tables_predicates[table_pos],
-                tables_with_columns[table_pos].columns.getNames());
+                tables_with_columns[table_pos]);
 
             if (table_element->table_join && isRight(table_element->table_join->as<ASTTableJoin>()->kind))
                 break;  /// Skip left table optimization
@@ -156,13 +156,13 @@ bool PredicateExpressionsOptimizer::tryRewritePredicatesToTables(ASTs & tables_e
     return is_rewrite_tables;
 }
 
-bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, Names && table_columns) const
+bool PredicateExpressionsOptimizer::tryRewritePredicatesToTable(ASTPtr & table_element, const ASTs & table_predicates, const TableWithColumnNamesAndTypes & table_columns) const
 {
     if (!table_predicates.empty())
     {
         auto optimize_final = enable_optimize_predicate_expression_to_final_subquery;
         auto optimize_with = allow_push_predicate_when_subquery_contains_with;
-        PredicateRewriteVisitor::Data data(context, table_predicates, std::move(table_columns), optimize_final, optimize_with);
+        PredicateRewriteVisitor::Data data(context, table_predicates, table_columns, optimize_final, optimize_with);
 
         PredicateRewriteVisitor(data).visit(table_element);
         return data.is_rewrite;
