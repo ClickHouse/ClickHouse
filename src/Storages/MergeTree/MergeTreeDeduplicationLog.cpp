@@ -196,7 +196,7 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
 {
     std::lock_guard lock(state_mutex);
 
-    /// If we alredy have this block let's deduplicate it
+    /// If we already have this block let's deduplicate it
     if (deduplication_map.contains(block_id))
     {
         auto info = deduplication_map.get(block_id);

@@ -2100,7 +2100,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     }
 
     /// Deduplication log used only from non-replicated MergeTree. Replicated
-    /// tables have their own mechanism. We try to deduplicated at such deep
+    /// tables have their own mechanism. We try to deduplicate at such deep
     /// level, because only here we know real part name which is required for
     /// deduplication.
     if (deduplication_log)
