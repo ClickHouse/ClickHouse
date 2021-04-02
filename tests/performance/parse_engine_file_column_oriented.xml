@@ -1,0 +1,28 @@
+<test max_ignored_relative_change="0.2">
+
+<preconditions>
+    <table_exists>test.hits</table_exists>
+</preconditions>
+
+<substitutions>
+    <substitution>
+        <name>format</name>
+        <values>
+            <value>Parquet</value>
+            <value>Arrow</value>
+            <value>ORC</value>
+        </values>
+    </substitution>
+</substitutions>
+    
+<create_query>CREATE TABLE IF NOT EXISTS table_{format}(ClientEventTime DateTime, MobilePhoneModel String, ClientIP6 FixedString(16)) ENGINE=File({format})</create_query>
+
+<fill_query>INSERT INTO table_{format} SELECT ClientEventTime, MobilePhoneModel, ClientIP6 FROM test.hits ORDER BY ClientEventTime, MobilePhoneModel, ClientIP6 LIMIT 100000</fill_query>
+
+<query>SELECT ClientEventTime FROM table_{format} FORMAT Null</query>
+<query>SELECT MobilePhoneModel FROM table_{format} FORMAT Null</query>
+<query>SELECT ClientIP6 FROM table_{format} FORMAT Null</query>
+
+<drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
+
+</test>
