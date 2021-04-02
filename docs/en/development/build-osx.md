@@ -15,7 +15,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 ## Install Xcode and Command Line Tools {#install-xcode-and-command-line-tools}
 
-Install the lates [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12) from App Store.
+Install the latest [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12) from App Store.
 
 Open it at least once to accept the end-user license agreement and automatically install the required components.
 
