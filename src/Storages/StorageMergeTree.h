@@ -96,7 +96,7 @@ public:
 
     std::optional<JobAndPool> getDataProcessingJob() override;
 
-    std::optional<MergeTreeDeduplicationLog> & getDeduplicationLog() { return deduplication_log; }
+    MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -109,7 +109,7 @@ private:
     BackgroundJobsExecutor background_executor;
     BackgroundMovesExecutor background_moves_executor;
 
-    std::optional<MergeTreeDeduplicationLog> deduplication_log;
+    std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
     /// For block numbers.
     SimpleIncrement increment;

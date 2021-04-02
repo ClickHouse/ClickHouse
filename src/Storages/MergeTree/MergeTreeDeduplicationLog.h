@@ -1,8 +1,13 @@
 #pragma once
 #include <Core/Types.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <common/StringRef.h>
+#include <IO/WriteBufferFromFile.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <map>
+#include <list>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 
 namespace DB
 {
@@ -111,10 +116,8 @@ public:
         size_t deduplication_window_,
         const MergeTreeDataFormatVersion & format_version_);
 
-    std::pair<MergeTreePartInfo, bool> addPart(const std::string & block_id, const MergeTreeData::MutableDataPartPtr & part);
-    std::pair<MergeTreePartInfo, bool> addPart(const MergeTreeData::MutableDataPartPtr & part);
-    void dropPart(const MergeTreeData::DataPartPtr & part);
-    void dropPartition(const std::string & partition_id);
+    std::pair<MergeTreePartInfo, bool> addPart(const std::string & block_id, const MergeTreePartInfo & part);
+    void dropPart(const MergeTreePartInfo & part);
 
     void load();
 
