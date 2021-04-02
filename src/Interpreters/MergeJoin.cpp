@@ -76,6 +76,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
     return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
 }
 
+/// Get first and last row from sorted block
 Block extractMinMax(const Block & block, const Block & keys)
 {
     if (block.rows() == 0)
@@ -87,9 +88,9 @@ Block extractMinMax(const Block & block, const Block & keys)
     for (size_t i = 0; i < columns.size(); ++i)
     {
         const auto & src_column = block.getByName(min_max.getByPosition(i).name);
-        /// Cannot use insertFrom because src_column type can differ from keys, e.g. to be LowCardinality
-        columns[i]->insert((*src_column.column)[0]);
-        columns[i]->insert((*src_column.column)[block.rows() - 1]);
+
+        columns[i]->insertFrom(*src_column.column, 0);
+        columns[i]->insertFrom(*src_column.column, block.rows() - 1);
     }
 
     min_max.setColumns(std::move(columns));
@@ -465,6 +466,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 
     table_join->splitAdditionalColumns(right_sample_block, right_table_keys, right_columns_to_add);
     JoinCommon::removeLowCardinalityInplace(right_table_keys);
+    JoinCommon::removeLowCardinalityInplace(right_sample_block, table_join->keyNamesRight());
 
     const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
