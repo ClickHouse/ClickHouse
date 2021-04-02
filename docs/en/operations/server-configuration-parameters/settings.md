@@ -102,7 +102,7 @@ Default value: `1073741824` (1 GB).
 ```
 ## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
-Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignore.
+Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
 
 Default value: `480` (8 minute).
 
