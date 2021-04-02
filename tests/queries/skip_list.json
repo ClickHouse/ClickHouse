@@ -164,7 +164,8 @@
         "00062_replicated_merge_tree_alter_zookeeper",
         /// Does not support renaming of multiple tables in single query
         "00634_rename_view",
-        "00140_rename"
+        "00140_rename",
+        "01783_http_chunk_size"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
