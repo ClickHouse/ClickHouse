@@ -6,6 +6,7 @@
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromString.h>
 #include <Formats/FormatFactory.h>
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -64,13 +65,22 @@ bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const st
 {
     startBridgeSync();
     auto uri = createRequestURI(LIB_NEW_METHOD);
-    return executeRequest(uri, [library_path, library_settings, attributes_names, this](std::ostream & os)
+
+    /// Sample block must contain null values
+    WriteBufferFromOwnString out;
+    auto output_stream = context.getOutputStream(LibraryBridgeHelper::DEFAULT_FORMAT, out, sample_block);
+    formatBlock(output_stream, sample_block);
+    auto block_string = out.str();
+
+    auto out_stream_callback = [library_path, library_settings, attributes_names, block_string, this](std::ostream & os)
     {
         os << "library_path=" << escapeForFileName(library_path) << "&";
         os << "library_settings=" << escapeForFileName(library_settings) << "&";
         os << "attributes_names=" << escapeForFileName(attributes_names) << "&";
-        os << "sample_block=" << escapeForFileName(sample_block.getNamesAndTypesList().toString());
-    });
+        os << "sample_block=" << escapeForFileName(sample_block.getNamesAndTypesList().toString()) << "&";
+        os << "sample_block_with_nulls=" << escapeForFileName(block_string);
+    };
+    return executeRequest(uri, out_stream_callback);
 }
 
 

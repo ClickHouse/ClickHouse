@@ -75,7 +75,8 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
     {
         if (method == "libNew")
         {
-            params.read(request.getStream());
+            auto & read_buf = request.getStream();
+            params.read(read_buf);
 
             if (!params.has("library_path"))
             {
@@ -93,26 +94,28 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             const auto & settings_string = params.get("library_settings");
             std::vector<std::string> library_settings = parseNamesFromBinary(settings_string);
 
+            /// Needed for library dictionary
             if (!params.has("attributes_names"))
             {
                 processError(response, "No 'attributes_names' in request URL");
                 return;
             }
 
+            const auto & attributes_string = params.get("attributes_names");
+            std::vector<std::string> attributes_names = parseNamesFromBinary(attributes_string);
+
+            /// Needed to parse block from binary string format
             if (!params.has("sample_block"))
             {
                 processError(response, "No 'sample_block' in request URL");
                 return;
             }
+            std::string sample_block_string = params.get("sample_block");
 
-            const auto & attributes_string = params.get("attributes_names");
-            std::vector<std::string> attributes_names = parseNamesFromBinary(attributes_string);
-            std::string columns = params.get("sample_block");
             std::shared_ptr<Block> sample_block;
-
             try
             {
-                sample_block = parseColumns(std::move(columns));
+                sample_block = parseColumns(std::move(sample_block_string));
             }
             catch (const Exception & ex)
             {
@@ -121,7 +124,20 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, *sample_block, attributes_names);
+            if (!params.has("sample_block_with_nulls"))
+            {
+                processError(response, "No 'sample_block_with_nulls' in request URL");
+                return;
+            }
+
+            ReadBufferFromString read_block_buf(params.get("sample_block_with_nulls"));
+            auto format = FormatFactory::instance().getInput(FORMAT, read_block_buf, *sample_block, context, DEFAULT_BLOCK_SIZE);
+            auto reader = std::make_shared<InputStreamFromInputFormat>(format);
+            auto sample_block_with_nulls = reader->read();
+
+            LOG_DEBUG(log, "Dictionary sample block with nulls: {}", sample_block_with_nulls.dumpStructure());
+
+            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, sample_block_with_nulls, attributes_names);
             writeStringBinary("1", out);
         }
         else if (method == "libClone")
@@ -159,6 +175,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             const auto & sample_block = library_handler->getSampleBlock();
             auto input = library_handler->loadAll();
+
             BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, context);
             copyData(*input, *output);
         }
