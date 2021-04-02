@@ -35,10 +35,10 @@ void MergeTreeBlockOutputStream::write(const Block & block)
         if (!part)
             continue;
 
-        if (auto deduplication_log = storage.getDeduplicationLog())
+        if (auto & deduplication_log = storage.getDeduplicationLog())
         {
             String block_id = part->getZeroLevelPartBlockID();
-            auto res = deduplication_log.addPart(block_id, part);
+            auto res = deduplication_log->addPart(block_id, part);
             if (!res.second)
             {
                 LOG_INFO(storage.log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
