@@ -24,12 +24,13 @@ public:
 
     ~ConnectionHolder()
     {
-        pool->returnObject(std::move(connection));
+        if (connection)
+            pool->returnObject(std::move(connection));
     }
 
     nanodbc::connection & operator*()
     {
-        if (!connection || !connection->connected())
+        if (!connection)
         {
             pool->borrowObject(connection, [&]()
             {
