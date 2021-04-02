@@ -46,10 +46,11 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Cont
 /** Try to fold condition to countable set of constant values.
   * @param node a condition that we try to fold.
   * @param target_expr expression evaluated over a set of constants.
+  * @param limit limit for number of values
   * @return optional blocks each with a single row and a single column for target expression,
   *         or empty blocks if condition is always false,
   *         or nothing if condition can't be folded to a set of constants.
   */
-std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr);
+std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr, size_t & limit);
 
 }

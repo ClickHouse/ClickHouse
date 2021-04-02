@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import shutil
 import sys
 import os
 import os.path
@@ -107,18 +108,19 @@ def remove_control_characters(s):
 
 def get_db_engine(args, database_name):
     if args.replicated_database:
-        return " ENGINE=Replicated('/test/clickhouse/db/{}', 's1', 'r1')".format(database_name)
+        return " ON CLUSTER test_cluster_database_replicated ENGINE=Replicated('/test/clickhouse/db/{}', '{{shard}}', '{{replica}}')".format(database_name)
     if args.db_engine:
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
 
-def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file):
+def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir):
     # print(client_options)
 
     start_time = datetime.now()
     if args.database:
         database = args.database
         os.environ.setdefault("CLICKHOUSE_DATABASE", database)
+        os.environ.setdefault("CLICKHOUSE_TMP", suite_tmp_dir)
 
     else:
         # If --database is not specified, we will create temporary database with unique name
@@ -136,6 +138,12 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
             return clickhouse_proc_create, "", "Timeout creating database {} before test".format(database), total_time
 
         os.environ["CLICKHOUSE_DATABASE"] = database
+        # Set temporary directory to match the randomly generated database,
+        # because .sh tests also use it for temporary files and we want to avoid
+        # collisions.
+        test_tmp_dir = os.path.join(suite_tmp_dir, database)
+        os.mkdir(test_tmp_dir)
+        os.environ.setdefault("CLICKHOUSE_TMP", test_tmp_dir)
 
     # This is for .sh tests
     os.environ["CLICKHOUSE_LOG_COMMENT"] = case_file
@@ -170,9 +178,12 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
 
     if need_drop_database:
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-        seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 10)
+        seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
         try:
-            clickhouse_proc_create.communicate(("DROP DATABASE " + database), timeout=seconds_left)
+            drop_database_query = "DROP DATABASE " + database
+            if args.replicated_database:
+                drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+            clickhouse_proc_create.communicate((drop_database_query), timeout=seconds_left)
         except TimeoutExpired:
             # kill test process because it can also hung
             if proc.returncode is None:
@@ -185,12 +196,17 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
             total_time = (datetime.now() - start_time).total_seconds()
             return clickhouse_proc_create, "", "Timeout dropping database {} after test".format(database), total_time
 
+        shutil.rmtree(test_tmp_dir)
+
     total_time = (datetime.now() - start_time).total_seconds()
 
     # Normalize randomized database names in stdout, stderr files.
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
     if not args.show_db_name:
         os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
+    if args.replicated_database:
+        os.system("LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {file}".format(file=stdout_file))
+        os.system("LC_ALL=C sed -i -e 's|auto_{{replica}}||g' {file}".format(file=stdout_file))
 
     stdout = open(stdout_file, 'rb').read() if os.path.exists(stdout_file) else b''
     stdout = str(stdout, errors='replace', encoding='utf-8')
@@ -206,8 +222,12 @@ def need_retry(stderr):
 
 def get_processlist(args):
     try:
+        query = b"SHOW PROCESSLIST FORMAT Vertical"
+        if args.replicated_database:
+            query = b"SELECT materialize((hostName(), tcpPort())) as host, * " \
+                    b"FROM clusterAllReplicas('r', system.processes) WHERE query NOT LIKE '%system.processes%' FORMAT Vertical"
         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        (stdout, _) = clickhouse_proc.communicate((b"SHOW PROCESSLIST FORMAT Vertical"), timeout=10)
+        (stdout, _) = clickhouse_proc.communicate((query), timeout=20)
         return False, stdout.decode('utf-8')
     except Exception as ex:
         print("Exception", ex)
@@ -352,7 +372,7 @@ def run_tests_array(all_tests_with_params):
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
                         failed_to_check = False
                         try:
-                            clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=10)
+                            clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=20)
                         except:
                             failed_to_check = True
 
@@ -367,7 +387,7 @@ def run_tests_array(all_tests_with_params):
                     stdout_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
 
-                    proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+                    proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir)
 
                     if proc.returncode is None:
                         try:
@@ -385,7 +405,7 @@ def run_tests_array(all_tests_with_params):
                     else:
                         counter = 1
                         while proc.returncode != 0 and need_retry(stderr):
-                            proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+                            proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir)
                             sleep(2**counter)
                             counter += 1
                             if counter > 6:
@@ -448,7 +468,7 @@ def run_tests_array(all_tests_with_params):
                                     failures_chain += 1
                                     status += MSG_FAIL
                                     status += print_test_time(total_time)
-                                    status += " - Long test not marked as 'long'"
+                                    status += " - Test runs too long (> 30s). Make it faster."
                                 else:
                                     passed_total += 1
                                     failures_chain = 0
@@ -649,7 +669,6 @@ def main(args):
     os.environ.setdefault("CLICKHOUSE_CONFIG", args.configserver)
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
-    os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
@@ -840,6 +859,8 @@ def main(args):
     if total_tests_run == 0:
         print("No tests were run.")
         sys.exit(1)
+    else:
+        print("All tests have finished.")
 
     sys.exit(exit_code)
 
