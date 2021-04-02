@@ -600,8 +600,10 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
                 }
                 else if (code == Coordination::Error::ZNOTEMPTY)
                 {
-                    throw Exception(fmt::format(
-                        "The old table was not completely removed from ZooKeeper, {} still exists and may contain some garbage. But it should never happen according to the logic of operations (it's a bug).", zookeeper_path), ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "The old table was not completely removed from ZooKeeper, {} still exists and may contain"
+                        " some garbage. But it should never happen according to the logic of operations (it's a bug).",
+                        zookeeper_path);
                 }
                 else if (code != Coordination::Error::ZOK)
                 {

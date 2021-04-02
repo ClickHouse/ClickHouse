@@ -100,6 +100,10 @@ def test_restore_replica(start_cluster):
 
     # 6. Check the initial table being attached (not in readonly) and the result being replicated.
     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
+
+    node_2.query("SYSTEM RESTORE REPLICA test"); # should detach and attach the table
+    node_3.query("SYSTEM RESTORE REPLICA test");
+
     check_data(2 * 499500, 2000)
 
     # 7. check we cannot restore the already restored replica

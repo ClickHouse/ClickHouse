@@ -232,6 +232,8 @@ public:
     /// Get best replica having this partition on S3
     String getSharedDataReplica(const IMergeTreeDataPart & part) const;
 
+    inline String getReplicaName() const { return replica_name; }
+
 private:
     /// Get a sequential consistent view of current parts.
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock getMaxAddedBlocks() const;

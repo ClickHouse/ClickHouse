@@ -487,23 +487,31 @@ void InterpreterSystemQuery::restoreReplica()
     StorageReplicatedMergeTree::Status status;
     storage_replicated->getStatus(status);
 
-    /// If there exists the path zk_path + /replicas/ *, we have at least one working replica,
-    /// no need to restore anything.
-    const String& zk_root_path = status.zookeeper_path;
-
-    if (const String replica_zk_path = zk_root_path + "/replicas"; zookeeper->exists(replica_zk_path))
-    {
-        Strings replicas_present;
-        zookeeper->tryGetChildren(replica_zk_path, replicas_present);
-
-        if (!replicas_present.empty())
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "The metadata for {} is present at some of the replicas -- nothing to restore,"
-                " try creating a new replica with the CREATE TABLE query", replica_zk_path);
-    }
-
     const String& db_name = table_id.database_name;
     const String& old_table_name = table_id.table_name;
+
+    const String& zk_root_path = status.zookeeper_path;
+
+    if (const String replicas_zk_path = zk_root_path + "/replicas"; zookeeper->exists(replicas_zk_path))
+    {
+        if (zookeeper->exists(replicas_zk_path + "/" + storage_replicated->getReplicaName()))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The metadata for {}.{} (replica {}) is present at {} -- nothing to restore,"
+                " try creating a new replica with the CREATE TABLE query",
+                db_name, old_table_name, storage_replicated->getReplicaName(), replicas_zk_path);
+        }
+
+        Strings replicas_present;
+        zookeeper->tryGetChildren(replicas_zk_path, replicas_present);
+
+        if (!replicas_present.empty()) // at least one table has valid metadata in zk
+        {
+            executeQuery(fmt::format("DETACH TABLE IF EXISTS {0}.{1}", db_name, old_table_name), context, true);
+            executeQuery(fmt::format("ATTACH TABLE IF NOT EXISTS {0}.{1}", db_name, old_table_name), context, true);
+            return;
+        }
+    }
 
     const std::hash<String> table_name_hash;
     const String new_table_name = fmt::format("{}_tmp_{}", old_table_name, table_name_hash(old_table_name));
