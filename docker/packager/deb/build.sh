@@ -6,6 +6,7 @@ set -x -e
 export CCACHE_LOGFILE=/build/ccache.log
 export CCACHE_DEBUG=1
 
+ccache --show-config ||:
 ccache --show-stats ||:
 ccache --zero-stats ||:
 
@@ -27,8 +28,11 @@ then
     mv /build/obj-*/src/unit_tests_dbms /output/binary
   fi
 fi
-ccache --show-stats ||:
+
 ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
+
+ccache --show-config ||:
+ccache --show-stats ||:
 
 if [ "${CCACHE_DEBUG:-}" == "1" ]
 then
