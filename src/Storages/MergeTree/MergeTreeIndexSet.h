@@ -14,7 +14,7 @@ namespace DB
 
 class MergeTreeIndexSet;
 
-struct MergeTreeIndexGranuleSet : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
 {
     explicit MergeTreeIndexGranuleSet(
         const String & index_name_,
@@ -42,7 +42,7 @@ struct MergeTreeIndexGranuleSet : public IMergeTreeIndexGranule
 };
 
 
-struct MergeTreeIndexAggregatorSet : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorSet final : IMergeTreeIndexAggregator
 {
     explicit MergeTreeIndexAggregatorSet(
         const String & index_name_,
@@ -79,7 +79,7 @@ private:
 };
 
 
-class MergeTreeIndexConditionSet : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionSet final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionSet(
@@ -113,7 +113,7 @@ private:
 };
 
 
-class MergeTreeIndexSet : public IMergeTreeIndex
+class MergeTreeIndexSet final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexSet(
