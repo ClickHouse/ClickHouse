@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ExpressionActions.h>
@@ -48,7 +49,10 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
         _compared_column);
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
-    const auto offset = _offset.get<typename ColumnType::ValueType>();
+    // Note that the storage type of offset returned by get<> is different, so
+    // we need to specify the type explicitly.
+    const typename ColumnType::ValueType offset
+            = _offset.get<typename ColumnType::ValueType>();
     assert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
@@ -62,32 +66,32 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
         reference_value_data.data);
 
     bool is_overflow;
-    bool overflow_to_negative;
     if (offset_is_preceding)
     {
         is_overflow = __builtin_sub_overflow(reference_value, offset,
             &reference_value);
-        overflow_to_negative = offset > 0;
     }
     else
     {
         is_overflow = __builtin_add_overflow(reference_value, offset,
             &reference_value);
-        overflow_to_negative = offset < 0;
     }
 
 //    fmt::print(stderr,
-//        "compared [{}] = {}, ref [{}] = {}, offset {} preceding {} overflow {} to negative {}\n",
+//        "compared [{}] = {}, old ref {}, shifted ref [{}] = {}, offset {} preceding {} overflow {} to negative {}\n",
 //        compared_row, toString(compared_value),
+//        // fmt doesn't like char8_t.
+//        static_cast<Int64>(unalignedLoad<typename ColumnType::ValueType>(reference_value_data.data)),
 //        reference_row, toString(reference_value),
 //        toString(offset), offset_is_preceding,
-//        is_overflow, overflow_to_negative);
+//        is_overflow, offset_is_preceding);
 
     if (is_overflow)
     {
-        if (overflow_to_negative)
+        if (offset_is_preceding)
         {
             // Overflow to the negative, [compared] must be greater.
+            // We know that because offset is >= 0.
             return 1;
         }
         else
@@ -263,6 +267,14 @@ WindowTransform::WindowTransform(const Block & input_header_,
             window_description.frame.begin_offset = convertFieldToTypeOrThrow(
                 window_description.frame.begin_offset,
                 *entry.type);
+
+            if (applyVisitor(FieldVisitorAccurateLess{},
+                window_description.frame.begin_offset, Field(0)))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Window frame start offset must be nonnegative, {} given",
+                    window_description.frame.begin_offset);
+            }
         }
         if (window_description.frame.end_type
             == WindowFrame::BoundaryType::Offset)
@@ -270,6 +282,14 @@ WindowTransform::WindowTransform(const Block & input_header_,
             window_description.frame.end_offset = convertFieldToTypeOrThrow(
                 window_description.frame.end_offset,
                 *entry.type);
+
+            if (applyVisitor(FieldVisitorAccurateLess{},
+                window_description.frame.end_offset, Field(0)))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Window frame start offset must be nonnegative, {} given",
+                    window_description.frame.end_offset);
+            }
         }
     }
 }
