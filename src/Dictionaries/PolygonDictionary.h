@@ -24,7 +24,7 @@ namespace bg = boost::geometry;
   * An implementation should inherit from this base class and preprocess the data upon construction if needed.
   * It must override the find method of this class which retrieves the polygon containing a single point.
   */
-class IPolygonDictionary : public IDictionaryBase
+class IPolygonDictionary : public IDictionary
 {
 public:
     /** Controls the different types of polygons allowed as input.
