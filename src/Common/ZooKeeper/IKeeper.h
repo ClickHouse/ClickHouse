@@ -119,9 +119,9 @@ struct Request
 };
 
 struct Response;
-using ResponsePtr = std::shared_ptr<Response>;
+using ResponsePtr = std::unique_ptr<Response>;
 using Responses = std::vector<ResponsePtr>;
-using ResponseCallback = std::function<void(const Response &)>;
+using ResponseCallback = std::function<void(ResponsePtr)>;
 
 struct Response
 {
@@ -266,14 +266,14 @@ struct ErrorResponse : virtual Response
 };
 
 
-using CreateCallback = std::function<void(const CreateResponse &)>;
-using RemoveCallback = std::function<void(const RemoveResponse &)>;
-using ExistsCallback = std::function<void(const ExistsResponse &)>;
-using GetCallback = std::function<void(const GetResponse &)>;
-using SetCallback = std::function<void(const SetResponse &)>;
-using ListCallback = std::function<void(const ListResponse &)>;
-using CheckCallback = std::function<void(const CheckResponse &)>;
-using MultiCallback = std::function<void(const MultiResponse &)>;
+using CreateCallback = std::function<void(CreateResponse)>;
+using RemoveCallback = std::function<void(RemoveResponse)>;
+using ExistsCallback = std::function<void(ExistsResponse)>;
+using GetCallback = std::function<void(GetResponse)>;
+using SetCallback = std::function<void(SetResponse)>;
+using ListCallback = std::function<void(ListResponse)>;
+using CheckCallback = std::function<void(CheckResponse)>;
+using MultiCallback = std::function<void(MultiResponse)>;
 
 
 /// For watches.

@@ -243,7 +243,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
         }
     }
 
-    return { std::make_shared<CreateResponse>(response), undo };
+    return { std::make_unique<CreateResponse>(response), undo };
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Container & container, int64_t) const
@@ -282,7 +282,7 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Contai
         };
     }
 
-    return { std::make_shared<RemoveResponse>(response), undo };
+    return { std::make_unique<RemoveResponse>(response), undo };
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperExistsRequest::process(TestKeeper::Container & container, int64_t) const
@@ -299,8 +299,7 @@ std::pair<ResponsePtr, Undo> TestKeeperExistsRequest::process(TestKeeper::Contai
     {
         response.error = Error::ZNONODE;
     }
-
-    return { std::make_shared<ExistsResponse>(response), {} };
+    return std::make_pair(std::make_unique<ExistsResponse>(response), Undo());
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container & container, int64_t) const
@@ -319,7 +318,7 @@ std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container
         response.error = Error::ZOK;
     }
 
-    return { std::make_shared<GetResponse>(response), {} };
+    return std::make_pair(std::make_unique<GetResponse>(response), Undo());
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container & container, int64_t zxid) const
@@ -356,7 +355,7 @@ std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container
         response.error = Error::ZBADVERSION;
     }
 
-    return { std::make_shared<SetResponse>(response), undo };
+    return { std::make_unique<SetResponse>(response), undo };
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Container & container, int64_t) const
@@ -390,7 +389,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
         response.error = Error::ZOK;
     }
 
-    return { std::make_shared<ListResponse>(response), {} };
+    return std::make_pair(std::make_unique<ListResponse>(response), Undo());
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Container & container, int64_t) const
@@ -410,7 +409,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Contain
         response.error = Error::ZOK;
     }
 
-    return { std::make_shared<CheckResponse>(response), {} };
+    return std::make_pair(std::make_unique<CheckResponse>(response), Undo());
 }
 
 std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Container & container, int64_t zxid) const
@@ -424,8 +423,8 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
         for (const auto & request : requests)
         {
             const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(*request);
-            auto [ cur_response, undo_action ] = concrete_request.process(container, zxid);
-            response.responses.emplace_back(cur_response);
+            auto [ processed_response, undo_action ] = concrete_request.process(container, zxid);
+            auto & cur_response = response.responses.emplace_back(std::move(processed_response));
             if (cur_response->error != Error::ZOK)
             {
                 response.error = cur_response->error;
@@ -434,14 +433,14 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
                     if (*it)
                         (*it)();
 
-                return { std::make_shared<MultiResponse>(response), {} };
+                return std::make_pair(std::make_unique<MultiResponse>(std::move(response)), Undo());
             }
             else
                 undo_actions.emplace_back(std::move(undo_action));
         }
 
         response.error = Error::ZOK;
-        return { std::make_shared<MultiResponse>(response), {} };
+        return std::make_pair(std::make_unique<MultiResponse>(std::move(response)), Undo());
     }
     catch (...)
     {
@@ -452,14 +451,14 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
     }
 }
 
-ResponsePtr TestKeeperCreateRequest::createResponse() const { return std::make_shared<CreateResponse>(); }
-ResponsePtr TestKeeperRemoveRequest::createResponse() const { return std::make_shared<RemoveResponse>(); }
-ResponsePtr TestKeeperExistsRequest::createResponse() const { return std::make_shared<ExistsResponse>(); }
-ResponsePtr TestKeeperGetRequest::createResponse() const { return std::make_shared<GetResponse>(); }
-ResponsePtr TestKeeperSetRequest::createResponse() const { return std::make_shared<SetResponse>(); }
-ResponsePtr TestKeeperListRequest::createResponse() const { return std::make_shared<ListResponse>(); }
-ResponsePtr TestKeeperCheckRequest::createResponse() const { return std::make_shared<CheckResponse>(); }
-ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_shared<MultiResponse>(); }
+ResponsePtr TestKeeperCreateRequest::createResponse() const { return std::make_unique<CreateResponse>(); }
+ResponsePtr TestKeeperRemoveRequest::createResponse() const { return std::make_unique<RemoveResponse>(); }
+ResponsePtr TestKeeperExistsRequest::createResponse() const { return std::make_unique<ExistsResponse>(); }
+ResponsePtr TestKeeperGetRequest::createResponse() const { return std::make_unique<GetResponse>(); }
+ResponsePtr TestKeeperSetRequest::createResponse() const { return std::make_unique<SetResponse>(); }
+ResponsePtr TestKeeperListRequest::createResponse() const { return std::make_unique<ListResponse>(); }
+ResponsePtr TestKeeperCheckRequest::createResponse() const { return std::make_unique<CheckResponse>(); }
+ResponsePtr TestKeeperMultiRequest::createResponse() const { return std::make_unique<MultiResponse>(); }
 
 
 TestKeeper::TestKeeper(const String & root_path_, Poco::Timespan operation_timeout_)
@@ -537,7 +536,7 @@ void TestKeeper::processingThread()
 
                 response->removeRootPath(root_path);
                 if (info.callback)
-                    info.callback(*response);
+                    info.callback(std::move(response));
             }
         }
     }
@@ -599,7 +598,7 @@ void TestKeeper::finalize()
                 response->error = Error::ZSESSIONEXPIRED;
                 try
                 {
-                    info.callback(*response);
+                    info.callback(std::move(response));
                 }
                 catch (...)
                 {
@@ -671,7 +670,7 @@ void TestKeeper::create(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperCreateRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CreateResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<CreateResponse &>(*response))); };
     pushRequest(std::move(request_info));
 }
 
@@ -686,7 +685,7 @@ void TestKeeper::remove(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperRemoveRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<RemoveResponse &>(*response))); };
     pushRequest(std::move(request_info));
 }
 
@@ -700,7 +699,7 @@ void TestKeeper::exists(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperExistsRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ExistsResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<ExistsResponse &>(*response))); };
     request_info.watch = watch;
     pushRequest(std::move(request_info));
 }
@@ -715,7 +714,7 @@ void TestKeeper::get(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperGetRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<GetResponse &>(*response))); };
     request_info.watch = watch;
     pushRequest(std::move(request_info));
 }
@@ -733,7 +732,7 @@ void TestKeeper::set(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperSetRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SetResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<SetResponse &>(*response))); };
     pushRequest(std::move(request_info));
 }
 
@@ -747,7 +746,7 @@ void TestKeeper::list(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperListRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<ListResponse &>(*response))); };
     request_info.watch = watch;
     pushRequest(std::move(request_info));
 }
@@ -763,7 +762,7 @@ void TestKeeper::check(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperCheckRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CheckResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<CheckResponse &>(*response))); };
     pushRequest(std::move(request_info));
 }
 
@@ -775,7 +774,7 @@ void TestKeeper::multi(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperMultiRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const MultiResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<MultiResponse &>(*response))); };
     pushRequest(std::move(request_info));
 }
 

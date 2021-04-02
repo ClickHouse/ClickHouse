@@ -34,7 +34,7 @@ struct ZooKeeperResponse : virtual Response
     virtual OpNum getOpNum() const = 0;
 };
 
-using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
+using ZooKeeperResponsePtr = std::unique_ptr<ZooKeeperResponse>;
 
 /// Exposed in header file for Yandex.Metrica code.
 struct ZooKeeperRequest : virtual Request
@@ -337,9 +337,9 @@ struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
             responses.emplace_back(dynamic_cast<const ZooKeeperRequest &>(*request).makeResponse());
     }
 
-    explicit ZooKeeperMultiResponse(const Responses & responses_)
+    explicit ZooKeeperMultiResponse(Responses responses_)
     {
-        responses = responses_;
+        responses = std::move(responses_);
     }
 
     void readImpl(ReadBuffer & in) override;

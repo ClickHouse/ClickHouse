@@ -312,9 +312,9 @@ void KeeperTCPHandler::runImpl()
     }
 
     auto response_fd = poll_wrapper->getResponseFD();
-    auto response_callback = [this, response_fd] (const Coordination::ZooKeeperResponsePtr & response)
+    auto response_callback = [this, response_fd] (Coordination::ZooKeeperResponsePtr response)
     {
-        responses->push(response);
+        responses->push(std::move(response));
         UInt8 single_byte = 1;
         [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
     };

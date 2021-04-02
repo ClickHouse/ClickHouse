@@ -685,16 +685,16 @@ void ZooKeeper::receiveEvent()
         if (err != Error::ZOK)
             throw Exception("Received error in heartbeat response: " + String(errorMessage(err)), Error::ZRUNTIMEINCONSISTENCY);
 
-        response = std::make_shared<ZooKeeperHeartbeatResponse>();
+        response = std::make_unique<ZooKeeperHeartbeatResponse>();
     }
     else if (xid == WATCH_XID)
     {
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
-        response = std::make_shared<ZooKeeperWatchResponse>();
+        response = std::make_unique<ZooKeeperWatchResponse>();
 
-        request_info.callback = [this](const Response & response_)
+        request_info.callback = [this](ResponsePtr response_)
         {
-            const WatchResponse & watch_response = dynamic_cast<const WatchResponse &>(response_);
+            const WatchResponse & watch_response = dynamic_cast<const WatchResponse &>(*response_);
 
             std::lock_guard lock(watches_mutex);
 
@@ -800,7 +800,7 @@ void ZooKeeper::receiveEvent()
         try
         {
             if (request_info.callback)
-                request_info.callback(*response);
+                request_info.callback(std::move(response));
         }
         catch (...)
         {
@@ -814,7 +814,7 @@ void ZooKeeper::receiveEvent()
     /// Exception in callback will propagate to receiveThread and will lead to session expiration. This is Ok.
 
     if (request_info.callback)
-        request_info.callback(*response);
+        request_info.callback(std::move(response));
 }
 
 
@@ -888,7 +888,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 {
                     try
                     {
-                        request_info.callback(*response);
+                        request_info.callback(std::move(response));
                     }
                     catch (...)
                     {
@@ -944,7 +944,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                     response->error = Error::ZSESSIONEXPIRED;
                     try
                     {
-                        info.callback(*response);
+                        info.callback(std::move(response));
                     }
                     catch (...)
                     {
@@ -1030,7 +1030,7 @@ void ZooKeeper::create(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCreateRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CreateResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<CreateResponse &>(*response))); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
@@ -1048,7 +1048,7 @@ void ZooKeeper::remove(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperRemoveRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const RemoveResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<RemoveResponse &>(*response))); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
@@ -1065,7 +1065,7 @@ void ZooKeeper::exists(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperExistsRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ExistsResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<ExistsResponse &>(*response))); };
     request_info.watch = watch;
 
     pushRequest(std::move(request_info));
@@ -1083,7 +1083,7 @@ void ZooKeeper::get(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperGetRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const GetResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<GetResponse &>(*response))); };
     request_info.watch = watch;
 
     pushRequest(std::move(request_info));
@@ -1104,7 +1104,7 @@ void ZooKeeper::set(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperSetRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const SetResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<SetResponse &>(*response))); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperSet);
@@ -1121,7 +1121,7 @@ void ZooKeeper::list(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperListRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const ListResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<ListResponse &>(*response))); };
     request_info.watch = watch;
 
     pushRequest(std::move(request_info));
@@ -1140,7 +1140,7 @@ void ZooKeeper::check(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCheckRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const CheckResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<CheckResponse &>(*response))); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
@@ -1155,7 +1155,7 @@ void ZooKeeper::multi(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperMultiRequest>(std::move(request));
-    request_info.callback = [callback](const Response & response) { callback(dynamic_cast<const MultiResponse &>(response)); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<MultiResponse &>(*response))); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);

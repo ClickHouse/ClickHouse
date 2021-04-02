@@ -20,7 +20,7 @@
 namespace DB
 {
 
-using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
+using ZooKeeperResponseCallback = std::function<void(Coordination::ZooKeeperResponsePtr response)>;
 
 class KeeperStorageDispatcher
 {
@@ -55,7 +55,7 @@ private:
     void responseThread();
     void sessionCleanerTask();
     void snapshotThread();
-    void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
+    void setResponse(int64_t session_id, Coordination::ZooKeeperResponsePtr response);
 
 public:
     KeeperStorageDispatcher();

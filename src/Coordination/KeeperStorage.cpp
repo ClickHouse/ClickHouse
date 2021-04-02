@@ -37,14 +37,14 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
     auto it = watches.find(path);
     if (it != watches.end())
     {
-        std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
+        std::unique_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_unique<Coordination::ZooKeeperWatchResponse>();
         watch_response->path = path;
         watch_response->xid = Coordination::WATCH_XID;
         watch_response->zxid = -1;
         watch_response->type = event_type;
         watch_response->state = Coordination::State::CONNECTED;
         for (auto watcher_session : it->second)
-            result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_response});
+            result.push_back(KeeperStorage::ResponseForSession{watcher_session, std::move(watch_response)});
 
         watches.erase(it);
     }
@@ -53,14 +53,14 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
     it = list_watches.find(parent_path);
     if (it != list_watches.end())
     {
-        std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response = std::make_shared<Coordination::ZooKeeperWatchResponse>();
+        std::unique_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response = std::make_unique<Coordination::ZooKeeperWatchResponse>();
         watch_list_response->path = parent_path;
         watch_list_response->xid = Coordination::WATCH_XID;
         watch_list_response->zxid = -1;
         watch_list_response->type = Coordination::Event::CHILD;
         watch_list_response->state = Coordination::State::CONNECTED;
         for (auto watcher_session : it->second)
-            result.push_back(KeeperStorage::ResponseForSession{watcher_session, watch_list_response});
+            result.push_back(KeeperStorage::ResponseForSession{watcher_session, std::move(watch_list_response)});
 
         list_watches.erase(it);
     }
@@ -93,7 +93,7 @@ struct KeeperStorageHeartbeatRequest final : public KeeperStorageRequest
     using KeeperStorageRequest::KeeperStorageRequest;
     std::pair<Coordination::ZooKeeperResponsePtr, Undo> process(KeeperStorage::Container & /* container */, KeeperStorage::Ephemerals & /* ephemerals */, int64_t /* zxid */, int64_t /* session_id */) const override
     {
-        return {zk_request->makeResponse(), {}};
+        return std::make_pair(zk_request->makeResponse(), Undo());
     }
 };
 
@@ -104,7 +104,7 @@ struct KeeperStorageSyncRequest final : public KeeperStorageRequest
     {
         auto response = zk_request->makeResponse();
         dynamic_cast<Coordination::ZooKeeperSyncResponse *>(response.get())->path = dynamic_cast<Coordination::ZooKeeperSyncRequest *>(zk_request.get())->path;
-        return {response, {}};
+        return std::make_pair(std::move(response), Undo());
     }
 };
 
@@ -201,7 +201,7 @@ struct KeeperStorageCreateRequest final : public KeeperStorageRequest
             }
         }
 
-        return { response_ptr, undo };
+        return std::make_pair(std::move(response_ptr), undo);
     }
 };
 
@@ -226,7 +226,7 @@ struct KeeperStorageGetRequest final : public KeeperStorageRequest
             response.error = Coordination::Error::ZOK;
         }
 
-        return { response_ptr, {} };
+        return std::make_pair(std::move(response_ptr), Undo());
     }
 };
 
@@ -291,7 +291,7 @@ struct KeeperStorageRemoveRequest final : public KeeperStorageRequest
             };
         }
 
-        return { response_ptr, undo };
+        return std::make_pair(std::move(response_ptr), undo);
     }
 
     KeeperStorage::ResponsesForSessions processWatches(KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches) const override
@@ -320,7 +320,7 @@ struct KeeperStorageExistsRequest final : public KeeperStorageRequest
             response.error = Coordination::Error::ZNONODE;
         }
 
-        return { response_ptr, {} };
+        return std::make_pair(std::move(response_ptr), Undo());
     }
 };
 
@@ -375,7 +375,7 @@ struct KeeperStorageSetRequest final : public KeeperStorageRequest
             response.error = Coordination::Error::ZBADVERSION;
         }
 
-        return { response_ptr, undo };
+        return std::make_pair(std::move(response_ptr), undo);
     }
 
     KeeperStorage::ResponsesForSessions processWatches(KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches) const override
@@ -411,7 +411,7 @@ struct KeeperStorageListRequest final : public KeeperStorageRequest
             response.error = Coordination::Error::ZOK;
         }
 
-        return { response_ptr, {} };
+        return std::make_pair(std::move(response_ptr), Undo());
     }
 };
 
@@ -437,7 +437,7 @@ struct KeeperStorageCheckRequest final : public KeeperStorageRequest
             response.error = Coordination::Error::ZOK;
         }
 
-        return { response_ptr, {} };
+        return std::make_pair(std::move(response_ptr), Undo());
     }
 };
 
@@ -485,21 +485,21 @@ struct KeeperStorageMultiRequest final : public KeeperStorageRequest
             size_t i = 0;
             for (const auto & concrete_request : concrete_requests)
             {
-                auto [ cur_response, undo_action ] = concrete_request->process(container, ephemerals, zxid, session_id);
+                auto [ processed_response, undo_action ] = concrete_request->process(container, ephemerals, zxid, session_id);
 
-                response.responses[i] = cur_response;
+                auto & cur_response = (response.responses[i] = std::move(processed_response));
                 if (cur_response->error != Coordination::Error::ZOK)
                 {
                     for (size_t j = 0; j <= i; ++j)
                     {
                         auto response_error = response.responses[j]->error;
-                        response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+                        response.responses[j] = std::make_unique<Coordination::ZooKeeperErrorResponse>();
                         response.responses[j]->error = response_error;
                     }
 
                     for (size_t j = i + 1; j < response.responses.size(); ++j)
                     {
-                        response.responses[j] = std::make_shared<Coordination::ZooKeeperErrorResponse>();
+                        response.responses[j] = std::make_unique<Coordination::ZooKeeperErrorResponse>();
                         response.responses[j]->error = Coordination::Error::ZRUNTIMEINCONSISTENCY;
                     }
 
@@ -507,7 +507,7 @@ struct KeeperStorageMultiRequest final : public KeeperStorageRequest
                         if (*it)
                             (*it)();
 
-                    return { response_ptr, {} };
+                    return std::make_pair(std::move(response_ptr), Undo());
                 }
                 else
                     undo_actions.emplace_back(std::move(undo_action));
@@ -516,7 +516,7 @@ struct KeeperStorageMultiRequest final : public KeeperStorageRequest
             }
 
             response.error = Coordination::Error::ZOK;
-            return { response_ptr, {} };
+            return std::make_pair(std::move(response_ptr), Undo());
         }
         catch (...)
         {
@@ -532,8 +532,8 @@ struct KeeperStorageMultiRequest final : public KeeperStorageRequest
         KeeperStorage::ResponsesForSessions result;
         for (const auto & generic_request : concrete_requests)
         {
-            auto responses = generic_request->processWatches(watches, list_watches);
-            result.insert(result.end(), responses.begin(), responses.end());
+            for (auto & response : generic_request->processWatches(watches, list_watches))
+                result.emplace_back(std::move(response));
         }
         return result;
     }
@@ -652,20 +652,20 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     parent.children.erase(getBaseName(ephemeral_path));
                 });
 
-                auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);
-                results.insert(results.end(), responses.begin(), responses.end());
+                for (auto & resp : processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED))
+                    results.emplace_back(std::move(resp));
             }
             ephemerals.erase(it);
         }
         clearDeadWatches(session_id);
 
         /// Finish connection
-        auto response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
+        auto response = std::make_unique<Coordination::ZooKeeperCloseResponse>();
         response->xid = zk_request->xid;
         response->zxid = getZXID();
         session_expiry_queue.remove(session_id);
         session_and_timeout.erase(session_id);
-        results.push_back(ResponseForSession{session_id, response});
+        results.push_back(ResponseForSession{session_id, std::move(response)});
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat)
     {
@@ -674,7 +674,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
         response->xid = zk_request->xid;
         response->zxid = getZXID();
 
-        results.push_back(ResponseForSession{session_id, response});
+        results.push_back(ResponseForSession{session_id, std::move(response)});
     }
     else
     {
@@ -701,14 +701,14 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
 
         if (response->error == Coordination::Error::ZOK)
         {
-            auto watch_responses = storage_request->processWatches(watches, list_watches);
-            results.insert(results.end(), watch_responses.begin(), watch_responses.end());
+            for (auto & watch_response : storage_request->processWatches(watches, list_watches))
+                results.emplace_back(std::move(watch_response));
         }
 
         response->xid = zk_request->xid;
         response->zxid = getZXID();
 
-        results.push_back(ResponseForSession{session_id, response});
+        results.push_back(ResponseForSession{session_id, std::move(response)});
     }
 
     return results;

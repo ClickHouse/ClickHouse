@@ -416,7 +416,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         }
         else if (Coordination::isUserError(multi_code))
         {
-            String failed_op_path = zkutil::KeeperMultiException(multi_code, ops, responses).getPathForFirstFailedOp();
+            String failed_op_path = zkutil::KeeperMultiException(multi_code, ops, std::move(responses)).getPathForFirstFailedOp();
 
             if (multi_code == Coordination::Error::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
             {

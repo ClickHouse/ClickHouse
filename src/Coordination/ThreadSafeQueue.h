@@ -16,10 +16,10 @@ private:
     std::queue<T> queue;
 public:
 
-    void push(const T & response)
+    void push(T response)
     {
         std::lock_guard lock(queue_mutex);
-        queue.push(response);
+        queue.push(std::move(response));
         cv.notify_one();
     }
 
@@ -30,7 +30,7 @@ public:
                 std::chrono::milliseconds(timeout_ms), [this] { return !queue.empty(); }))
             return false;
 
-        response = queue.front();
+        response = std::move(queue.front());
         queue.pop();
         return true;
     }

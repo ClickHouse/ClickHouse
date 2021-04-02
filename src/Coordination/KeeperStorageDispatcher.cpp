@@ -59,7 +59,7 @@ void KeeperStorageDispatcher::responseThread()
 
             try
             {
-                 setResponse(response_for_session.session_id, response_for_session.response);
+                 setResponse(response_for_session.session_id, std::move(response_for_session.response));
             }
             catch (...)
             {
@@ -91,16 +91,18 @@ void KeeperStorageDispatcher::snapshotThread()
     }
 }
 
-void KeeperStorageDispatcher::setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response)
+void KeeperStorageDispatcher::setResponse(int64_t session_id, Coordination::ZooKeeperResponsePtr response)
 {
     std::lock_guard lock(session_to_response_callback_mutex);
     auto session_writer = session_to_response_callback.find(session_id);
     if (session_writer == session_to_response_callback.end())
         return;
 
-    session_writer->second(response);
+    auto xid = response->xid;
+    auto opt = response->getOpNum();
+    session_writer->second(std::move(response));
     /// Session closed, no more writes
-    if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::Close)
+    if (xid != Coordination::WATCH_XID && opt == Coordination::OpNum::Close)
         session_to_response_callback.erase(session_writer);
 }
 
@@ -198,7 +200,7 @@ void KeeperStorageDispatcher::shutdown()
             {
                 auto response = request_for_session.request->makeResponse();
                 response->error = Coordination::Error::ZSESSIONEXPIRED;
-                setResponse(request_for_session.session_id, response);
+                setResponse(request_for_session.session_id, std::move(response));
             }
             else
             {

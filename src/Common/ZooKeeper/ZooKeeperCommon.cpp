@@ -378,7 +378,7 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
         /// For unknown reason, error code is duplicated in header and in response body.
 
         if (op_num == OpNum::Error)
-            response = std::make_shared<ZooKeeperErrorResponse>();
+            response = std::make_unique<ZooKeeperErrorResponse>();
 
         if (op_error != Error::ZOK)
         {
@@ -442,18 +442,18 @@ void ZooKeeperMultiResponse::writeImpl(WriteBuffer & out) const
     }
 }
 
-ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return std::make_shared<ZooKeeperHeartbeatResponse>(); }
-ZooKeeperResponsePtr ZooKeeperSyncRequest::makeResponse() const { return std::make_shared<ZooKeeperSyncResponse>(); }
-ZooKeeperResponsePtr ZooKeeperAuthRequest::makeResponse() const { return std::make_shared<ZooKeeperAuthResponse>(); }
-ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const { return std::make_shared<ZooKeeperCreateResponse>(); }
-ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const { return std::make_shared<ZooKeeperRemoveResponse>(); }
-ZooKeeperResponsePtr ZooKeeperExistsRequest::makeResponse() const { return std::make_shared<ZooKeeperExistsResponse>(); }
-ZooKeeperResponsePtr ZooKeeperGetRequest::makeResponse() const { return std::make_shared<ZooKeeperGetResponse>(); }
-ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return std::make_shared<ZooKeeperSetResponse>(); }
-ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return std::make_shared<ZooKeeperListResponse>(); }
-ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const { return std::make_shared<ZooKeeperCheckResponse>(); }
-ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const { return std::make_shared<ZooKeeperMultiResponse>(requests); }
-ZooKeeperResponsePtr ZooKeeperCloseRequest::makeResponse() const { return std::make_shared<ZooKeeperCloseResponse>(); }
+ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return std::make_unique<ZooKeeperHeartbeatResponse>(); }
+ZooKeeperResponsePtr ZooKeeperSyncRequest::makeResponse() const { return std::make_unique<ZooKeeperSyncResponse>(); }
+ZooKeeperResponsePtr ZooKeeperAuthRequest::makeResponse() const { return std::make_unique<ZooKeeperAuthResponse>(); }
+ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const { return std::make_unique<ZooKeeperCreateResponse>(); }
+ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const { return std::make_unique<ZooKeeperRemoveResponse>(); }
+ZooKeeperResponsePtr ZooKeeperExistsRequest::makeResponse() const { return std::make_unique<ZooKeeperExistsResponse>(); }
+ZooKeeperResponsePtr ZooKeeperGetRequest::makeResponse() const { return std::make_unique<ZooKeeperGetResponse>(); }
+ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return std::make_unique<ZooKeeperSetResponse>(); }
+ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return std::make_unique<ZooKeeperListResponse>(); }
+ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const { return std::make_unique<ZooKeeperCheckResponse>(); }
+ZooKeeperResponsePtr ZooKeeperMultiRequest::makeResponse() const { return std::make_unique<ZooKeeperMultiResponse>(requests); }
+ZooKeeperResponsePtr ZooKeeperCloseRequest::makeResponse() const { return std::make_unique<ZooKeeperCloseResponse>(); }
 
 void ZooKeeperRequestFactory::registerRequest(OpNum op_num, Creator creator)
 {

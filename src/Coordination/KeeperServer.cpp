@@ -131,7 +131,7 @@ void KeeperServer::putRequest(const KeeperStorage::RequestForSession & request_f
             response->xid = request->xid;
             response->zxid = 0;
             response->error = Coordination::Error::ZOPERATIONTIMEOUT;
-            responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response});
+            responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, std::move(response)});
         }
 
         if (result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
@@ -141,7 +141,7 @@ void KeeperServer::putRequest(const KeeperStorage::RequestForSession & request_f
             response->xid = request->xid;
             response->zxid = 0;
             response->error = Coordination::Error::ZOPERATIONTIMEOUT;
-            responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response});
+            responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, std::move(response)});
         }
         else if (result->get_result_code() != nuraft::cmd_result_code::OK)
             throw Exception(ErrorCodes::RAFT_ERROR, "Requests result failed with code {} and message: '{}'", result->get_result_code(), result->get_result_str());

@@ -556,11 +556,11 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
     Coordination::Error code = Coordination::Error::ZOK;
     Poco::Event event;
 
-    auto callback = [&](const Coordination::MultiResponse & response)
+    auto callback = [&](Coordination::MultiResponse response)
     {
         SCOPE_EXIT(event.set());
         code = response.error;
-        responses = response.responses;
+        responses = std::move(response.responses);
     };
 
     impl->multi(requests, callback);
@@ -883,9 +883,9 @@ std::future<Coordination::MultiResponse> ZooKeeper::tryAsyncMulti(const Coordina
     auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const Coordination::MultiResponse & response) mutable
+    auto callback = [promise](Coordination::MultiResponse response) mutable
     {
-        promise->set_value(response);
+        promise->set_value(std::move(response));
     };
 
     impl->multi(ops, std::move(callback));
@@ -897,12 +897,12 @@ std::future<Coordination::MultiResponse> ZooKeeper::asyncMulti(const Coordinatio
     auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
     auto future = promise->get_future();
 
-    auto callback = [promise](const Coordination::MultiResponse & response) mutable
+    auto callback = [promise](Coordination::MultiResponse response) mutable
     {
         if (response.error != Coordination::Error::ZOK)
             promise->set_exception(std::make_exception_ptr(KeeperException(response.error)));
         else
-            promise->set_value(response);
+            promise->set_value(std::move(response));
     };
 
     impl->multi(ops, std::move(callback));
@@ -943,9 +943,9 @@ size_t KeeperMultiException::getFailedOpIndex(Coordination::Error exception_code
 }
 
 
-KeeperMultiException::KeeperMultiException(Coordination::Error exception_code, const Coordination::Requests & requests_, const Coordination::Responses & responses_)
+KeeperMultiException::KeeperMultiException(Coordination::Error exception_code, const Coordination::Requests & requests_, Coordination::Responses responses_)
         : KeeperException("Transaction failed", exception_code),
-          requests(requests_), responses(responses_), failed_op_index(getFailedOpIndex(exception_code, responses))
+          requests(requests_), responses(std::move(responses_)), failed_op_index(getFailedOpIndex(exception_code, responses))
 {
     addMessage("Op #" + std::to_string(failed_op_index) + ", path: " + getPathForFirstFailedOp());
 }
@@ -957,13 +957,13 @@ std::string KeeperMultiException::getPathForFirstFailedOp() const
 }
 
 void KeeperMultiException::check(
-    Coordination::Error exception_code, const Coordination::Requests & requests, const Coordination::Responses & responses)
+    Coordination::Error exception_code, const Coordination::Requests & requests, Coordination::Responses & responses)
 {
     if (exception_code == Coordination::Error::ZOK)
         return;
 
     if (Coordination::isUserError(exception_code))
-        throw KeeperMultiException(exception_code, requests, responses);
+        throw KeeperMultiException(exception_code, requests, std::move(responses));
     else
         throw KeeperException(exception_code);
 }
