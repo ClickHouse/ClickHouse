@@ -86,10 +86,10 @@ Block extractMinMax(const Block & block, const Block & keys)
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        const auto & src_column = block.getByName(keys.getByPosition(i).name);
-
-        columns[i]->insertFrom(*src_column.column, 0);
-        columns[i]->insertFrom(*src_column.column, block.rows() - 1);
+        const auto & src_column = block.getByName(min_max.getByPosition(i).name);
+        /// Cannot use insertFrom because src_column type can differ from keys, e.g. to be LowCardinality
+        columns[i]->insert((*src_column.column)[0]);
+        columns[i]->insert((*src_column.column)[block.rows() - 1]);
     }
 
     min_max.setColumns(std::move(columns));
@@ -485,6 +485,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
             left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
 }
 
+/// Has to be called event totals is empty
 void MergeJoin::setTotals(const Block & totals_block)
 {
     totals = totals_block;
