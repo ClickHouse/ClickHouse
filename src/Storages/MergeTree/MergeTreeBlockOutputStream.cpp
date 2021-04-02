@@ -35,6 +35,7 @@ void MergeTreeBlockOutputStream::write(const Block & block)
         if (!part)
             continue;
 
+        /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (storage.renameTempPartAndAdd(part, &storage.increment, nullptr, storage.getDeduplicationLog()))
         {
             PartLog::addNewPart(storage.global_context, part, watch.elapsed());
