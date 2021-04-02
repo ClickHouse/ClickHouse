@@ -2109,6 +2109,7 @@ bool MergeTreeData::renameTempPartAndReplace(
         auto res = deduplication_log->addPart(block_id, part_info);
         if (!res.second)
         {
+            ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
             LOG_INFO(log, "Block with ID {} already exists as part {}; ignoring it", block_id, res.first.getPartName());
             return false;
         }
