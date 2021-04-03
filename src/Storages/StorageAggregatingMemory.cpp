@@ -166,7 +166,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
 
     // TODO: check GROUP BY inside this func
     auto select = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
-    ASTPtr select_ptr = select.select_query;
+    ASTPtr select_ptr = select.inner_query;
 
     auto select_context = std::make_unique<Context>(context_);
 
