@@ -652,7 +652,20 @@ Result:
 
 ## extractTextFromHTML {#extracttextfromhtml}
 
-Removes tags from a text.
+The function extracts text from HTML or XHTML according to the following rules.
+
+1. Comments starting with `<!--` and ending with `-->` are removed.
+1. The content of a `CDATA` section is left as is, without furthure processing.
+1. `<script>` and `<style>` tags are removed with their content.
+1. Other tags are removed from a text.
+1. Whitespaces are removed or inserted in the extracted text. The following rules are applied to continuous text blocks.
+
+    - Leading and trailing whitespaces are removed from a text block.
+    - Consecutive whitespaces are collapsed to a single whitespace.
+    - Single whitespace is inserted between text blocks.
+
+!!! info "Note"
+    It is not guaranteed that function entirely conforms to all HTML, XML or XHTML standards. But it tries to do the best.
 
 **Syntax**
 
@@ -660,11 +673,9 @@ Removes tags from a text.
 extractTextFromHTML(x)
 ```
 
+**Arguments**
 
-
-**Arguments** (Optional)
-
--   `x` — string to process. [String](../../sql-reference/data-types/string.md). 
+-   `x` — input text. [String](../../sql-reference/data-types/string.md). 
 
 **Returned value**
 
@@ -674,16 +685,21 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
+The first example contains tags and comment. Also note how whitespaces are processed.
+The second example shows CDATA and script tag processing.
+
 Query:
 
 ``` sql
-SELECT extractTextFromHTML('<p>Text with<b>tags</b></p>');
+SELECT extractTextFromHTML('<p> Text <i>inside</i><b>tags</b>.  </p> <!-- comments -->');
+
+SELECT extractTextFromHTML('<![CDATA[The content within <b>CDATA</b>]]> <script>alert("Script");</script>');
 ```
 
 Result:
 
 ``` text
-Text with tags 
+Text inside tags .
+
+The content within <b>CDATA</b>
 ```
-
-
