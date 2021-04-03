@@ -4,7 +4,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Storages/HDFS/HDFSCommon.h>
-#include <hdfs/hdfs.h>
+#include <hdfs/hdfs.h> // Y_IGNORE
 #include <Core/UUID.h>
 
 
@@ -24,24 +24,14 @@ friend class DiskHDFSReservation;
 public:
 
     DiskHDFS(
-        const Poco::Util::AbstractConfiguration & config,
         const String & name_,
         const String & hdfs_name_,
-        const String & metadata_path_);
-
-    const String & getName() const override { return name; }
-
-    ReservationPtr reserve(UInt64 bytes) override;
-
-    void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
-
-    Poco::Timestamp getLastModified(const String & path) override;
-
-    void setReadOnly(const String & path) override;
-
-    void createHardLink(const String & src_path, const String & dst_path) override;
+        const String & metadata_path_,
+        const Context & context_);
 
     DiskType::Type getType() const override { return DiskType::Type::HDFS; }
+
+    const String & getName() const override { return name; }
 
     const String & getPath() const override { return metadata_path; }
 
@@ -81,6 +71,24 @@ public:
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
+    void removeFile(const String & /* path */) override {}
+
+    void removeFileIfExists(const String & /* path */) override {}
+
+    void removeDirectory(const String & /* path */) override {}
+
+    void removeRecursive(const String & path) override;
+
+    ReservationPtr reserve(UInt64 bytes) override;
+
+    void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
+
+    Poco::Timestamp getLastModified(const String & path) override;
+
+    void setReadOnly(const String & path) override;
+
+    void createHardLink(const String & src_path, const String & dst_path) override;
+
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         size_t buf_size,
@@ -94,32 +102,27 @@ public:
         size_t buf_size,
         WriteMode mode) override;
 
-    void removeFile(const String & /* path */) override {}
+private:
+    String getRandomName() { return toString(UUIDHelpers::generateV4()); }
 
-    void removeFileIfExists(const String & /* path */) override {}
+    bool tryReserve(UInt64 bytes);
 
-    void removeDirectory(const String & /* path */) override {}
+    void remove(const String & path);
 
-    void removeRecursive(const String & path) override;
+    Poco::Logger * log;
+    const String name;
+    const String hdfs_name;
+    String metadata_path;
+    Context context;
+    const Poco::Util::AbstractConfiguration & config;
+
+    HDFSBuilderWrapper builder;
+    HDFSFSPtr fs;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
     std::mutex copying_mutex;
-
-private:
-    String getRandomName() { return toString(UUIDHelpers::generateV4()); }
-
-    bool tryReserve(UInt64 bytes);
-    void remove(const String & path);
-
-    const Poco::Util::AbstractConfiguration & config;
-    const String name;
-    const String hdfs_name;
-    String metadata_path;
-
-    HDFSBuilderWrapper builder;
-    HDFSFSPtr fs;
 };
 
 using DiskHDFSPtr = std::shared_ptr<DiskHDFS>;

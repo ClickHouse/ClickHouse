@@ -12,13 +12,13 @@ class WriteIndirectBufferFromHDFS final : public WriteBufferFromFileBase
 {
 public:
     WriteIndirectBufferFromHDFS(
-        const Poco::Util::AbstractConfiguration & config,
+        const Context & context,
         const String & hdfs_name_,
         const String & hdfs_path_,
         Metadata metadata_,
         size_t buf_size_)
         : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-        , impl(WriteBufferFromHDFS(hdfs_name_, config, buf_size_))
+        , impl(WriteBufferFromHDFS(hdfs_name_, context.getGlobalContext().getConfigRef(), buf_size_))
         , metadata(std::move(metadata_))
         , hdfs_path(hdfs_path_)
     {

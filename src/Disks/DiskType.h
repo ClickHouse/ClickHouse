@@ -25,7 +25,7 @@ struct DiskType
             case Type::S3:
                 return "s3";
             case Type::HDFS:
-                return "HDFS";
+                return "hdfs";
         }
         __builtin_unreachable();
     }

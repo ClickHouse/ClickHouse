@@ -8,7 +8,7 @@
 #include <string>
 #include <memory>
 
-#include <hdfs/hdfs.h>
+#include <hdfs/hdfs.h> // Y_IGNORE
 
 #include <common/types.h>
 
