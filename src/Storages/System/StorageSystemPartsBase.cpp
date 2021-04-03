@@ -84,7 +84,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            /// Checck if database can contain MergeTree tables,
+            /// Check if database can contain MergeTree tables,
             /// if not it's unnecessary to load all tables of database just to filter all of them.
             if (database.second->canContainMergeTreeTables())
                 database_column_mut->insert(database.first);

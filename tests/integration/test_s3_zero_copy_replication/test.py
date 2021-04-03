@@ -96,7 +96,7 @@ def test_s3_zero_copy_on_hybrid_storage(cluster):
     node1.query(
         """
         CREATE TABLE hybrid_test ON CLUSTER test_cluster (id UInt32, value String)
-        ENGINE=ReplicatedMergeTree('/clickhouse/tables/s3_test', '{}')
+        ENGINE=ReplicatedMergeTree('/clickhouse/tables/hybrid_test', '{}')
         ORDER BY id
         SETTINGS storage_policy='hybrid'
         """
@@ -131,3 +131,6 @@ def test_s3_zero_copy_on_hybrid_storage(cluster):
 
     assert node1.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
     assert node2.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
+
+    node1.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
