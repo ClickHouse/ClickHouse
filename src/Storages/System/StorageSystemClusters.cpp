@@ -38,7 +38,21 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context
     for (const auto & name_and_database : databases)
     {
         if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
-            writeCluster(res_columns, {name_and_database.first, replicated->getCluster()});
+        {
+            // A quick fix for stateless tests with DatabaseReplicated. Its ZK
+            // node can be destroyed at any time. If another test lists
+            // system.clusters to get client command line suggestions, it will
+            // get an error when trying to get the info about DB from ZK.
+            // Just ignore these inaccessible databases. A good example of a
+            // failing test is `01526_client_start_and_exit`.
+            try {
+                writeCluster(res_columns, {name_and_database.first, replicated->getCluster()});
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
     }
 }
 
