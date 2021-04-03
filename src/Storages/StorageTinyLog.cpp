@@ -357,6 +357,8 @@ void TinyLogBlockOutputStream::writeSuffix()
     for (const auto & file : column_files)
         storage.file_checker.update(file);
     storage.file_checker.save();
+
+    lock.unlock();
 }
 
 
