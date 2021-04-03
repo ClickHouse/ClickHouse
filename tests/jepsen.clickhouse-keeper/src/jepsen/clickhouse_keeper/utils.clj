@@ -12,6 +12,17 @@
                                  ZooKeeper)
            (org.apache.zookeeper ZooKeeper KeeperException KeeperException$BadVersionException)))
 
+(defn exec-with-retries
+  [retries f & args]
+  (let [res (try {:value (apply f args)}
+                 (catch Exception e
+                   (if (zero? retries)
+                     (throw e)
+                     {:exception e})))]
+    (if (:exception res)
+      (do (Thread/sleep 1000) (recur (dec retries) f args))
+      (:value res))))
+
 (defn parse-long
   "Parses a string to a Long. Passes through `nil` and empty strings."
   [s]
@@ -32,7 +43,7 @@
 
 (defn zk-connect
   [host port timeout]
-  (zk/connect (str host ":" port) :timeout-msec timeout))
+  (exec-with-retries 15 (fn [] (zk/connect (str host ":" port) :timeout-msec timeout))))
 
 (defn zk-create-range
   [conn n]
@@ -167,14 +178,3 @@
     :--keeper_server.snapshot_storage_path coordination-snapshots-dir
     :--keeper_server.logs_storage_path coordination-logs-dir)
    (wait-clickhouse-alive! node test)))
-
-(defn exec-with-retries
-  [retries f & args]
-  (let [res (try {:value (apply f args)}
-                 (catch Exception e
-                   (if (zero? retries)
-                     (throw e)
-                     {:exception e})))]
-    (if (:exception res)
-      (do (Thread/sleep 1000) (recur (dec retries) f args))
-      (:value res))))
