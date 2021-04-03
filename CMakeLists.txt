@@ -39,6 +39,8 @@ else()
     set(RECONFIGURE_MESSAGE_LEVEL STATUS)
 endif()
 
+enable_language(C CXX ASM)
+
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
