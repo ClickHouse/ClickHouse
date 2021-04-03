@@ -17,62 +17,6 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-
-std::vector<std::vector<CNFQuery::AtomicFormula>> getConstraintData(const StorageMetadataPtr & metadata_snapshot)
-{
-    std::vector<std::vector<CNFQuery::AtomicFormula>> constraint_data;
-    for (const auto & constraint :
-         metadata_snapshot->getConstraints().filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
-    {
-        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
-                             .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
-        for (const auto & group : cnf.getStatements())
-            constraint_data.emplace_back(std::begin(group), std::end(group));
-    }
-
-    return constraint_data;
-}
-
-std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData(const StorageMetadataPtr & metadata_snapshot)
-{
-    std::vector<CNFQuery::AtomicFormula> constraint_data;
-    for (const auto & constraint :
-        metadata_snapshot->getConstraints().filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
-    {
-        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
-            .pullNotOutFunctions();
-        for (const auto & group : cnf.getStatements()) {
-            if (group.size() == 1)
-                constraint_data.push_back(*group.begin());
-        }
-    }
-
-    return constraint_data;
-}
-
-ComparisonGraph getComparisonGraph(const StorageMetadataPtr & metadata_snapshot)
-{
-    static const std::set<std::string> relations = {
-        "equals", "less", "lessOrEquals", "greaterOrEquals", "greater"};
-
-    std::vector<ASTPtr> constraints_for_graph;
-    auto atomic_formulas = getAtomicConstraintData(metadata_snapshot);
-    const std::vector<CNFQuery::AtomicFormula> atomic_constraints = getAtomicConstraintData(metadata_snapshot);
-    for (auto & atomic_formula : atomic_formulas)
-    {
-        pushNotIn(atomic_formula);
-        auto * func = atomic_formula.ast->as<ASTFunction>();
-        if (func && relations.count(func->name))
-        {
-            if (atomic_formula.negative)
-                throw Exception(": ", ErrorCodes::LOGICAL_ERROR);
-            constraints_for_graph.push_back(atomic_formula.ast);
-        }
-    }
-
-    return ComparisonGraph(constraints_for_graph);
-}
-
 WhereConstraintsOptimizer::WhereConstraintsOptimizer(
     ASTSelectQuery * select_query_,
     Aliases & /*aliases_*/,
@@ -111,10 +55,7 @@ MatchState match(CNFQuery::AtomicFormula a, CNFQuery::AtomicFormula b)
 
 bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
 {
-    /// TODO: this is temporary; need to write more effective search
-    /// TODO: go deeper into asts (a < b, a = b,...) with z3 or some visitor
-    for (const auto & constraint : constraints) /// one constraint in group is enough,
-                                                /// otherwise it's difficult to make judgements without using constraint solving (z3..)
+    for (const auto & constraint : constraints)
     {
         bool group_always_true = true;
         for (const auto & constraint_ast : constraint)
@@ -211,8 +152,6 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
 
 bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const std::vector<std::vector<CNFQuery::AtomicFormula>> & constraints)
 {
-    /// TODO: more efficient matching
-
     for (const auto & constraint : constraints)
     {
         if (constraint.size() > 1)
@@ -290,8 +229,8 @@ void WhereConstraintsOptimizer::perform()
 {
     if (select_query->where() && metadata_snapshot)
     {
-        const auto constraint_data = getConstraintData(metadata_snapshot);
-        const auto compare_graph = getComparisonGraph(metadata_snapshot);
+        const auto constraint_data = metadata_snapshot->getConstraints().getConstraintData();
+        const auto compare_graph = metadata_snapshot->getConstraints().getGraph();
         Poco::Logger::get("BEFORE CNF ").information(select_query->where()->dumpTree());
         auto cnf = TreeCNFConverter::toCNF(select_query->where());
         Poco::Logger::get("BEFORE OPT").information(cnf.dump());

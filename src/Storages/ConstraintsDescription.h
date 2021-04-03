@@ -3,6 +3,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeCNFConverter.h>
+#include <Interpreters/ComparisonGraph.h>
 
 namespace DB
 {
@@ -31,7 +32,11 @@ struct ConstraintsDescription
     ASTs filterConstraints(ConstraintType selection) const;
     // TODO: перенести преобразование в КНФ + get constraitns
     //ASTs filterAtomicConstraints(ConstraintType selection) const;
-    //ASTs filterEqualConstraints(ConstraintType selection) const;
+
+    std::vector<std::vector<CNFQuery::AtomicFormula>> getConstraintData() const;
+    std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData() const;
+
+    ComparisonGraph getGraph() const;
 
     ConstraintsExpressions getExpressionsToCheck(const Context & context, const NamesAndTypesList & source_columns_) const;
 
