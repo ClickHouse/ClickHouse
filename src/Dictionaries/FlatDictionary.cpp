@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
@@ -249,6 +250,8 @@ void FlatDictionary::blockToAttributes(const Block & block)
     DictionaryKeysExtractor<DictionaryKeyType::simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
     auto keys = keys_extractor.extractAllKeys();
 
+    HashSet<UInt64> already_processed_keys;
+
     size_t key_offset = 1;
     for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
     {
@@ -259,12 +262,15 @@ void FlatDictionary::blockToAttributes(const Block & block)
         {
             auto key = keys[i];
 
-            if (key < loaded_keys.size() && loaded_keys[key])
+            if (already_processed_keys.find(key) != nullptr)
                 continue;
+            already_processed_keys.insert(key);
 
             setAttributeValue(attribute, key, attribute_column[i]);
             ++element_count;
         }
+
+        already_processed_keys.clear();
     }
 }
 
