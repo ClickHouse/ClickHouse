@@ -48,7 +48,7 @@ struct HashMapCell
 
     value_type value;
 
-    HashMapCell() {}
+    HashMapCell() = default;
     HashMapCell(const Key & key_, const State &) : value(key_, NoInitTag()) {}
     HashMapCell(const value_type & value_, const State &) : value(value_) {}
 
@@ -114,7 +114,38 @@ struct HashMapCell
 
     static void move(HashMapCell * /* old_location */, HashMapCell * /* new_location */) {}
 
+    template <size_t I>
+    auto & get() & {
+        if constexpr (I == 0) return value.first;
+        else if constexpr (I == 1) return value.second;
+    }
+
+    template <size_t I>
+    auto const & get() const & {
+        if constexpr (I == 0) return value.first;
+        else if constexpr (I == 1) return value.second;
+    }
+
+    template <size_t I>
+    auto && get() && {
+        if constexpr (I == 0) return std::move(value.first);
+        else if constexpr (I == 1) return std::move(value.second);
+    }
+
 };
+
+namespace std
+{
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_size<HashMapCell<Key, TMapped, Hash, TState>> : std::integral_constant<size_t, 2> { };
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_element<0, HashMapCell<Key, TMapped, Hash, TState>> { using type = Key; };
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_element<1, HashMapCell<Key, TMapped, Hash, TState>> { using type = TMapped; };
+}
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
 struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
@@ -226,6 +257,19 @@ public:
         return it->getMapped();
     }
 };
+
+namespace std
+{
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_size<HashMapCellWithSavedHash<Key, TMapped, Hash, TState>> : std::integral_constant<size_t, 2> { };
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_element<0, HashMapCellWithSavedHash<Key, TMapped, Hash, TState>> { using type = Key; };
+
+    template <typename Key, typename TMapped, typename Hash, typename TState>
+    struct tuple_element<1, HashMapCellWithSavedHash<Key, TMapped, Hash, TState>> { using type = TMapped; };
+}
 
 
 template <
