@@ -90,7 +90,7 @@ void MergeTreeDeduplicationLog::load()
 
     for (const auto & p : fs::directory_iterator(logs_dir))
     {
-        auto path = p.path();
+        const auto & path = p.path();
         auto log_number = getLogNumber(path);
         existing_logs[log_number] = {path, 0};
     }
