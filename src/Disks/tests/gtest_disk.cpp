@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include "gtest_disk.h"
@@ -8,6 +7,7 @@
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
+
 
 template <typename T>
 DB::DiskPtr createDisk();
@@ -158,7 +158,7 @@ TEST(DiskHdfsTest, testHdfsCreation)
         readString(d, *in);
         EXPECT_EQ("test data", d);
     }
-    
+
     {
         std::unique_ptr<DB::WriteBufferFromFileBase> out = disk.writeFile("test_file", 1, DB::WriteMode::Rewrite, 1024, 1);
         writeString("test data", *out);

@@ -25,12 +25,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int PATH_ACCESS_DENIED;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int CANNOT_REMOVE_FILE;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -177,7 +173,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
     bool exist = exists(path);
     /// Path to store new HDFS object.
     auto file_name = getRandomName();
-    auto HDFS_path = hdfs_name + file_name;
+    auto hdfs_path = hdfs_name + file_name;
     if (!exist || mode == WriteMode::Rewrite)
     {
         /// If metadata file exists - remove and new.
@@ -189,9 +185,9 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 
         LOG_DEBUG(
             &Poco::Logger::get("DiskHDFS"),
-            "Write to file by path: {}. New HDFS path: {}", backQuote(metadata_path + path), HDFS_path);
+            "Write to file by path: {}. New hdfs path: {}", backQuote(metadata_path + path), hdfs_path);
 
-        return std::make_unique<WriteIndirectBufferFromHDFS>(config, HDFS_path, file_name, metadata, buf_size);
+        return std::make_unique<WriteIndirectBufferFromHDFS>(config, hdfs_path, file_name, metadata, buf_size);
     }
     else
     {
@@ -199,10 +195,10 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 
         LOG_DEBUG(
             &Poco::Logger::get("DiskHDFS"),
-            "Append to file by path: {}. New HDFS path: {}. Existing HDFS objects: {}",
-            backQuote(metadata_path + path), HDFS_path, metadata.hdfs_objects.size());
+            "Append to file by path: {}. New hdfs path: {}. Existing HDFS objects: {}",
+            backQuote(metadata_path + path), hdfs_path, metadata.hdfs_objects.size());
 
-        return std::make_unique<WriteIndirectBufferFromHDFS>(config, HDFS_path, file_name, metadata, buf_size);
+        return std::make_unique<WriteIndirectBufferFromHDFS>(config, hdfs_path, file_name, metadata, buf_size);
     }
 }
 

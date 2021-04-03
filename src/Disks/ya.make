@@ -13,9 +13,9 @@ SRCS(
     DiskDecorator.cpp
     DiskFactory.cpp
     DiskLocal.cpp
-    DiskHDFS.cpp
     DiskMemory.cpp
     DiskSelector.cpp
+    HDFS/DiskHDFS.cpp
     IDisk.cpp
     IVolume.cpp
     LocalDirectorySyncGuard.cpp
