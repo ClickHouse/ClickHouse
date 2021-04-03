@@ -34,11 +34,11 @@ public:
     std::vector<ASTPtr> getEqual(const ASTPtr & ast) const;
     std::optional<ASTPtr> getEqualConst(const ASTPtr & ast) const;
 
-    /// Find constants less and greater.
+    /// Find constants lessOrEqual and greaterOrEqual.
     /// For int and double linear programming can be applied here.
     // TODO: implement
-    //ASTPtr getMax(const ASTPtr &) const { return nullptr; } // sup
-    //ASTPtr getMin(const ASTPtr &) const { return nullptr; } // inf
+    //ASTPtr getUpperBound(const ASTPtr &) const { return nullptr; } // sup
+    //ASTPtr getLowerBound(const ASTPtr &) const { return nullptr; } // inf
 
 private:
     /// strongly connected component

@@ -7,6 +7,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 
 #include <Core/Defines.h>
 
@@ -63,6 +64,58 @@ ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
         }
     }
     return res;
+}
+
+std::vector<std::vector<CNFQuery::AtomicFormula>> ConstraintsDescription::getConstraintData() const
+{
+    std::vector<std::vector<CNFQuery::AtomicFormula>> constraint_data;
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    {
+        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
+            .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
+        for (const auto & group : cnf.getStatements())
+            constraint_data.emplace_back(std::begin(group), std::end(group));
+    }
+
+    return constraint_data;
+}
+
+std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomicConstraintData() const
+{
+    std::vector<CNFQuery::AtomicFormula> constraint_data;
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    {
+        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
+            .pullNotOutFunctions();
+        for (const auto & group : cnf.getStatements()) {
+            if (group.size() == 1)
+                constraint_data.push_back(*group.begin());
+        }
+    }
+
+    return constraint_data;
+}
+
+ComparisonGraph ConstraintsDescription::getGraph() const
+{
+    static const std::set<std::string> relations = {
+        "equals", "less", "lessOrEquals", "greaterOrEquals", "greater"};
+
+    std::vector<ASTPtr> constraints_for_graph;
+    auto atomic_formulas = getAtomicConstraintData();
+    for (auto & atomic_formula : atomic_formulas)
+    {
+        pushNotIn(atomic_formula);
+        auto * func = atomic_formula.ast->as<ASTFunction>();
+        if (func && relations.count(func->name))
+        {
+            if (atomic_formula.negative)
+                throw Exception(": ", ErrorCodes::LOGICAL_ERROR);
+            constraints_for_graph.push_back(atomic_formula.ast);
+        }
+    }
+
+    return ComparisonGraph(constraints_for_graph);
 }
 
 ConstraintsExpressions ConstraintsDescription::getExpressionsToCheck(const DB::Context & context,
