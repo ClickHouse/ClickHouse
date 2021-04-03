@@ -9,13 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int PATH_ACCESS_DENIED;
-    extern const int FILE_ALREADY_EXISTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
-    extern const int UNKNOWN_FORMAT;
-    extern const int CANNOT_REMOVE_FILE;
 }
 
 
