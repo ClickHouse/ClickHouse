@@ -15,12 +15,6 @@ namespace
 
 static constexpr auto END_OF_GRANULE_FLAG = 1ULL << 63;
 
-struct SerializeStateSparse : public ISerialization::SerializeBinaryBulkState
-{
-    size_t num_trailing_default_values = 0;
-    ISerialization::SerializeBinaryBulkStatePtr nested;
-};
-
 struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkState
 {
     size_t num_trailing_defaults = 0;
@@ -28,44 +22,24 @@ struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkStat
     ISerialization::DeserializeBinaryBulkStatePtr nested;
 };
 
-void serializeOffsetsPositionIndependent(const IColumn::Offsets & offsets, WriteBuffer & ostr, size_t start, size_t end)
+void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size_t start, size_t end)
 {
-    // std::cerr << "writing start: " << start << ", end: " << end << "\n";
-    // std::cerr << "offsets: ";
-    // for (const auto & x : offsets)
-    //     std::cerr << x << " ";
-    // std::cerr << "\n";
-
     size_t size = offsets.size();
     for (size_t i = 0; i < size; ++i)
     {
         size_t group_size = offsets[i] - start;
-
-        // std::cerr << "writing group_size: " << group_size << "\n";
-
         writeIntBinary(group_size, ostr);
         start += group_size + 1;
     }
 
-    // std::cerr << "writing start: " << start << ", end: " << end << "\n";
     size_t group_size = start < end ? end - start : 0;
-    // std::cerr << "writing end group_size: " << group_size << "\n";
     group_size |= END_OF_GRANULE_FLAG;
     writeIntBinary(group_size, ostr);
 }
 
-// struct DeserializedRows
-// {
-//     size_t total = 0;
-//     size_t trailing_defaults = 0;
-// };
-
-size_t deserializeOffsetsPositionIndependent(IColumn::Offsets & offsets,
+size_t deserializeOffsets(IColumn::Offsets & offsets,
     ReadBuffer & istr, size_t limit, DeserializeStateSparse & state)
 {
-    // std::cerr << "limit: " << limit << ", num_trailing: " << state.num_trailing_defaults
-    //     << ", has_value_after_defaults: " << state.has_value_after_defaults << "\n";
-
     if (limit && state.num_trailing_defaults >= limit)
     {
         state.num_trailing_defaults -= limit;
@@ -73,7 +47,7 @@ size_t deserializeOffsetsPositionIndependent(IColumn::Offsets & offsets,
     }
 
     /// TODO:
-    offsets.reserve(limit / 10); /// TODO
+    offsets.reserve(limit / 10);
 
     size_t total_rows = state.num_trailing_defaults;
     if (state.has_value_after_defaults)
@@ -94,13 +68,8 @@ size_t deserializeOffsetsPositionIndependent(IColumn::Offsets & offsets,
         bool end_of_granule = group_size & END_OF_GRANULE_FLAG;
         group_size &= ~END_OF_GRANULE_FLAG;
 
-        // std::cerr << "read group_size: " << group_size << ", end_of_granule: " << end_of_granule << "\n";
         size_t next_total_rows = total_rows + group_size;
         group_size += state.num_trailing_defaults;
-
-
-        // std::cerr << "group_size: " << group_size << ", end_of_granule: " << end_of_granule << "\n";
-        // std::cerr << "next_total_rows: " << next_total_rows << "\n";
 
         if (limit && next_total_rows >= limit)
         {
@@ -150,13 +119,9 @@ void SerializationSparse::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto state_sparse = std::make_shared<SerializeStateSparse>();
-
     settings.path.push_back(Substream::SparseElements);
-    nested_serialization->serializeBinaryBulkStatePrefix(settings, state_sparse->nested);
+    nested_serialization->serializeBinaryBulkStatePrefix(settings, state);
     settings.path.pop_back();
-
-    state = std::move(state_sparse);
 }
 
 void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
@@ -167,9 +132,6 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkStatePtr & state) const
 {
     size_t size = column.size();
-    auto * state_sparse = checkAndGetSerializeState<SerializeStateSparse>(state, *this);
-
-    // std::cerr << "writing column: " << column.dumpStructure() << "\n";
 
     auto offsets_column = DataTypeNumber<IColumn::Offset>().createColumn();
     auto & offsets_data = assert_cast<ColumnVector<IColumn::Offset> &>(*offsets_column).getData();
@@ -179,7 +141,7 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
     if (auto * stream = settings.getter(settings.path))
     {
         size_t end = limit && offset + limit < size ? offset + limit : size;
-        serializeOffsetsPositionIndependent(offsets_data, *stream, offset, end);
+        serializeOffsets(offsets_data, *stream, offset, end);
     }
 
     if (!offsets_data.empty())
@@ -190,13 +152,12 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
             const auto & values = column_sparse->getValuesColumn();
             size_t begin = column_sparse->getValueIndex(offsets_data[0]);
             size_t end = column_sparse->getValueIndex(offsets_data.back());
-            // std::cerr << "begin: " << begin << ", end: " << end << "\n";
-            nested_serialization->serializeBinaryBulkWithMultipleStreams(values, begin, end - begin + 1, settings, state_sparse->nested);
+            nested_serialization->serializeBinaryBulkWithMultipleStreams(values, begin, end - begin + 1, settings, state);
         }
         else
         {
             auto values = column.index(*offsets_column, 0);
-            nested_serialization->serializeBinaryBulkWithMultipleStreams(*values, 0, values->size(), settings, state_sparse->nested);
+            nested_serialization->serializeBinaryBulkWithMultipleStreams(*values, 0, values->size(), settings, state);
         }
     }
 
@@ -207,10 +168,8 @@ void SerializationSparse::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * state_sparse = checkAndGetSerializeState<SerializeStateSparse>(state, *this);
-
     settings.path.push_back(Substream::SparseElements);
-    nested_serialization->serializeBinaryBulkStateSuffix(settings, state_sparse->nested);
+    nested_serialization->serializeBinaryBulkStateSuffix(settings, state);
     settings.path.pop_back();
 }
 
@@ -245,7 +204,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 
     size_t read_rows = 0;
     if (auto * stream = settings.getter(settings.path))
-        read_rows = deserializeOffsetsPositionIndependent(offsets_data, *stream, limit, *state_sparse);
+        read_rows = deserializeOffsets(offsets_data, *stream, limit, *state_sparse);
 
     auto & values_column = column_sparse.getValuesPtr();
     size_t values_limit = offsets_data.size() - old_size;
@@ -259,26 +218,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
         " Offsets size: {}, values size: {}", offsets_data.size(), values_column->size());
 
     column_sparse.insertManyDefaults(read_rows);
-
-    // std::cerr << "column_sparse: " << column_sparse.dumpStructure() << "\n";
-    // std::cerr << "offsets: ";
-    // for (const auto & x : column_sparse.getOffsetsData())
-    //     std::cerr << x << " ";
-    // std::cerr << "\n";
-
-    // std::cerr << "values: ";
-    // for (size_t i = 0; i < column_sparse.getValuesColumn().size(); ++i)
-    //     std::cerr << toString(column_sparse.getValuesColumn()[i]) << " ";
-    // std::cerr << "\n";
-
     column = std::move(mutable_column);
 }
-
-// void SerializationSparse::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-// {
-//     const auto & column_sparse = assert_cast<const ColumnSparse &>(column);
-//     const auto & values_column = column_sparse.getValuesColumn();
-//     nested_serialization->serializeText(values_column, column_sparse.getValueIndex(row_num), ostr, settings);
-// }
 
 }

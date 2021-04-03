@@ -176,6 +176,9 @@ public:
 
     ColumnPtr compress() const override;
 
+    size_t getNumberOfDefaultRows(size_t step) const override;
+    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const override;
+
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }

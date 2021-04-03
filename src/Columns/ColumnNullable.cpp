@@ -686,6 +686,16 @@ void ColumnNullable::checkConsistency() const
             ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
 }
 
+size_t ColumnNullable::getNumberOfDefaultRows(size_t step) const
+{
+    return null_map->getNumberOfDefaultRows(step);
+}
+
+void ColumnNullable::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const
+{
+    return null_map->getIndicesOfNonDefaultValues(indices, from, limit);
+}
+
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))

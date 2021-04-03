@@ -171,6 +171,9 @@ public:
     /// Check that size of null map equals to size of nested column.
     void checkConsistency() const;
 
+    size_t getNumberOfDefaultRows(size_t step) const override;
+    void getIndicesOfNonDefaultValues(Offsets & offsets, size_t from, size_t limit) const override;
+
 private:
     WrappedPtr nested_column;
     WrappedPtr null_map;

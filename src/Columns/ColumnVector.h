@@ -305,25 +305,9 @@ public:
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
 
-    void getIndicesOfNonDefaultValues(IColumn::Offsets & offsets, size_t from, size_t limit) const override
-    {
-        offsets.reserve(data.size());
-        size_t to = limit && from + limit < size() ? from + limit : size();
-        for (size_t i = from; i < to; ++i)
-            if (data[i] != T{})
-                offsets.push_back(i);
-    }
-
+    size_t getNumberOfDefaultRows(size_t step) const override;
+    void getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const override;
     ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows) const override;
-
-    size_t getNumberOfDefaultRows(size_t step) const override
-    {
-        size_t res = 0;
-        for (size_t i = 0; i < data.size(); i += step)
-            res += (data[i] == T{});
-
-        return res;
-    }
 
     ColumnPtr compress() const override;
 

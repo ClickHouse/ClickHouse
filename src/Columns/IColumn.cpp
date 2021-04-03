@@ -30,15 +30,23 @@ void IColumn::insertFrom(const IColumn & src, size_t n)
     insert(src[n]);
 }
 
+void IColumn::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const
+{
+    size_t to = limit && from + limit < size() ? from + limit : size();
+    indices.reserve(indices.size() + to - from);
+    for (size_t i = from; i < to; ++i)
+        indices.push_back(i);
+}
+
 ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, size_t total_rows) const
 {
     auto res = cloneEmpty();
     res->reserve(total_rows);
 
-    size_t current_offset = 0;
+    ssize_t current_offset = -1;
     for (size_t i = 0; i < offsets.size(); ++i)
     {
-        size_t offsets_diff = offsets[i] - current_offset;
+        ssize_t offsets_diff = static_cast<ssize_t>(offsets[i]) - current_offset;
         current_offset = offsets[i];
 
         if (offsets_diff > 1)
@@ -47,7 +55,7 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, size_t total_rows)
         res->insertFrom(*this, i + 1);
     }
 
-    size_t offsets_diff = total_rows - current_offset;
+    ssize_t offsets_diff = static_cast<ssize_t>(total_rows) - current_offset;
     if(offsets_diff > 1)
         res->insertManyFrom(*this, 0, offsets_diff - 1);
 
