@@ -104,30 +104,47 @@ const char * ColumnSparse::skipSerializedInArena(const char *) const
 
 void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    size_t end = start + length;
+    if (length == 0)
+        return;
+
+    if (start + length >= src.size())
+        throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
+            ErrorCodes::LOGICAL_ERROR);
+
     auto & offsets_data = getOffsetsData();
 
+    size_t end = start + length;
     if (const auto * src_sparse = typeid_cast<const ColumnSparse *>(&src))
     {
         const auto & src_offsets = src_sparse->getOffsetsData();
         const auto & src_values = src_sparse->getValuesColumn();
 
-        size_t offset_start = std::lower_bound(src_offsets.begin(), src_offsets.end(), start) - src_offsets.begin();
-        size_t offset_end = std::lower_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
-
-        insertManyDefaults(offset_start - start);
-        offsets_data.push_back(_size);
-
-        for (size_t i = offset_start + 1; i < offset_end; ++i)
+        if (!src_offsets.empty())
         {
-            size_t current_diff = src_offsets[i] - src_offsets[i - 1];
-            insertManyDefaults(current_diff - 1);
+            size_t offset_start = std::lower_bound(src_offsets.begin(), src_offsets.end(), start) - src_offsets.begin();
+            size_t offset_end = std::upper_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
+            if (offset_end != 0)
+                --offset_end;
+
+            insertManyDefaults(src_offsets[offset_start] - start);
             offsets_data.push_back(_size);
             ++_size;
-        }
 
-        insertManyDefaults(end - offset_end);
-        values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start);
+            for (size_t i = offset_start + 1; i < offset_end; ++i)
+            {
+                size_t current_diff = src_offsets[i] - src_offsets[i - 1];
+                insertManyDefaults(current_diff - 1);
+                offsets_data.push_back(_size);
+                ++_size;
+            }
+
+            insertManyDefaults(end - src_offsets[offset_end]);
+            values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start + 1);
+        }
+        else
+        {
+            insertManyDefaults(length);
+        }
     }
     else
     {
@@ -253,10 +270,24 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
 ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
 {
-    UNUSED(perm);
-    UNUSED(limit);
+    limit = limit ? std::min(limit, _size) : _size;
 
-    throwMustBeDense();
+    auto res_values = values->cloneEmpty();
+    auto res_offsets = offsets->cloneEmpty();
+    auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
+    res_values->insertDefault();
+
+    for (size_t i = 0; i < limit; ++i)
+    {
+        size_t index = getValueIndex(perm[i]);
+        if (index != 0)
+        {
+            res_values->insertFrom(*values, index);
+            res_offsets_data.push_back(i);
+        }
+    }
+
+    return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
 }
 
 ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const

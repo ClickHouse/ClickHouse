@@ -483,7 +483,17 @@ void NO_INLINE Aggregator::executeImplBatch(
             }
         }
 
-        if (!has_arrays)
+        bool has_sparse = false;
+        for (auto * inst = aggregate_instructions; inst->that; ++inst)
+        {
+            if (inst->has_sparse_arguments)
+            {
+                has_sparse = true;
+                break;
+            }
+        }
+
+        if (!has_arrays && !has_sparse)
         {
             for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
             {

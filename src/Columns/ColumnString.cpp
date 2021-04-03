@@ -539,6 +539,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
 void ColumnString::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const
 {
     size_t to = limit && from + limit < size() ? from + limit : size();
+    indices.reserve(indices.size() + to - from);
     for (size_t i = from; i < to; ++i)
         if (offsets[i] - offsets[i - 1] > 1)
             indices.push_back(i);

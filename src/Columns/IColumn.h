@@ -372,9 +372,9 @@ public:
     static constexpr auto DEFAULT_ROWS_SEARCH_STEP = 8;
     static constexpr auto MIN_ROWS_TO_SEARCH_DEFAULTS = DEFAULT_ROWS_SEARCH_STEP * 16;
 
-    virtual size_t getNumberOfDefaultRows(size_t /* step */) const { return {}; }
+    virtual size_t getNumberOfDefaultRows(size_t /* step */) const { return 0; }
 
-    virtual void getIndicesOfNonDefaultValues(Offsets & /* offsets */, size_t, size_t) const {}
+    virtual void getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const;
 
     virtual Ptr createWithOffsets(const Offsets & offsets, size_t total_rows) const;
 
