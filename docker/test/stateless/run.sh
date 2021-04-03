@@ -74,12 +74,17 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--order=random')
         ADDITIONAL_OPTIONS+=('--skip')
         ADDITIONAL_OPTIONS+=('00000_no_tests_to_skip')
-        ADDITIONAL_OPTIONS+=('--jobs')
-        ADDITIONAL_OPTIONS+=('4')
+        # Note that flaky check must be ran in parallel, but for now we run
+        # everything in parallel except DatabaseReplicated. See below.
     fi
 
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--replicated-database')
+    else
+        # Too many tests fail for DatabaseReplicated in parallel. All other
+        # configurations are OK.
+        ADDITIONAL_OPTIONS+=('--jobs')
+        ADDITIONAL_OPTIONS+=('8')
     fi
 
     clickhouse-test --testname --shard --zookeeper --hung-check --print-time \

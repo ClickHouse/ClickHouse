@@ -49,7 +49,7 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
         /// Attach the dictionary as table too.
         try
         {
-            /// TODO Make StorageDictionary an owner of IDictionaryBase objects.
+            /// TODO Make StorageDictionary an owner of IDictionary objects.
             /// All DDL operations with dictionaries will work with StorageDictionary table,
             /// and StorageDictionary will be responsible for loading of DDL dictionaries.
             /// ExternalLoaderDatabaseConfigRepository and other hacks related to ExternalLoader

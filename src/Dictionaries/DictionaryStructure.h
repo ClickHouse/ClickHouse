@@ -153,6 +153,8 @@ struct DictionaryStructure final
     std::unordered_map<std::string, size_t> attribute_name_to_index;
     std::optional<DictionaryTypedSpecialAttribute> range_min;
     std::optional<DictionaryTypedSpecialAttribute> range_max;
+    std::optional<size_t> hierarchical_attribute_index;
+
     bool has_expressions = false;
     bool access_to_key_from_attributes = false;
 

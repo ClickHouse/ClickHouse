@@ -1,6 +1,6 @@
 ---
 toc_folder_title: Integrations
-toc_priority: 30
+toc_priority: 1
 ---
 
 # Table Engines for Integrations {#table-engines-for-integrations}
@@ -19,5 +19,3 @@ List of supported integrations:
 -   [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md)
 -   [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md)
 -   [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md)
-
-[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/) <!--hide-->
