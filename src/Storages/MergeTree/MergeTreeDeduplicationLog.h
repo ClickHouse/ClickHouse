@@ -135,7 +135,7 @@ public:
     std::pair<MergeTreePartInfo, bool> addPart(const std::string & block_id, const MergeTreePartInfo & part);
 
     /// Remove all covered parts from in memory table and add DROP records to the disk
-    void dropPart(const MergeTreePartInfo & part);
+    void dropPart(const MergeTreePartInfo & drop_part_info);
 
     /// Load history from disk. Ignores broken logs.
     void load();
