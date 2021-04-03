@@ -82,13 +82,13 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
 
                 if (index_left != bad_term && index_right != bad_term)
                 {
-                    Poco::Logger::get("Edges").information("GOOD: " + atom->dumpTree());
-                    Poco::Logger::get("Edges").information("left=" + std::to_string(index_left) + " right=" + std::to_string(index_right));
-                    Poco::Logger::get("Edges").information("sz=" + std::to_string(g.edges.size()));
+                    //Poco::Logger::get("Edges").information("GOOD: " + atom->dumpTree());
+                    //Poco::Logger::get("Edges").information("left=" + std::to_string(index_left) + " right=" + std::to_string(index_right));
+                    //Poco::Logger::get("Edges").information("sz=" + std::to_string(g.edges.size()));
                     g.edges[index_right].push_back(Edge{it->second, index_left});
                     if (func->name == "equals")
                     {
-                        Poco::Logger::get("Edges").information("right=" + std::to_string(index_left) + " left=" + std::to_string(index_right));
+                        //Poco::Logger::get("Edges").information("right=" + std::to_string(index_left) + " left=" + std::to_string(index_right));
                         g.edges[index_left].push_back(Edge{it->second, index_right});
                     }
                 }
@@ -101,38 +101,16 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
     }
 
     graph = BuildGraphFromAstsGraph(g);
+    dists = BuildDistsFromGraph(graph);
 }
 
 std::pair<bool, bool> ComparisonGraph::findPath(const size_t start, const size_t finish) const
 {
-    // min path : < = -1, =< = 0
-    const auto inf = std::numeric_limits<int64_t>::max();
-    const size_t n = graph.vertexes.size();
-    std::vector<int64_t> dist(n, inf);
-    dist[start] = 0;
-    for (size_t k = 0; k < n; ++k)
-    {
-        bool has_relaxation = false;
-        for (size_t v = 0; v < n; ++v)
-        {
-            if (dist[v] == inf)
-                continue;
-
-            for (const auto & edge : graph.edges[v])
-            {
-                const int64_t weight = edge.type == Edge::Type::LESS ? -1 : 0;
-                if (dist[edge.to] > dist[v] + weight)
-                {
-                    dist[edge.to] = dist[v] + weight;
-                    has_relaxation = true;
-                }
-            }
-        }
-
-        if (has_relaxation)
-            break;
-    }
-    return {dist[finish] != inf, dist[finish] < 0};
+    const auto it = dists.find(std::make_pair(start, finish));
+    if (it == std::end(dists))
+        return {false, false};
+    else
+        return {true, it->second == Path::LESS};
 }
 
 ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, const ASTPtr & right) const
@@ -311,7 +289,7 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
         {
             result.edges[components[v]].push_back(Edge{edge.type, components[edge.to]});
         }
-        // TODO: make edges unique (most strict)
+        // TODO: make edges unique (left most strict)
     }
 
     Poco::Logger::get("Graph").information("finish");
@@ -333,6 +311,30 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
     }
 
     return result;
+}
+
+std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::BuildDistsFromGraph(const Graph & g) const
+{
+    // min path : < = -1, =< = 0
+    const auto inf = std::numeric_limits<int8_t>::max();
+    const size_t n = graph.vertexes.size();
+    std::vector<std::vector<int8_t>> results(n, std::vector<int8_t>(n, inf));
+    for (size_t v = 0; v < n; ++v)
+        for (const auto & edge : g.edges[v])
+            results[v][edge.to] = (edge.type == Edge::LESS ? -1 : 0);
+
+    for (size_t k = 0; k < n; ++k)
+        for (size_t v = 0; v < n; ++v)
+            for (size_t u = 0; u < n; ++u)
+                if (results[v][k] != inf && results[k][u] != inf)
+                    results[v][u] = std::min(results[v][u], std::min(results[v][k], results[k][u]));
+
+    std::map<std::pair<size_t, size_t>, Path> path;
+    for (size_t v = 0; v < n; ++v)
+        for (size_t u = 0; u < n; ++u)
+            if (results[v][u] != inf)
+                path[std::make_pair(v, u)] = (results[v][u] == -1 ? Path::LESS : Path::LESS_OR_EQUAL);
+    return path;
 }
 
 }
