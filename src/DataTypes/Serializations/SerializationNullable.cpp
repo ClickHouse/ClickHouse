@@ -224,7 +224,7 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
 {
     /// Little tricky, because we cannot discriminate null from first character.
 
-    if (istr.eof() || *istr.position() != '\\') /// Some data types can deserialize absense of data (e.g. empty string), so eof is ok.
+    if (istr.eof() || *istr.position() != '\\') /// Some data types can deserialize absence of data (e.g. empty string), so eof is ok.
     {
         /// This is not null, surely.
         return safeDeserialize<ReturnType>(column, *nested,
