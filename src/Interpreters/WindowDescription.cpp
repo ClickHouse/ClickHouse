@@ -1,6 +1,5 @@
 #include <Interpreters/WindowDescription.h>
 
-#include <Core/Field.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 
@@ -61,7 +60,7 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else
     {
-        buf << applyVisitor(FieldVisitorToString(), begin_offset);
+        buf << abs(begin_offset);
         buf << " "
             << (begin_preceding ? "PRECEDING" : "FOLLOWING");
     }
@@ -78,7 +77,7 @@ void WindowFrame::toString(WriteBuffer & buf) const
     }
     else
     {
-        buf << applyVisitor(FieldVisitorToString(), end_offset);
+        buf << abs(end_offset);
         buf << " "
             << (end_preceding ? "PRECEDING" : "FOLLOWING");
     }
@@ -122,33 +121,23 @@ void WindowFrame::checkValid() const
     if (end_type == BoundaryType::Offset
         && begin_type == BoundaryType::Offset)
     {
-        // Frame start offset must be less or equal that the frame end offset.
-        bool begin_less_equal_end;
-        if (begin_preceding && end_preceding)
+        // Frame starting with following rows can't have preceding rows.
+        if (!(end_preceding && !begin_preceding))
         {
-            begin_less_equal_end = begin_offset >= end_offset;
-        }
-        else if (begin_preceding && !end_preceding)
-        {
-            begin_less_equal_end = true;
-        }
-        else if (!begin_preceding && end_preceding)
-        {
-            begin_less_equal_end = false;
-        }
-        else /* if (!begin_preceding && !end_preceding) */
-        {
-            begin_less_equal_end = begin_offset <= end_offset;
-        }
+            // Frame start offset must be less or equal that the frame end offset.
+            const bool begin_before_end
+                = begin_offset * (begin_preceding ? -1 : 1)
+                    <= end_offset * (end_preceding ? -1 : 1);
 
-        if (!begin_less_equal_end)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Frame start offset {} {} does not precede the frame end offset {} {}",
-                begin_offset, begin_preceding ? "PRECEDING" : "FOLLOWING",
-                end_offset, end_preceding ? "PRECEDING" : "FOLLOWING");
+            if (!begin_before_end)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame start offset {} {} does not precede the frame end offset {} {}",
+                    begin_offset, begin_preceding ? "PRECEDING" : "FOLLOWING",
+                    end_offset, end_preceding ? "PRECEDING" : "FOLLOWING");
+            }
+            return;
         }
-        return;
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,

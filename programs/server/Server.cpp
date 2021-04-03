@@ -47,7 +47,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/ExpressionJIT.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -97,7 +96,7 @@
 #endif
 
 #if USE_NURAFT
-#   include <Server/KeeperTCPHandlerFactory.h>
+#   include <Server/NuKeeperTCPHandlerFactory.h>
 #endif
 
 namespace CurrentMetrics
@@ -829,14 +828,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     global_context->setMarkCache(mark_cache_size);
 
-    /// A cache for mmapped files.
-    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
-    if (mmap_cache_size)
-        global_context->setMMappedFileCache(mmap_cache_size);
-
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
+    if (compiled_expression_cache_size)
+        global_context->setCompiledExpressionCache(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
@@ -867,15 +862,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
-    if (config().has("keeper_server"))
+    if (config().has("test_keeper_server"))
     {
 #if USE_NURAFT
         /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperStorageDispatcher();
+        global_context->initializeNuKeeperStorageDispatcher();
         for (const auto & listen_host : listen_hosts)
         {
-            /// TCP Keeper
-            const char * port_name = "keeper_server.tcp_port";
+            /// TCP NuKeeper
+            const char * port_name = "test_keeper_server.tcp_port";
             createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
@@ -885,9 +880,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers_to_start_before_tables->emplace_back(
                     port_name,
                     std::make_unique<Poco::Net::TCPServer>(
-                        new KeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+                        new NuKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
 
-                LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
+                LOG_INFO(log, "Listening for connections to NuKeeper (tcp): {}", address.toString());
             });
         }
 #else
@@ -934,7 +929,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
 
-            global_context->shutdownKeeperStorageDispatcher();
+            global_context->shutdownNuKeeperStorageDispatcher();
         }
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.

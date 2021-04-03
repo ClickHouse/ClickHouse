@@ -58,12 +58,11 @@ public:
 
         String tmp;
         FormatSettings format_settings;
-        auto serialization = src.type->getDefaultSerialization();
         for (size_t i = 0; i < size; ++i)
         {
             {
                 WriteBufferFromString out(tmp);
-                serialization->serializeText(*src.column, i, out, format_settings);
+                src.type->serializeAsText(*src.column, i, out, format_settings);
             }
 
             res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());

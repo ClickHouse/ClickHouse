@@ -54,8 +54,6 @@ public:
         FETCH_PARTITION,
         FREEZE_PARTITION,
         FREEZE_ALL,
-        UNFREEZE_PARTITION,
-        UNFREEZE_ALL,
 
         DELETE,
         UPDATE,
@@ -155,9 +153,7 @@ public:
      */
     String from;
 
-    /**
-     * For FREEZE PARTITION - place local backup to directory with specified name.
-     * For UNFREEZE - delete local backup at directory with specified name.
+    /** For FREEZE PARTITION - place local backup to directory with specified name.
      */
     String with_name;
 

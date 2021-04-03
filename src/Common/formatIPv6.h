@@ -25,7 +25,7 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
 
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv4 string.
  *
- * Parses the input string `src` and stores binary host-endian value into buffer pointed by `dst`,
+ * Parses the input string `src` and stores binary BE value into buffer pointed by `dst`,
  * which should be long enough.
  * That is "127.0.0.1" becomes 0x7f000001.
  *
@@ -63,7 +63,7 @@ inline bool parseIPv4(const char * src, unsigned char * dst)
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
 *
 * Slightly altered implementation from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
-* Parses the input string `src` and stores binary big-endian value into buffer pointed by `dst`,
+* Parses the input string `src` and stores binary LE value into buffer pointed by `dst`,
 * which should be long enough. In case of failure zeroes
 * IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
 *

@@ -7,73 +7,42 @@
 #if USE_LIBPQXX
 #include <pqxx/pqxx> // Y_IGNORE
 #include <Core/Types.h>
-#include <Common/ConcurrentBoundedQueue.h>
 
 
 namespace DB
 {
 
+/// Tiny connection class to make it more convenient to use.
+/// Connection is not made until actually used.
 class PostgreSQLConnection
 {
-
-using ConnectionPtr = std::shared_ptr<pqxx::connection>;
+    using ConnectionPtr = std::shared_ptr<pqxx::connection>;
 
 public:
-    PostgreSQLConnection(
-        const String & connection_str_,
-        const String & address_);
+    PostgreSQLConnection(std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
+        : connection_str(formatConnectionString(std::move(dbname), std::move(host), port, std::move(user), std::move(password))) {}
 
-    PostgreSQLConnection(const PostgreSQLConnection & other) = delete;
+    PostgreSQLConnection(const std::string & connection_str_) : connection_str(connection_str_) {}
 
-    ConnectionPtr get();
+    PostgreSQLConnection(const PostgreSQLConnection &) = delete;
+    PostgreSQLConnection operator =(const PostgreSQLConnection &) = delete;
 
-    ConnectionPtr tryGet();
+    ConnectionPtr conn();
 
-    bool isConnected() { return tryConnectIfNeeded(); }
+    std::string & conn_str() { return connection_str; }
 
 private:
-    void connectIfNeeded();
-
-    bool tryConnectIfNeeded();
-
-    const std::string & getAddress() { return address; }
-
     ConnectionPtr connection;
-    std::string connection_str, address;
+    std::string connection_str;
+
+    static std::string formatConnectionString(
+        std::string dbname, std::string host, UInt16 port, std::string user, std::string password);
+
+    void checkUpdateConnection();
 };
 
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
-
-class PostgreSQLConnectionHolder
-{
-
-using Pool = ConcurrentBoundedQueue<PostgreSQLConnectionPtr>;
-static constexpr inline auto POSTGRESQL_POOL_WAIT_MS = 50;
-
-public:
-    PostgreSQLConnectionHolder(PostgreSQLConnectionPtr connection_, Pool & pool_)
-        : connection(std::move(connection_))
-        , pool(pool_)
-    {
-    }
-
-    PostgreSQLConnectionHolder(const PostgreSQLConnectionHolder & other) = delete;
-
-    ~PostgreSQLConnectionHolder() { pool.tryPush(connection, POSTGRESQL_POOL_WAIT_MS); }
-
-    pqxx::connection & conn() const { return *connection->get(); }
-
-    bool isConnected() { return connection->isConnected(); }
-
-private:
-    PostgreSQLConnectionPtr connection;
-    Pool & pool;
-};
-
-using PostgreSQLConnectionHolderPtr = std::shared_ptr<PostgreSQLConnectionHolder>;
-
 }
-
 
 #endif

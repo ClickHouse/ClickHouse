@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class MergeTreeIndexBloomFilter final : public IMergeTreeIndex
+class MergeTreeIndexBloomFilter : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilter(

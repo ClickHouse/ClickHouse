@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -15,8 +16,6 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
-#include <Common/quoteString.h>
-#include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
 
 
 namespace DB
@@ -40,14 +39,14 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & dbname_,
         const String & postgres_dbname,
-        PostgreSQLConnectionPoolPtr connection_pool_,
+        PostgreSQLConnectionPtr connection_,
         const bool cache_tables_)
     : IDatabase(dbname_)
     , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , dbname(postgres_dbname)
-    , connection_pool(std::move(connection_pool_))
+    , connection(std::move(connection_))
     , cache_tables(cache_tables_)
 {
     cleaner_task = context.getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
@@ -90,8 +89,7 @@ std::unordered_set<std::string> DatabasePostgreSQL::fetchTablesList() const
     std::unordered_set<std::string> tables;
     std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
         "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
-    auto connection = connection_pool->get();
-    pqxx::read_transaction tx(connection->conn());
+    pqxx::read_transaction tx(*connection->conn());
 
     for (auto table_name : tx.stream<std::string>(query))
         tables.insert(std::get<0>(table_name));
@@ -109,8 +107,7 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
             "PostgreSQL table name cannot contain single quote or backslash characters, passed {}", table_name);
     }
 
-    auto connection = connection_pool->get();
-    pqxx::nontransaction tx(connection->conn());
+    pqxx::nontransaction tx(*connection->conn());
 
     try
     {
@@ -165,13 +162,13 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, const Conte
             return StoragePtr{};
 
         auto use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
-        auto columns = fetchPostgreSQLTableStructure(connection_pool->get(), doubleQuoteString(table_name), use_nulls);
+        auto columns = fetchPostgreSQLTableStructure(connection->conn(), table_name, use_nulls);
 
         if (!columns)
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-                StorageID(database_name, table_name), table_name, std::make_shared<PostgreSQLConnectionPool>(*connection_pool),
+                StorageID(database_name, table_name), table_name, std::make_shared<PostgreSQLConnection>(connection->conn_str()),
                 ColumnsDescription{*columns}, ConstraintsDescription{}, context);
 
         if (cache_tables)

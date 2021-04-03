@@ -1,6 +1,6 @@
 ---
 toc_priority: 41
-toc_title: "Политика доступа"
+toc_title: "\u041f\u043e\u043b\u0438\u0442\u0438\u043a\u0430\u0020\u0434\u043e\u0441\u0442\u0443\u043f\u0430"
 ---
 
 # CREATE ROW POLICY {#create-row-policy-statement}
@@ -42,4 +42,5 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluste
 
 `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/row-policy) 
 <!--hide-->

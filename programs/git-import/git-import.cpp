@@ -1064,7 +1064,7 @@ void processCommit(
 
     time_t commit_time;
     readText(commit_time, in);
-    commit.time = LocalDateTime(commit_time);
+    commit.time = commit_time;
     assertChar('\0', in);
     readNullTerminated(commit.author, in);
     std::string parent_hash;

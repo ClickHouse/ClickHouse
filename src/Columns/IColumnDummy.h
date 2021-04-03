@@ -4,7 +4,6 @@
 #include <Common/PODArray.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsCommon.h>
-#include <Core/Field.h>
 
 
 namespace DB
@@ -65,11 +64,6 @@ public:
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
         ++s;
-        return pos;
-    }
-
-    const char * skipSerializedInArena(const char * pos) const override
-    {
         return pos;
     }
 

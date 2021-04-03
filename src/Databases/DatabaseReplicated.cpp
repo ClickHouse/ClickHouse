@@ -18,12 +18,10 @@
 #include <Interpreters/Cluster.h>
 #include <common/getFQDNOrHostName.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/formatAST.h>
-#include <Common/Macros.h>
 
 namespace DB
 {
@@ -107,22 +105,7 @@ std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String 
 
 ClusterPtr DatabaseReplicated::getCluster() const
 {
-    std::lock_guard lock{mutex};
-    if (cluster)
-        return cluster;
-
-    cluster = getClusterImpl();
-    return cluster;
-}
-
-void DatabaseReplicated::setCluster(ClusterPtr && new_cluster)
-{
-    std::lock_guard lock{mutex};
-    cluster = std::move(new_cluster);
-}
-
-ClusterPtr DatabaseReplicated::getClusterImpl() const
-{
+    /// TODO Maintain up-to-date Cluster and allow to use it in Distributed tables
     Strings hosts;
     Strings host_ids;
 
@@ -137,7 +120,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         hosts = zookeeper->getChildren(zookeeper_path + "/replicas", &stat);
         if (hosts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No hosts found");
-        Int32 cversion = stat.cversion;
+        Int32 cver = stat.cversion;
         std::sort(hosts.begin(), hosts.end());
 
         std::vector<zkutil::ZooKeeper::FutureGet> futures;
@@ -156,9 +139,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         }
 
         zookeeper->get(zookeeper_path + "/replicas", &stat);
-        if (cversion != stat.cversion)
-            success = false;
-        if (success)
+        if (success && cver == stat.version)
             break;
     }
     if (!success)
@@ -176,23 +157,22 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
         if (id == DROPPED_MARK)
             continue;
         auto [shard, replica] = parseFullReplicaName(hosts[i]);
-        auto pos = id.rfind(':');
-        String host_port = id.substr(0, pos);
+        auto pos = id.find(':');
+        String host = id.substr(0, pos);
         if (shard != current_shard)
         {
             current_shard = shard;
             if (!shards.back().empty())
                 shards.emplace_back();
         }
-        shards.back().emplace_back(unescapeForFileName(host_port));
+        shards.back().emplace_back(unescapeForFileName(host));
     }
 
-    String username = db_settings.cluster_username;
-    String password = db_settings.cluster_password;
-    UInt16 default_port = global_context.getTCPPort();
-    bool secure = db_settings.cluster_secure_connection;
+    /// TODO make it configurable
+    String username = "default";
+    String password;
 
-    return std::make_shared<Cluster>(global_context.getSettingsRef(), shards, username, password, default_port, false, secure);
+    return std::make_shared<Cluster>(global_context.getSettingsRef(), shards, username, password, global_context.getTCPPort(), false);
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
@@ -273,8 +253,11 @@ bool DatabaseReplicated::createDatabaseNodesInZooKeeper(const zkutil::ZooKeeperP
     __builtin_unreachable();
 }
 
-void DatabaseReplicated::createEmptyLogEntry(Coordination::Requests & ops, const ZooKeeperPtr & current_zookeeper)
+void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
 {
+    /// Write host name to replica_path, it will protect from multiple replicas with the same name
+    auto host_id = getHostID(global_context, db_uuid);
+
     /// On replica creation add empty entry to log. Can be used to trigger some actions on other replicas (e.g. update cluster info).
     DDLLogEntry entry{};
 
@@ -283,20 +266,11 @@ void DatabaseReplicated::createEmptyLogEntry(Coordination::Requests & ops, const
     String counter_path = current_zookeeper->create(counter_prefix, "", zkutil::CreateMode::EphemeralSequential);
     String query_path = query_path_prefix + counter_path.substr(counter_prefix.size());
 
-    ops.emplace_back(zkutil::makeCreateRequest(query_path, entry.toString(), zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(query_path + "/committed", getFullReplicaName(), zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
-}
-
-void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPtr & current_zookeeper)
-{
-    /// Write host name to replica_path, it will protect from multiple replicas with the same name
-    auto host_id = getHostID(global_context, db_uuid);
-
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
-    createEmptyLogEntry(ops, current_zookeeper);
+    ops.emplace_back(zkutil::makeCreateRequest(query_path, entry.toString(), zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
     current_zookeeper->multi(ops);
 }
 
@@ -310,67 +284,17 @@ void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_res
     ddl_worker->startup();
 }
 
-void DatabaseReplicated::checkQueryValid(const ASTPtr & query, const Context & query_context) const
+BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, const Context & query_context)
 {
+    if (is_readonly)
+        throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
+
+    if (query_context.getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
+
     /// Replicas will set correct name of current database in query context (database name can be different on replicas)
-    if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
-    {
-        if (ddl_query->database != getDatabaseName())
-            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
+    if (auto * ddl_query = query->as<ASTQueryWithTableAndOutput>())
         ddl_query->database.clear();
-
-        if (auto * create = query->as<ASTCreateQuery>())
-        {
-            bool replicated_table = create->storage && create->storage->engine && startsWith(create->storage->engine->name, "Replicated");
-            if (!replicated_table || !create->storage->engine->arguments)
-                return;
-
-            ASTs & args = create->storage->engine->arguments->children;
-            if (args.size() < 2)
-                return;
-
-            ASTLiteral * arg1 = args[0]->as<ASTLiteral>();
-            ASTLiteral * arg2 = args[1]->as<ASTLiteral>();
-            if (!arg1 || !arg2 || arg1->value.getType() != Field::Types::String || arg2->value.getType() != Field::Types::String)
-                return;
-
-            String maybe_path = arg1->value.get<String>();
-            String maybe_replica = arg2->value.get<String>();
-
-            /// Looks like it's ReplicatedMergeTree with explicit zookeeper_path and replica_name arguments.
-            /// Let's ensure that some macros are used.
-            /// NOTE: we cannot check here that substituted values will be actually different on shards and replicas.
-
-            Macros::MacroExpansionInfo info;
-            info.table_id = {getDatabaseName(), create->table, create->uuid};
-            query_context.getMacros()->expand(maybe_path, info);
-            bool maybe_shard_macros = info.expanded_other;
-            info.expanded_other = false;
-            query_context.getMacros()->expand(maybe_replica, info);
-            bool maybe_replica_macros = info.expanded_other;
-            bool enable_functional_tests_helper = global_context.getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
-
-            if (!enable_functional_tests_helper)
-                LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
-
-            if (maybe_shard_macros && maybe_replica_macros)
-                return;
-
-            if (enable_functional_tests_helper)
-            {
-                if (maybe_path.empty() || maybe_path.back() != '/')
-                    maybe_path += '/';
-                arg1->value = maybe_path + "auto_{shard}";
-                arg2->value = maybe_replica + "auto_{replica}";
-                return;
-            }
-
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
-                            "If you really want to specify it explicitly, then you should use some macros "
-                            "to distinguish different shards and replicas");
-        }
-    }
 
     if (const auto * query_alter = query->as<ASTAlterQuery>())
     {
@@ -381,36 +305,23 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, const Context & q
         }
     }
 
-    if (auto * query_drop = query->as<ASTDropQuery>())
-    {
-        if (query_drop->kind == ASTDropQuery::Kind::Detach && query_context.getSettingsRef().database_replicated_always_detach_permanently)
-            query_drop->permanently = true;
-        if (query_drop->kind == ASTDropQuery::Kind::Detach && !query_drop->permanently)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH TABLE is not allowed for Replicated databases. "
-                                                         "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA or set "
-                                                         "database_replicated_always_detach_permanently to 1");
-    }
-}
-
-BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, const Context & query_context)
-{
-    if (is_readonly)
-        throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
-
-    if (query_context.getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
-
-    checkQueryValid(query, query_context);
     LOG_DEBUG(log, "Proposing query: {}", queryToString(query));
 
+    /// TODO maybe write current settings to log entry?
     DDLLogEntry entry;
     entry.query = queryToString(query);
     entry.initiator = ddl_worker->getCommonHostID();
-    entry.setSettingsIfRequired(query_context);
     String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
+    BlockIO io;
+    if (query_context.getSettingsRef().distributed_ddl_task_timeout == 0)
+        return io;
+
     Strings hosts_to_wait = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
-    return getDistributedDDLStatus(node_path, entry, query_context, hosts_to_wait);
+    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, query_context, hosts_to_wait);
+    if (query_context.getSettingsRef().database_replicated_ddl_output)
+        io.in = std::move(stream);
+    return io;
 }
 
 static UUID getTableUUIDIfReplicated(const String & metadata, const Context & context)
@@ -646,14 +557,12 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
     auto ast = parseQuery(parser, query, description, 0, global_context.getSettingsRef().max_parser_depth);
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid == UUIDHelpers::Nil || create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER || !create.database.empty())
+    if (create.uuid == UUIDHelpers::Nil || create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER || ! create.database.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", node_name, query);
-
-    bool is_materialized_view_with_inner_table = create.is_materialized_view && create.to_table_id.empty();
 
     create.database = getDatabaseName();
     create.table = unescapeForFileName(node_name);
-    create.attach = is_materialized_view_with_inner_table;
+    create.attach = false;
 
     return ast;
 }
@@ -661,13 +570,8 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
 void DatabaseReplicated::drop(const Context & context_)
 {
     auto current_zookeeper = getZooKeeper();
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeSetRequest(replica_path, DROPPED_MARK, -1));
-    createEmptyLogEntry(ops, current_zookeeper);
-    current_zookeeper->multi(ops);
-
+    current_zookeeper->set(replica_path, DROPPED_MARK);
     DatabaseAtomic::drop(context_);
-
     current_zookeeper->tryRemoveRecursive(replica_path);
     /// TODO it may leave garbage in ZooKeeper if the last node lost connection here
     if (current_zookeeper->tryRemove(zookeeper_path + "/replicas") == Coordination::Error::ZOK)
@@ -694,7 +598,7 @@ void DatabaseReplicated::shutdown()
 void DatabaseReplicated::dropTable(const Context & context, const String & table_name, bool no_delay)
 {
     auto txn = context.getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id."));
+    assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
@@ -798,27 +702,11 @@ void DatabaseReplicated::detachTablePermanently(const Context & context, const S
     assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
-        /// We have to remove metadata from zookeeper, because we do not distinguish permanently detached tables
-        /// from attached tables when recovering replica.
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
     DatabaseAtomic::detachTablePermanently(context, table_name);
 }
-
-void DatabaseReplicated::removeDetachedPermanentlyFlag(const Context & context, const String & table_name, const String & table_metadata_path, bool attach) const
-{
-    auto txn = context.getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
-    if (txn && txn->isInitialQuery() && attach)
-    {
-        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
-        String statement = readMetadataFile(table_name);
-        txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));
-    }
-    DatabaseAtomic::removeDetachedPermanentlyFlag(context, table_name, table_metadata_path, attach);
-}
-
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {

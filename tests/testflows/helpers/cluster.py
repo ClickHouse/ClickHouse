@@ -26,7 +26,7 @@ class Node(object):
     def repr(self):
         return f"Node(name='{self.name}')"
 
-    def restart(self, timeout=300, retries=5, safe=True):
+    def restart(self, timeout=300, retries=5):
         """Restart node.
         """
         with self.cluster.lock:
@@ -48,7 +48,7 @@ class Node(object):
             if r.exitcode == 0:
                 break
 
-    def stop(self, timeout=300, retries=5, safe=True):
+    def stop(self, timeout=300, retries=5):
         """Stop node.
         """
         with self.cluster.lock:
@@ -64,44 +64,6 @@ class Node(object):
 
     def command(self, *args, **kwargs):
         return self.cluster.command(self.name, *args, **kwargs)
-
-    def cmd(self, cmd, message=None, exitcode=None, steps=True, shell_command="bash --noediting", no_checks=False,
-            raise_on_exception=False, step=By, *args, **kwargs):
-        """Execute and check command.
-        :param cmd: command
-        :param message: expected message that should be in the output, default: None
-        :param exitcode: expected exitcode, default: None
-        """
-
-        command = f"{cmd}"
-        with Step("executing command", description=command, format_description=False) if steps else NullStep():
-            try:
-                r = self.cluster.bash(self.name, command=shell_command)(command, *args, **kwargs)
-            except ExpectTimeoutError:
-                self.cluster.close_bash(self.name)
-                raise
-
-        if no_checks:
-            return r
-
-        if exitcode is not None:
-            with Then(f"exitcode should be {exitcode}") if steps else NullStep():
-                assert r.exitcode == exitcode, error(r.output)
-
-        if message is not None:
-            with Then(f"output should contain message", description=message) if steps else NullStep():
-                assert message in r.output, error(r.output)
-
-        if message is None or "Exception:" not in message:
-            with Then("check if output has exception") if steps else NullStep():
-                if "Exception:" in r.output:
-                    if raise_on_exception:
-                        raise QueryRuntimeException(r.output)
-                    assert False, error(r.output)
-
-        return r
-
-
 
 class ClickHouseNode(Node):
     """Node with ClickHouse server.
@@ -201,7 +163,7 @@ class ClickHouseNode(Node):
                     echo -e \"{sql[:100]}...\" > {query.name}
                     {command}
                 """
-                with Step("executing command", description=description, format_description=False) if steps else NullStep():
+                with step("executing command", description=description, format_description=False) if steps else NullStep():
                     try:
                         r = self.cluster.bash(None)(command, *args, **kwargs)
                     except ExpectTimeoutError:
@@ -211,7 +173,7 @@ class ClickHouseNode(Node):
             for setting in settings:
                 name, value = setting
                 command += f" --{name} \"{value}\""
-            with Step("executing command", description=command, format_description=False) if steps else NullStep():
+            with step("executing command", description=command, format_description=False) if steps else NullStep():
                 try:
                     r = self.cluster.bash(self.name)(command, *args, **kwargs)
                 except ExpectTimeoutError:
@@ -265,7 +227,7 @@ class Cluster(object):
                 self.configs_dir = caller_configs_dir
 
         if not os.path.exists(self.configs_dir):
-            raise TypeError(f"configs directory '{self.configs_dir}' does not exist")
+            raise TypeError("configs directory '{self.configs_dir}' does not exist")
 
         # auto set docker-compose project directory
         if docker_compose_project_dir is None:
@@ -294,7 +256,7 @@ class Cluster(object):
         shell.timeout = timeout
         return shell
 
-    def bash(self, node, timeout=300, command="bash --noediting"):
+    def bash(self, node, timeout=300):
         """Returns thread-local bash terminal
         to a specific node.
         :param node: name of the service
@@ -316,7 +278,7 @@ class Cluster(object):
                     self._bash[id] = Shell().__enter__()
                 else:
                     self._bash[id] = Shell(command=[
-                        "/bin/bash", "--noediting", "-c", f"{self.docker_compose} exec {node} {command}"
+                        "/bin/bash", "--noediting", "-c", f"{self.docker_compose} exec {node} bash --noediting"
                     ], name=node).__enter__()
 
                 self._bash[id].timeout = timeout

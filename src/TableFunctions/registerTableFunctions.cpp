@@ -40,8 +40,6 @@ void registerTableFunctions()
 #if USE_LIBPQXX
     registerTableFunctionPostgreSQL(factory);
 #endif
-
-    registerTableFunctionDictionary(factory);
 }
 
 }

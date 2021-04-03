@@ -32,9 +32,6 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
 
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -520,9 +517,7 @@ Pipe StorageDistributed::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
+    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
 }
 
 void StorageDistributed::read(
@@ -539,7 +534,7 @@ void StorageDistributed::read(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
     Block header =
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock();
 
     /// Return directly (with correct header) if no shard to query.
     if (query_info.cluster->getShardsInfo().empty())
@@ -907,24 +902,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
     }
 
     replaceConstantExpressions(condition_ast, context, metadata_snapshot->getColumns().getAll(), shared_from_this(), metadata_snapshot);
-
-    size_t limit = context.getSettingsRef().optimize_skip_unused_shards_limit;
-    if (!limit || limit > SSIZE_MAX)
-    {
-        throw Exception("optimize_skip_unused_shards_limit out of range (0, {}]", ErrorCodes::ARGUMENT_OUT_OF_BOUND, SSIZE_MAX);
-    }
-    // To interpret limit==0 as limit is reached
-    ++limit;
-    const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr, limit);
-
-    if (!limit)
-    {
-        LOG_TRACE(log,
-            "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
-            "try to increase it, but note that this may increase query processing time.",
-            context.getSettingsRef().optimize_skip_unused_shards_limit);
-        return nullptr;
-    }
+    const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
     if (!blocks)
