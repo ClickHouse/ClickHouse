@@ -201,11 +201,13 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         UInt16 default_port = getPortFromContext(context_copy, secure);
 
         std::string settings_config_prefix = config_prefix + ".clickhouse";
+        std::string host = config.getString(settings_config_prefix + ".host", "localhost");
+        UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
 
         ClickHouseDictionarySource::Configuration configuration {
             .secure = config.getBool(settings_config_prefix + ".secure", false),
-            .host = config.getString(settings_config_prefix + ".host", "localhost"),
-            .port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port)),
+            .host = host,
+            .port = port,
             .user = config.getString(settings_config_prefix + ".user", "default"),
             .password = config.getString(settings_config_prefix + ".password", ""),
             .db = config.getString(settings_config_prefix + ".db", default_database),
@@ -213,7 +215,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .where = config.getString(settings_config_prefix + ".where", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
-            .is_local = isLocalAddress({configuration.host, configuration.port}, default_port)
+            .is_local = isLocalAddress({host, port}, default_port)
         };
 
         /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
