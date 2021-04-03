@@ -1792,6 +1792,19 @@ ClickHouse генерирует исключение
 -   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
 -   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
 
+## insert_distributed_one_random_shard {#insert_distributed_one_random_shard}
+
+Включает или отключает режим вставки данных в [Distributed](../../engines/table-engines/special/distributed.md#distributed)) таблицу в случайный шард при отсутствии ключ шардирования.
+
+По умолчанию при вставке данных в `Distributed` таблицу с несколькими шардами и при отсутствии ключа шардирования сервер ClickHouse будет отклонять любой запрос на вставку данных. Когда `insert_distributed_one_random_shard = 1`, вставки принимаются, а данные записываются в случайный шард.
+
+Возможные значения:
+
+-   0 — если у таблицы несколько шардов, но ключ шардирования отсутствует, вставка данных отклоняется.
+-   1 — если ключ шардирования отсутствует, то вставка данных осуществляется в случайный шард среди всех доступных шардов.
+
+Значение по умолчанию: `0`.
+
 ## insert_shard_id {#insert_shard_id}
 
 Если не `0`, указывает, в какой шард [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы данные будут вставлены синхронно.
