@@ -256,6 +256,7 @@ def test_mysql_distributed(started_cluster):
     # disconnect mysql1
     started_cluster.pause_container('mysql1')
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    started_cluster.unpause_container('mysql1')
     assert(result == 'host2\nhost4\n' or result == 'host3\nhost4\n')
 
 
