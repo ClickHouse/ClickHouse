@@ -394,8 +394,8 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::RESTART_REPLICA:
             if (!tryRestartReplica(table_id, system_context))
-                throw Exception("There is no " + query.database + "." + query.table + " replicated table",
-                                ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no replicated table {}.{}",
+                    query.database, query.table);
             break;
         case Type::RESTORE_REPLICA:
             restoreReplica();
@@ -494,12 +494,12 @@ void InterpreterSystemQuery::restoreReplica()
 
     if (const String replicas_zk_path = zk_root_path + "/replicas"; zookeeper->exists(replicas_zk_path))
     {
-        if (zookeeper->exists(replicas_zk_path + "/" + storage_replicated->getReplicaName()))
+        if (const String replica = storage_replicated->getReplicaName();
+            zookeeper->exists(replicas_zk_path + "/" + replica))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The metadata for {}.{} (replica {}) is present at {} -- nothing to restore,"
-                " try creating a new replica with the CREATE TABLE query",
-                db_name, old_table_name, storage_replicated->getReplicaName(), replicas_zk_path);
+                "The metadata for {}.{} (replica {}) is present at {} -- nothing to restore",
+                db_name, old_table_name, replica, replicas_zk_path);
         }
 
         Strings replicas_present;
@@ -507,10 +507,14 @@ void InterpreterSystemQuery::restoreReplica()
 
         if (!replicas_present.empty()) // at least one table has valid metadata in zk
         {
+            LOG_DEBUG(log, "At least one replica is present, restoring state from it");
+
             executeQuery(fmt::format("DETACH TABLE IF EXISTS {0}.{1}", db_name, old_table_name), context, true);
             executeQuery(fmt::format("ATTACH TABLE IF NOT EXISTS {0}.{1}", db_name, old_table_name), context, true);
             return;
         }
+
+        LOG_DEBUG(log, "Replicas path is empty");
     }
 
     const std::hash<String> table_name_hash;

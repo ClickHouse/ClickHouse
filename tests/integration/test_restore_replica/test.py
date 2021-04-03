@@ -59,52 +59,56 @@ def check_data(_sum: int, count: int):
 def test_restore_replica(start_cluster):
     zk = cluster.get_kazoo_client('zoo1')
 
-    # 0. Check the invocation on non-existent and non-replicated tables
+    print("Checking the invocation on non-existent and non-replicated tables")
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA i_dont_exist_42")
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA no_db.i_dont_exist_42")
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA system.numbers")
 
-    # 0. Assert all the replicas have the inserted data and output debug info
     check_data(0, 0)
     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
     check_data(499500, 1000)
 
-    # 1. Delete individual replicas paths in ZK and check that the restoration query will return an error
-    # (there's nothing to restore as long as there is a single replica path in ZK)
+    # 1. Delete individual replicas paths in ZK and check the invocation
+    print("Deleting replica2 path, trying to restore replica1")
+    zk.delete("/clickhouse/tables/test/replicas/replica2", recursive=True)
+    assert zk.exists("/clickhouse/tables/test/replicas/replica2") is None
+    out, err = node_1.query_and_get_answer_with_error("SYSTEM RESTORE REPLICA test")
+    print("Got an exception (expected 'nothing to restore'):", out, err)
 
+    print("Deleting replica1 path, trying to restore replica1")
     zk.delete("/clickhouse/tables/test/replicas/replica1", recursive=True)
     assert zk.exists("/clickhouse/tables/test/replicas/replica1") is None
 
-    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
+    node_1.query("SYSTEM RESTART REPLICA test")
+    node_1.query("SYSTEM RESTORE REPLICA test") # Should restore by detaching and attaching the table
 
-    zk.delete("/clickhouse/tables/test/replicas/replica2", recursive=True)
-    assert zk.exists("/clickhouse/tables/test/replicas/replica2") is None
+    node_2.query("SYSTEM RESTART REPLICA test")
+    node_2.query("SYSTEM RESTORE REPLICA test") # Same
 
-    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
+    node_1.query("INSERT INTO test SELECT * FROM numbers(1000)") # assert all the tables are working
+    check_data(2 * 499500, 2000)
 
     # 2. Delete metadata for the root zk path (emulating a Zookeeper error)
+    print("Deleting root ZK path metadata")
     zk.delete("/clickhouse/tables/test", recursive=True)
     assert zk.exists("/clickhouse/tables/test") is None
 
     node_1.query("SYSTEM RESTART REPLICA test")
-
-    # 3. Assert there is an exception as the metadata is missing
+    # 3. Assert the table is readonly as the metadata is missing
     node_1.query_and_get_error("INSERT INTO test SELECT number AS num FROM numbers(1000,2000) WHERE num % 2 = 0")
 
-    # 4. restore replica
+    print("Restoring replica1")
     node_1.query("SYSTEM RESTORE REPLICA test")
-
-    # 5. Check if the data is same on all nodes
     assert zk.exists("/clickhouse/tables/test")
-    check_data(499500, 1000)
+    check_data(2 * 499500, 2000)
 
-    # 6. Check the initial table being attached (not in readonly) and the result being replicated.
     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
 
+    print("Restoring other replicas")
     node_2.query("SYSTEM RESTORE REPLICA test"); # should detach and attach the table
     node_3.query("SYSTEM RESTORE REPLICA test");
 
-    check_data(2 * 499500, 2000)
+    check_data(3 * 499500, 3000)
 
     # 7. check we cannot restore the already restored replica
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
