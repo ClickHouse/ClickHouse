@@ -15,6 +15,7 @@ struct ConstraintsDescription
     std::vector<ASTPtr> constraints;
     std::vector<CNFQuery> cnf_constraints;
 
+    // TODO: перенести преобразование в КНФ + get constraitns
     ConstraintsDescription() = default;
 
     bool empty() const { return constraints.empty(); }
@@ -30,8 +31,6 @@ struct ConstraintsDescription
     };
 
     ASTs filterConstraints(ConstraintType selection) const;
-    // TODO: перенести преобразование в КНФ + get constraitns
-    //ASTs filterAtomicConstraints(ConstraintType selection) const;
 
     std::vector<std::vector<CNFQuery::AtomicFormula>> getConstraintData() const;
     std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData() const;

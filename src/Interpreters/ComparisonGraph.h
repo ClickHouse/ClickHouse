@@ -3,6 +3,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <unordered_map>
+#include <map>
 #include <vector>
 
 namespace DB
@@ -87,7 +88,16 @@ private:
 
     std::pair<bool, bool> findPath(const size_t start, const size_t finish) const;
 
+    enum class Path
+    {
+        LESS,
+        LESS_OR_EQUAL,
+    };
+
+    std::map<std::pair<size_t, size_t>, Path> BuildDistsFromGraph(const Graph & g) const;
+
     Graph graph;
+    std::map<std::pair<size_t, size_t>, Path> dists;
 };
 
 }
