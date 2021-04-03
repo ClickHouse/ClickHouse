@@ -289,6 +289,7 @@ def test_postgres_distributed(started_cluster):
     # Disconnect postgres1
     started_cluster.pause_container('postgres1')
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    started_cluster.unpause_container('postgres1')
     assert(result == 'host2\nhost4\n' or result == 'host3\nhost4\n')
 
 
