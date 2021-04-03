@@ -80,12 +80,17 @@ public:
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+
+    template <typename Type>
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
+
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
-    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator &) const override;
+    int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator & collator) const override;
     bool hasEqualValues() const override;
     void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
     void updatePermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_range) const override;

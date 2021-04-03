@@ -1,5 +1,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/WeakHash.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -7,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 ColumnSparse::ColumnSparse(MutableColumnPtr && values_)
@@ -86,6 +89,7 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     return values->insertData(pos, length);
 }
 
+/// TODO: maybe need to reimplement it.
 StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
@@ -93,13 +97,13 @@ StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char co
 
 const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
 {
-    UNUSED(pos);
-    throwMustBeDense();
+    ++_size;
+    return values->deserializeAndInsertFromArena(pos);
 }
 
-const char * ColumnSparse::skipSerializedInArena(const char *) const
+const char * ColumnSparse::skipSerializedInArena(const char * pos) const
 {
-    throwMustBeDense();
+    return values->skipSerializedInArena(pos);
 }
 
 void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t length)
@@ -272,9 +276,12 @@ ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
 {
     limit = limit ? std::min(limit, _size) : _size;
 
-    auto res_values = values->cloneEmpty();
+    if (perm.size() < limit)
+        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
     auto res_offsets = offsets->cloneEmpty();
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
+    auto res_values = values->cloneEmpty();
     res_values->insertDefault();
 
     for (size_t i = 0; i < limit; ++i)
@@ -292,10 +299,30 @@ ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
 
 ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const
 {
-    UNUSED(indexes);
-    UNUSED(limit);
+    return selectIndexImpl(*this, indexes, limit);
+}
 
-    throwMustBeDense();
+template <typename Type>
+ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    limit = limit ? std::min(limit, indexes.size()) : indexes.size();
+
+    auto res_offsets = offsets->cloneEmpty();
+    auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
+    auto res_values = values->cloneEmpty();
+    res_values->insertDefault();
+
+    for (size_t i = 0; i < limit; ++i)
+    {
+        size_t index = getValueIndex(indexes[i]);
+        if (index != 0)
+        {
+            res_values->insertFrom(*values, index);
+            res_offsets_data.push_back(i);
+        }
+    }
+
+    return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
 }
 
 int ColumnSparse::compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const
@@ -320,14 +347,12 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
     throwMustBeDense();
 }
 
-int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator &) const
+int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int null_direction_hint, const Collator & collator) const
 {
-    UNUSED(n);
-    UNUSED(m);
-    UNUSED(rhs);
-    UNUSED(null_direction_hint);
+    if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs))
+        return values->compareAtWithCollation(getValueIndex(n), rhs_sparse->getValueIndex(m), rhs_sparse->getValuesColumn(), null_direction_hint, collator);
 
-    throwMustBeDense();
+    return values->compareAtWithCollation(getValueIndex(n), m, rhs, null_direction_hint, collator);
 }
 
 bool ColumnSparse::hasEqualValues() const
@@ -337,12 +362,54 @@ bool ColumnSparse::hasEqualValues() const
 
 void ColumnSparse::getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
 {
-    UNUSED(reverse);
-    UNUSED(limit);
-    UNUSED(null_direction_hint);
-    UNUSED(res);
+    if (_size == 0)
+        return;
 
-    throwMustBeDense();
+    res.resize(_size);
+    for (size_t i = 0; i < _size; ++i)
+        res[i] = i;
+
+    if (offsets->empty())
+        return;
+
+    Permutation perm;
+    values->getPermutation(reverse, limit, null_direction_hint, perm);
+
+    if (limit == 0 || limit > _size)
+        limit = _size;
+
+    size_t num_of_defaults = getNumberOfDefaults();
+    size_t row = 0;
+    size_t current_offset = 0;
+    size_t current_default_row = 0;
+    const auto & offsets_data = getOffsetsData();
+
+    for (size_t i = 0; i < perm.size() && row < limit; ++i)
+    {
+        if (perm[i] == 0)
+        {
+            if (!num_of_defaults)
+                continue;
+
+            while (row < limit && current_default_row < _size)
+            {
+                while (current_offset < offsets_data.size() && current_default_row == offsets_data[current_offset])
+                {
+                    ++current_offset;
+                    ++current_default_row;
+                }
+
+                res[row++] = current_default_row++;
+            }
+        }
+        else
+        {
+            res[row] = offsets_data[perm[i] - 1];
+            ++row;
+        }
+    }
+
+    assert(row == limit);
 }
 
 void ColumnSparse::updatePermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_range) const
@@ -406,7 +473,8 @@ size_t ColumnSparse::allocatedBytes() const
 
 void ColumnSparse::protect()
 {
-    throwMustBeDense();
+    values->protect();
+    offsets->protect();
 }
 
 ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
@@ -417,9 +485,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
 
 void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    UNUSED(n);
-    UNUSED(hash);
-    throwMustBeDense();
+    values->updateHashWithValue(getValueIndex(n), hash);
 }
 
 void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
@@ -430,15 +496,14 @@ void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
 
 void ColumnSparse::updateHashFast(SipHash & hash) const
 {
-    UNUSED(hash);
-    throwMustBeDense();
+    values->updateHashFast(hash);
+    offsets->updateHashFast(hash);
+    hash.update(_size);
 }
 
 void ColumnSparse::getExtremes(Field & min, Field & max) const
 {
-    UNUSED(min);
-    UNUSED(max);
-    throwMustBeDense();
+    values->getExtremes(min, max);
 }
 
 void ColumnSparse::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size_t from, size_t limit) const
@@ -475,8 +540,9 @@ ColumnPtr ColumnSparse::compress() const
 
 bool ColumnSparse::structureEquals(const IColumn & rhs) const
 {
-    UNUSED(rhs);
-    throwMustBeDense();
+    if (auto rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs))
+        return values->structureEquals(*rhs_sparse->values);
+    return false;
 }
 
 const IColumn::Offsets & ColumnSparse::getOffsetsData() const
