@@ -188,7 +188,7 @@ public:
             token_request->SetUserAgent(user_agent_string);
             LOG_TRACE(logger, "Calling EC2MetadataService to get token.");
             auto result = GetResourceWithAWSWebServiceResult(token_request);
-            String token_string = result.GetPayload();
+            const String & token_string = result.GetPayload();
             new_token = Aws::Utils::StringUtils::Trim(token_string.c_str());
 
             if (result.GetResponseCode() == Aws::Http::HttpResponseCode::BAD_REQUEST)
