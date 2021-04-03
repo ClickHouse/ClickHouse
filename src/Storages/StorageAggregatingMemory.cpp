@@ -150,7 +150,7 @@ private:
 };
 
 
-StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query)
+StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query, const Context & context_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>())
 {
     // TODO: this table must be created with original write structure, and aggregated read structure
@@ -164,14 +164,31 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception("UNION is not supported for AggregatingMemory", ErrorCodes::INCORRECT_QUERY);
 
+    // TODO: check GROUP BY inside this func
+    auto select = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
+    ASTPtr select_ptr = select.select_query;
+
+    auto select_context = std::make_unique<Context>(context_);
+
+    /// Get list of columns we get from select query.
+    auto header = InterpreterSelectQuery(select_ptr, *select_context, SelectQueryOptions().analyze())
+        .getSampleBlock();
+
+    /// Insert only columns returned by select.
+    auto list = std::make_shared<ASTExpressionList>();
+    for (const auto & column : header)
+    {
+        list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+    }
+
+
+
+
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_description_));
     storage_metadata.setConstraints(std::move(constraints_));
-
-    // TODO: check GROUP BY inside this func
-    auto select = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
     storage_metadata.setSelectQuery(select);
-
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -316,7 +333,7 @@ void registerStorageAggregatingMemory(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageAggregatingMemory::create(args.table_id, args.columns, args.constraints, args.query);
+        return StorageAggregatingMemory::create(args.table_id, args.columns, args.constraints, args.query, args.context);
     },
     {
         .supports_parallel_insert = true,
