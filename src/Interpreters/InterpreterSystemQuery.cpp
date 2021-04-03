@@ -74,7 +74,7 @@ namespace ErrorCodes
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int SYSTEM_ERROR;
     extern const int NO_ZOOKEEPER;
-    extern const int NO_AVAILABLE_DATA;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -494,12 +494,13 @@ void InterpreterSystemQuery::restoreReplica()
 
     if (const String replicas_zk_path = zk_root_path + "/replicas"; zookeeper->exists(replicas_zk_path))
     {
-        if (const String replica = storage_replicated->getReplicaName();
-            zookeeper->exists(replicas_zk_path + "/" + replica))
+        if (const String replica = storage_replicated->getReplicaName(),
+                         replica_zk_path = replicas_zk_path + "/" + replica;
+            zookeeper->exists(replica_zk_path))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "The metadata for {}.{} (replica {}) is present at {} -- nothing to restore",
-                db_name, old_table_name, replica, replicas_zk_path);
+                db_name, old_table_name, replica, replica_zk_path);
         }
 
         Strings replicas_present;

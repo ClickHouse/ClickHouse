@@ -73,16 +73,13 @@ def test_restore_replica(start_cluster):
     zk.delete("/clickhouse/tables/test/replicas/replica2", recursive=True)
     assert zk.exists("/clickhouse/tables/test/replicas/replica2") is None
     out, err = node_1.query_and_get_answer_with_error("SYSTEM RESTORE REPLICA test")
-    print("Got an exception (expected 'nothing to restore'):", out, err)
+    print("Got an exception (expected 'nothing to restore'):", out, "\n".join(err.split("\n")[:3]))
 
     print("Deleting replica1 path, trying to restore replica1")
     zk.delete("/clickhouse/tables/test/replicas/replica1", recursive=True)
     assert zk.exists("/clickhouse/tables/test/replicas/replica1") is None
 
-    node_1.query("SYSTEM RESTART REPLICA test")
     node_1.query("SYSTEM RESTORE REPLICA test") # Should restore by detaching and attaching the table
-
-    node_2.query("SYSTEM RESTART REPLICA test")
     node_2.query("SYSTEM RESTORE REPLICA test") # Same
 
     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)") # assert all the tables are working
