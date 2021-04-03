@@ -131,15 +131,15 @@
       (c/su
        (if (cu/exists? pid-file-path)
          (do
-          (info node "Collecting traces")
-          (collect-traces test node))
+           (info node "Collecting traces")
+           (collect-traces test node))
          (info node "Pid files doesn't exists"))
        (kill-clickhouse! node test)
        (if (cu/exists? coordination-data-dir)
          (do
            (info node "Coordination files exists, going to compress")
-           (c/cd data-dir)
-           (c/exec :tar :czf "coordination.tar.gz" "coordination"))))
+           (c/cd data-dir
+                 (c/exec :tar :czf "coordination.tar.gz" "coordination")))))
       (let [common-logs [stderr-file (str logs-dir "/clickhouse-server.log") (str data-dir "/coordination.tar.gz")]
             gdb-log (str logs-dir "/gdb.log")]
         (if (cu/exists? (str logs-dir "/gdb.log"))
