@@ -16,7 +16,7 @@ toc_title: "Введение"
 -   Возможно ли многопоточное выполнение запроса.
 -   Параметры репликации данных.
 
-## Семейства движков {#semeistva-dvizhkov}
+## Семейства движков {#engine-families}
 
 ### MergeTree {#mergetree}
 
@@ -42,7 +42,7 @@ toc_title: "Введение"
 -   [StripeLog](log-family/stripelog.md#stripelog)
 -   [Log](log-family/log.md#log)
 
-### Движки для интеграции {#dvizhki-dlia-integratsii}
+### Движки для интеграции {#integration-engines}
 
 Движки для связи с другими системами хранения и обработки данных.
 
@@ -55,6 +55,18 @@ toc_title: "Введение"
 -   [S3](integrations/s3.md#table-engine-s3)
 
 ### Специальные движки {#spetsialnye-dvizhki}
+
+-   [ODBC](../../engines/table-engines/integrations/odbc.md)
+-   [JDBC](../../engines/table-engines/integrations/jdbc.md)
+-   [MySQL](../../engines/table-engines/integrations/mysql.md)
+-   [MongoDB](../../engines/table-engines/integrations/mongodb.md)
+-   [HDFS](../../engines/table-engines/integrations/hdfs.md)
+-   [Kafka](../../engines/table-engines/integrations/kafka.md)
+-   [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md)
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md)
+-   [PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
+
+### Специальные движки {#special-engines}
 
 Движки семейства:
 

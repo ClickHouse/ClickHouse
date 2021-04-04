@@ -23,7 +23,6 @@ public:
 
 protected:
     static void sendErrorResponse(Poco::Net::HTTPServerSession & session, Poco::Net::HTTPResponse::HTTPStatus status);
-    void onServerStopped(const bool & abortCurrent);
 
 private:
     Context context;

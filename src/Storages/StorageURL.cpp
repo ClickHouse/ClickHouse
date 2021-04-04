@@ -33,7 +33,7 @@ namespace ErrorCodes
 
 IStorageURLBase::IStorageURLBase(
     const Poco::URI & uri_,
-    const Context & context_,
+    const Context & /*context_*/,
     const StorageID & table_id_,
     const String & format_name_,
     const std::optional<FormatSettings> & format_settings_,
@@ -42,13 +42,10 @@ IStorageURLBase::IStorageURLBase(
     const String & compression_method_)
     : IStorage(table_id_)
     , uri(uri_)
-    , context_global(context_)
     , compression_method(compression_method_)
     , format_name(format_name_)
     , format_settings(format_settings_)
 {
-    context_global.getRemoteHostFilter().checkURL(uri);
-
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
@@ -237,12 +234,26 @@ Pipe IStorageURLBase::read(
         chooseCompressionMethod(request_uri.getPath(), compression_method)));
 }
 
-BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
     return std::make_shared<StorageURLBlockOutputStream>(uri, format_name,
-        format_settings, metadata_snapshot->getSampleBlock(), context_global,
-        ConnectionTimeouts::getHTTPTimeouts(context_global),
+        format_settings, metadata_snapshot->getSampleBlock(), context,
+        ConnectionTimeouts::getHTTPTimeouts(context),
         chooseCompressionMethod(uri.toString(), compression_method));
+}
+
+StorageURL::StorageURL(const Poco::URI & uri_,
+           const StorageID & table_id_,
+           const String & format_name_,
+           const std::optional<FormatSettings> & format_settings_,
+           const ColumnsDescription & columns_,
+           const ConstraintsDescription & constraints_,
+           Context & context_,
+           const String & compression_method_)
+    : IStorageURLBase(uri_, context_, table_id_, format_name_,
+                      format_settings_, columns_, constraints_, compression_method_)
+{
+    context_.getRemoteHostFilter().checkURL(uri);
 }
 
 void registerStorageURL(StorageFactory & factory)

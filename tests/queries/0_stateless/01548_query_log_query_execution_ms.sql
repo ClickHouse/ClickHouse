@@ -13,8 +13,7 @@ where
     query like '%01548_query_log_query_execution_ms%'
     and current_database = currentDatabase()
     and query_duration_ms between 100 and 800
-    and event_date = today()
-    and event_time >= now() - interval 1 minute;
+    and event_date >= yesterday();
 
 -- at least two threads for processing
 -- (but one just waits for another, sigh)

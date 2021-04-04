@@ -69,11 +69,25 @@ function watchdog
     killall -9 clickhouse-client ||:
 }
 
+function filter_exists
+{
+    local path
+    for path in "$@"; do
+        if [ -e "$path" ]; then
+            echo "$path"
+        else
+            echo "'$path' does not exists" >&2
+        fi
+    done
+}
+
 function fuzz
 {
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
     NEW_TESTS="$(grep -P 'tests/queries/0_stateless/.*\.sql' ci-changed-files.txt | sed -r -e 's!^!ch/!' | sort -R)"
+    # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
+    NEW_TESTS="$(filter_exists $NEW_TESTS)"
     if [[ -n "$NEW_TESTS" ]]
     then
         NEW_TESTS_OPT="${NEW_TESTS_OPT:---interleave-queries-file ${NEW_TESTS}}"
