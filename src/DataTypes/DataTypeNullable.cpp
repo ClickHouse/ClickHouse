@@ -243,9 +243,6 @@ ReturnType DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer
 {
     /// Little tricky, because we cannot discriminate null from first character.
 
-    if (istr.eof())
-        throw ParsingException("Unexpected end of stream, while parsing value of Nullable type", ErrorCodes::CANNOT_READ_ALL_DATA);
-
     if (istr.eof() || *istr.position() != '\\') /// Some data types can deserialize absence of data (e.g. empty string), so eof is ok.
     {
         /// This is not null, surely.
