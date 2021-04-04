@@ -48,6 +48,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     context.checkAccess(getRequiredAccess());
     auto table_id = context.resolveStorageID(alter, Context::ResolveOrdinary);
+    query_ptr->as<ASTAlterQuery &>().database = table_id.database_name;
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get()) && context.getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
