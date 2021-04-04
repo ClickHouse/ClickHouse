@@ -53,6 +53,27 @@ struct HDFSFileInfo
 
 class HDFSBuilderWrapper
 {
+
+friend HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
+
+public:
+    HDFSBuilderWrapper() : hdfs_builder(hdfsNewBuilder()) {}
+
+    ~HDFSBuilderWrapper()
+    {
+        hdfsFreeBuilder(hdfs_builder);
+
+    }
+
+    HDFSBuilderWrapper(const HDFSBuilderWrapper &) = delete;
+    HDFSBuilderWrapper(HDFSBuilderWrapper &&) = default;
+
+    hdfsBuilder * get()
+    {
+        return hdfs_builder;
+    }
+
+private:
     hdfsBuilder * hdfs_builder;
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
@@ -73,37 +94,12 @@ class HDFSBuilderWrapper
 
     static const String CONFIG_PREFIX;
 
-private:
-
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool isUser = false);
 
     String getKinitCmd();
 
     void runKinit();
 
-public:
-
-    hdfsBuilder *
-    get()
-    {
-        return hdfs_builder;
-    }
-
-    HDFSBuilderWrapper()
-        : hdfs_builder(hdfsNewBuilder())
-    {
-    }
-
-    ~HDFSBuilderWrapper()
-    {
-        hdfsFreeBuilder(hdfs_builder);
-
-    }
-
-    HDFSBuilderWrapper(const HDFSBuilderWrapper &) = delete;
-    HDFSBuilderWrapper(HDFSBuilderWrapper &&) = default;
-
-    friend HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
 };
 
 using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsDeleter>;

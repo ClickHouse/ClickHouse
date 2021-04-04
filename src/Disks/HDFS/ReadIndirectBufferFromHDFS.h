@@ -86,11 +86,11 @@ private:
             if (size > offset)
             {
                 auto buf = std::make_unique<ReadBufferFromHDFS>(hdfs_name + path, config, buf_size);
-                //buf->seek(offset, SEEK_SET);
+                buf->seek(offset, SEEK_SET);
                 return buf;
             }
-            offset -= size;
 
+            offset -= size;
         }
 
         return nullptr;

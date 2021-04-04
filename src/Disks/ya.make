@@ -15,7 +15,6 @@ SRCS(
     DiskLocal.cpp
     DiskMemory.cpp
     DiskSelector.cpp
-    HDFS/DiskHDFS.cpp
     IDisk.cpp
     IVolume.cpp
     LocalDirectorySyncGuard.cpp
