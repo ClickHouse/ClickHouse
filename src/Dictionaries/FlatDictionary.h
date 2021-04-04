@@ -26,12 +26,19 @@ namespace DB
 class FlatDictionary final : public IDictionary
 {
 public:
+    struct Configuration
+    {
+        size_t initial_array_size;
+        size_t max_array_size;
+        bool require_nonempty;
+    };
+
     FlatDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
-        bool require_nonempty_,
+        Configuration configuration_,
         BlockPtr previously_loaded_block_ = nullptr);
 
     std::string getTypeName() const override { return "Flat"; }
@@ -48,7 +55,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, previously_loaded_block);
+        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, previously_loaded_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -145,10 +152,7 @@ private:
 
     void calculateBytesAllocated();
 
-    template <typename T>
-    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
-
-    static Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
+    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
@@ -168,7 +172,7 @@ private:
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
-    const bool require_nonempty;
+    const Configuration configuration;
 
     std::vector<Attribute> attributes;
     std::vector<bool> loaded_keys;

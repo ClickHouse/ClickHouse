@@ -420,7 +420,7 @@ private:
 };
 
 /** Merge block with blocks from stream. If there are duplicate keys in block they are filtered out.
-  * In result block_to_update will be merged with each block readed from stream.
+  * In result block_to_update will be merged with blocks from stream.
   * Note: readPrefix readImpl readSuffix will be called on stream object during function execution.
   */
 template <DictionaryKeyType dictionary_key_type>
