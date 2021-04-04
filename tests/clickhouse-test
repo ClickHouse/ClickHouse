@@ -108,7 +108,7 @@ def remove_control_characters(s):
 
 def get_db_engine(args, database_name):
     if args.replicated_database:
-        return " ENGINE=Replicated('/test/clickhouse/db/{}', 's1', 'r1')".format(database_name)
+        return " ON CLUSTER test_cluster_database_replicated ENGINE=Replicated('/test/clickhouse/db/{}', '{{shard}}', '{{replica}}')".format(database_name)
     if args.db_engine:
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
@@ -180,7 +180,10 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
         try:
-            clickhouse_proc_create.communicate(("DROP DATABASE " + database), timeout=seconds_left)
+            drop_database_query = "DROP DATABASE " + database
+            if args.replicated_database:
+                drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+            clickhouse_proc_create.communicate((drop_database_query), timeout=seconds_left)
         except TimeoutExpired:
             # kill test process because it can also hung
             if proc.returncode is None:
@@ -201,6 +204,9 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stdout_file))
     if not args.show_db_name:
         os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=database, file=stderr_file))
+    if args.replicated_database:
+        os.system("LC_ALL=C sed -i -e 's|/auto_{{shard}}||g' {file}".format(file=stdout_file))
+        os.system("LC_ALL=C sed -i -e 's|auto_{{replica}}||g' {file}".format(file=stdout_file))
 
     stdout = open(stdout_file, 'rb').read() if os.path.exists(stdout_file) else b''
     stdout = str(stdout, errors='replace', encoding='utf-8')
@@ -216,8 +222,12 @@ def need_retry(stderr):
 
 def get_processlist(args):
     try:
+        query = b"SHOW PROCESSLIST FORMAT Vertical"
+        if args.replicated_database:
+            query = b"SELECT materialize((hostName(), tcpPort())) as host, * " \
+                    b"FROM clusterAllReplicas('r', system.processes) WHERE query NOT LIKE '%system.processes%' FORMAT Vertical"
         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        (stdout, _) = clickhouse_proc.communicate((b"SHOW PROCESSLIST FORMAT Vertical"), timeout=20)
+        (stdout, _) = clickhouse_proc.communicate((query), timeout=20)
         return False, stdout.decode('utf-8')
     except Exception as ex:
         print("Exception", ex)
@@ -295,6 +305,9 @@ def run_tests_array(all_tests_with_params):
     failures_total = 0
     failures = 0
     failures_chain = 0
+    start_time = datetime.now()
+
+    is_concurrent = multiprocessing.current_process().name != "MainProcess"
 
     client_options = get_additional_client_options(args)
 
@@ -305,7 +318,7 @@ def run_tests_array(all_tests_with_params):
             return ''
 
     if all_tests:
-        print("\nRunning {} {} tests.".format(len(all_tests), suite) + "\n")
+        print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
 
     for case in all_tests:
         if SERVER_DIED:
@@ -320,7 +333,6 @@ def run_tests_array(all_tests_with_params):
 
         try:
             status = ''
-            is_concurrent = multiprocessing.current_process().name != "MainProcess"
             if not is_concurrent:
                 sys.stdout.flush()
                 sys.stdout.write("{0:72}".format(name + ": "))
@@ -489,12 +501,18 @@ def run_tests_array(all_tests_with_params):
     failures_total = failures_total + failures
 
     if failures_total > 0:
-        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(
-            passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), args, "red", attrs=["bold"]))
+        print(colored(f"\nHaving {failures_total} errors! {passed_total} tests passed."
+            f" {skipped_total} tests skipped. {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
+            f' ({multiprocessing.current_process().name}).',
+            args, "red", attrs=["bold"]))
         exit_code = 1
     else:
-        print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(
-            passed_total = passed_total, skipped_total = skipped_total), args, "green", attrs=["bold"]))
+        print(colored(f"\n{passed_total} tests passed. {skipped_total} tests skipped."
+            f" {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
+            f' ({multiprocessing.current_process().name}).',
+            args, "green", attrs=["bold"]))
+
+    sys.stdout.flush()
 
 
 server_logs_level = "warning"
@@ -789,7 +807,8 @@ def main(args):
                 if jobs > run_total:
                     run_total = jobs
 
-                batch_size = len(parallel_tests) // jobs
+                # Create two batches per process for more uniform execution time.
+                batch_size = max(1, len(parallel_tests) // (jobs * 2))
                 parallel_tests_array = []
                 for i in range(0, len(parallel_tests), batch_size):
                     parallel_tests_array.append((parallel_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir))
@@ -849,6 +868,8 @@ def main(args):
     if total_tests_run == 0:
         print("No tests were run.")
         sys.exit(1)
+    else:
+        print("All tests have finished.")
 
     sys.exit(exit_code)
 

@@ -23,6 +23,7 @@
 #include <Parsers/parseQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/formatAST.h>
+#include <Common/Macros.h>
 
 namespace DB
 {
@@ -309,20 +310,66 @@ void DatabaseReplicated::loadStoredObjects(Context & context, bool has_force_res
     ddl_worker->startup();
 }
 
-BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, const Context & query_context)
+void DatabaseReplicated::checkQueryValid(const ASTPtr & query, const Context & query_context) const
 {
-    if (is_readonly)
-        throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
-
-    if (query_context.getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
-
     /// Replicas will set correct name of current database in query context (database name can be different on replicas)
-    if (auto * ddl_query = query->as<ASTQueryWithTableAndOutput>())
+    if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
     {
         if (ddl_query->database != getDatabaseName())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
         ddl_query->database.clear();
+
+        if (auto * create = query->as<ASTCreateQuery>())
+        {
+            bool replicated_table = create->storage && create->storage->engine && startsWith(create->storage->engine->name, "Replicated");
+            if (!replicated_table || !create->storage->engine->arguments)
+                return;
+
+            ASTs & args = create->storage->engine->arguments->children;
+            if (args.size() < 2)
+                return;
+
+            ASTLiteral * arg1 = args[0]->as<ASTLiteral>();
+            ASTLiteral * arg2 = args[1]->as<ASTLiteral>();
+            if (!arg1 || !arg2 || arg1->value.getType() != Field::Types::String || arg2->value.getType() != Field::Types::String)
+                return;
+
+            String maybe_path = arg1->value.get<String>();
+            String maybe_replica = arg2->value.get<String>();
+
+            /// Looks like it's ReplicatedMergeTree with explicit zookeeper_path and replica_name arguments.
+            /// Let's ensure that some macros are used.
+            /// NOTE: we cannot check here that substituted values will be actually different on shards and replicas.
+
+            Macros::MacroExpansionInfo info;
+            info.table_id = {getDatabaseName(), create->table, create->uuid};
+            query_context.getMacros()->expand(maybe_path, info);
+            bool maybe_shard_macros = info.expanded_other;
+            info.expanded_other = false;
+            query_context.getMacros()->expand(maybe_replica, info);
+            bool maybe_replica_macros = info.expanded_other;
+            bool enable_functional_tests_helper = global_context.getConfigRef().has("_functional_tests_helper_database_replicated_replace_args_macros");
+
+            if (!enable_functional_tests_helper)
+                LOG_WARNING(log, "It's not recommended to explicitly specify zookeeper_path and replica_name in ReplicatedMergeTree arguments");
+
+            if (maybe_shard_macros && maybe_replica_macros)
+                return;
+
+            if (enable_functional_tests_helper)
+            {
+                if (maybe_path.empty() || maybe_path.back() != '/')
+                    maybe_path += '/';
+                arg1->value = maybe_path + "auto_{shard}";
+                arg2->value = maybe_replica + "auto_{replica}";
+                return;
+            }
+
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Explicit zookeeper_path and replica_name are specified in ReplicatedMergeTree arguments. "
+                            "If you really want to specify it explicitly, then you should use some macros "
+                            "to distinguish different shards and replicas");
+        }
     }
 
     if (const auto * query_alter = query->as<ASTAlterQuery>())
@@ -343,7 +390,17 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, const 
                                                          "Use DETACH TABLE PERMANENTLY or SYSTEM RESTART REPLICA or set "
                                                          "database_replicated_always_detach_permanently to 1");
     }
+}
 
+BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, const Context & query_context)
+{
+    if (is_readonly)
+        throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
+
+    if (query_context.getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
+
+    checkQueryValid(query, query_context);
     LOG_DEBUG(log, "Proposing query: {}", queryToString(query));
 
     DDLLogEntry entry;
