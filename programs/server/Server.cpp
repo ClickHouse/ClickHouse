@@ -986,7 +986,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     ///
     /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
     ///
-#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
+#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER) && defined(__x86_64__)
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -1021,6 +1021,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if defined(SANITIZER)
     LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work under sanitizers"
         " when two different stack unwinding methods will interfere with each other.");
+#endif
+
+#if !defined(__x86_64__)
+    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())
