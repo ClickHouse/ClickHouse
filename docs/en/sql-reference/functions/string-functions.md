@@ -655,15 +655,16 @@ Result:
 The function extracts text from HTML or XHTML according to the following rules.
 
 1. Comments starting with `<!--` and ending with `-->` are removed.
-1. The content of a `CDATA` section is left as is, without furthure processing.
-1. Text wrapped with `<script>` or `<style>` tags is removed entirely.
-1. Any tag is replaced with a space.
-1. Consecutive whitespaces (space, new line, line feed, tab characters) are converted to a single space.
-1. Leading and trailing spaces are removed.
+1. The content of a `CDATA` section between `<![CDATA[` and `]]>` is left as is, without furthure processing. Note that it is appended to the previous text without any space.
+1. A text wrapped with `<script>` or `<style>` tags is removed entirely. If `script` or `style` are the names of XML namespaces (like `<script:a>`) then they are treated like usual tags.
+1. Any tag is replaced with a space. Note that elements like `<>`, `<!>`, `<!-->` are also replaced. Tag without closing bracket `>` is removed to the end of an input text. 
+1. Any sequence of whitespaces (space, new line, carriage return, tab, vertical tab or form feed) is converted to a single space.
+1. Leading and trailing spaces are removed from the returned text.
 
 !!! info "Note"
-    HTML and XML entities are not decoded.
-    It is not guaranteed that the function fully supports all HTML, XML or XHTML standards. But it tries to do the best.
+    HTML and XML entities are not decoded by the extractTextFromHTML function.
+    
+    It is not guaranteed that extractTextFromHTML function fully supports all HTML, XML or XHTML standards. But it tries to do the best.
 
 **Syntax**
 
@@ -689,13 +690,13 @@ The second example shows CDATA and script tag processing.
 Query:
 
 ``` sql
-SELECT extractTextFromHTML(' <p> Text <i>inside</i><b>tags</b>. <!-- comments --> </p> ');
+SELECT extractTextFromHTML(' <p> Text <i>with</i><b>tags</b>. <!-- comments --> </p> ');
 SELECT extractTextFromHTML('<![CDATA[The content within <b>CDATA</b>]]> <script>alert("Script");</script>');
 ```
 
 Result:
 
 ``` text
-Text inside tags .
+Text with tags .
 The content within <b>CDATA</b>
 ```
