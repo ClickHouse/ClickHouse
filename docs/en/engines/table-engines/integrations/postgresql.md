@@ -50,7 +50,30 @@ PostgreSQL `Array` types are converted into ClickHouse arrays.
 !!! info "Note"
     Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
 
-Supports replicas priority for PostgreSQL dictionary source. The bigger the number in map, the less the priority. The highest priority is `0`. 
+Replicas priority for PostgreSQL dictionary source is supported. The bigger the number in map, the less the priority. The highest priority is `0`. 
+
+In the example below replica `example01-1` has the highest priority:
+
+```xml
+<postgresql>
+    <port>5432</port>
+    <user>clickhouse</user>
+    <password>qwerty</password>
+    <replica>
+        <host>example01-1</host>
+        <priority>1</priority>
+    </replica>
+    <replica>
+        <host>example01-2</host>
+        <priority>2</priority>
+    </replica>
+    <db>db_name</db>
+    <table>table_name</table>
+    <where>id=10</where>
+    <invalidate_query>SQL_QUERY</invalidate_query>
+</postgresql>
+</source>
+```
 
 ## Usage Example {#usage-example}
 

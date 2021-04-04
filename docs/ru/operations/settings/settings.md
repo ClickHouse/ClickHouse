@@ -759,6 +759,38 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 log_query_threads=1
 ```
 
+## log_comment {#settings-log-comment}
+
+Задаёт значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
+
+Может быть использована для улучшения читабельности логов сервера. Кроме того, помогает быстро выделить связанные с тестом запросы из `system.query_log` после запуска [clickhouse-test](../../development/tests.md).
+
+Возможные значения:
+
+-   Любая строка не длиннее [max_query_size](#settings-max_query_size). При превышении длины сервер сгенерирует исключение.
+
+Значение по умолчанию: пустая строка.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SET log_comment = 'log_comment test', log_queries = 1;
+SELECT 1;
+SYSTEM FLUSH LOGS;
+SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 2;
+```
+
+Результат:
+
+``` text
+┌─type────────┬─query─────┐
+│ QueryStart  │ SELECT 1; │
+│ QueryFinish │ SELECT 1; │
+└─────────────┴───────────┘
+```
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 Формировать блоки указанного размера, при вставке в таблицу.
@@ -1760,6 +1792,19 @@ ClickHouse генерирует исключение
 -   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
 -   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
 
+## insert_distributed_one_random_shard {#insert_distributed_one_random_shard}
+
+Включает или отключает режим вставки данных в [Distributed](../../engines/table-engines/special/distributed.md#distributed)) таблицу в случайный шард при отсутствии ключ шардирования.
+
+По умолчанию при вставке данных в `Distributed` таблицу с несколькими шардами и при отсутствии ключа шардирования сервер ClickHouse будет отклонять любой запрос на вставку данных. Когда `insert_distributed_one_random_shard = 1`, вставки принимаются, а данные записываются в случайный шард.
+
+Возможные значения:
+
+-   0 — если у таблицы несколько шардов, но ключ шардирования отсутствует, вставка данных отклоняется.
+-   1 — если ключ шардирования отсутствует, то вставка данных осуществляется в случайный шард среди всех доступных шардов.
+
+Значение по умолчанию: `0`.
+
 ## insert_shard_id {#insert_shard_id}
 
 Если не `0`, указывает, в какой шард [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы данные будут вставлены синхронно.
@@ -2654,7 +2699,6 @@ SELECT * FROM test2;
 - 1 — живые представления поддерживаются.
 
 Значение по умолчанию: `0`.
-
 
 ## live_view_heartbeat_interval {#live-view-heartbeat-interval}
 
