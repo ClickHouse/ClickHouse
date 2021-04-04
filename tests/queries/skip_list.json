@@ -589,6 +589,7 @@
         "limit_memory",
         "live_view",
         "memory_leak",
-        "memory_limit"
+        "memory_limit",
+        "01780_clickhouse_dictionary_source_loop"
     ]
 }
