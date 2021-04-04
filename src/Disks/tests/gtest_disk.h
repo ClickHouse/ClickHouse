@@ -2,7 +2,6 @@
 
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskMemory.h>
-#include <Disks/HDFS/DiskHDFS.h>
 #include <Disks/IDisk.h>
 
 
