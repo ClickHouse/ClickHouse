@@ -680,6 +680,7 @@
         "live_view",
         "memory_leak",
         "memory_limit",
-        "polygon_dicts" // they use an explicitly specified database
+        "polygon_dicts", // they use an explicitly specified database
+        "01780_clickhouse_dictionary_source_loop"
     ]
 }
