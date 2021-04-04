@@ -177,7 +177,7 @@ inline bool_if_big_int_vs_float<TABigInt, TAFloat> equalsOpTmpl(TABigInt, TAFloa
     return false;
 }
 
-/* Final realiztions */
+/* Final implementations */
 
 
 template <typename A, typename B>
