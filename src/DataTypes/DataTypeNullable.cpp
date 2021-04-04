@@ -246,9 +246,10 @@ ReturnType DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer
     if (istr.eof())
         throw ParsingException("Unexpected end of stream, while parsing value of Nullable type", ErrorCodes::CANNOT_READ_ALL_DATA);
 
-    /// This is not null, surely.
-    if (*istr.position() != '\\')
+    if (istr.eof() || *istr.position() != '\\') /// Some data types can deserialize absence of data (e.g. empty string), so eof is ok.
     {
+        /// This is not null, surely.
+
         return safeDeserialize<ReturnType>(column, *nested_data_type,
             [] { return false; },
             [&nested_data_type, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsTextEscaped(nested, istr, settings); });
