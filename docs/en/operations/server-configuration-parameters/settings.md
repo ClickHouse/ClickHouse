@@ -100,6 +100,11 @@ Default value: `1073741824` (1 GB).
     <size_limit>1073741824</size_limit>
 </core_dump> 
 ```
+## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
+
+Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
+
+Default value: `480` (8 minute).
 
 ## default_database {#default-database}
 
@@ -123,6 +128,25 @@ Settings profiles are located in the file specified in the parameter `user_confi
 
 ``` xml
 <default_profile>default</default_profile>
+```
+
+## default_replica_path {#default_replica_path}
+
+The path to the table in ZooKeeper.
+
+**Example**
+
+``` xml
+<default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
+```
+## default_replica_name {#default_replica_name}
+
+ The replica name in ZooKeeper.
+
+**Example**
+
+``` xml
+<default_replica_name>{replica}</default_replica_name>
 ```
 
 ## dictionaries_config {#server_configuration_parameters-dictionaries_config}
