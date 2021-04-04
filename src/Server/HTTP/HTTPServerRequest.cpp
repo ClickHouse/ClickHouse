@@ -26,7 +26,6 @@ HTTPServerRequest::HTTPServerRequest(const Context & context, HTTPServerResponse
 
     auto receive_timeout = context.getSettingsRef().http_receive_timeout;
     auto send_timeout = context.getSettingsRef().http_send_timeout;
-    auto max_query_size = context.getSettingsRef().max_query_size;
 
     session.socket().setReceiveTimeout(receive_timeout);
     session.socket().setSendTimeout(send_timeout);
@@ -37,7 +36,7 @@ HTTPServerRequest::HTTPServerRequest(const Context & context, HTTPServerResponse
     readRequest(*in);  /// Try parse according to RFC7230
 
     if (getChunkedTransferEncoding())
-        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), max_query_size);
+        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in));
     else if (hasContentLength())
         stream = std::make_unique<LimitReadBuffer>(std::move(in), getContentLength(), false);
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)

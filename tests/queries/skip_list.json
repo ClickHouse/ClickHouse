@@ -264,6 +264,10 @@
         "00116_storage_set",
         "00083_create_merge_tree_zookeeper",
         "00062_replicated_merge_tree_alter_zookeeper",
+        /// Does not support renaming of multiple tables in single query
+        "00634_rename_view",
+        "00140_rename",
+        "01783_http_chunk_size",
         "01720_constraints_complex_types",
         "01747_alter_partition_key_enum_zookeeper"
     ],
