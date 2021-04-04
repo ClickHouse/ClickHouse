@@ -310,55 +310,62 @@ inline bool_if_safe_conversion<A, B> equalsOp(A a, B b)
 }
 
 template <>
-inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Float64, DB::UInt64>(DB::Float64 f, DB::UInt64 u)
+inline bool equalsOp<DB::Float64, DB::UInt64>(DB::Float64 f, DB::UInt64 u)
 {
-    return static_cast<DB::UInt64>(f) == u && f == static_cast<DB::Float64>(u);
+    /// Maximum exactly representable integer.
+    return u <= (1ULL << std::numeric_limits<DB::Float64>::digits)
+        && f == static_cast<DB::Float64>(u);
 }
 
 template <>
-inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::UInt64, DB::Float64>(DB::UInt64 u, DB::Float64 f)
+inline bool equalsOp<DB::UInt64, DB::Float64>(DB::UInt64 u, DB::Float64 f)
 {
-    return u == static_cast<DB::UInt64>(f) && static_cast<DB::Float64>(u) == f;
+    return equalsOp(f, u);
 }
 
 template <>
-inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Float64, DB::Int64>(DB::Float64 f, DB::Int64 u)
+inline bool equalsOp<DB::Float64, DB::Int64>(DB::Float64 f, DB::Int64 u)
 {
-    return static_cast<DB::Int64>(f) == u && f == static_cast<DB::Float64>(u);
+    return u <= (1LL << std::numeric_limits<DB::Float64>::digits)
+        && u >= -(1LL << std::numeric_limits<DB::Float64>::digits)
+        && f == static_cast<DB::Float64>(u);
 }
 
 template <>
-inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Int64, DB::Float64>(DB::Int64 u, DB::Float64 f)
+inline bool equalsOp<DB::Int64, DB::Float64>(DB::Int64 u, DB::Float64 f)
 {
-    return u == static_cast<DB::Int64>(f) && static_cast<DB::Float64>(u) == f;
+    return equalsOp(f, u);
 }
 
 template <>
-inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Float32, DB::UInt64>(DB::Float32 f, DB::UInt64 u)
+inline bool equalsOp<DB::Float32, DB::UInt64>(DB::Float32 f, DB::UInt64 u)
 {
-    return static_cast<DB::UInt64>(f) == u && f == static_cast<DB::Float32>(u);
+    return u <= (1ULL << std::numeric_limits<DB::Float32>::digits)
+        && f == static_cast<DB::Float32>(u);
 }
 
 template <>
-inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
+inline bool equalsOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
 {
-    return u == static_cast<DB::UInt64>(f) && static_cast<DB::Float32>(u) == f;
+    return equalsOp(f, u);
 }
 
 template <>
-inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Float32, DB::Int64>(DB::Float32 f, DB::Int64 u)
+inline bool equalsOp<DB::Float32, DB::Int64>(DB::Float32 f, DB::Int64 u)
 {
-    return static_cast<DB::Int64>(f) == u && f == static_cast<DB::Float32>(u);
+    return u <= (1LL << std::numeric_limits<DB::Float32>::digits)
+        && u >= -(1LL << std::numeric_limits<DB::Float32>::digits)
+        && f == static_cast<DB::Float32>(u);
 }
 
 template <>
-inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::Int64, DB::Float32>(DB::Int64 u, DB::Float32 f)
+inline bool equalsOp<DB::Int64, DB::Float32>(DB::Int64 u, DB::Float32 f)
 {
-    return u == static_cast<DB::Int64>(f) && static_cast<DB::Float32>(u) == f;
+    return equalsOp(f, u);
 }
 
 template <>
-inline bool NO_SANITIZE_UNDEFINED equalsOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
+inline bool equalsOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
 {
     return u.low == 0 && equalsOp(static_cast<UInt64>(u.high), f);
 }
