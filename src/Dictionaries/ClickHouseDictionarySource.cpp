@@ -112,7 +112,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
     /** Query to local ClickHouse is marked internal in order to avoid
       *    the necessity of holding process_list_element shared pointer.
       */
-    if (is_local)
+    if (configuration.is_local)
     {
         auto stream = executeQuery(load_all_query, context, true).getInputStream();
         /// FIXME res.in may implicitly use some objects owned be res, but them will be destructed after return
@@ -125,7 +125,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
 BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll()
 {
     std::string load_update_query = getUpdateFieldAndDate();
-    if (is_local)
+    if (configuration.is_local)
     {
         auto stream = executeQuery(load_update_query, context, true).getInputStream();
         stream = std::make_shared<ConvertingBlockInputStream>(stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
