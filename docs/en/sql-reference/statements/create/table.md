@@ -53,11 +53,31 @@ Creates a table with the same result as that of the [table function](../../../sq
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 ```
 
-Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from SELECT.
+Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from `SELECT`.
 
 In all cases, if `IF NOT EXISTS` is specified, the query won’t return an error if the table already exists. In this case, the query won’t do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../../../engines/table-engines/index.md#table_engines).
+
+!!! warning "Warning"
+    The `SELECT` results must match the table description, otherwise an exception is thrown.
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+Result:
+
+```text
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
 
 ## NULL Or NOT NULL Modifiers {#null-modifiers}
 
