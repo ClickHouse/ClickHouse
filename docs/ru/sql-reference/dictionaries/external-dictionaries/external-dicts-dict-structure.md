@@ -3,7 +3,7 @@ toc_priority: 44
 toc_title: "Ключ и поля словаря"
 ---
 
-# Ключ и поля словаря {#kliuch-i-polia-slovaria}
+# Ключ и поля словаря {#dictionary-key-and-fields}
 
 Секция `<structure>` описывает ключ словаря и поля, доступные для запросов.
 
@@ -88,7 +88,7 @@ PRIMARY KEY Id
 
 -   `PRIMARY KEY` – имя столбца с ключами.
 
-### Составной ключ {#sostavnoi-kliuch}
+### Составной ключ {#composite-key}
 
 Ключом может быть кортеж (`tuple`) из полей произвольных типов. В этом случае [layout](external-dicts-dict-layout.md) должен быть `complex_key_hashed` или `complex_key_cache`.
 
@@ -165,6 +165,6 @@ CREATE DICTIONARY somename (
 | <a name="hierarchical-dict-attr"></a> `hierarchical` | Если `true`, то атрибут содержит ключ предка для текущего элемента. Смотрите [Иерархические словари](external-dicts-dict-hierarchical.md).<br/><br/>Значение по умолчанию: `false`.                                                                                                                                                                                   | Нет           |
 | `is_object_id`                                       | Признак того, что запрос выполняется к документу MongoDB по `ObjectID`.<br/><br/>Значение по умолчанию: `false`.                                                                                                                                                                                                                                              | Нет          |
 
-## Смотрите также {#smotrite-takzhe}
+**Смотрите также**
 
 -   [Функции для работы с внешними словарями](../../../sql-reference/functions/ext-dict-functions.md).
