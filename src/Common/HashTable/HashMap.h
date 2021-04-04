@@ -22,7 +22,7 @@ struct PairNoInit
     First first;
     Second second;
 
-    PairNoInit() = default;
+    PairNoInit() {};
 
     template <typename FirstValue>
     PairNoInit(FirstValue && first_, NoInitTag)
