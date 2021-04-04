@@ -24,7 +24,7 @@ Columns:
 
     -   `Real` represents collecting stack traces by wall-clock time.
     -   `CPU` represents collecting stack traces by CPU time.
-    -   `Memory` represents collecting allocations and deallocations.
+    -   `Memory` represents collecting allocations and deallocations when memory allocation exceeds the subsequent watermark.
     -   `MemorySample` represents collecting random allocations and deallocations.
 
 -   `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
