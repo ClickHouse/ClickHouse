@@ -17,9 +17,7 @@
 
 (defn get-clickhouse-url
   [url]
-  (let [download-result (cu/wget! url)]
-    (do (c/exec :mv download-result common-prefix)
-        (str common-prefix "/" download-result))))
+  (non-precise-cached-wget! url))
 
 (defn download-clickhouse
   [source]
@@ -49,6 +47,7 @@
 
 (defn chmod-binary
   [path]
+  (info "Binary path chmod" path)
   (c/exec :chmod :+x path))
 
 (defn install-downloaded-clickhouse
