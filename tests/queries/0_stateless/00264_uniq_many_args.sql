@@ -4,7 +4,8 @@ SELECT
     uniqCombined(17)(x), uniqCombined(17)((x)), uniqCombined(17)(x, y), uniqCombined(17)((x, y)), uniqCombined(17)(x, y, z), uniqCombined(17)((x, y, z)),
     uniqHLL12(x), uniqHLL12((x)), uniqHLL12(x, y), uniqHLL12((x, y)), uniqHLL12(x, y, z), uniqHLL12((x, y, z)),
     uniqExact(x), uniqExact((x)), uniqExact(x, y), uniqExact((x, y)), uniqExact(x, y, z), uniqExact((x, y, z)),
-    uniqUpTo(5)(x), uniqUpTo(5)((x)), uniqUpTo(5)(x, y), uniqUpTo(5)((x, y)), uniqUpTo(5)(x, y, z), uniqUpTo(5)((x, y, z))
+    uniqUpTo(5)(x), uniqUpTo(5)((x)), uniqUpTo(5)(x, y), uniqUpTo(5)((x, y)), uniqUpTo(5)(x, y, z), uniqUpTo(5)((x, y, z)),
+    uniqThetaSketch(x), uniqThetaSketch((x)), uniqThetaSketch(x, y), uniqThetaSketch((x, y)), uniqThetaSketch(x, y, z), uniqThetaSketch((x, y, z))
 FROM
 (
     SELECT
@@ -22,6 +23,7 @@ SELECT k,
     uniqHLL12(x), uniqHLL12((x)), uniqHLL12(x, y), uniqHLL12((x, y)), uniqHLL12(x, y, z), uniqHLL12((x, y, z)),
     uniqExact(x), uniqExact((x)), uniqExact(x, y), uniqExact((x, y)), uniqExact(x, y, z), uniqExact((x, y, z)),
     uniqUpTo(5)(x), uniqUpTo(5)((x)), uniqUpTo(5)(x, y), uniqUpTo(5)((x, y)), uniqUpTo(5)(x, y, z), uniqUpTo(5)((x, y, z)),
+    uniqThetaSketch(x), uniqThetaSketch((x)), uniqThetaSketch(x, y), uniqThetaSketch((x, y)), uniqThetaSketch(x, y, z), uniqThetaSketch((x, y, z)),
     count() AS c
 FROM
 (

@@ -24,7 +24,8 @@ SELECT (uniq(a), uniq(b), uniq(c)),
     (uniqCombined(a), uniqCombined(b), uniqCombined(c)),
     (uniqCombined(17)(a), uniqCombined(17)(b), uniqCombined(17)(c)),
     (uniqExact(a), uniqExact(b), uniqExact(c)),
-    (uniqHLL12(a), uniqHLL12(b), uniqHLL12(c))
+    (uniqHLL12(a), uniqHLL12(b), uniqHLL12(c)),
+    (uniqThetaSketch(a), uniqThetaSketch(b), uniqThetaSketch(c))
 FROM (SELECT * FROM decimal ORDER BY a);
 
 SELECT uniqUpTo(10)(a), uniqUpTo(10)(b), uniqUpTo(10)(c) FROM decimal WHERE a >= 0 AND a < 5;
