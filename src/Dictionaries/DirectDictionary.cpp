@@ -35,7 +35,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     const Strings & attribute_names,
     const DataTypes & result_types,
     const Columns & key_columns,
-    const DataTypes & key_types,
+    const DataTypes & key_types [[maybe_unused]],
     const Columns & default_values_columns) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::complex)
@@ -126,7 +126,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
     query_count.fetch_add(requested_keys_size, std::memory_order_relaxed);
 
-   return request.filterRequestedColumns(result_columns);
+    return request.filterRequestedColumns(result_columns);
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -141,7 +141,9 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(const Columns & key_columns, const DataTypes & key_types [[maybe_unused]]) const
+ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
+    const Columns & key_columns,
+    const DataTypes & key_types [[maybe_unused]]) const
 {
     if constexpr (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
