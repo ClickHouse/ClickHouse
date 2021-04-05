@@ -41,12 +41,14 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     size_t max_parts_per_block_,
     bool quorum_parallel_,
     bool deduplicate_,
-    bool optimize_on_insert_)
+    bool optimize_on_insert_,
+    bool is_attach_)
     : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , quorum(quorum_)
     , quorum_timeout_ms(quorum_timeout_ms_)
     , max_parts_per_block(max_parts_per_block_)
+    , is_attach(is_attach_)
     , quorum_parallel(quorum_parallel_)
     , deduplicate(deduplicate_)
     , log(&Poco::Logger::get(storage.getLogName() + " (Replicated OutputStream)"))
@@ -263,10 +265,20 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
 
             part->name = part->getNewName(part->info);
 
-            /// Will add log entry about new part.
-
             StorageReplicatedMergeTree::LogEntry log_entry;
-            log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+
+            if (is_attach)
+            {
+                log_entry.type = StorageReplicatedMergeTree::LogEntry::ATTACH_PART;
+
+                /// We don't need to involve ZooKeeper to obtain the checksums as by the time we get
+                /// the MutableDataPartPtr here, we already have the data thus being able to
+                /// calculate the checksums.
+                log_entry.part_checksum = part->checksums.getTotalChecksumHex();
+            }
+            else
+                log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
+
             log_entry.create_time = time(nullptr);
             log_entry.source_replica = storage.replica_name;
             log_entry.new_part_name = part->name;

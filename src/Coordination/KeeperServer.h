@@ -34,6 +34,7 @@ private:
     std::atomic<bool> initialized_flag = false;
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
+    std::atomic<size_t> active_session_id_requests = 0;
 
     nuraft::cb_func::ReturnCode callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param);
 
