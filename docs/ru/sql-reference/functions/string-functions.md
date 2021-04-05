@@ -652,7 +652,7 @@ SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 Функция извлекает текст из HTML или XHTML по следующим правилам:
 
 1. Комментарии, начинающиеся с `<!--` и оканчивающиеся `-->`, удаляются.
-1. Содержимое секции `CDATA` между `<![CDATA[` и `]]>` остается без изменений, и дальнейшая обработка не выполняется. Содержимое секции присоединяется к предыдущему блоку текста без пробела.
+1. Содержимое секции `CDATA` между `<![CDATA[` и `]]>` остается без изменений, и его дальнейшая обработка не выполняется. Содержимое секции присоединяется к предыдущему блоку текста без пробела.
 1. Текст, окруженный тегами `<script>` или `<style>`, убирается полностью. Если `script` или `style` использованы в качестве имен из пространства имен XML (например, `<script:a>`), то они обрабатываются как обычные теги.
 1. Каждый тег заменяется пробелом. Обратите внимание, что элементы наподобие `<>`, `<!>`, `<!-->` также заменяются. Тег без закрывающей скобки `>` удаляется до конца текста. 
 1. Любая последовательность пробельных символов (пробел, новая строка, возврат каретки, таб, вертикальный таб или перевод страницы) заменяется на один пробел.
@@ -688,7 +688,7 @@ extractTextFromHTML(x)
 Запрос:
 
 ``` sql
-SELECT extractTextFromHTML(' <p> Text <i>with</i><b>tags</b>. <!-- comments --> </p> ');
+SELECT extractTextFromHTML(' <p> A text <i>with</i><b>tags</b>. <!-- comments --> </p> ');
 SELECT extractTextFromHTML('<![CDATA[The content within <b>CDATA</b>]]> <script>alert("Script");</script>');
 SELECT extractTextFromHTML(html) FROM url('http://www.donothingfor2minutes.com/', RawBLOB, 'html String');
 ```
@@ -696,7 +696,7 @@ SELECT extractTextFromHTML(html) FROM url('http://www.donothingfor2minutes.com/'
 Результат:
 
 ``` text
-Text with tags .
+A text with tags .
 The content within <b>CDATA</b>
 Do Nothing for 2 Minutes 2:00 &nbsp;
 ```
