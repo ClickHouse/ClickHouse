@@ -280,6 +280,12 @@ set_source_files_properties(
         Common/SymbolIndex.cpp
         PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
 
+# coverage for everything in src/
+foreach (module ${all_modules})
+    set_target_properties(${module}
+        PROPERTIES COMPILE_FLAGS "${WITH_COVERAGE_FLAGS}")
+endforeach ()
+
 target_link_libraries (clickhouse_common_io
         PRIVATE
             string_utils

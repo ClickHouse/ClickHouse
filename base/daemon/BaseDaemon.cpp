@@ -43,7 +43,7 @@
 #include <common/sleep.h>
 
 #if WITH_COVERAGE
-#include <common/coverage.cpp>
+#include <common/coverage/coverage.h>
 #endif
 
 #include <IO/WriteBufferFromFile.h>
@@ -508,7 +508,7 @@ void BaseDaemon::terminate()
 void BaseDaemon::kill()
 {
 #if WITH_COVERAGE
-    dumpCoverageReportIfPossible();
+    coverage::dumpReport();
 #endif
 
     pid_file.reset();

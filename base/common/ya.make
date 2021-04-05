@@ -42,7 +42,6 @@ SRCS(
     LineReader.cpp
     StringRef.cpp
     argsToConfig.cpp
-    coverage.cpp
     demangle.cpp
     errnoToString.cpp
     getFQDNOrHostName.cpp
@@ -57,7 +56,6 @@ SRCS(
     shift10.cpp
     sleep.cpp
     terminalColors.cpp
-
 )
 
 END()

@@ -21,11 +21,13 @@ from errno import ESRCH
 try:
     import termcolor
 except ImportError:
-    termcolor = None
-import random
+    termcolor = None import random
 import string
 import multiprocessing
 from contextlib import closing
+
+from ctypes import *
+from signal import SIGUSR2
 
 
 MESSAGES_TO_RETRY = [
@@ -39,7 +41,7 @@ MESSAGES_TO_RETRY = [
 def json_minify(string):
     """
     Removes all js-style comments from json string. Allows to have comments in skip_list.json.
-    The code taken from https://github.com/getify/JSON.minify/tree/python under the MIT license.
+    The code was taken from https://github.com/getify/JSON.minify/tree/python under the MIT license.
     """
 
     tokenizer = re.compile(r'"|(/\*)|(\*/)|(//)|\n|\r')
@@ -284,6 +286,15 @@ SERVER_DIED = False
 exit_code = 0
 stop_time = None
 
+libc_ = None
+def send_coverage_signal(pid: int, test_id: int):
+    print("Sent test id " + str(test_id) + " to server")
+
+    if libc_ is None:
+        libc_ = cdll.LoadLibrary("libc.so.6")
+
+    libc_.sigqueue(pid, SIGUSR2, test_id)
+
 
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
@@ -320,7 +331,7 @@ def run_tests_array(all_tests_with_params):
     if all_tests:
         print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
 
-    for case in all_tests:
+    for test_id, case in enumerate(all_tests):
         if SERVER_DIED:
             break
 
@@ -389,6 +400,9 @@ def run_tests_array(all_tests_with_params):
                     stdout_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
 
+                    if args.coverage:
+                        send_coverage_signal(clickhouse_proc.pid, test_id)
+
                     proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir)
 
                     if proc.returncode is None:
@@ -407,6 +421,9 @@ def run_tests_array(all_tests_with_params):
                     else:
                         counter = 1
                         while need_retry(stderr):
+                            if args.coverage:
+                                send_coverage_signal(clickhouse_proc.pid, test_id)
+
                             proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir)
                             sleep(2**counter)
                             counter += 1
@@ -980,14 +997,27 @@ if __name__ == '__main__':
     parser.add_argument('--no-long', action='store_false', dest='no_long', help='Do not run long tests')
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
+
     group=parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')
     group.add_argument('--no-zookeeper', action='store_false', default=None, dest='zookeeper', help='Do not run zookeeper related tests')
+
     group=parser.add_mutually_exclusive_group(required=False)
-    group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
+    group.add_argument('--shard', action='store_true', default=None, dest='shard', 
+        help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
+    # TODO Why not using testname? Signals are faster, isolating the handler in server
+    parser.add_argument('--coverage', action='store_true', default=False,
+        help="Send a signal to the server along with the test_id that is going to be run. "
+             "Do not use this option with the server built without WITH_COVERAGE option, "
+             "it will terminate upon signal receive");
+
     args = parser.parse_args()
+
+    if args.coverage and (args.parallel != "1/1" or args.jobs != 1):
+        print("You can't run tests in parallel while tracking code coverage")
+        sys.exit(1)
 
     if args.queries and not os.path.isdir(args.queries):
         print("Cannot access the specified directory with queries (" + args.queries + ")", file=sys.stderr)

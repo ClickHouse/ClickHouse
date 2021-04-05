@@ -36,7 +36,6 @@ add_library (common ${SRCS})
 
 if (WITH_COVERAGE)
     target_compile_definitions(common PUBLIC WITH_COVERAGE=1)
-    list (APPEND SRCS coverage.cpp)
 else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()

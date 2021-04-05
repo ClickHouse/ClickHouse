@@ -284,8 +284,8 @@ if (WITH_COVERAGE)
     if (COMPILER_CLANG)
         message(STATUS "Code coverage runtime: attaching")
 
-        set(COMPILER_FLAGS
-            "${COMPILER_FLAGS} -fsanitize-coverage-allowlist=${CMAKE_CURRENT_SOURCE_DIR}/base/common/coverage_allowlist.txt -fsanitize-coverage=trace-pc-guard")
+        set(WITH_COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard")
+        set(WITHOUT_COVERAGE "-fno-sanitize-coverage=trace-pc-guard")
     else()
         message(ERROR "As for now, the code coverage is supported in Clang only")
     endif()

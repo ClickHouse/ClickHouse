@@ -21,7 +21,8 @@
 #include <common/errnoToString.h>
 
 #if WITH_COVERAGE
-#include <common/coverage.cpp>
+#include <common/coverage/coverage.h>
+#include <common/coverage/sanitizer_callbacks.h>
 #endif
 
 #include <Common/ClickHouseRevision.h>
@@ -1391,9 +1392,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 ///  and global thread pool destructor will wait for threads, preventing server shutdown).
 
                 /// Dump coverage here, because std::atexit callback would not be called.
-
 #if WITH_COVERAGE
-                    dumpCoverageReportIfPossible();
+                coverage::dumpReport();
 #endif
 
                 LOG_INFO(log, "Will shutdown forcefully.");
