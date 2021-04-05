@@ -200,7 +200,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
         const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-        const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+        const UInt64 null_value = dictionary_attribute.null_value.template get<UInt64>();
         const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
 
         auto is_key_valid_func = [&](auto & key) { return parent_keys_map.find(key) != parent_keys_map.end(); };
@@ -246,7 +246,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
         const auto & dictionary_attribute = dict_struct.attributes[hierarchical_attribute_index];
         auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
 
-        const UInt64 null_value = dictionary_attribute.null_value.get<UInt64>();
+        const UInt64 null_value = dictionary_attribute.null_value.template get<UInt64>();
         const CollectionType<UInt64> & parent_keys_map = std::get<CollectionType<UInt64>>(hierarchical_attribute.container);
 
         auto is_key_valid_func = [&](auto & key) { return parent_keys_map.find(key) != parent_keys_map.end(); };
@@ -327,14 +327,14 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
             {
                 string_arena = std::make_unique<Arena>();
 
-                const auto & string_null_value = dictionary_attribute.null_value.get<String>();
+                const auto & string_null_value = dictionary_attribute.null_value.template get<String>();
                 const size_t string_null_value_size = string_null_value.size();
 
                 const char * string_in_arena = string_arena->insert(string_null_value.data(), string_null_value_size);
                 default_value = {string_in_arena, string_null_value_size};
             }
             else
-                default_value = dictionary_attribute.null_value.get<NearestFieldType<ValueType>>();
+                default_value = dictionary_attribute.null_value.template get<NearestFieldType<ValueType>>();
 
             Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), default_value, CollectionType<ValueType>(), std::move(string_arena)};
             attributes.emplace_back(std::move(attribute));
