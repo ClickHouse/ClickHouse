@@ -2844,4 +2844,15 @@ Sets the interval in seconds after which periodically refreshed [live view](../.
 
 Default value: `60`.
 
+## check_query_single_value_result {#check_query_single_value_result}
+
+Defines the level of detail for the [CHECK TABLE](../../sql-reference/statements/check-table.md#checking-mergetree-tables) query result for `MergeTree` family engines .
+
+Possible values:
+
+-   0 — the query shows a check status for every individual data part of a table.
+-   1 — the query shows the general table check status.
+
+Default value: `0`.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
