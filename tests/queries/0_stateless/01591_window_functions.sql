@@ -378,3 +378,5 @@ select
     count(*) over (order by (toFloat64(number) as f64) range 5. preceding)
 from numbers(7)
 ;
+
+drop table window_mt;
