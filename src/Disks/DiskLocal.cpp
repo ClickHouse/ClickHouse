@@ -383,7 +383,7 @@ void registerDiskLocal(DiskFactory & factory)
 
         if (Poco::File disk{path}; !disk.canRead() || !disk.canWrite())
         {
-            throw Exception("There is no RW access to disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
+            throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
         }
 
         bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
