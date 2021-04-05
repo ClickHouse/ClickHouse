@@ -813,7 +813,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (part_names_with_disks.empty() && parts_from_wal.empty())
     {
-        LOG_DEBUG(log, "There is no data parts");
+        LOG_DEBUG(log, "There are no data parts");
         return;
     }
 
