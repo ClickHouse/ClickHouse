@@ -641,6 +641,10 @@ class ClickHouseCluster:
         except:
             pass
 
+        clickhouse_start_cmd = self.base_cmd + ['pull', '--ignore-pull-failures']
+        print(f"Pulling images for {self.base_cmd}")
+        subprocess_check_call(clickhouse_start_cmd)
+
         try:
             if destroy_dirs and p.exists(self.instances_dir):
                 print(("Removing instances dir %s", self.instances_dir))
