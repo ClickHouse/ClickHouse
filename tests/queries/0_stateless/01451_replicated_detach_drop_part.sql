@@ -47,3 +47,9 @@ SELECT name FROM system.parts WHERE table = 'replica2' AND active;
 
 DROP TABLE replica1;
 DROP TABLE replica2;
+
+CREATE TABLE replica1 (v UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/01451/attach', 'r1') order by tuple() settings max_replicated_merges_in_queue = 0;
+CREATE TABLE replica2 (v UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/01451/attach', 'r2') order by tuple() settings max_replicated_merges_in_queue = 0;
+
+DROP TABLE IF EXISTS replica1;
+DROP TABLE IF EXISTS replica2;
