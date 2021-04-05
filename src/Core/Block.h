@@ -116,7 +116,7 @@ public:
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
 
-     /** List of names, types and lengths of columns. Designed for debugging. */
+    /** List of names, types and lengths of columns. Designed for debugging. */
     std::string dumpStructure() const;
 
     /** List of column names and positions from index */

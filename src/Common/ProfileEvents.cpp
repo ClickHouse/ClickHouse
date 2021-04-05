@@ -32,6 +32,8 @@
     M(UncompressedCacheHits, "") \
     M(UncompressedCacheMisses, "") \
     M(UncompressedCacheWeightLost, "") \
+    M(MMappedFileCacheHits, "") \
+    M(MMappedFileCacheMisses, "") \
     M(IOBufferAllocs, "") \
     M(IOBufferAllocBytes, "") \
     M(ArenaAllocChunks, "") \

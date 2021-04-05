@@ -29,10 +29,12 @@ private:
 
     void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
+    void startBridgeIfNot(const Context & context) const;
+
     String connection_string;
     String schema_name;
     String remote_table_name;
-    BridgeHelperPtr helper;
+    mutable BridgeHelperPtr helper;
 };
 
 class TableFunctionJDBC : public ITableFunctionXDBC
