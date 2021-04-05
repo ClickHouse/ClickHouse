@@ -635,9 +635,8 @@ class ClickHouseCluster:
         # Just in case kill unstopped containers from previous launch
         try:
             print("Trying to kill unstopped containers...")
-
-            if not subprocess_call(['docker-compose', 'kill']):
-                subprocess_call(['docker-compose', 'down', '--volumes'])
+            subprocess_call(['docker-compose', 'kill'])
+            subprocess_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
             print("Unstopped containers killed")
         except:
             pass
