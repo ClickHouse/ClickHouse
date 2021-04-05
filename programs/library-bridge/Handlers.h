@@ -54,7 +54,7 @@ public:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
 private:
-    size_t keep_alive_timeout;
+    const size_t keep_alive_timeout;
 };
 
 }
