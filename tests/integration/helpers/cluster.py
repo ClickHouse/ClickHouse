@@ -656,7 +656,7 @@ class ClickHouseCluster:
 
             self.docker_client = docker.from_env(version=self.docker_api_version)
 
-            common_opts = ['up', '-d', '--force-recreate']
+            common_opts = ['up', '-d']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 print('Setup ZooKeeper')
@@ -738,7 +738,7 @@ class ClickHouseCluster:
 
             if self.with_redis and self.base_redis_cmd:
                 print('Setup Redis')
-                subprocess_check_call(self.base_redis_cmd + ['up', '-d', '--force-recreate'])
+                subprocess_check_call(self.base_redis_cmd + ['up', '-d'])
                 time.sleep(10)
 
             if self.with_minio and self.base_minio_cmd:
@@ -772,7 +772,7 @@ class ClickHouseCluster:
                             os.environ.pop('SSL_CERT_FILE')
 
             if self.with_cassandra and self.base_cassandra_cmd:
-                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
+                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'])
                 self.wait_cassandra_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
