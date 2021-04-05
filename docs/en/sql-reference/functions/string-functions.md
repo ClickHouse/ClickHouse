@@ -655,7 +655,7 @@ Result:
 The function extracts text from HTML or XHTML according to the following rules:
 
 1. Comments starting with `<!--` and ending with `-->` are removed.
-1. The content of a `CDATA` section between `<![CDATA[` and `]]>` is left as is, without furthure processing. Note that it is appended to the previous text without any space.
+1. The content of a `CDATA` section between `<![CDATA[` and `]]>` is left as is, without further processing. Note that it is appended to the previous text without any space.
 1. A text wrapped with `<script>` or `<style>` tags is removed entirely. If `script` or `style` are the names of XML namespaces (like `<script:a>`) then they are treated like usual tags.
 1. Any tag is replaced with a space. Note that elements like `<>`, `<!>`, `<!-->` are also replaced. Tag without closing bracket `>` is removed to the end of an input text. 
 1. Any sequence of whitespaces (space, new line, carriage return, tab, vertical tab or form feed) is converted to a single space.
