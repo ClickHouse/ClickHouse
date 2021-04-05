@@ -37,14 +37,16 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
     auto it = watches.find(path);
     if (it != watches.end())
     {
-        std::unique_ptr<Coordination::ZooKeeperWatchResponse> watch_response = std::make_unique<Coordination::ZooKeeperWatchResponse>();
-        watch_response->path = path;
-        watch_response->xid = Coordination::WATCH_XID;
-        watch_response->zxid = -1;
-        watch_response->type = event_type;
-        watch_response->state = Coordination::State::CONNECTED;
         for (auto watcher_session : it->second)
+        {
+            auto watch_response = std::make_unique<Coordination::ZooKeeperWatchResponse>();
+            watch_response->path = path;
+            watch_response->xid = Coordination::WATCH_XID;
+            watch_response->zxid = -1;
+            watch_response->type = event_type;
+            watch_response->state = Coordination::State::CONNECTED;
             result.push_back(KeeperStorage::ResponseForSession{watcher_session, std::move(watch_response)});
+        }
 
         watches.erase(it);
     }
@@ -53,14 +55,16 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
     it = list_watches.find(parent_path);
     if (it != list_watches.end())
     {
-        std::unique_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response = std::make_unique<Coordination::ZooKeeperWatchResponse>();
-        watch_list_response->path = parent_path;
-        watch_list_response->xid = Coordination::WATCH_XID;
-        watch_list_response->zxid = -1;
-        watch_list_response->type = Coordination::Event::CHILD;
-        watch_list_response->state = Coordination::State::CONNECTED;
         for (auto watcher_session : it->second)
+        {
+            auto watch_list_response = std::make_unique<Coordination::ZooKeeperWatchResponse>();
+            watch_list_response->path = parent_path;
+            watch_list_response->xid = Coordination::WATCH_XID;
+            watch_list_response->zxid = -1;
+            watch_list_response->type = Coordination::Event::CHILD;
+            watch_list_response->state = Coordination::State::CONNECTED;
             result.push_back(KeeperStorage::ResponseForSession{watcher_session, std::move(watch_list_response)});
+        }
 
         list_watches.erase(it);
     }

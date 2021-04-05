@@ -556,15 +556,21 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
     Coordination::Error code = Coordination::Error::ZOK;
     Poco::Event event;
 
+    std::cerr << "=========== Multi request " << reinterpret_cast<const void *>(&requests) << " size " << requests.size() << std::endl;
+
     auto callback = [&](Coordination::MultiResponse response)
     {
         SCOPE_EXIT(event.set());
         code = response.error;
+
+        std::cerr << "=========== Multi request callback " << reinterpret_cast<const void *>(&requests) << " size " << response.responses.size() << std::endl;
         responses = std::move(response.responses);
     };
 
     impl->multi(requests, callback);
     event.wait();
+
+    std::cerr << "=========== Multi request res " << reinterpret_cast<const void *>(&requests) << " size " << responses.size() << std::endl;
     return code;
 }
 
@@ -630,6 +636,8 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             String child_path = path + "/" + children.back();
+
+            std::cerr << "..... ..... try remove children " << child_path << std::endl;
             tryRemoveChildrenRecursive(child_path);
             if (likely(keep_child_node.empty() || keep_child_node != children.back()))
             {
@@ -643,9 +651,17 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         /// this means someone is concurrently removing these children and we will have
         /// to remove them one by one.
         Coordination::Responses responses;
+        std::cerr << ",,,,,,,, try multi for " << ops.size() << " elements" << std::endl;
         if (tryMulti(ops, responses) != Coordination::Error::ZOK)
+        {
+            std::cerr << ",,,,,, removed " << ops.size() << " elements" << std::endl;
             for (const std::string & child : batch)
                 tryRemove(child);
+        }
+        else
+        {
+            std::cerr << ",,,,,, NOT removed " << ops.size() << " elements" << std::endl;
+        }
     }
 }
 
@@ -657,6 +673,7 @@ void ZooKeeper::removeRecursive(const std::string & path)
 
 void ZooKeeper::tryRemoveRecursive(const std::string & path)
 {
+    std::cerr << ".......... tryRemoveRecursive " << path << std::endl;
     tryRemoveChildrenRecursive(path);
     tryRemove(path);
 }
