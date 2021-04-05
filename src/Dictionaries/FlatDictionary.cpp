@@ -1,20 +1,22 @@
 #include "FlatDictionary.h"
 
 #include <Core/Defines.h>
+#include <Common/HashTable/HashMap.h>
+
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include "DictionaryBlockInputStream.h"
-#include "DictionaryFactory.h"
+#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/HierarchyDictionariesUtils.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
@@ -23,7 +25,6 @@ namespace ErrorCodes
 
 static const auto initial_array_size = 1024;
 static const auto max_array_size = 500000;
-
 
 FlatDictionary::FlatDictionary(
     const StorageID & dict_id_,
@@ -45,69 +46,6 @@ FlatDictionary::FlatDictionary(
     calculateBytesAllocated();
 }
 
-
-void FlatDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
-{
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
-    DictionaryDefaultValueExtractor<UInt64> extractor(null_value);
-
-    getItemsImpl<UInt64, UInt64>(
-        *hierarchical_attribute,
-        ids,
-        [&](const size_t row, const UInt64 value) { out[row] = value; },
-        extractor);
-}
-
-
-/// Allow to use single value in same way as array.
-static inline FlatDictionary::Key getAt(const PaddedPODArray<FlatDictionary::Key> & arr, const size_t idx)
-{
-    return arr[idx];
-}
-static inline FlatDictionary::Key getAt(const FlatDictionary::Key & value, const size_t)
-{
-    return value;
-}
-
-template <typename ChildType, typename AncestorType>
-void FlatDictionary::isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
-    const auto & attr = std::get<ContainerType<Key>>(hierarchical_attribute->arrays);
-    const auto rows = out.size();
-
-    size_t loaded_size = attr.size();
-    for (const auto row : ext::range(0, rows))
-    {
-        auto id = getAt(child_ids, row);
-        const auto ancestor_id = getAt(ancestor_ids, row);
-
-        for (size_t i = 0; id < loaded_size && id != null_value && id != ancestor_id && i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
-            id = attr[id];
-
-        out[row] = id != null_value && id == ancestor_id;
-    }
-
-    query_count.fetch_add(rows, std::memory_order_relaxed);
-}
-
-
-void FlatDictionary::isInVectorVector(
-    const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_ids, ancestor_ids, out);
-}
-
-void FlatDictionary::isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_ids, ancestor_id, out);
-}
-
-void FlatDictionary::isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
-{
-    isInImpl(child_id, ancestor_ids, out);
-}
-
 ColumnPtr FlatDictionary::getColumn(
         const std::string & attribute_name,
         const DataTypePtr & result_type,
@@ -117,13 +55,15 @@ ColumnPtr FlatDictionary::getColumn(
 {
     ColumnPtr result;
 
-    PaddedPODArray<Key> backup_storage;
+    PaddedPODArray<UInt64> backup_storage;
     const auto & ids = getColumnVectorData(this, key_columns.front(), backup_storage);
 
     auto size = ids.size();
 
-    const auto & attribute = getAttribute(attribute_name);
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+
+    size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
+    const auto & attribute = attributes[attribute_index];
 
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
@@ -183,10 +123,9 @@ ColumnPtr FlatDictionary::getColumn(
     return result;
 }
 
-
 ColumnUInt8::Ptr FlatDictionary::hasKeys(const Columns & key_columns, const DataTypes &) const
 {
-    PaddedPODArray<Key> backup_storage;
+    PaddedPODArray<UInt64> backup_storage;
     const auto& ids = getColumnVectorData(this, key_columns.front(), backup_storage);
 
     auto result = ColumnUInt8::create(ext::size(ids));
@@ -205,24 +144,118 @@ ColumnUInt8::Ptr FlatDictionary::hasKeys(const Columns & key_columns, const Data
     return result;
 }
 
+ColumnPtr FlatDictionary::getHierarchy(ColumnPtr key_column, const DataTypePtr &) const
+{
+    PaddedPODArray<UInt64> keys_backup_storage;
+    const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
+
+    size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
+    const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
+
+    const UInt64 null_value = std::get<UInt64>(hierarchical_attribute.null_values);
+    const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.arrays);
+
+    auto is_key_valid_func = [&, this](auto & key)
+    {
+        return key < loaded_ids.size() && loaded_ids[key];
+    };
+
+    auto get_parent_key_func = [&, this](auto & hierarchy_key)
+    {
+        std::optional<UInt64> result;
+
+        if (hierarchy_key >= loaded_ids.size() || !loaded_ids[hierarchy_key])
+            return result;
+
+        result = parent_keys[hierarchy_key];
+
+        return result;
+    };
+
+    auto dictionary_hierarchy_array = getKeysHierarchyArray(keys, null_value, is_key_valid_func, get_parent_key_func);
+
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+
+    return dictionary_hierarchy_array;
+}
+
+ColumnUInt8::Ptr FlatDictionary::isInHierarchy(
+    ColumnPtr key_column,
+    ColumnPtr in_key_column,
+    const DataTypePtr &) const
+{
+    PaddedPODArray<UInt64> keys_backup_storage;
+    const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
+
+    PaddedPODArray<UInt64> keys_in_backup_storage;
+    const auto & keys_in = getColumnVectorData(this, in_key_column, keys_in_backup_storage);
+
+    size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
+    const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
+
+    const UInt64 null_value = std::get<UInt64>(hierarchical_attribute.null_values);
+    const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.arrays);
+
+    auto is_key_valid_func = [&, this](auto & key)
+    {
+        return key < loaded_ids.size() && loaded_ids[key];
+    };
+
+    auto get_parent_key_func = [&, this](auto & hierarchy_key)
+    {
+        std::optional<UInt64> result;
+
+        if (hierarchy_key >= loaded_ids.size() || !loaded_ids[hierarchy_key])
+            return result;
+
+        result = parent_keys[hierarchy_key];
+
+        return result;
+    };
+
+    auto result = getKeysIsInHierarchyColumn(keys, keys_in, null_value, is_key_valid_func, get_parent_key_func);
+
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+
+    return result;
+}
+
+ColumnPtr FlatDictionary::getDescendants(
+    ColumnPtr key_column,
+    const DataTypePtr &,
+    size_t level) const
+{
+    PaddedPODArray<UInt64> keys_backup;
+    const auto & keys = getColumnVectorData(this, key_column, keys_backup);
+
+    size_t hierarchical_attribute_index = *dict_struct.hierarchical_attribute_index;
+    const auto & hierarchical_attribute = attributes[hierarchical_attribute_index];
+    const ContainerType<UInt64> & parent_keys = std::get<ContainerType<UInt64>>(hierarchical_attribute.arrays);
+
+    HashMap<UInt64, PaddedPODArray<UInt64>> parent_to_child;
+
+    for (size_t i = 0; i < parent_keys.size(); ++i)
+    {
+        auto parent_key = parent_keys[i];
+
+        if (loaded_ids[i])
+            parent_to_child[parent_key].emplace_back(static_cast<UInt64>(i));
+    }
+
+    auto result = getKeysDescendantsArray(keys, parent_to_child, level);
+
+    query_count.fetch_add(keys.size(), std::memory_order_relaxed);
+
+    return result;
+}
+
 void FlatDictionary::createAttributes()
 {
     const auto size = dict_struct.attributes.size();
     attributes.reserve(size);
 
     for (const auto & attribute : dict_struct.attributes)
-    {
-        attribute_index_by_name.emplace(attribute.name, attributes.size());
         attributes.push_back(createAttribute(attribute, attribute.null_value));
-
-        if (attribute.hierarchical)
-        {
-            hierarchical_attribute = &attributes.back();
-
-            if (hierarchical_attribute->type != AttributeUnderlyingType::utUInt64)
-                throw Exception{full_name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
-        }
-    }
 }
 
 void FlatDictionary::blockToAttributes(const Block & block)
@@ -271,7 +304,7 @@ void FlatDictionary::updateData()
             const auto & saved_id_column = *saved_block->safeGetByPosition(0).column;
             const auto & update_id_column = *block.safeGetByPosition(0).column;
 
-            std::unordered_map<Key, std::vector<size_t>> update_ids;
+            std::unordered_map<UInt64, std::vector<size_t>> update_ids;
             for (size_t row = 0; row < update_id_column.size(); ++row)
             {
                 const auto id = update_id_column.get64(row);
@@ -280,7 +313,7 @@ void FlatDictionary::updateData()
 
             const size_t saved_rows = saved_id_column.size();
             IColumn::Filter filter(saved_rows);
-            std::unordered_map<Key, std::vector<size_t>>::iterator it;
+            std::unordered_map<UInt64, std::vector<size_t>>::iterator it;
 
             for (size_t row = 0; row < saved_id_column.size(); ++row)
             {
@@ -385,7 +418,6 @@ void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Fi
     attribute.arrays.emplace<ContainerType<StringRef>>(initial_array_size, StringRef(string_in_arena, string.size()));
 }
 
-
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
 {
     auto nullable_set = attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
@@ -408,7 +440,7 @@ FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttrib
 template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void FlatDictionary::getItemsImpl(
     const Attribute & attribute,
-    const PaddedPODArray<Key> & ids,
+    const PaddedPODArray<UInt64> & ids,
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
@@ -425,7 +457,7 @@ void FlatDictionary::getItemsImpl(
 }
 
 template <typename T>
-void FlatDictionary::resize(Attribute & attribute, const Key id)
+void FlatDictionary::resize(Attribute & attribute, const UInt64 id)
 {
     if (id >= max_array_size)
         throw Exception{full_name + ": identifier should be less than " + toString(max_array_size), ErrorCodes::ARGUMENT_OUT_OF_BOUND};
@@ -440,7 +472,7 @@ void FlatDictionary::resize(Attribute & attribute, const Key id)
 }
 
 template <typename T>
-void FlatDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const T & value)
+void FlatDictionary::setAttributeValueImpl(Attribute & attribute, const UInt64 id, const T & value)
 {
     auto & array = std::get<ContainerType<T>>(attribute.arrays);
     array[id] = value;
@@ -448,13 +480,13 @@ void FlatDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, 
 }
 
 template <>
-void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const Key id, const String & value)
+void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const UInt64 id, const String & value)
 {
     const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
     setAttributeValueImpl(attribute, id, StringRef{string_in_arena, value.size()});
 }
 
-void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, const Field & value)
+void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 id, const Field & value)
 {
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -484,21 +516,11 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, cons
     callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
-
-const FlatDictionary::Attribute & FlatDictionary::getAttribute(const std::string & attribute_name) const
-{
-    const auto it = attribute_index_by_name.find(attribute_name);
-    if (it == std::end(attribute_index_by_name))
-        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
-
-    return attributes[it->second];
-}
-
-PaddedPODArray<FlatDictionary::Key> FlatDictionary::getIds() const
+PaddedPODArray<UInt64> FlatDictionary::getIds() const
 {
     const auto ids_count = ext::size(loaded_ids);
 
-    PaddedPODArray<Key> ids;
+    PaddedPODArray<UInt64> ids;
     ids.reserve(ids_count);
 
     for (auto idx : ext::range(0, ids_count))
@@ -509,8 +531,7 @@ PaddedPODArray<FlatDictionary::Key> FlatDictionary::getIds() const
 
 BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<Key>;
-    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);
+    return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, getIds(), column_names);
 }
 
 void registerDictionaryFlat(DictionaryFactory & factory)

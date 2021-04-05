@@ -1914,7 +1914,7 @@ Default value: `0`.
 
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table when there is no distributed key.
 
-By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
+By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will reject any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
 
 Possible values:
 
@@ -2784,6 +2784,28 @@ Possible values:
 
 -   0 — Working with geo data types is disabled.
 -   1 — Working with geo data types is enabled.
+
+Default value: `0`.
+
+## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
+
+Adds a modifier `SYNC` to all `DROP` and `DETACH` queries. 
+
+Possible values:
+
+-   0 — Queries will be executed with delay.
+-   1 — Queries will be executed without delay.
+
+Default value: `0`.
+
+## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil}
+
+Sets the `SHOW TABLE` query display.
+
+Possible values:
+
+-   0 — The query will be displayed without table UUID.
+-   1 — The query will be displayed with table UUID.
 
 Default value: `0`.
 

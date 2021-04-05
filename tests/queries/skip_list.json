@@ -164,7 +164,8 @@
         "00062_replicated_merge_tree_alter_zookeeper",
         /// Does not support renaming of multiple tables in single query
         "00634_rename_view",
-        "00140_rename"
+        "00140_rename",
+        "01783_http_chunk_size"
     ],
     "polymorphic-parts": [
         "01508_partition_pruning_long", /// bug, shoud be fixed
@@ -641,6 +642,7 @@
         "01542_dictionary_load_exception_race",
         "01545_system_errors", // looks at the difference of values in system.errors
         "01560_optimize_on_insert_zookeeper",
+        "01563_distributed_query_finish", // looks at system.errors which is global
         "01575_disable_detach_table_of_dictionary",
         "01593_concurrent_alter_mutations_kill",
         "01593_concurrent_alter_mutations_kill_many_replicas",
@@ -667,6 +669,7 @@
         "01702_system_query_log", // Runs many global system queries
         "01715_background_checker_blather_zookeeper",
         "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01722_long_brotli_http_compression_json_format", // It is broken in some unimaginable way with the genius error 'cannot write to ofstream'. Not sure how to debug this
         "01747_alter_partition_key_enum_zookeeper",
         "01748_dictionary_table_dot", // creates database
         "01760_polygon_dictionaries",
@@ -679,6 +682,20 @@
         "live_view",
         "memory_leak",
         "memory_limit",
-        "polygon_dicts" // they use an explicitly specified database
+        "polygon_dicts", // they use an explicitly specified database
+        "01658_read_file_to_stringcolumn",
+        "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
+        "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
+        "01748_dictionary_table_dot", // creates database
+        "00950_dict_get",
+        "01683_flat_dictionary",
+        "01681_cache_dictionary_simple_key",
+        "01682_cache_dictionary_complex_key",
+        "01684_ssd_cache_dictionary_simple_key",
+        "01685_ssd_cache_dictionary_complex_key",
+        "01760_system_dictionaries",
+        "01760_polygon_dictionaries",
+        "01778_hierarchical_dictionaries",
+        "01780_clickhouse_dictionary_source_loop"
     ]
 }

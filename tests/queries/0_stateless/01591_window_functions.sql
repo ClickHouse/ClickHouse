@@ -242,6 +242,19 @@ from (
 window w as (order by x range between 1 preceding and 2 following)
 order by x;
 
+-- We need large offsets to trigger overflow to positive direction, or
+-- else the frame end runs into partition end w/o overflow and doesn't move
+-- after that. The frame from this query is equivalent to the entire partition.
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toUInt8(if(mod(number, 2),
+        toInt64(255 - intDiv(number, 2)),
+        toInt64(intDiv(number, 2)))) x
+    from numbers(10)
+)
+window w as (order by x range between 255 preceding and 255 following)
+order by x;
+
 -- RANGE OFFSET ORDER BY DESC
 select x, min(x) over w, max(x) over w, count(x) over w from (
     select toUInt8(number) x from numbers(11)) t
@@ -349,6 +362,8 @@ from numbers(5);
 
 -- variants of lag/lead that respect the frame
 select number, p, pp,
+    lagInFrame(number) over w as lag1,
+    lagInFrame(number, number - pp) over w as lag2,
     lagInFrame(number, number - pp, number * 11) over w as lag,
     leadInFrame(number, number - pp, number * 11) over w as lead
 from (select number, intDiv(number, 5) p, p * 5 pp from numbers(16))
@@ -374,7 +389,23 @@ select count() over () from numbers(4) where number < 2;
 
 -- floating point RANGE frame
 select
-    count(*) over (order by (toFloat32(number) as f32) range 5. preceding),
-    count(*) over (order by (toFloat64(number) as f64) range 5. preceding)
+    count(*) over (order by toFloat32(number) range 5. preceding),
+    count(*) over (order by toFloat64(number) range 5. preceding),
+    count(*) over (order by toFloat32(number) range between current row and 5. following),
+    count(*) over (order by toFloat64(number) range between current row and 5. following)
 from numbers(7)
 ;
+
+-- negative offsets should not be allowed
+select count() over (order by toInt64(number) range between -1 preceding and unbounded following) from numbers(1); -- { serverError 36 }
+select count() over (order by toInt64(number) range between -1 following and unbounded following) from numbers(1); -- { serverError 36 }
+select count() over (order by toInt64(number) range between unbounded preceding and -1 preceding) from numbers(1); -- { serverError 36 }
+select count() over (order by toInt64(number) range between unbounded preceding and -1 following) from numbers(1); -- { serverError 36 }
+
+---- a test with aggregate function that allocates memory in arena
+select sum(a[length(a)])
+from (
+    select groupArray(number) over (partition by modulo(number, 11)
+            order by modulo(number, 1111), number) a
+    from numbers_mt(10000)
+) settings max_block_size = 7;
