@@ -30,8 +30,6 @@ public:
     void write(const Block & block) override;
     void flush() override;
 
-    static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit);
-
     String getContentType() const override { return "application/octet-stream"; }
 
 private:
