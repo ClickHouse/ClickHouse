@@ -97,6 +97,9 @@ StorageMergeTree::StorageMergeTree(
     auto settings = getSettings();
     if (settings->non_replicated_deduplication_window != 0)
     {
+        if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+            throw Exception("Deduplication for non-replicated MergeTree in old syntax is not supported", ErrorCodes::BAD_ARGUMENTS);
+
         std::string path = getDataPaths()[0] + "/deduplication_logs";
         deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version);
         deduplication_log->load();
