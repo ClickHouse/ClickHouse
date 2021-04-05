@@ -59,6 +59,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <common/logger_useful.h>
@@ -887,6 +888,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.select && create.isView())
     {
+        // Expand CTE before filling default database
+        ApplyWithSubqueryVisitor().visit(*create.select);
         AddDefaultDatabaseVisitor visitor(current_database);
         visitor.visit(*create.select);
     }
