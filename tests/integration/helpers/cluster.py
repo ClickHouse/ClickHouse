@@ -54,6 +54,26 @@ def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=su
         raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr.decode('utf-8')))
 
 
+def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
+    """
+    Retry if `func()` throws, `num` times.
+
+    :param func: func to run
+    :param num: number of retries
+
+    :throws StopIteration
+    """
+    i = 0
+    while i <= num:
+        try:
+            func(*args, **kwargs)
+            time.sleep(delay)
+        except exception: # pylint: disable=broad-except
+            i += 1
+            continue
+        return
+    raise StopIteration('Function did not finished successfully')
+
 def subprocess_check_call(args):
     # Uncomment for debugging
     # print('run:', ' ' . join(args))
@@ -641,9 +661,9 @@ class ClickHouseCluster:
         except:
             pass
 
-        clickhouse_start_cmd = self.base_cmd + ['pull', '--ignore-pull-failures']
+        clickhouse_pull_cmd = self.base_cmd + ['pull']
         print(f"Pulling images for {self.base_cmd}")
-        subprocess_check_call(clickhouse_start_cmd)
+        retry_exception(10, 5, subprocess_check_call, Exception, clickhouse_pull_cmd)
 
         try:
             if destroy_dirs and p.exists(self.instances_dir):
