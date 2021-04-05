@@ -346,7 +346,7 @@ public:
     StoragePtr getViewSource();
 
     String getCurrentDatabase() const;
-    String getCurrentQueryId() const { return client_info.current_query_id; }
+    String getCurrentQueryId() const;
 
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;

@@ -24,7 +24,6 @@
 #include <regex>
 #include <Access/User.h>
 #include <Access/AccessControlManager.h>
-#include <Common/setThreadName.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -87,8 +86,6 @@ MySQLHandler::MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & so
 
 void MySQLHandler::run()
 {
-    setThreadName("MySQLHandler");
-    ThreadStatus thread_status;
     connection_context.makeSessionContext();
     connection_context.setDefaultFormat("MySQLWire");
 
@@ -341,9 +338,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
             affected_rows += progress.written_rows;
         });
 
-        CurrentThread::QueryScope query_scope{query_context};
-
-        executeQuery(should_replace ? replacement : payload, *out, false, query_context,
+        executeQuery(should_replace ? replacement : payload, *out, true, query_context,
             [&with_output](const String &, const String &, const String &, const String &)
             {
                 with_output = true;
