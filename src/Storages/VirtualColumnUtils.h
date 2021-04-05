@@ -4,6 +4,7 @@
 
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -24,9 +25,14 @@ namespace VirtualColumnUtils
 /// - `WITH toUInt16(9000) as _port`.
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value, const String & func = "");
 
+/// Prepare `expression_ast` to filter block. Returns true if `expression_ast` is not trimmed, that is,
+/// `block` provides all needed columns for `expression_ast`, else return false.
+bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, Block block, ASTPtr & expression_ast);
+
 /// Leave in the block only the rows that fit under the WHERE clause and the PREWHERE clause of the query.
 /// Only elements of the outer conjunction are considered, depending only on the columns present in the block.
-void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context);
+/// If `expression_ast` is passed, use it to filter block.
+void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context, ASTPtr expression_ast = {});
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
