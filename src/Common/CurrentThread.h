@@ -63,9 +63,6 @@ public:
     /// Call from master thread as soon as possible (e.g. when thread accepted connection)
     static void initializeQuery();
 
-    /// Sets query_context for current thread group
-    static void attachQueryContext(Context & query_context);
-
     /// You must call one of these methods when create a query child thread:
     /// Add current thread to a group associated with the thread group
     static void attachTo(const ThreadGroupStatusPtr & thread_group);
@@ -99,6 +96,10 @@ public:
 
 private:
     static void defaultThreadDeleter();
+
+    /// Sets query_context for current thread group
+    /// Can by used only through QueryScope
+    static void attachQueryContext(Context & query_context);
 };
 
 }
