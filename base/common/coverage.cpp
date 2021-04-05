@@ -2,26 +2,20 @@
 #include <cstdio>
 #include <cstdlib>
 
-#if !WITH_COVERAGE
-
-inline void dumpCoverageReportIfPossible() {}
-
-#else
-
 // Use roaring bitmaps
 // Use some way to pass test id without the foss
 // Use some way to switch test_id
-static inline FILE * report_file = nullptr;
-static inline int coverage_test_id = -1;
+static FILE * report_file = nullptr;
+static int coverage_test_id = -1;
 
-inline void updateTestId(int new_test_id) {
+void updateTestId(int new_test_id) {
     fprintf(report_file, "CHANGE test id from %d to %d\n",
         coverage_test_id, new_test_id);
 
     coverage_test_id = new_test_id;
 }
 
-inline void updateReportFile(const char * coverage_report_file) {
+void updateReportFile(const char * coverage_report_file) {
     if (report_file)
         fclose(report_file);
 
@@ -36,7 +30,7 @@ inline void updateReportFile(const char * coverage_report_file) {
     }
 }
 
-inline void dumpCoverageReportIfPossible()  {
+void dumpCoverageReportIfPossible()  {
     updateReportFile(nullptr);
 }
 
@@ -81,5 +75,3 @@ extern "C" void __sanitizer_cov_trace_pc_guard(uint32_t *edge_index) {
             static_cast<void*>(__builtin_return_address(0)),
             *edge_index);
 }
-
-#endif

@@ -40,8 +40,11 @@
 #include <common/ErrorHandlers.h>
 #include <common/argsToConfig.h>
 #include <common/getThreadId.h>
-#include <common/coverage.cpp>
 #include <common/sleep.h>
+
+#if WITH_COVERAGE
+#include <common/coverage.cpp>
+#endif
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -504,7 +507,10 @@ void BaseDaemon::terminate()
 
 void BaseDaemon::kill()
 {
+#if WITH_COVERAGE
     dumpCoverageReportIfPossible();
+#endif
+
     pid_file.reset();
     /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
     /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).

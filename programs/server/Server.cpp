@@ -19,7 +19,11 @@
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <common/errnoToString.h>
+
+#if WITH_COVERAGE
 #include <common/coverage.cpp>
+#endif
+
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
@@ -1385,7 +1389,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 ///  and global thread pool destructor will wait for threads, preventing server shutdown).
 
                 /// Dump coverage here, because std::atexit callback would not be called.
+#if WITH_COVERAGE
                 dumpCoverageReportIfPossible();
+#endif
+
                 LOG_INFO(log, "Will shutdown forcefully.");
                 _exit(Application::EXIT_OK);
             }
