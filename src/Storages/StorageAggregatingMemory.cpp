@@ -122,7 +122,8 @@ public:
     {
     }
 
-    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
+    // OutputStream structure is same as source (before aggregation).
+    Block getHeader() const override { return storage.src_sample_block; }
 
     void write(const Block & block) override
     {
@@ -164,7 +165,7 @@ public:
             /// and two-level aggregation is triggered).
             in = std::make_shared<SquashingBlockInputStream>(
                     in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-            in = std::make_shared<ConvertingBlockInputStream>(in, getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
+            in = std::make_shared<ConvertingBlockInputStream>(in, metadata_snapshot->getSampleBlock(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
         else
             in = std::make_shared<OneBlockInputStream>(block);
@@ -249,14 +250,15 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
     }
 
 
-
-
-
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_after_aggr));
     storage_metadata.setConstraints(std::move(constraints_));
     storage_metadata.setSelectQuery(std::move(select));
     setInMemoryMetadata(storage_metadata);
+
+    StorageInMemoryMetadata src_metadata;
+    src_metadata.setColumns(std::move(columns_description_));
+    src_sample_block = src_metadata.getSampleBlock();
 }
 
 

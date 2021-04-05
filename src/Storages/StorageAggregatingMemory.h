@@ -63,6 +63,8 @@ private:
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
 
+    Block src_sample_block;
+
 protected:
     StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query, const Context & context_);
 };
