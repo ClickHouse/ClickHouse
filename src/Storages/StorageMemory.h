@@ -51,6 +51,7 @@ public:
 
     void drop() override;
 
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands & commands, const Context & context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
@@ -97,6 +98,7 @@ public:
 
 private:
     /// MultiVersion data storage, so that we can copy the list of blocks to readers.
+
     MultiVersion<Blocks> data;
 
     mutable std::mutex mutex;
@@ -106,8 +108,14 @@ private:
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
 
+    bool compress;
+
 protected:
-    StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
+    StorageMemory(
+        const StorageID & table_id_,
+        ColumnsDescription columns_description_,
+        ConstraintsDescription constraints_,
+        bool compress_ = false);
 };
 
 }

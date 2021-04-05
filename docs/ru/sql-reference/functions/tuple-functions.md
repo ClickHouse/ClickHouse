@@ -45,9 +45,9 @@ untuple(x)
 
 Чтобы пропустить некоторые столбцы в результате запроса, вы можете использовать выражение `EXCEPT`.
 
-**Параметры**
+**Аргументы**
 
--   `x` - функция `tuple`, столбец или кортеж элементов. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `x` — функция `tuple`, столбец или кортеж элементов. [Tuple](../../sql-reference/data-types/tuple.md).
 
 **Возвращаемое значение**
 
@@ -111,4 +111,55 @@ SELECT untuple((* EXCEPT (v2, v3),)) FROM kv;
 
 -   [Tuple](../../sql-reference/data-types/tuple.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/tuple-functions/) <!--hide-->
+## tupleHammingDistance {#tuplehammingdistance}
+
+Возвращает [расстояние Хэмминга](https://ru.wikipedia.org/wiki/%D0%A0%D0%B0%D1%81%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5_%D0%A5%D1%8D%D0%BC%D0%BC%D0%B8%D0%BD%D0%B3%D0%B0) между двумя кортежами одинакового размера.
+
+**Синтаксис**
+
+``` sql
+tupleHammingDistance(tuple1, tuple2)
+```
+
+**Аргументы**
+
+-   `tuple1` — первый кортеж. [Tuple](../../sql-reference/data-types/tuple.md).
+-   `tuple2` — второй кортеж. [Tuple](../../sql-reference/data-types/tuple.md).
+
+Кортежи должны иметь одинаковый размер и тип элементов.
+
+**Возвращаемое значение**
+
+-   Расстояние Хэмминга.
+
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md).
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT tupleHammingDistance((1, 2, 3), (3, 2, 1)) AS HammingDistance;
+```
+
+Результат:
+
+``` text
+┌─HammingDistance─┐
+│               2 │
+└─────────────────┘
+```
+
+Может быть использовано с функциями [MinHash](../../sql-reference/functions/hash-functions.md#ngramminhash) для проверки строк на совпадение:
+
+``` sql
+SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseInsensitive(string)) as HammingDistance FROM (SELECT 'Clickhouse is a column-oriented database management system for online analytical processing of queries.' AS string);
+```
+
+Результат:
+
+``` text
+┌─HammingDistance─┐
+│               2 │
+└─────────────────┘
+```

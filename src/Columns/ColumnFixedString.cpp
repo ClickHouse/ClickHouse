@@ -1,6 +1,7 @@
 #include <Columns/ColumnFixedString.h>
-
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnCompressed.h>
+
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -96,6 +97,11 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
     size_t old_size = chars.size();
     chars.resize(old_size + n);
     memcpy(chars.data() + old_size, pos, n);
+    return pos + n;
+}
+
+const char * ColumnFixedString::skipSerializedInArena(const char * pos) const
+{
     return pos + n;
 }
 
@@ -444,6 +450,33 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
 
     get(min_idx, min);
     get(max_idx, max);
+}
+
+ColumnPtr ColumnFixedString::compress() const
+{
+    size_t source_size = chars.size();
+
+    /// Don't compress small blocks.
+    if (source_size < 4096) /// A wild guess.
+        return ColumnCompressed::wrap(this->getPtr());
+
+    auto compressed = ColumnCompressed::compressBuffer(chars.data(), source_size, false);
+
+    if (!compressed)
+        return ColumnCompressed::wrap(this->getPtr());
+
+    size_t column_size = size();
+
+    return ColumnCompressed::create(column_size, compressed->size(),
+        [compressed = std::move(compressed), column_size, n = n]
+        {
+            size_t chars_size = n * column_size;
+            auto res = ColumnFixedString::create(n);
+            res->getChars().resize(chars_size);
+            ColumnCompressed::decompressBuffer(
+                compressed->data(), res->getChars().data(), compressed->size(), chars_size);
+            return res;
+        });
 }
 
 }

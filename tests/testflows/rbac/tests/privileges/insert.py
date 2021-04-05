@@ -16,6 +16,9 @@ def input_output_equality_check(node, input_columns, input_data, table_name):
     return input_dict == output_dict
 
 @TestScenario
+@Requirements(
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
+)
 def without_privilege(self, table_type, node=None):
     """Check that user without insert privilege on a table is not able to insert on that table.
     """
@@ -28,7 +31,13 @@ def without_privilege(self, table_type, node=None):
     with table(node, table_name, table_type):
         with user(node, user_name):
 
-            with When("I run INSERT without privilege"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {user_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {user_name}")
+
+            with Then("I run INSERT without privilege"):
                 exitcode, message = errors.not_enough_privileges(name=user_name)
 
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings = [("user", user_name)],
@@ -62,6 +71,34 @@ def user_with_privilege(self, table_type, node=None):
 
 @TestScenario
 @Requirements(
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Grant_Privilege_Insert("1.0"),
+)
+def all_privilege(self, table_type, node=None):
+    """Check that user can insert into a table on which they have insert privilege.
+    """
+    user_name = f"user_{getuid()}"
+    table_name = f"table_{getuid()}"
+
+    if node is None:
+        node = self.context.node
+
+    with table(node, table_name, table_type):
+
+        with user(node, user_name):
+
+            with When("I grant insert privilege"):
+                node.query(f"GRANT ALL ON *.* TO {user_name}")
+
+            with And("I use INSERT"):
+                node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings=[("user",user_name)])
+
+            with Then("I check the insert functioned"):
+                output = node.query(f"SELECT d FROM {table_name} FORMAT JSONEachRow").output
+                assert output == '{"d":"2020-01-01"}', error()
+
+@TestScenario
+@Requirements(
     RQ_SRS_006_RBAC_Revoke_Privilege_Insert("1.0"),
 )
 def user_with_revoked_privilege(self, table_type, node=None):
@@ -82,7 +119,31 @@ def user_with_revoked_privilege(self, table_type, node=None):
             with And("I revoke insert privilege"):
                 node.query(f"REVOKE INSERT ON {table_name} FROM {user_name}")
 
-            with And("I use INSERT"):
+            with Then("I use INSERT"):
+                exitcode, message = errors.not_enough_privileges(name=user_name)
+                node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')",
+                    settings=[("user",user_name)], exitcode=exitcode, message=message)
+
+@TestScenario
+def user_with_all_revoked_privilege(self, table_type, node=None):
+    """Check that user is unable to insert into a table after ALL privilege has been revoked from user.
+    """
+    user_name = f"user_{getuid()}"
+    table_name = f"table_{getuid()}"
+
+    if node is None:
+        node = self.context.node
+
+    with table(node, table_name, table_type):
+        with user(node, user_name):
+
+            with When("I grant insert privilege"):
+                node.query(f"GRANT INSERT ON {table_name} TO {user_name}")
+
+            with And("I revoke ALL privilege"):
+                node.query(f"REVOKE ALL ON *.* FROM {user_name}")
+
+            with Then("I use INSERT"):
                 exitcode, message = errors.not_enough_privileges(name=user_name)
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')",
                     settings=[("user",user_name)], exitcode=exitcode, message=message)
@@ -111,26 +172,36 @@ def user_column_privileges(self, grant_columns, insert_columns_pass, data_fail, 
     """
     user_name = f"user_{getuid()}"
     table_name = f"table_{getuid()}"
+
     if node is None:
         node = self.context.node
+
     with table(node, table_name, table_type):
+
         with user(node, user_name):
+
             with When("I grant insert privilege"):
                 node.query(f"GRANT INSERT({grant_columns}) ON {table_name} TO {user_name}")
+
             if insert_columns_fail is not None:
                 with And("I insert into a column without insert privilege"):
                     exitcode, message = errors.not_enough_privileges(name=user_name)
                     node.query(f"INSERT INTO {table_name} ({insert_columns_fail}) VALUES ({data_fail})",
                         settings=[("user",user_name)], exitcode=exitcode, message=message)
+
             with And("I insert into granted column"):
                 node.query(f"INSERT INTO {table_name} ({insert_columns_pass}) VALUES ({data_pass})",
                     settings=[("user",user_name)])
+
             with Then("I check the insert functioned"):
                 input_equals_output = input_output_equality_check(node, insert_columns_pass, data_pass, table_name)
                 assert input_equals_output, error()
+
             if revoke_columns is not None:
+
                 with When("I revoke insert privilege from columns"):
                     node.query(f"REVOKE INSERT({revoke_columns}) ON {table_name} FROM {user_name}")
+
                 with And("I insert into revoked columns"):
                     exitcode, message = errors.not_enough_privileges(name=user_name)
                     node.query(f"INSERT INTO {table_name} ({insert_columns_pass}) VALUES ({data_pass})",
@@ -147,16 +218,23 @@ def role_with_privilege(self, table_type, node=None):
     user_name = f"user_{getuid()}"
     role_name = f"role_{getuid()}"
     table_name = f"table_{getuid()}"
+
     if node is None:
         node = self.context.node
+
     with table(node, table_name, table_type):
+
         with user(node, user_name), role(node, role_name):
+
             with When("I grant insert privilege to a role"):
                 node.query(f"GRANT INSERT ON {table_name} TO {role_name}")
+
             with And("I grant the role to a user"):
                 node.query(f"GRANT {role_name} TO {user_name}")
+
             with And("I insert into the table"):
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings=[("user",user_name)])
+
             with Then("I check the data matches the input"):
                 output = node.query(f"SELECT d FROM {table_name} FORMAT JSONEachRow").output
                 assert output == '{"d":"2020-01-01"}', error()
@@ -173,16 +251,23 @@ def role_with_revoked_privilege(self, table_type, node=None):
     user_name = f"user_{getuid()}"
     role_name = f"role_{getuid()}"
     table_name = f"table_{getuid()}"
+
     if node is None:
         node = self.context.node
+
     with table(node, table_name, table_type):
+
         with user(node, user_name), role(node, role_name):
+
             with When("I grant privilege to a role"):
                 node.query(f"GRANT INSERT ON {table_name} TO {role_name}")
+
             with And("I grant the role to a user"):
                 node.query(f"GRANT {role_name} TO {user_name}")
+
             with And("I revoke privilege from the role"):
                 node.query(f"REVOKE INSERT ON {table_name} FROM {role_name}")
+
             with And("I insert into the table"):
                 exitcode, message = errors.not_enough_privileges(name=user_name)
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')",
@@ -196,16 +281,23 @@ def user_with_revoked_role(self, table_type, node=None):
     user_name = f"user_{getuid()}"
     role_name = f"role_{getuid()}"
     table_name = f"table_{getuid()}"
+
     if node is None:
         node = self.context.node
+
     with table(node, table_name, table_type):
+
         with user(node, user_name), role(node, role_name):
+
             with When("I grant privilege to a role"):
                 node.query(f"GRANT INSERT ON {table_name} TO {role_name}")
+
             with And("I grant the role to a user"):
                 node.query(f"GRANT {role_name} TO {user_name}")
+
             with And("I revoke the role from the user"):
                 node.query(f"REVOKE {role_name} FROM {user_name}")
+
             with And("I insert into the table"):
                 exitcode, message = errors.not_enough_privileges(name=user_name)
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')",
@@ -235,32 +327,43 @@ def role_column_privileges(self, grant_columns, insert_columns_pass, data_fail, 
     user_name = f"user_{getuid()}"
     role_name = f"role_{getuid()}"
     table_name = f"table_{getuid()}"
+
     if node is None:
         node = self.context.node
+
     with table(node, table_name, table_type):
         with user(node, user_name), role(node, role_name):
-                with When("I grant insert privilege"):
-                    node.query(f"GRANT INSERT({grant_columns}) ON {table_name} TO {role_name}")
-                with And("I grant the role to a user"):
-                    node.query(f"GRANT {role_name} TO {user_name}")
-                if insert_columns_fail is not None:
-                    with And("I insert into columns without insert privilege"):
-                        exitcode, message = errors.not_enough_privileges(name=user_name)
-                        node.query(f"INSERT INTO {table_name} ({insert_columns_fail}) VALUES ({data_fail})",
-                            settings=[("user",user_name)], exitcode=exitcode, message=message)
-                with And("I insert into granted column"):
+
+            with When("I grant insert privilege"):
+                node.query(f"GRANT INSERT({grant_columns}) ON {table_name} TO {role_name}")
+
+            with And("I grant the role to a user"):
+                node.query(f"GRANT {role_name} TO {user_name}")
+
+            if insert_columns_fail is not None:
+                with And("I insert into columns without insert privilege"):
+                    exitcode, message = errors.not_enough_privileges(name=user_name)
+
+                    node.query(f"INSERT INTO {table_name} ({insert_columns_fail}) VALUES ({data_fail})",
+                        settings=[("user",user_name)], exitcode=exitcode, message=message)
+
+            with And("I insert into granted column"):
+                node.query(f"INSERT INTO {table_name} ({insert_columns_pass}) VALUES ({data_pass})",
+                    settings=[("user",user_name)])
+
+            with Then("I check the insert functioned"):
+                input_equals_output = input_output_equality_check(node, insert_columns_pass, data_pass, table_name)
+                assert input_equals_output, error()
+
+            if revoke_columns is not None:
+                with When("I revoke insert privilege from columns"):
+                    node.query(f"REVOKE INSERT({revoke_columns}) ON {table_name} FROM {role_name}")
+
+                with And("I insert into revoked columns"):
+                    exitcode, message = errors.not_enough_privileges(name=user_name)
+
                     node.query(f"INSERT INTO {table_name} ({insert_columns_pass}) VALUES ({data_pass})",
-                            settings=[("user",user_name)])
-                with Then("I check the insert functioned"):
-                    input_equals_output = input_output_equality_check(node, insert_columns_pass, data_pass, table_name)
-                    assert input_equals_output, error()
-                if revoke_columns is not None:
-                    with When("I revoke insert privilege from columns"):
-                        node.query(f"REVOKE INSERT({revoke_columns}) ON {table_name} FROM {role_name}")
-                    with And("I insert into revoked columns"):
-                        exitcode, message = errors.not_enough_privileges(name=user_name)
-                        node.query(f"INSERT INTO {table_name} ({insert_columns_pass}) VALUES ({data_pass})",
-                            settings=[("user",user_name)], exitcode=exitcode, message=message)
+                        settings=[("user",user_name)], exitcode=exitcode, message=message)
 
 @TestScenario
 @Requirements(
@@ -272,29 +375,40 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
     """
     user_name = f"user_{getuid()}"
     table_name = f"table_{getuid()}"
+
     if node is None:
         node = self.context.node
+
     with table(node, table_name, table_type):
+
         try:
             with Given("I have a user on a cluster"):
                 node.query(f"CREATE USER OR REPLACE {user_name} ON CLUSTER sharded_cluster")
+
             with When("I grant insert privilege on a cluster without the node with the table"):
                 node.query(f"GRANT ON CLUSTER sharded_cluster23 INSERT ON {table_name} TO {user_name}")
+
             with And("I insert into the table expecting a fail"):
                 exitcode, message = errors.not_enough_privileges(name=user_name)
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
+
             with And("I grant insert privilege on cluster including all nodes"):
                 node.query(f"GRANT ON CLUSTER sharded_cluster INSERT ON {table_name} TO {user_name}")
+
             with And("I revoke insert privilege on cluster without the node with the table"):
                 node.query(f"REVOKE ON CLUSTER sharded_cluster23 INSERT ON {table_name} FROM {user_name}")
+
             with And("I insert into the table"):
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings=[("user",user_name)])
+
             with And("I check that I can read inserted data"):
                 output = node.query(f"SELECT d FROM {table_name} FORMAT JSONEachRow").output
                 assert output == '{"d":"2020-01-01"}', error()
+
             with And("I revoke insert privilege on cluster with all nodes"):
                 node.query(f"REVOKE ON CLUSTER sharded_cluster INSERT ON {table_name} FROM {user_name}")
+
             with Then("I insert into table expecting fail"):
                 exitcode, message = errors.not_enough_privileges(name=user_name)
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings=[("user",user_name)],
@@ -314,33 +428,46 @@ def role_with_privilege_on_cluster(self, table_type, node=None):
     user_name = f"user_{getuid()}"
     role_name = f"role_{getuid()}"
     table_name = f"table_{getuid()}"
+
     if node is None:
         node = self.context.node
+
     with table(node, table_name, table_type):
+
         try:
             with Given("I have a user on a cluster"):
                 node.query(f"CREATE USER OR REPLACE {user_name} ON CLUSTER sharded_cluster")
+
             with And("I have a role on a cluster"):
                 node.query(f"CREATE ROLE OR REPLACE {role_name} ON CLUSTER sharded_cluster")
+
             with When("I grant the role to the user"):
                 node.query(f"GRANT {role_name} TO {user_name}")
+
             with And("I grant insert privilege on a cluster without the node with the table"):
                 node.query(f"GRANT ON CLUSTER sharded_cluster23 INSERT ON {table_name} TO {role_name}")
+
             with And("I insert into the table expecting a fail"):
                 exitcode, message = errors.not_enough_privileges(name=user_name)
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
+
             with And("I grant insert privilege on cluster including all nodes"):
                 node.query(f"GRANT ON CLUSTER sharded_cluster INSERT ON {table_name} TO {role_name}")
+
             with And("I revoke insert privilege on cluster without the table node"):
                 node.query(f"REVOKE ON CLUSTER sharded_cluster23 INSERT ON {table_name} FROM {role_name}")
+
             with And("I insert into the table"):
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings=[("user",user_name)])
+
             with And("I check that I can read inserted data"):
                 output = node.query(f"SELECT d FROM {table_name} FORMAT JSONEachRow").output
                 assert output == '{"d":"2020-01-01"}', error()
+
             with And("I revoke insert privilege on cluster with all nodes"):
                 node.query(f"REVOKE ON CLUSTER sharded_cluster INSERT ON {table_name} FROM {role_name}")
+
             with Then("I insert into table expecting fail"):
                 exitcode, message = errors.not_enough_privileges(name=user_name)
                 node.query(f"INSERT INTO {table_name} (d) VALUES ('2020-01-01')", settings=[("user",user_name)],
@@ -357,7 +484,6 @@ def role_with_privilege_on_cluster(self, table_type, node=None):
 @Examples("table_type", [
     (key,) for key in table_types.keys()
 ])
-@Flags(TE)
 @Name("insert")
 def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
     """Check the RBAC functionality of INSERT.
@@ -377,7 +503,10 @@ def feature(self, table_type, parallel=None, stress=None, node="clickhouse1"):
     pool = Pool(10)
 
     try:
-        for scenario in loads(current_module(), Scenario):
-            run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
+        try:
+            for scenario in loads(current_module(), Scenario):
+                run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
+        finally:
+            join(tasks)
     finally:
-        join(tasks)
+        pool.close()

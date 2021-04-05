@@ -3,7 +3,6 @@
 namespace Coordination
 {
 
-
 void write(size_t x, WriteBuffer & out)
 {
     x = __builtin_bswap64(x);
