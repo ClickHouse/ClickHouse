@@ -662,7 +662,7 @@ The function extracts text from HTML or XHTML according to the following rules:
 1. Leading and trailing spaces are removed from the returned text.
 
 !!! info "Note"
-    HTML and XML entities are not decoded by the extractTextFromHTML function.
+    extractTextFromHTML function does not decode HTML and XML entities.
     
     It is not guaranteed that extractTextFromHTML function fully supports all HTML, XML or XHTML standards. But it tries to do the best.
 
@@ -686,12 +686,12 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 The first example contains several tags and a comment and also shows whitespace processing.
 The second example shows `CDATA` and `script` tag processing.
-In the third example text is extracted from the full HTML response received by the [url](../../sql-reference/table-functions/url.md) function.
+In the third example a text is extracted from the full HTML response received by the [url](../../sql-reference/table-functions/url.md) function.
 
 Query:
 
 ``` sql
-SELECT extractTextFromHTML(' <p> Text <i>with</i><b>tags</b>. <!-- comments --> </p> ');
+SELECT extractTextFromHTML(' <p> A text <i>with</i><b>tags</b>. <!-- comments --> </p> ');
 SELECT extractTextFromHTML('<![CDATA[The content within <b>CDATA</b>]]> <script>alert("Script");</script>');
 SELECT extractTextFromHTML(html) FROM url('http://www.donothingfor2minutes.com/', RawBLOB, 'html String');
 ```
@@ -699,7 +699,7 @@ SELECT extractTextFromHTML(html) FROM url('http://www.donothingfor2minutes.com/'
 Result:
 
 ``` text
-Text with tags .
+A text with tags .
 The content within <b>CDATA</b>
 Do Nothing for 2 Minutes 2:00 &nbsp;
 ```
