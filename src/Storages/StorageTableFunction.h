@@ -94,7 +94,9 @@ public:
                     pipe.getHeader().getColumnsWithTypeAndName(),
                     to_header.getColumnsWithTypeAndName(),
                     ActionsDAG::MatchColumnsMode::Name);
-            auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag);
+            auto convert_actions = std::make_shared<ExpressionActions>(
+                convert_actions_dag,
+                ExpressionActionsSettings::fromSettings(context.getSettingsRef()));
 
             pipe.addSimpleTransform([&](const Block & header)
             {

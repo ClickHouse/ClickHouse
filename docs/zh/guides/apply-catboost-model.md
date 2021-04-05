@@ -238,6 +238,6 @@ FROM
 ```
 
 !!! note "注"
-    查看函数说明 [avg()](../sql-reference/aggregate-functions/reference.md#agg_function-avg) 和 [log()](../sql-reference/functions/math-functions.md) 。
+    查看函数说明 [avg()](../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) 和 [log()](../sql-reference/functions/math-functions.md) 。
 
 [原始文章](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->

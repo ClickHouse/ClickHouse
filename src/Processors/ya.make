@@ -96,6 +96,7 @@ SRCS(
     QueryPlan/AddingDelayedSourceStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
+    QueryPlan/BuildQueryPipelineSettings.cpp
     QueryPlan/CreatingSetsStep.cpp
     QueryPlan/CubeStep.cpp
     QueryPlan/DistinctStep.cpp
