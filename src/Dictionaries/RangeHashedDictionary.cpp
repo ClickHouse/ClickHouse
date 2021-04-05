@@ -76,7 +76,7 @@ RangeHashedDictionary::RangeHashedDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : IDictionaryBase(dict_id_)
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -185,10 +185,10 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeys(const Columns & key_columns, con
     auto range_column_storage_type = std::make_shared<DataTypeInt64>();
     auto range_column_updated = castColumnAccurate(column_to_cast, range_column_storage_type);
 
-    PaddedPODArray<Key> key_backup_storage;
+    PaddedPODArray<UInt64> key_backup_storage;
     PaddedPODArray<RangeStorageType> range_backup_storage;
 
-    const PaddedPODArray<Key> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
+    const PaddedPODArray<UInt64> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
     const PaddedPODArray<RangeStorageType> & dates = getColumnVectorData(this, range_column_updated, range_backup_storage);
 
     const auto & attribute = attributes.front();
@@ -213,7 +213,7 @@ ColumnUInt8::Ptr RangeHashedDictionary::hasKeys(const Columns & key_columns, con
 template <typename AttributeType>
 ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
     const Attribute & attribute,
-    const PaddedPODArray<Key> & ids,
+    const PaddedPODArray<UInt64> & ids,
     const PaddedPODArray<RangeStorageType> & dates) const
 {
     auto result = ColumnUInt8::create(ids.size());
@@ -388,10 +388,10 @@ void RangeHashedDictionary::getItemsImpl(
     ValueSetter && set_value,
     DefaultValueExtractor & default_value_extractor) const
 {
-    PaddedPODArray<Key> key_backup_storage;
+    PaddedPODArray<UInt64> key_backup_storage;
     PaddedPODArray<RangeStorageType> range_backup_storage;
 
-    const PaddedPODArray<Key> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
+    const PaddedPODArray<UInt64> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
     const PaddedPODArray<RangeStorageType> & dates = getColumnVectorData(this, key_columns[1], range_backup_storage);
 
     const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
@@ -436,7 +436,7 @@ void RangeHashedDictionary::getItemsImpl(
 
 
 template <typename T>
-void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value)
+void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value)
 {
     using ValueType = std::conditional_t<std::is_same_v<T, String>, StringRef, T>;
     auto & map = *std::get<Ptr<ValueType>>(attribute.maps);
@@ -480,7 +480,7 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
         map.insert({id, Values<ValueType>{std::move(value_to_insert)}});
 }
 
-void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value)
+void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const UInt64 id, const Range & range, const Field & value)
 {
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
@@ -515,7 +515,7 @@ RangeHashedDictionary::getAttributeWithType(const std::string & attribute_name, 
 
 template <typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(
-    PaddedPODArray<Key> & ids,
+    PaddedPODArray<UInt64> & ids,
     PaddedPODArray<RangeType> & start_dates,
     PaddedPODArray<RangeType> & end_dates) const
 {
@@ -536,7 +536,7 @@ void RangeHashedDictionary::getIdsAndDates(
 template <typename T, typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(
     const Attribute & attribute,
-    PaddedPODArray<Key> & ids,
+    PaddedPODArray<UInt64> & ids,
     PaddedPODArray<RangeType> & start_dates,
     PaddedPODArray<RangeType> & end_dates) const
 {
@@ -567,7 +567,7 @@ void RangeHashedDictionary::getIdsAndDates(
 template <typename RangeType>
 BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const
 {
-    PaddedPODArray<Key> ids;
+    PaddedPODArray<UInt64> ids;
     PaddedPODArray<RangeType> start_dates;
     PaddedPODArray<RangeType> end_dates;
     getIdsAndDates(ids, start_dates, end_dates);

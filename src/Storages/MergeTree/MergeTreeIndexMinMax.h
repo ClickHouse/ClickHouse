@@ -10,7 +10,7 @@
 namespace DB
 {
 
-struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_);
     MergeTreeIndexGranuleMinMax(
@@ -31,7 +31,7 @@ struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
 };
 
 
-struct MergeTreeIndexAggregatorMinMax : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
 {
     MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorMinMax() override = default;
@@ -46,7 +46,7 @@ struct MergeTreeIndexAggregatorMinMax : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionMinMax : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionMinMax final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionMinMax(
