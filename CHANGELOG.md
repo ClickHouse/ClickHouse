@@ -26,7 +26,7 @@
 #### Experimental feature
 
 * Add experimental `Replicated` database engine. It replicates DDL queries across multiple hosts. [#16193](https://github.com/ClickHouse/ClickHouse/pull/16193) ([tavplubix](https://github.com/tavplubix)).
-* Introduce experimental support for window functions, enabled with `allow_experimental_functions = 1`. This is a preliminary, alpha-quality implementation that is not suitable for production use and will change in backward-incompatible ways in future releases. Please see [the documentation](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/sql-reference/window-functions/index.md#experimental-window-functions) for the list of supported features. [#20337](https://github.com/ClickHouse/ClickHouse/pull/20337) ([Alexander Kuzmenkov](https://github.com/akuzm)).
+* Introduce experimental support for window functions, enabled with `allow_experimental_window_functions = 1`. This is a preliminary, alpha-quality implementation that is not suitable for production use and will change in backward-incompatible ways in future releases. Please see [the documentation](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/sql-reference/window-functions/index.md#experimental-window-functions) for the list of supported features. [#20337](https://github.com/ClickHouse/ClickHouse/pull/20337) ([Alexander Kuzmenkov](https://github.com/akuzm)).
 * Add the ability to backup/restore metadata files for DiskS3. [#18377](https://github.com/ClickHouse/ClickHouse/pull/18377) ([Pavel Kovalenko](https://github.com/Jokser)).
 
 #### Performance Improvement
