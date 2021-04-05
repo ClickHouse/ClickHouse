@@ -685,7 +685,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 **Example**
 
 The first example contains several tags and a comment and also shows whitespace processing.
-The second example shows `CDATA` and script tag processing.
+The second example shows `CDATA` and `script` tag processing.
 In the third example text is extracted from the full HTML response received by the [url](../../sql-reference/table-functions/url.md) function.
 
 Query:
