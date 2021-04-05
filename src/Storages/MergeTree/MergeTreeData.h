@@ -463,7 +463,7 @@ public:
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
-    /// for new parts which don't already present in table.
+    /// for new parts which aren't already present in table.
     void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
 
     /// Removes parts from the working set parts.
