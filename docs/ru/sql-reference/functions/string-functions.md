@@ -659,7 +659,7 @@ SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 1. Все пробелы в начале и конце текста удаляются.
 
 !!! info "Примечание"
-    HTML и XML мнемоники не декодируются функцией extractTextFromHTML.
+    Функция extractTextFromHTML не декодирует HTML и XML мнемоники.
     
     Функция extractTextFromHTML не обязательно соответствует всем стандартам HTML, XML или XHTML. Но она пытается обработать текст наилучшим образом.
 
