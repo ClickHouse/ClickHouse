@@ -135,6 +135,19 @@ def test_load_all_many_rows(ch_cluster):
         assert(result == expected)
 
 
+def test_null_values(ch_cluster):
+    instance.query('SYSTEM RELOAD DICTIONARY dict2')
+    instance.query("""
+        CREATE TABLE IF NOT EXISTS `dict2_table` (
+             key UInt64, value1 UInt64, value2 UInt64, value3 UInt64
+        ) ENGINE = Dictionary(dict2)
+        """)
+
+    result = instance.query('SELECT * FROM dict2_table ORDER BY key')
+    expected = "0\t12\t12\t12\n"
+    assert(result == expected)
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

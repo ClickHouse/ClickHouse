@@ -78,7 +78,7 @@ bool LibraryBridgeHelper::initLibrary(const std::string & library_path, const st
         os << "library_settings=" << escapeForFileName(library_settings) << "&";
         os << "attributes_names=" << escapeForFileName(attributes_names) << "&";
         os << "sample_block=" << escapeForFileName(sample_block.getNamesAndTypesList().toString()) << "&";
-        os << "sample_block_with_nulls=" << escapeForFileName(block_string);
+        os << "null_values=" << escapeForFileName(block_string);
     };
     return executeRequest(uri, out_stream_callback);
 }

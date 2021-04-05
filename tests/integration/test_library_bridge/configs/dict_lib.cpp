@@ -89,19 +89,32 @@ struct DataHolder
     std::unique_ptr<ClickHouseLibrary::Row[]> rowHolder;
     ClickHouseLibrary::Table ctable; // Result data prepared for transfer via c-style interface
     LibHolder * lib = nullptr;
+
+    size_t num_rows;
+    size_t num_cols;
 };
 
 
 template <typename T>
 void MakeColumnsFromVector(T * ptr)
 {
-    for (const auto & row : ptr->dataHolder)
+    if (ptr->dataHolder.empty())
     {
+        LOG(ptr->lib->log, "generating null values, cols: " << ptr->num_cols);
         std::vector<ClickHouseLibrary::Field> fields;
-        for (const auto & field : row)
-            fields.push_back({&field, sizeof(field)});
-
+        for (size_t i = 0; i < ptr->num_cols; ++i)
+            fields.push_back({nullptr, 0});
         ptr->fieldHolder.push_back(fields);
+    }
+    else
+    {
+        for (const auto & row : ptr->dataHolder)
+        {
+            std::vector<ClickHouseLibrary::Field> fields;
+            for (const auto & field : row)
+                fields.push_back({&field, sizeof(field)});
+            ptr->fieldHolder.push_back(fields);
+        }
     }
 
     const auto rows_num = ptr->fieldHolder.size();
@@ -176,7 +189,7 @@ void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibrary::CStri
     if (!ptr)
         return nullptr;
 
-    size_t num_rows = 0, num_cols = 0;
+    size_t num_rows = 0, num_cols = 4;
     std::string test_type;
     std::vector<std::string> settings_values;
     if (settings)
@@ -218,6 +231,9 @@ void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibrary::CStri
             ptr->dataHolder.emplace_back(std::vector<uint64_t>{i, i, i, i});
         }
     }
+
+    ptr->num_cols = num_cols;
+    ptr->num_rows = num_rows;
 
     MakeColumnsFromVector(ptr);
     return static_cast<void *>(&ptr->ctable);
