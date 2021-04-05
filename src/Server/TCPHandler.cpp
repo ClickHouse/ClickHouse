@@ -72,7 +72,8 @@ TCPHandler::~TCPHandler()
     try
     {
         state.reset();
-        out->next();
+        if (out)
+            out->next();
     }
     catch (...)
     {
