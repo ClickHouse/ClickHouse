@@ -2787,6 +2787,28 @@ Possible values:
 
 Default value: `0`.
 
+## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
+
+Adds a modifier `SYNC` to all `DROP` and `DETACH` queries. 
+
+Possible values:
+
+-   0 — Queries will be executed with delay.
+-   1 — Queries will be executed without delay.
+
+Default value: `0`.
+
+## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil}
+
+Sets the `SHOW TABLE` query display.
+
+Possible values:
+
+-   0 — The query will be displayed without table UUID.
+-   1 — The query will be displayed with table UUID.
+
+Default value: `0`.
+
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
 Allows creation of experimental [live views](../../sql-reference/statements/create/view.md#live-view).
