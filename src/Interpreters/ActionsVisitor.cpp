@@ -52,6 +52,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int BAD_ARGUMENTS;
+    extern const int DUPLICATE_COLUMN;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -346,11 +347,9 @@ SetPtr makeExplicitSet(
     const ASTPtr & left_arg = args.children.at(0);
     const ASTPtr & right_arg = args.children.at(1);
 
-    const auto & index = actions.getIndex();
-    auto it = index.find(left_arg->getColumnName());
-    if (it == index.end())
-        throw Exception("Unknown identifier: '" + left_arg->getColumnName() + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
-    const DataTypePtr & left_arg_type = (*it)->result_type;
+    auto column_name = left_arg->getColumnName();
+    const auto & dag_node = actions.findInIndex(column_name);
+    const DataTypePtr & left_arg_type = dag_node.result_type;
 
     DataTypes set_element_types = {left_arg_type};
     const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
@@ -381,6 +380,54 @@ SetPtr makeExplicitSet(
     return set;
 }
 
+ScopeStack::Level::~Level() = default;
+ScopeStack::Level::Level() = default;
+ScopeStack::Level::Level(Level &&) = default;
+
+class ScopeStack::Index
+{
+    /// Map column name -> Node.
+    /// Use string_view as key which always points to Node::result_name.
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> map;
+    ActionsDAG::NodeRawConstPtrs & index;
+
+public:
+    explicit Index(ActionsDAG::NodeRawConstPtrs & index_) : index(index_)
+    {
+        for (const auto * node : index)
+            map.emplace(node->result_name, node);
+    }
+
+    void addNode(const ActionsDAG::Node * node)
+    {
+        bool inserted = map.emplace(node->result_name, node).second;
+        if (!inserted)
+            throw Exception("Column '" + node->result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+
+        index.push_back(node);
+    }
+
+    const ActionsDAG::Node * tryGetNode(const std::string & name) const
+    {
+        auto it = map.find(name);
+        if (it == map.end())
+            return nullptr;
+
+        return it->second;
+    }
+
+    const ActionsDAG::Node & getNode(const std::string & name) const
+    {
+        const auto * node = tryGetNode(name);
+        if (!node)
+            throw Exception("Unknown identifier: '" + name + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
+
+        return *node;
+    }
+
+    bool contains(const std::string & name) const { return map.count(name) > 0; }
+};
+
 ActionsMatcher::Data::Data(
     const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
     const NamesAndTypesList & source_columns_, ActionsDAGPtr actions_dag,
@@ -404,7 +451,7 @@ ActionsMatcher::Data::Data(
 
 bool ActionsMatcher::Data::hasColumn(const String & column_name) const
 {
-    return actions_stack.getLastActions().getIndex().contains(column_name);
+    return actions_stack.getLastActionsIndex().contains(column_name);
 }
 
 ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, const Context & context_)
@@ -412,6 +459,7 @@ ScopeStack::ScopeStack(ActionsDAGPtr actions_dag, const Context & context_)
 {
     auto & level = stack.emplace_back();
     level.actions_dag = std::move(actions_dag);
+    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getIndex());
 
     for (const auto & node : level.actions_dag->getIndex())
         if (node->type == ActionsDAG::ActionType::INPUT)
@@ -422,20 +470,23 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
 {
     auto & level = stack.emplace_back();
     level.actions_dag = std::make_shared<ActionsDAG>();
+    level.index = std::make_unique<ScopeStack::Index>(level.actions_dag->getIndex());
     const auto & prev = stack[stack.size() - 2];
 
     for (const auto & input_column : input_columns)
     {
-        level.actions_dag->addInput(input_column.name, input_column.type);
+        const auto & node = level.actions_dag->addInput(input_column.name, input_column.type);
+        level.index->addNode(&node);
         level.inputs.emplace(input_column.name);
     }
 
-    const auto & index = level.actions_dag->getIndex();
-
     for (const auto & node : prev.actions_dag->getIndex())
     {
-        if (!index.contains(node->result_name))
-            level.actions_dag->addInput({node->column, node->result_type, node->result_name});
+        if (!level.index->contains(node->result_name))
+        {
+            const auto & input = level.actions_dag->addInput({node->column, node->result_type, node->result_name});
+            level.index->addNode(&input);
+        }
     }
 }
 
@@ -448,10 +499,8 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
         if (stack[i].inputs.count(name))
             return i;
 
-        const auto & index = stack[i].actions_dag->getIndex();
-        auto it = index.find(name);
-
-        if (it != index.end() && (*it)->type != ActionsDAG::ActionType::INPUT)
+        const auto * node = stack[i].index->tryGetNode(name);
+        if (node && node->type != ActionsDAG::ActionType::INPUT)
             return i;
     }
 
@@ -461,32 +510,46 @@ size_t ScopeStack::getColumnLevel(const std::string & name)
 void ScopeStack::addColumn(ColumnWithTypeAndName column)
 {
     const auto & node = stack[0].actions_dag->addColumn(std::move(column));
+    stack[0].index->addNode(&node);
 
     for (size_t j = 1; j < stack.size(); ++j)
-        stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
+    {
+        const auto & input = stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
+        stack[j].index->addNode(&input);
+    }
 }
 
 void ScopeStack::addAlias(const std::string & name, std::string alias)
 {
     auto level = getColumnLevel(name);
-    const auto & node = stack[level].actions_dag->addAlias(name, std::move(alias));
+    const auto & source = stack[level].index->getNode(name);
+    const auto & node = stack[level].actions_dag->addAlias(source, std::move(alias));
+    stack[level].index->addNode(&node);
 
     for (size_t j = level + 1; j < stack.size(); ++j)
-        stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
+    {
+        const auto & input = stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
+        stack[j].index->addNode(&input);
+    }
 }
 
 void ScopeStack::addArrayJoin(const std::string & source_name, std::string result_name)
 {
     getColumnLevel(source_name);
 
-    if (!stack.front().actions_dag->getIndex().contains(source_name))
+    const auto * source_node = stack.front().index->tryGetNode(source_name);
+    if (!source_node)
         throw Exception("Expression with arrayJoin cannot depend on lambda argument: " + source_name,
                         ErrorCodes::BAD_ARGUMENTS);
 
-    const auto & node = stack.front().actions_dag->addArrayJoin(source_name, std::move(result_name));
+    const auto & node = stack.front().actions_dag->addArrayJoin(*source_node, std::move(result_name));
+    stack.front().index->addNode(&node);
 
     for (size_t j = 1; j < stack.size(); ++j)
-        stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
+    {
+        const auto & input = stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
+        stack[j].index->addNode(&input);
+    }
 }
 
 void ScopeStack::addFunction(
@@ -498,17 +561,26 @@ void ScopeStack::addFunction(
     for (const auto & argument : argument_names)
         level = std::max(level, getColumnLevel(argument));
 
-    const auto & node = stack[level].actions_dag->addFunction(function, argument_names, std::move(result_name), context);
+    ActionsDAG::NodeRawConstPtrs children;
+    children.reserve(argument_names.size());
+    for (const auto & argument : argument_names)
+        children.push_back(&stack[level].index->getNode(argument));
+
+    const auto & node = stack[level].actions_dag->addFunction(function, std::move(children), std::move(result_name));
+    stack[level].index->addNode(&node);
 
     for (size_t j = level + 1; j < stack.size(); ++j)
-        stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
+    {
+        const auto & input = stack[j].actions_dag->addInput({node.column, node.result_type, node.result_name});
+        stack[j].index->addNode(&input);
+    }
 }
 
 ActionsDAGPtr ScopeStack::popLevel()
 {
-    auto res = std::move(stack.back());
+    auto res = std::move(stack.back().actions_dag);
     stack.pop_back();
-    return res.actions_dag;
+    return res;
 }
 
 std::string ScopeStack::dumpNames() const
@@ -519,6 +591,11 @@ std::string ScopeStack::dumpNames() const
 const ActionsDAG & ScopeStack::getLastActions() const
 {
     return *stack.back().actions_dag;
+}
+
+const ScopeStack::Index & ScopeStack::getLastActionsIndex() const
+{
+    return *stack.back().index;
 }
 
 bool ActionsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -568,10 +645,9 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
         child_column_name = as_literal->unique_column_name;
     }
 
-    const auto & index = data.actions_stack.getLastActions().getIndex();
-    auto it = index.find(child_column_name);
-    if (it != index.end())
-        return NameAndTypePair(child_column_name, (*it)->result_type);
+    const auto & index = data.actions_stack.getLastActionsIndex();
+    if (const auto * node = index.tryGetNode(child_column_name))
+        return NameAndTypePair(child_column_name, node->result_type);
 
     if (!data.only_consts)
         throw Exception("Unknown identifier: " + child_column_name + " there are columns: " + data.actions_stack.dumpNames(),
@@ -927,7 +1003,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     String result_name = lambda->arguments->children.at(1)->getColumnName();
                     lambda_dag->removeUnusedActions(Names(1, result_name));
 
-                    auto lambda_actions = std::make_shared<ExpressionActions>(lambda_dag);
+                    auto lambda_actions = std::make_shared<ExpressionActions>(
+                        lambda_dag,
+                        ExpressionActionsSettings::fromContext(data.context));
 
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 
@@ -983,12 +1061,8 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     if (literal.unique_column_name.empty())
     {
         const auto default_name = literal.getColumnName();
-        const auto & index = data.actions_stack.getLastActions().getIndex();
-        const ActionsDAG::Node * existing_column = nullptr;
-
-        auto it = index.find(default_name);
-        if (it != index.end())
-            existing_column = *it;
+        const auto & index = data.actions_stack.getLastActionsIndex();
+        const auto * existing_column = index.tryGetNode(default_name);
 
         /*
          * To approximate CSE, bind all identical literals to a single temporary
@@ -1101,7 +1175,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
     else
     {
         const auto & last_actions = data.actions_stack.getLastActions();
-        const auto & index = last_actions.getIndex();
+        const auto & index = data.actions_stack.getLastActionsIndex();
         if (index.contains(left_in_operand->getColumnName()))
             /// An explicit enumeration of values in parentheses.
             return makeExplicitSet(&node, last_actions, false, data.context, data.set_size_limit, data.prepared_sets);

@@ -59,7 +59,7 @@ private:
     StorageListWithLocks getSelectedTables(const String & query_id, const Settings & settings) const;
 
     StorageMerge::StorageListWithLocks getSelectedTables(
-            const ASTPtr & query, bool has_virtual_column, const String & query_id, const Settings & settings) const;
+        const SelectQueryInfo & query_info, bool has_virtual_column, const String & query_id, const Settings & settings) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;

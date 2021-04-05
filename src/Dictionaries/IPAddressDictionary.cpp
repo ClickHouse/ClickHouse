@@ -4,19 +4,17 @@
 #include <Common/assert_cast.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/memcmpSmall.h>
-#include <Common/memcpySmall.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <IO/WriteIntText.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
 #include <common/itoa.h>
 #include <ext/map.h>
 #include <ext/range.h>
-#include "DictionaryBlockInputStream.h"
-#include "DictionaryFactory.h"
+#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
 
 namespace DB
@@ -191,64 +189,13 @@ inline static void mapIPv4ToIPv6(UInt32 addr, uint8_t * buf)
     memcpy(&buf[12], &addr, 4);
 }
 
-static bool matchIPv4Subnet(UInt32 target, UInt32 addr, UInt8 prefix)
-{
-    UInt32 mask = (prefix >= 32) ? 0xffffffffu : ~(0xffffffffu >> prefix);
-    return (target & mask) == addr;
-}
-
-#if defined(__SSE2__)
-#include <emmintrin.h>
-
-static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 prefix)
-{
-    uint16_t mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(target)),
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(addr))));
-    mask = ~mask;
-
-    if (mask)
-    {
-        auto offset = __builtin_ctz(mask);
-
-        if (prefix / 8 != offset)
-            return prefix / 8 < offset;
-
-        auto cmpmask = ~(0xff >> (prefix % 8));
-        return (target[offset] & cmpmask) == addr[offset];
-    }
-    return true;
-}
-
-# else
-
-static bool matchIPv6Subnet(const uint8_t * target, const uint8_t * addr, UInt8 prefix)
-{
-    if (prefix > IPV6_BINARY_LENGTH * 8U)
-        prefix = IPV6_BINARY_LENGTH * 8U;
-
-    size_t i = 0;
-    for (; prefix >= 8; ++i, prefix -= 8)
-    {
-        if (target[i] != addr[i])
-            return false;
-    }
-    if (prefix == 0)
-        return true;
-
-    auto mask = ~(0xff >> prefix);
-    return (target[i] & mask) == addr[i];
-}
-
-#endif  // __SSE2__
-
 IPAddressDictionary::IPAddressDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : IDictionaryBase(dict_id_)
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -595,7 +542,7 @@ void IPAddressDictionary::calculateBytesAllocated()
 template <typename T>
 void IPAddressDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = null_value.isNull() ? T{} : T(null_value.get<NearestFieldType<T>>());
+    attribute.null_values = null_value.isNull() ? T{} : T(null_value.get<T>());
     attribute.maps.emplace<ContainerType<T>>();
 }
 
@@ -786,7 +733,7 @@ void IPAddressDictionary::setAttributeValue(Attribute & attribute, const Field &
         }
         else
         {
-            setAttributeValueImpl<AttributeType>(attribute, value.get<NearestFieldType<AttributeType>>());
+            setAttributeValueImpl<AttributeType>(attribute, value.get<AttributeType>());
         }
     };
 
@@ -857,9 +804,6 @@ static auto keyViewGetter()
 
 BlockInputStreamPtr IPAddressDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using BlockInputStreamType = DictionaryBlockInputStream<UInt64>;
-
-
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
 
     auto get_keys = [is_ipv4](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
@@ -880,12 +824,12 @@ BlockInputStreamPtr IPAddressDictionary::getBlockInputStream(const Names & colum
     if (is_ipv4)
     {
         auto get_view = keyViewGetter<ColumnVector<UInt32>, true>();
-        return std::make_shared<BlockInputStreamType>(
+        return std::make_shared<DictionaryBlockInputStream>(
             shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
     }
 
     auto get_view = keyViewGetter<ColumnFixedString, false>();
-    return std::make_shared<BlockInputStreamType>(
+    return std::make_shared<DictionaryBlockInputStream>(
         shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
 }
 

@@ -11,9 +11,9 @@ CREATE TABLE tt6
 )
 ENGINE = Distributed('test_shard_localhost', '', 'tt6', rand());
 
-INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError 580 }
+INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError 581 }
 
-SELECT * FROM tt6; -- { serverError 580 }
+SELECT * FROM tt6; -- { serverError 581 }
 
 SET max_distributed_depth = 0;
 
