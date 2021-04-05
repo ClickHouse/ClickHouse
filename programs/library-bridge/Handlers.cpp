@@ -124,18 +124,18 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
-            if (!params.has("sample_block_with_nulls"))
+            if (!params.has("null_values"))
             {
-                processError(response, "No 'sample_block_with_nulls' in request URL");
+                processError(response, "No 'null_values' in request URL");
                 return;
             }
 
-            ReadBufferFromString read_block_buf(params.get("sample_block_with_nulls"));
+            ReadBufferFromString read_block_buf(params.get("null_values"));
             auto format = FormatFactory::instance().getInput(FORMAT, read_block_buf, *sample_block, context, DEFAULT_BLOCK_SIZE);
             auto reader = std::make_shared<InputStreamFromInputFormat>(format);
             auto sample_block_with_nulls = reader->read();
 
-            LOG_DEBUG(log, "Dictionary sample block with nulls: {}", sample_block_with_nulls.dumpStructure());
+            LOG_DEBUG(log, "Dictionary sample block with null values: {}", sample_block_with_nulls.dumpStructure());
 
             SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, sample_block_with_nulls, attributes_names);
             writeStringBinary("1", out);

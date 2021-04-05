@@ -44,4 +44,43 @@
             </attribute>
         </structure>
     </dictionary>
+    <dictionary>
+        <name>dict2</name>
+        <source>
+            <library>
+                <path>/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so</path>
+                <settings>
+                    <test_type>test_nulls</test_type>
+                </settings>
+            </library>
+        </source>
+        <layout>
+            <hashed/>
+        </layout>
+        <lifetime>
+            <max>1</max>
+            <min>1</min>
+        </lifetime>
+        <structure>
+            <id>
+                <name>key</name>
+                <type>UInt64</type>
+            </id>
+            <attribute>
+                <name>value1</name>
+                <null_value>12</null_value>
+                <type>UInt64</type>
+            </attribute>
+            <attribute>
+                <name>value2</name>
+                <null_value>12</null_value>
+                <type>UInt64</type>
+            </attribute>
+            <attribute>
+                <name>value3</name>
+                <null_value>12</null_value>
+                <type>UInt64</type>
+            </attribute>
+        </structure>
+    </dictionary>
 </yandex>
