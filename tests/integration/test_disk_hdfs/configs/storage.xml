@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<yandex>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/</endpoint>
+            </hdfs>
+            <default/>
+        </disks>
+        <policies>
+            <hdfs>
+                <volumes>
+                    <main>
+                        <disk>hdfs</disk>
+                    </main>
+                </volumes>
+            </hdfs>
+        </policies>
+    </storage_configuration>
+</yandex>
