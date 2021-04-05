@@ -6,10 +6,25 @@ namespace
 const char DICT_LOGGER_NAME[] = "LibraryDictionarySourceExternal";
 }
 
-void ClickHouseLibrary::log(ClickHouseLibrary::LogLevel level, ClickHouseLibrary::CString msg)
+namespace ClickHouseLibrary
 {
-    using ClickHouseLibrary::LogLevel;
 
+std::string_view LIBRARY_CREATE_NEW_FUNC_NAME = "ClickHouseDictionary_v3_libNew";
+std::string_view LIBRARY_CLONE_FUNC_NAME = "ClickHouseDictionary_v3_libClone";
+std::string_view LIBRARY_DELETE_FUNC_NAME = "ClickHouseDictionary_v3_libDelete";
+
+std::string_view LIBRARY_DATA_NEW_FUNC_NAME = "ClickHouseDictionary_v3_dataNew";
+std::string_view LIBRARY_DATA_DELETE_FUNC_NAME = "ClickHouseDictionary_v3_dataDelete";
+
+std::string_view LIBRARY_LOAD_ALL_FUNC_NAME = "ClickHouseDictionary_v3_loadAll";
+std::string_view LIBRARY_LOAD_IDS_FUNC_NAME = "ClickHouseDictionary_v3_loadIds";
+std::string_view LIBRARY_LOAD_KEYS_FUNC_NAME = "ClickHouseDictionary_v3_loadKeys";
+
+std::string_view LIBRARY_IS_MODIFIED_FUNC_NAME = "ClickHouseDictionary_v3_isModified";
+std::string_view LIBRARY_SUPPORTS_SELECTIVE_LOAD_FUNC_NAME = "ClickHouseDictionary_v3_supportsSelectiveLoad";
+
+void log(LogLevel level, CString msg)
+{
     auto & logger = Poco::Logger::get(DICT_LOGGER_NAME);
     switch (level)
     {
@@ -46,4 +61,6 @@ void ClickHouseLibrary::log(ClickHouseLibrary::LogLevel level, ClickHouseLibrary
                 logger.fatal(msg);
             break;
     }
+}
+
 }

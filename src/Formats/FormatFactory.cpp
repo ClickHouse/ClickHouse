@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>

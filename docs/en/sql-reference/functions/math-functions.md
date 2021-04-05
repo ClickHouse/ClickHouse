@@ -54,7 +54,7 @@ If ‘x’ is non-negative, then `erf(x / σ√2)` is the probability that a ran
 Example (three sigma rule):
 
 ``` sql
-SELECT erf(3 / sqrt(2))
+SELECT erf(3 / sqrt(2));
 ```
 
 ``` text
@@ -121,7 +121,7 @@ Accepts a numeric argument and returns a UInt64 number close to 10 to the power 
 cosh(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -157,7 +157,7 @@ Result:
 acosh(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Hyperbolic cosine of angle. Values from the interval: `1 <= x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -197,7 +197,7 @@ Result:
 sinh(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — The angle, in radians. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -233,7 +233,7 @@ Result:
 asinh(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Hyperbolic sine of angle. Values from the interval: `-∞ < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -273,7 +273,7 @@ Result:
 atanh(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Hyperbolic tangent of angle. Values from the interval: `–1 < x < 1`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -309,7 +309,7 @@ The [function](https://en.wikipedia.org/wiki/Atan2) calculates the angle in the 
 atan2(y, x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `y` — y-coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 -   `x` — x-coordinate of the point through which the ray passes. [Float64](../../sql-reference/data-types/float.md#float32-float64).
@@ -346,7 +346,7 @@ Calculates the length of the hypotenuse of a right-angle triangle. The [function
 hypot(x, y)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — The first cathetus of a right-angle triangle. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 -   `y` — The second cathetus of a right-angle triangle. [Float64](../../sql-reference/data-types/float.md#float32-float64).
@@ -383,7 +383,7 @@ Calculates `log(1+x)`. The [function](https://en.wikipedia.org/wiki/Natural_loga
 log1p(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Values from the interval: `-1 < x < +∞`. [Float64](../../sql-reference/data-types/float.md#float32-float64).
 
@@ -415,7 +415,7 @@ Result:
 
 ## sign(x) {#signx}
 
-The `sign` function can extract the sign of a real number.
+Returns the sign of a real number.
 
 **Syntax**
 
@@ -423,7 +423,7 @@ The `sign` function can extract the sign of a real number.
 sign(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Values from  `-∞` to `+∞`. Support all numeric types in ClickHouse.
 
@@ -433,9 +433,9 @@ sign(x)
 -  0 for `x = 0`
 -  1 for `x > 0`
 
-**Example**
+**Examples**
 
-Query:
+Sign for the zero value:
 
 ``` sql
 SELECT sign(0);
@@ -449,7 +449,7 @@ Result:
 └─────────┘
 ```
 
-Query:
+Sign for the positive value:
 
 ``` sql
 SELECT sign(1);
@@ -463,7 +463,7 @@ Result:
 └─────────┘
 ```
 
-Query:
+Sign for the negative value:
 
 ``` sql
 SELECT sign(-1);
@@ -477,4 +477,3 @@ Result:
 └──────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/math_functions/) <!--hide-->

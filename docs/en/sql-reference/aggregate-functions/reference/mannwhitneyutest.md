@@ -16,20 +16,23 @@ mannWhitneyUTest[(alternative[, continuity_correction])](sample_data, sample_ind
 Values of both samples are in the `sample_data` column. If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population. Otherwise it belongs to the sample from the second population. 
 The null hypothesis is that two populations are stochastically equal. Also one-sided hypothesises can be tested. This test does not assume that data have normal distribution.
 
+**Arguments**
+
+-   `sample_data` — sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `sample_index` — sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
+
 **Parameters**
 
 -   `alternative` — alternative hypothesis. (Optional, default: `'two-sided'`.) [String](../../../sql-reference/data-types/string.md).
     -   `'two-sided'`;
     -   `'greater'`;
     -   `'less'`.
--   `continuity_correction` - if not 0 then continuity correction in the normal approximation for the p-value is applied. (Optional, default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
--   `sample_data` — sample data. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
--   `sample_index` — sample index. [Integer](../../../sql-reference/data-types/int-uint.md).
-
+-   `continuity_correction` — if not 0 then continuity correction in the normal approximation for the p-value is applied. (Optional, default: 1.) [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
 [Tuple](../../../sql-reference/data-types/tuple.md) with two elements:
+
 -   calculated U-statistic. [Float64](../../../sql-reference/data-types/float.md).
 -   calculated p-value. [Float64](../../../sql-reference/data-types/float.md).
 

@@ -61,7 +61,7 @@ protected:
     std::shared_ptr<MySQLProtocol::PacketEndpoint> packet_endpoint;
 
 private:
-    size_t connection_id = 0;
+    UInt64 connection_id = 0;
 
     size_t server_capability_flags = 0;
     size_t client_capability_flags = 0;

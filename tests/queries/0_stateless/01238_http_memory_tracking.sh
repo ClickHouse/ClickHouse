@@ -18,3 +18,6 @@ yes 'SELECT 1' 2>/dev/null | {
 } | grep -x -c 1
 
 wait
+
+# Reset max_memory_usage_for_user, so it will not affect other tests
+${CLICKHOUSE_CLIENT} --max_memory_usage_for_user=0 -q "SELECT 1 FORMAT Null"

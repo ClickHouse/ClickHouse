@@ -2,7 +2,7 @@ version: '2.3'
 
 services:
   zookeeper:
-    image: zookeeper:3.4.12
+    image: zookeeper:3.6.2
     expose:
       - "2181"
     environment:

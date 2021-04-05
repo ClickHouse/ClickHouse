@@ -7,12 +7,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 PORT="$(($RANDOM%63000+2001))"
 
-TEMP_FILE="$CURDIR/01622_defaults_for_url_engine.tmp"
+TEMP_FILE="${CLICKHOUSE_TMP}/01622_defaults_for_url_engine.tmp"
 
 function thread1
 {
-    while true; do 
-        echo -e "HTTP/1.1 200 OK\n\n{\"a\": 1}" | nc -l -p $1 -q 1; 
+    while true; do
+        echo -e "HTTP/1.1 200 OK\n\n{\"a\": 1}" | nc -l -p $1 -q 1;
     done
 }
 

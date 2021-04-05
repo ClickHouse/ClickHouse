@@ -13,6 +13,7 @@ namespace Coordination
 
 using namespace DB;
 
+void write(size_t x, WriteBuffer & out);
 void write(int64_t x, WriteBuffer & out);
 void write(int32_t x, WriteBuffer & out);
 void write(OpNum x, WriteBuffer & out);
@@ -37,6 +38,7 @@ void write(const std::vector<T> & arr, WriteBuffer & out)
         write(elem, out);
 }
 
+void read(size_t & x, ReadBuffer & in);
 void read(int64_t & x, ReadBuffer & in);
 void read(int32_t & x, ReadBuffer & in);
 void read(OpNum & x, ReadBuffer & in);

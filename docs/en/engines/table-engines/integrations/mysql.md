@@ -1,5 +1,5 @@
 ---
-toc_priority: 3
+toc_priority: 4
 toc_title: MySQL
 ---
 
@@ -24,6 +24,7 @@ The table structure can differ from the original MySQL table structure:
 
 -   Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
 -   Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   Setting `external_table_functions_use_nulls` defines how to handle Nullable columns. Default is true, if false - table function will not make nullable columns and will insert default values instead of nulls. This is also applicable for null values inside array data types.
 
 **Engine Parameters**
 
@@ -100,4 +101,4 @@ SELECT * FROM mysql_table
 -   [The ‘mysql’ table function](../../../sql-reference/table-functions/mysql.md)
 -   [Using MySQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/mysql/) <!--hide-->

@@ -20,10 +20,12 @@ Columns:
 
     When connecting to the server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
 
--   `timer_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Timer type:
+-   `trace_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Trace type:
 
-    -   `Real` represents wall-clock time.
-    -   `CPU` represents CPU time.
+    -   `Real` represents collecting stack traces by wall-clock time.
+    -   `CPU` represents collecting stack traces by CPU time.
+    -   `Memory` represents collecting allocations and deallocations when memory allocation exceeds the subsequent watermark.
+    -   `MemorySample` represents collecting random allocations and deallocations.
 
 -   `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 
@@ -52,4 +54,5 @@ trace:                   [371912858,371912789,371798468,371799717,371801313,3717
 size:                    5244400
 ```
 
- [Original article](https://clickhouse.tech/docs/en/operations/system_tables/trace_log) <!--hide-->
+ [Original article](https://clickhouse.tech/docs/en/operations/system-tables/trace_log) <!--hide-->
+ 

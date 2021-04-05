@@ -2,6 +2,7 @@
 
 #include <pdqsort.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnCompressed.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
@@ -46,6 +47,12 @@ template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.emplace_back(unalignedLoad<T>(pos));
+    return pos + sizeof(T);
+}
+
+template <typename T>
+const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
+{
     return pos + sizeof(T);
 }
 
@@ -520,6 +527,33 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max);
 }
 
+
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+
+template <typename T>
+ColumnPtr ColumnVector<T>::compress() const
+{
+    size_t source_size = data.size() * sizeof(T);
+
+    /// Don't compress small blocks.
+    if (source_size < 4096) /// A wild guess.
+        return ColumnCompressed::wrap(this->getPtr());
+
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
+
+    if (!compressed)
+        return ColumnCompressed::wrap(this->getPtr());
+
+    return ColumnCompressed::create(data.size(), compressed->size(),
+        [compressed = std::move(compressed), column_size = data.size()]
+        {
+            auto res = ColumnVector<T>::create(column_size);
+            ColumnCompressed::decompressBuffer(
+                compressed->data(), res->getData().data(), compressed->size(), column_size * sizeof(T));
+            return res;
+        });
+}
+
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;
@@ -535,4 +569,5 @@ template class ColumnVector<Int128>;
 template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
+
 }
