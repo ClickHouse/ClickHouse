@@ -645,3 +645,58 @@ SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 
 -   [Мнемоники в HTML](https://ru.wikipedia.org/wiki/%D0%9C%D0%BD%D0%B5%D0%BC%D0%BE%D0%BD%D0%B8%D0%BA%D0%B8_%D0%B2_HTML)
 
+
+
+## extractTextFromHTML {#extracttextfromhtml}
+
+Функция достает текст из HTML или XHTML по следующим правилам:
+
+1. Комментарии, начинающиеся с `<!--` и оканчивающиеся `-->`, удаляются.
+1. Содержимое секции `CDATA` между `<![CDATA[` и `]]>` остается без изменений, и дальнейшая обработка не выполняется. Содержимое секции присоединяется к предыдущему блоку текста без пробела.
+1. Текст, окруженный тегами `<script>` или `<style>`, убирается полностью. Если `script` или `style` использованы в качестве имен из пространства имен XML (например, `<script:a>`), то они обрабатываются как обычные теги.
+1. Каждый тег заменяется пробелом. Обратите внимание, что элементы наподобие `<>`, `<!>`, `<!-->` также заменяются. Тег без закрывающей скобки `>` удалаяется до конца текста. 
+1. Любая последовательность пробельных символов (пробел, новая строка, возврат каретки, таб, вертикальный таб или перевод страницы) заменется на один пробел.
+1. Все пробелы в начале и конце текста удаляются.
+
+!!! info "Примечание"
+    HTML и XML мнемоники не декодируются функцией extractTextFromHTML.
+    
+    Функция extractTextFromHTML не обязательно соответствует всем стандартам HTML, XML или XHTML. Но она пытается обработать текст наилучшим образом.
+
+**Синтаксис**
+
+``` sql
+extractTextFromHTML(x)
+```
+
+**Аргументы**
+
+-   `x` — документ для обработки. [String](../../sql-reference/data-types/string.md). 
+
+**Возвращаемое значение**
+
+-   Найденный текст.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Первый пример содержит несколько тегов и комментарий. На нем также видно, как обрабатываются пробелы.
+Второй пример показывает обработку `CDATA` и тега `script`.
+В третьем примере текст ищется в полном HTML ответе, полученном с помощью функции [url](../../sql-reference/table-functions/url.md).
+
+Запрос:
+
+``` sql
+SELECT extractTextFromHTML(' <p> Text <i>with</i><b>tags</b>. <!-- comments --> </p> ');
+SELECT extractTextFromHTML('<![CDATA[The content within <b>CDATA</b>]]> <script>alert("Script");</script>');
+SELECT extractTextFromHTML(html) FROM url('http://www.donothingfor2minutes.com/', RawBLOB, 'html String');
+```
+
+Результат:
+
+``` text
+Text with tags .
+The content within <b>CDATA</b>
+Do Nothing for 2 Minutes 2:00 &nbsp;
+```
