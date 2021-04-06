@@ -46,6 +46,95 @@ namespace ErrorCodes
     extern const int S3_ERROR;
 }
 
+class StorageS3Source::DisclosedGlobIterator::Impl
+{
+
+public:
+    Impl(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
+        : client(client_), globbed_uri(globbed_uri_) {
+
+        if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
+            throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
+
+        const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
+
+        if (key_prefix.size() == globbed_uri.key.size())
+            buffer.emplace_back(globbed_uri.key);
+
+        request.SetBucket(globbed_uri.bucket);
+        request.SetPrefix(key_prefix);
+
+        matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
+
+        /// Don't forget about iterator invalidation
+        buffer_iter = buffer.begin();
+    }
+
+    std::optional<String> next()
+    {
+        if (buffer_iter != buffer.end())
+        {
+            auto answer = *buffer_iter;
+            ++buffer_iter;
+            return answer;
+        }
+
+        if (is_finished)
+            return std::nullopt; // Or throw?
+
+        fillInternalBuffer();
+
+        return next();
+    }
+
+private:
+
+    void fillInternalBuffer()
+    {
+        buffer.clear();
+
+        outcome = client.ListObjectsV2(request);
+        if (!outcome.IsSuccess())
+            throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
+                            quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
+                            backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
+
+        const auto & result_batch = outcome.GetResult().GetContents();
+
+        buffer.reserve(result_batch.size());
+        for (const auto & row : result_batch)
+        {
+            String key = row.GetKey();
+            if (re2::RE2::FullMatch(key, *matcher))
+                buffer.emplace_back(std::move(key));
+        }
+        /// Set iterator only after the whole batch is processed
+        buffer_iter = buffer.begin();
+
+        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+        
+        /// It returns false when all objects were returned
+        is_finished = !outcome.GetResult().GetIsTruncated();
+    }
+
+    Strings buffer;
+    Strings::iterator buffer_iter;
+    Aws::S3::S3Client client;
+    S3::URI globbed_uri;
+    Aws::S3::Model::ListObjectsV2Request request;
+    Aws::S3::Model::ListObjectsV2Outcome outcome;
+    std::unique_ptr<re2::RE2> matcher;
+    bool is_finished{false};
+};
+
+StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
+    : pimpl(std::make_unique<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_)) {}
+
+std::optional<String> StorageS3Source::DisclosedGlobIterator::next()
+{
+    return pimpl->next();
+}
+
 
 Block StorageS3Source::getHeader(Block sample_block, bool with_path_column, bool with_file_column)
 {
@@ -209,62 +298,6 @@ StorageS3::StorageS3(
 }
 
 
-/* "Recursive" directory listing with matched paths as a result.
- * Have the same method in StorageFile.
- */
-Strings StorageS3::listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
-{
-    if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
-    {
-        throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
-    }
-
-    const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
-    if (key_prefix.size() == globbed_uri.key.size())
-    {
-        return {globbed_uri.key};
-    }
-
-    Aws::S3::Model::ListObjectsV2Request request;
-    request.SetBucket(globbed_uri.bucket);
-    request.SetPrefix(key_prefix);
-
-    re2::RE2 matcher(makeRegexpPatternFromGlobs(globbed_uri.key));
-    Strings result;
-    Aws::S3::Model::ListObjectsV2Outcome outcome;
-    int page = 0;
-    do
-    {
-        ++page;
-        outcome = client.ListObjectsV2(request);
-        if (!outcome.IsSuccess())
-        {
-            if (page > 1)
-                throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, page {}, S3 exception: {}, message: {}",
-                            quoteString(request.GetBucket()), quoteString(request.GetPrefix()), page,
-                            backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
-
-            throw Exception(ErrorCodes::S3_ERROR, "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
-                            quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
-                            backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
-        }
-
-        for (const auto & row : outcome.GetResult().GetContents())
-        {
-            String key = row.GetKey();
-            std::cout << "KEY   " << key << std::endl;
-            if (re2::RE2::FullMatch(key, matcher))
-                result.emplace_back(std::move(key));
-        }
-
-        request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-    }
-    while (outcome.GetResult().GetIsTruncated());
-
-    return result;
-}
-
-
 Pipe StorageS3::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -287,7 +320,12 @@ Pipe StorageS3::read(
             need_file_column = true;
     }
 
-    for (const String & key : listFilesWithRegexpMatching(*client_auth.client, client_auth.uri))
+    /// Iterate through disclosed globs and make a source for each file
+    StorageS3Source::DisclosedGlobIterator glob_iterator(*client_auth.client, client_auth.uri);
+    /// TODO: better to put first num_streams keys into pipeline 
+    /// and put others dynamically in runtime
+    while (auto key = glob_iterator.next())
+    {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
             need_path_column,
             need_file_column,
@@ -300,8 +338,8 @@ Pipe StorageS3::read(
             chooseCompressionMethod(client_auth.uri.key, compression_method),
             client_auth.client,
             client_auth.uri.bucket,
-            key));
-
+            key.value()));
+    }
     auto pipe = Pipe::unitePipes(std::move(pipes));
     // It's possible to have many buckets read from s3, resize(num_streams) might open too many handles at the same time.
     // Using narrowPipe instead.

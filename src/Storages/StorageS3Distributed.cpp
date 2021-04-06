@@ -29,6 +29,7 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sources/RemoteSource.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
@@ -180,8 +181,7 @@ private:
 
 
 StorageS3Distributed::StorageS3Distributed(
-    IAST::Hash tree_hash_,
-    const String & address_hash_or_filename_,
+    const String & filename_,
     const String & access_key_id_,
     const String & secret_access_key_,
     const StorageID & table_id_,
@@ -193,8 +193,7 @@ StorageS3Distributed::StorageS3Distributed(
     const Context & context_,
     const String & compression_method_)
     : IStorage(table_id_)
-    , tree_hash(tree_hash_)
-    , address_hash_or_filename(address_hash_or_filename_)
+    , filename(filename_)
     , cluster_name(cluster_name_)
     , cluster(context_.getCluster(cluster_name)->getClusterWithReplicasAsShards(context_.getSettings()))
     , format_name(format_name_)
@@ -268,28 +267,17 @@ Pipe StorageS3Distributed::read(
         for (const auto & node : replicas)
         {
             connections.emplace_back(std::make_shared<Connection>(
-                /*host=*/node.host_name,
-                /*port=*/node.port,
-                /*default_database=*/context.getGlobalContext().getCurrentDatabase(),
-                /*user=*/node.user,
-                /*password=*/node.password,
-                /*cluster=*/node.cluster,
-                /*cluster_secret=*/node.cluster_secret,
+                node.host_name, node.port, context.getGlobalContext().getCurrentDatabase(),
+                node.user, node.password, node.cluster, node.cluster_secret,
                 "StorageS3DistributedInititiator",
                 Protocol::Compression::Disable,
                 Protocol::Secure::Disable
             ));
-            auto stream = std::make_shared<RemoteBlockInputStream>(
-                /*connection=*/*connections.back(),
-                /*query=*/queryToString(query_info.query),
-                /*header=*/header,
-                /*context=*/context,
-                /*throttler=*/nullptr,
-                /*scalars*/scalars,
-                /*external_tables*/Tables(),
-                /*stage*/processed_stage
-            );
-            pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
+
+            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                    *connections.back(), queryToString(query_info.query), header, context, /*throttler=*/nullptr, scalars, Tables(), processed_stage);
+
+            pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, false, false, false, false)); 
         }
     }
 

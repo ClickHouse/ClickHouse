@@ -1,3 +1,5 @@
+#include <memory>
+#include <memory>
 #include <thread>
 #include <Common/config.h>
 #include "DataStreams/RemoteBlockInputStream.h"
@@ -11,6 +13,8 @@
 
 #if USE_AWS_S3
 
+
+#include <DataTypes/DataTypeString.h>
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -29,7 +33,9 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNEXPECTED_EXPRESSION;
 }
+
 
 void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, const Context & context)
 {
@@ -41,32 +47,51 @@ void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, con
 
     ASTs & args = args_func.at(0)->children;
 
+    const auto message = fmt::format(
+        "The signature of table function {} could be the following:\n" \
+        " - cluster, url, format, structure\n" \
+        " - cluster, url, format, structure, compression_method\n" \
+        " - cluster, url, access_key_id, secret_access_key, format, structure\n" \
+        " - cluster, url, access_key_id, secret_access_key, format, structure, compression_method",
+        getName());
+
     if (args.size() < 4 || args.size() > 7)
-        throw Exception("Table function '" + getName() + "' requires 4 to 7 arguments: cluster, url," + 
-            "[access_key_id, secret_access_key,] format, structure and [compression_method].",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     cluster_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    filename_or_initiator_hash = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    filename = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-    if (args.size() < 5)
+    if (args.size() == 4)
     {
         format = args[2]->as<ASTLiteral &>().value.safeGet<String>();
         structure = args[3]->as<ASTLiteral &>().value.safeGet<String>();
+    } 
+    else if (args.size() == 5)
+    {
+        format = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        structure = args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        compression_method = args[4]->as<ASTLiteral &>().value.safeGet<String>();
     }
-    else
+    else if (args.size() == 6)
     {
         access_key_id = args[2]->as<ASTLiteral &>().value.safeGet<String>();
         secret_access_key = args[3]->as<ASTLiteral &>().value.safeGet<String>();
         format = args[4]->as<ASTLiteral &>().value.safeGet<String>();
         structure = args[5]->as<ASTLiteral &>().value.safeGet<String>();
     }
-
-    if (args.size() == 5 || args.size() == 7)
-        compression_method = args.back()->as<ASTLiteral &>().value.safeGet<String>();
+    else if (args.size() == 7)
+    {
+        access_key_id = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        secret_access_key = args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        format = args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        structure = args[5]->as<ASTLiteral &>().value.safeGet<String>();
+        compression_method = args[4]->as<ASTLiteral &>().value.safeGet<String>();
+    }
+    else
+        throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 
@@ -76,7 +101,7 @@ ColumnsDescription TableFunctionS3Distributed::getActualTableStructure(const Con
 }
 
 StoragePtr TableFunctionS3Distributed::executeImpl(
-    const ASTPtr & ast_function, const Context & context,
+    const ASTPtr & /*filename*/, const Context & context,
     const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     UInt64 max_connections = context.getSettingsRef().s3_max_connections;
@@ -84,32 +109,28 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
     /// Initiator specific logic
     while (context.getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
-        auto poco_uri = Poco::URI{filename_or_initiator_hash};
-
-        /// This is needed, because secondary query on local replica has the same query-id
-        if (poco_uri.getHost().empty() || poco_uri.getPort() == 0)
-            break;
-
+        auto poco_uri = Poco::URI{filename};
         S3::URI s3_uri(poco_uri);
         StorageS3::ClientAuthentificaiton client_auth{s3_uri, access_key_id, secret_access_key, max_connections, {}, {}};
         StorageS3::updateClientAndAuthSettings(context, client_auth);
+        StorageS3Source::DisclosedGlobIterator iterator(*client_auth.client, client_auth.uri);
 
-        auto lists = StorageS3::listFilesWithRegexpMatching(*client_auth.client, client_auth.uri);
-        Strings tasks;
-        tasks.reserve(lists.size());
+        auto callback = [endpoint = client_auth.uri.endpoint, bucket = client_auth.uri.bucket, iterator = std::move(iterator)]() mutable -> String
+        {
+            if (auto value = iterator.next())
+                return endpoint + '/' + bucket + '/' + *value;
+            return {};
+        };
 
-        for (auto & value : lists)
-            tasks.emplace_back(client_auth.uri.endpoint + '/' + client_auth.uri.bucket + '/' + value);
-
-        /// Register resolver, which will give other nodes a task to execute
-        context.getReadTaskSupervisor()->registerNextTaskResolver(std::make_unique<S3NextTaskResolver>(context.getCurrentQueryId(), std::move(tasks)));
+        /// Register resolver, which will give other nodes a task std::make_unique
+        context.getReadTaskSupervisor()->registerNextTaskResolver(
+            std::make_unique<ReadTaskResolver>(context.getCurrentQueryId(), std::move(callback)));
         break;
     }
 
 
     StoragePtr storage = StorageS3Distributed::create(
-            ast_function->getTreeHash(),
-            filename_or_initiator_hash,
+            filename,
             access_key_id,
             secret_access_key,
             StorageID(getDatabaseName(), table_name),
@@ -135,6 +156,15 @@ void registerTableFunctionS3Distributed(TableFunctionFactory & factory)
 void registerTableFunctionCOSDistributed(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionCOSDistributed>();
+}
+
+
+NamesAndTypesList StorageS3Distributed::getVirtuals() const
+{
+    return NamesAndTypesList{
+        {"_path", std::make_shared<DataTypeString>()},
+        {"_file", std::make_shared<DataTypeString>()}
+    };
 }
 
 }
