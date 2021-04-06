@@ -32,6 +32,8 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"refcount",                                   std::make_shared<DataTypeUInt32>()},
         {"min_date",                                   std::make_shared<DataTypeDate>()},
         {"max_date",                                   std::make_shared<DataTypeDate>()},
+        {"min_time",                                   std::make_shared<DataTypeDateTime>()},
+        {"max_time",                                   std::make_shared<DataTypeDateTime>()},
         {"partition_id",                               std::make_shared<DataTypeString>()},
         {"min_block_number",                           std::make_shared<DataTypeInt64>()},
         {"max_block_number",                           std::make_shared<DataTypeInt64>()},
@@ -95,8 +97,10 @@ void StorageSystemPartsColumns::processNextStorage(
 
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
         auto use_count = part.use_count() - 1;
-        auto min_date = part->getMinDate();
-        auto max_date = part->getMaxDate();
+
+        auto min_max_date = part->getMinMaxDate();
+        auto min_max_time = part->getMinMaxTime();
+
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
 
@@ -141,9 +145,14 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(UInt64(use_count));
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(min_date);
+                columns[res_index++]->insert(min_max_date.first);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(max_date);
+                columns[res_index++]->insert(min_max_date.second);
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(static_cast<UInt32>(min_max_time.first));
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(static_cast<UInt32>(min_max_time.second));
+
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->info.partition_id);
             if (columns_mask[src_index++])

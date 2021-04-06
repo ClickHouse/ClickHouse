@@ -49,7 +49,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -581,30 +580,20 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         else if (parser_literal.parse(pos, ast_literal, expected))
         {
             const Field & value = ast_literal->as<ASTLiteral &>().value;
-            if (!isInt64FieldType(value.getType()))
+            if ((node->frame.type == WindowFrame::FrameType::Rows
+                    || node->frame.type == WindowFrame::FrameType::Groups)
+                && !(value.getType() == Field::Types::UInt64
+                     || (value.getType() == Field::Types::Int64
+                            && value.get<Int64>() >= 0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Only integer frame offsets are supported, '{}' is not supported.",
+                    "Frame offset for '{}' frame must be a nonnegative integer, '{}' of type '{}' given.",
+                    WindowFrame::toString(node->frame.type),
+                    applyVisitor(FieldVisitorToString(), value),
                     Field::Types::toString(value.getType()));
             }
-            node->frame.begin_offset = value.get<Int64>();
+            node->frame.begin_offset = value;
             node->frame.begin_type = WindowFrame::BoundaryType::Offset;
-            // We can easily get a UINT64_MAX here, which doesn't even fit into
-            // int64_t. Not sure what checks we are going to need here after we
-            // support floats and dates.
-            if (node->frame.begin_offset > INT_MAX)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame offset must be less than {}, but {} is given",
-                    INT_MAX, node->frame.begin_offset);
-            }
-
-            if (node->frame.begin_offset < 0)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame start offset must be greater than zero, {} given",
-                    node->frame.begin_offset);
-            }
         }
         else
         {
@@ -620,8 +609,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             node->frame.begin_preceding = false;
             if (node->frame.begin_type == WindowFrame::BoundaryType::Unbounded)
             {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Frame start UNBOUNDED FOLLOWING is not implemented");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Frame start cannot be UNBOUNDED FOLLOWING");
             }
         }
         else
@@ -652,28 +641,20 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             else if (parser_literal.parse(pos, ast_literal, expected))
             {
                 const Field & value = ast_literal->as<ASTLiteral &>().value;
-                if (!isInt64FieldType(value.getType()))
+                if ((node->frame.type == WindowFrame::FrameType::Rows
+                        || node->frame.type == WindowFrame::FrameType::Groups)
+                    && !(value.getType() == Field::Types::UInt64
+                         || (value.getType() == Field::Types::Int64
+                                && value.get<Int64>() >= 0)))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Only integer frame offsets are supported, '{}' is not supported.",
+                        "Frame offset for '{}' frame must be a nonnegative integer, '{}' of type '{}' given.",
+                        WindowFrame::toString(node->frame.type),
+                        applyVisitor(FieldVisitorToString(), value),
                         Field::Types::toString(value.getType()));
                 }
-                node->frame.end_offset = value.get<Int64>();
+                node->frame.end_offset = value;
                 node->frame.end_type = WindowFrame::BoundaryType::Offset;
-
-                if (node->frame.end_offset > INT_MAX)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Frame offset must be less than {}, but {} is given",
-                        INT_MAX, node->frame.end_offset);
-                }
-
-                if (node->frame.end_offset < 0)
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Frame end offset must be greater than zero, {} given",
-                        node->frame.end_offset);
-                }
             }
             else
             {
@@ -685,8 +666,8 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                 node->frame.end_preceding = true;
                 if (node->frame.end_type == WindowFrame::BoundaryType::Unbounded)
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Frame end UNBOUNDED PRECEDING is not implemented");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Frame end cannot be UNBOUNDED PRECEDING");
                 }
             }
             else if (keyword_following.ignore(pos, expected))
