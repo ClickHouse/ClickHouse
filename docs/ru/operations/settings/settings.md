@@ -1792,6 +1792,19 @@ ClickHouse генерирует исключение
 -   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
 -   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
 
+## insert_distributed_one_random_shard {#insert_distributed_one_random_shard}
+
+Включает или отключает режим вставки данных в [Distributed](../../engines/table-engines/special/distributed.md#distributed)) таблицу в случайный шард при отсутствии ключ шардирования.
+
+По умолчанию при вставке данных в `Distributed` таблицу с несколькими шардами и при отсутствии ключа шардирования сервер ClickHouse будет отклонять любой запрос на вставку данных. Когда `insert_distributed_one_random_shard = 1`, вставки принимаются, а данные записываются в случайный шард.
+
+Возможные значения:
+
+-   0 — если у таблицы несколько шардов, но ключ шардирования отсутствует, вставка данных отклоняется.
+-   1 — если ключ шардирования отсутствует, то вставка данных осуществляется в случайный шард среди всех доступных шардов.
+
+Значение по умолчанию: `0`.
+
 ## insert_shard_id {#insert_shard_id}
 
 Если не `0`, указывает, в какой шард [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы данные будут вставлены синхронно.
@@ -2674,6 +2687,28 @@ SELECT * FROM test2;
 Возможные значения:
 -   0 — использование типов данных для работы с географическими структурами не поддерживается.
 -   1 — использование типов данных для работы с географическими структурами поддерживается.
+
+Значение по умолчанию: `0`.
+
+## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
+
+Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`. 
+
+Возможные значения:
+
+-   0 — Запросы будут выполняться с задержкой.
+-   1 — Запросы будут выполняться без задержки.
+
+Значение по умолчанию: `0`.
+
+## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil}
+
+Устанавливает отображение запроса `SHOW TABLE`.
+
+Возможные значения:
+
+-   0 — Запрос будет отображаться без UUID таблицы.
+-   1 — Запрос будет отображаться с UUID таблицы.
 
 Значение по умолчанию: `0`.
 
