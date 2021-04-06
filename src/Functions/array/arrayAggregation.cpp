@@ -22,7 +22,8 @@ enum class AggregateOperation
     min,
     max,
     sum,
-    average
+    average,
+    product
 };
 
 /**
@@ -50,6 +51,12 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::max>
 
 template <typename ArrayElement>
 struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::average>
+{
+    using Result = Float64;
+};
+
+template <typename ArrayElement>
+struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::product>
 {
     using Result = Float64;
 };
@@ -86,7 +93,7 @@ struct ArrayAggregateImpl
             using Types = std::decay_t<decltype(types)>;
             using DataType = typename Types::LeftType;
 
-            if constexpr (aggregate_operation == AggregateOperation::average)
+            if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
             {
                 result = std::make_shared<DataTypeFloat64>();
 
@@ -128,13 +135,13 @@ struct ArrayAggregateImpl
         using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
         using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
 
-        /// For average of array we return Float64 as result, but we want to keep precision
+        /// For average and product of array we return Float64 as result, but we want to keep precision
         /// so we convert to Float64 as last step, but intermediate sum is represented as result of sum operation
-        static constexpr bool is_average_operation = aggregate_operation == AggregateOperation::average;
+        static constexpr bool is_average_or_product_operation = aggregate_operation == AggregateOperation::average ||
+            aggregate_operation == AggregateOperation::product;
         using SummAggregationType = ArrayAggregateResult<Element, AggregateOperation::sum>;
 
-        using AggregationType = std::conditional_t<is_average_operation, SummAggregationType, Result>;
-
+        using AggregationType = std::conditional_t<is_average_or_product_operation, SummAggregationType, Result>;
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
@@ -183,6 +190,22 @@ struct ArrayAggregateImpl
                     else
                     {
                         res[i] = x;
+                    }
+                }
+                else if constexpr (aggregate_operation == AggregateOperation::product)
+                {
+                    size_t array_size = offsets[i] - pos;
+                    AggregationType product = 1;
+                    for (i = 0; i < array_size; ++i)
+                        product = product * x;
+
+                    if constexpr (IsDecimalNumber<Element>)
+                    {
+                        res[i] = DecimalUtils::convertTo<Result>(product, data.getScale() * array_size);
+                    }
+                    else
+                    {
+                        res[i] = product;
                     }
                 }
 
@@ -242,6 +265,10 @@ struct ArrayAggregateImpl
                         s = element;
                     }
                 }
+                else if constexpr (aggregate_operation == AggregateOperation::product)
+                {
+                    s *= element;
+                }
 
                 ++count;
             }
@@ -257,6 +284,10 @@ struct ArrayAggregateImpl
                 {
                     res[i] = static_cast<Result>(s) / count;
                 }
+            }
+            else if constexpr (aggregate_operation == AggregateOperation::product && IsDecimalNumber<Element>)
+            {
+                res[i] = DecimalUtils::convertTo<Result>(s, data.getScale() * count);
             }
             else
             {
@@ -307,12 +338,16 @@ using FunctionArraySum = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperati
 struct NameArrayAverage { static constexpr auto name = "arrayAvg"; };
 using FunctionArrayAverage = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperation::average>, NameArrayAverage>;
 
+struct NameArrayProduct { static constexpr auto name = "arrayProduct"; };
+using FunctionArrayProduct = FunctionArrayMapped<ArrayAggregateImpl<AggregateOperation::product>, NameArrayProduct>;
+
 void registerFunctionArrayAggregation(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayMin>();
     factory.registerFunction<FunctionArrayMax>();
     factory.registerFunction<FunctionArraySum>();
     factory.registerFunction<FunctionArrayAverage>();
+    factory.registerFunction<FunctionArrayProduct>();
 }
 
 }
