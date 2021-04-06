@@ -12,6 +12,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/SelectQueryDescription.h>
+#include <Processors/QueryPipeline.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -34,6 +35,7 @@ class Context;
 using StorageActionBlockType = size_t;
 
 class ASTCreateQuery;
+class ASTInsertQuery;
 
 struct Settings;
 
@@ -49,6 +51,9 @@ using Processors = std::vector<ProcessorPtr>;
 class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
+
+class QueryPipeline;
+using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
@@ -317,6 +322,19 @@ public:
         const Context & /*context*/)
     {
         throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /** Writes the data to a table in distributed manner.
+      * It is supposed that implementation looks into SELECT part of the query and executes distributed
+      * INSERT SELECT if it is possible with current storage as a receiver and query SELECT part as a producer.
+      *
+      * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
+      */
+    virtual QueryPipelinePtr distributedWrite(
+        const ASTInsertQuery & /*query*/,
+        const Context & /*context*/)
+    {
+        return nullptr;
     }
 
     /** Delete the table data. Called before deleting the directory with the data.
