@@ -262,7 +262,6 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry)
                 ops.emplace_back(zkutil::makeCreateRequest(
                     entry.to_shard + "/log/log-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
 
-                /// Submit.
                 Coordination::Responses responses;
                 Coordination::Error rc = zk->tryMulti(ops, responses);
                 zkutil::KeeperMultiException::check(rc, ops, responses);
