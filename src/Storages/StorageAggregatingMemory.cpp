@@ -153,12 +153,17 @@ public:
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.
 
+            // TODO: seems like storage -> src_storage (block source)
+            auto block_storage = StorageValues::create(
+                    storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals());
+
             Context local_context = context;
-            local_context.addViewSource(
-                StorageValues::create(
-                    storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals())); // TODO: seems like storage -> src_storage (block source)
+            local_context.addViewSource(block_storage);
+
             select.emplace(query.inner_query, local_context, SelectQueryOptions());
-            in = std::make_shared<MaterializingBlockInputStream>(select->execute().getInputStream());
+            auto select_result = select->execute();
+
+            in = std::make_shared<MaterializingBlockInputStream>(select_result.getInputStream());
 
             /// Squashing is needed here because the materialized view query can generate a lot of blocks
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
