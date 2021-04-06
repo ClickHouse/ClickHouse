@@ -1030,7 +1030,7 @@ void ZooKeeper::create(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCreateRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<CreateResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<CreateResponse &>(*response))); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCreate);
@@ -1048,7 +1048,7 @@ void ZooKeeper::remove(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperRemoveRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<RemoveResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<RemoveResponse &>(*response))); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
@@ -1065,7 +1065,7 @@ void ZooKeeper::exists(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperExistsRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<ExistsResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<ExistsResponse &>(*response))); };
     request_info.watch = watch;
 
     pushRequest(std::move(request_info));
@@ -1083,7 +1083,7 @@ void ZooKeeper::get(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperGetRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<GetResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<GetResponse &>(*response))); };
     request_info.watch = watch;
 
     pushRequest(std::move(request_info));
@@ -1104,7 +1104,7 @@ void ZooKeeper::set(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperSetRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<SetResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<SetResponse &>(*response))); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperSet);
@@ -1121,7 +1121,7 @@ void ZooKeeper::list(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperListRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<ListResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<ListResponse &>(*response))); };
     request_info.watch = watch;
 
     pushRequest(std::move(request_info));
@@ -1140,7 +1140,7 @@ void ZooKeeper::check(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCheckRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<CheckResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<CheckResponse &>(*response))); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperCheck);
@@ -1155,7 +1155,7 @@ void ZooKeeper::multi(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperMultiRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<MultiResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<MultiResponse &>(*response))); };
 
     pushRequest(std::move(request_info));
     ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);

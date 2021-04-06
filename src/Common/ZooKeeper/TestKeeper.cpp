@@ -1,7 +1,6 @@
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
 #include <common/types.h>
 
 #include <sstream>
@@ -671,7 +670,7 @@ void TestKeeper::create(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperCreateRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<CreateResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<CreateResponse &>(*response))); };
     pushRequest(std::move(request_info));
 }
 
@@ -686,7 +685,7 @@ void TestKeeper::remove(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperRemoveRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<RemoveResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<RemoveResponse &>(*response))); };
     pushRequest(std::move(request_info));
 }
 
@@ -700,7 +699,7 @@ void TestKeeper::exists(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperExistsRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<ExistsResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<ExistsResponse &>(*response))); };
     request_info.watch = watch;
     pushRequest(std::move(request_info));
 }
@@ -715,7 +714,7 @@ void TestKeeper::get(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperGetRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<GetResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<GetResponse &>(*response))); };
     request_info.watch = watch;
     pushRequest(std::move(request_info));
 }
@@ -733,7 +732,7 @@ void TestKeeper::set(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperSetRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<SetResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<SetResponse &>(*response))); };
     pushRequest(std::move(request_info));
 }
 
@@ -747,7 +746,7 @@ void TestKeeper::list(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperListRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<ListResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<ListResponse &>(*response))); };
     request_info.watch = watch;
     pushRequest(std::move(request_info));
 }
@@ -763,7 +762,7 @@ void TestKeeper::check(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperCheckRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<CheckResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<CheckResponse &>(*response))); };
     pushRequest(std::move(request_info));
 }
 
@@ -775,7 +774,7 @@ void TestKeeper::multi(
 
     RequestInfo request_info;
     request_info.request = std::make_shared<TestKeeperMultiRequest>(std::move(request));
-    request_info.callback = [callback](ResponsePtr response) { callback(std::move(typeid_cast<MultiResponse &>(*response))); };
+    request_info.callback = [callback](ResponsePtr response) { callback(std::move(dynamic_cast<MultiResponse &>(*response))); };
     pushRequest(std::move(request_info));
 }
 

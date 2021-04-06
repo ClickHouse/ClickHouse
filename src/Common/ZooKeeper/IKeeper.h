@@ -156,7 +156,7 @@ struct CreateRequest : virtual Request
     String getPath() const override { return path; }
 };
 
-struct CreateResponse final : virtual Response
+struct CreateResponse : virtual Response
 {
     String path_created;
 
@@ -172,7 +172,7 @@ struct RemoveRequest : virtual Request
     String getPath() const override { return path; }
 };
 
-struct RemoveResponse final : virtual Response
+struct RemoveResponse : virtual Response
 {
 };
 
@@ -184,7 +184,7 @@ struct ExistsRequest : virtual Request
     String getPath() const override { return path; }
 };
 
-struct ExistsResponse final : virtual Response
+struct ExistsResponse : virtual Response
 {
     Stat stat;
 };
@@ -197,7 +197,7 @@ struct GetRequest : virtual Request
     String getPath() const override { return path; }
 };
 
-struct GetResponse final : virtual Response
+struct GetResponse : virtual Response
 {
     String data;
     Stat stat;
@@ -213,7 +213,7 @@ struct SetRequest : virtual Request
     String getPath() const override { return path; }
 };
 
-struct SetResponse final : virtual Response
+struct SetResponse : virtual Response
 {
     Stat stat;
 };
@@ -226,7 +226,7 @@ struct ListRequest : virtual Request
     String getPath() const override { return path; }
 };
 
-struct ListResponse final : virtual Response
+struct ListResponse : virtual Response
 {
     std::vector<String> names;
     Stat stat;
@@ -241,7 +241,7 @@ struct CheckRequest : virtual Request
     String getPath() const override { return path; }
 };
 
-struct CheckResponse final : virtual Response
+struct CheckResponse : virtual Response
 {
 };
 
@@ -253,7 +253,7 @@ struct MultiRequest : virtual Request
     String getPath() const override { return {}; }
 };
 
-struct MultiResponse final : virtual Response
+struct MultiResponse : virtual Response
 {
     Responses responses;
 
