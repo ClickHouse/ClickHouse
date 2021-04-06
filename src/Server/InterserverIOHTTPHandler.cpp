@@ -104,7 +104,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
 
     try
     {
-        if (checkAuthentication(request))
+        if (auto [message, success] = checkAuthentication(request); success)
         {
             processQuery(request, response, used_output);
             used_output.out->finalize();
@@ -121,7 +121,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     {
         if (e.code() == ErrorCodes::WRONG_PASSWORD)
         {
-            response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
+            response.setStatusAndReason(HTTPServerResponse::HTTP_UNAUTHORIZED);
             if (!response.sent())
                 writeString("Unauthorized.", *used_output.out);
             LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
