@@ -16,6 +16,7 @@
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/TaskSupervisor.h>
 
 namespace DB
 {
@@ -307,6 +308,9 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 {
     switch (packet.type)
     {
+        case Protocol::Server::ReadTaskRequest:
+            processReadTaskRequest(packet.read_task_request);
+            break;
         case Protocol::Server::PartUUIDs:
             if (!setPartUUIDs(packet.part_uuids))
                 got_duplicated_part_uuids = true;
@@ -383,6 +387,13 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
         return false;
     }
     return true;
+}
+
+void RemoteQueryExecutor::processReadTaskRequest(const String & request)
+{
+    auto query_context = context->getQueryContext();
+    String responce = query_context->getReadTaskSupervisor()->getNextTaskForId(request);
+    connections->sendReadTaskResponce(responce);
 }
 
 void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)

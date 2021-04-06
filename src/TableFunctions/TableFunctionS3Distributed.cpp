@@ -7,6 +7,7 @@
 #include "Parsers/IAST_fwd.h"
 #include "Processors/Sources/SourceFromInputStream.h"
 #include "Storages/StorageS3Distributed.h"
+#include <Storages/TaskSupervisor.h>
 
 #if USE_AWS_S3
 
@@ -101,9 +102,7 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
             tasks.emplace_back(client_auth.uri.endpoint + '/' + client_auth.uri.bucket + '/' + value);
 
         /// Register resolver, which will give other nodes a task to execute
-        TaskSupervisor::instance().registerNextTaskResolver(
-            std::make_unique<S3NextTaskResolver>(context.getCurrentQueryId(), std::move(tasks)));
-
+        context.getReadTaskSupervisor()->registerNextTaskResolver(std::make_unique<S3NextTaskResolver>(context.getCurrentQueryId(), std::move(tasks)));
         break;
     }
 

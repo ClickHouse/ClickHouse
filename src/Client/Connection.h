@@ -65,7 +65,7 @@ struct Packet
     Progress progress;
     BlockStreamProfileInfo profile_info;
     std::vector<UUID> part_uuids;
-    String next_task;
+    String read_task_request;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -159,8 +159,8 @@ public:
     void sendExternalTablesData(ExternalTablesData & data);
     /// Send parts' uuids to excluded them from query processing
     void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
-    /// Send request to acquire a new task
-    void sendNextTaskRequest(const std::string & id);
+
+    void sendReadTaskResponse(const std::string &);
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
@@ -303,7 +303,7 @@ private:
 #endif
     bool ping();
 
-    String receiveNextTask() const;
+    String receiveReadTaskRequest() const;
     Block receiveData();
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);

@@ -84,25 +84,15 @@ public:
 
     StorageS3SequentialSource(
         String initial_query_id_,
-        Cluster::Address initiator,
+        NextTaskCallback read_task_callback_,
         const ClientAuthentificationBuilder & client_auth_builder_,
         const StorageS3SourceBuilder & s3_builder_)
         : SourceWithProgress(getHeader(s3_builder_.sample_block, s3_builder_.need_path, s3_builder_.need_file))
         , initial_query_id(initial_query_id_)
         , s3_source_builder(s3_builder_)
         , cli_builder(client_auth_builder_)
+        , read_task_callback(read_task_callback_)
     {
-        connections = std::make_shared<ConnectionPool>(
-            /*max_connections*/3,
-            /*host*/initiator.host_name,
-            /*port*/initiator.port,
-            /*default_database=*/s3_builder_.context.getGlobalContext().getCurrentDatabase(),
-            /*user=*/s3_builder_.context.getClientInfo().initial_user,
-            /*password=*/initiator.password,
-            /*cluster=*/initiator.cluster,
-            /*cluster_secret=*/initiator.cluster_secret
-        );
-
         createOrUpdateInnerSource();
     }
 
@@ -133,12 +123,7 @@ private:
     {
         try
         {
-            auto connection = connections->get(timeouts);
-            connection->sendNextTaskRequest(initial_query_id);
-            auto packet = connection->receivePacket();
-            assert(packet.type = Protocol::Server::NextTaskReply);
-            LOG_TRACE(&Poco::Logger::get("StorageS3SequentialSource"), "Got new task {}", packet.next_task);
-            return packet.next_task;
+            return read_task_callback(initial_query_id);
         }
         catch (...)
         {
@@ -189,9 +174,7 @@ private:
 
     std::unique_ptr<StorageS3Source> inner;
 
-    ///  One second just in case
-    ConnectionTimeouts timeouts{{1, 0}, {1, 0}, {1, 0}};
-    std::shared_ptr<ConnectionPool> connections;
+    NextTaskCallback read_task_callback;
 };
 
 
@@ -276,7 +259,7 @@ Pipe StorageS3Distributed::read(
 
         return Pipe(std::make_shared<StorageS3SequentialSource>(
             context.getInitialQueryId(),
-            /*initiator*/initiator,
+            context.getNextTaskCallback(),
             cli_builder,
             s3builder
         ));
@@ -349,7 +332,10 @@ Pipe StorageS3Distributed::read(
                 /*user=*/node.user,
                 /*password=*/node.password,
                 /*cluster=*/node.cluster,
-                /*cluster_secret=*/node.cluster_secret
+                /*cluster_secret=*/node.cluster_secret,
+                "StorageS3DistributedInititiator",
+                Protocol::Compression::Disable,
+                Protocol::Secure::Disable
             ));
             auto stream = std::make_shared<RemoteBlockInputStream>(
                 /*connection=*/*connections.back(),

@@ -138,6 +138,8 @@ private:
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
+    std::mutex buffer_mutex;
+    
 
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_check_cancelled;
@@ -169,10 +171,11 @@ private:
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
-    String receiveNextTaskRequest();
+    String receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & connection_settings);
+    void receiveClusterNameAndSalt(); // ASSUMELocked
     std::tuple<size_t, int> getReadTimeouts(const Settings & connection_settings);
 
     [[noreturn]] void receiveUnexpectedData();
@@ -199,12 +202,10 @@ private:
     void sendLogs();
     void sendEndOfStream();
     void sendPartUUIDs();
-    void sendNextTaskReply(String reply);
+    void sendReadTaskRequestAssumeLocked(const String &);
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
-
-    void receiveClusterNameAndSalt();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
