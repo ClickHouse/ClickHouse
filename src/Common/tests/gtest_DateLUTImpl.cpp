@@ -20,6 +20,8 @@ extern const char * auto_time_zones[];
 namespace
 {
 
+GTEST_ALLOW_UNINSTANTIATED_PARAMETERIZED_TEST(DateLUTWithTimeZoneAndTimeRange);
+
 cctz::civil_day YYYYMMDDToDay(unsigned value)
 {
     return cctz::civil_day(
