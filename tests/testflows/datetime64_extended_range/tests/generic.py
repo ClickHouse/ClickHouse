@@ -40,7 +40,7 @@ def extended_range_start(self):
     """
     with When("I do incrementing time sweep",
             description="check different time points in the first 24 hours at given date"):
-        walk_datetime_in_incrementing_steps(date="1698-01-01", precision=5, hrs_range=(0, 24))
+        walk_datetime_in_incrementing_steps(date="1925-01-01", precision=5, hrs_range=(0, 24))
 
 
 @TestScenario
@@ -52,7 +52,7 @@ def extended_range_end(self, precision=3):
     """
     with When("I do decrementing time sweep",
             description="check different time points in the last 24 hours at given date"):
-        walk_datetime_in_decrementing_steps(date="2377-12-31", precision=5, hrs_range=(23, 0))
+        walk_datetime_in_decrementing_steps(date="2238-12-31", precision=5, hrs_range=(23, 0))
 
 
 @TestOutline(Scenario)
@@ -91,7 +91,7 @@ def timezone_local_below_extended_range(self):
     """
     with When("I do incrementing time sweep",
             description="check different time points when UTC datetime fits normal range but below it for local datetime"):
-        walk_datetime_in_incrementing_steps(date="1697-12-12", hrs_range=(17, 24), timezone='America/Phoenix')
+        walk_datetime_in_incrementing_steps(date="1924-12-12", hrs_range=(17, 24), timezone='America/Phoenix')
 
 
 @TestOutline(Scenario)
@@ -104,7 +104,7 @@ def timezone_local_above_extended_range(self):
     """
     with When("I do decrementing time sweep",
               description="check different time points when UTC datetime fits normal range but above it for local datetime"):
-        walk_datetime_in_decrementing_steps(date="2378-01-01", hrs_range=(6, 0), timezone='Asia/Novosibirsk')
+        walk_datetime_in_decrementing_steps(date="2239-01-01", hrs_range=(6, 0), timezone='Asia/Novosibirsk')
 
 
 @TestScenario
