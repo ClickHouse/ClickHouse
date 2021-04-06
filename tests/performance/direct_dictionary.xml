@@ -113,7 +113,7 @@
         FORMAT Null;
     </query>
     <query>
-        SELECT dictGet('default.simple_key_direct_dictionary', ('value_int', 'value_string', 'value_decimal', 'value_string_nullable'), (number, toString(number)))
+        SELECT dictGet('default.complex_key_direct_dictionary', ('value_int', 'value_string', 'value_decimal', 'value_string_nullable'), (number, toString(number)))
         FROM system.numbers
         LIMIT {elements_count}
         FORMAT Null;
