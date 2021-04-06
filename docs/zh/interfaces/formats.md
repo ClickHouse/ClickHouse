@@ -1225,9 +1225,9 @@ SELECT * FROM topic1_stream;
 !!! note "警告"
     设置 `format_avro_schema_registry_url` 需要在配置 `users.xml` restart动后保持它的价值。
 
-## 镶木地板 {#data-format-parquet}
+## Parquet {#data-format-parquet}
 
-[阿帕奇地板](http://parquet.apache.org/) 是Hadoop生态系统中普遍存在的列式存储格式。 ClickHouse支持此格式的读写操作。
+[Apache Parquet](http://parquet.apache.org/) 是Hadoop生态系统中普遍存在的列式存储格式。 ClickHouse支持此格式的读写操作。
 
 ### 数据类型匹配{#sql_reference/data_types-matching-2} {#data-types-matching-sql_referencedata_types-matching-2}
 
@@ -1251,7 +1251,7 @@ SELECT * FROM topic1_stream;
 | —                          | [固定字符串](../sql-reference/data-types/fixedstring.md) | `STRING`                   |
 | `DECIMAL`                  | [十进制](../sql-reference/data-types/decimal.md)         | `DECIMAL`                  |
 
-ClickHouse支持可配置的精度 `Decimal` 类型。 该 `INSERT` 查询对待实木复合地板 `DECIMAL` 键入为ClickHouse `Decimal128` 类型。
+ClickHouse支持可配置的精度 `Decimal` 类型。 该 `INSERT` 查询对待 Parquet `DECIMAL` 键入为ClickHouse `Decimal128` 类型。
 
 不支持的Parquet数据类型: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 

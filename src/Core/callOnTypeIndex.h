@@ -207,4 +207,22 @@ bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
     return false;
 }
 
+template <typename F>
+static bool callOnTwoTypeIndexes(TypeIndex left_type, TypeIndex right_type, F && func)
+{
+    return callOnIndexAndDataType<void>(left_type, [&](const auto & left_types) -> bool
+    {
+        using LeftTypes = std::decay_t<decltype(left_types)>;
+        using LeftType = typename LeftTypes::LeftType;
+
+        return callOnIndexAndDataType<void>(right_type, [&](const auto & right_types) -> bool
+        {
+            using RightTypes = std::decay_t<decltype(right_types)>;
+            using RightType = typename RightTypes::LeftType;
+
+            return std::forward<F>(func)(TypePair<LeftType, RightType>());
+        });
+    });
+}
+
 }

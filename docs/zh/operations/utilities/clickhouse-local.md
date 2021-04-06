@@ -3,11 +3,11 @@ toc_priority: 60
 toc_title: clickhouse-local
 ---
 
-# ClickHouse Local {#clickhouse-local}
+# clickhouse-local {#clickhouse-local}
 
 `clickhouse-local`模式可以使您能够对本地文件执行快速处理，而无需部署和配置ClickHouse服务器。
 
-[ClickHouse SQL语法](../../operations/utilities/clickhouse-local.md)支持对表格数据的查询.
+接受表示表格tables的数据，并使用[ClickHouse SQL方言](../../operations/utilities/clickhouse-local.md)查询它们。
 
 `clickhouse-local`使用与ClickHouse Server相同的核心，因此它支持大多数功能以及相同的格式和表引擎。
 
@@ -15,6 +15,8 @@ toc_title: clickhouse-local
 
 !!! warning "警告"
     不建议将生产服务器配置加载到`clickhouse-local`因为数据可以在人为错误的情况下被损坏。
+
+对于临时数据，默认情况下会创建一个唯一的临时数据目录。
 
 ## 用途 {#usage}
 
@@ -29,14 +31,22 @@ clickhouse-local --structure "table_structure" --input-format "format_of_incomin
 -   `-S`, `--structure` — 输入数据的表结构。
 -   `-if`, `--input-format` — 输入格式化类型, 默认是`TSV`。
 -   `-f`, `--file` — 数据路径, 默认是`stdin`。
--   `-q` `--query` — 要查询的SQL语句使用`;`做分隔符。
+-   `-q`, `--query` — 要查询的SQL语句使用`;`做分隔符。您必须指定`query`或`queries-file`选项。
+-   `-qf`, `--queries-file` - 包含执行查询的文件路径。您必须指定`query`或`queries-file`选项。
 -   `-N`, `--table` — 数据输出的表名，默认是`table`。
 -   `-of`, `--format`, `--output-format` — 输出格式化类型, 默认是`TSV`。
+-   `-d`, `--database` — 默认数据库名，默认是`_local`。
 -   `--stacktrace` — 是否在出现异常时输出栈信息。
+-   `--echo` — 执行前打印查询。
 -   `--verbose` — debug显示查询的详细信息。
--   `-s` — 禁用`stderr`输出信息。
--   `--config-file` — 与ClickHouse服务器格式相同配置文件的路径，默认情况下配置为空。
+-   `--logger.console` — 日志显示到控制台。
+-   `--logger.log` — 日志文件名。
+-   `--logger.level` — 日志级别。
+-   `--ignore-error` — 当查询失败时，不停止处理。
+-   `-c`, `--config-file` — 与ClickHouse服务器格式相同配置文件的路径，默认情况下配置为空。
+-   `--no-system-tables` — 不附加系统表。
 -   `--help` — `clickhouse-local`使用帮助信息。
+-   `-V`, `--version` — 打印版本信息并退出。
 
 对于每个ClickHouse配置的参数，也可以单独使用，可以不使用`--config-file`指定。
 

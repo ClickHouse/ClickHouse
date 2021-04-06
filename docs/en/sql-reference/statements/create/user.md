@@ -5,16 +5,17 @@ toc_title: USER
 
 # CREATE USER {#create-user-statement}
 
-Creates a [user account](../../../operations/access-rights.md#user-account-management).
+Creates [user accounts](../../../operations/access-rights.md#user-account-management).
 
 Syntax:
 
 ``` sql
-CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
-    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
+CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1] 
+        [, name2 [ON CLUSTER cluster_name2] ...]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
 `ON CLUSTER` clause allows creating users on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
@@ -29,6 +30,8 @@ There are multiple ways of user identification:
 -   `IDENTIFIED WITH sha256_hash BY 'hash'`
 -   `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 -   `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+-   `IDENTIFIED WITH ldap SERVER 'server_name'`
+-   `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 
 ## User Host {#user-host}
 
@@ -69,7 +72,7 @@ CREATE USER john DEFAULT ROLE role1, role2
 Create the user account `john` and make all his future roles default:
 
 ``` sql
-ALTER USER user DEFAULT ROLE ALL
+CREATE USER user DEFAULT ROLE ALL
 ```
 
 When some role is assigned to `john` in the future, it will become default automatically.
@@ -77,5 +80,5 @@ When some role is assigned to `john` in the future, it will become default autom
 Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
 
 ``` sql
-ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
+CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2
 ```

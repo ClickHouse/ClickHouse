@@ -84,3 +84,9 @@ SELECT '::ffff:127.0.0.1 is ipv6 string:                        ', isIPv6String(
 SELECT '::ffff:8.8.8.8 is ipv6 string:                          ', isIPv6String('::ffff:8.8.8.8');
 SELECT '2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D is ipv6 string: ', isIPv6String('2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D');
 
+-- IPV6 functions parse IPv4 addresses.
+
+SELECT toIPv6('0.0.0.0');
+SELECT toIPv6('127.0.0.1');
+SELECT cutIPv6(IPv6StringToNum('127.0.0.1'), 0, 0);
+SELECT toIPv6('127.0.0.' || toString(number)) FROM numbers(13);

@@ -131,7 +131,7 @@ def login_after_user_is_deleted_from_ldap(self, server, rbac=False):
             user = add_user_to_ldap(**user)
 
         with ldap_authenticated_users({"username": user["cn"], "server": server}, config_file=f"ldap_users_{getuid()}.xml",
-            restart=True, rbac=rbac):
+                restart=True, rbac=rbac):
             login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
             with When("I delete this user from LDAP"):
@@ -202,7 +202,7 @@ def login_after_user_cn_changed_in_ldap(self, server, rbac=False):
             user = add_user_to_ldap(**user)
 
         with ldap_authenticated_users({"username": user["cn"], "server": server},
-            config_file=f"ldap_users_{getuid()}.xml", restart=True, rbac=rbac):
+                config_file=f"ldap_users_{getuid()}.xml", restart=True, rbac=rbac):
             login_and_execute_query(username=user["cn"], password=user["userpassword"])
 
             with When("I change user password in LDAP"):
@@ -747,10 +747,7 @@ def verification_cooldown_performance(self, server, rbac=False, iterations=5000)
         no_vcd_time = repeat_requests(server=server, iterations=iterations, vcd_value="0", rbac=rbac)
         metric("login_with_vcd_value_0", units="seconds", value=no_vcd_time)
 
-    with Then("The performance with verification cooldown parameter set is better than the performance with no verification cooldown parameter."):
-        assert no_vcd_time > vcd_time, error()
-
-    with And("Log the performance improvement as a percentage."):
+    with Then("Log the performance improvement as a percentage"):
         metric("percentage_improvement", units="%", value=100*(no_vcd_time - vcd_time)/vcd_time)
 
 @TestOutline

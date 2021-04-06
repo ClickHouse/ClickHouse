@@ -27,6 +27,8 @@ public:
         return name;
     }
 
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     size_t getNumberOfArguments() const override
     {
         return 1;

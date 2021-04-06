@@ -7,7 +7,7 @@ toc_title: "\u6570\u636E\u5907\u4EFD"
 
 # 数据备份 {#data-backup}
 
-尽管[副本](../engines/table-engines/mergetree-family/replication.md) 可以预防硬件错误带来的数据丢失, 但是它不能防止人为操作的错误: 意外删除数据, 删除错误的 table 或者删除错误 cluster 上的 table, 可以导致错误数据处理错误或者数据损坏的 bugs. 这类意外可能会影响所有的副本. ClickHouse 有内建的保障措施可以预防一些错误 — 例如, 默认情况下[您不能使用类似MergeTree的引擎删除包含超过50Gb数据的表](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). 但是，这些保障措施不能涵盖所有可能的情况，并且可以规避。
+尽管[副本](../engines/table-engines/mergetree-family/replication.md) 可以预防硬件错误带来的数据丢失, 但是它不能防止人为操作的错误: 意外删除数据, 删除错误的 table 或者删除错误 cluster 上的 table, 可以导致错误数据处理错误或者数据损坏的 bugs. 这类意外可能会影响所有的副本. ClickHouse 有内建的保障措施可以预防一些错误 — 例如, 默认情况下[您不能使用类似MergeTree的引擎删除包含超过50Gb数据的表](server-configuration-parameters/settings.md#max-table-size-to-drop). 但是，这些保障措施不能涵盖所有可能的情况，并且可以规避。
 
 为了有效地减少可能的人为错误，您应该 **提前**准备备份和还原数据的策略.
 

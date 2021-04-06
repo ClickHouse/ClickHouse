@@ -19,7 +19,7 @@ public:
     virtual ~BaseInterserverCredentials() { }
 
     /// isValidUser returns true or throws WRONG_PASSWORD
-    virtual bool isValidUser(const std::pair<std::string, std::string> credentials) = 0;
+    virtual std::pair<String, bool> isValidUser(const std::pair<std::string, std::string> credentials) = 0;
 
     std::string getUser() { return current_user; }
 
@@ -33,7 +33,7 @@ protected:
 
 
 /// NullInterserverCredentials are used when authentication is not configured
-class NullInterserverCredentials : public virtual BaseInterserverCredentials
+class NullInterserverCredentials : public BaseInterserverCredentials
 {
 public:
     NullInterserverCredentials(const NullInterserverCredentials &) = delete;
@@ -43,10 +43,10 @@ public:
 
     static std::shared_ptr<NullInterserverCredentials> make() { return std::make_shared<NullInterserverCredentials>(); }
 
-    bool isValidUser(const std::pair<std::string, std::string> credentials) override
+    std::pair<String, bool> isValidUser(const std::pair<std::string, std::string> credentials) override
     {
         std::ignore = credentials;
-        return true;
+        return {"", true};
     }
 };
 
@@ -63,7 +63,7 @@ public:
 ///            <admin>111</admin>
 ///        </users>
 ///    </interserver_http_credentials>
-class ConfigInterserverCredentials : public virtual BaseInterserverCredentials
+class ConfigInterserverCredentials : public BaseInterserverCredentials
 {
 public:
     using Store = std::map<std::pair<std::string, std::string>, bool>;
@@ -79,7 +79,7 @@ public:
     {
     }
 
-    bool isValidUser(const std::pair<std::string, std::string> credentials) override;
+    std::pair<String, bool> isValidUser(const std::pair<std::string, std::string> credentials) override;
 
 private:
     Store store;

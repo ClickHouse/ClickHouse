@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/IProcessor.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
@@ -108,6 +109,7 @@ public:
     /// This methods are from QueryPipeline. Needed to make conversion from pipeline to pipe possible.
     void addInterpreterContext(std::shared_ptr<Context> context) { holder.interpreter_context.emplace_back(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
+    void addQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { holder.query_id_holder = std::move(query_id_holder); }
     /// For queries with nested interpreters (i.e. StorageDistributed)
     void addQueryPlan(std::unique_ptr<QueryPlan> plan) { holder.query_plans.emplace_back(std::move(plan)); }
 
@@ -128,6 +130,7 @@ private:
         std::vector<StoragePtr> storage_holders;
         std::vector<TableLockHolder> table_locks;
         std::vector<std::unique_ptr<QueryPlan>> query_plans;
+        std::shared_ptr<QueryIdHolder> query_id_holder;
     };
 
     Holder holder;

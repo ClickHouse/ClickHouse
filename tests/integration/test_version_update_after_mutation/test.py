@@ -58,7 +58,7 @@ def test_mutate_and_upgrade(start_cluster):
     assert node1.query("SELECT COUNT() FROM mt") == "2\n"
     assert node2.query("SELECT COUNT() FROM mt") == "2\n"
 
-    node1.query("ALTER TABLE mt MODIFY COLUMN id String DEFAULT '0'",
+    node1.query("ALTER TABLE mt MODIFY COLUMN id Int32 DEFAULT 0",
                 settings={"replication_alter_partitions_sync": "2"})
 
     node2.query("OPTIMIZE TABLE mt FINAL")

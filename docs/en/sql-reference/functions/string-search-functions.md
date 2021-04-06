@@ -12,9 +12,9 @@ The search is case-sensitive by default in all these functions. There are separa
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
-Returns the position (in bytes) of the found substring in the string, starting from 1.
+Searches for the substring `needle` in the string `haystack`.
 
-Works under the assumption that the string contains a set of bytes representing a single-byte encoded text. If this assumption is not met and a character can’t be represented using a single byte, the function doesn’t throw an exception and returns some unexpected result. If character can be represented using two bytes, it will use two bytes and so on.
+Returns the position (in bytes) of the found substring in the string, starting from 1. 
 
 For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
 
@@ -22,15 +22,22 @@ For a case-insensitive search, use the function [positionCaseInsensitive](#posit
 
 ``` sql
 position(haystack, needle[, start_pos])
-```
+``` 
+
+``` sql
+position(needle IN haystack)
+``` 
 
 Alias: `locate(haystack, needle[, start_pos])`.
 
-**Parameters**
+!!! note "Note"
+    Syntax of `position(needle IN haystack)` provides SQL-compatibility, the function works the same way as to `position(haystack, needle)`.
 
--   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+**Arguments**
+
+-   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` – Position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
 
 **Returned values**
 
@@ -46,7 +53,7 @@ The phrase “Hello, world!” contains a set of bytes representing a single-byt
 Query:
 
 ``` sql
-SELECT position('Hello, world!', '!')
+SELECT position('Hello, world!', '!');
 ```
 
 Result:
@@ -74,7 +81,7 @@ The same phrase in Russian contains characters which can’t be represented usin
 Query:
 
 ``` sql
-SELECT position('Привет, мир!', '!')
+SELECT position('Привет, мир!', '!');
 ```
 
 Result:
@@ -83,6 +90,36 @@ Result:
 ┌─position('Привет, мир!', '!')─┐
 │                            21 │
 └───────────────────────────────┘
+```
+
+**Examples for POSITION(needle IN haystack) syntax**
+
+Query:
+
+```sql
+SELECT 3 = position('c' IN 'abc');
+```
+
+Result:
+
+```text
+┌─equals(3, position('abc', 'c'))─┐
+│                               1 │
+└─────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT 6 = position('/' IN s) FROM (SELECT 'Hello/World' AS s);
+```
+
+Result:
+
+```text
+┌─equals(6, position(s, '/'))─┐
+│                           1 │
+└─────────────────────────────┘
 ```
 
 ## positionCaseInsensitive {#positioncaseinsensitive}
@@ -97,11 +134,11 @@ Works under the assumption that the string contains a set of bytes representing 
 positionCaseInsensitive(haystack, needle[, start_pos])
 ```
 
-**Parameters**
+**Arguments**
 
--   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
@@ -115,7 +152,7 @@ Type: `Integer`.
 Query:
 
 ``` sql
-SELECT positionCaseInsensitive('Hello, world!', 'hello')
+SELECT positionCaseInsensitive('Hello, world!', 'hello');
 ```
 
 Result:
@@ -140,11 +177,11 @@ For a case-insensitive search, use the function [positionCaseInsensitiveUTF8](#p
 positionUTF8(haystack, needle[, start_pos])
 ```
 
-**Parameters**
+**Arguments**
 
--   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned values**
 
@@ -160,7 +197,7 @@ The phrase “Hello, world!” in Russian contains a set of Unicode points repre
 Query:
 
 ``` sql
-SELECT positionUTF8('Привет, мир!', '!')
+SELECT positionUTF8('Привет, мир!', '!');
 ```
 
 Result:
@@ -176,7 +213,7 @@ The phrase “Salut, étudiante!”, where character `é` can be represented usi
 Query for the letter `é`, which is represented one Unicode point `U+00E9`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!')
+SELECT positionUTF8('Salut, étudiante!', '!');
 ```
 
 Result:
@@ -190,7 +227,7 @@ Result:
 Query for the letter `é`, which is represented two Unicode points `U+0065U+0301`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!')
+SELECT positionUTF8('Salut, étudiante!', '!');
 ```
 
 Result:
@@ -213,11 +250,11 @@ Works under the assumption that the string contains a set of bytes representing 
 positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 ```
 
-**Parameters**
+**Arguments**
 
--   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Returned value**
 
@@ -231,7 +268,7 @@ Type: `Integer`.
 Query:
 
 ``` sql
-SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')
+SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир');
 ```
 
 Result:
@@ -258,10 +295,10 @@ The search is performed on sequences of bytes without respect to string encoding
 multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 ```
 
-**Parameters**
+**Arguments**
 
--   `haystack` — string, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned values**
 
@@ -272,7 +309,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 Query:
 
 ``` sql
-SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
+SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
 ```
 
 Result:
@@ -373,7 +410,7 @@ Matches all groups of the `haystack` string using the `pattern` regular expressi
 extractAllGroupsHorizontal(haystack, pattern)
 ```
 
-**Parameters** 
+**Arguments** 
 
 -   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
 -   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md). 
@@ -389,7 +426,7 @@ If `haystack` doesn’t match the `pattern` regex, an array of empty arrays is r
 Query:
 
 ``` sql
-SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
+SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
 ```
 
 Result:
@@ -414,7 +451,7 @@ Matches all groups of the `haystack` string using the `pattern` regular expressi
 extractAllGroupsVertical(haystack, pattern)
 ```
 
-**Parameters** 
+**Arguments** 
 
 -   `haystack` — Input string. Type: [String](../../sql-reference/data-types/string.md).
 -   `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. Type: [String](../../sql-reference/data-types/string.md).
@@ -430,7 +467,7 @@ If `haystack` doesn’t match the `pattern` regex, an empty array is returned.
 Query:
 
 ``` sql
-SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
+SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
 ```
 
 Result:
@@ -473,7 +510,7 @@ Case insensitive variant of [like](https://clickhouse.tech/docs/en/sql-reference
 ilike(haystack, pattern)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `haystack` — Input string. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `pattern` — If `pattern` doesn't contain percent signs or underscores, then the `pattern` only represents the string itself. An underscore (`_`) in `pattern` stands for (matches) any single character. A percent sign (`%`) matches any sequence of zero or more characters.
@@ -508,7 +545,7 @@ Input table:
 Query:
 
 ``` sql
-SELECT * FROM Months WHERE ilike(name, '%j%')
+SELECT * FROM Months WHERE ilike(name, '%j%');
 ```
 
 Result:
@@ -538,11 +575,11 @@ For case-insensitive search or/and in UTF-8 format use functions `ngramSearchCas
 !!! note "Note"
     For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the (non-)symmetric difference between these hash tables – collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function – we zero the 5-th bit (starting from zero) of each codepoint byte and first bit of zeroth byte if bytes more than one – this works for Latin and mostly for all Cyrillic letters.
 
-## countSubstrings(haystack, needle) {#countSubstrings}
+## countSubstrings {#countSubstrings}
 
-Count the number of substring occurrences
+Returns the number of substring occurrences.
 
-For a case-insensitive search, use the function `countSubstringsCaseInsensitive` (or `countSubstringsCaseInsensitiveUTF8`).
+For a case-insensitive search, use [countSubstringsCaseInsensitive](../../sql-reference/functions/string-search-functions.md#countSubstringsCaseInsensitive) or [countSubstringsCaseInsensitiveUTF8](../../sql-reference/functions/string-search-functions.md#countSubstringsCaseInsensitiveUTF8) functions.
 
 **Syntax**
 
@@ -550,24 +587,24 @@ For a case-insensitive search, use the function `countSubstringsCaseInsensitive`
 countSubstrings(haystack, needle[, start_pos])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` – Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md)
+-   `start_pos` – Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Returned values**
 
 -   Number of occurrences.
 
-Type: `Integer`.
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Examples**
 
 Query:
 
 ``` sql
-SELECT countSubstrings('foobar.com', '.')
+SELECT countSubstrings('foobar.com', '.');
 ```
 
 Result:
@@ -581,7 +618,7 @@ Result:
 Query:
 
 ``` sql
-SELECT countSubstrings('aaaa', 'aa')
+SELECT countSubstrings('aaaa', 'aa');
 ```
 
 Result:
@@ -590,6 +627,138 @@ Result:
 ┌─countSubstrings('aaaa', 'aa')─┐
 │                             2 │
 └───────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT countSubstrings('abc___abc', 'abc', 4);
+```
+
+Result:
+
+``` text
+┌─countSubstrings('abc___abc', 'abc', 4)─┐
+│                                      1 │
+└────────────────────────────────────────┘
+```
+
+## countSubstringsCaseInsensitive {#countSubstringsCaseInsensitive}
+
+Returns the number of substring occurrences case-insensitive.
+
+**Syntax**
+
+``` sql
+countSubstringsCaseInsensitive(haystack, needle[, start_pos])
+```
+
+**Arguments**
+
+-   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Returned values**
+
+-   Number of occurrences.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT countSubstringsCaseInsensitive('aba', 'B');
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitive('aba', 'B')─┐
+│                                          1 │
+└────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT countSubstringsCaseInsensitive('foobar.com', 'CoM');
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitive('foobar.com', 'CoM')─┐
+│                                                   1 │
+└─────────────────────────────────────────────────────┘
+```
+
+Query:
+
+``` sql
+SELECT countSubstringsCaseInsensitive('abC___abC', 'aBc', 2);
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitive('abC___abC', 'aBc', 2)─┐
+│                                                     1 │
+└───────────────────────────────────────────────────────┘
+```
+
+## countSubstringsCaseInsensitiveUTF8 {#countSubstringsCaseInsensitiveUTF8}
+
+Returns the number of substring occurrences in `UTF-8` case-insensitive.
+
+**Syntax**
+
+``` sql
+SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
+```
+
+**Arguments**
+
+-   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `needle` — The substring to search for. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `start_pos` — Position of the first character in the string to start search. Optional. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Returned values**
+
+-   Number of occurrences.
+
+Type: [UInt64](../../sql-reference/data-types/int-uint.md).
+
+**Examples** 
+
+Query:
+
+``` sql
+SELECT countSubstringsCaseInsensitiveUTF8('абв', 'A');
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('абв', 'A')─┐
+│                                              1 │
+└────────────────────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв');
+```
+
+Result:
+
+``` text
+┌─countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв')─┐
+│                                                          3 │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ## countMatches(haystack, pattern) {#countmatcheshaystack-pattern}
@@ -602,7 +771,7 @@ Returns the number of regular expression matches for a `pattern` in a `haystack`
 countMatches(haystack, pattern)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
@@ -642,5 +811,3 @@ Result:
 │                             2 │
 └───────────────────────────────┘
 ```
-
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/string_search_functions/) <!--hide-->

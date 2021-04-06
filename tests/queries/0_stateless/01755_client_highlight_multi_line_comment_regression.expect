@@ -1,0 +1,25 @@
+#!/usr/bin/expect -f
+
+log_user 0
+set timeout 5
+match_max 100000
+# A default timeout action is to do nothing, change it to fail
+expect_after {
+    timeout {
+        exit 2
+    }
+}
+
+set basedir [file dirname $argv0]
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
+expect ":) "
+
+# regression for heap-buffer-overflow issue (under ASAN)
+send -- "/**"
+expect "/**"
+# just in case few more bytes
+send -- "foobar"
+expect "/**foobar"
+
+send -- "\3\4"
+expect eof

@@ -27,6 +27,7 @@ SRCS(
     ExecutionSpeedLimits.cpp
     ExpressionBlockInputStream.cpp
     IBlockInputStream.cpp
+    ITTLAlgorithm.cpp
     InputStreamFromASTInsertQuery.cpp
     InternalTextLogsRowOutputStream.cpp
     LimitBlockInputStream.cpp
@@ -39,11 +40,16 @@ SRCS(
     RemoteBlockInputStream.cpp
     RemoteBlockOutputStream.cpp
     RemoteQueryExecutor.cpp
+    RemoteQueryExecutorReadContext.cpp
     SizeLimits.cpp
     SquashingBlockInputStream.cpp
     SquashingBlockOutputStream.cpp
     SquashingTransform.cpp
+    TTLAggregationAlgorithm.cpp
     TTLBlockInputStream.cpp
+    TTLColumnAlgorithm.cpp
+    TTLDeleteAlgorithm.cpp
+    TTLUpdateInfoAlgorithm.cpp
     copyData.cpp
     finalizeBlock.cpp
     materializeBlock.cpp

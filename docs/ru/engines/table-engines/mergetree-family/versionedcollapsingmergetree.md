@@ -233,4 +233,3 @@ SELECT * FROM UAct FINAL
 
 Это очень неэффективный способ выбора данных. Не используйте его для больших таблиц.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

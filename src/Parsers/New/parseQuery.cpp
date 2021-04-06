@@ -12,7 +12,6 @@
 
 #include <CommonTokenStream.h>
 
-
 namespace DB
 {
 
@@ -20,7 +19,7 @@ using namespace antlr4;
 using namespace AST;
 
 // For testing only
-PtrTo<Query> parseQuery(const String & query)
+PtrTo<Query> parseQuery(const String & query, const String & current_database)
 {
     ANTLRInputStream input(query);
     ClickHouseLexer lexer(&input);
@@ -34,12 +33,12 @@ PtrTo<Query> parseQuery(const String & query)
     lexer.addErrorListener(&lexer_error_listener);
     parser.addErrorListener(&parser_error_listener);
 
-    ParseTreeVisitor visitor;
+    ParseTreeVisitor visitor { current_database };
 
     return visitor.visit(parser.queryStmt());
 }
 
-ASTPtr parseQuery(const char * begin, const char * end, size_t, size_t)
+ASTPtr parseQuery(const char * begin, const char * end, size_t, size_t, const String & current_database)
 {
     // TODO: do not ignore |max_parser_depth|.
 
@@ -60,7 +59,7 @@ ASTPtr parseQuery(const char * begin, const char * end, size_t, size_t)
     lexer.addErrorListener(&lexer_error_listener);
     parser.addErrorListener(&parser_error_listener);
 
-    ParseTreeVisitor visitor;
+    ParseTreeVisitor visitor { current_database };
 
     PtrTo<Query> new_ast = visitor.visit(parser.queryStmt());
     auto old_ast = new_ast->convertToOld();

@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.2">
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
         <table_exists>hits_10m_single</table_exists>
@@ -32,6 +32,7 @@
                <value>extractURLParameters</value>
                <value>extractURLParameterNames</value>
                <value>decodeURLComponent</value>
+               <value>decodeXMLComponent</value>
                <value>cutWWW</value>
                <value>cutQueryString</value>
                <value>cutQueryStringAndFragment</value>

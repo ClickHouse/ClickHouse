@@ -168,7 +168,6 @@ namespace MultiRegexps
         hs_database_t * db = nullptr;
         hs_compile_error_t * compile_error;
 
-
         std::unique_ptr<unsigned int[]> ids;
 
         /// We mark the patterns to provide the callback results.

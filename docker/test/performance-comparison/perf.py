@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 import argparse
 import clickhouse_driver
@@ -44,6 +44,7 @@ parser.add_argument('--port', nargs='*', default=[9000], help="Space-separated l
 parser.add_argument('--runs', type=int, default=1, help='Number of query runs per server.')
 parser.add_argument('--max-queries', type=int, default=None, help='Test no more than this number of queries, chosen at random.')
 parser.add_argument('--queries-to-run', nargs='*', type=int, default=None, help='Space-separated list of indexes of queries to test.')
+parser.add_argument('--max-query-seconds', type=int, default=10, help='For how many seconds at most a query is allowed to run. The script finishes with error if this time is exceeded.')
 parser.add_argument('--profile-seconds', type=int, default=0, help='For how many seconds to profile a query for which the performance has changed.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
@@ -262,8 +263,16 @@ for query_index in queries_to_run:
     for conn_index, c in enumerate(all_connections):
         try:
             prewarm_id = f'{query_prefix}.prewarm0'
-            # Will also detect too long queries during warmup stage
-            res = c.execute(q, query_id = prewarm_id, settings = {'max_execution_time': 10})
+
+            try:
+                # Will also detect too long queries during warmup stage
+                res = c.execute(q, query_id = prewarm_id, settings = {'max_execution_time': args.max_query_seconds})
+            except clickhouse_driver.errors.Error as e:
+                # Add query id to the exception to make debugging easier.
+                e.args = (prewarm_id, *e.args)
+                e.message = prewarm_id + ': ' + e.message
+                raise
+
             print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
         except KeyboardInterrupt:
             raise
@@ -310,8 +319,8 @@ for query_index in queries_to_run:
 
         for conn_index, c in enumerate(this_query_connections):
             try:
-                res = c.execute(q, query_id = run_id)
-            except Exception as e:
+                res = c.execute(q, query_id = run_id, settings = {'max_execution_time': args.max_query_seconds})
+            except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (run_id, *e.args)
                 e.message = run_id + ': ' + e.message
@@ -323,7 +332,7 @@ for query_index in queries_to_run:
             server_seconds += elapsed
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}')
 
-            if elapsed > 10:
+            if elapsed > args.max_query_seconds:
                 # Stop processing pathologically slow queries, to avoid timing out
                 # the entire test task. This shouldn't really happen, so we don't
                 # need much handling for this case and can just exit.
@@ -388,7 +397,7 @@ for query_index in queries_to_run:
             try:
                 res = c.execute(q, query_id = run_id, settings = {'query_profiler_real_time_period_ns': 10000000})
                 print(f'profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
-            except Exception as e:
+            except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (run_id, *e.args)
                 e.message = run_id + ': ' + e.message

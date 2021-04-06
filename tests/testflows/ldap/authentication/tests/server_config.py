@@ -245,7 +245,7 @@ def invalid_verification_cooldown_value(self, invalid_value, timeout=20):
         }}
 
     with When("I try to use this configuration then it should not work"):
-        invalid_server_config(servers, message=error_message, tail=17, timeout=timeout)
+        invalid_server_config(servers, message=error_message, tail=30, timeout=timeout)
 
 @TestScenario
 @Requirements(

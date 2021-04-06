@@ -21,25 +21,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec_,
     bool blocks_are_granules_size)
-    : MergedBlockOutputStream(
-        data_part,
-        metadata_snapshot_,
-        columns_list_,
-        skip_indices,
-        default_codec_,
-        data_part->storage.global_context.getSettings().min_bytes_to_use_direct_io,
-        blocks_are_granules_size)
-{
-}
-
-MergedBlockOutputStream::MergedBlockOutputStream(
-    const MergeTreeDataPartPtr & data_part,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const NamesAndTypesList & columns_list_,
-    const MergeTreeIndices & skip_indices,
-    CompressionCodecPtr default_codec_,
-    size_t aio_threshold,
-    bool blocks_are_granules_size)
     : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
@@ -48,7 +29,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         storage.global_context.getSettings(),
         storage.getSettings(),
         data_part->index_granularity_info.is_adaptive,
-        aio_threshold,
         /* rewrite_primary_key = */ true,
         blocks_are_granules_size);
 
@@ -111,6 +91,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->calculateColumnsSizesOnDisk();
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
+    new_part->storage.lockSharedData(*new_part);
 }
 
 void MergedBlockOutputStream::finalizePartOnDisk(
@@ -205,7 +186,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation);
-
     rows_count += rows;
 }
 

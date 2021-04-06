@@ -50,6 +50,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return false; }
 
+    /// We do not use default implementation for LowCardinality because this is not a pure function.
+    /// If used, optimization for LC may execute function only for dictionary, which gives wrong result.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         size_t number_of_arguments = arguments.size();

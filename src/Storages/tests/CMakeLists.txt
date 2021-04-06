@@ -1,6 +1,3 @@
-add_executable (part_name part_name.cpp)
-target_link_libraries (part_name PRIVATE dbms)
-
 add_executable (remove_symlink_directory remove_symlink_directory.cpp)
 target_link_libraries (remove_symlink_directory PRIVATE dbms)
 
@@ -29,4 +26,7 @@ target_link_libraries (transform_part_zk_nodes
 if (ENABLE_FUZZING)
     add_executable (mergetree_checksum_fuzzer mergetree_checksum_fuzzer.cpp)
     target_link_libraries (mergetree_checksum_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})
+
+    add_executable (columns_description_fuzzer columns_description_fuzzer.cpp)
+    target_link_libraries (columns_description_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})
 endif ()

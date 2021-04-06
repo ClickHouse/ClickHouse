@@ -3,9 +3,13 @@
 #include <memory>
 #include <string>
 #include <Poco/Logger.h>
-#include <Poco/Net/HTTPRequestHandler.h>
+#include <Server/HTTP/HTTPRequestHandler.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/InterserverCredentials.h>
+
+#include <Poco/Logger.h>
+
+#include <memory>
 
 
 namespace CurrentMetrics
@@ -19,7 +23,7 @@ namespace DB
 class IServer;
 class WriteBufferFromHTTPServerResponse;
 
-class InterserverIOHTTPHandler : public Poco::Net::HTTPRequestHandler
+class InterserverIOHTTPHandler : public HTTPRequestHandler
 {
 public:
     explicit InterserverIOHTTPHandler(IServer & server_)
@@ -28,7 +32,7 @@ public:
     {
     }
 
-    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override;
 
 private:
     struct Output
@@ -41,11 +45,12 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
 
-    void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Output & used_output);
+    void processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output);
 
     bool checkAuthentication(Poco::Net::HTTPServerRequest & request) const;
-    const std::string default_user = "";
-    const std::string default_password = "";
+    const std::string default_user;
+    const std::string default_password;
+    std::pair<String, bool> checkAuthentication(HTTPServerRequest & request) const;
 };
 
 }

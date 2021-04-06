@@ -500,6 +500,8 @@ CurrentThread::QueryScope::QueryScope(Context & query_context)
 {
     CurrentThread::initializeQuery();
     CurrentThread::attachQueryContext(query_context);
+    if (!query_context.hasQueryContext())
+        query_context.makeQueryContext();
 }
 
 void CurrentThread::QueryScope::logPeakMemoryUsage()

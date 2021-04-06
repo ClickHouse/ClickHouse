@@ -63,12 +63,4 @@ public:
 };
 
 
-/// Part of the UPDATE command of the form: col_name = expr
-class ParserAssignment : public IParserBase
-{
-protected:
-    const char * getName() const  override{ return "column assignment"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 }

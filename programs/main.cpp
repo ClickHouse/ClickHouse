@@ -18,6 +18,7 @@
 #endif
 
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/getHashOfLoadedBinary.h>
 
 #include <common/phdr_cache.h>
 #include <ext/scope_guard.h>
@@ -61,6 +62,14 @@ int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 #endif
+
+int mainEntryClickHouseHashBinary(int, char **)
+{
+    /// Intentionally without newline. So you can run:
+    /// objcopy --add-section .note.ClickHouse.hash=<(./clickhouse hash-binary) clickhouse
+    std::cout << getHashOfLoadedBinaryHex();
+    return 0;
+}
 
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
 
@@ -110,6 +119,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
 #endif
+    {"hash-binary", mainEntryClickHouseHashBinary},
 };
 
 

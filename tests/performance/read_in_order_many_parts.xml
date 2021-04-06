@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test>
     <settings>
         <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
         <optimize_read_in_order>1</optimize_read_in_order>

@@ -240,7 +240,7 @@ try
 
     /// Skip networking
 
-    /// Sets external authenticators config (LDAP).
+    /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
 
     setupUsers();
@@ -260,6 +260,11 @@ try
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
 
+    /// A cache for mmapped files.
+    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
+    if (mmap_cache_size)
+        global_context->setMMappedFileCache(mmap_cache_size);
+
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
 
@@ -273,11 +278,12 @@ try
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(*global_context);
 
-    String path = global_context->getPath();
-    if (!path.empty())
+    if (config().has("path"))
     {
+        String path = global_context->getPath();
+
         /// Lock path directory before read
-        status.emplace(global_context->getPath() + "status", StatusFile::write_full_info);
+        status.emplace(path + "status", StatusFile::write_full_info);
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
         Poco::File(path + "data/").createDirectories();
@@ -288,7 +294,7 @@ try
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
-    else
+    else if (!config().has("no-system-tables"))
     {
         attachSystemTables(*global_context);
     }
@@ -540,6 +546,7 @@ void LocalServer::init(int argc, char ** argv)
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
         ("ignore-error", "do not stop processing if a query failed")
+        ("no-system-tables", "do not attach system tables (better startup time)")
         ("version,V", "print version information and exit")
         ;
 
@@ -602,6 +609,8 @@ void LocalServer::init(int argc, char ** argv)
         config().setString("logger.level", options["logger.level"].as<std::string>());
     if (options.count("ignore-error"))
         config().setBool("ignore-error", true);
+    if (options.count("no-system-tables"))
+        config().setBool("no-system-tables", true);
 
     std::vector<std::string> arguments;
     for (int arg_num = 1; arg_num < argc; ++arg_num)
