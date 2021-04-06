@@ -235,6 +235,9 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
             int index = timeout_fd_to_replica_index[event_fd];
             replicas[index].change_replica_timeout.reset();
             ++shuffled_pools[index].slowdown_count;
+            TryResult result = replicas[index].connection_establisher.getResult();
+            Connection * connection = &*result.entry;
+            LOG_DEBUG(log, "Increment HedgedRequestsChangeReplica in Factory, slow replica: {}", connection->getDescription());
             ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
         }
         else

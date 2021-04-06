@@ -327,6 +327,10 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             offset_states[location.offset].replicas[location.index].is_change_replica_timeout_expired = true;
             offset_states[location.offset].next_replica_in_process = true;
             offsets_queue.push(location.offset);
+            LOG_DEBUG(
+                &Poco::Logger::get("HedgedConnections"),
+                "Increment HedgedRequestsChangeReplica in Connections, slow replica: {}",
+                offset_states[location.offset].replicas[location.index].connection->getDescription());
             ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
             startNewReplica();
         }
