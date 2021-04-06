@@ -81,56 +81,6 @@ private:
     ASTTableJoin * join = nullptr;
 };
 
-/// Collect all identifiers from ast
-class IdentifiersCollector
-{
-public:
-    using ASTIdentPtr = const ASTIdentifier *;
-    using ASTIdentifiers = std::vector<ASTIdentPtr>;
-    struct Data
-    {
-        ASTIdentifiers idents;
-    };
-
-    static void visit(const ASTPtr & node, Data & data)
-    {
-        if (const auto * ident = node->as<ASTIdentifier>())
-            data.idents.push_back(ident);
-    }
-
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &)
-    {
-        return true;
-    }
-
-    static ASTIdentifiers collect(const ASTPtr & node)
-    {
-        IdentifiersCollector::Data ident_data;
-        ConstInDepthNodeVisitor<IdentifiersCollector, true> ident_visitor(ident_data);
-        ident_visitor.visit(node);
-        return ident_data.idents;
-    }
-};
-
-/// Split expression `expr_1 AND expr_2 AND ... AND expr_n` into vector `[expr_1, expr_2, ..., expr_n]`
-void collectConjunctions(const ASTPtr & node, std::vector<ASTPtr> & members)
-{
-    if (const auto * func = node->as<ASTFunction>(); func && func->name == NameAnd::name)
-    {
-        for (const auto & child : func->arguments->children)
-            collectConjunctions(child, members);
-        return;
-    }
-    members.push_back(node);
-}
-
-std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
-{
-    std::vector<ASTPtr> members;
-    collectConjunctions(node, members);
-    return members;
-}
-
 bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
 {
     if (node->as<ASTFunction>())
