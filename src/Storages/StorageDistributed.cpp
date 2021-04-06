@@ -1,7 +1,10 @@
 #include <Storages/StorageDistributed.h>
 
 #include <Databases/IDatabase.h>
+
 #include <Disks/IDisk.h>
+
+#include <DataStreams/RemoteBlockInputStream.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -31,9 +34,7 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
-
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Parsers/queryToString.h>
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -42,6 +43,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/JoinedTables.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
@@ -51,8 +53,12 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/IFunction.h>
 
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/NullSink.h>
 
 #include <Core/Field.h>
 #include <Core/Settings.h>
@@ -60,6 +66,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/ConnectionTimeoutsContext.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -75,6 +82,8 @@ const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
 const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
 
 const UInt64 DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION = 2;
+
+const UInt64 PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL = 2;
 }
 
 namespace ProfileEvents
@@ -610,6 +619,85 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
         createInsertToRemoteTableQuery(
             remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
         cluster, insert_sync, timeout);
+}
+
+
+QueryPipelinePtr StorageDistributed::distributedWrite(const ASTInsertQuery & query, const Context & context)
+{
+    const Settings & settings = context.getSettingsRef();
+    std::shared_ptr<StorageDistributed> storage_src;
+    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+    auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
+    if (select.list_of_selects->children.size() == 1)
+    {
+        if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
+        {
+            JoinedTables joined_tables(Context(context), *select_query);
+
+            if (joined_tables.tablesCount() == 1)
+            {
+                storage_src = std::dynamic_pointer_cast<StorageDistributed>(joined_tables.getLeftTableStorage());
+                if (storage_src)
+                {
+                    const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+                    select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+
+                    auto new_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(select_query->clone());
+                    select_with_union_query->list_of_selects->children.push_back(new_select_query);
+
+                    new_select_query->replaceDatabaseAndTable(storage_src->getRemoteDatabaseName(), storage_src->getRemoteTableName());
+
+                    new_query->select = select_with_union_query;
+                }
+            }
+        }
+    }
+
+    if (!storage_src || storage_src->getClusterName() != getClusterName())
+    {
+        return nullptr;
+    }
+
+    if (settings.parallel_distributed_insert_select == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
+    {
+        new_query->table_id = StorageID(getRemoteDatabaseName(), getRemoteTableName());
+    }
+
+    const auto & cluster = getCluster();
+    const auto & shards_info = cluster->getShardsInfo();
+
+    std::vector<std::unique_ptr<QueryPipeline>> pipelines;
+
+    String new_query_str = queryToString(new_query);
+    for (size_t shard_index : ext::range(0, shards_info.size()))
+    {
+        const auto & shard_info = shards_info[shard_index];
+        if (shard_info.isLocal())
+        {
+            InterpreterInsertQuery interpreter(new_query, context);
+            pipelines.emplace_back(std::make_unique<QueryPipeline>(interpreter.execute().pipeline));
+        }
+        else
+        {
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
+            auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
+            if (connections.empty() || connections.front().isNull())
+                throw Exception(
+                    "Expected exactly one connection for shard " + toString(shard_info.shard_num), ErrorCodes::LOGICAL_ERROR);
+
+            ///  INSERT SELECT query returns empty block
+            auto in_stream = std::make_shared<RemoteBlockInputStream>(std::move(connections), new_query_str, Block{}, context);
+            pipelines.emplace_back(std::make_unique<QueryPipeline>());
+            pipelines.back()->init(Pipe(std::make_shared<SourceFromInputStream>(std::move(in_stream))));
+            pipelines.back()->setSinks([](const Block & header, QueryPipeline::StreamType) -> ProcessorPtr
+            {
+                return std::make_shared<EmptySink>(header);
+            });
+        }
+    }
+
+    return std::make_unique<QueryPipeline>(
+        QueryPipeline::unitePipelines(std::move(pipelines), {}, ExpressionActionsSettings::fromContext(context)));
 }
 
 
