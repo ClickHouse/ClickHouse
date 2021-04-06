@@ -9,21 +9,17 @@
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
-#include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Interpreters/JoinedTables.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/queryToString.h>
-#include <Processors/NullSink.h>
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -36,11 +32,6 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
 
-namespace
-{
-const UInt64 PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL = 2;
-}
-
 
 namespace DB
 {
@@ -50,7 +41,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int DUPLICATE_COLUMN;
-    extern const int LOGICAL_ERROR;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -178,79 +168,10 @@ BlockIO InterpreterInsertQuery::execute()
     if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
     {
         // Distributed INSERT SELECT
-        std::shared_ptr<StorageDistributed> storage_src;
-        auto & select = query.select->as<ASTSelectWithUnionQuery &>();
-        auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
-        if (select.list_of_selects->children.size() == 1)
+        if (auto maybe_pipeline = table->distributedWrite(query, context))
         {
-            if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
-            {
-                JoinedTables joined_tables(Context(context), *select_query);
-
-                if (joined_tables.tablesCount() == 1)
-                {
-                    storage_src = std::dynamic_pointer_cast<StorageDistributed>(joined_tables.getLeftTableStorage());
-                    if (storage_src)
-                    {
-                        const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-                        select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
-
-                        auto new_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(select_query->clone());
-                        select_with_union_query->list_of_selects->children.push_back(new_select_query);
-
-                        new_select_query->replaceDatabaseAndTable(storage_src->getRemoteDatabaseName(), storage_src->getRemoteTableName());
-
-                        new_query->select = select_with_union_query;
-                    }
-                }
-            }
-        }
-
-        auto storage_dst = std::dynamic_pointer_cast<StorageDistributed>(table);
-
-        if (storage_src && storage_dst && storage_src->getClusterName() == storage_dst->getClusterName())
-        {
+            res.pipeline = std::move(*maybe_pipeline);
             is_distributed_insert_select = true;
-
-            if (settings.parallel_distributed_insert_select == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
-            {
-                new_query->table_id = StorageID(storage_dst->getRemoteDatabaseName(), storage_dst->getRemoteTableName());
-            }
-
-            const auto & cluster = storage_src->getCluster();
-            const auto & shards_info = cluster->getShardsInfo();
-
-            std::vector<std::unique_ptr<QueryPipeline>> pipelines;
-
-            String new_query_str = queryToString(new_query);
-            for (size_t shard_index : ext::range(0, shards_info.size()))
-            {
-                const auto & shard_info = shards_info[shard_index];
-                if (shard_info.isLocal())
-                {
-                    InterpreterInsertQuery interpreter(new_query, context);
-                    pipelines.emplace_back(std::make_unique<QueryPipeline>(interpreter.execute().pipeline));
-                }
-                else
-                {
-                    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-                    auto connections = shard_info.pool->getMany(timeouts, &settings, PoolMode::GET_ONE);
-                    if (connections.empty() || connections.front().isNull())
-                        throw Exception(
-                            "Expected exactly one connection for shard " + toString(shard_info.shard_num), ErrorCodes::LOGICAL_ERROR);
-
-                    ///  INSERT SELECT query returns empty block
-                    auto in_stream = std::make_shared<RemoteBlockInputStream>(std::move(connections), new_query_str, Block{}, context);
-                    pipelines.emplace_back(std::make_unique<QueryPipeline>());
-                    pipelines.back()->init(Pipe(std::make_shared<SourceFromInputStream>(std::move(in_stream))));
-                    pipelines.back()->setSinks([](const Block & header, QueryPipeline::StreamType) -> ProcessorPtr
-                    {
-                        return std::make_shared<EmptySink>(header);
-                    });
-                }
-            }
-
-            res.pipeline = QueryPipeline::unitePipelines(std::move(pipelines), {}, ExpressionActionsSettings::fromContext(context));
         }
     }
 
