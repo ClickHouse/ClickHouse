@@ -212,7 +212,7 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
     std::lock_guard lock(state_mutex);
 
     /// We support zero case because user may want to disable deduplication with
-    /// ALTER MODIFY SETTING query. It's much more simplier to handle zero case
+    /// ALTER MODIFY SETTING query. It's much more simpler to handle zero case
     /// here then destroy whole object, check for null pointer from different
     /// threads and so on.
     if (deduplication_window == 0)
@@ -249,7 +249,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     std::lock_guard lock(state_mutex);
 
     /// We support zero case because user may want to disable deduplication with
-    /// ALTER MODIFY SETTING query. It's much more simplier to handle zero case
+    /// ALTER MODIFY SETTING query. It's much more simpler to handle zero case
     /// here then destroy whole object, check for null pointer from different
     /// threads and so on.
     if (deduplication_window == 0)
