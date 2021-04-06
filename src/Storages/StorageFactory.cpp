@@ -179,6 +179,7 @@ StoragePtr StorageFactory::get(
         .attach = query.attach,
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
+    assert(&arguments.context == &arguments.context.getGlobalContext());
 
     auto res = storages.at(name).creator_fn(arguments);
     if (!empty_engine_args.empty())
@@ -189,6 +190,10 @@ StoragePtr StorageFactory::get(
         storage_def->engine->children.push_back(storage_def->engine->arguments);
         storage_def->engine->arguments->children = empty_engine_args;
     }
+
+    if (local_context.hasQueryContext() && context.getSettingsRef().log_queries)
+        local_context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
+
     return res;
 }
 

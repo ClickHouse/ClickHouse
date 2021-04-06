@@ -1,4 +1,4 @@
-Expression (Projection + Before ORDER BY)
+Expression ((Projection + Before ORDER BY))
 Header: x UInt8
   SettingQuotaAndLimits (Set limits and quota after reading from storage)
   Header: dummy UInt8

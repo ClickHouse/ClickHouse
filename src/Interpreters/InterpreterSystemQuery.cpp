@@ -6,6 +6,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
+#include <Common/ShellCommand.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -15,7 +16,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/DDLWorker.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/TraceLog.h>
@@ -23,6 +24,7 @@
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Access/ContextAccess.h>
 #include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
@@ -221,21 +223,43 @@ BlockIO InterpreterSystemQuery::execute()
     switch (query.type)
     {
         case Type::SHUTDOWN:
+        {
             context.checkAccess(AccessType::SYSTEM_SHUTDOWN);
             if (kill(0, SIGTERM))
                 throwFromErrno("System call kill(0, SIGTERM) failed", ErrorCodes::CANNOT_KILL);
             break;
+        }
         case Type::KILL:
+        {
             context.checkAccess(AccessType::SYSTEM_SHUTDOWN);
-            if (kill(0, SIGKILL))
-                throwFromErrno("System call kill(0, SIGKILL) failed", ErrorCodes::CANNOT_KILL);
+            /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
+            /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
+            LOG_INFO(log, "Exit immediately as the SYSTEM KILL command has been issued.");
+            _exit(128 + SIGKILL);
+            // break; /// unreachable
+        }
+        case Type::SUSPEND:
+        {
+            auto command = fmt::format("kill -STOP {0} && sleep {1} && kill -CONT {0}", getpid(), query.seconds);
+            LOG_DEBUG(log, "Will run {}", command);
+            auto res = ShellCommand::execute(command);
+            res->in.close();
+            WriteBufferFromOwnString out;
+            copyData(res->out, out);
+            copyData(res->err, out);
+            if (!out.str().empty())
+                LOG_DEBUG(log, "The command returned output: {}", command, out.str());
+            res->wait();
             break;
+        }
         case Type::DROP_DNS_CACHE:
+        {
             context.checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
             /// Reinitialize clusters to update their resolved_addresses
             system_context.reloadClusterConfig();
             break;
+        }
         case Type::DROP_MARK_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context.dropMarkCache();
@@ -244,19 +268,29 @@ BlockIO InterpreterSystemQuery::execute()
             context.checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context.dropUncompressedCache();
             break;
+        case Type::DROP_MMAP_CACHE:
+            context.checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
+            system_context.dropMMappedFileCache();
+            break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
             context.checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
-            system_context.dropCompiledExpressionCache();
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
+        {
             context.checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            system_context.getExternalDictionariesLoader().loadOrReload(
-                    DatabaseCatalog::instance().resolveDictionaryName(query.target_dictionary));
+
+            auto & external_dictionaries_loader = system_context.getExternalDictionariesLoader();
+            external_dictionaries_loader.reloadDictionary(query.target_dictionary, context);
+
             ExternalDictionariesLoader::resetAll();
             break;
+        }
         case Type::RELOAD_DICTIONARIES:
+        {
             context.checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
             executeCommandsAndThrowIfError(
                     [&] () { system_context.getExternalDictionariesLoader().reloadAllTriedToLoad(); },
@@ -264,6 +298,7 @@ BlockIO InterpreterSystemQuery::execute()
             );
             ExternalDictionariesLoader::resetAll();
             break;
+        }
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             context.checkAccess(AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES);
             system_context.getEmbeddedDictionaries().reload();
@@ -273,6 +308,7 @@ BlockIO InterpreterSystemQuery::execute()
             system_context.reloadConfig();
             break;
         case Type::RELOAD_SYMBOLS:
+        {
 #if defined(__ELF__) && !defined(__FreeBSD__)
             context.checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
             (void)SymbolIndex::instance(true);
@@ -280,6 +316,7 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception("SYSTEM RELOAD SYMBOLS is not supported on current platform", ErrorCodes::NOT_IMPLEMENTED);
 #endif
+        }
         case Type::STOP_MERGES:
             startStopAction(ActionLocks::PartsMerge, false);
             break;
@@ -340,6 +377,7 @@ BlockIO InterpreterSystemQuery::execute()
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
         case Type::FLUSH_LOGS:
+        {
             context.checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             executeCommandsAndThrowIfError(
                     [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(true); },
@@ -352,6 +390,7 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { if (auto opentelemetry_span_log = context.getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); }
             );
             break;
+        }
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
             throw Exception(String(ASTSystemQuery::typeToString(query.type)) + " is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
@@ -436,8 +475,11 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
         guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
 
     ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
-    for (auto & table : replica_names)
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(table, system_context, false); });
+    for (auto & replica : replica_names)
+    {
+        LOG_TRACE(log, "Restarting replica on {}", replica.getNameForLogs());
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context, false); });
+    }
     pool.wait();
 }
 
@@ -572,7 +614,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
     context.checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
     if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id, context).get()))
-        storage_distributed->flushClusterNodesAllData();
+        storage_distributed->flushClusterNodesAllData(context);
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
@@ -586,13 +628,15 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
     switch (query.type)
     {
         case Type::SHUTDOWN: [[fallthrough]];
-        case Type::KILL:
+        case Type::KILL: [[fallthrough]];
+        case Type::SUSPEND:
         {
             required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
         case Type::DROP_DNS_CACHE: [[fallthrough]];
         case Type::DROP_MARK_CACHE: [[fallthrough]];
+        case Type::DROP_MMAP_CACHE: [[fallthrough]];
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE: [[fallthrough]];
 #endif
@@ -717,6 +761,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::END: break;
     }
     return required_access;
+}
+
+void InterpreterSystemQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, const Context &) const
+{
+    elem.query_kind = "System";
 }
 
 }

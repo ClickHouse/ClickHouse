@@ -3,7 +3,7 @@
 set -x -e
 
 mkdir -p build/cmake/toolchain/darwin-x86_64
-tar xJf MacOSX10.14.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
+tar xJf MacOSX10.15.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
 
 mkdir -p build/cmake/toolchain/linux-aarch64
 tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolchain/linux-aarch64 --strip-components=1
@@ -15,7 +15,6 @@ mkdir -p build/build_docker
 cd build/build_docker
 ccache --show-stats ||:
 ccache --zero-stats ||:
-ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
 rm -f CMakeCache.txt
 # Read cmake arguments into array (possibly empty)
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"

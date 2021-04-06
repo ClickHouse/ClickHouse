@@ -20,7 +20,7 @@ services:
       zookeeper:
         condition: service_healthy
 
-  # dummy service which does nothing, but allows to postpone 
+  # dummy service which does nothing, but allows to postpone
   # 'docker-compose up -d' till all dependecies will go healthy
   all_services_ready:
     image: hello-world

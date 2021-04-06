@@ -6,11 +6,15 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 # 系统。动物园管理员 {#system-zookeeper}
 
 如果未配置ZooKeeper，则表不存在。 允许从配置中定义的ZooKeeper集群读取数据。
-查询必须具有 ‘path’ WHERE子句中的平等条件。 这是ZooKeeper中您想要获取数据的孩子的路径。
+查询必须具有 ‘path’ WHERE子句中的相等条件或者在某个集合中的条件。 这是ZooKeeper中您想要获取数据的孩子的路径。
 
 查询 `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` 输出对所有孩子的数据 `/clickhouse` 节点。
 要输出所有根节点的数据，write path= ‘/’.
 如果在指定的路径 ‘path’ 不存在，将引发异常。
+
+查询`SELECT * FROM system.zookeeper WHERE path IN ('/', '/clickhouse')` 输出`/` 和 `/clickhouse`节点上所有子节点的数据。
+如果在指定的 ‘path’ 集合中有不存在的路径，将引发异常。
+它可以用来做一批ZooKeeper路径查询。
 
 列:
 

@@ -120,6 +120,12 @@ inline bool isWhitespaceASCII(char c)
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
+/// Since |isWhiteSpaceASCII()| is used inside algorithms it's easier to implement another function than add extra argument.
+inline bool isWhitespaceASCIIOneLine(char c)
+{
+    return c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v';
+}
+
 inline bool isControlASCII(char c)
 {
     return static_cast<unsigned char>(c) <= 31;

@@ -2,14 +2,15 @@
 
 #include <cstddef>
 #include <memory>
-#include <vector>
 #include <type_traits>
+#include <vector>
 
 #include <common/types.h>
-#include <Core/ColumnNumbers.h>
-#include <Core/Block.h>
 #include <Common/Exception.h>
+#include <Core/Block.h>
+#include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 
 
@@ -25,6 +26,7 @@ class ReadBuffer;
 class WriteBuffer;
 class IColumn;
 class IDataType;
+class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
@@ -48,7 +50,9 @@ class IAggregateFunction
 {
 public:
     IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_)
-        : argument_types(argument_types_), parameters(parameters_) {}
+        : argument_types(argument_types_), parameters(parameters_)
+    {
+    }
 
     /// Get main function name.
     virtual String getName() const = 0;
@@ -69,10 +73,10 @@ public:
     /** Create empty data for aggregation with `placement new` at the specified location.
       * You will have to destroy them using the `destroy` method.
       */
-    virtual void create(AggregateDataPtr place) const = 0;
+    virtual void create(AggregateDataPtr __restrict place) const = 0;
 
     /// Delete data for aggregation.
-    virtual void destroy(AggregateDataPtr place) const noexcept = 0;
+    virtual void destroy(AggregateDataPtr __restrict place) const noexcept = 0;
 
     /// It is not necessary to delete data.
     virtual bool hasTrivialDestructor() const = 0;
@@ -88,22 +92,19 @@ public:
      *  row_num is number of row which should be added.
      *  Additional parameter arena should be used instead of standard memory allocator if the addition requires memory allocation.
      */
-    virtual void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
+    virtual void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
 
     /// Merges state (on which place points to) with other state of current aggregation function.
-    virtual void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
+    virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
     /// Serializes state (to transmit it over the network, for example).
-    virtual void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const = 0;
+    virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const = 0;
 
     /// Deserializes state. This function is called only for empty (just created) states.
-    virtual void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const = 0;
+    virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
-    virtual bool allocatesMemoryInArena() const
-    {
-        return false;
-    }
+    virtual bool allocatesMemoryInArena() const { return false; }
 
     /// Inserts results into a column. This method might modify the state (e.g.
     /// sort an array), so must be called once, from single thread. The state
@@ -111,7 +112,7 @@ public:
     /// insertResultInto must work correctly. This kind of call sequence occurs
     /// in `runningAccumulate`, or when calculating an aggregate function as a
     /// window function.
-    virtual void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const = 0;
+    virtual void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const = 0;
 
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
@@ -177,12 +178,8 @@ public:
       *  "places" contains a large number of same values consecutively.
       */
     virtual void addBatchArray(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        const UInt64 * offsets,
-        Arena * arena) const = 0;
+        size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena)
+        const = 0;
 
     /** The case when the aggregation key is UInt8
       * and pointers to aggregation states are stored in AggregateDataPtr[256] lookup table.
@@ -203,8 +200,10 @@ public:
      *  arguments and params are for nested_function.
      */
     virtual AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/,
-        const Array & /*params*/, const AggregateFunctionProperties & /*properties*/) const
+        const AggregateFunctionPtr & /*nested_function*/,
+        const DataTypes & /*arguments*/,
+        const Array & /*params*/,
+        const AggregateFunctionProperties & /*properties*/) const
     {
         return nullptr;
     }
@@ -216,6 +215,20 @@ public:
 
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
+
+    // Any aggregate function can be calculated over a window, but there are some
+    // window functions such as rank() that require a different interface, e.g.
+    // because they don't respect the window frame, or need to be notified when
+    // a new peer group starts. They pretend to be normal aggregate functions,
+    // but will fail if you actually try to use them in Aggregator. The
+    // WindowTransform recognizes these functions and handles them differently.
+    // We could have a separate factory for window functions, and make all
+    // aggregate functions implement IWindowFunction interface and so on. This
+    // would be more logically correct, but more complex. We only have a handful
+    // of true window functions, so this hack-ish interface suffices.
+    virtual IWindowFunction * asWindowFunction() { return nullptr; }
+    virtual const IWindowFunction * asWindowFunction() const
+    { return const_cast<IAggregateFunction *>(this)->asWindowFunction(); }
 
 protected:
     DataTypes argument_types;
@@ -235,7 +248,9 @@ private:
 
 public:
     IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunction(argument_types_, parameters_) {}
+        : IAggregateFunction(argument_types_, parameters_)
+    {
+    }
 
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
@@ -252,14 +267,15 @@ public:
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = 0; i < batch_size; ++i)
             {
-                if (flags[i])
+                if (flags[i] && places[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
             }
         }
         else
         {
             for (size_t i = 0; i < batch_size; ++i)
-                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+                if (places[i])
+                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
         }
     }
 
@@ -334,7 +350,8 @@ public:
         {
             size_t next_offset = offsets[i];
             for (size_t j = current_offset; j < next_offset; ++j)
-                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
+                if (places[i])
+                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
         }
     }
@@ -387,40 +404,27 @@ class IAggregateFunctionDataHelper : public IAggregateFunctionHelper<Derived>
 protected:
     using Data = T;
 
-    static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data*>(place); }
-    static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
 public:
     // Derived class can `override` this to flag that DateTime64 is not supported.
     static constexpr bool DateTime64Supported = true;
 
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
-
-    void create(AggregateDataPtr place) const override
+        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_)
     {
-        new (place) Data;
     }
 
-    void destroy(AggregateDataPtr place) const noexcept override
-    {
-        data(place).~Data();
-    }
+    void create(AggregateDataPtr __restrict place) const override { new (place) Data; }
 
-    bool hasTrivialDestructor() const override
-    {
-        return std::is_trivially_destructible_v<Data>;
-    }
+    void destroy(AggregateDataPtr __restrict place) const noexcept override { data(place).~Data(); }
 
-    size_t sizeOfData() const override
-    {
-        return sizeof(Data);
-    }
+    bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<Data>; }
 
-    size_t alignOfData() const override
-    {
-        return alignof(Data);
-    }
+    size_t sizeOfData() const override { return sizeof(Data); }
+
+    size_t alignOfData() const override { return alignof(Data); }
 
     void addBatchLookupTable8(
         size_t batch_size,
@@ -499,6 +503,142 @@ public:
     }
 };
 
+/// Implements tuple argument unwrapper when the tuple just masks arguments
+template <typename T, typename Derived, size_t args_count>
+class IAggregateFunctionTupleArgHelper : public IAggregateFunctionDataHelper<T, Derived>
+{
+private:
+    using Base = IAggregateFunctionDataHelper<T, Derived>;
+
+    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns_, size_t row_num, Arena * arena)
+    {
+        if (const auto * col = checkAndGetColumn<ColumnTuple>(*columns_[0]))
+        {
+            const IColumn * columns[args_count];
+            const auto & tup_columns = col->getColumns();
+
+            assert(tup_columns.size() == args_count);
+            for (size_t i = 0; i < tup_columns.size(); ++i)
+            {
+                columns[i] = tup_columns[i].get();
+            }
+
+            static_cast<const Derived &>(*that).add(place, columns, row_num, arena);
+        }
+        else
+            static_cast<const Derived &>(*that).add(place, columns_, row_num, arena);
+    }
+
+protected:
+    ssize_t extractColumns(const IColumn ** columns, const IColumn ** aggr_columns, ssize_t if_argument_pos) const
+    {
+        if (tuple_argument)
+        {
+            auto tup_columns = assert_cast<const ColumnTuple *>(aggr_columns[0])->getColumns();
+            for (size_t i = 0; i < args_count; ++i)
+                columns[i] = tup_columns[i].get();
+        }
+        else
+        {
+            for (size_t i = 0; i < args_count; ++i)
+                columns[i] = aggr_columns[i];
+        }
+        if (if_argument_pos >= 0)
+        {
+            columns[args_count] = aggr_columns[if_argument_pos];
+            return args_count;
+        }
+        else
+            return -1;
+    }
+
+    bool tuple_argument;
+
+public:
+    IAggregateFunctionTupleArgHelper(const DataTypes & argument_types_, const Array & parameters_, bool tuple_argument_)
+        : Base(argument_types_, parameters_)
+    {
+        tuple_argument = tuple_argument_;
+    }
+
+    IAggregateFunction::AddFunc getAddressOfAddFunction() const override { return &addFree; }
+
+    /*
+     * We're overriding addBatch* functions just to avoid extracting columns
+     * in 'add' functions
+     */
+    void addBatch(
+        size_t batch_size,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        const IColumn * ex_columns[args_count + (if_argument_pos >= 0)];
+        if_argument_pos = extractColumns(ex_columns, columns, if_argument_pos);
+
+        Base::addBatch(batch_size, places, place_offset, ex_columns, arena, if_argument_pos);
+    }
+
+    void addBatchSinglePlace(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
+    {
+        const IColumn * ex_columns[args_count + (if_argument_pos >= 0)];
+        if_argument_pos = extractColumns(ex_columns, columns, if_argument_pos);
+
+        Base::addBatchSinglePlace(batch_size, place, ex_columns, arena, if_argument_pos);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t batch_size,
+        AggregateDataPtr place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        const IColumn * ex_columns[args_count + (if_argument_pos >= 0)];
+        if_argument_pos = extractColumns(ex_columns, columns, if_argument_pos);
+
+        Base::addBatchSinglePlaceNotNull(batch_size, place, ex_columns, null_map, arena, if_argument_pos);
+    }
+
+    void addBatchSinglePlaceFromInterval(
+        size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1)
+        const override
+    {
+        const IColumn * ex_columns[args_count + (if_argument_pos >= 0)];
+        if_argument_pos = extractColumns(ex_columns, columns, if_argument_pos);
+
+        Base::addBatchSinglePlaceFromInterval(batch_begin, batch_end, place, ex_columns, arena, if_argument_pos);
+    }
+
+    void addBatchArray(
+        size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena)
+        const override
+    {
+        const IColumn * ex_columns[args_count];
+        extractColumns(ex_columns, columns, -1);
+
+        Base::addBatchArray(batch_size, places, place_offset, ex_columns, offsets, arena);
+    }
+
+    void addBatchLookupTable8(
+        size_t batch_size,
+        AggregateDataPtr * map,
+        size_t place_offset,
+        std::function<void(AggregateDataPtr &)> init,
+        const UInt8 * key,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const IColumn * ex_columns[args_count];
+        extractColumns(ex_columns, columns, -1);
+
+        Base::addBatchLookupTable8(batch_size, map, place_offset, init, key, ex_columns, arena);
+    }
+};
 
 /// Properties of aggregate function that are independent of argument types and parameters.
 struct AggregateFunctionProperties

@@ -50,12 +50,12 @@ ConfigInterserverCredentials::Store ConfigInterserverCredentials::makeCredential
     return store;
 }
 
-bool ConfigInterserverCredentials::isValidUser(const std::pair<std::string, std::string> credentials)
+std::pair<String, bool> ConfigInterserverCredentials::isValidUser(const std::pair<std::string, std::string> credentials)
 {
     const auto & valid = store.find(credentials);
     if (valid == store.end())
         throw Exception("Incorrect user or password in HTTP basic authentication: " + credentials.first, ErrorCodes::WRONG_PASSWORD);
-    return true;
+    return {"", true};
 }
 
 }

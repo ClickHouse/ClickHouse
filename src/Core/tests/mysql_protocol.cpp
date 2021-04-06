@@ -262,12 +262,12 @@ int main(int argc, char ** argv)
              "20662d71-9d91-11ea-bbc2-0242ac110003:9",
              "10662d71-9d91-11ea-bbc2-0242ac110003:6-7,20662d71-9d91-11ea-bbc2-0242ac110003:9"},
 
-            {"shirnk-sequence",
+            {"shrink-sequence",
               "10662d71-9d91-11ea-bbc2-0242ac110003:1-3:4-5:7",
              "10662d71-9d91-11ea-bbc2-0242ac110003:6",
              "10662d71-9d91-11ea-bbc2-0242ac110003:1-7"},
 
-            {"shirnk-sequence",
+            {"shrink-sequence",
              "10662d71-9d91-11ea-bbc2-0242ac110003:1-3:4-5:10",
              "10662d71-9d91-11ea-bbc2-0242ac110003:8",
              "10662d71-9d91-11ea-bbc2-0242ac110003:1-5:8:10"

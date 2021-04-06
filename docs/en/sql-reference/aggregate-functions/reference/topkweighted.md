@@ -12,13 +12,13 @@ Similar to `topK` but takes one additional argument of integer type - `weight`. 
 topKWeighted(N)(x, weight)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `N` — The number of elements to return.
 
 **Arguments**
 
--   `x` – The value.
+-   `x` — The value.
 -   `weight` — The weight. [UInt8](../../../sql-reference/data-types/int-uint.md).
 
 **Returned value**

@@ -121,7 +121,7 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if constexpr (StatFunc::num_args == 2)
             this->data(place).add(
@@ -141,22 +141,22 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).read(buf);
     }
 
-    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         const auto & data = this->data(place);
         auto & dst = static_cast<ColVecResult &>(to).getData();

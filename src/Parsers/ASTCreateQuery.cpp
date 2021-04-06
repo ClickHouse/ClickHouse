@@ -269,6 +269,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         if (live_view_timeout)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
                           << *live_view_timeout;
+
+        if (live_view_periodic_refresh)
+        {
+            if (live_view_timeout)
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " AND" << (settings.hilite ? hilite_none : "");
+            else
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH" << (settings.hilite ? hilite_none : "");
+
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
+                << *live_view_periodic_refresh;
+        }
+
         formatOnCluster(settings);
     }
     else
@@ -285,10 +297,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (to_table_id)
     {
+        assert(is_materialized_view && to_inner_uuid == UUIDHelpers::Nil);
         settings.ostr
             << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
             << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
             << backQuoteIfNeed(to_table_id.table_name);
+    }
+
+    if (to_inner_uuid != UUIDHelpers::Nil)
+    {
+        assert(is_materialized_view && !to_table_id);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO INNER UUID " << (settings.hilite ? hilite_none : "")
+                      << quoteString(toString(to_inner_uuid));
     }
 
     if (!as_table.empty())

@@ -110,7 +110,7 @@ public:
         return align_of_data;
     }
 
-    void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr __restrict place) const override
     {
         for (size_t i = 0; i < total; ++i)
         {
@@ -127,7 +127,7 @@ public:
         }
     }
 
-    void destroy(AggregateDataPtr place) const noexcept override
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->destroy(place + i * size_of_data);

@@ -27,7 +27,6 @@
 #include <atomic>
 #include <optional>
 
-
 namespace DB
 {
 
@@ -66,6 +65,7 @@ struct Packet
     std::vector<String> multistring_message;
     Progress progress;
     BlockStreamProfileInfo profile_info;
+    std::vector<UUID> part_uuids;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -88,9 +88,9 @@ public:
         const String & user_, const String & password_,
         const String & cluster_,
         const String & cluster_secret_,
-        const String & client_name_ = "client",
-        Protocol::Compression compression_ = Protocol::Compression::Enable,
-        Protocol::Secure secure_ = Protocol::Secure::Disable,
+        const String & client_name_,
+        Protocol::Compression compression_,
+        Protocol::Secure secure_,
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_), default_database(default_database_),
@@ -157,6 +157,8 @@ public:
     void sendScalarsData(Scalars & data);
     /// Send all contents of external (temporary) tables.
     void sendExternalTablesData(ExternalTablesData & data);
+    /// Send parts' uuids to excluded them from query processing
+    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
@@ -172,8 +174,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
 
     /// Receive packet from server.
-    /// Each time read blocks and async_callback is set, it will be called. You can poll socket inside it.
-    Packet receivePacket(std::function<void(Poco::Net::Socket &)> async_callback = {});
+    Packet receivePacket();
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     void forceConnected(const ConnectionTimeouts & timeouts);
@@ -191,6 +192,16 @@ public:
 
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
+
+    Poco::Net::Socket * getSocket() { return socket.get(); }
+
+    /// Each time read from socket blocks and async_callback is set, it will be called. You can poll socket inside it.
+    void setAsyncCallback(AsyncCallback async_callback_)
+    {
+        async_callback = std::move(async_callback_);
+        if (in)
+            in->setAsyncCallback(std::move(async_callback));
+    }
 
 private:
     String host;
@@ -279,6 +290,8 @@ private:
 
     LoggerWrapper log_wrapper;
 
+    AsyncCallback async_callback = {};
+
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void receiveHello();
@@ -302,6 +315,22 @@ private:
     void initBlockLogsInput();
 
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
+};
+
+class AsyncCallbackSetter
+{
+public:
+    AsyncCallbackSetter(Connection * connection_, AsyncCallback async_callback) : connection(connection_)
+    {
+        connection->setAsyncCallback(std::move(async_callback));
+    }
+
+    ~AsyncCallbackSetter()
+    {
+        connection->setAsyncCallback({});
+    }
+private:
+    Connection * connection;
 };
 
 }

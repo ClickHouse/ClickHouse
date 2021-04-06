@@ -7,7 +7,9 @@ namespace DB {
 
 class ParseTreeVisitor : public ClickHouseParserVisitor
 {
+    const String & current_database_name;
 public:
+    explicit ParseTreeVisitor(const String & database_name) : ClickHouseParserVisitor(), current_database_name(database_name) {}
     virtual ~ParseTreeVisitor() override = default;
 
     // Top-level statements
@@ -134,7 +136,8 @@ public:
     antlrcpp::Any visitTtlExpr(ClickHouseParser::TtlExprContext * ctx) override;
 
     // ExistsQuery
-    antlrcpp::Any visitExistsStmt(ClickHouseParser::ExistsStmtContext * ctx) override;
+    antlrcpp::Any visitExistsTableStmt(ClickHouseParser::ExistsTableStmtContext * ctx) override;
+    antlrcpp::Any visitExistsDatabaseStmt(ClickHouseParser::ExistsDatabaseStmtContext * ctx) override;
 
     // ExplainQuery
     antlrcpp::Any visitExplainStmt(ClickHouseParser::ExplainStmtContext * ctx) override;

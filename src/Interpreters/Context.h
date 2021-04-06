@@ -40,7 +40,6 @@ namespace Poco
 namespace zkutil
 {
     class ZooKeeper;
-    class TestKeeperStorage;
 }
 
 
@@ -70,6 +69,7 @@ class ReplicatedFetchList;
 class Cluster;
 class Compiler;
 class MarkCache;
+class MMappedFileCache;
 class UncompressedCache;
 class ProcessList;
 class QueryStatus;
@@ -95,6 +95,8 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
 class AccessControlManager;
+class Credentials;
+class GSSAcceptorContext;
 class SettingsConstraints;
 class RemoteHostFilter;
 struct StorageID;
@@ -103,11 +105,14 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 using DisksMap = std::map<String, DiskPtr>;
-class StoragePolicy;
-using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
+class IStoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+struct PartUUIDs;
+using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
+class KeeperStorageDispatcher;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -116,6 +121,8 @@ using VolumePtr = std::shared_ptr<IVolume>;
 struct NamedSession;
 struct BackgroundTaskSchedulingSettings;
 
+class ZooKeeperMetadataTransaction;
+using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
@@ -176,7 +183,7 @@ private:
     InputBlocksReader input_blocks_reader;
 
     std::optional<UUID> user_id;
-    boost::container::flat_set<UUID> current_roles;
+    std::vector<UUID> current_roles;
     bool use_default_roles = false;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
@@ -195,12 +202,56 @@ private:
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
     {
-        std::set<std::string> databases;
-        std::set<std::string> tables;
-        std::set<std::string> columns;
+        QueryAccessInfo() = default;
+
+        QueryAccessInfo(const QueryAccessInfo & rhs)
+        {
+            std::lock_guard<std::mutex> lock(rhs.mutex);
+            databases = rhs.databases;
+            tables = rhs.tables;
+            columns = rhs.columns;
+        }
+
+        QueryAccessInfo(QueryAccessInfo && rhs) = delete;
+
+        QueryAccessInfo & operator=(QueryAccessInfo rhs)
+        {
+            swap(rhs);
+            return *this;
+        }
+
+        void swap(QueryAccessInfo & rhs)
+        {
+            std::swap(databases, rhs.databases);
+            std::swap(tables, rhs.tables);
+            std::swap(columns, rhs.columns);
+        }
+
+        /// To prevent a race between copy-constructor and other uses of this structure.
+        mutable std::mutex mutex{};
+        std::set<std::string> databases{};
+        std::set<std::string> tables{};
+        std::set<std::string> columns{};
     };
 
     QueryAccessInfo query_access_info;
+
+    /// Record names of created objects of factories (for testing, etc)
+    struct QueryFactoriesInfo
+    {
+        std::unordered_set<std::string> aggregate_functions;
+        std::unordered_set<std::string> aggregate_function_combinators;
+        std::unordered_set<std::string> database_engines;
+        std::unordered_set<std::string> data_type_families;
+        std::unordered_set<std::string> dictionaries;
+        std::unordered_set<std::string> formats;
+        std::unordered_set<std::string> functions;
+        std::unordered_set<std::string> storages;
+        std::unordered_set<std::string> table_functions;
+    };
+
+    /// Needs to be chandged while having const context in factories methods
+    mutable QueryFactoriesInfo query_factories_info;
 
     //TODO maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -209,6 +260,7 @@ private:
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
+    std::shared_ptr<Context> buffer_context;/// Buffer context. Could be equal to this.
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for
@@ -221,6 +273,9 @@ private:
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
 
+    PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
+    PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
+
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
 
@@ -229,6 +284,12 @@ private:
                                    /// logger, some query identification information, profiling guards, etc. This field is
                                    /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
                                    /// methods.
+
+    ZooKeeperMetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,
+                                                    /// but it's the easiest way to pass this through the whole stack from executeQuery(...)
+                                                    /// to DatabaseOnDisk::commitCreateTable(...) or IStorage::alter(...) without changing
+                                                    /// thousands of signatures.
+                                                    /// And I hope it will be replaced with more common Transaction sometime.
 
     /// Use copy constructor or createGlobal() instead
     Context();
@@ -265,8 +326,11 @@ public:
     AccessControlManager & getAccessControlManager();
     const AccessControlManager & getAccessControlManager() const;
 
-    /// Sets external authenticators config (LDAP).
+    /// Sets external authenticators config (LDAP, Kerberos).
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
+
+    /// Creates GSSAcceptorContext instance based on external authenticator params.
+    std::unique_ptr<GSSAcceptorContext> makeGSSAcceptorContext() const;
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -275,11 +339,12 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user, checks the password and that the specified host is allowed.
-    /// Must be called before getClientInfo.
+    /// Sets the current user, checks the credentials and that the specified host is allowed.
+    /// Must be called before getClientInfo() can be called.
+    void setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address);
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
 
-    /// Sets the current user, *do not checks the password and that the specified host is allowed*.
+    /// Sets the current user, *does not check the password/credentials and that the specified host is allowed*.
     /// Must be called before getClientInfo.
     ///
     /// (Used only internally in cluster, if the secret matches)
@@ -291,7 +356,7 @@ public:
     String getUserName() const;
     std::optional<UUID> getUserID() const;
 
-    void setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_);
+    void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
     boost::container::flat_set<UUID> getCurrentRoles() const;
     boost::container::flat_set<UUID> getEnabledRoles() const;
@@ -370,13 +435,30 @@ public:
     const QueryAccessInfo & getQueryAccessInfo() const { return query_access_info; }
     void addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names);
 
+    /// Supported factories for records in query_log
+    enum class QueryLogFactories
+    {
+        AggregateFunction,
+        AggregateFunctionCombinator,
+        Database,
+        DataType,
+        Dictionary,
+        Format,
+        Function,
+        Storage,
+        TableFunction
+    };
+
+    const QueryFactoriesInfo & getQueryFactoriesInfo() const { return query_factories_info; }
+    void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
+
     StoragePtr executeTableFunction(const ASTPtr & table_expression);
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource();
 
     String getCurrentDatabase() const;
-    String getCurrentQueryId() const;
+    String getCurrentQueryId() const { return client_info.current_query_id; }
 
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
@@ -469,6 +551,7 @@ public:
     const Context & getQueryContext() const;
     Context & getQueryContext();
     bool hasQueryContext() const { return query_context != nullptr; }
+    bool isInternalSubquery() const { return hasQueryContext() && query_context != this; }
 
     const Context & getSessionContext() const;
     Context & getSessionContext();
@@ -477,6 +560,8 @@ public:
     const Context & getGlobalContext() const;
     Context & getGlobalContext();
     bool hasGlobalContext() const { return global_context != nullptr; }
+
+    const Context & getBufferContext() const;
 
     void setQueryContext(Context & context_) { query_context = &context_; }
     void setSessionContext(Context & context_) { session_context = &context_; }
@@ -514,8 +599,11 @@ public:
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
-
-    std::shared_ptr<zkutil::TestKeeperStorage> & getTestKeeperStorage() const;
+#if USE_NURAFT
+    std::shared_ptr<KeeperStorageDispatcher> & getKeeperStorageDispatcher() const;
+#endif
+    void initializeKeeperStorageDispatcher() const;
+    void shutdownKeeperStorageDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -538,6 +626,11 @@ public:
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
 
+    /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    void setMMappedFileCache(size_t cache_size_in_num_entries);
+    std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
+    void dropMMappedFileCache() const;
+
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
       *  - since caches are linked to file names, and become incorrect.
@@ -552,6 +645,7 @@ public:
 
     BackgroundSchedulePool & getBufferFlushSchedulePool() const;
     BackgroundSchedulePool & getSchedulePool() const;
+    BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.
@@ -654,17 +748,16 @@ public:
     void setQueryParameter(const String & name, const String & value);
     void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
 
-#if USE_EMBEDDED_COMPILER
-    std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
-    void setCompiledExpressionCache(size_t cache_size);
-    void dropCompiledExpressionCache() const;
-#endif
-
     /// Add started bridge command. It will be killed after context destruction
-    void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
+    void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;
+
+    /// Initialize context of distributed DDL query with Replicated database.
+    void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
+    /// Returns context of current distributed DDL query or nullptr.
+    ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
 
     struct MySQLWireContext
     {
@@ -674,6 +767,9 @@ public:
     };
 
     MySQLWireContext mysql;
+
+    PartUUIDsPtr getPartUUIDs();
+    PartUUIDsPtr getIgnoredPartUUIDs();
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 

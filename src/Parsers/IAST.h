@@ -41,7 +41,14 @@ public:
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;
+    /** Same as the above but ensure no alias names are used. This is for index analysis */
+    String getColumnNameWithoutAlias() const;
     virtual void appendColumnName(WriteBuffer &) const
+    {
+        throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
+    }
+
+    virtual void appendColumnNameWithoutAlias(WriteBuffer &) const
     {
         throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
     }

@@ -50,6 +50,8 @@ public:
     void fromString(const String & str);
     String toString() const;
 
+    Value getValue() const { return value; }
+
 private:
     Value value;
 };
