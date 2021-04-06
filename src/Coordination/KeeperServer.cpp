@@ -192,14 +192,14 @@ bool KeeperServer::isLeaderAlive() const
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
 {
+    if (initialized_flag)
+        return nuraft::cb_func::ReturnCode::Ok;
+
     size_t last_commited = state_machine->last_commit_index();
     size_t next_index = state_manager->getLogStore()->next_slot();
     bool commited_store = false;
     if (next_index < last_commited || next_index - last_commited <= 1)
         commited_store = true;
-
-    if (initialized_flag)
-        return nuraft::cb_func::ReturnCode::Ok;
 
     auto set_initialized = [this] ()
     {

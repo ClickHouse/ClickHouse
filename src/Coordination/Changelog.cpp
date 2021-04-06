@@ -357,10 +357,6 @@ void Changelog::readChangelogAndInitWriter(size_t last_commited_log_index, size_
 
 void Changelog::rotate(size_t new_start_log_index)
 {
-    //// doesn't exist on init
-    if (current_writer)
-        current_writer->flush();
-
     ChangelogFileDescription new_description;
     new_description.prefix = DEFAULT_PREFIX;
     new_description.from_log_index = new_start_log_index;
