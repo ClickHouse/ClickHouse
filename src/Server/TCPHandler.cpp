@@ -26,6 +26,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Distributed.h>
+#include <Storages/TaskSupervisor.h>
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -287,6 +288,16 @@ void TCPHandler::runImpl()
 
             customizeContext(query_context);
 
+            /// This callback is needed for requsting read tasks inside pipeline for distributed processing
+            query_context->setNextTaskCallback([this](String request) -> String
+            {
+                std::lock_guard lock(buffer_mutex);
+                sendReadTaskRequestAssumeLocked(request);
+                return receiveReadTaskResponseAssumeLocked();
+            });
+
+            query_context->setReadTaskSupervisor(std::make_shared<TaskSupervisor>());
+
             bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
@@ -460,8 +471,11 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
     /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
     while (true)
     {
-        if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(poll_interval))
-            break;
+        {
+            std::lock_guard lock(buffer_mutex);
+            if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(poll_interval))
+                break;
+        }
 
         /// Do we need to shut down?
         if (server.isCancelled())
@@ -480,12 +494,15 @@ bool TCPHandler::readDataNext(const size_t & poll_interval, const int & receive_
         }
     }
 
-    /// If client disconnected.
-    if (in->eof())
     {
-        LOG_INFO(log, "Client has dropped the connection, cancel the query.");
-        state.is_connection_closed = true;
-        return false;
+        std::lock_guard lock(buffer_mutex);
+        /// If client disconnected.
+        if (in->eof())
+        {
+            LOG_INFO(log, "Client has dropped the connection, cancel the query.");
+            state.is_connection_closed = true;
+            return false;
+        }
     }
 
     /// We accept and process data. And if they are over, then we leave.
@@ -737,6 +754,8 @@ void TCPHandler::processTablesStatusRequest()
 
 void TCPHandler::receiveUnexpectedTablesStatusRequest()
 {
+    std::lock_guard lock(buffer_mutex);
+
     TablesStatusRequest skip_request;
     skip_request.read(*in, client_tcp_protocol_version);
 
@@ -745,6 +764,8 @@ void TCPHandler::receiveUnexpectedTablesStatusRequest()
 
 void TCPHandler::sendPartUUIDs()
 {
+    std::lock_guard lock(buffer_mutex);
+
     auto uuids = query_context->getPartUUIDs()->get();
     if (!uuids.empty())
     {
@@ -758,16 +779,17 @@ void TCPHandler::sendPartUUIDs()
 }
 
 
-void TCPHandler::sendNextTaskReply(String reply)
+void TCPHandler::sendReadTaskRequestAssumeLocked(const String & request)
 {
-    LOG_TRACE(log, "Nexttask for id is {} ", reply);
-    writeVarUInt(Protocol::Server::NextTaskReply, *out);
-    writeStringBinary(reply, *out);
+    writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
+    writeStringBinary(request, *out);
     out->next();
 }
 
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
+    std::lock_guard lock(buffer_mutex);
+
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
     info.write(*out);
     out->next();
@@ -776,6 +798,8 @@ void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 
 void TCPHandler::sendTotals(const Block & totals)
 {
+    std::lock_guard lock(buffer_mutex);
+
     if (totals)
     {
         initBlockOutput(totals);
@@ -792,6 +816,8 @@ void TCPHandler::sendTotals(const Block & totals)
 
 void TCPHandler::sendExtremes(const Block & extremes)
 {
+    std::lock_guard lock(buffer_mutex);
+
     if (extremes)
     {
         initBlockOutput(extremes);
@@ -808,6 +834,8 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
 bool TCPHandler::receiveProxyHeader()
 {
+    std::lock_guard lock(buffer_mutex);
+
     if (in->eof())
     {
         LOG_WARNING(log, "Client has not sent any data.");
@@ -880,6 +908,8 @@ bool TCPHandler::receiveProxyHeader()
 
 void TCPHandler::receiveHello()
 {
+    std::lock_guard lock(buffer_mutex);
+
     /// Receive `hello` packet.
     UInt64 packet_type = 0;
     String user;
@@ -937,6 +967,8 @@ void TCPHandler::receiveHello()
 
 void TCPHandler::receiveUnexpectedHello()
 {
+    std::lock_guard lock(buffer_mutex);
+
     UInt64 skip_uint_64;
     String skip_string;
 
@@ -954,6 +986,8 @@ void TCPHandler::receiveUnexpectedHello()
 
 void TCPHandler::sendHello()
 {
+    std::lock_guard lock(buffer_mutex);
+
     writeVarUInt(Protocol::Server::Hello, *out);
     writeStringBinary(DBMS_NAME, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
@@ -972,23 +1006,16 @@ void TCPHandler::sendHello()
 bool TCPHandler::receivePacket()
 {
     UInt64 packet_type = 0;
-    readVarUInt(packet_type, *in);
+    {
+        std::lock_guard lock(buffer_mutex);
+        readVarUInt(packet_type, *in);
+    }
 
 
     switch (packet_type)
     {
-        case Protocol::Client::NextTaskRequest:
-        {
-            auto id = receiveNextTaskRequest();
-#if USE_AWS_S3
-            auto next = TaskSupervisor::instance().getNextTaskForId(id);
-#else
-            auto next = "";
-#endif
-            sendNextTaskReply(next);
-            return false;
-        }
-
+        case Protocol::Client::ReadTaskResponse:
+            throw Exception("ReadTaskResponse must be received only after requesting in callback", ErrorCodes::LOGICAL_ERROR);
         case Protocol::Client::IgnoredPartUUIDs:
             /// Part uuids packet if any comes before query.
             receiveIgnoredPartUUIDs();
@@ -1029,16 +1056,10 @@ bool TCPHandler::receivePacket()
 }
 
 
-String TCPHandler::receiveNextTaskRequest()
-{
-    std::string id;
-    readStringBinary(id, *in);
-    LOG_DEBUG(log, "Got nextTaskRequest {}", id);
-    return id;
-}
-
 void TCPHandler::receiveIgnoredPartUUIDs()
 {
+    std::lock_guard lock(buffer_mutex);
+
     state.part_uuids = true;
     std::vector<UUID> uuids;
     readVectorBinary(uuids, *in);
@@ -1047,10 +1068,29 @@ void TCPHandler::receiveIgnoredPartUUIDs()
         query_context->getIgnoredPartUUIDs()->add(uuids);
 }
 
+
+String TCPHandler::receiveReadTaskResponseAssumeLocked()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    
+    if (packet_type != Protocol::Client::ReadTaskResponse)
+        throw Exception(fmt::format("Received {} packet after requesting read task",
+                Protocol::Client::toString(packet_type)), ErrorCodes::LOGICAL_ERROR);
+
+    String response;
+    readStringBinary(response, *in);
+    return response;
+}
+
+
 void TCPHandler::receiveClusterNameAndSalt()
 {
-    readStringBinary(cluster, *in);
-    readStringBinary(salt, *in, 32);
+    {
+        std::lock_guard lock(buffer_mutex);
+        readStringBinary(cluster, *in);
+        readStringBinary(salt, *in, 32);
+    }
 
     try
     {
@@ -1074,6 +1114,8 @@ void TCPHandler::receiveClusterNameAndSalt()
 
 void TCPHandler::receiveQuery()
 {
+    std::lock_guard lock(buffer_mutex);
+
     UInt64 stage = 0;
     UInt64 compression = 0;
 
@@ -1215,6 +1257,8 @@ void TCPHandler::receiveQuery()
 
 void TCPHandler::receiveUnexpectedQuery()
 {
+    std::lock_guard lock(buffer_mutex);
+
     UInt64 skip_uint_64;
     String skip_string;
 
@@ -1243,6 +1287,8 @@ void TCPHandler::receiveUnexpectedQuery()
 
 bool TCPHandler::receiveData(bool scalar)
 {
+    std::lock_guard lock(buffer_mutex);
+
     initBlockInput();
 
     /// The name of the temporary table for writing data, default to empty string
@@ -1302,6 +1348,8 @@ bool TCPHandler::receiveData(bool scalar)
 
 void TCPHandler::receiveUnexpectedData()
 {
+    std::lock_guard lock(buffer_mutex);
+
     String skip_external_table_name;
     readStringBinary(skip_external_table_name, *in);
 
@@ -1440,6 +1488,8 @@ bool TCPHandler::isQueryCancelled()
 
 void TCPHandler::sendData(const Block & block)
 {
+    std::lock_guard lock(buffer_mutex);
+
     initBlockOutput(block);
 
     auto prev_bytes_written_out = out->count();
@@ -1502,6 +1552,8 @@ void TCPHandler::sendLogData(const Block & block)
 
 void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
 {
+    std::lock_guard lock(buffer_mutex);
+
     writeVarUInt(Protocol::Server::TableColumns, *out);
 
     /// Send external table name (empty name is the main table)
@@ -1513,6 +1565,8 @@ void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
 
 void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {
+    std::lock_guard lock(buffer_mutex);
+
     writeVarUInt(Protocol::Server::Exception, *out);
     writeException(e, *out, with_stack_trace);
     out->next();
@@ -1521,6 +1575,8 @@ void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 
 void TCPHandler::sendEndOfStream()
 {
+    std::lock_guard lock(buffer_mutex);
+
     state.sent_all_data = true;
     writeVarUInt(Protocol::Server::EndOfStream, *out);
     out->next();
@@ -1535,6 +1591,8 @@ void TCPHandler::updateProgress(const Progress & value)
 
 void TCPHandler::sendProgress()
 {
+    std::lock_guard lock(buffer_mutex);
+
     writeVarUInt(Protocol::Server::Progress, *out);
     auto increment = state.progress.fetchAndResetPiecewiseAtomically();
     increment.write(*out, client_tcp_protocol_version);
@@ -1544,6 +1602,8 @@ void TCPHandler::sendProgress()
 
 void TCPHandler::sendLogs()
 {
+    std::lock_guard lock(buffer_mutex);
+
     if (!state.logs_queue)
         return;
 

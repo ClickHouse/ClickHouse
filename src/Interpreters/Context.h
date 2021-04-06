@@ -128,6 +128,11 @@ using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
 /// Callback for reading blocks of data from client for function input()
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
+/// Class which gives tasks to other nodes in cluster
+class TaskSupervisor;
+using TaskSupervisorPtr = std::shared_ptr<TaskSupervisor>;
+using NextTaskCallback = std::function<String(String)>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -188,6 +193,10 @@ private:
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
+
+    /// Fields for distributed s3 function
+    TaskSupervisorPtr read_task_supervisor;
+    std::optional<NextTaskCallback> next_task_callback;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -769,6 +778,14 @@ public:
 
     PartUUIDsPtr getPartUUIDs();
     PartUUIDsPtr getIgnoredPartUUIDs();
+
+    /// A bunch of functions for distributed s3 function
+    TaskSupervisorPtr getReadTaskSupervisor() const;
+    void setReadTaskSupervisor(TaskSupervisorPtr);
+
+    NextTaskCallback getNextTaskCallback() const;
+    void setNextTaskCallback(NextTaskCallback && callback);
+
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 

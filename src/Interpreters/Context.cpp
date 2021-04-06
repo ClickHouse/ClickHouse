@@ -2615,6 +2615,32 @@ PartUUIDsPtr Context::getPartUUIDs()
     return part_uuids;
 }
 
+
+TaskSupervisorPtr Context::getReadTaskSupervisor() const
+{
+    return read_task_supervisor;
+}
+
+
+void Context::setReadTaskSupervisor(TaskSupervisorPtr resolver)
+{
+    read_task_supervisor = resolver;
+}
+
+
+NextTaskCallback Context::getNextTaskCallback() const
+{
+    if (!next_task_callback.has_value())
+        throw Exception(fmt::format("Next task callback is not set for query {}", getInitialQueryId()), ErrorCodes::LOGICAL_ERROR);
+    return next_task_callback.value();
+}
+
+
+void Context::setNextTaskCallback(NextTaskCallback && callback)
+{
+    next_task_callback = callback;
+}
+
 PartUUIDsPtr Context::getIgnoredPartUUIDs()
 {
     auto lock = getLock();

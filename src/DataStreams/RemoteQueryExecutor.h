@@ -179,6 +179,8 @@ private:
     /// Return true if duplicates found.
     bool setPartUUIDs(const std::vector<UUID> & uuids);
 
+    void processReadTaskRequest(const String &);
+
     /// Cancell query and restart it with info about duplicated UUIDs
     /// only for `allow_experimental_query_deduplication`.
     std::variant<Block, int> restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
