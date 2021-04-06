@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <Core/BaseSettings.h>
+#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
 namespace Poco::Util
