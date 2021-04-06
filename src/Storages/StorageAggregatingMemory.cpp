@@ -160,6 +160,8 @@ public:
             Context local_context = context;
             local_context.addViewSource(block_storage);
 
+            auto select_query = query.inner_query->as<ASTSelectQuery &>();
+
             select.emplace(query.inner_query, local_context, SelectQueryOptions());
             auto select_result = select->execute();
 
