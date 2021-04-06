@@ -120,8 +120,15 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
     switch (type)
     {
         case ValueType::vtUInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
+        {
+            if (value == "t")
+                assert_cast<ColumnUInt8 &>(column).insertValue(1);
+            else if (value == "f")
+                assert_cast<ColumnUInt8 &>(column).insertValue(0);
+            else
+                assert_cast<ColumnUInt8 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
             break;
+        }
         case ValueType::vtUInt16:
             assert_cast<ColumnUInt16 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
             break;
