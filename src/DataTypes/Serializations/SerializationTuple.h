@@ -59,6 +59,8 @@ public:
             DeserializeBinaryBulkStatePtr & state,
             SubstreamsCache * cache) const override;
 
+    const ElementSerializations & getElementsSerializations() const { return elems; }
+
 private:
     ElementSerializations elems;
     bool have_explicit_names;

@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
@@ -40,6 +41,17 @@ String NameAndTypePair::getSubcolumnName() const
         return "";
 
     return name.substr(*subcolumn_delimiter_position + 1, name.size() - *subcolumn_delimiter_position);
+}
+
+String NameAndTypePair::dump() const
+{
+    WriteBufferFromOwnString out;
+    out << "name: " << name << "\n"
+        << "type: " << type->getName() << "\n"
+        << "name in storage: " << getNameInStorage() << "\n"
+        << "type in storage: " << getTypeInStorage()->getName();
+
+    return out.str();
 }
 
 void NamesAndTypesList::readText(ReadBuffer & buf)

@@ -129,4 +129,6 @@ private:
     RowsMaskByColumnId rows_mask_by_column_id;
 };
 
+void convertToFullIfSparse(Chunk & chunk);
+
 }

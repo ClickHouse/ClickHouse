@@ -163,6 +163,20 @@ MutableColumnPtr DataTypeTuple::createColumn() const
     return ColumnTuple::create(std::move(tuple_columns));
 }
 
+MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serialization) const
+{
+    const auto & element_serializations =
+        assert_cast<const SerializationTuple &>(serialization).getElementsSerializations();
+
+    size_t size = elems.size();
+    assert(element_serializations.size() == size);
+    MutableColumns tuple_columns(size);
+    for (size_t i = 0; i < size; ++i)
+        tuple_columns[i] = elems[i]->createColumn(*element_serializations[i]);
+
+    return ColumnTuple::create(std::move(tuple_columns));
+}
+
 Field DataTypeTuple::getDefault() const
 {
     return Tuple(ext::map<Tuple>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));

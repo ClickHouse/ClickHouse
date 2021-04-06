@@ -122,11 +122,7 @@ public:
 
     ColumnPtr compress() const override;
 
-    void forEachSubcolumn(ColumnCallback callback) override
-    {
-        callback(values);
-        callback(offsets);
-    }
+    void forEachSubcolumn(ColumnCallback callback) override;
 
     bool structureEquals(const IColumn & rhs) const override;
 
@@ -169,5 +165,7 @@ private:
     WrappedPtr offsets;
     size_t _size;
 };
+
+ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
 
 }

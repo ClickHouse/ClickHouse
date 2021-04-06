@@ -175,7 +175,7 @@ Block NativeBlockInputStream::readImpl()
             readData(*column.type, read_column, istr, rows, avg_value_size_hint);
 
         /// TODO: maybe remove.
-        read_column = read_column->convertToFullColumnIfSparse();
+        read_column = recursiveRemoveSparse(read_column);
         column.column = std::move(read_column);
 
         // std::cerr << "column.column: " << column.column->dumpStructure() << "\n";

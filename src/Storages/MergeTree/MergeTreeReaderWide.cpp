@@ -84,12 +84,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
-            {
-                if (isSparseSerializaion(serializations[name]))
-                    res_columns[pos] = ColumnSparse::create(type->createColumn());
-                else
-                    res_columns[pos] = type->createColumn();
-            }
+                res_columns[pos] = type->createColumn(*serializations[name]);
 
             auto & column = res_columns[pos];
             try

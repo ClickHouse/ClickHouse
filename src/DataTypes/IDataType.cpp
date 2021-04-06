@@ -62,6 +62,15 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
     }
 }
 
+MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
+{
+    auto column = createColumn();
+    if (serialization.getKind() == ISerialization::Kind::SPARSE)
+        return ColumnSparse::create(std::move(column));
+
+    return column;
+}
+
 ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     auto column = createColumn();
@@ -190,7 +199,7 @@ SerializationPtr IDataType::getSerialization(const IColumn & column) const
 SerializationPtr IDataType::getSerialization(const ISerialization::Settings & settings) const
 {
     double ratio = settings.num_rows ? std::min(static_cast<double>(settings.num_default_rows) / settings.num_rows, 1.0) : 0.0;
-    if (ratio > settings.ratio_for_sparse_serialization)
+    if (ratio >= settings.ratio_for_sparse_serialization)
         return getSparseSerialization();
 
     return getDefaultSerialization();
@@ -237,11 +246,6 @@ void IDataType::enumerateStreams(const SerializationPtr & serialization, const S
     {
         callback(substream_path, *getTypeForSubstream(substream_path));
     }, path);
-}
-
-bool isSparseSerializaion(const SerializationPtr & serialization)
-{
-    return typeid_cast<const SerializationSparse *>(serialization.get());
 }
 
 }

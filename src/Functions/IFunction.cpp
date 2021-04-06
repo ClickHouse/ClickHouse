@@ -383,7 +383,7 @@ static void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
 static void convertSparseColumnsToFull(ColumnsWithTypeAndName & args)
 {
     for (auto & column : args)
-        column.column = column.column->convertToFullColumnIfSparse();
+        column.column = recursiveRemoveSparse(column.column);
 }
 
 ColumnPtr ExecutableFunctionAdaptor::executeWithoutSparseColumns(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const

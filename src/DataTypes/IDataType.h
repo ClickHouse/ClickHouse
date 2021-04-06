@@ -106,6 +106,8 @@ public:
       */
     virtual MutableColumnPtr createColumn() const = 0;
 
+    virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
+
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
     ColumnPtr createColumnConst(size_t size, const Field & field) const;
@@ -503,7 +505,5 @@ template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
-
-bool isSparseSerializaion(const SerializationPtr & serialization);
 
 }
