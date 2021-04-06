@@ -46,11 +46,16 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override;
 
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override
+    {
+        return QueryProcessingStage::Enum::WithMergeableState;
+    }
+
+    NamesAndTypesList getVirtuals() const override;
 
 protected:
     StorageS3Distributed(
-        IAST::Hash tree_hash_,
-        const String & address_hash_or_filename_,
+        const String & filename_,
         const String & access_key_id_,
         const String & secret_access_key_,
         const StorageID & table_id_,
@@ -65,8 +70,7 @@ protected:
 private:
     /// Connections from initiator to other nodes
     std::vector<std::shared_ptr<Connection>> connections;
-    IAST::Hash tree_hash;
-    String address_hash_or_filename;
+    String filename;
     std::string cluster_name;
     ClusterPtr cluster;
 

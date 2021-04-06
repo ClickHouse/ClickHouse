@@ -21,34 +21,15 @@ using Task = std::string;
 using Tasks = std::vector<Task>;
 using TasksIterator = Tasks::iterator;
 
-class S3NextTaskResolver
+struct ReadTaskResolver
 {
-public:
-    S3NextTaskResolver(QueryId query_id, Tasks && all_tasks)
-        : id(query_id)
-        , tasks(all_tasks)
-        , current(tasks.begin())
-    {}
-
-    std::string next()
-    {
-        auto it = current;
-        ++current;
-        return it == tasks.end() ? "" : *it;
-    }
-
-    std::string getId()
-    {
-        return id;
-    }
-
-private:
-    QueryId id;
-    Tasks tasks;
-    TasksIterator current;
+    ReadTaskResolver(String name_, std::function<String()> callback_)
+        : name(name_), callback(callback_) {}
+    String name;
+    std::function<String()> callback;
 };
 
-using S3NextTaskResolverPtr = std::shared_ptr<S3NextTaskResolver>;
+using ReadTaskResolverPtr = std::unique_ptr<ReadTaskResolver>;
 
 class TaskSupervisor
 {
@@ -57,13 +38,13 @@ public:
 
     TaskSupervisor() = default;
 
-    void registerNextTaskResolver(S3NextTaskResolverPtr resolver)
+    void registerNextTaskResolver(ReadTaskResolverPtr resolver)
     {
         std::lock_guard lock(mutex);
-        auto & target = dict[resolver->getId()];
+        auto & target = dict[resolver->name];
         if (target)
             throw Exception(fmt::format("NextTaskResolver with name {} is already registered for query {}",
-                target->getId(), resolver->getId()), ErrorCodes::LOGICAL_ERROR);
+                target->name, resolver->name), ErrorCodes::LOGICAL_ERROR);
         target = std::move(resolver);
     }
 
@@ -74,14 +55,14 @@ public:
         auto it = dict.find(id);
         if (it == dict.end())
             return "";
-        auto answer = it->second->next();
+        auto answer = it->second->callback();
         if (answer.empty())
             dict.erase(it); 
         return answer;
     }
 
 private:
-    using ResolverDict = std::unordered_map<QueryId, S3NextTaskResolverPtr>;
+    using ResolverDict = std::unordered_map<QueryId, ReadTaskResolverPtr>;
     ResolverDict dict;
     std::mutex mutex;
 };

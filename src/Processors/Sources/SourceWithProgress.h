@@ -55,11 +55,11 @@ public:
     void setProgressCallback(const ProgressCallback & callback) final { progress_callback = callback; }
     void addTotalRowsApprox(size_t value) final { total_rows_approx += value; }
 
-    void work() override;
-
 protected:
     /// Call this method to provide information about progress.
     void progress(const Progress & value);
+
+    void work() override;
 
 private:
     StreamLocalLimits limits;

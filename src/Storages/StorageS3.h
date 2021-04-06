@@ -31,6 +31,17 @@ class StorageS3Source : public SourceWithProgress
 {
 public:
 
+    class DisclosedGlobIterator
+    {
+        public:
+            DisclosedGlobIterator(Aws::S3::S3Client &, const S3::URI &);
+            std::optional<String> next();
+        private:
+            class Impl;
+            /// shared_ptr to have copy constructor
+            std::shared_ptr<Impl> pimpl;
+    };
+
     static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column);
 
     StorageS3Source(
@@ -125,7 +136,6 @@ private:
     String compression_method;
     String name;
 
-    static Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri);
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentificaiton &);
 };
 

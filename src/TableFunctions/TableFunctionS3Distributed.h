@@ -44,7 +44,7 @@ protected:
     void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
     String cluster_name;
-    String filename_or_initiator_hash;
+    String filename;
     String format;
     String structure;
     String access_key_id;
