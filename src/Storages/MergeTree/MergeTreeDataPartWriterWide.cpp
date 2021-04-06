@@ -3,6 +3,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
@@ -95,6 +96,7 @@ void MergeTreeDataPartWriterWide::addStreams(
     IDataType::StreamCallbackWithType callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
     {
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
+
         /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
             return;
@@ -195,11 +197,6 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     }
 
     Block block_to_write = block;
-    for (auto & col : block_to_write)
-    {
-        if (serializations[col.name]->getKind() != ISerialization::Kind::SPARSE)
-            col.column = col.column->convertToFullColumnIfSparse();
-    }
 
     auto granules_to_write = getGranulesToWrite(index_granularity, block_to_write.rows(), getCurrentMark(), rows_written_in_last_mark);
 
@@ -213,7 +210,10 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
     {
-        const ColumnWithTypeAndName & column = block_to_write.getByName(it->name);
+        auto & column = block_to_write.getByName(it->name);
+
+        if (serializations[column.name]->getKind() != ISerialization::Kind::SPARSE)
+            column.column = recursiveRemoveSparse(column.column);
 
         if (permutation)
         {

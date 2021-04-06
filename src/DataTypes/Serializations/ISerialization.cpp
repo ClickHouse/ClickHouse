@@ -153,11 +153,23 @@ String ISerialization::getFileNameForStream(const NameAndTypePair & column, cons
     return getFileNameForStream(column.getNameInStorage(), path);
 }
 
+static size_t isOffsetsOfNested(const ISerialization::SubstreamPath & path)
+{
+    if (path.empty())
+        return false;
+
+    for (const auto & elem : path)
+        if (elem.type == ISerialization::Substream::ArrayElements)
+            return false;
+
+    return path.back().type == ISerialization::Substream::ArraySizes;
+}
+
 String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path)
 {
     String stream_name;
     auto nested_storage_name = Nested::extractTableName(name_in_storage);
-    if (name_in_storage != nested_storage_name && (path.size() == 1 && path[0].type == ISerialization::Substream::ArraySizes))
+    if (name_in_storage != nested_storage_name && isOffsetsOfNested(path))
         stream_name = escapeForFileName(nested_storage_name);
     else
         stream_name = escapeForFileName(name_in_storage);

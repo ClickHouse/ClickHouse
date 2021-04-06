@@ -10,6 +10,7 @@
 
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
@@ -119,7 +120,7 @@ void NativeBlockOutputStream::write(const Block & block)
 
         writeStringBinary(type_name, ostr);
 
-        column.column = column.column->convertToFullColumnIfSparse();
+        column.column = recursiveRemoveSparse(column.column);
 
         /// TODO: add revision
         auto serialization = column.type->getSerialization(*column.column);

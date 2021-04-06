@@ -14,6 +14,8 @@ protected:
 public:
     SerializationWrapper(const SerializationPtr & nested_serialization_) : nested_serialization(nested_serialization_) {}
 
+    Kind getKind() const override { return nested_serialization->getKind(); }
+
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefix(

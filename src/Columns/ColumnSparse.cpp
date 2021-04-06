@@ -1,6 +1,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/WeakHash.h>
 #include <Common/SipHash.h>
 
@@ -586,6 +587,12 @@ bool ColumnSparse::structureEquals(const IColumn & rhs) const
     return false;
 }
 
+void ColumnSparse::forEachSubcolumn(ColumnCallback callback)
+{
+    callback(values);
+    callback(offsets);
+}
+
 const IColumn::Offsets & ColumnSparse::getOffsetsData() const
 {
     return assert_cast<const ColumnUInt64 &>(*offsets).getData();
@@ -606,6 +613,23 @@ size_t ColumnSparse::getValueIndex(size_t n) const
         return 0;
 
     return it - offsets_data.begin() + 1;
+}
+
+ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
+{
+    if (!column)
+        return column;
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        auto columns = column_tuple->getColumns();
+        for (auto & element : columns)
+            element = recursiveRemoveSparse(element);
+
+        return ColumnTuple::create(columns);
+    }
+
+    return column->convertToFullColumnIfSparse();
 }
 
 }

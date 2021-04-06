@@ -628,7 +628,7 @@ void Aggregator::prepareAggregateInstructions(Columns columns, AggregateColumns 
 
             auto full_column = allow_sparse_arguments
                 ? aggregate_columns[i][j]->getPtr()
-                : aggregate_columns[i][j]->convertToFullColumnIfSparse();
+                : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
 
             full_column = recursiveRemoveLowCardinality(full_column);
             if (full_column.get() != aggregate_columns[i][j])
@@ -707,7 +707,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        materialized_columns.push_back(columns.at(params.keys[i])->convertToFullColumnIfSparse()->convertToFullColumnIfConst());
+        materialized_columns.push_back(recursiveRemoveSparse(columns.at(params.keys[i]))->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back().get();
 
         if (!result.isLowCardinality())

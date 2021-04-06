@@ -39,6 +39,8 @@ public:
         return name == rhs.name && type->equals(*rhs.type);
     }
 
+    String dump() const;
+
     String name;
     DataTypePtr type;
 
