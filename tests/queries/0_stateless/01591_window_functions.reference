@@ -1104,3 +1104,4 @@ from (
     from numbers_mt(10000)
 ) settings max_block_size = 7;
 49995000
+drop table window_mt;
