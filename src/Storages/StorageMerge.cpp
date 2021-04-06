@@ -71,31 +71,23 @@ TreeRewriterResult modifySelect(ASTSelectQuery & select, const TreeRewriterResul
                 return;
 
             const size_t left_table_pos = 0;
-            if (const auto * conjunctions = where->as<ASTFunction>(); conjunctions && conjunctions->name == "and")
+            /// Test each argument of `and` function and select ones related to only left table
+            std::shared_ptr<ASTFunction> new_conj = makeASTFunction("and");
+            for (const auto & node : collectConjunctions(where))
             {
-                /// Test each argument of `and` function and select related to only left table
-                std::shared_ptr<ASTFunction> new_conj = makeASTFunction("and");
-                for (const auto & node : conjunctions->arguments->children)
-                {
-                    if (membership_collector.getIdentsMembership(node) == left_table_pos)
-                        new_conj->arguments->children.push_back(std::move(node));
-                }
-                if (new_conj->arguments->children.empty())
-                    /// No identifiers from left table
-                    query.setExpression(expr, {});
-                else if (new_conj->arguments->children.size() == 1)
-                    /// Only one expression, lift from `and`
-                    query.setExpression(expr, std::move(new_conj->arguments->children[0]));
-                else
-                    /// Set new expression
-                    query.setExpression(expr, std::move(new_conj));
+                if (membership_collector.getIdentsMembership(node) == left_table_pos)
+                    new_conj->arguments->children.push_back(std::move(node));
             }
+
+            if (new_conj->arguments->children.empty())
+                /// No identifiers from left table
+                query.setExpression(expr, {});
+            else if (new_conj->arguments->children.size() == 1)
+                /// Only one expression, lift from `and`
+                query.setExpression(expr, std::move(new_conj->arguments->children[0]));
             else
-            {
-                /// Remove whole expression if not match to left table
-                if (membership_collector.getIdentsMembership(where) != left_table_pos)
-                    query.setExpression(expr, {});
-            }
+                /// Set new expression
+                query.setExpression(expr, std::move(new_conj));
         };
         replace_where(select,ASTSelectQuery::Expression::WHERE);
         replace_where(select,ASTSelectQuery::Expression::PREWHERE);

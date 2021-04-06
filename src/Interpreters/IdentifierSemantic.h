@@ -107,4 +107,7 @@ private:
     Aliases aliases;
 };
 
+/// Split expression `expr_1 AND expr_2 AND ... AND expr_n` into vector `[expr_1, expr_2, ..., expr_n]`
+std::vector<ASTPtr> collectConjunctions(const ASTPtr & node);
+
 }

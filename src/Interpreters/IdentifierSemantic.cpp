@@ -3,6 +3,8 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 
+#include <Parsers/ASTFunction.h>
+
 namespace DB
 {
 
@@ -311,6 +313,24 @@ IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuer
 std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr ast) const
 {
     return IdentifierSemantic::getIdentsMembership(ast, tables, aliases);
+}
+
+static void collectConjunctions(const ASTPtr & node, std::vector<ASTPtr> & members)
+{
+    if (const auto * func = node->as<ASTFunction>(); func && func->name == "and")
+    {
+        for (const auto & child : func->arguments->children)
+            collectConjunctions(child, members);
+        return;
+    }
+    members.push_back(node);
+}
+
+std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
+{
+    std::vector<ASTPtr> members;
+    collectConjunctions(node, members);
+    return members;
 }
 
 }
