@@ -224,3 +224,4 @@
 01306_polygons_intersection
 01702_system_query_log
 01759_optimize_skip_unused_shards_zero_shards
+01780_clickhouse_dictionary_source_loop

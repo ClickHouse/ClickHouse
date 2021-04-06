@@ -1,0 +1,75 @@
+<test max_ignored_relative_change="0.3">
+    <create_query>
+        CREATE TABLE simple_key_flat_dictionary_source_table
+        (
+            id UInt64,
+            value_int UInt64,
+            value_string String,
+            value_decimal Decimal64(8),
+            value_string_nullable Nullable(String)
+        ) ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE DICTIONARY simple_key_flat_dictionary
+        (
+            id UInt64,
+            value_int UInt64,
+            value_string String,
+            value_decimal Decimal64(8),
+            value_string_nullable Nullable(String)
+        )
+        PRIMARY KEY id
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'simple_key_flat_dictionary_source_table'))
+        LAYOUT(FLAT())
+        LIFETIME(MIN 0 MAX 1000)
+    </create_query>
+
+    <fill_query>
+        INSERT INTO simple_key_flat_dictionary_source_table
+        SELECT number, number, toString(number), toDecimal64(number, 8), toString(number)
+        FROM system.numbers
+        LIMIT 5000000;
+    </fill_query>
+
+    <substitutions>
+        <substitution>
+            <name>column_name</name>
+            <values>
+                <value>'value_int'</value>
+                <value>'value_string'</value>
+                <value>'value_decimal'</value>
+                <value>'value_string_nullable'</value>
+            </values>
+        </substitution>
+
+        <substitution>
+            <name>elements_count</name>
+            <values>
+                <value>2500000</value>
+                <value>5000000</value>
+                <value>7500000</value>
+                <value>10000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>
+        SELECT dictGet('default.simple_key_flat_dictionary', {column_name}, number)
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
+
+    <query>
+        SELECT dictHas('default.simple_key_flat_dictionary', number)
+        FROM system.numbers
+        LIMIT {elements_count}
+        FORMAT Null;
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS simple_key_flat_dictionary_source_table</drop_query>
+
+    <drop_query>DROP DICTIONARY IF EXISTS simple_key_flat_dictionary</drop_query>
+
+</test>

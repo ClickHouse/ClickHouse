@@ -1,24 +1,6 @@
 # QA-SRS010 ClickHouse DateTime64 Extended Range
 # Software Requirements Specification
 
-(c) 2020 Altinity LTD. All Rights Reserved.
-
-**Document status:** Confidential
-
-**Author:** vzakaznikov, zvonand
-
-**Date:** August 10, 2020
-
-## Approval
-
-**Status:** -
-
-**Version:** -
-
-**Approved by:** -
-
-**Date:** -
-
 ## Table of Contents
 
 * 1 [Revision History](#revision-history)

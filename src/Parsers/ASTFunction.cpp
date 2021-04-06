@@ -15,8 +15,16 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNEXPECTED_EXPRESSION;
+}
+
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
+    if (name == "view")
+        throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
+
     writeString(name, ostr);
 
     if (parameters)
