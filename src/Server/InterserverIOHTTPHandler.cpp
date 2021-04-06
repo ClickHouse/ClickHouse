@@ -27,18 +27,27 @@ namespace ErrorCodes
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
-    auto creds = server.context().getInterserverCredential();
-    if (!request.hasCredentials())
-        return creds->isValidUser(std::make_pair(default_user, default_password));
+    auto server_credentials = server.context().getInterserverCredential();
+    if (server_credentials)
+    {
+        if (!request.hasCredentials())
+            return server_credentials->isValidUser(std::make_pair(default_user, default_password));
 
-    String scheme, info;
-    request.getCredentials(scheme, info);
+        String scheme, info;
+        request.getCredentials(scheme, info);
 
-    if (scheme != "Basic")
-        throw Exception("Server requires HTTP Basic authentication but client provides another method", ErrorCodes::NOT_IMPLEMENTED);
+        if (scheme != "Basic")
+            return {"Server requires HTTP Basic authentication but client provides another method", false};
 
-    Poco::Net::HTTPBasicCredentials credentials(info);
-    return creds->isValidUser(std::make_pair(credentials.getUsername(), credentials.getPassword()));
+        Poco::Net::HTTPBasicCredentials credentials(info);
+        return server_credentials->isValidUser(std::make_pair(credentials.getUsername(), credentials.getPassword()));
+    }
+    else if (request.hasCredentials())
+    {
+        return {"Client requires HTTP Basic authentication, but server doesn't provide it", false};
+    }
+
+    return {"", true};
 }
 
 void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)

@@ -54,7 +54,7 @@ std::pair<String, bool> ConfigInterserverCredentials::isValidUser(const std::pai
 {
     const auto & valid = store.find(credentials);
     if (valid == store.end())
-        throw Exception("Incorrect user or password in HTTP basic authentication: " + credentials.first, ErrorCodes::WRONG_PASSWORD);
+        return {"Incorrect user or password in HTTP basic authentication: " + credentials.first, false};
     return {"", true};
 }
 
