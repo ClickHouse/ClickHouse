@@ -89,6 +89,7 @@ private:
     ConstantExpressionTemplate::Cache templates_cache;
 
     const DataTypes types;
+    Serializations serializations;
 
     BlockMissingValues block_missing_values;
 };
