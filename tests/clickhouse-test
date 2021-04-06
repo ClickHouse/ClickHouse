@@ -116,6 +116,8 @@ def get_db_engine(args, database_name):
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir):
     # print(client_options)
 
+    client = f"{args.client} --log_comment='{case_file}'"
+
     start_time = datetime.now()
     if args.database:
         database = args.database
@@ -130,7 +132,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
             return ''.join(random.choice(alphabet) for _ in range(length))
         database = 'test_{suffix}'.format(suffix=random_str())
 
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         try:
             clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args, database)), timeout=args.timeout)
         except TimeoutExpired:
@@ -149,7 +151,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     os.environ["CLICKHOUSE_LOG_COMMENT"] = case_file
 
     params = {
-        'client': args.client + ' --database=' + database,
+        'client': client + ' --database=' + database,
         'logs_level': server_logs_level,
         'options': client_options,
         'test': case_file,
@@ -160,7 +162,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     pattern = '{test} > {stdout} 2> {stderr}'
 
     if ext == '.sql':
-        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} --log_comment='{test}' < " + pattern
+        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} < " + pattern
 
     command = pattern.format(**params)
 
@@ -177,7 +179,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         need_drop_database = not maybe_passed
 
     if need_drop_database:
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
         try:
             drop_database_query = "DROP DATABASE " + database
