@@ -17,49 +17,14 @@ from datetime64_extended_range.requirements import *
 from datetime64_extended_range.common import *
 
 # cross-outs
-# https://github.com/ClickHouse/ClickHouse/issues/15486 : wrong seconds value prior to 1920
+# https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350: 128 and 256-bit types are not supported for now
+# "https://github.com/ClickHouse/ClickHouse/issues/17079#issuecomment-783396589" : leap seconds unsupported
 
 xfails = {
-    "date time funcs/to year/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to time zone/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "generic/timezone local below normal range/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16222")],
-    "generic/timezone local below extended range/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15486")],
-    "generic/timezones support*:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15486")],
-    "date time funcs/to quarter/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to month/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to unix timestamp": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to day of month": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to day of week": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to day of year": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to hour": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to minute": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to second": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to year": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to iso year": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to iso week": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to monday": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to relative :": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to time": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to start of :": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to yyyy:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/time slot": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/add :": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15486")],
-    "date time funcs/subtract :": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15486")],
-    "date time funcs/to week": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/to year week": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/format date time": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15784")],
-    "date time funcs/date diff/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16260")],
-    "date time funcs/time slots*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16260")],
-    "type conversion/to datetime64": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15486")],
-    "type conversion/to uint 8 16 32 64 256*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581")],
-    "type conversion/to int 8 16 32 64 128 256*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581")],
-    "type conversion/from unix timestamp64*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15486")],
-    "type conversion/to unix timestamp64*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15486")],
-    "type conversion/to string*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/15486")],
-    "type conversion/to datetime64 from string missing time*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/17080")],
-    "non existent time/dst time zone switch*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16924")],
-    "non existent time/leap seconds*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/17079")],
-    "reference times": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16924")]
+    "type conversion/to int 8 16 32 64 128 256/*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
+    "type conversion/to uint 8 16 32 64 256/*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
+    "non existent time/leap seconds/*": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/17079#issuecomment-783396589")],
+
 }
 
 

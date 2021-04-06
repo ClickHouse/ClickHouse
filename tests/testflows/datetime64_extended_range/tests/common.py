@@ -16,7 +16,7 @@ def in_normal_range(dt: datetime.datetime):
 def years_range(stress=False, padding=(0, 0)):
     """Returns a set of year values used for testing.
     """
-    return range(1698+padding[0], 2378-padding[1]) if stress else (1800, 2000, 2200)
+    return range(1925+padding[0], 2238-padding[1]) if stress else (1927, 2000, 2236)
 
 
 def timezones_range(stress=False):

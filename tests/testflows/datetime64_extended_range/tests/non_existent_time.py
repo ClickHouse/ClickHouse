@@ -13,10 +13,10 @@ def invalid_date(self):
     """Check how non-existent date is treated.
     For example, check 31st day in month that only has 30 days.
     """
-    date_range = [1700, 1980, 2300]
+    date_range = [930, 1980, 2230]
 
     if self.context.stress:
-        date_range = range(1698, 2378)
+        date_range = range(1925, 2238)
 
     with Step("I check 31st day of a 30-day month"):
         for year in date_range:
