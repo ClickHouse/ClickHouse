@@ -117,6 +117,16 @@ private:
         size_t & granules_dropped,
         Poco::Logger * log);
 
+    struct PartFilterCounters
+    {
+        size_t num_initial_selected_parts = 0;
+        size_t num_initial_selected_granules = 0;
+        size_t num_parts_after_minmax = 0;
+        size_t num_granules_after_minmax = 0;
+        size_t num_parts_after_partition = 0;
+        size_t num_granules_after_partition = 0;
+    };
+
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
     static void selectPartsToRead(
@@ -125,7 +135,8 @@ private:
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read);
+        const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        PartFilterCounters & counters);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
     void selectPartsToReadWithUUIDFilter(
@@ -135,7 +146,8 @@ private:
         const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        const Context & query_context) const;
+        const Context & query_context,
+        PartFilterCounters & counters) const;
 };
 
 }

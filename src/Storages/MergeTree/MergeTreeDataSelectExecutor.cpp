@@ -273,11 +273,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     const Context & query_context = context.hasQueryContext() ? context.getQueryContext() : context;
 
-    if (query_context.getSettingsRef().allow_experimental_query_deduplication)
-        selectPartsToReadWithUUIDFilter(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, query_context);
-    else
-        selectPartsToRead(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read);
+    PartFilterCounters part_filter_counters;
 
+    if (query_context.getSettingsRef().allow_experimental_query_deduplication)
+        selectPartsToReadWithUUIDFilter(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, query_context, part_filter_counters);
+    else
+        selectPartsToRead(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, part_filter_counters);
 
     /// Sampling.
     Names column_names_to_read = real_column_names;
@@ -559,6 +560,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         MergeTreeIndexConditionPtr condition;
         std::atomic<size_t> total_granules{0};
         std::atomic<size_t> granules_dropped{0};
+        std::atomic<size_t> total_parts{0};
+        std::atomic<size_t> parts_dropped{0};
 
         DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
             : index(index_)
@@ -633,25 +636,26 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
             RangesInDataPart ranges(part, part_index);
 
-            total_marks_pk.fetch_add(part->index_granularity.getMarksCount(), std::memory_order_relaxed);
+            size_t total_marks_count = part->getMarksCount();
+            if (total_marks_count && part->index_granularity.hasFinalMark())
+                --total_marks_count;
+
+            total_marks_pk.fetch_add(total_marks_count, std::memory_order_relaxed);
 
             if (metadata_snapshot->hasPrimaryKey())
                 ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
-            else
-            {
-                size_t total_marks_count = part->getMarksCount();
-                if (total_marks_count)
-                {
-                    if (part->index_granularity.hasFinalMark())
-                        --total_marks_count;
-                    ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
-                }
-            }
+            else if (total_marks_count)
+                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
 
             for (auto & index_and_condition : useful_indices)
             {
+                if (ranges.ranges.empty())
+                    break;
+
+                index_and_condition.total_parts.fetch_add(1, std::memory_order_relaxed);
+
                 size_t total_granules = 0;
                 size_t granules_dropped = 0;
                 ranges.ranges = filterMarksUsingIndex(
@@ -663,6 +667,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
                 index_and_condition.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
                 index_and_condition.granules_dropped.fetch_add(granules_dropped, std::memory_order_relaxed);
+
+                if (ranges.ranges.empty())
+                    index_and_condition.parts_dropped.fetch_add(1, std::memory_order_relaxed);
             }
 
             if (!ranges.ranges.empty())
@@ -1796,7 +1803,8 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     std::optional<PartitionPruner> & partition_pruner,
-    const PartitionIdToMaxBlock * max_block_numbers_to_read)
+    const PartitionIdToMaxBlock * max_block_numbers_to_read,
+    PartFilterCounters & counters)
 {
     auto prev_parts = parts;
     parts.clear();
@@ -1809,9 +1817,26 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
         if (part->isEmpty())
             continue;
 
+        if (max_block_numbers_to_read)
+        {
+            auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
+            if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
+                continue;
+        }
+
+        size_t num_granules = part->getMarksCount();
+        if (num_granules && part->index_granularity.hasFinalMark())
+            --num_granules;
+
+        counters.num_initial_selected_parts += 1;
+        counters.num_initial_selected_granules += num_granules;
+
         if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
                 part->minmax_idx.hyperrectangle, minmax_columns_types).can_be_true)
             continue;
+
+        counters.num_parts_after_minmax += 1;
+        counters.num_granules_after_minmax += num_granules;
 
         if (partition_pruner)
         {
@@ -1819,12 +1844,8 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
                 continue;
         }
 
-        if (max_block_numbers_to_read)
-        {
-            auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
-            if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
-                continue;
-        }
+        counters.num_parts_after_partition += 1;
+        counters.num_granules_after_partition += num_granules;
 
         parts.push_back(part);
     }
@@ -1837,7 +1858,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     const DataTypes & minmax_columns_types,
     std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    const Context & query_context) const
+    const Context & query_context,
+    PartFilterCounters & counters) const
 {
     /// const_cast to add UUIDs to context. Bad practice.
     Context & non_const_context = const_cast<Context &>(query_context);
@@ -1860,17 +1882,6 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
             if (part->isEmpty())
                 continue;
 
-            if (minmax_idx_condition
-                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx.hyperrectangle, minmax_columns_types)
-                        .can_be_true)
-                continue;
-
-            if (partition_pruner)
-            {
-                if (partition_pruner->canBePruned(part))
-                    continue;
-            }
-
             if (max_block_numbers_to_read)
             {
                 auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
@@ -1878,13 +1889,37 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
                     continue;
             }
 
+            /// Skip the part if its uuid is meant to be excluded
+            if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
+                continue;
+
+            size_t num_granules = part->getMarksCount();
+            if (num_granules && part->index_granularity.hasFinalMark())
+                --num_granules;
+
+            counters.num_initial_selected_parts += 1;
+            counters.num_initial_selected_granules += num_granules;
+
+            if (minmax_idx_condition
+                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx.hyperrectangle, minmax_columns_types)
+                        .can_be_true)
+                continue;
+
+            counters.num_parts_after_minmax += 1;
+            counters.num_granules_after_minmax += num_granules;
+
+            if (partition_pruner)
+            {
+                if (partition_pruner->canBePruned(part))
+                    continue;
+            }
+
+            counters.num_parts_after_partition += 1;
+            counters.num_granules_after_partition += num_granules;
+
             /// populate UUIDs and exclude ignored parts if enabled
             if (part->uuid != UUIDHelpers::Nil)
             {
-                /// Skip the part if its uuid is meant to be excluded
-                if (ignored_part_uuids->has(part->uuid))
-                    continue;
-
                 auto result = temp_part_uuids.insert(part->uuid);
                 if (!result.second)
                     throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
@@ -1915,6 +1950,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     if (needs_retry)
     {
         LOG_DEBUG(log, "Found duplicate uuids locally, will retry part selection without them");
+
+        counters = PartFilterCounters();
 
         /// Second attempt didn't help, throw an exception
         if (!select_parts(parts))
