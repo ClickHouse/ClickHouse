@@ -29,8 +29,6 @@ then
   fi
 fi
 
-ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
-
 ccache --show-config ||:
 ccache --show-stats ||:
 
