@@ -1,9 +1,9 @@
-#include "ODBCBridge.h"
+#include "LibraryBridge.h"
 
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
-int mainEntryClickHouseODBCBridge(int argc, char ** argv)
+int mainEntryClickHouseLibraryBridge(int argc, char ** argv)
 {
-    DB::ODBCBridge app;
+    DB::LibraryBridge app;
     try
     {
         return app.run(argc, argv);

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context.h>
-#include <Poco/Logger.h>
 #include <bridge/IBridge.h>
 #include "HandlerFactory.h"
 
@@ -9,18 +8,19 @@
 namespace DB
 {
 
-class ODBCBridge : public IBridge
+class LibraryBridge : public IBridge
 {
 
 protected:
     const std::string bridgeName() const override
     {
-        return "ODBCBridge";
+        return "LibraryBridge";
     }
 
     HandlerFactoryPtr getHandlerFactoryPtr(Context & context) const override
     {
-        return std::make_shared<ODBCBridgeHandlerFactory>("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context);
+        return std::make_shared<LibraryBridgeHandlerFactory>("LibraryRequestHandlerFactory-factory", keep_alive_timeout, context);
     }
 };
+
 }

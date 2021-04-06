@@ -75,6 +75,15 @@ def get_odbc_bridge_path():
             return '/usr/bin/clickhouse-odbc-bridge'
     return path
 
+def get_library_bridge_path():
+    path = os.environ.get('CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH')
+    if path is None:
+        server_path = os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH')
+        if server_path is not None:
+            return os.path.join(os.path.dirname(server_path), 'clickhouse-library-bridge')
+        else:
+            return '/usr/bin/clickhouse-library-bridge'
+    return path
 
 def get_docker_compose_path():
     compose_path = os.environ.get('DOCKER_COMPOSE_DIR')
@@ -98,7 +107,7 @@ class ClickHouseCluster:
     """
 
     def __init__(self, base_path, name=None, base_config_dir=None, server_bin_path=None, client_bin_path=None,
-                 odbc_bridge_bin_path=None, zookeeper_config_path=None, custom_dockerd_host=None):
+                 odbc_bridge_bin_path=None, library_bridge_bin_path=None, zookeeper_config_path=None, custom_dockerd_host=None):
         for param in list(os.environ.keys()):
             print("ENV %40s %s" % (param, os.environ[param]))
         self.base_dir = p.dirname(base_path)
@@ -109,6 +118,7 @@ class ClickHouseCluster:
         self.server_bin_path = p.realpath(
             server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse'))
         self.odbc_bridge_bin_path = p.realpath(odbc_bridge_bin_path or get_odbc_bridge_path())
+        self.library_bridge_bin_path = p.realpath(library_bridge_bin_path or get_library_bridge_path())
         self.client_bin_path = p.realpath(
             client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client'))
         self.zookeeper_config_path = p.join(self.base_dir, zookeeper_config_path) if zookeeper_config_path else p.join(
@@ -236,6 +246,7 @@ class ClickHouseCluster:
             with_cassandra=with_cassandra,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
+            library_bridge_bin_path=self.library_bridge_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
             hostname=hostname,
@@ -893,6 +904,7 @@ services:
             - /etc/passwd:/etc/passwd:ro
             {binary_volume}
             {odbc_bridge_volume}
+            {library_bridge_volume}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
@@ -930,7 +942,7 @@ class ClickHouseInstance:
             custom_dictionaries,
             macros, with_zookeeper, zookeeper_config_path, with_mysql, with_mysql_cluster, with_kafka, with_kerberized_kafka, with_rabbitmq, with_kerberized_hdfs,
             with_mongo, with_redis, with_minio,
-            with_cassandra, server_bin_path, odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers,
+            with_cassandra, server_bin_path, odbc_bridge_bin_path, library_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers,
             hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test", tag="latest",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
@@ -954,6 +966,7 @@ class ClickHouseInstance:
 
         self.server_bin_path = server_bin_path
         self.odbc_bridge_bin_path = odbc_bridge_bin_path
+        self.library_bridge_bin_path = library_bridge_bin_path
 
         self.with_mysql = with_mysql
         self.with_mysql_cluster = with_mysql_cluster
@@ -1422,9 +1435,11 @@ class ClickHouseInstance:
         if not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/bin/clickhouse-odbc-bridge"
+            library_bridge_volume = "- " + self.library_bridge_bin_path + ":/usr/bin/clickhouse-library-bridge"
         else:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
+            library_bridge_volume = "- " + self.library_bridge_bin_path + ":/usr/share/clickhouse-library-bridge_fresh"
 
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
@@ -1434,6 +1449,7 @@ class ClickHouseInstance:
                 hostname=self.hostname,
                 binary_volume=binary_volume,
                 odbc_bridge_volume=odbc_bridge_volume,
+                library_bridge_volume=library_bridge_volume,
                 instance_config_dir=instance_config_dir,
                 config_d_dir=self.config_d_dir,
                 db_dir=db_dir,
