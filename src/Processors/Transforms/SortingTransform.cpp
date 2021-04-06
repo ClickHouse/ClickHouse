@@ -37,6 +37,13 @@ MergeSorter::MergeSorter(Chunks chunks_, SortDescription & description_, size_t 
         if (chunk.getNumRows() == 0)
             continue;
 
+        size_t num_rows = chunk.getNumRows();
+        auto columns = chunk.detachColumns();
+        for (auto & column : columns)
+            column = column->convertToFullColumnIfSparse();
+
+        chunk.setColumns(std::move(columns), num_rows);
+
         cursors.emplace_back(chunk.getColumns(), description);
         has_collation |= cursors.back().has_collation;
 
