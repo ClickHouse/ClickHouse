@@ -362,9 +362,10 @@ int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
     epoll_event event;
     event.data.fd = -1;
     size_t events_count = 0;
+    bool blocking = !static_cast<bool>(async_callback);
     while (events_count == 0)
     {
-        events_count = epoll.getManyReady(1, &event, false);
+        events_count = epoll.getManyReady(1, &event, blocking);
         if (!events_count && async_callback)
             async_callback(epoll.getFileDescriptor(), 0, epoll.getDescription());
     }
@@ -520,14 +521,17 @@ void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State s
 
 void HedgedConnections::finishProcessReplica(ReplicaState & replica, bool disconnect)
 {
+    /// It's important to remove file descriptor from epoll exactly before cancelling packet_receiver,
+    /// because otherwise another thread can try to receive a packet, get this file descriptor
+    /// from epoll and resume cancelled packet_receiver.
+    epoll.remove(replica.packet_receiver->getFileDescriptor());
+    epoll.remove(replica.change_replica_timeout.getDescriptor());
+
     replica.packet_receiver->cancel();
     replica.change_replica_timeout.reset();
 
-    epoll.remove(replica.packet_receiver->getFileDescriptor());
     --offset_states[fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset].active_connection_count;
     fd_to_replica_location.erase(replica.packet_receiver->getFileDescriptor());
-
-    epoll.remove(replica.change_replica_timeout.getDescriptor());
     timeout_fd_to_replica_location.erase(replica.change_replica_timeout.getDescriptor());
 
     --active_connection_count;

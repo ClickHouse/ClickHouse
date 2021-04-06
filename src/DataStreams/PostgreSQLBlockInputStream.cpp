@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 PostgreSQLBlockInputStream::PostgreSQLBlockInputStream(
-    PostgreSQLConnectionHolderPtr connection_,
+    postgres::ConnectionHolderPtr connection_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_)
@@ -176,7 +176,7 @@ void PostgreSQLBlockInputStream::insertValue(IColumn & column, std::string_view 
         case ValueType::vtDecimal256:
         {
             ReadBufferFromString istr(value);
-            data_type->deserializeAsWholeText(column, istr, FormatSettings{});
+            data_type->getDefaultSerialization()->deserializeWholeText(column, istr, FormatSettings{});
             break;
         }
         case ValueType::vtArray:

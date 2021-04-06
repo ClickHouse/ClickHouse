@@ -219,9 +219,10 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
-DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
+DiskLocal::readFile(
+    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
 {
-    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, buf_size);
+    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -382,7 +383,7 @@ void registerDiskLocal(DiskFactory & factory)
 
         if (Poco::File disk{path}; !disk.canRead() || !disk.canWrite())
         {
-            throw Exception("There is no RW access to disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
+            throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
         }
 
         bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
