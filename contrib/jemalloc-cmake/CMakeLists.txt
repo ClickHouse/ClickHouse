@@ -1,4 +1,4 @@
-if (SANITIZE OR NOT (ARCH_AMD64 OR ARCH_ARM OR ARCH_PPC64LE) OR NOT (OS_LINUX OR OS_FREEBSD OR OS_DARWIN))
+if (SANITIZE OR NOT (ARCH_AMD64 OR ARCH_ARM OR ARCH_PPC64LE) OR NOT (OS_LINUX OR OS_FREEBSD OR OS_DARWIN) OR (OS_DARWIN AND ARCH_AARCH64))
     if (ENABLE_JEMALLOC)
         message (${RECONFIGURE_MESSAGE_LEVEL}
                  "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64 or ppc64le on linux or freebsd.")
