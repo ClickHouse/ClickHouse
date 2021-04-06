@@ -48,7 +48,11 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
     try
     {
         std::string connection_string = params.get("connection_string");
-        auto connection = ODBCConnectionFactory::instance().get(validateODBCConnectionString(connection_string));
+
+        auto connection = ODBCConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string),
+                context.getSettingsRef().odbc_bridge_connection_pool_size);
+
         bool result = isSchemaAllowed(*connection);
 
         WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);

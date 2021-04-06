@@ -1,6 +1,7 @@
 option(ENABLE_NANODBC "Enalbe nanodbc" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_NANODBC)
+    set (USE_ODBC 0)
     return()
 endif()
 
@@ -20,7 +21,7 @@ endif()
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/unixodbc/include")
     message (ERROR "submodule contrib/unixodbc is missing. to fix try run: \n git submodule update --init --recursive")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal unixodbc needed for nanodbc")
-    set (USE_NANODBCX 0)
+    set (USE_NANODBC 0)
     return()
 endif()
 

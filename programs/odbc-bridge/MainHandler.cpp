@@ -106,11 +106,14 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     std::string connection_string = params.get("connection_string");
     LOG_TRACE(log, "Connection string: '{}'", connection_string);
 
-    auto connection = ODBCConnectionFactory::instance().get(validateODBCConnectionString(connection_string));
     WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
 
     try
     {
+        auto connection = ODBCConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string),
+                context.getSettingsRef().odbc_bridge_connection_pool_size);
+
         if (mode == "write")
         {
             if (!params.has("db_name"))
