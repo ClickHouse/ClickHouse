@@ -652,19 +652,28 @@ Result:
 
 ## extractTextFromHTML {#extracttextfromhtml}
 
-The function extracts text from HTML or XHTML according to the following rules:
+A function to extract text from HTML or XHTML.
+It does not necessarily 100% conforms to any of the HTML, XML or XHTML standards, but the implementation is reasonably accurate and it is fast. The rules are the following:
 
-1. Comments starting with `<!--` and ending with `-->` are removed.
-1. The content of a `CDATA` section between `<![CDATA[` and `]]>` is left as is, without further processing. Note that it is appended to the previous text without any space.
-1. A text wrapped with `<script>` or `<style>` tags is removed entirely. If `script` or `style` are the names of XML namespaces (like `<script:a>`) then they are treated like usual tags.
-1. Any tag is replaced with a space. Note that elements like `<>`, `<!>`, `<!-->` are also replaced. Tag without closing bracket `>` is removed to the end of an input text. 
-1. Any sequence of whitespaces (space, new line, carriage return, tab, vertical tab or form feed) is converted to a single space.
-1. Leading and trailing spaces are removed from the returned text.
-
-!!! info "Note"
-    extractTextFromHTML function does not decode HTML and XML entities.
-    
-    It is not guaranteed that extractTextFromHTML function fully supports all HTML, XML or XHTML standards. But it tries to do the best.
+1. Comments are skipped. Example: `<!-- test -->`. Comment must end with `-->`. Nested comments are not possible.
+Note: constructions like `<!-->` `<!--->` are not valid comments in HTML but will be skipped by other rules.
+2. CDATA is pasted verbatim. Note: CDATA is XML/XHTML specific. But we still process it for "best-effort" approach.
+3. `script` and `style` elements are removed with all their content. Note: it's assumed that closing tag cannot appear inside content. For example, in JS string literal is has to be escaped as `"<\/script>"`.
+Note: comments and CDATA is possible inside script or style - then closing tags are not searched inside CDATA. Example: `<script><![CDATA[</script>]]></script>` But still searched inside comments. Sometimes it becomes complicated: `<script>var x = "<!--"; </script> var y = "-->"; alert(x + y);</script>`
+Note: script and style can be the names of XML namespaces - then they are not treat like usual script or style. Example: `<script:a>Hello</script:a>`.
+Note: whitespaces are possible after closing tag name: `</script >` but not before: `< / script>`.
+4. Other tags or tag-like elements are skipped without inner content. Example: `<a>.</a>`
+Note: it's expected that this HTML is illegal: `<a test=">"></a>`
+Note: it will also skip something like tags: `<>`, `<!>`, etc.
+Note: tag without end will be skipped to the end of input: `<hello   `
+5. HTML and XML entities are not decoded. It should be processed by separate function.
+6. Whitespaces in text are collapsed or inserted by specific rules.
+Whitespaces at beginning and at the end are removed.
+Consecutive whitespaces are collapsed.
+But if text is separated by other elements and there is no whitespace, it is inserted.
+It may be unnatural, examples: `Hello<b>world</b>`, `Hello<!-- -->world` - in HTML there will be no whitespace, but the function will insert it. But also consider: `Hello<p>world</p>`, `Hello<br>world`.
+This behaviour is reasonable for data analysis, e.g. convert HTML to a bag of words.
+7. Also note that correct handling of whitespaces would require support of `<pre></pre>` and CSS display and white-space properties.
 
 **Syntax**
 
