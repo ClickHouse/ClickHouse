@@ -40,6 +40,8 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
         res = std::make_shared<DataTypeInt32>();
     else if (type == "bigint")
         res = std::make_shared<DataTypeInt64>();
+    else if (type == "boolean")
+        res = std::make_shared<DataTypeUInt8>();
     else if (type == "real")
         res = std::make_shared<DataTypeFloat32>();
     else if (type == "double precision")
