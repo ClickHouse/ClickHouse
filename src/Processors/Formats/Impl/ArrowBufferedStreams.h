@@ -61,25 +61,25 @@ private:
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromSeekableReadBuffer);
 };
 
-class ArrowInputStream : public arrow::io::InputStream
+class ArrowInputStreamFromReadBuffer : public arrow::io::InputStream
 {
 public:
-    explicit ArrowInputStream(ReadBuffer & in);
+    explicit ArrowInputStreamFromReadBuffer(ReadBuffer & in);
     arrow::Result<int64_t> Read(int64_t nbytes, void* out) override;
     arrow::Result<std::shared_ptr<arrow::Buffer>> Read(int64_t nbytes) override;
     arrow::Status Abort() override;
     arrow::Result<int64_t> Tell() const override;
     arrow::Status Close() override;
-    bool closed() const override;
+    bool closed() const override { return !is_open; }
 
 private:
     ReadBuffer & in;
+    bool is_open = false;
 
-    ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowInputStream);
+    ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowInputStreamFromReadBuffer);
 };
 
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in);
-std::shared_ptr<arrow::io::InputStream> asArrowInputStream(ReadBuffer & in);
 
 }
 
