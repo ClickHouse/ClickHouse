@@ -67,15 +67,15 @@ void HTTPServerConnection::run()
                 }
             }
         }
-        catch (Poco::Net::NoMessageException &)
+        catch (const Poco::Net::NoMessageException &)
         {
             break;
         }
-        catch (Poco::Net::MessageException &)
+        catch (const Poco::Net::MessageException &)
         {
             sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         }
-        catch (Poco::Exception &)
+        catch (const Poco::Exception &)
         {
             if (session.networkException())
             {
@@ -96,33 +96,6 @@ void HTTPServerConnection::sendErrorResponse(Poco::Net::HTTPServerSession & sess
     response.setKeepAlive(false);
     response.send();
     session.setKeepAlive(false);
-}
-
-void HTTPServerConnection::onServerStopped(const bool & abortCurrent)
-{
-    stopped = true;
-    if (abortCurrent)
-    {
-        try
-        {
-            socket().shutdown();
-        }
-        catch (...)
-        {
-        }
-    }
-    else
-    {
-        std::unique_lock<std::mutex> lock(mutex);
-
-        try
-        {
-            socket().shutdown();
-        }
-        catch (...)
-        {
-        }
-    }
 }
 
 }

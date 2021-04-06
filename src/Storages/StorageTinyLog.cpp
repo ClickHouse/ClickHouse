@@ -357,6 +357,11 @@ void TinyLogBlockOutputStream::writeSuffix()
     for (const auto & file : column_files)
         storage.file_checker.update(file);
     storage.file_checker.save();
+
+    /// unlock should be done from the same thread as lock, and dtor may be
+    /// called from different thread, so it should be done here (at least in
+    /// case of no exceptions occurred)
+    lock.unlock();
 }
 
 

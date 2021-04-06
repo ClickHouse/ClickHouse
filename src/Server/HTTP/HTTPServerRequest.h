@@ -43,10 +43,11 @@ private:
         MAX_NAME_LENGTH = 256,
         MAX_VALUE_LENGTH = 8192,
         MAX_METHOD_LENGTH = 32,
-        MAX_URI_LENGTH = 16384,
         MAX_VERSION_LENGTH = 8,
         MAX_FIELDS_NUMBER = 100,
     };
+
+    const size_t max_uri_size;
 
     std::unique_ptr<ReadBuffer> stream;
     Poco::Net::SocketImpl * socket;

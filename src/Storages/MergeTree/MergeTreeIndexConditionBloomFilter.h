@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class MergeTreeIndexConditionBloomFilter : public IMergeTreeIndexCondition, WithContext
+class MergeTreeIndexConditionBloomFilter final : public IMergeTreeIndexCondition, WithContext
 {
 public:
     struct RPNElement

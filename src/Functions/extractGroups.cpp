@@ -65,12 +65,12 @@ public:
         const auto & re2 = regexp->getRE2();
 
         if (!re2)
-            throw Exception("There is no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
 
         const size_t groups_count = re2->NumberOfCapturingGroups();
 
         if (!groups_count)
-            throw Exception("There is no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
 
         // Including 0-group, which is the whole regexp.
         PODArrayWithStackMemory<re2_st::StringPiece, 128> matched_groups(groups_count + 1);

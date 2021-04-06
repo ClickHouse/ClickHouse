@@ -101,6 +101,12 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </core_dump> 
 ```
 
+## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
+
+Устанавливает задержку перед удалением табличных данных, в секундах. Если запрос имеет идентификатор `SYNC`, эта настройка игнорируется.
+
+Значение по умолчанию: `480` (8 минут).
+
 ## default\_database {#default-database}
 
 База данных по умолчанию.

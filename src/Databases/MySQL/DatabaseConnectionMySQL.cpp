@@ -52,7 +52,7 @@ DatabaseConnectionMySQL::DatabaseConnectionMySQL(
     const ASTStorage * database_engine_define_,
     const String & database_name_in_mysql_,
     std::unique_ptr<ConnectionMySQLSettings> settings_,
-    mysqlxx::Pool && pool)
+    mysqlxx::PoolWithFailover && pool)
     : IDatabase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)

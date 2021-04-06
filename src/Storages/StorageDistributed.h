@@ -81,6 +81,8 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
+    QueryPipelinePtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
+
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
