@@ -55,26 +55,23 @@ arrow::Status RandomAccessFileFromSeekableReadBuffer::Close()
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Tell() const
 {
-    return arrow::Result<int64_t>(in.getPosition());
+    return in.getPosition();
 }
 
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes, void * out)
 {
-    int64_t bytes_read = in.readBig(reinterpret_cast<char *>(out), nbytes);
-    return arrow::Result<int64_t>(bytes_read);
+    return in.readBig(reinterpret_cast<char *>(out), nbytes);
 }
 
 arrow::Result<std::shared_ptr<arrow::Buffer>> RandomAccessFileFromSeekableReadBuffer::Read(int64_t nbytes)
 {
-    auto buffer_status = arrow::AllocateBuffer(nbytes);
-    ARROW_RETURN_NOT_OK(buffer_status);
+    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes))
+    ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, Read(nbytes, buffer->mutable_data()))
 
-    auto shared_buffer = std::shared_ptr<arrow::Buffer>(std::move(std::move(*buffer_status)));
+    if (bytes_read < nbytes)
+        RETURN_NOT_OK(buffer->Resize(bytes_read));
 
-    size_t n = in.readBig(reinterpret_cast<char *>(shared_buffer->mutable_data()), nbytes);
-
-    auto read_buffer = arrow::SliceBuffer(shared_buffer, 0, n);
-    return arrow::Result<std::shared_ptr<arrow::Buffer>>(shared_buffer);
+    return buffer;
 }
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
@@ -84,44 +81,40 @@ arrow::Status RandomAccessFileFromSeekableReadBuffer::Seek(int64_t position)
 }
 
 
-ArrowInputStream::ArrowInputStream(ReadBuffer & in_) : in(in_)
+ArrowInputStreamFromReadBuffer::ArrowInputStreamFromReadBuffer(ReadBuffer & in_) : in(in_), is_open{true}
 {
 }
 
-arrow::Result<int64_t> ArrowInputStream::Read(int64_t nbytes, void * out)
+arrow::Result<int64_t> ArrowInputStreamFromReadBuffer::Read(int64_t nbytes, void * out)
 {
-    return in.read(reinterpret_cast<char *>(out), nbytes);
+    return in.readBig(reinterpret_cast<char *>(out), nbytes);
 }
 
-arrow::Result<std::shared_ptr<arrow::Buffer>> ArrowInputStream::Read(int64_t nbytes)
+arrow::Result<std::shared_ptr<arrow::Buffer>> ArrowInputStreamFromReadBuffer::Read(int64_t nbytes)
 {
-    std::string file_data;
-    {
-        WriteBufferFromString file_buffer(file_data);
-        copyData(in, file_buffer, nbytes);
-    }
+    ARROW_ASSIGN_OR_RAISE(auto buffer, arrow::AllocateResizableBuffer(nbytes))
+    ARROW_ASSIGN_OR_RAISE(int64_t bytes_read, Read(nbytes, buffer->mutable_data()))
 
-    return arrow::Buffer::FromString(std::move(file_data));
+    if (bytes_read < nbytes)
+        RETURN_NOT_OK(buffer->Resize(bytes_read));
+
+    return buffer;
 }
 
-arrow::Status ArrowInputStream::Abort()
+arrow::Status ArrowInputStreamFromReadBuffer::Abort()
 {
     return arrow::Status();
 }
 
-arrow::Result<int64_t> ArrowInputStream::Tell() const
+arrow::Result<int64_t> ArrowInputStreamFromReadBuffer::Tell() const
 {
     return in.count();
 }
 
-arrow::Status ArrowInputStream::Close()
+arrow::Status ArrowInputStreamFromReadBuffer::Close()
 {
+    is_open = false;
     return arrow::Status();
-}
-
-bool ArrowInputStream::closed() const
-{
-    return false;
 }
 
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in)
@@ -143,11 +136,6 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in)
     }
 
     return std::make_shared<arrow::io::BufferReader>(arrow::Buffer::FromString(std::move(file_data)));
-}
-
-std::shared_ptr<arrow::io::InputStream> asArrowInputStream(ReadBuffer & in)
-{
-    return std::make_shared<ArrowInputStream>(in);
 }
 
 }
