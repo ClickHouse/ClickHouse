@@ -1624,6 +1624,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && !query.limitBy()
         && query.limitLength()
         && !query_analyzer->hasAggregation()
+        && !query_analyzer->hasWindow()
         && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset
         && limit_length + limit_offset < max_block_size)
     {

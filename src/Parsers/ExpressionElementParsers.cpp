@@ -592,11 +592,11 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             // We can easily get a UINT64_MAX here, which doesn't even fit into
             // int64_t. Not sure what checks we are going to need here after we
             // support floats and dates.
-            if (node->frame.begin_offset > INT_MAX || node->frame.begin_offset < INT_MIN)
+            if (node->frame.begin_offset > INT_MAX)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame offset must be between {} and {}, but {} is given",
-                    INT_MAX, INT_MIN, node->frame.begin_offset);
+                    "Frame offset must be less than {}, but {} is given",
+                    INT_MAX, node->frame.begin_offset);
             }
 
             if (node->frame.begin_offset < 0)
@@ -661,11 +661,11 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
                 node->frame.end_offset = value.get<Int64>();
                 node->frame.end_type = WindowFrame::BoundaryType::Offset;
 
-                if (node->frame.end_offset > INT_MAX || node->frame.end_offset < INT_MIN)
+                if (node->frame.end_offset > INT_MAX)
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Frame offset must be between {} and {}, but {} is given",
-                        INT_MAX, INT_MIN, node->frame.end_offset);
+                        "Frame offset must be less than {}, but {} is given",
+                        INT_MAX, node->frame.end_offset);
                 }
 
                 if (node->frame.end_offset < 0)
