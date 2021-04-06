@@ -769,6 +769,38 @@ Example:
 log_query_threads=1
 ```
 
+## log_comment {#settings-log-comment}
+
+Specifies the value for the `log_comment` field of the [system.query_log](../system-tables/query_log.md) table and comment text for the server log.
+
+It can be used to improve the readability of server logs. Additionally, it helps to select queries related to the test from the `system.query_log` after running [clickhouse-test](../../development/tests.md).
+
+Possible values:
+
+-   Any string no longer than [max_query_size](#settings-max_query_size). If length is exceeded, the server throws an exception.
+
+Default value: empty string.
+
+**Example**
+
+Query:
+
+``` sql
+SET log_comment = 'log_comment test', log_queries = 1;
+SELECT 1;
+SYSTEM FLUSH LOGS;
+SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 2;
+```
+
+Result:
+
+``` text
+┌─type────────┬─query─────┐
+│ QueryStart  │ SELECT 1; │
+│ QueryFinish │ SELECT 1; │
+└─────────────┴───────────┘
+```
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 The size of blocks (in a count of rows) to form for insertion into a table.
@@ -1514,6 +1546,14 @@ FORMAT PrettyCompactMonoBlock
 
 Default value: 0
 
+## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
+
+Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
+
+Too many values may require significant amount for processing, while the benefit is doubtful, since if you have huge number of values in `IN (...)`, then most likely the query will be sent to all shards anyway.
+
+Default value: 1000
+
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
 Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
@@ -1874,7 +1914,7 @@ Default value: `0`.
 
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table when there is no distributed key.
 
-By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
+By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will reject any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
 
 Possible values:
 
@@ -2728,11 +2768,11 @@ Default value: `0`.
 
 ## engine_file_truncate_on_insert {#engine-file-truncate-on-insert}
 
-Enables or disables truncate before insert in file engine tables.
+Enables or disables truncate before insert in [File](../../engines/table-engines/special/file.md) engine tables.
 
 Possible values:
-- 0 — Disabled.
-- 1 — Enabled.
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` replaces existing content of the file with the new data.
 
 Default value: `0`.
 
@@ -2744,6 +2784,74 @@ Possible values:
 
 -   0 — Working with geo data types is disabled.
 -   1 — Working with geo data types is enabled.
+
+Default value: `0`.
+
+## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
+
+Adds a modifier `SYNC` to all `DROP` and `DETACH` queries. 
+
+Possible values:
+
+-   0 — Queries will be executed with delay.
+-   1 — Queries will be executed without delay.
+
+Default value: `0`.
+
+## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil}
+
+Sets the `SHOW TABLE` query display.
+
+Possible values:
+
+-   0 — The query will be displayed without table UUID.
+-   1 — The query will be displayed with table UUID.
+
+Default value: `0`.
+
+## allow_experimental_live_view {#allow-experimental-live-view}
+
+Allows creation of experimental [live views](../../sql-reference/statements/create/view.md#live-view).
+
+Possible values:
+
+-   0 — Working with live views is disabled.
+-   1 — Working with live views is enabled.
+
+Default value: `0`.
+
+## live_view_heartbeat_interval {#live-view-heartbeat-interval}
+
+Sets the heartbeat interval in seconds to indicate [live view](../../sql-reference/statements/create/view.md#live-view) is alive .
+
+Default value: `15`.
+
+## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
+
+Sets the maximum number of inserted blocks after which mergeable blocks are dropped and query for [live view](../../sql-reference/statements/create/view.md#live-view) is re-executed.
+
+Default value: `64`.
+
+## temporary_live_view_timeout {#temporary-live-view-timeout}
+
+Sets the interval in seconds after which [live view](../../sql-reference/statements/create/view.md#live-view) with timeout is deleted.
+
+Default value: `5`.
+
+## periodic_live_view_refresh {#periodic-live-view-refresh}
+
+Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md#live-view) is forced to refresh.
+
+Default value: `60`.
+
+## check_query_single_value_result {#check_query_single_value_result}
+
+Defines the level of detail for the [CHECK TABLE](../../sql-reference/statements/check-table.md#checking-mergetree-tables) query result for `MergeTree` family engines .
+
+Possible values:
+
+-   0 — the query shows a check status for every individual data part of a table.
+-   1 — the query shows the general table check status.
 
 Default value: `0`.
 

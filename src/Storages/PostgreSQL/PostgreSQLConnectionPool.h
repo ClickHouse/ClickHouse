@@ -8,42 +8,41 @@
 #include "PostgreSQLConnection.h"
 
 
-namespace DB
+namespace postgres
 {
 
-class PostgreSQLReplicaConnection;
-
+class PoolWithFailover;
 
 /// Connection pool size is defined by user with setting `postgresql_connection_pool_size` (default 16).
 /// If pool is empty, it will block until there are available connections.
 /// If setting `connection_pool_wait_timeout` is defined, it will not block on empty pool and will
 /// wait until the timeout and then create a new connection. (only for storage/db engine)
-class PostgreSQLConnectionPool
+class ConnectionPool
 {
 
-friend class PostgreSQLReplicaConnection;
+friend class PoolWithFailover;
 
 static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
 
 public:
 
-    PostgreSQLConnectionPool(
-            std::string dbname,
-            std::string host,
-            UInt16 port,
-            std::string user,
-            std::string password,
-            size_t pool_size_ = POSTGRESQL_POOL_DEFAULT_SIZE,
-            int64_t pool_wait_timeout_ = -1);
+    ConnectionPool(
+        std::string dbname,
+        std::string host,
+        UInt16 port,
+        std::string user,
+        std::string password,
+        size_t pool_size_ = POSTGRESQL_POOL_DEFAULT_SIZE,
+        int64_t pool_wait_timeout_ = -1);
 
-    PostgreSQLConnectionPool(const PostgreSQLConnectionPool & other);
+    ConnectionPool(const ConnectionPool & other);
 
-    PostgreSQLConnectionPool operator =(const PostgreSQLConnectionPool &) = delete;
+    ConnectionPool operator =(const ConnectionPool &) = delete;
 
-    PostgreSQLConnectionHolderPtr get();
+    ConnectionHolderPtr get();
 
 private:
-    using Pool = ConcurrentBoundedQueue<PostgreSQLConnectionPtr>;
+    using Pool = ConcurrentBoundedQueue<ConnectionPtr>;
     using PoolPtr = std::shared_ptr<Pool>;
 
     static std::string formatConnectionString(
@@ -58,7 +57,7 @@ private:
     bool block_on_empty_pool;
 };
 
-using PostgreSQLConnectionPoolPtr = std::shared_ptr<PostgreSQLConnectionPool>;
+using ConnectionPoolPtr = std::shared_ptr<ConnectionPool>;
 
 }
 
