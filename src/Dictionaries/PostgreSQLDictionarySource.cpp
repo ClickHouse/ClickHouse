@@ -31,7 +31,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     const Block & sample_block_)
     : dict_struct{dict_struct_}
     , sample_block(sample_block_)
-    , connection(std::make_shared<PostgreSQLReplicaConnection>(config_, config_prefix))
+    , connection(std::make_shared<postgres::PoolWithFailover>(config_, config_prefix))
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , db(config_.getString(fmt::format("{}.db", config_prefix), ""))
     , table(config_.getString(fmt::format("{}.table", config_prefix), ""))

@@ -29,7 +29,7 @@
         INSERT INTO simple_key_flat_dictionary_source_table
         SELECT number, number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
-        LIMIT 500000;
+        LIMIT 5000000;
     </fill_query>
 
     <substitutions>
@@ -46,10 +46,10 @@
         <substitution>
             <name>elements_count</name>
             <values>
-                <value>250000</value>
-                <value>500000</value>
-                <value>750000</value>
-                <value>1000000</value>
+                <value>2500000</value>
+                <value>5000000</value>
+                <value>7500000</value>
+                <value>10000000</value>
             </values>
         </substitution>
     </substitutions>
