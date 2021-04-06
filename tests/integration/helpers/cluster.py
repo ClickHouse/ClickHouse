@@ -652,19 +652,6 @@ class ClickHouseCluster:
         if self.is_up:
             return
 
-        # Just in case kill unstopped containers from previous launch
-        try:
-            print("Trying to kill unstopped containers...")
-            subprocess_call(['docker-compose', 'kill'])
-            subprocess_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
-            print("Unstopped containers killed")
-        except:
-            pass
-
-        clickhouse_pull_cmd = self.base_cmd + ['pull']
-        print(f"Pulling images for {self.base_cmd}")
-        retry_exception(10, 5, subprocess_check_call, Exception, clickhouse_pull_cmd)
-
         try:
             if destroy_dirs and p.exists(self.instances_dir):
                 print(("Removing instances dir %s", self.instances_dir))
@@ -673,6 +660,19 @@ class ClickHouseCluster:
             for instance in list(self.instances.values()):
                 print(('Setup directory for instance: {} destroy_dirs: {}'.format(instance.name, destroy_dirs)))
                 instance.create_dir(destroy_dir=destroy_dirs)
+
+            # Just in case kill unstopped containers from previous launch
+            try:
+                print("Trying to kill unstopped containers...")
+                subprocess_call(['docker-compose', 'kill'])
+                subprocess_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+                print("Unstopped containers killed")
+            except:
+                pass
+
+            clickhouse_pull_cmd = self.base_cmd + ['pull']
+            print(f"Pulling images for {self.base_cmd}")
+            retry_exception(10, 5, subprocess_check_call, Exception, clickhouse_pull_cmd)
 
             self.docker_client = docker.from_env(version=self.docker_api_version)
 
