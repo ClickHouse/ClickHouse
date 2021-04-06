@@ -662,7 +662,10 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         const auto & partition_desc = metadata_snapshot->getPartitionKey();
         if (partition_desc.expression)
         {
-            const auto & partition_source_columns = partition_desc.expression->getRequiredColumns();
+            auto partition_source_columns = partition_desc.expression->getRequiredColumns();
+            partition_source_columns.push_back("_part");
+            partition_source_columns.push_back("_partition_id");
+            partition_source_columns.push_back("_part_uuid");
             optimize_trivial_count = true;
             for (const auto & required_column : required)
             {
@@ -813,7 +816,14 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
 
-    normalize(query, result.aliases, settings);
+    NameSet all_source_columns_set = source_columns_set;
+    if (table_join)
+    {
+        for (const auto & [name, _] : table_join->columns_from_joined_table)
+            all_source_columns_set.insert(name);
+    }
+
+    normalize(query, result.aliases, all_source_columns_set, settings);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -871,7 +881,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 
     TreeRewriterResult result(source_columns, storage, metadata_snapshot, false);
 
-    normalize(query, result.aliases, settings);
+    normalize(query, result.aliases, result.source_columns_set, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
     executeScalarSubqueries(query, context, 0, result.scalars, false);
@@ -896,7 +906,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     return std::make_shared<const TreeRewriterResult>(result);
 }
 
-void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings)
+void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, const Settings & settings)
 {
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
@@ -945,7 +955,7 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
         FunctionNameNormalizer().visit(query.get());
 
     /// Common subexpression elimination. Rewrite rules.
-    QueryNormalizer::Data normalizer_data(aliases, settings);
+    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, settings);
     QueryNormalizer(normalizer_data).visit(query);
 }
 

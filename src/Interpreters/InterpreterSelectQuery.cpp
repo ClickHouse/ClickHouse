@@ -393,7 +393,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && query.where() && !query.prewhere() && !query.final())
+        if (try_move_to_prewhere && storage && query.where() && !query.prewhere())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
