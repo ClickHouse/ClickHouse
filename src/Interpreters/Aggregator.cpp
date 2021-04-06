@@ -707,7 +707,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        materialized_columns.push_back(columns.at(params.keys[i])->convertToFullColumnIfConst());
+        materialized_columns.push_back(columns.at(params.keys[i])->convertToFullColumnIfSparse()->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back().get();
 
         if (!result.isLowCardinality())
