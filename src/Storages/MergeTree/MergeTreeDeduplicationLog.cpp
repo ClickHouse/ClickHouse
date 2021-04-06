@@ -80,13 +80,17 @@ MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
     , rotate_interval(deduplication_window_ * 2) /// actually it doesn't matter
     , format_version(format_version_)
     , deduplication_map(deduplication_window)
-{}
+{
+    namespace fs = std::filesystem;
+    if (deduplication_window != 0 && !fs::exists(logs_dir))
+        fs::create_directories(logs_dir);
+}
 
 void MergeTreeDeduplicationLog::load()
 {
     namespace fs = std::filesystem;
     if (!fs::exists(logs_dir))
-        fs::create_directories(logs_dir);
+        return;
 
     for (const auto & p : fs::directory_iterator(logs_dir))
     {
@@ -95,26 +99,33 @@ void MergeTreeDeduplicationLog::load()
         existing_logs[log_number] = {path, 0};
     }
 
-    /// Order important, we load history from the begging to the end
-    for (auto & [log_number, desc] : existing_logs)
+    /// We should know which logs are exist even in case
+    /// of deduplication_window = 0
+    if (!existing_logs.empty())
+        current_log_number = existing_logs.rbegin()->first;
+
+    if (deduplication_window != 0)
     {
-        try
+        /// Order important, we load history from the begging to the end
+        for (auto & [log_number, desc] : existing_logs)
         {
-            desc.entries_count = loadSingleLog(desc.path);
-            current_log_number = log_number;
+            try
+            {
+                desc.entries_count = loadSingleLog(desc.path);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__, "Error while loading MergeTree deduplication log on path " + desc.path);
+            }
         }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__, "Error while loading MergeTree deduplication log on path " + desc.path);
-        }
+
+        /// Start new log, drop previous
+        rotateAndDropIfNeeded();
+
+        /// Can happen in case we have unfinished log
+        if (!current_writer)
+            current_writer = std::make_unique<WriteBufferFromFile>(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     }
-
-    /// Start new log, drop previous
-    rotateAndDropIfNeeded();
-
-    /// Can happen in case we have unfinished log
-    if (!current_writer)
-        current_writer = std::make_unique<WriteBufferFromFile>(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
 }
 
 size_t MergeTreeDeduplicationLog::loadSingleLog(const std::string & path)
@@ -137,6 +148,10 @@ size_t MergeTreeDeduplicationLog::loadSingleLog(const std::string & path)
 
 void MergeTreeDeduplicationLog::rotate()
 {
+    /// We don't deduplicate anything so we don't need any writers
+    if (deduplication_window == 0)
+        return;
+
     current_log_number++;
     auto new_path = getLogPath(logs_dir, current_log_number);
     MergeTreeDeduplicationLogNameDescription log_description{new_path, 0};
@@ -169,7 +184,7 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
     /// If we found some logs to drop
     if (remove_from_value != 0)
     {
-        /// Go from beginning to the end and drop all outdated logs
+        /// Go from the beginning to the end and drop all outdated logs
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
@@ -195,6 +210,13 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
 std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std::string & block_id, const MergeTreePartInfo & part_info)
 {
     std::lock_guard lock(state_mutex);
+
+    /// We support zero case because user may want to disable deduplication with
+    /// ALTER MODIFY SETTING query. It's much more simplier to handle zero case
+    /// here then destroy whole object, check for null pointer from different
+    /// threads and so on.
+    if (deduplication_window == 0)
+        return std::make_pair(part_info, true);
 
     /// If we already have this block let's deduplicate it
     if (deduplication_map.contains(block_id))
@@ -225,6 +247,13 @@ std::pair<MergeTreePartInfo, bool> MergeTreeDeduplicationLog::addPart(const std:
 void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)
 {
     std::lock_guard lock(state_mutex);
+
+    /// We support zero case because user may want to disable deduplication with
+    /// ALTER MODIFY SETTING query. It's much more simplier to handle zero case
+    /// here then destroy whole object, check for null pointer from different
+    /// threads and so on.
+    if (deduplication_window == 0)
+        return;
 
     assert(current_writer != nullptr);
 
@@ -258,6 +287,25 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             ++itr;
         }
     }
+}
+
+void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_window_)
+{
+    std::lock_guard lock(state_mutex);
+
+    deduplication_window = deduplication_window_;
+    rotate_interval = deduplication_window * 2;
+
+    /// If settings was set for the first time with ALTER MODIFY SETTING query
+    if (deduplication_window != 0 && !std::filesystem::exists(logs_dir))
+        std::filesystem::create_directories(logs_dir);
+
+    deduplication_map.setMaxSize(deduplication_window);
+    rotateAndDropIfNeeded();
+
+    /// Can happen in case we have unfinished log
+    if (!current_writer)
+        current_writer = std::make_unique<WriteBufferFromFile>(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
 }
 
 }

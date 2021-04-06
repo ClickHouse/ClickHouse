@@ -102,4 +102,86 @@ INSERT INTO merge_tree_deduplication (key, value) VALUES (12, '12'); -- not dedu
 
 SELECT part, key, value FROM merge_tree_deduplication ORDER BY key;
 
+-- Alters....
+
+ALTER TABLE merge_tree_deduplication MODIFY SETTING non_replicated_deduplication_window = 2;
+
+SELECT '===============';
+
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (1, '1', 33);
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (2, '2', 33);
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (3, '3', 33);
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (1, '1', 33);
+
+SELECT * FROM merge_tree_deduplication WHERE part = 33 ORDER BY key;
+
+SELECT '===============';
+
+ALTER TABLE merge_tree_deduplication MODIFY SETTING non_replicated_deduplication_window = 0;
+
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (1, '1', 33);
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (1, '1', 33);
+
+DETACH TABLE merge_tree_deduplication;
+ATTACH TABLE merge_tree_deduplication;
+
+SELECT * FROM merge_tree_deduplication WHERE part = 33 ORDER BY key;
+
+SELECT '===============';
+
+ALTER TABLE merge_tree_deduplication MODIFY SETTING non_replicated_deduplication_window = 3;
+
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (1, '1', 33);
+
+SELECT * FROM merge_tree_deduplication WHERE part = 33 ORDER BY key;
+
+SELECT '===============';
+
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (1, '1', 44);
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (2, '2', 44);
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (3, '3', 44);
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (1, '1', 44);
+
+INSERT INTO merge_tree_deduplication (key, value, part) VALUES (4, '4', 44);
+
+DETACH TABLE merge_tree_deduplication;
+ATTACH TABLE merge_tree_deduplication;
+
+SELECT * FROM merge_tree_deduplication WHERE part = 44 ORDER BY key;
+
 DROP TABLE IF EXISTS merge_tree_deduplication;
+
+SELECT '===============';
+
+DROP TABLE IF EXISTS merge_tree_no_deduplication;
+
+CREATE TABLE merge_tree_no_deduplication
+(
+    key UInt64,
+    value String
+)
+ENGINE=MergeTree()
+ORDER BY key;
+
+INSERT INTO merge_tree_no_deduplication (key, value) VALUES (1, '1');
+INSERT INTO merge_tree_no_deduplication (key, value) VALUES (1, '1');
+
+SELECT * FROM merge_tree_no_deduplication ORDER BY key;
+
+SELECT '===============';
+
+ALTER TABLE merge_tree_no_deduplication MODIFY SETTING non_replicated_deduplication_window = 3;
+
+INSERT INTO merge_tree_no_deduplication (key, value) VALUES (1, '1');
+INSERT INTO merge_tree_no_deduplication (key, value) VALUES (2, '2');
+INSERT INTO merge_tree_no_deduplication (key, value) VALUES (3, '3');
+
+DETACH TABLE merge_tree_no_deduplication;
+ATTACH TABLE merge_tree_no_deduplication;
+
+INSERT INTO merge_tree_no_deduplication (key, value) VALUES (1, '1');
+INSERT INTO merge_tree_no_deduplication (key, value) VALUES (4, '4');
+
+SELECT * FROM merge_tree_no_deduplication ORDER BY key;
+
+DROP TABLE IF EXISTS merge_tree_no_deduplication;

@@ -39,7 +39,7 @@ private:
 
     Queue queue;
     IndexMap map;
-    const size_t max_size;
+    size_t max_size;
 public:
     using iterator = typename Queue::iterator;
     using const_iterator = typename Queue::const_iterator;
@@ -63,6 +63,16 @@ public:
     size_t size() const
     {
         return queue.size();
+    }
+
+    void setMaxSize(size_t max_size_)
+    {
+        max_size = max_size_;
+        while (size() > max_size)
+        {
+            map.erase(queue.front().key);
+            queue.pop_front();
+        }
     }
 
     bool erase(const std::string & key)
@@ -139,14 +149,16 @@ public:
 
     /// Load history from disk. Ignores broken logs.
     void load();
+
+    void setDeduplicationWindowSize(size_t deduplication_window_);
 private:
     const std::string logs_dir;
     /// Size of deduplication window
-    const size_t deduplication_window;
+    size_t deduplication_window;
 
     /// How often we create new logs. Not very important,
     /// default value equals deduplication_window * 2
-    const size_t rotate_interval;
+    size_t rotate_interval;
     const MergeTreeDataFormatVersion format_version;
 
     /// Current log number. Always growing number.
