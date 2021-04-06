@@ -21,7 +21,7 @@ std::unique_ptr<HTTPRequestHandler> ODBCBridgeHandlerFactory::createRequestHandl
 
         if (uri.getPath() == "/columns_info")
 #if USE_ODBC
-            return std::make_unique<ODBCColumnsInfoHandler>(keep_alive_timeout);
+            return std::make_unique<ODBCColumnsInfoHandler>(keep_alive_timeout, context);
 #else
             return nullptr;
 #endif

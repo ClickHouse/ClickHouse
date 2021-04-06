@@ -6,7 +6,6 @@
 #include "HandlerFactory.h"
 
 
-
 namespace DB
 {
 

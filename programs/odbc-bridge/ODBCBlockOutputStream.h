@@ -19,7 +19,7 @@ public:
             const std::string & remote_database_name_,
             const std::string & remote_table_name_,
             const Block & sample_block_,
-            Context & context_,
+            const Context & context_,
             IdentifierQuotingStyle quoting);
 
     Block getHeader() const override;
@@ -32,7 +32,7 @@ private:
     std::string db_name;
     std::string table_name;
     Block sample_block;
-    Context & context;
+    const Context & context;
     IdentifierQuotingStyle quoting;
 
     ExternalResultDescription description;

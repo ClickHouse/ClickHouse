@@ -53,8 +53,6 @@ private:
 namespace DB
 {
 
-static constexpr inline auto ODBC_DEFAULT_POOL_SIZE = 16;
-
 class ODBCConnectionFactory final : private boost::noncopyable
 {
 public:
@@ -64,7 +62,7 @@ public:
         return ret;
     }
 
-    nanodbc::ConnectionHolder get(const std::string & connection_string, size_t pool_size = ODBC_DEFAULT_POOL_SIZE)
+    nanodbc::ConnectionHolder get(const std::string & connection_string, size_t pool_size)
     {
         std::lock_guard lock(mutex);
 
@@ -75,7 +73,7 @@ public:
     }
 
 private:
-    /// [connection_string] -> [connection_pool]
+    /// [connection_settings_string] -> [connection_pool]
     using PoolFactory = std::unordered_map<std::string, nanodbc::PoolPtr>;
     PoolFactory factory;
     std::mutex mutex;

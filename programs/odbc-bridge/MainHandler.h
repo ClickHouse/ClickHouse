@@ -17,7 +17,7 @@ class ODBCHandler : public HTTPRequestHandler
 public:
     ODBCHandler(
         size_t keep_alive_timeout_,
-        Context & context_,
+        const Context & context_,
         const String & mode_)
         : log(&Poco::Logger::get("ODBCHandler"))
         , keep_alive_timeout(keep_alive_timeout_)
@@ -32,7 +32,7 @@ private:
     Poco::Logger * log;
 
     size_t keep_alive_timeout;
-    Context & context;
+    const Context & context;
     String mode;
 
     static inline std::mutex mutex;
