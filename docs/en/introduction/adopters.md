@@ -13,6 +13,7 @@ toc_title: Adopters
 | <a href="https://2gis.ru" class="favicon">2gis</a> | Maps | Monitoring | — | — | [Talk in Russian, July 2019](https://youtu.be/58sPkXfq6nw) |
 | <a href="https://getadmiral.com/" class="favicon">Admiral</a> | Martech | Engagement Management | — | — | [Webinar Slides, June 2020](https://altinity.com/presentations/2020/06/16/big-data-in-real-time-how-clickhouse-powers-admirals-visitor-relationships-for-publishers) |
 | <a href="http://www.adscribe.tv/" class="favicon">AdScribe</a> | Ads | TV Analytics | — | — | [A quote from CTO](https://altinity.com/24x7-support/) |
+| <a href="https://ahrefs.com/" class="favicon">Ahrefs</a> | SEO | Analytics | — | — | [Job listing](https://ahrefs.com/jobs/data-scientist-search) |
 | <a href="https://cn.aliyun.com/" class="favicon">Alibaba Cloud</a> | Cloud | Managed Service | — | — | [Official Website](https://help.aliyun.com/product/144466.html) |
 | <a href="https://alohabrowser.com/" class="favicon">Aloha Browser</a> | Mobile App | Browser backend | — | — | [Slides in Russian, May 2019](https://presentations.clickhouse.tech/meetup22/aloha.pdf) |
 | <a href="https://altinity.com/" class="favicon">Altinity</a> | Cloud, SaaS | Main product | — | — | [Official Website](https://altinity.com/) |

@@ -20,5 +20,6 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     Feature(test=load("aes_encryption.regression", "regression"))(**args
     Feature(test=load("datetime64_extended_range.regression", "regression"))(**args)
     # Feature(test=load("kerberos.regression", "regression"))(**args)
+
 if main():
     regression()

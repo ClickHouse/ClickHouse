@@ -97,7 +97,7 @@ public:
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
 private:
-    /// MultiVersion data storage, so that we can copy the list of blocks to readers.
+    /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
     MultiVersion<Blocks> data;
 

@@ -116,6 +116,8 @@ def get_db_engine(args, database_name):
 def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir):
     # print(client_options)
 
+    client = f"{args.client} --log_comment='{case_file}'"
+
     start_time = datetime.now()
     if args.database:
         database = args.database
@@ -130,7 +132,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
             return ''.join(random.choice(alphabet) for _ in range(length))
         database = 'test_{suffix}'.format(suffix=random_str())
 
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         try:
             clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args, database)), timeout=args.timeout)
         except TimeoutExpired:
@@ -149,7 +151,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     os.environ["CLICKHOUSE_LOG_COMMENT"] = case_file
 
     params = {
-        'client': args.client + ' --database=' + database,
+        'client': client + ' --database=' + database,
         'logs_level': server_logs_level,
         'options': client_options,
         'test': case_file,
@@ -160,7 +162,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     pattern = '{test} > {stdout} 2> {stderr}'
 
     if ext == '.sql':
-        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} --log_comment='{test}' < " + pattern
+        pattern = "{client} --send_logs_level={logs_level} --testmode --multiquery {options} < " + pattern
 
     command = pattern.format(**params)
 
@@ -177,7 +179,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         need_drop_database = not maybe_passed
 
     if need_drop_database:
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
         try:
             drop_database_query = "DROP DATABASE " + database
@@ -305,6 +307,9 @@ def run_tests_array(all_tests_with_params):
     failures_total = 0
     failures = 0
     failures_chain = 0
+    start_time = datetime.now()
+
+    is_concurrent = multiprocessing.current_process().name != "MainProcess"
 
     client_options = get_additional_client_options(args)
 
@@ -315,7 +320,7 @@ def run_tests_array(all_tests_with_params):
             return ''
 
     if all_tests:
-        print("\nRunning {} {} tests.".format(len(all_tests), suite) + "\n")
+        print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
 
     for case in all_tests:
         if SERVER_DIED:
@@ -330,7 +335,6 @@ def run_tests_array(all_tests_with_params):
 
         try:
             status = ''
-            is_concurrent = multiprocessing.current_process().name != "MainProcess"
             if not is_concurrent:
                 sys.stdout.flush()
                 sys.stdout.write("{0:72}".format(name + ": "))
@@ -404,7 +408,7 @@ def run_tests_array(all_tests_with_params):
                             status += stderr
                     else:
                         counter = 1
-                        while proc.returncode != 0 and need_retry(stderr):
+                        while need_retry(stderr):
                             proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir)
                             sleep(2**counter)
                             counter += 1
@@ -499,12 +503,18 @@ def run_tests_array(all_tests_with_params):
     failures_total = failures_total + failures
 
     if failures_total > 0:
-        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(
-            passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), args, "red", attrs=["bold"]))
+        print(colored(f"\nHaving {failures_total} errors! {passed_total} tests passed."
+            f" {skipped_total} tests skipped. {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
+            f' ({multiprocessing.current_process().name}).',
+            args, "red", attrs=["bold"]))
         exit_code = 1
     else:
-        print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(
-            passed_total = passed_total, skipped_total = skipped_total), args, "green", attrs=["bold"]))
+        print(colored(f"\n{passed_total} tests passed. {skipped_total} tests skipped."
+            f" {(datetime.now() - start_time).total_seconds():.2f} s elapsed"
+            f' ({multiprocessing.current_process().name}).',
+            args, "green", attrs=["bold"]))
+
+    sys.stdout.flush()
 
 
 server_logs_level = "warning"
@@ -799,7 +809,8 @@ def main(args):
                 if jobs > run_total:
                     run_total = jobs
 
-                batch_size = len(parallel_tests) // jobs
+                # Create two batches per process for more uniform execution time.
+                batch_size = max(1, len(parallel_tests) // (jobs * 2))
                 parallel_tests_array = []
                 for i in range(0, len(parallel_tests), batch_size):
                     parallel_tests_array.append((parallel_tests[i:i+batch_size], suite, suite_dir, suite_tmp_dir))
