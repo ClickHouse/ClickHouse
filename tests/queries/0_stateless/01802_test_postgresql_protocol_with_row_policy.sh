@@ -25,7 +25,7 @@ CREATE ROW POLICY IF NOT EXISTS test_policy ON postgresql_protocol_with_row_poli
 SELECT 'after row policy with no password';
 " | $CLICKHOUSE_CLIENT -n
 
-psql --host localhost --port 5433 default --user postgresql_protocol_user -c "SELECT * FROM postgresql_protocol_with_row_policy;"
+psql --host localhost --port 9005 default --user postgresql_protocol_user -c "SELECT * FROM postgresql_protocol_with_row_policy;"
 
 echo "
 DROP USER IF EXISTS postgresql_protocol_user;
@@ -37,5 +37,5 @@ CREATE ROW POLICY IF NOT EXISTS test_policy ON postgresql_protocol_with_row_poli
 SELECT 'after row policy with plaintext_password';
 " | $CLICKHOUSE_CLIENT -n
 
-psql "postgresql://postgresql_protocol_user:qwerty@localhost:5433/default" -c "SELECT * FROM postgresql_protocol_with_row_policy;"
+psql "postgresql://postgresql_protocol_user:qwerty@localhost:9005/default" -c "SELECT * FROM postgresql_protocol_with_row_policy;"
 
