@@ -15,6 +15,7 @@ MAX_RETRY = 2
 SLEEP_BETWEEN_RETRIES = 5
 CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
+CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-library-bridge"
 
 TRIES_COUNT = 10
 MAX_TIME_SECONDS = 3600
@@ -238,10 +239,13 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("All packages installed")
         os.chmod(CLICKHOUSE_BINARY_PATH, 0o777)
         os.chmod(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, 0o777)
+        os.chmod(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, 0o777)
         result_path_bin = os.path.join(str(self.base_path()), "clickhouse")
-        result_path_bridge = os.path.join(str(self.base_path()), "clickhouse-odbc-bridge")
+        result_path_odbc_bridge = os.path.join(str(self.base_path()), "clickhouse-odbc-bridge")
+        result_path_library_bridge = os.path.join(str(self.base_path()), "clickhouse-library-bridge")
         shutil.copy(CLICKHOUSE_BINARY_PATH, result_path_bin)
-        shutil.copy(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, result_path_bridge)
+        shutil.copy(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, result_path_odbc_bridge)
+        shutil.copy(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, result_path_library_bridge)
         return None, None
 
     def _compress_logs(self, path, result_path):

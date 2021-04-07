@@ -298,6 +298,25 @@
     <mark_cache_size>5368709120</mark_cache_size>
 
 
+    <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
+         the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
+         It makes sense only for large files and helps only if data reside in page cache.
+         To avoid frequent open/mmap/munmap/close calls (which are very expensive due to consequent page faults)
+         and to reuse mappings from several threads and queries,
+         the cache of mapped files is maintained. Its size is the number of mapped regions (usually equal to the number of mapped files).
+         The amount of data in mapped files can be monitored
+         in system.metrics, system.metric_log by the MMappedFiles, MMappedFileBytes metrics
+         and in system.asynchronous_metrics, system.asynchronous_metrics_log by the MMapCacheCells metric,
+         and also in system.events, system.processes, system.query_log, system.query_thread_log by the
+         CreatedReadBufferMMap, CreatedReadBufferMMapFailed, MMappedFileCacheHits, MMappedFileCacheMisses events.
+         Note that the amount of data in mapped files does not consume memory directly and is not accounted
+         in query or server memory usage - because this memory can be discarded similar to OS page cache.
+         The cache is dropped (the files are closed) automatically on removal of old parts in MergeTree,
+         also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
+      -->
+    <mmap_cache_size>1000</mmap_cache_size>
+
+
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
 
