@@ -29,6 +29,7 @@
 #include <common/logger_useful.h>
 #include <random>
 #include <pcg_random.hpp>
+#include <ext/scope_guard_safe.h>
 
 namespace fs = std::filesystem;
 
@@ -820,7 +821,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
 
             task.ops.push_back(create_shard_flag);
-            SCOPE_EXIT({ if (!executed_by_us && !task.ops.empty()) task.ops.pop_back(); });
+            SCOPE_EXIT_MEMORY({ if (!executed_by_us && !task.ops.empty()) task.ops.pop_back(); });
 
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock

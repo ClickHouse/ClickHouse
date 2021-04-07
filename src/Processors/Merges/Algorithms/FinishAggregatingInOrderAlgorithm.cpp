@@ -24,11 +24,13 @@ FinishAggregatingInOrderAlgorithm::FinishAggregatingInOrderAlgorithm(
     const Block & header_,
     size_t num_inputs_,
     AggregatingTransformParamsPtr params_,
-    SortDescription description_)
+    SortDescription description_,
+    size_t max_block_size_)
     : header(header_)
     , num_inputs(num_inputs_)
     , params(params_)
     , description(std::move(description_))
+    , max_block_size(max_block_size_)
 {
     /// Replace column names in description to positions.
     for (auto & column_description : description)
@@ -56,6 +58,13 @@ void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num
 
 IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
 {
+    if (!inputs_to_update.empty())
+    {
+        Status status(inputs_to_update.back());
+        inputs_to_update.pop_back();
+        return status;
+    }
+
     /// Find the input with smallest last row.
     std::optional<size_t> best_input;
     for (size_t i = 0; i < num_inputs; ++i)
@@ -94,16 +103,30 @@ IMergingAlgorithm::Status FinishAggregatingInOrderAlgorithm::merge()
         states[i].to_row = (it == indices.end() ? states[i].num_rows : *it);
     }
 
-    Status status(*best_input);
-    status.chunk = aggregate();
+    addToAggregation();
+
+    /// At least one chunk should be fully aggregated.
+    assert(!inputs_to_update.empty());
+    Status status(inputs_to_update.back());
+    inputs_to_update.pop_back();
+
+    /// Do not merge blocks, if there are too few rows.
+    if (accumulated_rows >= max_block_size)
+        status.chunk = aggregate();
 
     return status;
 }
 
 Chunk FinishAggregatingInOrderAlgorithm::aggregate()
 {
-    BlocksList blocks;
+    auto aggregated = params->aggregator.mergeBlocks(blocks, false);
+    blocks.clear();
+    accumulated_rows = 0;
+    return {aggregated.getColumns(), aggregated.rows()};
+}
 
+void FinishAggregatingInOrderAlgorithm::addToAggregation()
+{
     for (size_t i = 0; i < num_inputs; ++i)
     {
         const auto & state = states[i];
@@ -112,7 +135,7 @@ Chunk FinishAggregatingInOrderAlgorithm::aggregate()
 
         if (state.to_row - state.current_row == state.num_rows)
         {
-            blocks.emplace_back(header.cloneWithColumns(states[i].all_columns));
+            blocks.emplace_back(header.cloneWithColumns(state.all_columns));
         }
         else
         {
@@ -125,10 +148,11 @@ Chunk FinishAggregatingInOrderAlgorithm::aggregate()
         }
 
         states[i].current_row = states[i].to_row;
-    }
+        accumulated_rows += blocks.back().rows();
 
-    auto aggregated = params->aggregator.mergeBlocks(blocks, false);
-    return {aggregated.getColumns(), aggregated.rows()};
+        if (!states[i].isValid())
+            inputs_to_update.push_back(i);
+    }
 }
 
 }
