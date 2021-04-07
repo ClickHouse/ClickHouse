@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 #include <ext/range.h>
 
 
@@ -20,6 +22,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 namespace
@@ -85,8 +88,8 @@ createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_events,
             "Aggregate function '{}' requires at most {} (timestamp, value_column, ...{} events) arguments.",
                 name, max_events + min_required_args, max_events), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (const auto * cond_arg = argument_types[1].get(); cond_arg && !isUInt8(cond_arg))
-        throw Exception("Illegal type " + cond_arg->getName() + " of argument 1 of aggregate function "
+    if (const auto * cond_arg = argument_types[2].get(); cond_arg && !isUInt8(cond_arg))
+        throw Exception("Illegal type " + cond_arg->getName() + " of third argument of aggregate function "
                 + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     for (const auto i : ext::range(min_required_args, argument_types.size()))
@@ -98,12 +101,12 @@ createAggregateFunctionSequenceNode(const std::string & name, UInt64 max_events,
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    if (WhichDataType(argument_types[2].get()).idx != TypeIndex::String)
+    if (WhichDataType(argument_types[1].get()).idx != TypeIndex::String)
         throw Exception{"Illegal type " + argument_types[1].get()->getName()
                 + " of second argument of aggregate function " + name + ", must be String",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-    DataTypePtr data_type = makeNullable(argument_types[2]);
+    DataTypePtr data_type = makeNullable(argument_types[1]);
 
     WhichDataType timestamp_type(argument_types[0].get());
     if (timestamp_type.idx == TypeIndex::UInt8)
@@ -128,6 +131,14 @@ auto createAggregateFunctionSequenceNodeMaxArgs(UInt64 max_events)
 {
     return [max_events](const std::string & name, const DataTypes & argument_types, const Array & parameters)
     {
+        if (CurrentThread::isInitialized())
+        {
+            const Context * query_context = CurrentThread::get().getQueryContext();
+            if (query_context && !query_context->getSettingsRef().allow_experimental_funnel_functions)
+                throw Exception{"Cannot call 'sequenceNextNode' aggregate function because experimental_funnel_functions is not allowed. "
+                    "Set 'allow_experimental_funnel_functions = 1' setting to enable", ErrorCodes::FUNCTION_NOT_ALLOWED};
+        }
+
         return createAggregateFunctionSequenceNode(name, max_events, argument_types, parameters);
     };
 }
