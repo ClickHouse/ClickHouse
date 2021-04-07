@@ -21,7 +21,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
@@ -1610,7 +1610,7 @@ private:
         {
             /// Temporarily apply query settings to context.
             std::optional<Settings> old_settings;
-            SCOPE_EXIT({ if (old_settings) context.setSettings(*old_settings); });
+            SCOPE_EXIT_SAFE({ if (old_settings) context.setSettings(*old_settings); });
             auto apply_query_settings = [&](const IAST & settings_ast)
             {
                 if (!old_settings)
