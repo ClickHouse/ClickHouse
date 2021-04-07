@@ -31,6 +31,7 @@ SRCS(
     DataTypeNothing.cpp
     DataTypeNullable.cpp
     DataTypeNumberBase.cpp
+    DataTypeSecret.cpp
     DataTypeString.cpp
     DataTypeTuple.cpp
     DataTypeUUID.cpp
@@ -57,6 +58,7 @@ SRCS(
     Serializations/SerializationNothing.cpp
     Serializations/SerializationNullable.cpp
     Serializations/SerializationNumber.cpp
+    Serializations/SerializationSecret.cpp
     Serializations/SerializationString.cpp
     Serializations/SerializationTuple.cpp
     Serializations/SerializationTupleElement.cpp

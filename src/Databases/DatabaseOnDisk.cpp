@@ -232,7 +232,7 @@ void DatabaseOnDisk::createTable(
         throw Exception(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
-    String table_metadata_path = getObjectMetadataPath(table_name);
+    const String table_metadata_path = getObjectMetadataPath(table_name);
 
     if (create.attach_short_syntax)
     {
@@ -259,7 +259,7 @@ void DatabaseOnDisk::createTable(
                     backQuote(getDatabaseName()), backQuote(table_name));
     }
 
-    String table_metadata_tmp_path = table_metadata_path + create_suffix;
+    const String table_metadata_tmp_path = table_metadata_path + create_suffix;
     String statement;
 
     {

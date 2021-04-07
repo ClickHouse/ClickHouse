@@ -59,6 +59,7 @@ void registerFunctionAESEncryptMysql(FunctionFactory & factory);
 void registerFunctionAESDecryptMysql(FunctionFactory & factory);
 
 #endif
+void registerFunctionSecret(FunctionFactory & factory);
 
 void registerFunctions()
 {
@@ -118,6 +119,7 @@ void registerFunctions()
 #endif
     registerFunctionTid(factory);
     registerFunctionLogTrace(factory);
+    registerFunctionSecret(factory);
 }
 
 }

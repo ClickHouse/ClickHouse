@@ -129,6 +129,16 @@ Exception::FramePointers Exception::getStackFramePointers() const
     return frame_pointers;
 }
 
+void Exception::replaceMessage(const std::string & new_message)
+{
+    message(new_message);
+}
+
+void ExceptionMessageReplacer::replaceExceptionMessage(Exception & exception, const std::string & new_message)
+{
+    exception.replaceMessage(new_message);
+}
+
 
 void throwFromErrno(const std::string & s, int code, int the_errno)
 {

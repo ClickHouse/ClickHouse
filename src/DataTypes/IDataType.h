@@ -328,6 +328,7 @@ struct WhichDataType
     constexpr bool isString() const { return idx == TypeIndex::String; }
     constexpr bool isFixedString() const { return idx == TypeIndex::FixedString; }
     constexpr bool isStringOrFixedString() const { return isString() || isFixedString(); }
+    constexpr bool isSecret() const { return idx == TypeIndex::Secret; }
 
     constexpr bool isUUID() const { return idx == TypeIndex::UUID; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
@@ -444,6 +445,13 @@ template <typename T>
 inline bool isStringOrFixedString(const T & data_type)
 {
     return WhichDataType(data_type).isStringOrFixedString();
+}
+
+template <typename T>
+inline bool isSecretOrStringOrFixedString(const T & data_type)
+{
+    const WhichDataType type_info(data_type);
+    return type_info.isSecret() || type_info.isStringOrFixedString();
 }
 
 template <typename T>

@@ -15,6 +15,7 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -423,13 +424,27 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         else if (const auto * func = pair->second->as<ASTFunction>())
         {
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
-            auto function = builder->build({});
-            function->prepare({});
+            ColumnsWithTypeAndName arguments;
+
+            // Allow function 'secret' to be evaluated against simple arguments.
+            if (func->name == "secret" && func->arguments)
+            {
+                for (const auto & arg : func->arguments->children)
+                {
+                    if (const auto * literal_argument = arg->as<ASTLiteral>())
+                    {
+                        const auto column_datatype = DataTypeFactory::instance().get(literal_argument->value.getTypeName());
+                        arguments.push_back(ColumnWithTypeAndName(column_datatype->createColumnConst(1, literal_argument->value), column_datatype, literal_argument->getAliasOrColumnName()));
+                    }
+                }
+            }
+            auto function = builder->build(arguments);
+            function->prepare(arguments);
 
             /// We assume that function will not take arguments and will return constant value like tcpPort or hostName
             /// Such functions will return column with size equal to input_rows_count.
             size_t input_rows_count = 1;
-            auto result = function->execute({}, function->getResultType(), input_rows_count);
+            auto result = function->execute(arguments, function->getResultType(), input_rows_count);
 
             Field value;
             result->get(0, value);

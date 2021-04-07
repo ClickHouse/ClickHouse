@@ -381,6 +381,9 @@ function run_tests
 
         # needs psql
         01889_postgresql_protocol_null_fields
+
+        # Depends on MySQL, encrypt and decrypt functions.
+        01801_secrets_from_config
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \

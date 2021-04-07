@@ -57,6 +57,7 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Secrets/SecretsManager.h>
 
 
 namespace ProfileEvents
@@ -77,6 +78,7 @@ namespace ErrorCodes
 {
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 
@@ -230,6 +232,50 @@ static void logException(ContextPtr context, QueryLogElement & elem)
             elem.stack_trace);
 }
 
+static void removeSecretsFromException(const Context & context, Exception & e)
+{
+    static const auto substitute = [](const auto & secret_name)
+    {
+        return fmt::format("secret('{}')", secret_name);
+    };
+    ExceptionMessageReplacer::replaceExceptionMessage(e,
+            context.getSecretsProvider().redactOutAllSecrets(e.message(), substitute));
+}
+
+// removing secrets from current exception, possibly replacing the exception itself by wrapping it into DB::Exception.
+static void removeSecretsFromCurrentException(const Context & context)
+{
+    try
+    {
+        try
+        {
+            throw;
+        }
+        catch (Exception & e)
+        {
+            removeSecretsFromException(context, e);
+        }
+        catch (const Poco::Exception & e)
+        {
+            auto new_exception = Exception(Exception::CreateFromPocoTag{}, e);
+            removeSecretsFromException(context, new_exception);
+            throw std::move(new_exception);
+        }
+        catch (const std::exception & e)
+        {
+            auto new_exception = Exception(Exception::CreateFromSTDTag{}, e);
+            removeSecretsFromException(context, new_exception);
+            throw std::move(new_exception);
+        }
+        catch (...)
+        {
+            throw;
+        }
+    }
+    catch (...)
+    {}
+}
+
 inline UInt64 time_in_microseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {
     return std::chrono::duration_cast<std::chrono::microseconds>(timepoint.time_since_epoch()).count();
@@ -267,7 +313,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
     elem.normalized_query_hash = normalizedQueryHash<false>(query_for_logging);
 
     // We don't calculate query_kind, databases, tables and columns when the query isn't able to start
-
+    removeSecretsFromCurrentException(*context);
     elem.exception_code = getCurrentExceptionCode();
     elem.exception = getCurrentExceptionMessage(false);
 
@@ -828,7 +874,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                  log_queries,
                  log_queries_min_type = settings.log_queries_min_type,
                  log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
-                 quota(quota), status_info_to_query_log] () mutable
+                 quota(quota), status_info_to_query_log] (Exception & e) mutable
             {
                 if (quota)
                     quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
@@ -842,8 +888,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.event_time = time_in_seconds(time_now);
                 elem.event_time_microseconds = time_in_microseconds(time_now);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
-                elem.exception_code = getCurrentExceptionCode();
-                elem.exception = getCurrentExceptionMessage(false);
+
+                removeSecretsFromException(*context, e);
+                elem.exception_code = e.code();
+                elem.exception = getExceptionMessage(e, false);// getCurrentExceptionMessage(false);
 
                 QueryStatus * process_list_elem = context->getProcessListElement();
                 const Settings & current_settings = context->getSettingsRef();
@@ -1103,10 +1151,28 @@ void executeQuery(
             }
         }
     }
+    catch (Exception & e)
+    {
+        streams.onException(e);
+        throw;
+    }
+    catch (const Poco::Exception & e)
+    {
+        auto new_exception = Exception(Exception::CreateFromPocoTag{}, e);
+        streams.onException(new_exception);
+        throw std::move(new_exception);
+    }
+    catch (const std::exception & e)
+    {
+        auto new_exception = Exception(Exception::CreateFromSTDTag{}, e);
+        streams.onException(new_exception);
+        throw std::move(new_exception);
+    }
     catch (...)
     {
-        streams.onException();
-        throw;
+        auto new_exception = Exception("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+        streams.onException(new_exception);
+        throw std::move(new_exception);
     }
 
     streams.onFinish();

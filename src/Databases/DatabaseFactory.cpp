@@ -83,10 +83,11 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
 }
 
 template <typename ValueType>
-static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
+static inline ValueType safeGetLiteralValue(const ASTs &asts, size_t argument_pos, const String &engine_name)
 {
+    const auto & ast = asts[argument_pos];
     if (!ast || !ast->as<ASTLiteral>())
-        throw Exception("Database engine " + engine_name + " requested literal argument.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument {}.", engine_name, argument_pos);
 
     return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
@@ -131,12 +132,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 ErrorCodes::BAD_ARGUMENTS);
 
         ASTs & arguments = engine->arguments->children;
-        arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
+        for (auto & args : arguments)
+            args = evaluateConstantExpressionOrIdentifierAsLiteral(args, context);
 
-        const auto & host_port = safeGetLiteralValue<String>(arguments[0], engine_name);
-        const auto & mysql_database_name = safeGetLiteralValue<String>(arguments[1], engine_name);
-        const auto & mysql_user_name = safeGetLiteralValue<String>(arguments[2], engine_name);
-        const auto & mysql_user_password = safeGetLiteralValue<String>(arguments[3], engine_name);
+        const auto & host_port = safeGetLiteralValue<String>(arguments, 0, engine_name);
+        const auto & mysql_database_name = safeGetLiteralValue<String>(arguments, 1, engine_name);
+        const auto & mysql_user_name = safeGetLiteralValue<String>(arguments, 2, engine_name);
+        const auto & mysql_user_password = safeGetLiteralValue<String>(arguments, 3, engine_name);
 
         try
         {
@@ -191,7 +193,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         const auto & arguments = engine->arguments->children;
 
-        const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
+        const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments, 0, "Lazy");
         return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
     }
 
@@ -204,9 +206,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         const auto & arguments = engine->arguments->children;
 
-        String zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
-        String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
-        String replica_name  = safeGetLiteralValue<String>(arguments[2], "Replicated");
+        String zookeeper_path = safeGetLiteralValue<String>(arguments, 0, "Replicated");
+        String shard_name = safeGetLiteralValue<String>(arguments, 1, "Replicated");
+        String replica_name  = safeGetLiteralValue<String>(arguments, 2, "Replicated");
 
         zookeeper_path = context->getMacros()->expand(zookeeper_path);
         shard_name = context->getMacros()->expand(shard_name);
@@ -238,14 +240,14 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
-        const auto & postgres_database_name = safeGetLiteralValue<String>(engine_args[1], engine_name);
-        const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-        const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+        const auto & host_port = safeGetLiteralValue<String>(engine_args, 0, engine_name);
+        const auto & postgres_database_name = safeGetLiteralValue<String>(engine_args, 1, engine_name);
+        const auto & username = safeGetLiteralValue<String>(engine_args, 2, engine_name);
+        const auto & password = safeGetLiteralValue<String>(engine_args, 3, engine_name);
 
         auto use_table_cache = 0;
         if (engine->arguments->children.size() == 5)
-            use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
+            use_table_cache = safeGetLiteralValue<UInt64>(engine_args, 4, engine_name);
 
         /// Split into replicas if needed.
         size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;

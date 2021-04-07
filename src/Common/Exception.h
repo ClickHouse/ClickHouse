@@ -72,6 +72,9 @@ public:
     FramePointers getStackFramePointers() const;
 
 private:
+    friend class ExceptionMessageReplacer;
+    void replaceMessage(const std::string & new_message);
+
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
     StackTrace trace;
 #endif
@@ -187,6 +190,19 @@ struct ExecutionStatus
     void deserializeText(const std::string & data);
 
     bool tryDeserializeText(const std::string & data);
+};
+
+/** Changes message stored in the Exception.
+ *
+ * Caution: completely rewrites message, should be used only to prevent leaking sensitive information
+ * to logs, clients, etc.
+ *
+ * It is intentionally ugly to discourage usage and to stand out.
+ */
+class ExceptionMessageReplacer
+{
+public:
+    static void replaceExceptionMessage(Exception & exception, const std::string & new_message);
 };
 
 

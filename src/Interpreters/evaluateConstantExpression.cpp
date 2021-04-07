@@ -70,7 +70,13 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, ContextPtr conte
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
-    return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
+
+    auto result = std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
+    // Special case for handling secrets: prevent value from leaking to metadata SQL.
+    if (const auto * function = node->as<ASTFunction>(); function && function->name == "secret")
+        result->setSubstituteOnFormat(node);
+
+    return result;
 }
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, ContextPtr context)

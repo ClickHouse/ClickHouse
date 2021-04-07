@@ -32,7 +32,8 @@ struct BlockIO
 
     /// Callbacks for query logging could be set here.
     std::function<void(IBlockInputStream *, IBlockOutputStream *, QueryPipeline *)>    finish_callback;
-    std::function<void()>                                                              exception_callback;
+    /// Allow callback to modify exception if required: e.g. for redacting out the secrets.
+    std::function<void(Exception &)>                                                   exception_callback;
 
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;
@@ -50,10 +51,10 @@ struct BlockIO
         }
     }
 
-    void onException() const
+    void onException(Exception & e) const
     {
         if (exception_callback)
-            exception_callback();
+            return exception_callback(e);
     }
 
     /// Returns in or converts pipeline to stream. Throws if out is not empty.

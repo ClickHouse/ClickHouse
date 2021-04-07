@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -280,6 +281,17 @@ void IFunctionOverloadResolver::checkNumberOfArguments(size_t number_of_argument
 
 DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
 {
+    // Prevent unintentional access to minimize chances of leaking secrets.
+    if (!canBeExecutedOnSecret())
+    {
+        for (const auto & arg : arguments)
+        {
+            if (arg.type->getTypeId() == TypeIndex::Secret)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {} can't be used to access secrets", getName());
+        }
+    }
+
     if (useDefaultImplementationForLowCardinalityColumns())
     {
         bool has_low_cardinality = false;
@@ -428,5 +440,4 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
 }
 
 #endif
-
 }

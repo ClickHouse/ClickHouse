@@ -73,9 +73,21 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     }
 }
 
-void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked stacked_state) const
 {
-    settings.ostr << applyVisitor(FieldVisitorToString(), value);
+    if (substitute_on_format)
+    {
+        substitute_on_format->formatImpl(settings, state, stacked_state);
+    }
+    else
+    {
+        settings.ostr << applyVisitor(FieldVisitorToString(), value);
+    }
+}
+
+void ASTLiteral::setSubstituteOnFormat(ASTPtr substitute_on_format_)
+{
+    substitute_on_format = substitute_on_format_;
 }
 
 }

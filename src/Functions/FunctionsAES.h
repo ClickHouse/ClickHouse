@@ -151,17 +151,18 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool canBeExecutedOnSecret() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto optional_args = FunctionArgumentDescriptors{
-            {"IV", isStringOrFixedString, nullptr, "Initialization vector binary string"},
+            {"IV", isSecretOrStringOrFixedString, nullptr, "Initialization vector binary string"},
         };
 
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
         {
             optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", isStringOrFixedString, nullptr, "Additional authenticated data binary string for GCM mode"
+                "AAD", isSecretOrStringOrFixedString, nullptr, "Additional authenticated data binary string for GCM mode"
             });
         }
 
@@ -169,7 +170,7 @@ private:
             FunctionArgumentDescriptors{
                 {"mode", isStringOrFixedString, isColumnConst, "encryption mode string"},
                 {"input", isStringOrFixedString, nullptr, "plaintext"},
-                {"key", isStringOrFixedString, nullptr, "encryption key binary string"},
+                {"key", isSecretOrStringOrFixedString, nullptr, "encryption key binary string"},
             },
             optional_args
         );
@@ -426,17 +427,18 @@ private:
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool canBeExecutedOnSecret() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto optional_args = FunctionArgumentDescriptors{
-            {"IV", isStringOrFixedString, nullptr, "Initialization vector binary string"},
+            {"IV", isSecretOrStringOrFixedString, nullptr, "Initialization vector binary string"},
         };
 
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
         {
             optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", isStringOrFixedString, nullptr, "Additional authenticated data binary string for GCM mode"
+                "AAD", isSecretOrStringOrFixedString, nullptr, "Additional authenticated data binary string for GCM mode"
             });
         }
 
@@ -444,7 +446,7 @@ private:
             FunctionArgumentDescriptors{
                 {"mode", isStringOrFixedString, isColumnConst, "decryption mode string"},
                 {"input", nullptr, nullptr, "ciphertext"},
-                {"key", isStringOrFixedString, nullptr, "decryption key binary string"},
+                {"key", isSecretOrStringOrFixedString, nullptr, "decryption key binary string"},
             },
             optional_args
         );

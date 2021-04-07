@@ -351,8 +351,8 @@ void TCPHandler::runImpl()
         }
         catch (const Exception & e)
         {
-            state.io.onException();
             exception.emplace(e);
+            state.io.onException(*exception);
 
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
@@ -375,13 +375,13 @@ void TCPHandler::runImpl()
              *  Although in one of them, we have to send exception to the client, but in the other - we can not.
              *  We will try to send exception to the client in any case - see below.
              */
-            state.io.onException();
             exception.emplace(Exception::CreateFromPocoTag{}, e);
+            state.io.onException(*exception);
         }
         catch (const Poco::Exception & e)
         {
-            state.io.onException();
             exception.emplace(Exception::CreateFromPocoTag{}, e);
+            state.io.onException(*exception);
         }
 // Server should die on std logic errors in debug, like with assert()
 // or ErrorCodes::LOGICAL_ERROR. This helps catch these errors in
@@ -389,21 +389,21 @@ void TCPHandler::runImpl()
 #ifndef NDEBUG
         catch (const std::logic_error & e)
         {
-            state.io.onException();
             exception.emplace(Exception::CreateFromSTDTag{}, e);
+            state.io.onException(*exception);
             sendException(*exception, send_exception_with_stack_trace);
             std::abort();
         }
 #endif
         catch (const std::exception & e)
         {
-            state.io.onException();
             exception.emplace(Exception::CreateFromSTDTag{}, e);
+            state.io.onException(*exception);
         }
         catch (...)
         {
-            state.io.onException();
             exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            state.io.onException(*exception);
         }
 
         try

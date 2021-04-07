@@ -119,6 +119,13 @@ using ThrottlerPtr = std::shared_ptr<Throttler>;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
+class ISecretsProvider;
+class SecretsManager;
+
+#if USE_EMBEDDED_COMPILER
+class CompiledExpressionCache;
+#endif
+
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
 
@@ -341,6 +348,12 @@ public:
       */
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
+
+    /** Sets config used for managing secrets
+     */
+    void setSecretsConfig(const Poco::Util::AbstractConfiguration & config);
+    const ISecretsProvider & getSecretsProvider() const;
+    SecretsManager & getSecretsManager();
 
     /// Sets the current user, checks the credentials and that the specified host is allowed.
     /// Must be called before getClientInfo() can be called.

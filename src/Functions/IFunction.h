@@ -320,6 +320,15 @@ protected:
     // /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
+    /** Should this function be allowed to read values of the DataTypeSecret.
+     *
+     *  To prevent leaking sensitive secrets, all functions except few selected ones shouldn't
+     *  even be able to read secret data.
+     *  If this is set to false and any input is of DataTypeSecret, then exception is thrown.
+     *  No implicit data or type conversion is done if this function returns `true`.
+     */
+    virtual bool canBeExecutedOnSecret() const { return false; }
+
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
@@ -366,6 +375,15 @@ public:
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
+
+    /** Should this function be allowed to read values of the DataTypeSecret.
+     *
+     *  To prevent leaking sensitive secrets, all functions except few selected ones shouldn't
+     *  even be able to read secret data.
+     *  If this is set to false and any input is of DataTypeSecret, then exception is thrown.
+     *  No implicit data or type conversion is done if this function returns `true`.
+     */
+    virtual bool canBeExecutedOnSecret() const { return false; }
 
     /** Some arguments could remain constant during this implementation.
       */

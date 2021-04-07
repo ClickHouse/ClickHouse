@@ -39,11 +39,13 @@ public:
     ASTPtr clone() const override { return std::make_shared<ASTLiteral>(*this); }
 
     void updateTreeHashImpl(SipHash & hash_state) const override;
-
+    void setSubstituteOnFormat(ASTPtr substitute_on_format_);
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked stacked_state) const override;
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
+
+    ASTPtr substitute_on_format;
 };
 
 }

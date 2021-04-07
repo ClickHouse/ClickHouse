@@ -444,6 +444,7 @@ SRCS(
     runningConcurrency.cpp
     runningDifference.cpp
     runningDifferenceStartingWithFirstValue.cpp
+    secret.cpp
     sigmoid.cpp
     sign.cpp
     sin.cpp

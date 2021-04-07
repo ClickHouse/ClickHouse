@@ -59,6 +59,7 @@ enum class TypeIndex
     AggregateFunction,
     LowCardinality,
     Map,
+    Secret
 };
 #if !defined(__clang__)
 #pragma GCC diagnostic pop
@@ -277,6 +278,7 @@ inline constexpr const char * getTypeName(TypeIndex idx)
         case TypeIndex::AggregateFunction: return "AggregateFunction";
         case TypeIndex::LowCardinality: return "LowCardinality";
         case TypeIndex::Map:        return "Map";
+        case TypeIndex::Secret:     return "Secret";
     }
 
     __builtin_unreachable();

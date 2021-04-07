@@ -191,6 +191,8 @@ struct SHA256Impl
         SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         SHA256_Final(out_char_data, &ctx);
     }
+
+    using allow_access_to_secrets = void;
 };
 #endif
 
@@ -529,9 +531,18 @@ struct ImplXxHash64
 
 #endif
 
+template <typename Impl>
+class FunctionHashBase : public IFunction
+{
+    // In order to access secrets, Impl has to define type `allow_access_to_secrets`.
+    template <typename U, typename = void> struct allow_access_to_secrets : std::false_type {};
+    template <typename U> struct allow_access_to_secrets<U, std::void_t<typename U::allow_access_to_secrets>> : std::true_type {};
+
+    bool canBeExecutedOnSecret() const override { return allow_access_to_secrets<Impl>(); }
+};
 
 template <typename Impl>
-class FunctionStringHashFixedString : public IFunction
+class FunctionStringHashFixedString : public FunctionHashBase<Impl>
 {
 public:
     static constexpr auto name = Impl::name;
@@ -546,7 +557,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isStringOrFixedString(arguments[0]))
+        // Some hash functions can also access secrets, see allow_access_to_secrets.
+        if (!isSecretOrStringOrFixedString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -607,7 +619,7 @@ public:
 DECLARE_MULTITARGET_CODE(
 
 template <typename Impl, typename Name>
-class FunctionIntHash : public IFunction
+class FunctionIntHash : public FunctionHashBase<Impl>
 {
 public:
     static constexpr auto name = Name::name;
@@ -730,7 +742,7 @@ private:
 DECLARE_MULTITARGET_CODE(
 
 template <typename Impl>
-class FunctionAnyHash : public IFunction
+class FunctionAnyHash : public FunctionHashBase<Impl>
 {
 public:
     static constexpr auto name = Impl::name;

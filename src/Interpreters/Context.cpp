@@ -19,6 +19,7 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Databases/IDatabase.h>
+#include <Secrets/SecretsManager.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeList.h>
@@ -397,6 +398,8 @@ struct ContextSharedPart
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
 
+    SecretsManager secret_manager;
+
     bool shutdown_called = false;
 
     Stopwatch uptime_watch;
@@ -746,6 +749,21 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
+void Context::setSecretsConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    auto lock = getLock();
+    shared->secret_manager.loadScrets(config);
+}
+
+const ISecretsProvider & Context::getSecretsProvider() const
+{
+    return shared->secret_manager;
+}
+
+SecretsManager & Context::getSecretsManager()
+{
+    return shared->secret_manager;
+}
 
 void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address)
 {

@@ -498,7 +498,7 @@ namespace
         void generateOutputWithProcessors();
 
         void finishQuery();
-        void onException(const Exception & exception);
+        void onException(Exception & exception);
         void onFatalError();
         void close();
 
@@ -616,11 +616,13 @@ namespace
         }
         catch (Poco::Exception & exception)
         {
-            onException(Exception{Exception::CreateFromPocoTag{}, exception});
+            Exception wrapped_exception{Exception::CreateFromPocoTag{}, exception};
+            onException(wrapped_exception);
         }
         catch (std::exception & exception)
         {
-            onException(Exception{Exception::CreateFromSTDTag{}, exception});
+            Exception wrapped_exception{Exception::CreateFromSTDTag{}, exception};
+            onException(wrapped_exception);
         }
     }
 
@@ -1146,9 +1148,9 @@ namespace
             static_cast<double>(waited_for_client_writing) / 1000000000ULL);
     }
 
-    void Call::onException(const Exception & exception)
+    void Call::onException(Exception & exception)
     {
-        io.onException();
+        io.onException(exception);
 
         LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", exception.code(), exception.displayText(), exception.getStackTraceString());
 
