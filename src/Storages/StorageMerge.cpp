@@ -9,6 +9,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -43,12 +44,15 @@ namespace ErrorCodes
 namespace
 {
 
-void modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_result)
+TreeRewriterResult modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_result, const Context & context)
 {
+
+    TreeRewriterResult new_rewriter_result = rewriter_result;
     if (removeJoin(select))
     {
         /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
         select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+        new_rewriter_result.aggregates.clear();
 
         /// Replace select list to remove joined columns
         auto select_list = std::make_shared<ASTExpressionList>();
@@ -57,12 +61,40 @@ void modifySelect(ASTSelectQuery & select, const TreeRewriterResult & rewriter_r
 
         select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
-        /// TODO: keep WHERE/PREWHERE. We have to remove joined columns and their expressions but keep others.
-        select.setExpression(ASTSelectQuery::Expression::WHERE, {});
-        select.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+        const DB::IdentifierMembershipCollector membership_collector{select, context};
+
+        /// Remove unknown identifiers from where, leave only ones from left table
+        auto replace_where = [&membership_collector](ASTSelectQuery & query, ASTSelectQuery::Expression expr)
+        {
+            auto where = query.getExpression(expr, false);
+            if (!where)
+                return;
+
+            const size_t left_table_pos = 0;
+            /// Test each argument of `and` function and select ones related to only left table
+            std::shared_ptr<ASTFunction> new_conj = makeASTFunction("and");
+            for (const auto & node : collectConjunctions(where))
+            {
+                if (membership_collector.getIdentsMembership(node) == left_table_pos)
+                    new_conj->arguments->children.push_back(std::move(node));
+            }
+
+            if (new_conj->arguments->children.empty())
+                /// No identifiers from left table
+                query.setExpression(expr, {});
+            else if (new_conj->arguments->children.size() == 1)
+                /// Only one expression, lift from `and`
+                query.setExpression(expr, std::move(new_conj->arguments->children[0]));
+            else
+                /// Set new expression
+                query.setExpression(expr, std::move(new_conj));
+        };
+        replace_where(select,ASTSelectQuery::Expression::WHERE);
+        replace_where(select,ASTSelectQuery::Expression::PREWHERE);
         select.setExpression(ASTSelectQuery::Expression::HAVING, {});
         select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
     }
+    return new_rewriter_result;
 }
 
 }
@@ -150,8 +182,6 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
-    ASTPtr modified_query = query_info.query->clone();
-    auto & modified_select = modified_query->as<ASTSelectQuery &>();
     /// In case of JOIN the first stage (which includes JOIN)
     /// should be done on the initiator always.
     ///
@@ -159,7 +189,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
     /// (see modifySelect()/removeJoin())
     ///
     /// And for this we need to return FetchColumns.
-    if (removeJoin(modified_select))
+    if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
         return QueryProcessingStage::FetchColumns;
 
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
@@ -304,7 +334,8 @@ Pipe StorageMerge::createSources(
 
     /// Original query could contain JOIN but we need only the first joined table and its columns.
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
-    modifySelect(modified_select, *query_info.syntax_analyzer_result);
+    auto new_analyzer_res = modifySelect(modified_select, *query_info.syntax_analyzer_result, *modified_context);
+    modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
 
@@ -327,7 +358,6 @@ Pipe StorageMerge::createSources(
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
             real_column_names.push_back(ExpressionActions::getSmallestColumn(metadata_snapshot->getColumns().getAllPhysical()));
-
 
         pipe = storage->read(real_column_names, metadata_snapshot, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }

@@ -101,6 +101,7 @@ private:
         OutputProcessorCreator output_processor_creator;
         FileSegmentationEngine file_segmentation_engine;
         bool supports_parallel_formatting{false};
+        bool is_column_oriented{false};
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -155,6 +156,9 @@ public:
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
+    void markFormatAsColumnOriented(const String & name);
+
+    bool checkIfFormatIsColumnOriented(const String & name);
 
     const FormatsDictionary & getAllFormats() const
     {
