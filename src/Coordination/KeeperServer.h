@@ -45,8 +45,7 @@ private:
     /// Allows to avoid race conditions.
     void launchRaftServer(
         const nuraft::raft_params & params,
-        const nuraft::asio_service::options & asio_opts,
-        const nuraft::raft_server::init_options & init_opts);
+        const nuraft::asio_service::options & asio_opts);
 
     void shutdownRaftServer();
 
