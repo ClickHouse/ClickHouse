@@ -12,7 +12,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
@@ -58,7 +57,7 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
     const ColumnUInt8 * condition_column = typeid_cast<const ColumnUInt8 *>(arguments[0].column.get());
 
     size_t args_num = arguments.size();
-    
+
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         if (!condition_column->getData()[i])
@@ -82,7 +81,7 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
                 auto & offsets = current_column->getOffsets();
                 length = offsets[i] - offsets[i - 1];
             }
-            
+
             if (args_idx == 1)
             {
                 first_length = length;
@@ -96,13 +95,13 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
             }
         }
     }
-    
+
     auto res = ColumnUInt8::create(input_rows_count);
     auto & vec_res = res->getData();
     for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         vec_res[row_num] = 1;
 
-    return res; 
+    return res;
 }
 
 void registerFunctionValidateNestedArraySizes(FunctionFactory & factory)
