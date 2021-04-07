@@ -21,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
-    extern const int WRONG_PASSWORD;
 }
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
@@ -127,15 +126,6 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     }
     catch (Exception & e)
     {
-        if (e.code() == ErrorCodes::WRONG_PASSWORD)
-        {
-            response.setStatusAndReason(HTTPServerResponse::HTTP_UNAUTHORIZED);
-            if (!response.sent())
-                writeString("Unauthorized.", *used_output.out);
-            LOG_WARNING(log, "Query processing failed request: '{}' authentication failed", request.getURI());
-            return;
-        }
-
         if (e.code() == ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES)
             return;
 
