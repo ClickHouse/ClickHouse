@@ -9,6 +9,8 @@
 #include <Common/quoteString.h>
 #include <Common/hex.h>
 #include <Common/ActionBlocker.h>
+#include <Common/formatReadable.h>
+#include <Common/Stopwatch.h>
 #include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -523,7 +525,7 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
-    LOG_TRACE(log, "Started processing `{}`", file_path);
+    Stopwatch watch;
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
 
     try
@@ -532,6 +534,10 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = readDistributedHeader(in, log);
+
+        LOG_TRACE(log, "Started processing `{}` ({} rows, {} bytes)", file_path,
+            formatReadableQuantity(distributed_header.rows),
+            formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
         auto connection = pool->get(timeouts, &distributed_header.insert_settings);
         RemoteBlockOutputStream remote{*connection, timeouts,
@@ -550,7 +556,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
     auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     markAsSend(file_path);
-    LOG_TRACE(log, "Finished processing `{}`", file_path);
+    LOG_TRACE(log, "Finished processing `{}` (took {} ms)", file_path, watch.elapsedMilliseconds());
 }
 
 struct StorageDistributedDirectoryMonitor::BatchHeader
@@ -622,6 +628,12 @@ struct StorageDistributedDirectoryMonitor::Batch
             return;
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
+
+        Stopwatch watch;
+
+        LOG_TRACE(parent.log, "Sending a batch of {} files ({} rows, {} bytes).", file_indices.size(),
+            formatReadableQuantity(total_rows),
+            formatReadableSizeWithBinarySuffix(total_bytes));
 
         if (!recovered)
         {
@@ -697,7 +709,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         if (!batch_broken)
         {
-            LOG_TRACE(parent.log, "Sent a batch of {} files.", file_indices.size());
+            LOG_TRACE(parent.log, "Sent a batch of {} files (took {} ms).", file_indices.size(), watch.elapsedMilliseconds());
 
             auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
             for (UInt64 file_index : file_indices)
