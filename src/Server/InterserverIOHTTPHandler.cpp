@@ -30,7 +30,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
     if (server_credentials)
     {
         if (!request.hasCredentials())
-            return server_credentials->isValidUser(std::make_pair("", ""));
+            return server_credentials->isValidUser("", "");
 
         String scheme, info;
         request.getCredentials(scheme, info);
@@ -39,7 +39,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
             return {"Server requires HTTP Basic authentication but client provides another method", false};
 
         Poco::Net::HTTPBasicCredentials credentials(info);
-        return server_credentials->isValidUser(std::make_pair(credentials.getUsername(), credentials.getPassword()));
+        return server_credentials->isValidUser(credentials.getUsername(), credentials.getPassword());
     }
     else if (request.hasCredentials())
     {

@@ -44,6 +44,7 @@ public:
     {}
 
     CheckResult isValidUser(const UserWithPassword & credentials) const;
+    CheckResult isValidUser(const std::string & user, const std::string & password) const;
 
     std::string getUser() const { return current_user; }
 
@@ -56,7 +57,6 @@ private:
 
     /// In common situation this store contains one record
     CurrentCredentials all_users_store;
-
 
     static CurrentCredentials parseCredentialsFromConfig(
         const std::string & current_user_,

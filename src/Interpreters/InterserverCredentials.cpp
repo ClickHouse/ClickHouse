@@ -74,4 +74,9 @@ InterserverCredentials::CheckResult InterserverCredentials::isValidUser(const Us
     return {"", true};
 }
 
+InterserverCredentials::CheckResult InterserverCredentials::isValidUser(const std::string & user, const std::string & password) const
+{
+    return isValidUser(std::make_pair(user, password));
+}
+
 }
