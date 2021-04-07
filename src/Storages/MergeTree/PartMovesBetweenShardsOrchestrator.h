@@ -126,7 +126,7 @@ public:
     void wakeup() { task->schedule(); }
     void shutdown();
 
-    void sync();
+    void fetchStateFromZK();
 
     /// We could have one thread per Entry and worry about concurrency issues.
     /// Or we could have a single thread trying to run one step at a time.

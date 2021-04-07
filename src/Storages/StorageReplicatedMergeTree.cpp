@@ -6604,8 +6604,8 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     String task_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
     LOG_DEBUG(log, "Created task for part movement between shards at " + task_znode_path);
 
-    /// Force refresh local state for making system table up to date after this operation succeeds.
-    part_moves_between_shards_orchestrator.sync();
+    /// Force refresh local state. This will make the task immediately visible in `system.part_moves_between_shards` table.
+    part_moves_between_shards_orchestrator.fetchStateFromZK();
 
     // TODO: Add support for `replication_alter_partitions_sync`.
 }
