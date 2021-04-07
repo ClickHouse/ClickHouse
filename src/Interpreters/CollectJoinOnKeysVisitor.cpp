@@ -49,7 +49,10 @@ void CollectJoinOnKeysMatcher::Data::addJoinKeys(const ASTPtr & left_ast, const 
     else
         throw Exception("Cannot detect left and right JOIN keys. JOIN ON section is ambiguous.",
                         ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-    if (table_no.first != table_no.second && table_no.first > 0 && table_no.second > 0)
+    /// ON section correct if it contains at least one equi expression with different tables at each side.
+    /// Expression with table_no = 0 (unknown) considered as an expression from left table.
+    /// So, we can join ON 1 = t2.x where t2 is the right table, but not ON 1 = t1.x if t1 is the left table.
+    if (table_no.first != table_no.second && (table_no.first > 1 || table_no.second > 1))
         has_some = true;
 }
 
