@@ -1427,7 +1427,7 @@ def date_diff(self):
             dt2 = pytz.timezone(tz).localize(dt_2)
 
             for unit in compare_units:
-                with Example(f"{unit}: {dt1_str} {dt2_str}, {tz}"):
+                with Given(f"{unit}: {dt1_str} {dt2_str}, {tz}"):
                     with When("I compute expected result with Pythons"):
                         expected = date_diff_helper(dt1=dt1, dt2=dt2, unit=unit)
                     with Then(f"I check dateDiff {dt1_str} {dt2_str} in {unit}"):

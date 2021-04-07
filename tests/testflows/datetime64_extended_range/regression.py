@@ -12,11 +12,13 @@ from datetime64_extended_range.common import *
 # cross-outs
 # https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350: 128 and 256-bit types are not supported for now
 # "https://github.com/ClickHouse/ClickHouse/issues/17079#issuecomment-783396589" : leap seconds unsupported
+# https://github.com/ClickHouse/ClickHouse/issues/22824 : dateDiff not working woth dt64
 
 xfails = {
     "type conversion/to int 8 16 32 64 128 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
     "type conversion/to uint 8 16 32 64 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
     "non existent time/leap seconds/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/17079#issuecomment-783396589")],
+    "date time funcs/date diff/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22824")],
 
 }
 
