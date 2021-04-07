@@ -229,6 +229,7 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
 
     auto callback = [&](const Coordination::ListResponse & response)
     {
+        SCOPE_EXIT(event.set());
         code = response.error;
         if (code == Coordination::Error::ZOK)
         {
@@ -236,7 +237,6 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
             if (stat)
                 *stat = response.stat;
         }
-        event.set();
     };
 
     impl->list(path, callback, watch_callback);
@@ -289,10 +289,10 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
 
     auto callback = [&](const Coordination::CreateResponse & response)
     {
+        SCOPE_EXIT(event.set());
         code = response.error;
         if (code == Coordination::Error::ZOK)
             path_created = response.path_created;
-        event.set();
     };
 
     impl->create(path, data, mode & 1, mode & 2, {}, callback);  /// TODO better mode
@@ -357,9 +357,9 @@ Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t vers
 
     auto callback = [&](const Coordination::RemoveResponse & response)
     {
+        SCOPE_EXIT(event.set());
         if (response.error != Coordination::Error::ZOK)
             code = response.error;
-        event.set();
     };
 
     impl->remove(path, version, callback);
@@ -390,10 +390,10 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
 
     auto callback = [&](const Coordination::ExistsResponse & response)
     {
+        SCOPE_EXIT(event.set());
         code = response.error;
         if (code == Coordination::Error::ZOK && stat)
             *stat = response.stat;
-        event.set();
     };
 
     impl->exists(path, callback, watch_callback);
@@ -422,6 +422,7 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
 
     auto callback = [&](const Coordination::GetResponse & response)
     {
+        SCOPE_EXIT(event.set());
         code = response.error;
         if (code == Coordination::Error::ZOK)
         {
@@ -429,7 +430,6 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
             if (stat)
                 *stat = response.stat;
         }
-        event.set();
     };
 
     impl->get(path, callback, watch_callback);
@@ -494,10 +494,10 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
 
     auto callback = [&](const Coordination::SetResponse & response)
     {
+        SCOPE_EXIT(event.set());
         code = response.error;
         if (code == Coordination::Error::ZOK && stat)
             *stat = response.stat;
-        event.set();
     };
 
     impl->set(path, data, version, callback);
@@ -544,9 +544,9 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
 
     auto callback = [&](const Coordination::MultiResponse & response)
     {
+        SCOPE_EXIT(event.set());
         code = response.error;
         responses = response.responses;
-        event.set();
     };
 
     impl->multi(requests, callback);
