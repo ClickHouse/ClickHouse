@@ -26,11 +26,11 @@ namespace ErrorCodes
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
-    auto server_credentials = server.context().getInterserverCredential();
+    auto server_credentials = server.context().getInterserverCredentials();
     if (server_credentials)
     {
         if (!request.hasCredentials())
-            return server_credentials->isValidUser(std::make_pair(default_user, default_password));
+            return server_credentials->isValidUser(std::make_pair("", ""));
 
         String scheme, info;
         request.getCredentials(scheme, info);

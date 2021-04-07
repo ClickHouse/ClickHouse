@@ -324,8 +324,7 @@ struct ContextShared
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_scheme;                              /// http or https
-    mutable std::mutex interserver_io_credentials_mutex;
-    std::shared_ptr<BaseInterserverCredentials> interserver_io_credentials;
+    MultiVersion<InterserverCredentials> interserver_io_credentials;
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
@@ -1735,40 +1734,15 @@ bool Context::hasAuxiliaryZooKeeper(const String & name) const
     return getConfigRef().has("auxiliary_zookeepers." + name);
 }
 
-std::shared_ptr<BaseInterserverCredentials> Context::getInterserverCredential()
+InterserverCredentialsPtr Context::getInterserverCredentials()
 {
-    std::lock_guard lock(shared->interserver_io_credentials_mutex);
-    return shared->interserver_io_credentials;
-}
-
-void Context::setInterserverCredentials(std::shared_ptr<BaseInterserverCredentials> credentials)
-{
-    std::lock_guard lock(shared->interserver_io_credentials_mutex);
-    shared->interserver_io_credentials = credentials;
+    return shared->interserver_io_credentials.get();
 }
 
 void Context::updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config)
 {
-    std::shared_ptr<BaseInterserverCredentials> interserver_credentials = nullptr;
-
-    if (config.has("interserver_http_credentials"))
-    {
-        interserver_credentials = ConfigInterserverCredentials::make(config, "interserver_http_credentials");
-    }
-    else
-    {
-        interserver_credentials = NullInterserverCredentials::make();
-    }
-
-    global_context->setInterserverCredentials(interserver_credentials);
-}
-
-std::pair<String, String> Context::getInterserverCredentials() const
-{
-    std::lock_guard lock(shared->interserver_io_credentials_mutex);
-    auto & credentials = shared->interserver_io_credentials;
-
-    return { credentials->getUser(), credentials->getPassword() };
+    auto credentials = InterserverCredentials::make(config, "interserver_http_credentials");
+    shared->interserver_io_credentials.set(std::move(credentials));
 }
 
 void Context::setInterserverIOAddress(const String & host, UInt16 port)
