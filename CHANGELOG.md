@@ -33,7 +33,6 @@
 * Support `dictHas` function for `RangeHashedDictionary`. Fixes [#6680](https://github.com/ClickHouse/ClickHouse/issues/6680). [#19816](https://github.com/ClickHouse/ClickHouse/pull/19816) ([Maksim Kita](https://github.com/kitaisreal)).
 * Zero-copy replication for `ReplicatedMergeTree` over S3 storage. [#16240](https://github.com/ClickHouse/ClickHouse/pull/16240) ([ianton-ru](https://github.com/ianton-ru)).
 * Extended range of `DateTime64` to properly support dates from year 1925 to 2283. Improved support of `DateTime` around zero date (`1970-01-01`). [#9404](https://github.com/ClickHouse/ClickHouse/pull/9404) ([Vasily Nemkov](https://github.com/Enmk)).
-* Support ThetaSketch to do set operations. [#22207](https://github.com/ClickHouse/ClickHouse/pull/22207) ([Ping Yu](https://github.com/pingyu)).
 
 #### Performance Improvement
 
