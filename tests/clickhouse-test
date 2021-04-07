@@ -18,16 +18,19 @@ from subprocess import TimeoutExpired
 from datetime import datetime
 from time import time, sleep
 from errno import ESRCH
+
 try:
     import termcolor
 except ImportError:
-    termcolor = None import random
+    termcolor = None
+
+import random
 import string
 import multiprocessing
 from contextlib import closing
 
 from ctypes import *
-from signal import SIGUSR2
+from signal import SIGRTMIN
 
 
 MESSAGES_TO_RETRY = [
@@ -115,15 +118,25 @@ def get_db_engine(args, database_name):
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
 
-def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir):
-    # print(client_options)
-
+def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir,
+        test_id: int):
     start_time = datetime.now()
+
+    if args.coverage:
+        tmp_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+
+        try:
+            (server_port, _) = tmp_proc.communicate(("SELECT tcpPort() FORMAT TabSeparated"), timeout=args.timeout)
+        except TimeoutExpired:
+            total_time = (datetime.now() - start_time).total_seconds()
+            return tmp_proc, "", "Timeout getting server TCP port before test", total_time
+
+        send_coverage_signal(int(server_port), test_id)
+
     if args.database:
         database = args.database
         os.environ.setdefault("CLICKHOUSE_DATABASE", database)
         os.environ.setdefault("CLICKHOUSE_TMP", suite_tmp_dir)
-
     else:
         # If --database is not specified, we will create temporary database with unique name
         # And we will recreate and drop it for each test
@@ -133,6 +146,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         database = 'test_{suffix}'.format(suffix=random_str())
 
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+
         try:
             clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args, database)), timeout=args.timeout)
         except TimeoutExpired:
@@ -287,13 +301,15 @@ exit_code = 0
 stop_time = None
 
 libc_ = None
-def send_coverage_signal(pid: int, test_id: int):
-    print("Sent test id " + str(test_id) + " to server")
+def send_coverage_signal(server_port: int, test_id: int):
+    global libc_
+
+    server_pid: int= get_server_pid(server_port)
 
     if libc_ is None:
         libc_ = cdll.LoadLibrary("libc.so.6")
 
-    libc_.sigqueue(pid, SIGUSR2, test_id)
+    libc_.sigqueue(server_pid, SIGRTMIN + 1, test_id)
 
 
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
@@ -380,7 +396,6 @@ def run_tests_array(all_tests_with_params):
                     message = open(disabled_file, 'r').read()
                     status += MSG_SKIPPED + " - " + message + "\n"
                 else:
-
                     if args.testname:
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
                         failed_to_check = False
@@ -400,10 +415,9 @@ def run_tests_array(all_tests_with_params):
                     stdout_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + file_suffix + '.stderr'
 
-                    if args.coverage:
-                        send_coverage_signal(clickhouse_proc.pid, test_id)
-
-                    proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir)
+                    proc, stdout, stderr, total_time = run_single_test(
+                        args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file,
+                        suite_tmp_dir, test_id)
 
                     if proc.returncode is None:
                         try:
@@ -421,10 +435,10 @@ def run_tests_array(all_tests_with_params):
                     else:
                         counter = 1
                         while need_retry(stderr):
-                            if args.coverage:
-                                send_coverage_signal(clickhouse_proc.pid, test_id)
+                            proc, stdout, stderr, total_time = run_single_test(
+                                args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file,
+                                suite_tmp_dir, test_id)
 
-                            proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir)
                             sleep(2**counter)
                             counter += 1
                             if counter > 6:
@@ -1003,7 +1017,7 @@ if __name__ == '__main__':
     group.add_argument('--no-zookeeper', action='store_false', default=None, dest='zookeeper', help='Do not run zookeeper related tests')
 
     group=parser.add_mutually_exclusive_group(required=False)
-    group.add_argument('--shard', action='store_true', default=None, dest='shard', 
+    group.add_argument('--shard', action='store_true', default=None, dest='shard',
         help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 

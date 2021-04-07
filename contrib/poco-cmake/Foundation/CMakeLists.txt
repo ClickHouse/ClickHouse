@@ -206,13 +206,16 @@ if (USE_INTERNAL_POCO_LIBRARY)
                 -Wno-implicit-int-float-conversion
                 -Wno-thread-safety-analysis
                 -Wno-thread-safety-negative
+                ${WITHOUT_COVERAGE}
         )
     endif ()
+
     target_compile_options (_poco_foundation
         PRIVATE
             -Wno-sign-compare
             -Wno-unused-parameter
     )
+
     target_compile_definitions (_poco_foundation
         PRIVATE
             POCO_UNBUNDLED
