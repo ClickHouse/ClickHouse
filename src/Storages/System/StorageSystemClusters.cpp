@@ -23,7 +23,6 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
         {"user", std::make_shared<DataTypeString>()},
         {"default_database", std::make_shared<DataTypeString>()},
         {"errors_count", std::make_shared<DataTypeUInt32>()},
-        {"slowdowns_count", std::make_shared<DataTypeUInt32>()},
         {"estimated_recovery_time", std::make_shared<DataTypeUInt32>()}
     };
 }
@@ -72,7 +71,6 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const Nam
             res_columns[i++]->insert(address.user);
             res_columns[i++]->insert(address.default_database);
             res_columns[i++]->insert(pool_status[replica_index].error_count);
-            res_columns[i++]->insert(pool_status[replica_index].slowdown_count);
             res_columns[i++]->insert(pool_status[replica_index].estimated_recovery_time.count());
         }
     }

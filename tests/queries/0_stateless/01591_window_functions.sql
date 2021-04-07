@@ -316,6 +316,17 @@ SELECT
 FROM numbers(2)
 ;
 
+-- optimize_read_in_order conflicts with sorting for window functions, must
+-- be disabled.
+create table window_mt engine MergeTree order by number
+    as select number, mod(number, 3) p from numbers(100);
+
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 0;
+
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 1;
+
 -- some true window functions -- rank and friends
 select number, p, o,
     count(*) over w,

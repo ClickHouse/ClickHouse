@@ -28,8 +28,7 @@ public:
         PostgreSQLConnectionPtr connection_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_,
-        const std::string & remote_table_schema_ = "");
+        const Context & context_);
 
     String getName() const override { return "PostgreSQL"; }
 
@@ -48,7 +47,6 @@ private:
     friend class PostgreSQLBlockOutputStream;
 
     String remote_table_name;
-    String remote_table_schema;
     Context global_context;
     PostgreSQLConnectionPtr connection;
 };

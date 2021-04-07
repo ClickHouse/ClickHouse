@@ -1,17 +1,16 @@
 #pragma once
 
+#include <Core/Field.h>
+#include <DataTypes/IDataType.h>
+#include <IO/ReadBufferFromString.h>
+#include <Interpreters/IExternalLoadable.h>
+#include <Poco/Util/AbstractConfiguration.h>
+
 #include <map>
 #include <optional>
 #include <string>
 #include <vector>
 
-
-#include <Poco/Util/AbstractConfiguration.h>
-
-#include <Core/Field.h>
-#include <IO/ReadBufferFromString.h>
-#include <DataTypes/IDataType.h>
-#include <Interpreters/IExternalLoadable.h>
 
 namespace DB
 {
@@ -46,7 +45,6 @@ using DictionaryLifetime = ExternalLoadableLifetime;
 /** Holds the description of a single dictionary attribute:
 *    - name, used for lookup into dictionary and source;
 *    - type, used in conjunction with DataTypeFactory and getAttributeUnderlyingTypeByname;
-*    - nested_type, contains nested type of complex type like Nullable, Array
 *    - null_value, used as a default value for non-existent entries in the dictionary,
 *        decimal representation for numeric attributes;
 *    - hierarchical, whether this attribute defines a hierarchy;
@@ -149,7 +147,6 @@ struct DictionaryStructure final
     std::optional<DictionarySpecialAttribute> id;
     std::optional<std::vector<DictionaryAttribute>> key;
     std::vector<DictionaryAttribute> attributes;
-    std::unordered_map<std::string, size_t> attribute_name_to_index;
     std::optional<DictionaryTypedSpecialAttribute> range_min;
     std::optional<DictionaryTypedSpecialAttribute> range_max;
     bool has_expressions = false;
@@ -158,11 +155,8 @@ struct DictionaryStructure final
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
     void validateKeyTypes(const DataTypes & key_types) const;
-
-    const DictionaryAttribute & getAttribute(const std::string & attribute_name) const;
-    const DictionaryAttribute & getAttribute(const std::string & attribute_name, const DataTypePtr & type) const;
-    size_t getKeysSize() const;
-
+    const DictionaryAttribute & getAttribute(const String & attribute_name) const;
+    const DictionaryAttribute & getAttribute(const String & attribute_name, const DataTypePtr & type) const;
     std::string getKeyDescription() const;
     bool isKeySizeFixed() const;
     size_t getKeySize() const;
@@ -173,7 +167,8 @@ private:
     std::vector<DictionaryAttribute> getAttributes(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        bool complex_key_attributes);
+        const bool hierarchy_allowed = true,
+        const bool allow_null_values = true);
 };
 
 }

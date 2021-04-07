@@ -1,6 +1,6 @@
 ---
 toc_priority: 36
-toc_title: "Таблица"
+toc_title: "\u0422\u0430\u0431\u043b\u0438\u0446\u0430"
 ---
 
 # CREATE TABLE {#create-table-query}
@@ -243,4 +243,5 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 
 
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/table) 
 <!--hide-->

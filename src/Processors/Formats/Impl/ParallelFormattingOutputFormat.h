@@ -6,7 +6,6 @@
 #include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
 #include <Common/Exception.h>
-#include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -76,7 +75,10 @@ public:
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
         /// and n threads for formatting.
         processing_units.resize(params.max_threads_for_parallel_formatting + 2);
-        collector_thread = ThreadFromGlobalPool([&] { collectorThreadFunction(); });
+        collector_thread = ThreadFromGlobalPool([thread_group = CurrentThread::getGroup(), this]
+        {
+            collectorThreadFunction(thread_group);
+        });
         LOG_TRACE(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
     }
 
@@ -100,15 +102,6 @@ public:
     void onCancel() override
     {
         finishAndWait();
-    }
-
-    /// There are no formats which support parallel formatting and progress writing at the same time
-    void onProgress(const Progress &) override {}
-
-    String getContentType() const override
-    {
-        WriteBufferFromOwnString buffer;
-        return internal_formatter_creator(buffer)->getContentType();
     }
 
 protected:
@@ -200,14 +193,17 @@ private:
 
     void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number)
     {
-        pool.scheduleOrThrowOnError([this, ticket_number] { formatterThreadFunction(ticket_number); });
+        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), ticket_number]
+        {
+            formatterThreadFunction(ticket_number, thread_group);
+        });
     }
 
     /// Collects all temporary buffers into main WriteBuffer.
-    void collectorThreadFunction();
+    void collectorThreadFunction(const ThreadGroupStatusPtr & thread_group);
 
     /// This function is executed in ThreadPool and the only purpose of it is to format one Chunk into a continuous buffer in memory.
-    void formatterThreadFunction(size_t current_unit_number);
+    void formatterThreadFunction(size_t current_unit_number, const ThreadGroupStatusPtr & thread_group);
 };
 
 }

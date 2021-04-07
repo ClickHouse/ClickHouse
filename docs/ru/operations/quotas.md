@@ -1,6 +1,6 @@
 ---
 toc_priority: 51
-toc_title: "Квоты"
+toc_title: "\u041a\u0432\u043e\u0442\u044b"
 ---
 
 # Квоты {#quotas}
@@ -107,3 +107,4 @@ toc_title: "Квоты"
 
 При перезапуске сервера, квоты сбрасываются.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/quotas/) <!--hide-->

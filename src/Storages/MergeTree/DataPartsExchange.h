@@ -9,12 +9,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 
 
-namespace zkutil
-{
-    class ZooKeeper;
-    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
-}
-
 namespace DB
 {
 
@@ -38,7 +32,6 @@ private:
     MergeTreeData::DataPartPtr findPart(const String & name);
     void sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
     void sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, int client_protocol_version);
-    void sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
@@ -65,10 +58,7 @@ public:
         const String & password,
         const String & interserver_scheme,
         bool to_detached = false,
-        const String & tmp_prefix_ = "",
-        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
-        bool try_use_s3_copy = true,
-        const DiskPtr disk_s3 = nullptr);
+        const String & tmp_prefix_ = "");
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
@@ -88,14 +78,6 @@ private:
             const UUID & part_uuid,
             const StorageMetadataPtr & metadata_snapshot,
             ReservationPtr reservation,
-            PooledReadWriteBufferFromHTTP & in);
-
-    MergeTreeData::MutableDataPartPtr downloadPartToS3(
-            const String & part_name,
-            const String & replica_path,
-            bool to_detached,
-            const String & tmp_prefix_,
-            const Disks & disks_s3,
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData & data;

@@ -19,6 +19,11 @@
 #include <tmmintrin.h>
 #endif
 
+
+template <>
+struct DefaultHash<StringRef> : public StringRefHash {};
+
+
 namespace DB
 {
 namespace ErrorCodes
@@ -63,57 +68,6 @@ constexpr auto getBitmapSize()
         0)));
 }
 
-}
-
-template<typename T, size_t step>
-void fillFixedBatch(size_t num_rows, const T * source, T * dest)
-{
-    for (size_t i = 0; i < num_rows; ++i)
-    {
-        *dest = *source;
-        ++source;
-        dest += step;
-    }
-}
-
-/// Move keys of size T into binary blob, starting from offset.
-/// It is assumed that offset is aligned to sizeof(T).
-/// Example: sizeof(key) = 16, sizeof(T) = 4, offset = 8
-/// out[0] : [--------****----]
-/// out[1] : [--------****----]
-/// ...
-template<typename T, typename Key>
-void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<Key> & out, size_t & offset)
-{
-    for (size_t i = 0; i < keys_size; ++i)
-    {
-        if (key_sizes[i] == sizeof(T))
-        {
-            const auto * column = key_columns[i];
-            size_t num_rows = column->size();
-            out.resize_fill(num_rows);
-
-            /// Note: here we violate strict aliasing.
-            /// It should be ok as log as we do not reffer to any value from `out` before filling.
-            const char * source = static_cast<const ColumnVectorHelper *>(column)->getRawDataBegin<sizeof(T)>();
-            T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
-            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
-            offset += sizeof(T);
-        }
-    }
-}
-
-/// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
-/// binary blob. Keys are placed starting from the longest one.
-template <typename T>
-void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes, PaddedPODArray<T> & out)
-{
-    size_t offset = 0;
-    fillFixedBatch<UInt128>(keys_size, key_columns, key_sizes, out, offset);
-    fillFixedBatch<UInt64>(keys_size, key_columns, key_sizes, out, offset);
-    fillFixedBatch<UInt32>(keys_size, key_columns, key_sizes, out, offset);
-    fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
-    fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
 }
 
 template <typename T>

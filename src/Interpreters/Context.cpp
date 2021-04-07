@@ -30,17 +30,15 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 #include <Access/AccessControlManager.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
-#include <Access/Credentials.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
-#include <Access/ExternalAuthenticators.h>
-#include <Access/GSSAcceptor.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -60,7 +58,6 @@
 #include <Parsers/parseQuery.h>
 #include <Common/StackTrace.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
 #include <Common/TraceCollector.h>
@@ -673,12 +670,6 @@ void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfigur
     shared->access_control_manager.setExternalAuthenticatorsConfig(config);
 }
 
-std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
-{
-    auto lock = getLock();
-    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager.getExternalAuthenticators().getKerberosParams());
-}
-
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
@@ -693,22 +684,29 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
-void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address)
+void Context::setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address)
 {
     auto lock = getLock();
 
-    client_info.current_user = credentials.getUserName();
+    client_info.current_user = name;
     client_info.current_address = address;
 
 #if defined(ARCADIA_BUILD)
     /// This is harmful field that is used only in foreign "Arcadia" build.
-    client_info.current_password.clear();
-    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
-        client_info.current_password = basic_credentials->getPassword();
+    client_info.current_password = password.value_or("");
 #endif
 
-    /// Find a user with such name and check the credentials.
-    auto new_user_id = getAccessControlManager().login(credentials, address.host());
+    /// Find a user with such name and check the password.
+    UUID new_user_id;
+    if (password)
+        new_user_id = getAccessControlManager().login(name, *password, address.host());
+    else
+    {
+        /// Access w/o password is done under interserver-secret (remote_servers.secret)
+        /// So it is okay not to check client's host in this case (since there is trust).
+        new_user_id = getAccessControlManager().getIDOfLoggedUser(name);
+    }
+
     auto new_access = getAccessControlManager().getContextAccess(
         new_user_id, /* current_roles = */ {}, /* use_default_roles = */ true,
         settings, current_database, client_info);
@@ -723,12 +721,12 @@ void Context::setUser(const Credentials & credentials, const Poco::Net::SocketAd
 
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address)
 {
-    setUser(BasicCredentials(name, password), address);
+    setUserImpl(name, password, address);
 }
 
 void Context::setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address)
 {
-    setUser(AlwaysAllowCredentials(name), address);
+    setUserImpl(name, {} /* no password */, address);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -754,7 +752,7 @@ std::optional<UUID> Context::getUserID() const
 }
 
 
-void Context::setCurrentRoles(const std::vector<UUID> & current_roles_)
+void Context::setCurrentRoles(const boost::container::flat_set<UUID> & current_roles_)
 {
     auto lock = getLock();
     if (current_roles == current_roles_ && !use_default_roles)
@@ -1104,6 +1102,7 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     auto lock = getLock();
     for (const SettingChange & change : changes)
         applySettingChange(change);
+    applySettingsQuirks(settings);
 }
 
 
@@ -1542,7 +1541,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
         shared->message_broker_schedule_pool.emplace(
             settings.background_message_broker_schedule_pool_size,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
-            "BgMsgBrkSchPool");
+            "BgMBSchPool");
     return *shared->message_broker_schedule_pool;
 }
 
@@ -1834,17 +1833,12 @@ void Context::setClustersConfig(const ConfigurationPtr & config, const String & 
 {
     std::lock_guard lock(shared->clusters_mutex);
 
-    /// Do not update clusters if this part of config wasn't changed.
-    if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
-        return;
-
-    auto old_clusters_config = shared->clusters_config;
     shared->clusters_config = config;
 
     if (!shared->clusters)
         shared->clusters = std::make_unique<Clusters>(*shared->clusters_config, settings, config_name);
     else
-        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
+        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name);
 }
 
 
@@ -2276,6 +2270,8 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setProfile(shared->system_profile_name);
+
+    applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
     buffer_context = std::make_shared<Context>(*this);

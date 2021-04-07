@@ -50,10 +50,9 @@ inline auto scaleMultiplier(UInt32 scale)
  * whole - represents whole part of decimal, can be negative or positive.
  * fractional - for fractional part of decimal, always positive.
  */
-template <typename DecimalType>
+template <typename T>
 struct DecimalComponents
 {
-    using T = typename DecimalType::NativeType;
     T whole;
     T fractional;
 };
@@ -107,15 +106,6 @@ inline DecimalType decimalFromComponentsWithMultiplier(
     return DecimalType(value);
 }
 
-template <typename DecimalType>
-inline DecimalType decimalFromComponentsWithMultiplier(
-        const DecimalComponents<DecimalType> & components,
-        typename DecimalType::NativeType scale_multiplier)
-{
-    return decimalFromComponentsWithMultiplier<DecimalType>(components.whole, components.fractional, scale_multiplier);
-}
-
-
 /** Make a decimal value from whole and fractional components with given scale.
  *
  * @see `decimalFromComponentsWithMultiplier` for details.
@@ -136,7 +126,7 @@ inline DecimalType decimalFromComponents(
  */
 template <typename DecimalType>
 inline DecimalType decimalFromComponents(
-        const DecimalComponents<DecimalType> & components,
+        const DecimalComponents<typename DecimalType::NativeType> & components,
         UInt32 scale)
 {
     return decimalFromComponents<DecimalType>(components.whole, components.fractional, scale);
@@ -146,7 +136,7 @@ inline DecimalType decimalFromComponents(
  * This is an optimization to reduce number of calls to scaleMultiplier on known scale.
  */
 template <typename DecimalType>
-inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
+inline DecimalComponents<typename DecimalType::NativeType> splitWithScaleMultiplier(
         const DecimalType & decimal,
         typename DecimalType::NativeType scale_multiplier)
 {
@@ -161,7 +151,7 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
 
 /// Split decimal into components: whole and fractional part, @see `DecimalComponents` for details.
 template <typename DecimalType>
-inline DecimalComponents<DecimalType> split(const DecimalType & decimal, UInt32 scale)
+inline DecimalComponents<typename DecimalType::NativeType> split(const DecimalType & decimal, UInt32 scale)
 {
     if (scale == 0)
     {

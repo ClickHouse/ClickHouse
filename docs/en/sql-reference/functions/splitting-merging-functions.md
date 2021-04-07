@@ -150,3 +150,4 @@ Result:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->
