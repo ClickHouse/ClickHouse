@@ -96,7 +96,7 @@ See the dictionary here: [https://en.wikipedia.org/wiki/Mobile_country_code](htt
 
 So, the top countries are: the USA, Germany, and Russia.
 
-You may want to create an [External Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts/) in ClickHouse to decode these values.
+You may want to create an [External Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) in ClickHouse to decode these values.
 
 
 ### Example of using `pointInPolygon` function {#example-of-using}
