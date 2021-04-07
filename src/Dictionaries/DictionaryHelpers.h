@@ -60,7 +60,11 @@ private:
 class DictionaryStorageFetchRequest
 {
 public:
-    DictionaryStorageFetchRequest(const DictionaryStructure & structure, const Strings & attributes_names_to_fetch, Columns attributes_default_values_columns)
+    DictionaryStorageFetchRequest(
+        const DictionaryStructure & structure,
+        const Strings & attributes_names_to_fetch,
+        DataTypes attributes_to_fetch_result_types,
+        Columns attributes_default_values_columns)
         : attributes_to_fetch_names_set(attributes_names_to_fetch.begin(), attributes_names_to_fetch.end())
         , attributes_to_fetch_filter(structure.attributes.size(), false)
     {
@@ -73,7 +77,7 @@ public:
         dictionary_attributes_types.reserve(attributes_size);
         attributes_default_value_providers.reserve(attributes_to_fetch_names_set.size());
 
-        size_t default_values_column_index = 0;
+        size_t attributes_to_fetch_index = 0;
         for (size_t i = 0; i < attributes_size; ++i)
         {
             const auto & dictionary_attribute = structure.attributes[i];
@@ -84,8 +88,16 @@ public:
             if (attributes_to_fetch_names_set.find(name) != attributes_to_fetch_names_set.end())
             {
                 attributes_to_fetch_filter[i] = true;
-                attributes_default_value_providers.emplace_back(dictionary_attribute.null_value, attributes_default_values_columns[default_values_column_index]);
-                ++default_values_column_index;
+                auto & attribute_to_fetch_result_type = attributes_to_fetch_result_types[attributes_to_fetch_index];
+
+                if (!attribute_to_fetch_result_type->equals(*type))
+                    throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Attribute type does not match, expected ({}), found ({})",
+                    attribute_to_fetch_result_type->getName(),
+                    type->getName());
+
+                attributes_default_value_providers.emplace_back(dictionary_attribute.null_value, attributes_default_values_columns[attributes_to_fetch_index]);
+                ++attributes_to_fetch_index;
             }
             else
                 attributes_default_value_providers.emplace_back(dictionary_attribute.null_value);
