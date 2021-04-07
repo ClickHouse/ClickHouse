@@ -485,8 +485,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                             condition,
                             update_expr->clone(),
                             std::make_shared<ASTIdentifier>(column));
+                        condition = makeASTFunction("and", condition, function);
                     }
-                    else
+                    else if (nested_update_exprs.second.size() > 1)
                     {
                         function = std::make_shared<ASTFunction>();
                         function->name = "validateNestedArraySizes";
@@ -495,8 +496,8 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                         function->arguments->children.push_back(condition);
                         for (auto it : nested_update_exprs.second)
                             function->arguments->children.push_back(it->clone());
+                        condition = makeASTFunction("and", condition, function);
                     }
-                    condition = makeASTFunction("and", condition, function);
                 }
 
                 auto updated_column = makeASTFunction("CAST",
