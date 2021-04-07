@@ -72,6 +72,17 @@ void KeeperServer::startup()
     params.return_method_ = nuraft::raft_params::blocking;
 
     nuraft::asio_service::options asio_opts{};
+
+    launchRaftServer(params, asio_opts);
+
+    if (!raft_instance)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
+}
+
+void KeeperServer::launchRaftServer(
+    const nuraft::raft_params & params,
+    const nuraft::asio_service::options & asio_opts)
+{
     nuraft::raft_server::init_options init_options;
 
     init_options.skip_initial_election_timeout_ = state_manager->shouldStartAsFollower();
@@ -81,17 +92,6 @@ void KeeperServer::startup()
         return callbackFunc(type, param);
     };
 
-    launchRaftServer(params, asio_opts, init_options);
-
-    if (!raft_instance)
-        throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
-}
-
-void KeeperServer::launchRaftServer(
-    const nuraft::raft_params & params,
-    const nuraft::asio_service::options & asio_opts,
-    const nuraft::raft_server::init_options & init_opts)
-{
     nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);
     asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger);
@@ -110,9 +110,9 @@ void KeeperServer::launchRaftServer(
         casted_state_manager, casted_state_machine,
         asio_listener, logger, rpc_cli_factory, scheduler, params);
 
-    raft_instance = nuraft::cs_new<nuraft::raft_server>(ctx, init_opts);
+    raft_instance = nuraft::cs_new<nuraft::raft_server>(ctx, init_options);
 
-    raft_instance->start_server(init_opts.skip_initial_election_timeout_);
+    raft_instance->start_server(init_options.skip_initial_election_timeout_);
     asio_listener->listen(raft_instance);
 }
 
