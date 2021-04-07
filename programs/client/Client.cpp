@@ -21,7 +21,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
@@ -527,7 +527,10 @@ private:
         std::cerr << std::fixed << std::setprecision(3);
 
         if (is_interactive)
+        {
+            clearTerminal();
             showClientVersion();
+        }
 
         is_default_format = !config().has("vertical") && !config().has("format");
         if (config().has("vertical"))
@@ -1607,7 +1610,7 @@ private:
         {
             /// Temporarily apply query settings to context.
             std::optional<Settings> old_settings;
-            SCOPE_EXIT({ if (old_settings) context.setSettings(*old_settings); });
+            SCOPE_EXIT_SAFE({ if (old_settings) context.setSettings(*old_settings); });
             auto apply_query_settings = [&](const IAST & settings_ast)
             {
                 if (!old_settings)
@@ -2465,6 +2468,17 @@ private:
     static void showClientVersion()
     {
         std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+    }
+
+    static void clearTerminal()
+    {
+        /// Clear from cursor until end of screen.
+        /// It is needed if garbage is left in terminal.
+        /// Show cursor. It can be left hidden by invocation of previous programs.
+        /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
+        std::cout <<
+            "\033[0J"
+            "\033[?25h";
     }
 
 public:

@@ -357,6 +357,11 @@ void LogBlockOutputStream::writeSuffix()
 
     streams.clear();
     done = true;
+
+    /// unlock should be done from the same thread as lock, and dtor may be
+    /// called from different thread, so it should be done here (at least in
+    /// case of no exceptions occurred)
+    lock.unlock();
 }
 
 

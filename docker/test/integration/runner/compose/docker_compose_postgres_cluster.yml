@@ -1,0 +1,23 @@
+version: '2.3'
+services:
+    postgres2:
+        image: postgres
+        restart: always
+        environment:
+            POSTGRES_PASSWORD: mysecretpassword
+        ports:
+            - 5421:5432
+    postgres3:
+        image: postgres
+        restart: always
+        environment:
+            POSTGRES_PASSWORD: mysecretpassword
+        ports:
+            - 5441:5432
+    postgres4:
+        image: postgres
+        restart: always
+        environment:
+            POSTGRES_PASSWORD: mysecretpassword
+        ports:
+            - 5461:5432

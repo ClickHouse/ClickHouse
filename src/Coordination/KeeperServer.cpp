@@ -150,6 +150,13 @@ void KeeperServer::putRequest(const KeeperStorage::RequestForSession & request_f
 
 int64_t KeeperServer::getSessionID(int64_t session_timeout_ms)
 {
+    /// Just some sanity check. We don't want to make a lot of clients wait with lock.
+    if (active_session_id_requests > 10)
+        throw Exception(ErrorCodes::RAFT_ERROR, "Too many concurrent SessionID requests already in flight");
+
+    ++active_session_id_requests;
+    SCOPE_EXIT({ --active_session_id_requests; });
+
     auto entry = nuraft::buffer::alloc(sizeof(int64_t));
     /// Just special session request
     nuraft::buffer_serializer bs(entry);
@@ -185,14 +192,14 @@ bool KeeperServer::isLeaderAlive() const
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * /* param */)
 {
+    if (initialized_flag)
+        return nuraft::cb_func::ReturnCode::Ok;
+
     size_t last_commited = state_machine->last_commit_index();
     size_t next_index = state_manager->getLogStore()->next_slot();
     bool commited_store = false;
     if (next_index < last_commited || next_index - last_commited <= 1)
         commited_store = true;
-
-    if (initialized_flag)
-        return nuraft::cb_func::ReturnCode::Ok;
 
     auto set_initialized = [this] ()
     {

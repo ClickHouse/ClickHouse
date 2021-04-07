@@ -40,7 +40,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & dbname_,
         const String & postgres_dbname,
-        PostgreSQLConnectionPoolPtr connection_pool_,
+        postgres::PoolWithFailoverPtr connection_pool_,
         const bool cache_tables_)
     : IDatabase(dbname_)
     , global_context(context.getGlobalContext())
@@ -171,7 +171,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, const Conte
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-                StorageID(database_name, table_name), table_name, std::make_shared<PostgreSQLConnectionPool>(*connection_pool),
+                StorageID(database_name, table_name), *connection_pool, table_name,
                 ColumnsDescription{*columns}, ConstraintsDescription{}, context);
 
         if (cache_tables)

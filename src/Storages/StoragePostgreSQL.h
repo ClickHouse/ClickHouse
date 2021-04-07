@@ -9,7 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
+#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
 #include <pqxx/pqxx>
 
 
@@ -23,8 +23,8 @@ class StoragePostgreSQL final : public ext::shared_ptr_helper<StoragePostgreSQL>
 public:
     StoragePostgreSQL(
         const StorageID & table_id_,
+        const postgres::PoolWithFailover & pool_,
         const String & remote_table_name_,
-        PostgreSQLConnectionPoolPtr connection_pool_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const Context & context_,
@@ -49,7 +49,7 @@ private:
     String remote_table_name;
     String remote_table_schema;
     Context global_context;
-    PostgreSQLConnectionPoolPtr connection_pool;
+    postgres::PoolWithFailoverPtr pool;
 };
 
 }
