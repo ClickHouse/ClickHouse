@@ -5,7 +5,7 @@ toc_title: Third-Party Libraries Used
 
 # Third-Party Libraries Used {#third-party-libraries-used}
 
-The list of third-party libraries can be obtained by the followind query:
+The list of third-party libraries can be obtained by the following query:
 
 ```
 SELECT library_name, license_type, license_path FROM system.licenses ORDER BY library_name COLLATE 'en'
