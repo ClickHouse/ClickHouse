@@ -65,6 +65,8 @@ struct Packet
     Progress progress;
     BlockStreamProfileInfo profile_info;
     std::vector<UUID> part_uuids;
+    /// String describes an identifier for a request.
+    /// Used for dynamic distributed data processing (S3 downloading)
     String read_task_request;
 
     Packet() : type(Protocol::Server::Hello) {}
