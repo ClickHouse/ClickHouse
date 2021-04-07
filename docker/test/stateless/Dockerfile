@@ -29,7 +29,7 @@ RUN apt-get update -y \
             unixodbc \
             wget \
             mysql-client=5.7* \
-            postgresql-client
+            postgresql-client-10
 
 RUN pip3 install numpy scipy pandas
 
@@ -42,6 +42,8 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+RUN ln -s /usr/lib/postgresql/10/bin/psql /usr/bin/psql
 
 ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
