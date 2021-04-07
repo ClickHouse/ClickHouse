@@ -7,16 +7,16 @@ toc_title: Cell Towers
 
 This dataset is from [OpenCellid](https://www.opencellid.org/) - The world's largest Open Database of Cell Towers.
 
-As of 2021 it contains more than 40 million records about cell towers (GSM, LTE, UMTS, etc.) around the world with their geographical coordinates and metadata (country code, network, etc).
+As of 2021, it contains more than 40 million records about cell towers (GSM, LTE, UMTS, etc.) around the world with their geographical coordinates and metadata (country code, network, etc).
 
-OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License, and we redistribute a snapshot of this dataset under the terms of the same license. The up to date version of the dataset is available to download after sign in.
+OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License, and we redistribute a snapshot of this dataset under the terms of the same license. The up-to-date version of the dataset is available to download after sign in.
 
 
 ## Get the Dataset {#get-the-dataset}
 
-Download the snapshot of the dataset from Feb 2021: [https://datasets.clickhouse.tech/cell_towers.csv.xz] (729 MB).
+Download the snapshot of the dataset from February 2021: [https://datasets.clickhouse.tech/cell_towers.csv.xz] (729 MB).
 
-Optionally validate the integrity:
+Validate the integrity (optional step):
 ```
 md5sum cell_towers.csv.xz
 8cf986f4a0d9f12c6f384a0e9192c908  cell_towers.csv.xz
@@ -55,10 +55,9 @@ Insert the dataset:
 clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
 ```
 
-
 ## Run some queries {#run-some-queries}
 
-Number of cell towers by type:
+A number of cell towers by type:
 ```
 SELECT radio, count() AS c FROM cell_towers GROUP BY radio ORDER BY c DESC
 
@@ -95,7 +94,7 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 
 See the dictionary here: [https://en.wikipedia.org/wiki/Mobile_country_code](https://en.wikipedia.org/wiki/Mobile_country_code).
 
-So, the top countries are USA, Germany and Russia.
+So, the top countries are: the USA, Germany, and Russia.
 
 You may want to create an [External Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts/) in ClickHouse to decode these values.
 
