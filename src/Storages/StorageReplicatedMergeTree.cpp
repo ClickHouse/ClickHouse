@@ -3757,6 +3757,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
     ReplicatedMergeTreeAddress address;
     ConnectionTimeouts timeouts;
     String interserver_scheme;
+    InterserverCredentialsPtr credentials;
     std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
 
@@ -3772,7 +3773,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         address.fromString(zookeeper->get(source_replica_path + "/host"));
         timeouts = getFetchPartHTTPTimeouts(global_context);
 
-        auto credentials = global_context.getInterserverCredentials();
+        credentials = global_context.getInterserverCredentials();
         interserver_scheme = global_context.getInterserverScheme();
 
         get_part = [&, address, timeouts, credentials, interserver_scheme]()
