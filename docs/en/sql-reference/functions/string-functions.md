@@ -653,26 +653,26 @@ Result:
 ## extractTextFromHTML {#extracttextfromhtml}
 
 A function to extract text from HTML or XHTML.
-It does not necessarily 100% conforms to any of the HTML, XML or XHTML standards, but the implementation is reasonably accurate and it is fast. The rules are the following:
+It does not necessarily 100% conform to any of the HTML, XML or XHTML standards, but the implementation is reasonably accurate and it is fast. The rules are the following:
 
 1. Comments are skipped. Example: `<!-- test -->`. Comment must end with `-->`. Nested comments are not possible.
-Note: constructions like `<!-->` and `<!--->` are not valid comments in HTML but they will be skipped by other rules.
-2. CDATA is pasted verbatim. Note: CDATA is XML/XHTML specific. But we still process it for "best-effort" approach.
-3. `script` and `style` elements are removed with all their content. Note: it's assumed that closing tag cannot appear inside content. For example, in JS string literal has to be escaped like `"<\/script>"`.
-Note: comments and CDATA is possible inside `script` or `style` - then closing tags are not searched inside CDATA. Example: `<script><![CDATA[</script>]]></script>` But they are still searched inside comments. Sometimes it becomes complicated: `<script>var x = "<!--"; </script> var y = "-->"; alert(x + y);</script>`
+Note: constructions like `<!-->` and `<!--->` are not valid comments in HTML but they are skipped by other rules.
+2. CDATA is pasted verbatim. Note: CDATA is XML/XHTML specific. But it is processed for "best-effort" approach.
+3. `script` and `style` elements are removed with all their content. Note: it is assumed that closing tag cannot appear inside content. For example, in JS string literal has to be escaped like `"<\/script>"`.
+Note: comments and CDATA are possible inside `script` or `style` - then closing tags are not searched inside CDATA. Example: `<script><![CDATA[</script>]]></script>` But they are still searched inside comments. Sometimes it becomes complicated: `<script>var x = "<!--"; </script> var y = "-->"; alert(x + y);</script>`
 Note: `script` and `style` can be the names of XML namespaces - then they are not treated like usual `script` or `style` elements. Example: `<script:a>Hello</script:a>`.
 Note: whitespaces are possible after closing tag name: `</script >` but not before: `< / script>`.
 4. Other tags or tag-like elements are skipped without inner content. Example: `<a>.</a>`
-Note: it's expected that this HTML is illegal: `<a test=">"></a>`
-Note: it will also skip something like tags: `<>`, `<!>`, etc.
-Note: tag without end will be skipped to the end of input: `<hello   `
+Note: it is expected that this HTML is illegal: `<a test=">"></a>`
+Note: it also skips something like tags: `<>`, `<!>`, etc.
+Note: tag without end is skipped to the end of input: `<hello   `
 5. HTML and XML entities are not decoded. They must be processed by separate function.
 6. Whitespaces in the text are collapsed or inserted by specific rules.
     - Whitespaces at the beginning and at the end are removed.
     - Consecutive whitespaces are collapsed.
     - But if the text is separated by other elements and there is no whitespace, it is inserted.
-    - It may be unnatural examples: `Hello<b>world</b>`, `Hello<!-- -->world` - in HTML there will be no whitespace, but the function will insert it. But also consider: `Hello<p>world</p>`, `Hello<br>world`. This behavior is reasonable for data analysis, e.g. to convert HTML to a bag of words.
-7. Also note that correct handling of whitespaces would require support of `<pre></pre>` and CSS display and white-space properties.
+    - It may cause unnatural examples: `Hello<b>world</b>`, `Hello<!-- -->world` - there is no whitespace in HTML, but the function inserts it. Also consider: `Hello<p>world</p>`, `Hello<br>world`. This behavior is reasonable for data analysis, e.g. to convert HTML to a bag of words.
+7. Also note that correct handling of whitespaces requires the support of `<pre></pre>` and CSS `display` and `white-space` properties.
 
 **Syntax**
 
@@ -694,7 +694,7 @@ Type: [String](../../sql-reference/data-types/string.md).
 
 The first example contains several tags and a comment and also shows whitespace processing.
 The second example shows `CDATA` and `script` tag processing.
-In the third example a text is extracted from the full HTML response received by the [url](../../sql-reference/table-functions/url.md) function.
+In the third example text is extracted from the full HTML response received by the [url](../../sql-reference/table-functions/url.md) function.
 
 Query:
 
