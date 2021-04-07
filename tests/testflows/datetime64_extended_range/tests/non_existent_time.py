@@ -13,7 +13,7 @@ def invalid_date(self):
     """Check how non-existent date is treated.
     For example, check 31st day in month that only has 30 days.
     """
-    date_range = [930, 1980, 2230]
+    date_range = [1930, 1980, 2230]
 
     if self.context.stress:
         date_range = range(1925, 2238)
@@ -126,11 +126,11 @@ def dst_time_zone_switch(self):
             continue
         with Example(f"{timezone}"):
             tz = pytz.timezone(timezone)
-            transition_times = tz._utc_transition_times[1:]
-            transition_info = tz._transition_info[1:]
+            transition_times = tz._utc_transition_times
+            transition_info = tz._transition_info
 
             for i in range(len(transition_times)-1, 0, -1):
-                if transition_times[i] > datetime.datetime.now():
+                if (transition_times[i] > datetime.datetime.now()) or (transition_times[i].year < 1925) or (transition_times[i].year > 2238):
                     continue
                 with Step(f"{transition_times[i]}"):
                     with By("localize python datetime"):
