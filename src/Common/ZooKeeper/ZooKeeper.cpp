@@ -11,6 +11,7 @@
 #include <Common/randomSeed.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
+#include <ext/scope_guard.h>
 
 #include <Poco/Net/NetException.h>
 
