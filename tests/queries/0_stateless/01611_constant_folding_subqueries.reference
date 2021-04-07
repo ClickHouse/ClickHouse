@@ -1,0 +1,5 @@
+1,10
+1,10
+SELECT 
+    identity(CAST(0, \'UInt64\')) AS n,
+    toUInt64(10 / n)
