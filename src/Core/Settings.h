@@ -428,6 +428,7 @@ class IColumn;
     M(Bool, optimize_on_insert, true, "Do the same transformation for inserted block of data as if merge was done on this block.", 0) \
     M(Bool, allow_experimental_map_type, false, "Allow data type Map", 0) \
     M(Bool, allow_experimental_window_functions, false, "Allow experimental window functions", 0) \
+    M(Bool, allow_experimental_funnel_functions, false, "Allow sequenceNextNode aggregate funcion", 0) \
     M(Bool, use_antlr_parser, false, "Parse incoming queries using ANTLR-generated experimental parser", 0) \
     M(Bool, async_socket_for_remote, true, "Asynchronously read from socket executing remote query", 0) \
     \

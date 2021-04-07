@@ -160,8 +160,8 @@ class SequenceNextNodeImpl final
     static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
 
-    static constexpr size_t base_cond_column_idx = 1;
-    static constexpr size_t event_column_idx = 2;
+    static constexpr size_t base_cond_column_idx = 2;
+    static constexpr size_t event_column_idx = 1;
 
     SequenceBase seq_base_kind;
     SequenceDirection seq_direction;
