@@ -14,9 +14,9 @@ from datetime64_extended_range.common import *
 # "https://github.com/ClickHouse/ClickHouse/issues/17079#issuecomment-783396589" : leap seconds unsupported
 
 xfails = {
-    "type conversion/to int 8 16 32 64 128 256": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
-    "type conversion/to uint 8 16 32 64 256": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
-    "non existent time/leap seconds": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/17079#issuecomment-783396589")],
+    "type conversion/to int 8 16 32 64 128 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
+    "type conversion/to uint 8 16 32 64 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
+    "non existent time/leap seconds/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/17079#issuecomment-783396589")],
 
 }
 
