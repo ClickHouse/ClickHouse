@@ -5,29 +5,29 @@ toc_title: Вышки сотовой связи
 
 # Вышки сотовой связи {#cell-towers}
 
-Этот датасет взят с сайта [OpenCellid](https://www.opencellid.org/) - самой большой в мире открытой базы данных of Cell Towers.
+Источник этого датасета - самая большая в мире открытая база данных о сотовых вышках - [OpenCellid](https://www.opencellid.org/).
 
-К 2021-му году в ней содержится более, чем 40 миллионов записей о сетевых (мобильных?) вышках (GSM, LTE, UMTS, и т.д.) по всему миру с их географическими координатами и метаданными (код страны, сети, и т.д.).
+К 2021-му году здесь накопилось более, чем 40 миллионов записей о сотовых вышках (GSM, LTE, UMTS, и т.д.) по всему миру с их географическими координатами и метаданными (код страны, сети, и т.д.).
 
 OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License, and we redistribute a snapshot of this dataset under the terms of the same license. The up to date version of the dataset is available to download after sign in.
 
 
-## Получаем датасет {#get-the-dataset}
+## Получите датасет {#get-the-dataset}
 
-Загрузить снэпшот датасета за Февраль 2021: [https://datasets.clickhouse.tech/cell_towers.csv.xz] (729 MB).
+Можно загрузить снэпшот датасета за Февраль 2021 [отсюда](https://datasets.clickhouse.tech/cell_towers.csv.xz)(729 MB).
 
-Если нужно, проверяем полноту (целостность):
+Если нужно, проверьте полноту при помощи команды:
 ```
 md5sum cell_towers.csv.xz
 8cf986f4a0d9f12c6f384a0e9192c908  cell_towers.csv.xz
 ```
 
-Распаковываем датасет при помощи следующей команды:
+Распакуйте датасет при помощи команды:
 ```
 xz -d cell_towers.csv.xz
 ```
 
-Создаем таблицу:
+Создайте таблицу:
 
 ```
 CREATE TABLE cell_towers
@@ -50,7 +50,7 @@ CREATE TABLE cell_towers
 ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
 ```
 
-Добавляем датасет:
+Добавьте датасет:
 ```
 clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
 ```
