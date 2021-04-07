@@ -27,10 +27,10 @@ void PartMovesBetweenShardsOrchestrator::run()
 
     try
     {
-        sync();
+        fetchStateFromZK();
 
         if (step())
-            sync();
+            fetchStateFromZK();
         else
             sleep_ms = 3 * 1000;
     }
@@ -50,7 +50,7 @@ void PartMovesBetweenShardsOrchestrator::shutdown()
     LOG_TRACE(log, "PartMovesBetweenShardsOrchestrator thread finished");
 }
 
-void PartMovesBetweenShardsOrchestrator::sync()
+void PartMovesBetweenShardsOrchestrator::fetchStateFromZK()
 {
     std::lock_guard lock(state_mutex);
 
@@ -102,15 +102,16 @@ bool PartMovesBetweenShardsOrchestrator::step()
     if (!entry_to_process.has_value())
         return false;
 
+    /// Since some state transitions are long running (waiting on replicas acknowledgement we create this lock to avoid
+    /// other replicas trying to do the same work. All state transitions should be idempotent so is is safe to lose the
+    /// lock and have another replica retry.
+    ///
+    /// Note: This blocks all other entries from being executed. Technical debt.
+    zkutil::EphemeralNodeHolder::Ptr entry_node_holder;
+
     try
     {
-
-        /// Since some state transitions are long running (waiting on replicas acknowledgement we create this lock to avoid
-        /// other replicas trying to do the same work. All state transitions should be idempotent so is is safe to lose the
-        /// lock and have another replica retry.
-        ///
-        /// Note: This blocks all other entries from being executed. Technical debt.
-        auto entry_node_holder = zkutil::EphemeralNodeHolder::create(entry_to_process->znode_path + "/lock_holder", *zk, storage.replica_name);
+        entry_node_holder = zkutil::EphemeralNodeHolder::create(entry_to_process->znode_path + "/lock_holder", *zk, storage.replica_name);
     }
     catch (const Coordination::Exception & e)
     {
@@ -169,6 +170,8 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry)
             {
                 /// Log entry.
                 Coordination::Requests ops;
+                ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+
                 ReplicatedMergeTreeLogEntryData log_entry;
                 log_entry.type = ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS;
                 log_entry.create_time = std::time(nullptr);
@@ -202,6 +205,8 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry)
             {
                 /// Log entry.
                 Coordination::Requests ops;
+                ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
+
                 ReplicatedMergeTreeLogEntryData log_entry;
                 log_entry.type = ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS;
                 log_entry.create_time = std::time(nullptr);
@@ -236,19 +241,9 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry)
         {
             /// There is a chance that attach on destination will fail and this task will be left in the queue forever.
             /// Make sure table structure doesn't change when there are part movements in progress.
-            ///
-            /// DESTINATION_FETCH is tricky from idempotency standpoint. We must ensure that no orchestrator
-            /// issues a CLONE_PART_FROM_SHARD entry after the source part is dropped.
-            ///
-            /// `makeSetRequest` on the entry is a sloppy mechanism for ensuring that the thread that makes the state
-            /// transition is the last one to issue a CLONE_PART_FROM_SHARD event. We assume here that if last event
-            /// was processed then all the ones prior to that succeeded as well.
-            ///
-            /// If we could somehow create just one entry in the log and record log entry name in the same
-            /// transaction so we could wait for it later the problem would be solved.
             {
                 Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeSetRequest(entry.znode_path, entry.toString(), entry.version));
+                ops.emplace_back(zkutil::makeCheckRequest(entry.znode_path, entry.version));
 
                 /// Log entry.
                 ReplicatedMergeTreeLogEntryData log_entry;
@@ -277,7 +272,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry)
                 Entry entry_copy = entry;
                 entry_copy.state = EntryState::SOURCE_DROP_PRE_DELAY;
                 entry_copy.update_time = std::time(nullptr);
-                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version + 1);
+                zk->set(entry_copy.znode_path, entry_copy.toString(), entry_copy.version);
             }
         }
         break;
