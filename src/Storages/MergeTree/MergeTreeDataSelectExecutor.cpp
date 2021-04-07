@@ -1,5 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 #include <optional>
 #include <unordered_set>
 
@@ -704,7 +704,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()] {
-                    SCOPE_EXIT(
+                    SCOPE_EXIT_SAFE(
                         if (thread_group)
                             CurrentThread::detachQueryIfNotDetached();
                     );

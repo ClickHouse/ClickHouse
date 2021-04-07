@@ -10,7 +10,7 @@
 #include <Storages/IStorage.h>
 
 #include <common/logger_useful.h>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 #include <iomanip>
 #include <Poco/File.h>
 
@@ -61,7 +61,7 @@ void DatabaseLazy::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    SCOPE_EXIT({ clearExpiredTables(); });
+    SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     if (!endsWith(table->getName(), "Log"))
         throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
     DatabaseOnDisk::createTable(context, table_name, table, query);
@@ -78,7 +78,7 @@ void DatabaseLazy::dropTable(
     const String & table_name,
     bool no_delay)
 {
-    SCOPE_EXIT({ clearExpiredTables(); });
+    SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     DatabaseOnDisk::dropTable(context, table_name, no_delay);
 }
 
@@ -90,7 +90,7 @@ void DatabaseLazy::renameTable(
     bool exchange,
     bool dictionary)
 {
-    SCOPE_EXIT({ clearExpiredTables(); });
+    SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, exchange, dictionary);
 }
 
@@ -115,14 +115,14 @@ void DatabaseLazy::alterTable(
 
 bool DatabaseLazy::isTableExist(const String & table_name) const
 {
-    SCOPE_EXIT({ clearExpiredTables(); });
+    SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     std::lock_guard lock(mutex);
     return tables_cache.find(table_name) != tables_cache.end();
 }
 
 StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
 {
-    SCOPE_EXIT({ clearExpiredTables(); });
+    SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     {
         std::lock_guard lock(mutex);
         auto it = tables_cache.find(table_name);
@@ -224,7 +224,7 @@ DatabaseLazy::~DatabaseLazy()
 
 StoragePtr DatabaseLazy::loadTable(const String & table_name) const
 {
-    SCOPE_EXIT({ clearExpiredTables(); });
+    SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
 
     LOG_DEBUG(log, "Load table {} to cache.", backQuote(table_name));
 
