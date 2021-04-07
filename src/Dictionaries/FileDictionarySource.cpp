@@ -101,8 +101,6 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
 
         Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
-        std::cerr << "Check config " << check_config << std::endl;
-
         return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context_local_copy, check_config);
     };
 
