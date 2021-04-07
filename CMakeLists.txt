@@ -284,8 +284,9 @@ if (WITH_COVERAGE)
     if (COMPILER_CLANG)
         message(STATUS "Code coverage runtime: attaching")
 
-        set(WITH_COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard")
-        set(WITHOUT_COVERAGE "-fno-sanitize-coverage=trace-pc-guard")
+        # addr sanitizer needed for symbolizer
+        set(WITH_COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard -fsanitize=address")
+        set(WITHOUT_COVERAGE "-fno-sanitize-coverage=trace-pc-guard -fno-sanitize=address")
     else()
         message(ERROR "As for now, the code coverage is supported in Clang only")
     endif()

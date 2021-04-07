@@ -5,7 +5,7 @@ extern "C" void __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *s
 {
     if (start == stop || *start) return;
 
-    static uint64_t n;
+    static uint32_t n;
     for (uint32_t *edge_index = start; edge_index < stop; edge_index++)
       *edge_index = ++n;
 
@@ -16,7 +16,5 @@ extern "C" void __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *s
 extern "C" void __sanitizer_cov_trace_pc_guard(uint32_t *edge_index)
 {
     if (!*edge_index) return;
-    const void * addr = __builtin_return_address(0);
-    coverage::hit(addr);
-    //*edge_index = 0;
+    coverage::hit(*edge_index, __builtin_return_address(0));
 }
