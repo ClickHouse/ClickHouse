@@ -195,16 +195,32 @@ struct ArrayAggregateImpl
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
                     size_t array_size = offsets[i] - pos;
-                    AggregationType product = 1;
-                    for (i = 0; i < array_size; ++i)
-                        product = product * x;
+                    size_t num = array_size;
+                    AggregationType product = x;
 
                     if constexpr (IsDecimalNumber<Element>)
                     {
-                        res[i] = DecimalUtils::convertTo<Result>(product, data.getScale() * array_size);
+                        using T = decltype(x.value);
+                        T x_val = x.value;
+
+                        for (i = 1; i < array_size; ++i)
+                        {
+                            T product_val = product.value;
+                            while (common::mulOverflow(x_val, product_val, product.value))
+                            {
+                                x_val = x_val / DecimalUtils::scaleMultiplier<T>(data.getScale());
+                                if (num == 1)
+                                    throw Exception("arrayProduct for decimal type overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                                --num;
+                            }
+                        }
+
+                        res[i] = DecimalUtils::convertTo<Result>(product, data.getScale() * num);
                     }
                     else
                     {
+                        for (i = 1; i < array_size; ++i)
+                            product = product * x;
                         res[i] = product;
                     }
                 }
@@ -267,7 +283,23 @@ struct ArrayAggregateImpl
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
-                    s *= element;
+                    if constexpr (IsDecimalNumber<Element>)
+                    {
+                        using T = decltype(s.value);
+                        T s_val = s.value;
+                        T element_val = element.value;
+                        while (common::mulOverflow(s_val, element_val, s.value))
+                        {
+                            s_val = s_val / DecimalUtils::scaleMultiplier<T>(data.getScale());
+                            if (count == 0)
+                                throw Exception("arrayProduct for decimal type overflow", ErrorCodes::DECIMAL_OVERFLOW);
+                            --count;
+                        }
+                    }
+                    else
+                    {
+                        s *= element;
+                    }
                 }
 
                 ++count;
