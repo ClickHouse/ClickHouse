@@ -462,6 +462,9 @@ class SourceCassandra(ExternalSource):
         )
 
     def prepare(self, structure, table_name, cluster):
+        if self.internal_hostname is None:
+            self.internal_hostname = cluster.cassandra_ip
+
         self.client = cassandra.cluster.Cluster([self.internal_hostname], port=self.internal_port)
         self.session = self.client.connect()
         self.session.execute(

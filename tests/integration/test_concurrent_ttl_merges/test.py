@@ -116,7 +116,7 @@ def test_limited_ttl_merges_in_empty_pool_replicated(started_cluster):
     node1.query("SYSTEM STOP TTL MERGES")
 
     for i in range(100):
-        node1.query("INSERT INTO replicated_ttl SELECT now() - INTERVAL 1 MONTH, {}, number FROM numbers(1)".format(i))
+        node1.query_with_retry("INSERT INTO replicated_ttl SELECT now() - INTERVAL 1 MONTH, {}, number FROM numbers(1)".format(i))
 
     assert node1.query("SELECT COUNT() FROM replicated_ttl") == "100\n"
 
@@ -147,7 +147,7 @@ def test_limited_ttl_merges_two_replicas(started_cluster):
     node2.query("SYSTEM STOP TTL MERGES")
 
     for i in range(100):
-        node1.query(
+        node1.query_with_retry(
             "INSERT INTO replicated_ttl_2 SELECT now() - INTERVAL 1 MONTH, {}, number FROM numbers(10000)".format(i))
 
     node2.query("SYSTEM SYNC REPLICA replicated_ttl_2", timeout=10)
