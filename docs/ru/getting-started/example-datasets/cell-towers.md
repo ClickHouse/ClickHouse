@@ -15,44 +15,44 @@ OpenCelliD Project имеет лицензию Creative Commons Attribution-Shar
 
 1. Если нужно, проверьте полноту при помощи команды:
 
-    ```
-    md5sum cell_towers.csv.xz
-    8cf986f4a0d9f12c6f384a0e9192c908  cell_towers.csv.xz
-    ```
+```
+md5sum cell_towers.csv.xz
+8cf986f4a0d9f12c6f384a0e9192c908  cell_towers.csv.xz
+```
 
 1. Распакуйте датасет при помощи команды:
 
-    ```
-    xz -d cell_towers.csv.xz
-    ```
+```
+xz -d cell_towers.csv.xz
+```
 
 1. Создайте таблицу:
 
-    ```
-    CREATE TABLE cell_towers
-    (
-        radio Enum8('' = 0, 'CDMA' = 1, 'GSM' = 2, 'LTE' = 3, 'NR' = 4, 'UMTS' = 5),
-        mcc UInt16,
-        net UInt16,
-        area UInt16,
-        cell UInt64,
-        unit Int16,
-        lon Float64,
-        lat Float64,
-        range UInt32,
-        samples UInt32,
-        changeable UInt8,
-        created DateTime,
-        updated DateTime,
-        averageSignal UInt8
-    )
-    ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
-    ```
+```
+CREATE TABLE cell_towers
+(
+    radio Enum8('' = 0, 'CDMA' = 1, 'GSM' = 2, 'LTE' = 3, 'NR' = 4, 'UMTS' = 5),
+    mcc UInt16,
+    net UInt16,
+    area UInt16,
+    cell UInt64,
+    unit Int16,
+    lon Float64,
+    lat Float64,
+    range UInt32,
+    samples UInt32,
+    changeable UInt8,
+    created DateTime,
+    updated DateTime,
+    averageSignal UInt8
+)
+ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
+```
 
 1. Добавьте датасет:
-    ```
-    clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
-    ```
+```
+clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
+```
 
 ## Как проверить некоторые запросы {#run-some-queries}
 
@@ -103,9 +103,9 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 
 1. Создаем таблицу, в которой будем хранить многоугольники:
 
-    ```
-    CREATE TEMPORARY TABLE moscow (polygon Array(Tuple(Float64, Float64)));
-    ```
+```
+CREATE TEMPORARY TABLE moscow (polygon Array(Tuple(Float64, Float64)));
+```
 
 1. Очертания Москвы выглядят приблизительно так ("Новая Москва" в них не включена):
 
@@ -115,15 +115,15 @@ INSERT INTO moscow VALUES ([(37.84172564285271, 55.78000432402266), (37.83812076
 
 1. Проверяем, сколько сотовых вышек находится в Москве:
 
-    ```
-    SELECT count() FROM cell_towers WHERE pointInPolygon((lon, lat), (SELECT * FROM moscow))
+```
+SELECT count() FROM cell_towers WHERE pointInPolygon((lon, lat), (SELECT * FROM moscow))
 
-    ┌─count()─┐
-    │  310463 │
-    └─────────┘
+┌─count()─┐
+│  310463 │
+└─────────┘
 
-    1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
-    ```
+1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
+```
 
 Можно попробовать другие запросы с помощью интерактивного ресурса [Песочницы](https://gh-api.clickhouse.tech/play?user=play), например, [вот так](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=). Но тут нельзя создавать временные таблицы.
 
