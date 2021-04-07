@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/MergeTreeReaderCompact.h>
 
 
 #include <Databases/IDatabase.h>
@@ -59,7 +60,7 @@
 
 #include <ext/range.h>
 #include <ext/scope_guard.h>
-#include "Storages/MergeTree/MergeTreeReaderCompact.h"
+#include <ext/scope_guard_safe.h>
 
 #include <ctime>
 #include <thread>
@@ -3693,7 +3694,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         }
     }
 
-    SCOPE_EXIT
+    SCOPE_EXIT_MEMORY
     ({
         std::lock_guard lock(currently_fetching_parts_mutex);
         currently_fetching_parts.erase(part_name);
@@ -3901,7 +3902,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         }
     }
 
-    SCOPE_EXIT
+    SCOPE_EXIT_MEMORY
     ({
         std::lock_guard lock(currently_fetching_parts_mutex);
         currently_fetching_parts.erase(part_name);
