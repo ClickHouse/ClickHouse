@@ -46,10 +46,7 @@ public:
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override
-    {
-        return QueryProcessingStage::Enum::WithMergeableState;
-    }
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 
     NamesAndTypesList getVirtuals() const override;
 
