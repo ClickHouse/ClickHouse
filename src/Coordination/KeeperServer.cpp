@@ -39,7 +39,6 @@ KeeperServer::KeeperServer(
 
 void KeeperServer::startup()
 {
-
     state_machine->init();
 
     state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
@@ -73,15 +72,22 @@ void KeeperServer::startup()
 
     nuraft::asio_service::options asio_opts{};
     nuraft::raft_server::init_options init_options;
+
     init_options.skip_initial_election_timeout_ = state_manager->shouldStartAsFollower();
     init_options.raft_callback_ = [this] (nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
     {
         return callbackFunc(type, param);
     };
 
-    raft_instance = launcher.init(
-        state_machine, state_manager, nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level), state_manager->getPort(),
-        asio_opts, params, init_options);
+    {
+        /// We use this lock here because NuRaft start background threads in
+        /// raft_server constructor. These threads may call raft_callback
+        /// (callbackFunc) before raft_instance object fully constructed.
+        std::lock_guard lock(initialized_mutex);
+        raft_instance = launcher.init(
+            state_machine, state_manager, nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings->raft_logs_level), state_manager->getPort(),
+            asio_opts, params, init_options);
+    }
 
     if (!raft_instance)
         throw Exception(ErrorCodes::RAFT_ERROR, "Cannot allocate RAFT instance");
@@ -201,9 +207,12 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
     if (next_index < last_commited || next_index - last_commited <= 1)
         commited_store = true;
 
+    /// We use this lock here because NuRaft starts background threads in
+    /// raft_server constructor. So this callback can be called before
+    /// raft_instance object fully initialized. This lock allows to avoid this.
+    std::unique_lock lock(initialized_mutex);
     auto set_initialized = [this] ()
     {
-        std::unique_lock lock(initialized_mutex);
         initialized_flag = true;
         initialized_cv.notify_all();
     };
