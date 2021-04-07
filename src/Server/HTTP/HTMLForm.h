@@ -52,24 +52,6 @@ public:
         return (it != end()) ? DB::parse<T>(it->second) : default_value;
     }
 
-    template <typename T>
-    T getParsed(const std::string & key)
-    {
-        return DB::parse<T>(get(key));
-    }
-
-    /// Sets the encoding used for posting the form.
-    /// Encoding must be either "application/x-www-form-urlencoded" (which is the default) or "multipart/form-data".
-    void setEncoding(const std::string & encoding);
-
-    /// Returns the encoding used for posting the form.
-    const std::string & getEncoding() const { return encoding; }
-
-    /// Adds an part/attachment (file upload) to the form.
-    /// The form takes ownership of the PartSource and deletes it when it is no longer needed.
-    /// The part will only be sent if the encoding set for the form is "multipart/form-data"
-    void addPart(const std::string & name, Poco::Net::PartSource * pSource);
-
     /// Reads the form data from the given HTTP request.
     /// Uploaded files are passed to the given PartHandler.
     void load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler);
@@ -78,40 +60,9 @@ public:
     /// Uploaded files are silently discarded.
     void load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody);
 
-    /// Reads the form data from the given HTTP request.
-    /// The request must be a GET request and the form data must be in the query string (URL encoded).
-    /// For POST requests, you must use one of the overloads taking an additional input stream for the request body.
-    void load(const Poco::Net::HTTPRequest & request);
-
-    /// Reads the form data from the given input stream.
-    /// The form data read from the stream must be in the encoding specified for the form.
-    /// Note that read() does not clear the form before reading the new values.
-    void read(ReadBuffer & in, PartHandler & handler);
-
     /// Reads the URL-encoded form data from the given input stream.
     /// Note that read() does not clear the form before reading the new values.
     void read(ReadBuffer & in);
-
-    /// Reads the form data from the given HTTP query string.
-    /// Note that read() does not clear the form before reading the new values.
-    void read(const std::string & queryString);
-
-    /// Returns the MIME boundary used for writing multipart form data.
-    const std::string & getBoundary() const { return boundary; }
-
-    /// Returns the maximum number of header fields allowed.
-    /// See setFieldLimit() for more information.
-    int getFieldLimit() const { return field_limit; }
-
-    /// Sets the maximum number of header fields allowed. This limit is used to defend certain kinds of denial-of-service attacks.
-    /// Specify 0 for unlimited (not recommended). The default limit is 100.
-    void setFieldLimit(int limit);
-
-    /// Sets the maximum size for form field values stored as strings.
-    void setValueLengthLimit(int limit);
-
-    /// Returns the maximum size for form field values stored as strings.
-    int getValueLengthLimit() const { return value_length_limit; }
 
     static const std::string ENCODING_URL; /// "application/x-www-form-urlencoded"
     static const std::string ENCODING_MULTIPART; /// "multipart/form-data"

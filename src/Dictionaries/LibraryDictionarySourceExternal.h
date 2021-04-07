@@ -101,7 +101,7 @@ using RequestedIds = const VectorUInt64 *;
 using LibraryLoadIdsFunc = RawClickHouseLibraryTable (*)(LibraryData, LibrarySettings, RequestedColumnsNames, RequestedIds);
 
 using RequestedKeys = Table *;
-/// There is no requested columns names for load keys func
+/// There are no requested column names for load keys func
 using LibraryLoadKeysFunc = RawClickHouseLibraryTable (*)(LibraryData, LibrarySettings, RequestedKeys);
 
 using LibraryIsModifiedFunc = bool (*)(LibraryContext, LibrarySettings);

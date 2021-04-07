@@ -210,7 +210,7 @@ SRCS(
     cbrt.cpp
     coalesce.cpp
     concat.cpp
-    connectionID.cpp
+    connectionId.cpp
     convertCharset.cpp
     cos.cpp
     cosh.cpp
@@ -309,6 +309,7 @@ SRCS(
     isConstant.cpp
     isDecimalOverflow.cpp
     isFinite.cpp
+    isIPAddressContainedIn.cpp
     isInfinite.cpp
     isNaN.cpp
     isNotNull.cpp
@@ -373,6 +374,7 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    partitionId.cpp
     pi.cpp
     plus.cpp
     pointInEllipses.cpp
