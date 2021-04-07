@@ -15,6 +15,7 @@ endif ()
 add_executable(clickhouse-library-bridge ${CLICKHOUSE_LIBRARY_BRIDGE_SOURCES})
 
 target_link_libraries(clickhouse-library-bridge PRIVATE
+    daemon
     dbms
     bridge
 )

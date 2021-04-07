@@ -450,22 +450,22 @@ def test_many_connections(started_cluster):
     conn = get_postgres_conn()
     cursor = conn.cursor()
 
-    cursor.execute('DROP TABLE IF EXISTS clickhouse.test_table')
-    cursor.execute('CREATE TABLE clickhouse.test_table (key integer, value integer)')
+    cursor.execute('DROP TABLE IF EXISTS clickhouse.test_pg_table')
+    cursor.execute('CREATE TABLE clickhouse.test_pg_table (key integer, value integer)')
 
     node1.query('''
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (key UInt32, value UInt32)
-        ENGINE = ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_table')''')
+        DROP TABLE IF EXISTS test_pg_table;
+        CREATE TABLE test_pg_table (key UInt32, value UInt32)
+        ENGINE = ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_pg_table')''')
 
-    node1.query("INSERT INTO test_table SELECT number, number FROM numbers(10)")
+    node1.query("INSERT INTO test_pg_table SELECT number, number FROM numbers(10)")
 
     query = "SELECT count() FROM ("
     for i in range (24):
         query += "SELECT key FROM {t} UNION ALL "
     query += "SELECT key FROM {t})"
 
-    assert node1.query(query.format(t='test_table')) == '250\n'
+    assert node1.query(query.format(t='test_pg_table')) == '250\n'
 
 
 def test_concurrent_queries(started_cluster):
@@ -473,35 +473,35 @@ def test_concurrent_queries(started_cluster):
     cursor = conn.cursor()
 
     node1.query('''
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (key UInt32, value UInt32)
-        ENGINE = ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_table')''')
+        DROP TABLE IF EXISTS test_pg_table;
+        CREATE TABLE test_pg_table (key UInt32, value UInt32)
+        ENGINE = ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_pg_table')''')
 
-    cursor.execute('DROP TABLE IF EXISTS clickhouse.test_table')
-    cursor.execute('CREATE TABLE clickhouse.test_table (key integer, value integer)')
+    cursor.execute('DROP TABLE IF EXISTS clickhouse.test_pg_table')
+    cursor.execute('CREATE TABLE clickhouse.test_pg_table (key integer, value integer)')
 
     def node_insert(_):
         for i in range(5):
-            node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
+            node1.query("INSERT INTO test_pg_table SELECT number, number FROM numbers(1000)", user='default')
 
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert, range(5))
     p.wait()
-    result = node1.query("SELECT count() FROM test_table", user='default')
+    result = node1.query("SELECT count() FROM test_pg_table", user='default')
     print(result)
     assert(int(result) == 5 * 5 * 1000)
 
     def node_insert_select(_):
         for i in range(5):
-            result = node1.query("INSERT INTO test_table SELECT number, number FROM numbers(1000)", user='default')
-            result = node1.query("SELECT * FROM test_table LIMIT 100", user='default')
+            result = node1.query("INSERT INTO test_pg_table SELECT number, number FROM numbers(1000)", user='default')
+            result = node1.query("SELECT * FROM test_pg_table LIMIT 100", user='default')
 
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert_select, range(5))
     p.wait()
-    result = node1.query("SELECT count() FROM test_table", user='default')
+    result = node1.query("SELECT count() FROM test_pg_table", user='default')
     print(result)
     assert(int(result) == 5 * 5 * 1000  * 2)
 
-    node1.query('DROP TABLE test_table;')
-    cursor.execute('DROP TABLE clickhouse.test_table;')
+    node1.query('DROP TABLE test_pg_table;')
+    cursor.execute('DROP TABLE clickhouse.test_pg_table;')
