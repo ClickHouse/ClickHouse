@@ -69,7 +69,12 @@ InterserverCredentials::CheckResult InterserverCredentials::isValidUser(const Us
     auto itr = std::find(all_users_store.begin(), all_users_store.end(), credentials);
 
     if (itr == all_users_store.end())
+    {
+        if (credentials.first.empty())
+            return {"Server requires HTTP Basic authentication, but client doesn't provide it", false};
+
         return {"Incorrect user or password in HTTP basic authentication: " + credentials.first, false};
+    }
 
     return {"", true};
 }
