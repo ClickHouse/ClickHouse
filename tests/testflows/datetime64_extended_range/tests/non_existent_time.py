@@ -96,7 +96,7 @@ def leap_seconds(self, datet, years):
     Being checked by selecting a timestamp prior to leap second and adding seconds so that the result is after it.
     """
     for year in years:
-        with Example(f"{datet}, {year}"):
+        with When(f"{datet}, {year}"):
             with By("forming an expected result using python"):
                 dt_str = f"{year}-{datet}"
                 dt = datetime.datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
