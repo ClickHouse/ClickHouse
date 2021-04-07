@@ -38,7 +38,7 @@ static size_t tryAddNewFilterStep(
 
     auto * filter = static_cast<FilterStep *>(parent.get());
     const auto & expression = filter->getExpression();
-    const auto & filter_column_name = filter->getFilterColumnName();
+    const auto filter_column_name = filter->getFilterColumnName();
     bool removes_filter = filter->removesFilterColumn();
 
     // std::cerr << "Filter: \n" << expression->dumpDAG() << std::endl;
@@ -75,9 +75,10 @@ static size_t tryAddNewFilterStep(
 
     /// New filter column is added to the end.
     auto split_filter_column_name = (*split_filter->getIndex().rbegin())->result_name;
+    bool remove_split_filter_column = (split_filter_column_name != filter_column_name || removes_filter);
     node.step = std::make_unique<FilterStep>(
             node.children.at(0)->step->getOutputStream(),
-            std::move(split_filter), std::move(split_filter_column_name), true);
+            std::move(split_filter), std::move(split_filter_column_name), remove_split_filter_column);
 
     return 3;
 }
