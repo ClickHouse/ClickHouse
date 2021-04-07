@@ -567,7 +567,7 @@ void DatabaseAtomic::renameDictionaryInMemoryUnlocked(const StorageID & old_name
     auto result = external_loader.getLoadResult(toString(old_name.uuid));
     if (!result.object)
         return;
-    const auto & dict = dynamic_cast<const IDictionaryBase &>(*result.object);
+    const auto & dict = dynamic_cast<const IDictionary &>(*result.object);
     dict.updateDictionaryName(new_name);
 }
 void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)

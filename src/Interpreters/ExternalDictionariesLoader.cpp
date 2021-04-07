@@ -46,13 +46,13 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, const Context & context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, context.getCurrentDatabase());
-    return std::static_pointer_cast<const IDictionaryBase>(load(resolved_dictionary_name));
+    return std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, const Context & context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, context.getCurrentDatabase());
-    return std::static_pointer_cast<const IDictionaryBase>(tryLoad(resolved_dictionary_name));
+    return std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 }
 
 

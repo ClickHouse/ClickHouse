@@ -24,7 +24,7 @@ public:
     using Key = UInt64;
 
     RangeDictionaryBlockInputStream(
-        std::shared_ptr<const IDictionaryBase> dictionary,
+        std::shared_ptr<const IDictionary> dictionary,
         size_t max_block_size,
         const Names & column_names,
         PaddedPODArray<Key> && ids_to_fill,
@@ -49,7 +49,7 @@ private:
         const PaddedPODArray<RangeType> & block_start_dates,
         const PaddedPODArray<RangeType> & block_end_dates) const;
 
-    std::shared_ptr<const IDictionaryBase> dictionary;
+    std::shared_ptr<const IDictionary> dictionary;
     NameSet column_names;
     PaddedPODArray<Key> ids;
     PaddedPODArray<RangeType> start_dates;
@@ -59,7 +59,7 @@ private:
 
 template <typename RangeType>
 RangeDictionaryBlockInputStream<RangeType>::RangeDictionaryBlockInputStream(
-    std::shared_ptr<const IDictionaryBase> dictionary_,
+    std::shared_ptr<const IDictionary> dictionary_,
     size_t max_block_size_,
     const Names & column_names_,
     PaddedPODArray<Key> && ids_,

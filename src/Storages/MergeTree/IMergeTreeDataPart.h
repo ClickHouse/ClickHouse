@@ -16,7 +16,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Columns/IColumn.h>
 
 #include <Poco/Path.h>
 
@@ -54,6 +53,8 @@ namespace ErrorCodes
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
+    static constexpr auto DATA_FILE_EXTENSION = ".bin";
+
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
     using ValueSizeMap = std::map<std::string, double>;
@@ -62,7 +63,7 @@ public:
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
-    using NameToPosition = std::unordered_map<std::string, size_t>;
+    using NameToNumber = std::unordered_map<std::string, size_t>;
 
     using Type = MergeTreeDataPartType;
 
@@ -202,8 +203,8 @@ public:
      *
      * Possible state transitions:
      * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:    we could not to add a part to active set and doing a rollback (for example it is duplicated part)
-     * Precommitted -> Committed:    we successfully committed a part to active dataset
+     * Precommitted -> Outdated:    we could not add a part to active set and are doing a rollback (for example it is duplicated part)
+     * Precommitted -> Committed:   we successfully committed a part to active dataset
      * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
      * Outdated -> Deleting:        a cleaner selected this part for deletion
      * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
@@ -365,6 +366,9 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
+    /// Returns serialization for column according to files in which column is written in part.
+    SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
+
     /// Return some uniq string for file
     /// Required for distinguish different copies of the same part on S3
     String getUniqueId() const;
@@ -398,7 +402,7 @@ protected:
 
 private:
     /// In compact parts order of columns is necessary
-    NameToPosition column_name_to_position;
+    NameToNumber column_name_to_position;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

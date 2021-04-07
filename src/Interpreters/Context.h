@@ -111,7 +111,7 @@ class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
-class NuKeeperStorageDispatcher;
+class KeeperStorageDispatcher;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -598,10 +598,10 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
 #if USE_NURAFT
-    std::shared_ptr<NuKeeperStorageDispatcher> & getNuKeeperStorageDispatcher() const;
+    std::shared_ptr<KeeperStorageDispatcher> & getKeeperStorageDispatcher() const;
 #endif
-    void initializeNuKeeperStorageDispatcher() const;
-    void shutdownNuKeeperStorageDispatcher() const;
+    void initializeKeeperStorageDispatcher() const;
+    void shutdownKeeperStorageDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -747,7 +747,7 @@ public:
     void setQueryParameters(const NameToNameMap & parameters) { query_parameters = parameters; }
 
     /// Add started bridge command. It will be killed after context destruction
-    void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
+    void addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const;
 
     IHostContextPtr & getHostContext();
     const IHostContextPtr & getHostContext() const;

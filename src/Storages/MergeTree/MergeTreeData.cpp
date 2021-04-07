@@ -42,6 +42,7 @@
 #include <Storages/MergeTree/localBackup.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
@@ -681,6 +682,41 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 }
 
 
+std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
+    const SelectQueryInfo & query_info, const Context & context, const DataPartsVector & parts) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    ASTPtr expression_ast;
+    Block virtual_columns_block = MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns();
+
+    // Generate valid expressions for filtering
+    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, context, virtual_columns_block, expression_ast);
+
+    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
+    if (partition_pruner.isUseless() && !valid)
+        return {};
+
+    std::unordered_set<String> part_values;
+    if (valid && expression_ast)
+    {
+        MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context, expression_ast);
+        part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+        if (part_values.empty())
+            return 0;
+    }
+    // At this point, empty `part_values` means all parts.
+
+    size_t res = 0;
+    for (const auto & part : parts)
+    {
+        if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(part))
+            res += part->rows_count;
+    }
+    return res;
+}
+
+
 String MergeTreeData::MergingParams::getModeName() const
 {
     switch (mode)
@@ -777,7 +813,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (part_names_with_disks.empty() && parts_from_wal.empty())
     {
-        LOG_DEBUG(log, "There is no data parts");
+        LOG_DEBUG(log, "There are no data parts");
         return;
     }
 
@@ -2244,7 +2280,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
 void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool
 restore_covered)
 {
-    LOG_INFO(log, "Renaming {} to {}{} and forgiving it.", part_to_detach->relative_path, prefix, part_to_detach->name);
+    LOG_INFO(log, "Renaming {} to {}{} and forgetting it.", part_to_detach->relative_path, prefix, part_to_detach->name);
 
     auto lock = lockParts();
 
@@ -2710,12 +2746,12 @@ void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & comm
             if (command.part)
             {
                 auto part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
-                /// We able to parse it
+                /// We are able to parse it
                 MergeTreePartInfo::fromPartName(part_name, format_version);
             }
             else
             {
-                /// We able to parse it
+                /// We are able to parse it
                 getPartitionIDFromQuery(command.partition, global_context);
             }
         }
@@ -3143,15 +3179,18 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Cont
 MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
         const Context & context, PartsTemporaryRename & renamed_parts)
 {
-    String source_dir = "detached/";
+    const String source_dir = "detached/";
 
     std::map<String, DiskPtr> name_to_disk;
+
     /// Let's compose a list of parts that should be added.
     if (attach_part)
     {
-        String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+        const String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
+
         validateDetachedPartName(part_id);
         renamed_parts.addPart(part_id, "attaching_" + part_id);
+
         if (MergeTreePartInfo::tryParsePartName(part_id, nullptr, format_version))
             name_to_disk[part_id] = getDiskForPart(part_id, source_dir);
     }
@@ -3162,12 +3201,14 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         ActiveDataPartSet active_parts(format_version);
 
         const auto disks = getStoragePolicy()->getDisks();
+
         for (const auto & disk : disks)
         {
             for (auto it = disk->iterateDirectory(relative_data_path + source_dir); it->isValid(); it->next())
             {
                 const String & name = it->name();
                 MergeTreePartInfo part_info;
+
                 // TODO what if name contains "_tryN" suffix?
                 /// Parts with prefix in name (e.g. attaching_1_3_3_0, deleting_1_3_3_0) will be ignored
                 if (!MergeTreePartInfo::tryParsePartName(name, &part_info, format_version)
@@ -3175,21 +3216,23 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
                 {
                     continue;
                 }
+
                 LOG_DEBUG(log, "Found part {}", name);
                 active_parts.add(name);
                 name_to_disk[name] = disk;
             }
         }
         LOG_DEBUG(log, "{} of them are active", active_parts.size());
-        /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
+
+        /// Inactive parts are renamed so they can not be attached in case of repeated ATTACH.
         for (const auto & [name, disk] : name_to_disk)
         {
-            String containing_part = active_parts.getContainingPart(name);
+            const String containing_part = active_parts.getContainingPart(name);
+
             if (!containing_part.empty() && containing_part != name)
-            {
                 // TODO maybe use PartsTemporaryRename here?
-                disk->moveDirectory(relative_data_path + source_dir + name, relative_data_path + source_dir + "inactive_" + name);
-            }
+                disk->moveDirectory(relative_data_path + source_dir + name,
+                    relative_data_path + source_dir + "inactive_" + name);
             else
                 renamed_parts.addPart(name, "attaching_" + name);
         }
@@ -3204,11 +3247,13 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
 
-    for (const auto & part_names : renamed_parts.old_and_new_names)
+    for (const auto & [old_name, new_name] : renamed_parts.old_and_new_names)
     {
-        LOG_DEBUG(log, "Checking part {}", part_names.second);
-        auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_names.first, name_to_disk[part_names.first], 0);
-        MutableDataPartPtr part = createPart(part_names.first, single_disk_volume, source_dir + part_names.second);
+        LOG_DEBUG(log, "Checking part {}", new_name);
+
+        auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + old_name, name_to_disk[old_name]);
+        MutableDataPartPtr part = createPart(old_name, single_disk_volume, source_dir + new_name);
+
         loadPartAndFixMetadataImpl(part);
         loaded_parts.push_back(part);
     }

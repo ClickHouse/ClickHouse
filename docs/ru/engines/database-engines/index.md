@@ -4,7 +4,7 @@ toc_priority: 27
 toc_title: "Введение"
 ---
 
-# Движки баз данных {#dvizhki-baz-dannykh}
+# Движки баз данных {#database-engines}
 
 Движки баз данных обеспечивают работу с таблицами.
 
@@ -17,4 +17,6 @@ toc_title: "Введение"
 -   [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md)
 
 -   [Lazy](../../engines/database-engines/lazy.md)
+
+-   [PostgreSQL](../../engines/database-engines/postgresql.md)
 
