@@ -17,19 +17,19 @@ def started_cluster():
         cluster.start()
 
         for node in [node1, node2]:
-            node.query('''
-            CREATE TABLE test_table_replicated(date Date, id UInt32, value Int32)
+            node.query_with_retry('''
+            CREATE TABLE IF NOT EXISTS test_table_replicated(date Date, id UInt32, value Int32)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/sometable', '{replica}') ORDER BY id;
                 '''.format(replica=node.name))
-            node.query('''CREATE TABLE test_table(date Date, id UInt32, value Int32) ENGINE=MergeTree ORDER BY id''')
+            node.query_with_retry('''CREATE TABLE IF NOT EXISTS test_table(date Date, id UInt32, value Int32) ENGINE=MergeTree ORDER BY id''')
 
         for node in [node3, node4]:
-            node.query('''
-            CREATE TABLE test_table_replicated(date Date, id UInt32, value Int32)
+            node.query_with_retry('''
+            CREATE TABLE IF NOT EXISTS test_table_replicated(date Date, id UInt32, value Int32)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/1/someotable', '{replica}') ORDER BY id;
                 '''.format(replica=node.name))
 
-            node.query('''CREATE TABLE test_table(date Date, id UInt32, value Int32) ENGINE=MergeTree ORDER BY id''')
+            node.query_with_retry('''CREATE TABLE IF NOT EXISTS test_table(date Date, id UInt32, value Int32) ENGINE=MergeTree ORDER BY id''')
 
         yield cluster
 

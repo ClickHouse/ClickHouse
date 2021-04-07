@@ -25,7 +25,7 @@ def setup_module(module):
 
     cluster = ClickHouseCluster(__file__, name=test_name)
 
-    SOURCE = SourceCassandra("Cassandra", "localhost", cluster.cassandra_port, cluster.cassandra_host, "9042", "", "")
+    SOURCE = SourceCassandra("Cassandra", None, cluster.cassandra_port, cluster.cassandra_host, cluster.cassandra_port, "", "")
 
     simple_tester = SimpleLayoutTester(test_name)
     simple_tester.cleanup()

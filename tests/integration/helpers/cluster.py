@@ -16,6 +16,7 @@ import traceback
 import urllib.parse
 import shlex
 
+from cassandra.policies import RoundRobinPolicy
 import cassandra.cluster
 import psycopg2
 import pymongo
@@ -98,7 +99,6 @@ def get_docker_compose_path():
         else:
             logging.debug(f"Fallback docker_compose_path to LOCAL_DOCKER_COMPOSE_DIR: {LOCAL_DOCKER_COMPOSE_DIR}")
             return LOCAL_DOCKER_COMPOSE_DIR
-
 
 def check_kafka_is_available(kafka_id, kafka_port):
     p = subprocess.Popen(('docker',
@@ -225,7 +225,9 @@ class ClickHouseCluster:
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
-        self.cassandra_port = get_open_port()
+        self.cassandra_port = 9042
+        self.cassandra_ip = None
+        self.cassandra_id = self.get_instance_docker_id(self.cassandra_host)
 
         # available when with_rabbitmq == True
         self.rabbitmq_host = "rabbitmq1"
@@ -551,8 +553,7 @@ class ClickHouseCluster:
 
         if with_cassandra and not self.with_cassandra:
             self.with_cassandra = True
-            env_variables['CASSANDRA_EXTERNAL_PORT'] = str(self.cassandra_port)
-            env_variables['CASSANDRA_INTERNAL_PORT'] = "9042"
+            env_variables['CASSANDRA_PORT'] = str(self.cassandra_port)
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')])
             self.base_cassandra_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                        '--file', p.join(docker_compose_yml_dir, 'docker_compose_cassandra.yml')]
@@ -778,7 +779,7 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=30, secure=False):
+    def wait_minio_to_start(self, timeout=120, secure=False):
         os.environ['SSL_CERT_FILE'] = p.join(self.base_dir, self.minio_dir, 'certs', 'public.crt')
         minio_client = Minio('localhost:{}'.format(self.minio_port),
                              access_key='minio',
@@ -819,17 +820,26 @@ class ClickHouseCluster:
                 logging.debug(("Can't connect to SchemaRegistry: %s", str(ex)))
                 time.sleep(1)
 
-    def wait_cassandra_to_start(self, timeout=30):
-        cass_client = cassandra.cluster.Cluster(["localhost"], self.cassandra_port)
+        raise Exception("Can't wait Schema Registry to start")
+
+        
+    def wait_cassandra_to_start(self, timeout=120):
+        self.cassandra_ip = self.get_instance_ip(self.cassandra_host)
+        cass_client = cassandra.cluster.Cluster([self.cassandra_ip], port=self.cassandra_port, load_balancing_policy=RoundRobinPolicy())
         start = time.time()
         while time.time() - start < timeout:
             try:
+                logging.info(f"Check Cassandra Online {self.cassandra_id} {self.cassandra_ip} {self.cassandra_port}")
+                check = self.exec_in_container(self.cassandra_id, ["bash", "-c", f"/opt/cassandra/bin/cqlsh -u cassandra -p cassandra -e 'describe keyspaces' {self.cassandra_ip} {self.cassandra_port}"], user='root')
+                logging.info("Cassandra Online")
                 cass_client.connect()
-                logging.info("Connected to Cassandra")
+                logging.info("Connected Clients to Cassandra")
                 return
             except Exception as ex:
                 logging.warning("Can't connect to Cassandra: %s", str(ex))
                 time.sleep(1)
+
+        raise Exception("Can't wait Cassandra to start")
 
     def start(self, destroy_dirs=True):
         logging.debug("Cluster start called. is_up={}, destroy_dirs={}".format(self.is_up, destroy_dirs))
@@ -844,6 +854,8 @@ class ClickHouseCluster:
             if not subprocess_call(['docker-compose', 'kill']):
                 subprocess_call(['docker-compose', 'down', '--volumes'])
             logging.debug("Unstopped containers killed")
+            subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+
         except:
             pass
 
@@ -895,7 +907,7 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql_logs_dir)
                 os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
-                self.wait_mysql_to_start(120)
+                self.wait_mysql_to_start(180)
 
             if self.with_mysql8 and self.base_mysql8_cmd:
                 logging.debug('Setup MySQL 8')
@@ -916,8 +928,7 @@ class ClickHouseCluster:
                 os.chmod(self.postgres2_logs_dir, stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
-                self.wait_postgres_to_start(30)
-                self.wait_postgres_to_start(30)
+                self.wait_postgres_to_start(120)
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug('Setup Kafka')
@@ -987,7 +998,7 @@ class ClickHouseCluster:
             subprocess_check_call(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
-            start_deadline = time.time() + 120.0  # seconds
+            start_deadline = time.time() + 180.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
@@ -1334,8 +1345,20 @@ class ClickHouseInstance:
         if not self.stay_alive:
             raise Exception("clickhouse can be stopped only with stay_alive=True instance")
 
-        self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
-        time.sleep(start_wait_sec)
+        try:
+            ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
+            if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND" :
+                logging.warning("ClickHouse process already stopped")
+                return
+
+            self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
+            time.sleep(start_wait_sec)
+            ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
+            if ps_clickhouse != "  PID TTY      STAT   TIME COMMAND" :
+                logging.warning(f"Force kill clickhouse in stop_clickhouse. ps:{ps_clickhouse}")
+                self.stop_clickhouse(kill=True)
+        except Exception as e:
+            logging.warning(f"Stop ClickHouse raised an error {e}")
 
     def start_clickhouse(self, stop_wait_sec=5):
         if not self.stay_alive:
@@ -1360,8 +1383,10 @@ class ClickHouseInstance:
         return len(result) > 0
 
     def grep_in_log(self, substring):
+        logging.debug(f"grep in log called {substring}")
         result = self.exec_in_container(
             ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
+        logging.debug(f"grep result {result}")
         return result
 
     def count_in_log(self, substring):
