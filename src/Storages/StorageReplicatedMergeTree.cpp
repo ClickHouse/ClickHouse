@@ -447,12 +447,12 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     if (replicas.empty())
         return;
 
-    zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
 
     std::set<String> inactive_replicas;
     for (const String & replica : replicas)
     {
         LOG_DEBUG(log, "Waiting for {} to apply mutation {}", replica, mutation_id);
+        zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
 
         while (!partial_shutdown_called)
         {
@@ -476,9 +476,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
             String mutation_pointer = zookeeper_path + "/replicas/" + replica + "/mutation_pointer";
             std::string mutation_pointer_value;
-            Coordination::Stat get_stat;
             /// Replica could be removed
-            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, &get_stat, wait_event))
+            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
             {
                 LOG_WARNING(log, "Replica {} was removed", replica);
                 break;
@@ -488,8 +487,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
             /// Replica can become inactive, so wait with timeout and recheck it
             if (wait_event->tryWait(1000))
-                break;
+                continue;
 
+            /// Here we check mutation for errors or kill on local replica. If they happen on this replica
+            /// they will happen on each replica, so we can check only in-memory info.
             auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id);
             if (!mutation_status || !mutation_status->latest_fail_reason.empty())
                 break;
@@ -506,6 +507,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         std::set<String> mutation_ids;
         mutation_ids.insert(mutation_id);
 
+        /// Here we check mutation for errors or kill on local replica. If they happen on this replica
+        /// they will happen on each replica, so we can check only in-memory info.
         auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
         checkMutationStatus(mutation_status, mutation_ids);
 
