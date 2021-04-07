@@ -26,10 +26,6 @@ class MemorySource : public SourceWithProgress
 {
     using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
 public:
-    /// Blocks are stored in std::list which may be appended in another thread.
-    /// We use pointer to the beginning of the list and its current size.
-    /// We don't need synchronisation in this reader, because while we hold SharedLock on storage,
-    /// only new elements can be added to the back of the list, so our iterators remain valid
 
     MemorySource(
         Names column_names_,
@@ -59,7 +55,7 @@ protected:
 
         size_t current_index = getAndIncrementExecutionIndex();
 
-        if (current_index >= data->size())
+        if (!data || current_index >= data->size())
         {
             return {};
         }

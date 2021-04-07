@@ -463,7 +463,7 @@ public:
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
-    /// for new parts which don't already present in table.
+    /// for new parts which aren't already present in table.
     void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
 
     /// Removes parts from the working set parts.
@@ -892,6 +892,9 @@ protected:
         auto end = data_parts_by_info.upper_bound(PartitionID(partition_id), LessDataPart());
         return {begin, end};
     }
+
+    std::optional<UInt64> totalRowsByPartitionPredicateImpl(
+        const SelectQueryInfo & query_info, const Context & context, const DataPartsVector & parts) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
