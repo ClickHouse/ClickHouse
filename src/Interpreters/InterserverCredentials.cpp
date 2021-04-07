@@ -1,59 +1,76 @@
 #include <Interpreters/InterserverCredentials.h>
 #include <common/logger_useful.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
-std::shared_ptr<ConfigInterserverCredentials>
-ConfigInterserverCredentials::make(const Poco::Util::AbstractConfiguration & config, const std::string root_tag)
+std::unique_ptr<InterserverCredentials>
+InterserverCredentials::make(const Poco::Util::AbstractConfiguration & config, const std::string & root_tag)
 {
-    const auto user = config.getString(root_tag + ".user", "");
-    const auto password = config.getString(root_tag + ".password", "");
+    if (config.has("user") && !config.has("password"))
+        throw Exception("Configuration parameter interserver_http_credentials.password can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    if (user.empty())
-        throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    if (!config.has("user") && config.has("password"))
+        throw Exception("Configuration parameter interserver_http_credentials.user can't be empty if user specified", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    auto store = makeCredentialStore(user, password, config, root_tag);
+    /// They both can be empty
+    auto user = config.getString(root_tag + ".user", "");
+    auto password = config.getString(root_tag + ".password", "");
 
-    return std::make_shared<ConfigInterserverCredentials>(user, password, store);
+    auto store = parseCredentialsFromConfig(user, password, config, root_tag);
+
+    return std::make_unique<InterserverCredentials>(user, password, store);
 }
 
-ConfigInterserverCredentials::Store ConfigInterserverCredentials::makeCredentialStore(
-    const std::string current_user_,
-    const std::string current_password_,
+InterserverCredentials::CurrentCredentials InterserverCredentials::parseCredentialsFromConfig(
+    const std::string & current_user_,
+    const std::string & current_password_,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string root_tag)
+    const std::string & root_tag)
 {
-    Store store;
-    store.insert({{current_user_, current_password_}, true});
-    if (config.has(root_tag + ".allow_empty") && config.getBool(root_tag + ".allow_empty"))
+    auto * log = &Poco::Logger::get("InterserverCredentials");
+    CurrentCredentials store;
+    store.emplace_back(current_user_, current_password_);
+    if (config.getBool(root_tag + ".allow_empty", false))
     {
+        LOG_DEBUG(log, "Allowing empty credentials");
         /// Allow empty credential to support migrating from no auth
-        store.insert({{"", ""}, true});
+        store.emplace_back("", "");
     }
 
+    Poco::Util::AbstractConfiguration::Keys old_users;
+    config.keys(root_tag, old_users);
 
-    Poco::Util::AbstractConfiguration::Keys users;
-    config.keys(root_tag + ".users", users);
-    for (const auto & user : users)
+    for (const auto & user_key : old_users)
     {
-        LOG_DEBUG(&Poco::Logger::get("InterserverCredentials"), "Adding credential for {}", user);
-        const auto password = config.getString(root_tag + ".users." + user);
-        store.insert({{user, password}, true});
+        if (startsWith(user_key, "old"))
+        {
+            std::string full_prefix = root_tag + "." + user_key;
+            std::string old_user_name = config.getString(full_prefix + ".user");
+            LOG_DEBUG(log, "Adding credentials for old user {}", old_user_name);
+
+            std::string old_user_password =  config.getString(full_prefix + ".password");
+
+            store.emplace_back(old_user_name, old_user_password);
+        }
     }
 
     return store;
 }
 
-std::pair<String, bool> ConfigInterserverCredentials::isValidUser(const std::pair<std::string, std::string> credentials)
+InterserverCredentials::CheckResult InterserverCredentials::isValidUser(const UserWithPassword & credentials) const
 {
-    const auto & valid = store.find(credentials);
-    if (valid == store.end())
+    auto itr = std::find(all_users_store.begin(), all_users_store.end(), credentials);
+
+    if (itr == all_users_store.end())
         return {"Incorrect user or password in HTTP basic authentication: " + credentials.first, false};
+
     return {"", true};
 }
 

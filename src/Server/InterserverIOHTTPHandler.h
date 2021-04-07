@@ -46,8 +46,6 @@ private:
     void processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output);
 
     std::pair<String, bool> checkAuthentication(HTTPServerRequest & request) const;
-    const std::string default_user;
-    const std::string default_password;
 };
 
 }

@@ -3,92 +3,68 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
+#include <unordered_set>
 
 namespace DB
 {
-/// InterserverCredentials holds credentials for server (store) and client
-/// credentials (current_*). The container is constructed through `make` and a
-/// shared_ptr is captured inside Context.
-class BaseInterserverCredentials
-{
-public:
-    BaseInterserverCredentials(std::string current_user_, std::string current_password_)
-        : current_user(current_user_), current_password(current_password_)
-            { }
 
-    virtual ~BaseInterserverCredentials() { }
-
-    /// isValidUser returns true or throws WRONG_PASSWORD
-    virtual std::pair<String, bool> isValidUser(const std::pair<std::string, std::string> credentials) = 0;
-
-    std::string getUser() { return current_user; }
-
-    std::string getPassword() { return current_password; }
-
-
-protected:
-    std::string current_user;
-    std::string current_password;
-};
-
-
-/// NullInterserverCredentials are used when authentication is not configured
-class NullInterserverCredentials : public BaseInterserverCredentials
-{
-public:
-    NullInterserverCredentials(const NullInterserverCredentials &) = delete;
-    NullInterserverCredentials() : BaseInterserverCredentials("", "") { }
-
-    ~NullInterserverCredentials() override { }
-
-    static std::shared_ptr<NullInterserverCredentials> make() { return std::make_shared<NullInterserverCredentials>(); }
-
-    std::pair<String, bool> isValidUser(const std::pair<std::string, std::string> credentials) override
-    {
-        std::ignore = credentials;
-        return {"", true};
-    }
-};
-
-
-/// ConfigInterserverCredentials implements authentication using a Store, which
+/// InterserverCredentials implements authentication using a CurrentCredentials, which
 /// is configured, e.g.
 ///    <interserver_http_credentials>
 ///        <user>admin</user>
 ///        <password>222</password>
 ///        <!-- To support mix of un/authenticated clients -->
 ///        <!-- <allow_empty>true</allow_empty> -->
-///        <users>
+///        <old>
 ///            <!-- Allow authentication using previous passwords during rotation -->
-///            <admin>111</admin>
-///        </users>
+///            <user>admin</user>
+///            <password>qqq</password>
+///        </old>
+///        <old>
+///            <!-- Allow authentication using previous users during rotation -->
+///            <user>johny</user>
+///            <password>333</password>
+///        </old>
 ///    </interserver_http_credentials>
-class ConfigInterserverCredentials : public BaseInterserverCredentials
+class InterserverCredentials
 {
 public:
-    using Store = std::map<std::pair<std::string, std::string>, bool>;
+    using UserWithPassword = std::pair<std::string, std::string>;
+    using CheckResult = std::pair<std::string, bool>;
+    using CurrentCredentials = std::vector<UserWithPassword>;
 
-    ConfigInterserverCredentials(const ConfigInterserverCredentials &) = delete;
+    InterserverCredentials(const InterserverCredentials &) = delete;
 
-    static std::shared_ptr<ConfigInterserverCredentials> make(const Poco::Util::AbstractConfiguration & config, const std::string root_tag);
+    static std::unique_ptr<InterserverCredentials> make(const Poco::Util::AbstractConfiguration & config, const std::string & root_tag);
 
-    ~ConfigInterserverCredentials() override { }
+    InterserverCredentials(const std::string & current_user_, const std::string & current_password_, const CurrentCredentials & all_users_store_)
+        : current_user(current_user_)
+        , current_password(current_password_)
+        , all_users_store(all_users_store_)
+    {}
 
-    ConfigInterserverCredentials(const std::string current_user_, const std::string current_password_, const Store & store_)
-        : BaseInterserverCredentials(current_user_, current_password_), store(std::move(store_))
-    {
-    }
+    CheckResult isValidUser(const UserWithPassword & credentials) const;
 
-    std::pair<String, bool> isValidUser(const std::pair<std::string, std::string> credentials) override;
+    std::string getUser() const { return current_user; }
+
+    std::string getPassword() const { return current_password; }
+
 
 private:
-    Store store;
+    std::string current_user;
+    std::string current_password;
 
-    static Store makeCredentialStore(
-        const std::string current_user_,
-        const std::string current_password_,
+    /// In common situation this store contains one record
+    CurrentCredentials all_users_store;
+
+
+    static CurrentCredentials parseCredentialsFromConfig(
+        const std::string & current_user_,
+        const std::string & current_password_,
         const Poco::Util::AbstractConfiguration & config,
-        const std::string root_tag);
+        const std::string & root_tag);
 };
+
+using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 
 }

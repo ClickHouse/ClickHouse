@@ -689,7 +689,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    LOG_DEBUG(log, "Initiaializing InterserverCredentials.");
+    LOG_DEBUG(log, "Initiailizing interserver credentials.");
     global_context->updateInterserverCredentials(config());
 
     if (config().has("macros"))
