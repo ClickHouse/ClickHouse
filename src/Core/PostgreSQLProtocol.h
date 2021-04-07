@@ -832,10 +832,13 @@ class NoPasswordAuth : public AuthenticationMethod
 {
 public:
     void authenticate(
-        const String & /* user_name */,
-        Context & /* context */,
+        const String & user_name,
+        Context & context,
         Messaging::MessageTransport & /* mt */,
-        const Poco::Net::SocketAddress & /* address */) override {}
+        const Poco::Net::SocketAddress & address) override
+    {
+        context.setUser(user_name, "", address);
+    }
 
     Authentication::Type getType() const override
     {
@@ -859,6 +862,7 @@ public:
         {
             std::unique_ptr<Messaging::PasswordMessage> password = mt.receive<Messaging::PasswordMessage>();
             setPassword(user_name, password->password, context, mt, address);
+            context.setUser(user_name, password->password, address);
         }
         else
             throw Exception(
