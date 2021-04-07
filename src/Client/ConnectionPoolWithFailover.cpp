@@ -13,12 +13,6 @@
 
 #include <IO/ConnectionTimeouts.h>
 
-namespace ProfileEvents
-{
-    extern const Event DistributedConnectionMissingTable;
-    extern const Event DistributedConnectionStaleReplica;
-}
-
 namespace DB
 {
 

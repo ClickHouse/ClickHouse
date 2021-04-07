@@ -1,7 +1,13 @@
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/ClientInfo.h>
+
+namespace ProfileEvents
+{
+    extern const Event HedgedRequestsChangeReplica;
+}
 
 namespace DB
 {
@@ -321,6 +327,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             offset_states[location.offset].replicas[location.index].is_change_replica_timeout_expired = true;
             offset_states[location.offset].next_replica_in_process = true;
             offsets_queue.push(location.offset);
+            ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
             startNewReplica();
         }
         else
@@ -399,11 +406,21 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
             break;
 
         case Protocol::Server::EndOfStream:
+            /// Check case when we receive EndOfStream before first not empty data packet
+            /// or positive progress. It may happen if max_parallel_replicas > 1 and
+            /// there is no way to sample data in this query.
+            if (offset_states[replica_location.offset].can_change_replica)
+                disableChangingReplica(replica_location);
             finishProcessReplica(replica, false);
             break;
 
         case Protocol::Server::Exception:
         default:
+            /// Check case when we receive Exception before first not empty data packet
+            /// or positive progress. It may happen if max_parallel_replicas > 1 and
+            /// there is no way to sample data in this query.
+            if (offset_states[replica_location.offset].can_change_replica)
+                disableChangingReplica(replica_location);
             finishProcessReplica(replica, true);
             break;
     }

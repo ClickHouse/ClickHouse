@@ -36,7 +36,7 @@ def started_cluster():
         NODES['node'].query('''CREATE TABLE distributed (id UInt32, date Date) ENGINE =
             Distributed('test_cluster', 'default', 'replicated')''')
 
-        NODES['node'].query("INSERT INTO distributed VALUES (1, '2020-01-01'), (2, '2020-01-02')")
+        NODES['node'].query("INSERT INTO distributed SELECT number, toDateTime(number) FROM numbers(100)")
 
         yield cluster
 
@@ -54,17 +54,21 @@ config = '''<yandex>
 </yandex>'''
 
 
-def check_query():
+QUERY_1 = "SELECT count() FROM distributed"
+QUERY_2 = "SELECT * FROM distributed"
+
+
+def check_query(query=QUERY_1):
     NODES['node'].restart_clickhouse()
 
     # Without hedged requests select query will last more than 30 seconds,
     # with hedged requests it will last just around 1-2 second
 
     start = time.time()
-    NODES['node'].query("SELECT * FROM distributed");
+    NODES['node'].query(query);
     query_time = time.time() - start
     print("Query time:", query_time)
-    
+
     assert query_time < 5
 
 
@@ -81,6 +85,11 @@ def check_settings(node_name, sleep_in_send_tables_status, sleep_in_send_data):
     assert attempts < 1000
 
 
+def check_changing_replica_events(expected_count):
+    result = NODES['node'].query("SELECT value FROM system.events WHERE event='HedgedRequestsChangeReplica'")
+    assert int(result) == expected_count
+
+
 def test_send_table_status_sleep(started_cluster):
     NODES['node_1'].replace_config(
         '/etc/clickhouse-server/users.d/users1.xml',
@@ -94,9 +103,11 @@ def test_send_table_status_sleep(started_cluster):
     check_settings('node_2', sleep_time, 0)
 
     check_query()
+    check_changing_replica_events(2)
 
 
 def test_send_data(started_cluster):
+
     NODES['node_1'].replace_config(
         '/etc/clickhouse-server/users.d/users1.xml',
         config.format(sleep_in_send_tables_status=0, sleep_in_send_data=sleep_time))
@@ -109,6 +120,7 @@ def test_send_data(started_cluster):
     check_settings('node_2', 0, sleep_time)
 
     check_query()
+    check_changing_replica_events(2)
 
 
 def test_combination1(started_cluster):
@@ -129,6 +141,7 @@ def test_combination1(started_cluster):
     check_settings('node_3', 0, sleep_time)
 
     check_query()
+    check_changing_replica_events(3)
 
 
 def test_combination2(started_cluster):
@@ -155,4 +168,33 @@ def test_combination2(started_cluster):
     check_settings('node_4', 1, 0)
     
     check_query()
+    check_changing_replica_events(4)
+
+
+def test_query_with_no_data_to_sample(started_cluster):
+    NODES['node_1'].replace_config(
+        '/etc/clickhouse-server/users.d/users1.xml',
+        config.format(sleep_in_send_tables_status=0, sleep_in_send_data=sleep_time))
+
+    NODES['node_2'].replace_config(
+        '/etc/clickhouse-server/users.d/users1.xml',
+        config.format(sleep_in_send_tables_status=0, sleep_in_send_data=sleep_time))
+
+    NODES['node_3'].replace_config(
+        '/etc/clickhouse-server/users.d/users1.xml',
+        config.format(sleep_in_send_tables_status=0, sleep_in_send_data=0))
+
+    NODES['node_4'].replace_config(
+        '/etc/clickhouse-server/users.d/users1.xml',
+        config.format(sleep_in_send_tables_status=0, sleep_in_send_data=0))
+    check_settings('node_1', 0, sleep_time)
+    check_settings('node_2', 0, sleep_time)
+    check_settings('node_3', 0, 0)
+    check_settings('node_4', 0, 0)
+
+    # When there is no way to sample data, the whole query will be performed by
+    # the first replica and the second replica will just send EndOfStream,
+    # so we will change only the first replica here.
+    check_query(query=QUERY_2)
+    check_changing_replica_events(1)
 
