@@ -15,6 +15,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct SelectQueryInfo;
 class ASTSelectQuery;
 
+bool hasJoin(const ASTSelectQuery & select);
 bool removeJoin(ASTSelectQuery & select);
 
 Block getHeaderForProcessingStage(

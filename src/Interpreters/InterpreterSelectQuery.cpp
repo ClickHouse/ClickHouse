@@ -82,7 +82,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <ext/map.h>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 #include <memory>
 
 
@@ -1407,7 +1407,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             AggregateDataPtr place = state.data();
 
             agg_count.create(place);
-            SCOPE_EXIT(agg_count.destroy(place));
+            SCOPE_EXIT_MEMORY_SAFE(agg_count.destroy(place));
 
             agg_count.set(place, *num_rows);
 
@@ -1630,6 +1630,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && !query.limitBy()
         && query.limitLength()
         && !query_analyzer->hasAggregation()
+        && !query_analyzer->hasWindow()
         && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset
         && limit_length + limit_offset < max_block_size)
     {

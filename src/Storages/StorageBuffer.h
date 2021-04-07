@@ -118,7 +118,15 @@ private:
     {
         time_t first_write_time = 0;
         Block data;
+
+        std::unique_lock<std::mutex> lockForReading() const;
+        std::unique_lock<std::mutex> lockForWriting() const;
+        std::unique_lock<std::mutex> tryLock() const;
+
+    private:
         mutable std::mutex mutex;
+
+        std::unique_lock<std::mutex> lockImpl(bool read) const;
     };
 
     /// There are `num_shards` of independent buffers.

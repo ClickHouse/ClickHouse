@@ -148,6 +148,7 @@
         "00626_replace_partition_from_table",
         "00152_insert_different_granularity",
         "00054_merge_tree_partitions",
+        "01781_merge_tree_deduplication",
         /// Old syntax is not allowed
         "01062_alter_on_mutataion_zookeeper",
         "00925_zookeeper_empty_replicated_merge_tree_optimize_final",

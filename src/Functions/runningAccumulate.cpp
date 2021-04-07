@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 
 
 namespace DB
@@ -104,7 +104,7 @@ public:
         const auto & states = column_with_states->getData();
 
         bool state_created = false;
-        SCOPE_EXIT({
+        SCOPE_EXIT_MEMORY_SAFE({
             if (state_created)
                 agg_func.destroy(place.data());
         });

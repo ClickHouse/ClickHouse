@@ -155,18 +155,9 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         if (deduplicate)
         {
-            SipHash hash;
-            part->checksums.computeTotalChecksumDataOnly(hash);
-            union
-            {
-                char bytes[16];
-                UInt64 words[2];
-            } hash_value;
-            hash.get128(hash_value.bytes);
-
             /// We add the hash from the data and partition identifier to deduplication ID.
             /// That is, do not insert the same data to the same partition twice.
-            block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
+            block_id = part->getZeroLevelPartBlockID();
 
             LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }

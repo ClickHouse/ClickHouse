@@ -132,7 +132,8 @@ XDBCDictionarySource::XDBCDictionarySource(
 
 /// copy-constructor is provided in order to support cloneability
 XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
-    : log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
+    : WithContext(other.getContext())
+    , log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
     , db{other.db}
