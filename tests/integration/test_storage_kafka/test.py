@@ -2859,8 +2859,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 val3 UInt8
             ) ENGINE = Kafka()
                 SETTINGS kafka_broker_list = 'kafka1:19092',
-                        kafka_topic_list = '{topic_name}',
-                        kafka_group_name = '{topic_name}_group',
+                        kafka_topic_list = 'stream_{topic_name}',
+                        kafka_group_name = 'stream_{topic_name}_group',
                         kafka_format = '{format_name}',
                         kafka_handle_error_mode = 'stream',
                         kafka_flush_interval_ms = 1000 {extra_settings};
@@ -2876,8 +2876,6 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 WHERE length(_error) > 0;
             '''.format(topic_name=topic_name, format_name=format_name, raw_message=raw_message,
                        extra_settings=format_opts.get('extra_settings') or ''))
-
-            #DROP TABLE IF EXISTS test.kafka_errors_{format_name}_mv;
 
     for format_name, format_opts in list(all_formats.items()):
         print(('Checking {}'.format(format_name)))
