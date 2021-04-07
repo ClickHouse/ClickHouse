@@ -13,8 +13,8 @@ tar xJf freebsd-11.3-toolchain.tar.xz -C build/cmake/toolchain/freebsd-x86_64 --
 
 # Uncomment to debug ccache. Don't put ccache log in /output right away, or it
 # will be confusingly packed into the "performance" package.
-export CCACHE_LOGFILE=/build/ccache.log
-export CCACHE_DEBUG=1
+# export CCACHE_LOGFILE=/build/ccache.log
+# export CCACHE_DEBUG=1
 
 mkdir -p build/build_docker
 cd build/build_docker
@@ -28,7 +28,7 @@ ccache --show-stats ||:
 ccache --zero-stats ||:
 
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
-ninja $NINJA_FLAGS --verbose clickhouse-bundle
+ninja $NINJA_FLAGS clickhouse-bundle
 
 ccache --show-config ||:
 ccache --show-stats ||:

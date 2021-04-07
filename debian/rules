@@ -62,7 +62,7 @@ ifndef DISABLE_NINJA
     NINJA=$(shell which ninja)
 ifneq ($(NINJA),)
         CMAKE_FLAGS += -GNinja
-        export MAKE=$(NINJA) $(NINJA_FLAGS) --verbose
+        export MAKE=$(NINJA) $(NINJA_FLAGS)
 endif
 endif
 
