@@ -12,22 +12,22 @@ toc_title: Вышки сотовой связи
 OpenCelliD Project is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License, and we redistribute a snapshot of this dataset under the terms of the same license. The up to date version of the dataset is available to download after sign in.
 
 
-## Получить датасет {#get-the-dataset}
+## Получаем датасет {#get-the-dataset}
 
 Download the snapshot of the dataset from Feb 2021: [https://datasets.clickhouse.tech/cell_towers.csv.xz] (729 MB).
 
-Optionally validate the integrity:
+Если нужно, проверяем полноту (целостность):
 ```
 md5sum cell_towers.csv.xz
 8cf986f4a0d9f12c6f384a0e9192c908  cell_towers.csv.xz
 ```
 
-Decompress it with the following command:
+Распаковываем датасет при помощи следующей команды:
 ```
 xz -d cell_towers.csv.xz
 ```
 
-Создать таблице:
+Создаем таблицу:
 
 ```
 CREATE TABLE cell_towers
@@ -50,7 +50,7 @@ CREATE TABLE cell_towers
 ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
 ```
 
-Insert the dataset:
+Добавляем датасет:
 ```
 clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
 ```
@@ -95,14 +95,14 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 
 Здесь можно заглянуть в словарь: [https://ru.wikipedia.org/wiki/Mobile_Country_Code](https://ru.wikipedia.org/wiki/Mobile_Country_Code).
 
-So, the top countries are USA, Germany and Russia.
+Итак, получаем самые популярные страны: США, Германия, Россия.
 
-You may want to create an [External Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts/) in ClickHouse to decode these values.
+Вам может понадобится создать [внешний словарь](../../sql-reference/dictionaries/external-dictionaries/external-dicts/) в ClickHouse для того, чтобы расшифровать эти значения.
 
 
-### Example of using `pointInPolygon` function {#example-of-using}
+### Пример применения функции `pointInPolygon {#example-of-using}
 
-Создаем таблицу, где будем хранить polygons:
+Создаем таблицу, где будем хранить многоугольники:
 
 ```
 CREATE TEMPORARY TABLE moscow (polygon Array(Tuple(Float64, Float64)));
@@ -126,8 +126,8 @@ SELECT count() FROM cell_towers WHERE pointInPolygon((lon, lat), (SELECT * FROM 
 1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
 ```
 
-The data is also available for interactive queries in the [Playground](https://gh-api.clickhouse.tech/play?user=play), [example](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
+Также данные доступны для интерактивных запросов в [Песочнице](https://gh-api.clickhouse.tech/play?user=play), [пример](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
 
-Although you cannot create temporary tables there.
+Хотя вы и не можете создавать временные таблицы тут.
 
 [Original article](https://clickhouse.tech/docs/ru/getting_started/example_datasets/cell-towers/) <!--hide-->
