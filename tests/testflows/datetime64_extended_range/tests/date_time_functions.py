@@ -1226,8 +1226,10 @@ def add_subtract_functions(self, clh_func, py_key, test_range, years_padding=(1,
                             with By("converting datetime to string"):
                                 dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                             with And("computing the expected result using pytz"):
-                                dt = eval(f"dt + rd.relativedelta({py_key}={mult*incr*modifier})")
-                                expected = f"{dt.strftime('%Y-%m-%d %H:%M:%S')}"
+                                dt_new = dt + rd.relativedelta(**{py_key: mult*incr*modifier})
+                                tzone = pytz.timezone(tz)
+                                dt_norm = tzone.normalize(tzone.localize(dt_new))
+                                expected = f"{dt_norm.strftime('%Y-%m-%d %H:%M:%S')}"
                             with And("making a query string for ClickHouse"):
                                 query = f"SELECT {clh_func}(toDateTime64('{dt_str}', 0, '{tz}'), {incr})"
                             with Then("I execute query"):
@@ -1527,4 +1529,4 @@ def date_time_funcs(self, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
     for scenario in loads(current_module(), Scenario):
-        Scenario(run=scenario, flags=TE)    
+        Scenario(run=scenario, flags=TE)
