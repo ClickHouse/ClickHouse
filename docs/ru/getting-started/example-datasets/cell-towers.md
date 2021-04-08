@@ -99,7 +99,8 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 
 Также вам может понадобится создать [внешний словарь](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) в ClickHouse для того, чтобы объяснить эти значения.
 
-### Пример применения функции `pointInPolygon` {#example-of-using}
+## Пример использования {#use-case}
+Рассмотрим применение функции `pointInPolygon`.
 
 1. Создаем таблицу, в которой будем хранить многоугольники:
 
