@@ -1084,7 +1084,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     auto step = std::make_unique<ReadFromMergeTree>(
         data, metadata_snapshot, query_id,
         column_names, std::move(parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
-        step_settings, num_streams, /*allow_mix_streams*/ true, /*read_reverse*/ false);
+        step_settings, num_streams, ReadFromMergeTree::ReadType::Default);
 
     plan->addStep(std::move(step));
     return plan;
@@ -1277,17 +1277,19 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
         };
 
-        bool read_reverse = input_order_info->direction != 1;
+        auto read_type = input_order_info->direction == 1
+                       ? ReadFromMergeTree::ReadType::InOrder
+                       : ReadFromMergeTree::ReadType::InReverseOrder;
 
         auto plan = std::make_unique<QueryPlan>();
         auto step = std::make_unique<ReadFromMergeTree>(
             data, metadata_snapshot, query_id,
             column_names, std::move(new_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
-            step_settings, num_streams, /*allow_mix_streams*/ false, /*read_reverse*/ read_reverse);
+            step_settings, num_streams, read_type);
 
         plan->addStep(std::move(step));
 
-        if (read_reverse)
+        if (read_type == ReadFromMergeTree::ReadType::InReverseOrder)
         {
             auto reverse_step = std::make_unique<ReverseRowsStep>(plan->getCurrentDataStream());
             plan->addStep(std::move(reverse_step));
@@ -1466,7 +1468,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             auto step = std::make_unique<ReadFromMergeTree>(
                 data, metadata_snapshot, query_id,
                 column_names, std::move(new_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
-                step_settings, num_streams, /*allow_mix_streams*/ false, /*read_reverse*/ false);
+                step_settings, num_streams, ReadFromMergeTree::ReadType::InOrder);
 
             plan->addStep(std::move(step));
 
@@ -1549,7 +1551,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         auto step = std::make_unique<ReadFromMergeTree>(
             data, metadata_snapshot, query_id,
             column_names, std::move(lonely_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
-            step_settings, num_streams_for_lonely_parts, /*allow_mix_streams*/ true, /*read_reverse*/ false);
+            step_settings, num_streams_for_lonely_parts, ReadFromMergeTree::ReadType::Default);
 
         plan->addStep(std::move(step));
 

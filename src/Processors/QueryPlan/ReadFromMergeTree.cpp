@@ -20,8 +20,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     Names virt_column_names_,
     Settings settings_,
     size_t num_streams_,
-    bool allow_mix_streams_,
-    bool read_reverse_)
+    ReadType read_type_)
     : ISourceStep(DataStream{.header = MergeTreeBaseSelectProcessor::transformHeader(
         metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
         prewhere_info_,
@@ -36,8 +35,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , virt_column_names(std::move(virt_column_names_))
     , settings(std::move(settings_))
     , num_streams(num_streams_)
-    , allow_mix_streams(allow_mix_streams_)
-    , read_reverse(read_reverse_)
+    , read_type(read_type_)
 {
 }
 
@@ -104,7 +102,7 @@ Pipe ReadFromMergeTree::readFromSeparateParts()
     Pipes pipes;
     for (const auto & part : parts)
     {
-        auto source = read_reverse
+        auto source = read_type == ReadType::InReverseOrder
                     ? createSource<MergeTreeReverseSelectProcessor>(part)
                     : createSource<MergeTreeSelectProcessor>(part);
 
@@ -121,17 +119,15 @@ Pipe ReadFromMergeTree::readFromSeparateParts()
 
 Pipe ReadFromMergeTree::read()
 {
-    if (allow_mix_streams && num_streams > 1)
+    if (read_type == ReadType::Default && num_streams > 1)
         return readFromPool();
 
     auto pipe = readFromSeparateParts();
-    if (allow_mix_streams)
-    {
-        /// Use ConcatProcessor to concat sources together.
-        /// It is needed to read in parts order (and so in PK order) if single thread is used.
-        if (pipe.numOutputPorts() > 1)
-            pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
-    }
+
+    /// Use ConcatProcessor to concat sources together.
+    /// It is needed to read in parts order (and so in PK order) if single thread is used.
+    if (read_type == ReadType::Default && pipe.numOutputPorts() > 1)
+        pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
 
     return pipe;
 }
@@ -169,11 +165,29 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
     __builtin_unreachable();
 }
 
+static const char * readTypeToString(ReadFromMergeTree::ReadType type)
+{
+    switch (type)
+    {
+        case ReadFromMergeTree::ReadType::Default:
+            return "Default";
+        case ReadFromMergeTree::ReadType::InOrder:
+            return "InOrder";
+        case ReadFromMergeTree::ReadType::InReverseOrder:
+            return "InReverseOrder";
+    }
+
+    __builtin_unreachable();
+}
+
 void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 {
+    std::string prefix(format_settings.offset, format_settings.indent_char);
+    format_settings.out << prefix << "ReadType: " << readTypeToString(read_type) << '\n';
+
     if (index_stats && !index_stats->empty())
     {
-        std::string prefix(format_settings.offset, format_settings.indent_char);
+
         std::string indent(format_settings.indent, format_settings.indent_char);
         format_settings.out << prefix << "Indexes:\n";
 
