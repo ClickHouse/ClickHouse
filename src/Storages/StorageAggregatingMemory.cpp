@@ -157,6 +157,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
     // TODO: also i should add metadata to indicate that aggregation is not needed in this case.
 
     LOG_DEBUG(&Poco::Logger::get("Arthur"), "create engine with query={}", serializeAST(query));
+    LOG_DEBUG(&Poco::Logger::get("Arthur"), "original columns description={}", columns_description_.toString());
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -174,11 +175,13 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
     auto header = InterpreterSelectQuery(select_ptr, *select_context, SelectQueryOptions().analyze())
         .getSampleBlock();
 
+    ColumnsDescription columns_after_aggr;
+
     /// Insert only columns returned by select.
-    auto list = std::make_shared<ASTExpressionList>();
     for (const auto & column : header)
     {
-        list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+        ColumnDescription column_description(column.name, column.type);
+        columns_after_aggr.add(column_description);
     }
 
 
@@ -186,9 +189,9 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
 
 
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(std::move(columns_description_));
+    storage_metadata.setColumns(std::move(columns_after_aggr));
     storage_metadata.setConstraints(std::move(constraints_));
-    storage_metadata.setSelectQuery(select);
+    storage_metadata.setSelectQuery(std::move(select));
     setInMemoryMetadata(storage_metadata);
 }
 
