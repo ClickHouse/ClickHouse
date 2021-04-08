@@ -5,7 +5,7 @@
 #endif
 
 #if USE_LIBPQXX
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
+#include <Core/PostgreSQL/PostgreSQLConnection.h>
 #include <Core/NamesAndTypes.h>
 
 

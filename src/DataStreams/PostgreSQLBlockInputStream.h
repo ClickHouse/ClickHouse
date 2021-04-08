@@ -10,8 +10,8 @@
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
 #include <pqxx/pqxx>
-#include <Storages/PostgreSQL/insertPostgreSQLValue.h>
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
+#include <Core/PostgreSQL/insertPostgreSQLValue.h>
+#include <Core/PostgreSQL/PostgreSQLConnection.h>
 
 
 namespace DB

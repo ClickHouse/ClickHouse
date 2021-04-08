@@ -5,9 +5,9 @@
 #endif
 
 #if USE_LIBPQXX
-#include "PostgreSQLConnection.h"
 #include "MaterializePostgreSQLMetadata.h"
-#include "insertPostgreSQLValue.h"
+#include <Core/PostgreSQL/PostgreSQLConnection.h>
+#include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>

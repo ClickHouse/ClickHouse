@@ -11,7 +11,7 @@
 #include <Core/Block.h>
 #include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
-#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
+#include <Core/PostgreSQL/PostgreSQLPoolWithFailover.h>
 #include <pqxx/pqxx>
 
 

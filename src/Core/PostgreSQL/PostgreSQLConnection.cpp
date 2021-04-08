@@ -1,10 +1,11 @@
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
+#include "PostgreSQLConnection.h"
 
 #if USE_LIBPQXX
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <common/logger_useful.h>
 #include <IO/Operators.h>
+
 
 namespace DB
 {
@@ -13,7 +14,6 @@ namespace ErrorCodes
     extern const int POSTGRESQL_CONNECTION_FAILURE;
 }
 }
-
 
 namespace postgres
 {

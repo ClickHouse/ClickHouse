@@ -86,6 +86,7 @@ if (USE_AMQPCPP)
 endif()
 
 if (USE_LIBPQXX)
+    add_headers_and_sources(dbms Core/PostgreSQL)
     add_headers_and_sources(dbms Databases/PostgreSQL)
     add_headers_and_sources(dbms Storages/PostgreSQL)
 endif()

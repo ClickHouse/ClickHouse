@@ -9,7 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
+#include <Core/PostgreSQL/PostgreSQLPoolWithFailover.h>
 #include <pqxx/pqxx>
 
 

@@ -12,7 +12,6 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include <Common/quoteString.h>
 #include <Common/parseRemoteDescription.h>
 

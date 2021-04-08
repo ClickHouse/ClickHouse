@@ -1,7 +1,7 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
+#include <Core/PostgreSQL/PostgreSQLConnection.h>
 #include <DataStreams/PostgreSQLBlockInputStream.h>
 
 #include <Storages/StorageFactory.h>
