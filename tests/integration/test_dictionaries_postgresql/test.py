@@ -9,7 +9,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=[
     'configs/config.xml',
     'configs/dictionaries/postgres_dict.xml',
-    'configs/log_conf.xml'], with_postgres=True)
+    'configs/log_conf.xml'], with_postgres=True, with_postgres_cluster=True)
 
 postgres_dict_table_template = """
     CREATE TABLE IF NOT EXISTS {} (

@@ -45,8 +45,14 @@ constexpr static const auto suffix = ".remove_flag";
 static constexpr const std::chrono::seconds cleaner_sleep_time{30};
 static const std::chrono::seconds lock_acquire_timeout{10};
 
-DatabaseConnectionMySQL::DatabaseConnectionMySQL(const Context & context, const String & database_name_, const String & metadata_path_,
-    const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, std::unique_ptr<ConnectionMySQLSettings> settings_, mysqlxx::Pool && pool)
+DatabaseConnectionMySQL::DatabaseConnectionMySQL(
+    const Context & context,
+    const String & database_name_,
+    const String & metadata_path_,
+    const ASTStorage * database_engine_define_,
+    const String & database_name_in_mysql_,
+    std::unique_ptr<ConnectionMySQLSettings> settings_,
+    mysqlxx::PoolWithFailover && pool)
     : IDatabase(database_name_)
     , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
