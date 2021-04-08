@@ -87,33 +87,46 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
                 materialized_view->lockForShare(context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout));
 
             StoragePtr inner_table = materialized_view->getTargetTable();
-
-            if (dynamic_cast<const StorageAggregatingMemory *>(inner_table.get()))
-            {
-                // TODO: process insert without aggregation
-                // out = std::make_shared<PushingToViewsBlockOutputStream>(
-                // dependent_table, dependent_metadata_snapshot, *insert_context, ASTPtr(), true);
-            }
-
             auto inner_table_id = inner_table->getStorageID();
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
 
-            std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-            insert->table_id = inner_table_id;
-
-            /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, *select_context, SelectQueryOptions().analyze())
-                .getSampleBlock();
-
-            /// Insert only columns returned by select.
-            auto list = std::make_shared<ASTExpressionList>();
-            const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
-            for (const auto & column : header)
+            if (dynamic_cast<const StorageAggregatingMemory *>(inner_table.get()))
             {
-                /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasPhysical(column.name))
-                    list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                // NOTE: processing insert without aggregation
+                out = inner_table->write(query, inner_metadata_snapshot, *insert_context);
+
+                // TODO: maybe use PushingToViewsBlockOutputStream instead, because live view is doing this?
+                // out = std::make_shared<PushingToViewsBlockOutputStream>(
+                //     dependent_table, dependent_metadata_snapshot, *insert_context, ASTPtr(), true);
+            }
+            else
+            {
+                std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+                insert->table_id = inner_table_id;
+
+                /// Get list of columns we get from select query.
+                auto header = InterpreterSelectQuery(query, *select_context, SelectQueryOptions().analyze())
+                    .getSampleBlock();
+
+                /// Insert only columns returned by select.
+                auto list = std::make_shared<ASTExpressionList>();
+                const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
+                for (const auto & column : header)
+                {
+                    /// But skip columns which storage doesn't have.
+                    if (inner_table_columns.hasPhysical(column.name))
+                        list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                }
+
+                insert->columns = std::move(list);
+
+                ASTPtr insert_query_ptr(insert.release());
+                InterpreterInsertQuery interpreter(insert_query_ptr, *insert_context);
+
+                LOG_DEBUG(&Poco::Logger::get("Arthur"), "materialized_view pusher pre-interpreter.execute(), insert_query={}", insert_query_ptr->dumpTree());
+                BlockIO io = interpreter.execute();
+                out = io.out;
             }
 
             insert->columns = std::move(list);
