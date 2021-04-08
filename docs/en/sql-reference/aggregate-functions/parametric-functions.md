@@ -511,10 +511,12 @@ Same behavior as [sumMap](../../sql-reference/aggregate-functions/reference/summ
 
 Returns a value of next event that matched an event chain.
 
+_Experimental function, `SET allow_experimental_funnel_functions = 1` to enable it._
+
 **Syntax**
 
 ``` sql
-sequenceNextNode(direction, base)(timestamp, base_condition, event_column, event1, event2, event3, ...)
+sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event1, event2, event3, ...)
 ```
 
 **Parameters**
@@ -530,8 +532,8 @@ sequenceNextNode(direction, base)(timestamp, base_condition, event_column, event
     
 **Arguments**
 -   `timestamp` — Name of the column containing the timestamp. Data types supported: `Date`, `DateTime` and other unsigned integer types.
--   `base_condition` — Condition that the base point must fulfill.
 -   `event_column` — Name of the column containing the value of the next event to be returned. Data types supported: `String` and `Nullable(String)`
+-   `base_condition` — Condition that the base point must fulfill.
 -   `cond` — Conditions describing the chain of events. `UInt8`
 
 **Returned value**
@@ -557,7 +559,7 @@ ORDER BY id;
 
 INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'E') (5, 1, 'F');
 
-SELECT id, sequenceNextNode('forward', 'head')(dt, page = 'A', page, page = 'A', page = 'B') as next_flow FROM test_flow GROUP BY id;
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'A', page = 'A', page = 'B') as next_flow FROM test_flow GROUP BY id;
 ```
 
 Result:
@@ -579,7 +581,7 @@ INSERT INTO test_flow VALUES (1, 3, 'Gift') (2, 3, 'Home') (3, 3, 'Gift') (4, 3,
 ```
 
 ```SQL
-SELECT id, sequenceNextNode('forward', 'head')(dt, page = 'Home', page, page = 'Home', page = 'Gift') FROM test_flow GROUP BY id;
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = 'Home', page = 'Gift') FROM test_flow GROUP BY id;
  
                   dt   id   page
  1970-01-01 09:00:01    1   Home // Base point, Matched with Home
@@ -600,7 +602,7 @@ SELECT id, sequenceNextNode('forward', 'head')(dt, page = 'Home', page, page = '
 **Behavior for `backward` and `tail`**
 
 ```SQL
-SELECT id, sequenceNextNode('backward', 'tail')(dt, page = 'Basket', page, page = 'Basket', page = 'Gift') FROM test_flow GROUP BY id;
+SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page = 'Basket', page = 'Gift') FROM test_flow GROUP BY id;
 
                  dt   id   page
 1970-01-01 09:00:01    1   Home
@@ -622,7 +624,7 @@ SELECT id, sequenceNextNode('backward', 'tail')(dt, page = 'Basket', page, page 
 **Behavior for `forward` and `first_match`**
 
 ```SQL
-SELECT id, sequenceNextNode('forward', 'first_match')(dt, page = 'Gift', page, page = 'Gift') FROM test_flow GROUP BY id;
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
 
                  dt   id   page
 1970-01-01 09:00:01    1   Home
@@ -641,7 +643,7 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page = 'Gift', page, p
 ```
 
 ```SQL
-SELECT id, sequenceNextNode('forward', 'first_match')(dt, page = 'Gift', page, page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
 
                  dt   id   page
 1970-01-01 09:00:01    1   Home
@@ -663,7 +665,7 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, page = 'Gift', page, p
 **Behavior for `backward` and `last_match`**
 
 ```SQL
-SELECT id, sequenceNextNode('backward', 'last_match')(dt, page = 'Gift', page, page = 'Gift') FROM test_flow GROUP BY id;
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
 
                  dt   id   page
 1970-01-01 09:00:01    1   Home // The result
