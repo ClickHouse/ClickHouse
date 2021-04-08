@@ -57,7 +57,7 @@ clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_t
 
 ## Examples {#examples}
 
-A number of cell towers by type:
+1. A number of cell towers by type:
 ```
 SELECT radio, count() AS c FROM cell_towers GROUP BY radio ORDER BY c DESC
 
