@@ -93,6 +93,8 @@ StorageMergeTree::StorageMergeTree(
     increment.set(getMaxBlockNumber());
 
     loadMutations();
+
+    loadDeduplicationLog();
 }
 
 
@@ -265,6 +267,7 @@ void StorageMergeTree::alter(
     TableLockHolder & table_lock_holder)
 {
     auto table_id = getStorageID();
+    auto old_storage_settings = getSettings();
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
@@ -298,6 +301,21 @@ void StorageMergeTree::alter(
         /// should be executed in sequential order.
         if (!maybe_mutation_commands.empty())
             waitForMutation(mutation_version, mutation_file_name);
+    }
+
+    {
+        /// Some additional changes in settings
+        auto new_storage_settings = getSettings();
+
+        if (old_storage_settings->non_replicated_deduplication_window != new_storage_settings->non_replicated_deduplication_window)
+        {
+            /// We cannot place this check into settings sanityCheck because it depends on format_version.
+            /// sanityCheck must work event without storage.
+            if (new_storage_settings->non_replicated_deduplication_window != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+                throw Exception("Deduplication for non-replicated MergeTree in old syntax is not supported", ErrorCodes::BAD_ARGUMENTS);
+
+            deduplication_log->setDeduplicationWindowSize(new_storage_settings->non_replicated_deduplication_window);
+        }
     }
 }
 
@@ -614,6 +632,16 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     return CancellationCode::CancelSent;
 }
 
+void StorageMergeTree::loadDeduplicationLog()
+{
+    auto settings = getSettings();
+    if (settings->non_replicated_deduplication_window != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        throw Exception("Deduplication for non-replicated MergeTree in old syntax is not supported", ErrorCodes::BAD_ARGUMENTS);
+
+    std::string path = getDataPaths()[0] + "/deduplication_logs";
+    deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version);
+    deduplication_log->load();
+}
 
 void StorageMergeTree::loadMutations()
 {
@@ -1207,6 +1235,12 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool
                 LOG_INFO(log, "Detaching {}", part->relative_path);
                 part->makeCloneInDetached("", metadata_snapshot);
             }
+        }
+
+        if (deduplication_log)
+        {
+            for (const auto & part : parts_to_remove)
+                deduplication_log->dropPart(part->info);
         }
 
         if (detach)
