@@ -1,5 +1,5 @@
 ---
-toc_folder_title: Interfaces
+toc_folder_title: 接口
 toc_priority: 14
 toc_title: 客户端
 ---

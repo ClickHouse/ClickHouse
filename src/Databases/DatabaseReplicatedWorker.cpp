@@ -125,7 +125,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         });
 
         if (!processed)
-            throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica,"
+            throw Exception(ErrorCodes::UNFINISHED, "Timeout: Cannot enqueue query on this replica, "
                             "most likely because replica is busy with previous queue entries");
     }
 
@@ -237,6 +237,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->entry.query.empty())
     {
+        /// Some replica is added or removed, let's update cached cluster
+        database->setCluster(database->getClusterImpl());
         out_reason = fmt::format("Entry {} is a dummy task", entry_name);
         return {};
     }

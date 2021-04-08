@@ -42,7 +42,7 @@ DatabaseMaterializePostgreSQL<DatabaseOrdinary>::DatabaseMaterializePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & database_name_,
         const String & postgres_database_name,
-        PostgreSQLConnectionPtr connection_,
+        const String & connection_string,
         std::unique_ptr<MaterializePostgreSQLSettings> settings_)
     : DatabaseOrdinary(
             database_name_, metadata_path_, "data/" + escapeForFileName(database_name_) + "/",
@@ -53,7 +53,7 @@ DatabaseMaterializePostgreSQL<DatabaseOrdinary>::DatabaseMaterializePostgreSQL(
     , database_engine_define(database_engine_define_->clone())
     , database_name(database_name_)
     , remote_database_name(postgres_database_name)
-    , connection(std::move(connection_))
+    , connection(std::make_shared<postgres::Connection>(connection_string, ""))
     , settings(std::move(settings_))
 {
 }
@@ -67,14 +67,14 @@ DatabaseMaterializePostgreSQL<DatabaseAtomic>::DatabaseMaterializePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & database_name_,
         const String & postgres_database_name,
-        PostgreSQLConnectionPtr connection_,
+        const String & connection_string,
         std::unique_ptr<MaterializePostgreSQLSettings> settings_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializePostgreSQL<Atomic> (" + database_name_ + ")", context)
     , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , remote_database_name(postgres_database_name)
-    , connection(std::move(connection_))
+    , connection(std::make_shared<postgres::Connection>(connection_string, ""))
     , settings(std::move(settings_))
 {
 }
@@ -85,14 +85,14 @@ void DatabaseMaterializePostgreSQL<Base>::startSynchronization()
 {
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
-            connection->conn_str(),
+            connection->getConnectionString(),
             metadata_path + METADATA_SUFFIX,
             global_context,
             settings->postgresql_replica_max_block_size.value,
             settings->postgresql_replica_allow_minimal_ddl, true,
             settings->postgresql_replica_tables_list.value);
 
-    std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection->conn());
+    std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection->getRef());
 
     for (const auto & table_name : tables_to_replicate)
     {

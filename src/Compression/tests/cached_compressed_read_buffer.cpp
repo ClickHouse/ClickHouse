@@ -37,7 +37,7 @@ int main(int argc, char ** argv)
                 path,
                 [&]()
                 {
-                    return createReadBufferFromFileBase(path, 0, 0, 0);
+                    return createReadBufferFromFileBase(path, 0, 0, 0, nullptr);
                 },
                 &cache
             );
@@ -56,7 +56,7 @@ int main(int argc, char ** argv)
                 path,
                 [&]()
                 {
-                    return createReadBufferFromFileBase(path, 0, 0, 0);
+                    return createReadBufferFromFileBase(path, 0, 0, 0, nullptr);
                 },
                 &cache
             );

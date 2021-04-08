@@ -25,30 +25,52 @@ namespace DB
 
 template<typename T>
 PostgreSQLBlockInputStream<T>::PostgreSQLBlockInputStream(
+    postgres::ConnectionHolderPtr connection_,
+    const std::string & query_str_,
+    const Block & sample_block,
+    const UInt64 max_block_size_)
+    : query_str(query_str_)
+    , max_block_size(max_block_size_)
+    , connection(std::move(connection_))
+{
+    init(sample_block);
+}
+
+
+template<typename T>
+PostgreSQLBlockInputStream<T>::PostgreSQLBlockInputStream(
     std::shared_ptr<T> tx_,
     const std::string & query_str_,
     const Block & sample_block,
     const UInt64 max_block_size_,
     bool auto_commit_)
     : query_str(query_str_)
+    , tx(std::move(tx_))
     , max_block_size(max_block_size_)
     , auto_commit(auto_commit_)
-    , tx(tx_)
 {
-    description.init(sample_block);
+    init(sample_block);
 }
 
 
 template<typename T>
-void PostgreSQLBlockInputStream<T>::readPrefix()
+void PostgreSQLBlockInputStream<T>::init(const Block & sample_block)
 {
+    description.init(sample_block);
+
     for (const auto idx : ext::range(0, description.sample_block.columns()))
         if (description.types[idx].first == ExternalResultDescription::ValueType::vtArray)
             preparePostgreSQLArrayInfo(array_info, idx, description.sample_block.getByPosition(idx).type);
     /// pqxx::stream_from uses COPY command, will get error if ';' is present
     if (query_str.ends_with(';'))
         query_str.resize(query_str.size() - 1);
+}
 
+
+template<typename T>
+void PostgreSQLBlockInputStream<T>::readPrefix()
+{
+    tx = std::make_shared<T>(connection->conn());
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view(query_str));
 }
 
@@ -123,10 +145,10 @@ void PostgreSQLBlockInputStream<T>::readSuffix()
 }
 
 template
-class PostgreSQLBlockInputStream<pqxx::work>;
+class PostgreSQLBlockInputStream<pqxx::ReplicationTransaction>;
 
 template
-class PostgreSQLBlockInputStream<pqxx::read_transaction>;
+class PostgreSQLBlockInputStream<pqxx::ReadTransaction>;
 
 }
 

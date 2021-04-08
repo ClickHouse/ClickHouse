@@ -4,44 +4,68 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <common/logger_useful.h>
-
+#include <IO/Operators.h>
 
 namespace DB
 {
-
-PostgreSQLConnection::PostgreSQLConnection(std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
+namespace ErrorCodes
 {
-    address = host + ':' + std::to_string(port);
-    connection_str = formatConnectionString(std::move(dbname), std::move(host), port, std::move(user), std::move(password));
+    extern const int POSTGRESQL_CONNECTION_FAILURE;
+}
 }
 
 
-PostgreSQLConnection::PostgreSQLConnection(const PostgreSQLConnection & other)
-        : connection_str(other.connection_str)
-        , address(other.address)
+namespace postgres
+{
+
+Connection::Connection(
+        const String & connection_str_,
+        const String & address_)
+    : connection_str(connection_str_)
+    , address(address_)
 {
 }
 
 
-PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::conn()
+pqxx::ConnectionPtr Connection::get()
 {
-    connect();
+    connectIfNeeded();
     return connection;
 }
 
 
-void PostgreSQLConnection::connect()
+pqxx::connection & Connection::getRef()
 {
-    if (!connection || !connection->is_open())
-        connection = std::make_unique<pqxx::connection>(connection_str);
+    if (tryConnectIfNeeded())
+        return *connection;
+
+    throw DB::Exception(DB::ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, "Connection failure");
 }
 
 
-bool PostgreSQLConnection::tryConnect()
+pqxx::ConnectionPtr Connection::tryGet()
+{
+    if (tryConnectIfNeeded())
+        return connection;
+    return nullptr;
+}
+
+
+void Connection::connectIfNeeded()
+{
+    if (!connection || !connection->is_open())
+    {
+        LOG_DEBUG(&Poco::Logger::get("PostgreSQLConnection"), "New connection to {}", getAddress());
+        connection = std::make_shared<pqxx::connection>(connection_str);
+    }
+}
+
+
+bool Connection::tryConnectIfNeeded()
 {
     try
     {
-        connect();
+        connectIfNeeded();
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
@@ -57,19 +81,6 @@ bool PostgreSQLConnection::tryConnect()
     }
 
     return true;
-}
-
-
-std::string PostgreSQLConnection::formatConnectionString(
-    std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
-{
-    WriteBufferFromOwnString out;
-    out << "dbname=" << quote << dbname
-        << " host=" << quote << host
-        << " port=" << port
-        << " user=" << quote << user
-        << " password=" << quote << password;
-    return out.str();
 }
 
 }

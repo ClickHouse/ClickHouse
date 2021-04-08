@@ -37,9 +37,17 @@ void insertPostgreSQLValue(
 {
     switch (type)
     {
+
         case ExternalResultDescription::ValueType::vtUInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
+        {
+            if (value == "t")
+                assert_cast<ColumnUInt8 &>(column).insertValue(1);
+            else if (value == "f")
+                assert_cast<ColumnUInt8 &>(column).insertValue(0);
+            else
+                assert_cast<ColumnUInt8 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
             break;
+        }
         case ExternalResultDescription::ValueType::vtUInt16:
             assert_cast<ColumnUInt16 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
             break;
@@ -94,7 +102,7 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtDecimal256:
         {
             ReadBufferFromString istr(value);
-            data_type->deserializeAsWholeText(column, istr, FormatSettings{});
+            data_type->getDefaultSerialization()->deserializeWholeText(column, istr, FormatSettings{});
             break;
         }
         case ExternalResultDescription::ValueType::vtArray:
@@ -224,4 +232,3 @@ void preparePostgreSQLArrayInfo(
     array_info[column_idx] = {count_dimensions, default_value, parser};
 }
 }
-

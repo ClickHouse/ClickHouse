@@ -22,6 +22,7 @@
 #include <Storages/StorageFactory.h>
 #include <common/logger_useful.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
+#include "PostgreSQLConnectionPool.h"
 
 
 namespace DB
@@ -438,7 +439,7 @@ void registerStorageMaterializePostgreSQL(StorageFactory & factory)
         const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         /// No connection is made here, see Storages/PostgreSQL/PostgreSQLConnection.cpp
-        PostgreSQLConnection connection(
+        auto connection_string = postgres::ConnectionPool::formatConnectionString(
             remote_database,
             parsed_host_port.first,
             parsed_host_port.second,
@@ -446,7 +447,7 @@ void registerStorageMaterializePostgreSQL(StorageFactory & factory)
             engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
 
         return StorageMaterializePostgreSQL::create(
-                args.table_id, remote_database, remote_table, connection.conn_str(),
+                args.table_id, remote_database, remote_table, connection_string,
                 metadata, args.context,
                 std::move(postgresql_replication_settings));
     };
