@@ -5,7 +5,7 @@ toc_title: Build on Mac OS X
 
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-Build should work on x86_64 (Intel) and ARM (Apple Silicon) based macOS 10.15 (Catalina) and higher with recent Xcode's native AppleClang, or Homebrew's vanilla Clang or GCC compilers.
+Build should work on x86_64 (Intel) and arm64 (Apple Silicon) based macOS 10.15 (Catalina) and higher with recent Xcode's native AppleClang, or Homebrew's vanilla Clang or GCC compilers.
 
 ## Install Homebrew {#install-homebrew}
 
