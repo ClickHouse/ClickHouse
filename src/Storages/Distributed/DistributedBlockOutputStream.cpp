@@ -679,7 +679,13 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             context.getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
             writeVarUInt(block.rows(), header_buf);
             writeVarUInt(block.bytes(), header_buf);
-            writeStringBinary(block.cloneEmpty().dumpStructure(), header_buf);
+            writeStringBinary(block.cloneEmpty().dumpStructure(), header_buf); /// obsolete
+            /// Write block header separately in the batch header.
+            /// It is required for checking does conversion is required or not.
+            {
+                NativeBlockOutputStream header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+                header_stream.write(block.cloneEmpty());
+            }
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
