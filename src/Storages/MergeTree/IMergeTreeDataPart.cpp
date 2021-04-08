@@ -189,6 +189,9 @@ static void incrementStateMetric(IMergeTreeDataPart::State state)
         case IMergeTreeDataPart::State::DeleteOnDestroy:
             CurrentMetrics::add(CurrentMetrics::PartsDeleteOnDestroy);
             return;
+        case IMergeTreeDataPart::State::DeleteOnDestroyKeepS3:
+            CurrentMetrics::add(CurrentMetrics::PartsDeleteOnDestroy);
+            return;
     }
 }
 
@@ -212,6 +215,9 @@ static void decrementStateMetric(IMergeTreeDataPart::State state)
             CurrentMetrics::sub(CurrentMetrics::PartsDeleting);
             return;
         case IMergeTreeDataPart::State::DeleteOnDestroy:
+            CurrentMetrics::sub(CurrentMetrics::PartsDeleteOnDestroy);
+            return;
+        case IMergeTreeDataPart::State::DeleteOnDestroyKeepS3:
             CurrentMetrics::sub(CurrentMetrics::PartsDeleteOnDestroy);
             return;
     }
@@ -393,7 +399,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
-    if (state == State::DeleteOnDestroy || is_temp)
+    if (state == State::DeleteOnDestroy || state == State::DeleteOnDestroyKeepS3 || is_temp)
     {
         try
         {
@@ -416,9 +422,9 @@ void IMergeTreeDataPart::removeIfNeeded()
                 }
             }
 
-            remove(false);
+            remove(state == State::DeleteOnDestroyKeepS3);
 
-            if (state == State::DeleteOnDestroy)
+            if (state == State::DeleteOnDestroy || state == State::DeleteOnDestroyKeepS3)
             {
                 LOG_TRACE(storage.log, "Removed part from old location {}", path);
             }
@@ -463,6 +469,8 @@ String IMergeTreeDataPart::stateToString(IMergeTreeDataPart::State state)
             return "Deleting";
         case State::DeleteOnDestroy:
             return "DeleteOnDestroy";
+        case State::DeleteOnDestroyKeepS3:
+            return "DeleteOnDestroyKeepS3";
     }
 
     __builtin_unreachable();

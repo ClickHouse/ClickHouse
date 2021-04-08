@@ -410,9 +410,34 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         size_t sum_files_size = 0;
         readBinary(sum_files_size, in);
         IMergeTreeDataPart::TTLInfos ttl_infos;
-        /// Skip ttl infos, not required for S3 metadata
         String ttl_infos_string;
         readBinary(ttl_infos_string, in);
+        ReadBufferFromString ttl_infos_buffer(ttl_infos_string);
+        assertString("ttl format version: 1\n", ttl_infos_buffer);
+        ttl_infos.read(ttl_infos_buffer);
+
+        ReservationPtr reservation
+            = data.balancedReservation(metadata_snapshot, sum_files_size, 0, part_name, part_info, {}, tagger_ptr, &ttl_infos, true);
+        if (!reservation)
+            reservation
+                = data.reserveSpacePreferringTTLRules(metadata_snapshot, sum_files_size, ttl_infos, std::time(nullptr), 0, true);
+        if (reservation)
+        {
+            DiskPtr disk = reservation->getDisk();
+            if (disk && disk->getType() == DiskType::Type::S3)
+            {
+                for (const auto & d : disks_s3)
+                {
+                    if (d->getPath() == disk->getPath())
+                    {
+                        Disks disks_tmp = { disk };
+                        disks_s3.swap(disks_tmp);
+                        break;
+                    }
+                }
+            }
+        }
+
         String part_type = "Wide";
         readStringBinary(part_type, in);
         if (part_type == "InMemory")
