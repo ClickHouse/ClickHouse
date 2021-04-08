@@ -115,10 +115,15 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
         StorageS3::updateClientAndAuthSettings(context, client_auth);
         StorageS3Source::DisclosedGlobIterator iterator(*client_auth.client, client_auth.uri);
 
-        auto callback = [endpoint = client_auth.uri.endpoint, bucket = client_auth.uri.bucket, iterator = std::move(iterator)]() mutable -> String
+        auto task_identifier = UUIDHelpers::generateV4();
+        const_cast<Context &>(context).getClientInfo().task_identifier = toString(task_identifier);
+
+        std::cout << "Created UUID: " << toString(context.getClientInfo().task_identifier) << std::endl;
+
+        auto callback = [iterator = std::move(iterator)]() mutable -> String
         {
             if (auto value = iterator.next())
-                return endpoint + '/' + bucket + '/' + *value;
+                return *value;
             return {};
         };
 

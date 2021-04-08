@@ -5,9 +5,9 @@
 #if USE_AWS_S3
 
 #include "Client/Connection.h"
-#include "Interpreters/Cluster.h"
-#include "Storages/IStorage.h"
-#include "Storages/StorageS3.h"
+#include <Interpreters/Cluster.h>
+#include <IO/S3Common.h>
+#include <Storages/StorageS3.h>
 
 #include <memory>
 #include <optional>
@@ -67,13 +67,33 @@ protected:
 private:
     /// Connections from initiator to other nodes
     std::vector<std::shared_ptr<Connection>> connections;
+    StorageS3::ClientAuthentificaiton client_auth;
+
     String filename;
     std::string cluster_name;
     ClusterPtr cluster;
 
     String format_name;
     String compression_method;
-    ClientAuthentificationBuilder cli_builder;
+    
+
+    struct DistributedFileIterator : public StorageS3Source::FileIterator
+    {
+        DistributedFileIterator(NextTaskCallback callback_, String identifier_)
+            : callback(callback_), identifier(identifier_) {}
+
+        NextTaskCallback callback;
+        String identifier;
+
+        std::optional<String> next() override
+        {
+            std::cout << "DistributedFileIterator" << std::endl;
+            std::cout << identifier << std::endl;
+            auto answer = callback(identifier);
+            std::cout << answer << std::endl;
+            return answer;
+        }
+    };
 };
 
 
