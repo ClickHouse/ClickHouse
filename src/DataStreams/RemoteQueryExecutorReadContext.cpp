@@ -146,7 +146,6 @@ bool RemoteQueryExecutorReadContext::checkTimeoutImpl(bool blocking)
     events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
 
     /// Wait for epoll_fd will not block if it was polled externally.
-
     int timeout = blocking ? -1 : 0;
     int num_events = 0;
     while (num_events <= 0)
