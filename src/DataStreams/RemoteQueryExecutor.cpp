@@ -200,6 +200,8 @@ void RemoteQueryExecutor::sendQuery()
             connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
     }
 
+    std::cout << "RemoteQueryExecutor " << toString(context.getClientInfo().task_identifier) << std::endl;
+
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 
     established = false;

@@ -17,6 +17,7 @@
 #include <ext/shared_ptr_helper.h>
 #include <IO/S3Common.h>
 #include <IO/CompressionMethod.h>
+#include <Interpreters/Context.h>
 
 namespace Aws::S3
 {
@@ -30,7 +31,6 @@ class StorageS3SequentialSource;
 class StorageS3Source : public SourceWithProgress
 {
 public:
-
     class DisclosedGlobIterator
     {
         public:
@@ -42,6 +42,13 @@ public:
             std::shared_ptr<Impl> pimpl;
     };
 
+    struct FileIterator
+    {
+        virtual ~FileIterator() = default;
+        virtual std::optional<String> next() = 0;
+    };
+    
+
     static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column);
 
     StorageS3Source(
@@ -50,13 +57,13 @@ public:
         const String & format,
         String name_,
         const Block & sample_block,
-        const Context & context,
-        const ColumnsDescription & columns,
-        UInt64 max_block_size,
-        const CompressionMethod compression_method,
-        const std::shared_ptr<Aws::S3::S3Client> & client,
+        const Context & context_,
+        const ColumnsDescription & columns_,
+        UInt64 max_block_size_,
+        const String compression_hint_,
+        const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
-        const String & key);
+        std::shared_ptr<FileIterator> file_iterator_);
 
     String getName() const override;
 
@@ -64,12 +71,26 @@ public:
 
 private:
     String name;
+    String bucket;
+    String file_path;
+    String format;
+    Context context;
+    ColumnsDescription columns_desc;
+    UInt64 max_block_size;
+    String compression_hint;
+    std::shared_ptr<Aws::S3::S3Client> client;
+    Block sample_block;
+
+
     std::unique_ptr<ReadBuffer> read_buf;
     BlockInputStreamPtr reader;
     bool initialized = false;
     bool with_file_column = false;
     bool with_path_column = false;
-    String file_path;
+    std::shared_ptr<FileIterator> file_iterator;
+
+    /// Recreate ReadBuffer and BlockInputStream for each file.
+    bool initialize();
 };
 
 /**
@@ -135,6 +156,23 @@ private:
     size_t max_single_part_upload_size;
     String compression_method;
     String name;
+
+    struct LocalFileIterator : public StorageS3Source::FileIterator
+    {
+        explicit LocalFileIterator(StorageS3Source::DisclosedGlobIterator glob_iterator_)
+            : glob_iterator(glob_iterator_) {}
+
+        StorageS3Source::DisclosedGlobIterator glob_iterator;
+        /// Several files could be processed in parallel
+        /// from different sources
+        std::mutex iterator_mutex;
+
+        std::optional<String> next() override
+        {
+            std::lock_guard lock(iterator_mutex);
+            return glob_iterator.next();
+        }
+    };
 
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentificaiton &);
 };

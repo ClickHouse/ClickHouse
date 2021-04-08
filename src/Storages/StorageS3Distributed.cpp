@@ -9,6 +9,7 @@
 #include <Common/Throttler.h>
 #include "Client/Connection.h"
 #include "Core/QueryProcessingStage.h"
+#include <Core/UUID.h>
 #include "DataStreams/RemoteBlockInputStream.h"
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -34,7 +35,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageS3.h>
 #include <common/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
@@ -56,119 +56,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct StorageS3SourceBuilder
-{
-    bool need_path;
-    bool need_file;
-    String format;
-    String name;
-    Block sample_block;
-    const Context & context;
-    const ColumnsDescription & columns;
-    UInt64 max_block_size;
-    String compression_method;
-};
-
-class StorageS3SequentialSource : public SourceWithProgress
-{
-public:
-
-    static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column)
-    {
-        if (with_path_column)
-            sample_block.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
-        if (with_file_column)
-            sample_block.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
-
-        return sample_block;
-    }
-
-    StorageS3SequentialSource(
-        String initial_query_id_,
-        NextTaskCallback read_task_callback_,
-        const ClientAuthentificationBuilder & client_auth_builder_,
-        const StorageS3SourceBuilder & s3_builder_)
-        : SourceWithProgress(getHeader(s3_builder_.sample_block, s3_builder_.need_path, s3_builder_.need_file))
-        , initial_query_id(initial_query_id_)
-        , s3b(s3_builder_)
-        , cab(client_auth_builder_)
-        , read_task_callback(read_task_callback_)
-    {
-        createOrUpdateInnerSource();
-    }
-
-    String getName() const override
-    {
-        return "StorageS3SequentialSource"; 
-    }
-
-    Chunk generate() override
-    {
-        if (!inner)
-            return {};
-
-        auto chunk = inner->generate();
-        if (!chunk) 
-        {
-            if (!createOrUpdateInnerSource())
-                return {};
-            else
-                chunk = inner->generate();
-        }
-        return chunk;
-    }
-
-private:
-
-    String askAboutNextKey()
-    {
-        try
-        {
-            return read_task_callback(initial_query_id);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(&Poco::Logger::get(getName()));
-            throw;
-        }
-    }
-
-    bool createOrUpdateInnerSource()
-    {
-        auto next_string = askAboutNextKey();
-        if (next_string.empty())
-            return false;
-
-        auto next_uri = S3::URI(Poco::URI(next_string));
-
-        auto client_auth = StorageS3::ClientAuthentificaiton{
-            next_uri,
-            cab.access_key_id,
-            cab.secret_access_key,
-            cab.max_connections,
-            {}, {}};
-        StorageS3::updateClientAndAuthSettings(s3b.context, client_auth);
-
-        inner = std::make_unique<StorageS3Source>(
-            s3b.need_path, s3b.need_file, s3b.format, s3b.name,
-            s3b.sample_block, s3b.context, s3b.columns, s3b.max_block_size,
-            chooseCompressionMethod(client_auth.uri.key, ""),
-            client_auth.client,
-            client_auth.uri.bucket,
-            next_uri.key
-        );
-
-        return true;
-    }
-
-    String initial_query_id;
-    StorageS3SourceBuilder s3b;
-    ClientAuthentificationBuilder cab;
-    std::unique_ptr<StorageS3Source> inner;
-    NextTaskCallback read_task_callback;
-};
-
-
 
 StorageS3Distributed::StorageS3Distributed(
     const String & filename_,
@@ -183,17 +70,18 @@ StorageS3Distributed::StorageS3Distributed(
     const Context & context_,
     const String & compression_method_)
     : IStorage(table_id_)
+    , client_auth{S3::URI{Poco::URI{filename_}}, access_key_id_, secret_access_key_, max_connections_, {}, {}} /// Client and settings will be updated later
     , filename(filename_)
     , cluster_name(cluster_name_)
     , cluster(context_.getCluster(cluster_name)->getClusterWithReplicasAsShards(context_.getSettings()))
     , format_name(format_name_)
     , compression_method(compression_method_)
-    , cli_builder{access_key_id_, secret_access_key_, max_connections_}
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
+    StorageS3::updateClientAndAuthSettings(context_, client_auth);
 }
 
 
@@ -206,6 +94,8 @@ Pipe StorageS3Distributed::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
+    StorageS3::updateClientAndAuthSettings(context, client_auth);
+
     /// Secondary query, need to read from S3
     if (context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
@@ -219,16 +109,21 @@ Pipe StorageS3Distributed::read(
                 need_file_column = true;
         }
 
-        StorageS3SourceBuilder s3builder{
-            need_path_column, need_file_column,
-            format_name, getName(),
+        std::cout << "Got UUID on worker " << toString(context.getClientInfo().task_identifier) << std::endl;
+        
+        auto file_iterator = std::make_shared<DistributedFileIterator>(
+            context.getNextTaskCallback(), 
+            context.getInitialQueryId());
+
+        return Pipe(std::make_shared<StorageS3Source>(
+            need_path_column, need_file_column, format_name, getName(),
             metadata_snapshot->getSampleBlock(), context,
             metadata_snapshot->getColumns(), max_block_size,
-            compression_method
-        };
-
-        return Pipe(std::make_shared<StorageS3SequentialSource>(
-            context.getInitialQueryId(), context.getNextTaskCallback(), cli_builder, s3builder));
+            compression_method,
+            client_auth.client,
+            client_auth.uri.bucket,
+            file_iterator
+        ));
     }
 
     /// The code from here and below executes on initiator
@@ -253,6 +148,8 @@ Pipe StorageS3Distributed::read(
                 node.compression,
                 node.secure
             ));
+
+            std::cout << "S3Distributed initiator " << toString(context.getClientInfo().task_identifier) << std::endl;
 
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                     *connections.back(), queryToString(query_info.query), header, context, /*throttler=*/nullptr, scalars, Tables(), processed_stage);

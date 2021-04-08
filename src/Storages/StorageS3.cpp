@@ -149,28 +149,62 @@ Block StorageS3Source::getHeader(Block sample_block, bool with_path_column, bool
 StorageS3Source::StorageS3Source(
     bool need_path,
     bool need_file,
-    const String & format,
+    const String & format_,
     String name_,
-    const Block & sample_block,
-    const Context & context,
-    const ColumnsDescription & columns,
-    UInt64 max_block_size,
-    const CompressionMethod compression_method,
-    const std::shared_ptr<Aws::S3::S3Client> & client,
-    const String & bucket,
-    const String & key)
-    : SourceWithProgress(getHeader(sample_block, need_path, need_file))
+    const Block & sample_block_,
+    const Context & context_,
+    const ColumnsDescription & columns_,
+    UInt64 max_block_size_,
+    const String compression_hint_,
+    const std::shared_ptr<Aws::S3::S3Client> & client_,
+    const String & bucket_,
+    std::shared_ptr<FileIterator> file_iterator_)
+    : SourceWithProgress(getHeader(sample_block_, need_path, need_file))
     , name(std::move(name_))
+    , bucket(bucket_)
+    , format(format_)
+    , context(context_)
+    , columns_desc(columns_)
+    , max_block_size(max_block_size_)
+    , compression_hint(compression_hint_)
+    , client(client_)
+    , sample_block(sample_block_)
     , with_file_column(need_file)
     , with_path_column(need_path)
-    , file_path(bucket + "/" + key)
+    , file_iterator(file_iterator_)
 {
-    read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
+    initialize();
+}
+
+
+bool StorageS3Source::initialize()
+{
+    String current_key;
+    if (auto result = file_iterator->next())
+    {
+        current_key = result.value();
+        if (current_key.empty()) {
+            return false;
+        }
+        file_path = bucket + "/" + current_key;
+        std::cout << "StorageS3Source " << file_path << std::endl;
+    }
+    else
+    {
+        /// Do not initialize read_buffer and stream.
+        return false;
+    }
+
+    read_buf = wrapReadBufferWithCompressionMethod(
+        std::make_unique<ReadBufferFromS3>(client, bucket, current_key), chooseCompressionMethod(current_key, compression_hint));
     auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
     reader = std::make_shared<InputStreamFromInputFormat>(input_format);
 
-    if (columns.hasDefaults())
-        reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns, context);
+    if (columns_desc.hasDefaults())
+        reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_desc, context);
+
+    initialized = false;
+    return true;
 }
 
 String StorageS3Source::getName() const
@@ -206,9 +240,14 @@ Chunk StorageS3Source::generate()
         return Chunk(std::move(columns), num_rows);
     }
 
+    reader->readSuffix();
     reader.reset();
+    read_buf.reset();
 
-    return {};
+    if (!initialize())
+        return {};
+
+    return generate();
 }
 
 namespace 
@@ -322,9 +361,9 @@ Pipe StorageS3::read(
 
     /// Iterate through disclosed globs and make a source for each file
     StorageS3Source::DisclosedGlobIterator glob_iterator(*client_auth.client, client_auth.uri);
-    /// TODO: better to put first num_streams keys into pipeline 
-    /// and put others dynamically in runtime
-    while (auto key = glob_iterator.next())
+
+    auto file_iterator = std::make_shared<LocalFileIterator>(glob_iterator);
+    for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
             need_path_column,
@@ -335,16 +374,12 @@ Pipe StorageS3::read(
             local_context,
             metadata_snapshot->getColumns(),
             max_block_size,
-            chooseCompressionMethod(client_auth.uri.key, compression_method),
+            compression_method,
             client_auth.client,
             client_auth.uri.bucket,
-            key.value()));
+            file_iterator));
     }
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-    // It's possible to have many buckets read from s3, resize(num_streams) might open too many handles at the same time.
-    // Using narrowPipe instead.
-    narrowPipe(pipe, num_streams);
-    return pipe;
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
@@ -402,7 +437,8 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
 
         if (engine_args.size() < 2 || engine_args.size() > 5)
             throw Exception(
-                "Storage S3 requires 2 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                "Storage S3 requires 2 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());

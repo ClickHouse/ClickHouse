@@ -88,6 +88,8 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
             writeBinary(uint8_t(0), out);
         }
     }
+
+    writeBinary(task_identifier, out);
 }
 
 
@@ -163,6 +165,8 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
             readBinary(client_trace_context.trace_flags, in);
         }
     }
+
+    readBinary(task_identifier, in);
 }
 
 
