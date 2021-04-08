@@ -1453,11 +1453,11 @@ def format_date_time(self):
         with Given(f"I choose datetimes in {year}"):
             datetimes = select_dates_in_year(year=year, stress=stress)
 
-        with When("I format each of the datetimes in every possible way"):
+        with And("I format the datetimes in every possible way"):
             for dt in datetimes:
                 for tz in timezones:
                     for mode in modes:
-                        with Example(f"{dt} {tz}, format '%{mode}"):
+                        with When(f"{dt} {tz}, format '%{mode}"):
                             with By("converting datetime to string"):
                                 dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                             with And("computing the expected result using python"):

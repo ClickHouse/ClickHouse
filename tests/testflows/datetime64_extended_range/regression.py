@@ -11,15 +11,21 @@ from datetime64_extended_range.common import *
 
 # cross-outs
 # https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350: 128 and 256-bit types are not supported for now
-# "https://github.com/ClickHouse/ClickHouse/issues/17079#issuecomment-783396589" : leap seconds unsupported
+# https://github.com/ClickHouse/ClickHouse/issues/17079#issuecomment-783396589 : leap seconds unsupported
 # https://github.com/ClickHouse/ClickHouse/issues/22824 : dateDiff not working woth dt64
+# https://github.com/ClickHouse/ClickHouse/issues/22852 : formatDateTime wrong value
+# https://github.com/ClickHouse/ClickHouse/issues/22854 : timeSlot(), toMonday() wrong when out of normal
+# https://github.com/ClickHouse/ClickHouse/issues/16260 : timeSlots(), dateDiff() not working with DT64
 
 xfails = {
     "type conversion/to int 8 16 32 64 128 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
     "type conversion/to uint 8 16 32 64 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
     "non existent time/leap seconds/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/17079#issuecomment-783396589")],
     "date time funcs/date diff/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22824")],
-
+    "date time funcs/format date time/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22852")],
+    "date time funcs/time slot/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22854")],
+    "date time funcs/to monday/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22854")],
+    "date time funcs/time slots/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16260")],
 }
 
 
