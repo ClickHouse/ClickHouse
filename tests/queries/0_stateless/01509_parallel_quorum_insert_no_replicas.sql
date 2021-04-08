@@ -15,7 +15,6 @@ ORDER BY tuple();
 
 SET insert_quorum_parallel=1;
 
-SET insert_quorum_timeout=1;
 SET insert_quorum=3;
 INSERT INTO r1 VALUES(1, '1'); --{serverError 285}
 
@@ -26,17 +25,11 @@ INSERT INTO r1 VALUES(1, '1'); --{serverError 285}
 SELECT 'insert to two replicas works';
 SET insert_quorum=2, insert_quorum_parallel=1;
 
--- the first 'good' retry after failure will return:
--- Unknown status, client must retry. Reason: Code: 159, Timeout while waiting for quorum
--- it's related to decreased insert_quorum_timeout=1 at the test beginning
--- it's not critical but not good
-INSERT INTO r1 VALUES(1, '1'); --{serverError 319}
 INSERT INTO r1 VALUES(1, '1');
 
 SELECT COUNT() FROM r1;
 SELECT COUNT() FROM r2;
 
-SET insert_quorum_timeout=600000;
 DETACH TABLE r2;
 
 INSERT INTO r1 VALUES(2, '2'); --{serverError 285}
@@ -92,6 +85,8 @@ INSERT INTO r1 VALUES (4, '4'); -- { serverError 319 }
 SELECT * FROM r2 WHERE key=4;
 
 SYSTEM START FETCHES r2;
+
+SET insert_quorum_timeout=6000000;
 
 -- now retry should be successful
 INSERT INTO r1 VALUES (4, '4');
