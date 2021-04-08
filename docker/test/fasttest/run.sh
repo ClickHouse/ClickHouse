@@ -337,7 +337,7 @@ function run_tests
         secure
         sha256
         xz
-
+        
         # Not sure why these two fail even in sequential mode. Disabled for now
         # to make some progress.
         00646_url_engine
@@ -365,7 +365,10 @@ function run_tests
         01622_defaults_for_url_engine
 
         # JSON functions
-        01666_blns
+        01666_blnsi
+
+        # Depends on AWS
+        01801_s3_distributed.sh
     )
 
     (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
