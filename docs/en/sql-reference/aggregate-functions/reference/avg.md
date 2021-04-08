@@ -12,7 +12,7 @@ Calculates the arithmetic mean.
 avgWeighted(x)
 ```
 
-**Arguments**
+**Parameter**
 
 -   `x` — Values.
 

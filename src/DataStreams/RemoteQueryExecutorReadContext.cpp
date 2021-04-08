@@ -126,11 +126,11 @@ void RemoteQueryExecutorReadContext::setSocket(Poco::Net::Socket & socket)
     receive_timeout = socket.impl()->getReceiveTimeout();
 }
 
-bool RemoteQueryExecutorReadContext::checkTimeout() const
+bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)
 {
     try
     {
-        return checkTimeoutImpl();
+        return checkTimeoutImpl(blocking);
     }
     catch (DB::Exception & e)
     {
@@ -140,30 +140,31 @@ bool RemoteQueryExecutorReadContext::checkTimeout() const
     }
 }
 
-bool RemoteQueryExecutorReadContext::checkTimeoutImpl() const
+bool RemoteQueryExecutorReadContext::checkTimeoutImpl(bool blocking)
 {
     epoll_event events[3];
     events[0].data.fd = events[1].data.fd = events[2].data.fd = -1;
 
     /// Wait for epoll_fd will not block if it was polled externally.
+
+    int timeout = blocking ? -1 : 0;
     int num_events = 0;
     while (num_events <= 0)
     {
-        num_events = epoll_wait(epoll_fd, events, 3, -1);
+        num_events = epoll_wait(epoll_fd, events, 3, timeout);
         if (num_events == -1 && errno != EINTR)
             throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
     }
 
     bool is_socket_ready = false;
     bool is_pipe_alarmed = false;
-    bool has_timer_alarm = false;
 
     for (int i = 0; i < num_events; ++i)
     {
         if (events[i].data.fd == socket_fd)
             is_socket_ready = true;
         if (events[i].data.fd == timer.getDescriptor())
-            has_timer_alarm = true;
+            is_timer_alarmed = true;
         if (events[i].data.fd == pipe_fd[0])
             is_pipe_alarmed = true;
     }
@@ -171,7 +172,7 @@ bool RemoteQueryExecutorReadContext::checkTimeoutImpl() const
     if (is_pipe_alarmed)
         return false;
 
-    if (has_timer_alarm && !is_socket_ready)
+    if (is_timer_alarmed && !is_socket_ready)
     {
         /// Socket receive timeout. Drain it in case or error, or it may be hide by timeout exception.
         timer.drain();
@@ -212,8 +213,23 @@ bool RemoteQueryExecutorReadContext::resumeRoutine()
 void RemoteQueryExecutorReadContext::cancel()
 {
     std::lock_guard guard(fiber_lock);
+
     /// It is safe to just destroy fiber - we are not in the process of reading from socket.
     boost::context::fiber to_destroy = std::move(fiber);
+
+    /// One should not try to wait for the current packet here in case of
+    /// timeout because this will exceed the timeout.
+    /// Anyway if the timeout is exceeded, then the connection will be shutdown
+    /// (disconnected), so it will not left in an unsynchronised state.
+    if (!is_timer_alarmed)
+    {
+        /// Wait for current pending packet, to avoid leaving connection in unsynchronised state.
+        while (is_read_in_progress.load(std::memory_order_relaxed))
+        {
+            checkTimeout(/* blocking= */ true);
+            to_destroy = std::move(to_destroy).resume();
+        }
+    }
 
     /// Send something to pipe to cancel executor waiting.
     uint64_t buf = 0;

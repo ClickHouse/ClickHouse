@@ -1,5 +1,6 @@
 #include "DictionarySourceHelpers.h"
 #include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -12,54 +13,44 @@
 
 namespace DB
 {
-
-void formatBlock(BlockOutputStreamPtr & out, const Block & block)
+/// For simple key
+void formatIDs(BlockOutputStreamPtr & out, const std::vector<UInt64> & ids)
 {
+    auto column = ColumnUInt64::create(ids.size());
+    memcpy(column->getData().data(), ids.data(), ids.size() * sizeof(ids.front()));
+
+    Block block{{std::move(column), std::make_shared<DataTypeUInt64>(), "id"}};
+
     out->writePrefix();
     out->write(block);
     out->writeSuffix();
     out->flush();
 }
 
-/// For simple key
-
-Block blockForIds(
-    const DictionaryStructure & dict_struct,
-    const std::vector<UInt64> & ids)
-{
-    auto column = ColumnUInt64::create(ids.size());
-    memcpy(column->getData().data(), ids.data(), ids.size() * sizeof(ids.front()));
-
-    Block block{{std::move(column), std::make_shared<DataTypeUInt64>(), (*dict_struct.id).name}};
-
-    return block;
-}
-
 /// For composite key
-
-Block blockForKeys(
+void formatKeys(
     const DictionaryStructure & dict_struct,
+    BlockOutputStreamPtr & out,
     const Columns & key_columns,
     const std::vector<size_t> & requested_rows)
 {
     Block block;
-
     for (size_t i = 0, size = key_columns.size(); i < size; ++i)
     {
         const ColumnPtr & source_column = key_columns[i];
-        size_t column_rows_size = source_column->size();
-
-        PaddedPODArray<UInt8> filter(column_rows_size, false);
+        auto filtered_column = source_column->cloneEmpty();
+        filtered_column->reserve(requested_rows.size());
 
         for (size_t idx : requested_rows)
-            filter[idx] = true;
+            filtered_column->insertFrom(*source_column, idx);
 
-        auto filtered_column = source_column->filter(filter, requested_rows.size());
-
-        block.insert({std::move(filtered_column), (*dict_struct.key)[i].type, (*dict_struct.key)[i].name});
+        block.insert({std::move(filtered_column), (*dict_struct.key)[i].type, toString(i)});
     }
 
-    return block;
+    out->writePrefix();
+    out->write(block);
+    out->writeSuffix();
+    out->flush();
 }
 
 Context copyContextAndApplySettings(

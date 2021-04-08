@@ -37,10 +37,7 @@ ORDER BY expr
 [PARTITION BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
-[TTL expr 
-    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx' [, ...] ]
-    [WHERE conditions] 
-    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] ] 
+[TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
 [SETTINGS name=value, ...]
 ```
 
@@ -74,7 +71,7 @@ ORDER BY expr
     
     Выражение должно возвращать столбец `Date` или `DateTime`. Пример: `TTL date + INTERVAL 1 DAY`.   
 
-    Тип правила `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` указывает действие, которое будет выполнено с частью: удаление строк (прореживание), перемещение (при выполнении условия для всех строк части) на определённый диск (`TO DISK 'xxx'`) или том (`TO VOLUME 'xxx'`), или агрегирование данных в устаревших строках. Поведение по умолчанию соответствует удалению строк (`DELETE`). В списке правил может быть указано только одно выражение с поведением `DELETE`.
+    Тип правила `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'` указывает действие, которое будет выполнено с частью, удаление строк (прореживание), перемещение (при выполнении условия для всех строк части) на определённый диск (`TO DISK 'xxx'`) или том (`TO VOLUME 'xxx'`). Поведение по умолчанию соответствует удалению строк (`DELETE`). В списке правил может быть указано только одно выражение с поведением `DELETE`.
     
     Дополнительные сведения смотрите в разделе [TTL для столбцов и таблиц](#table_engine-mergetree-ttl)
 
@@ -94,7 +91,6 @@ ORDER BY expr
 	-   `max_parts_in_total` — максимальное количество кусков во всех партициях.
 	-   `max_compress_block_size` — максимальный размер блоков несжатых данных перед сжатием для записи в таблицу. Вы также можете задать этот параметр в глобальных настройках (смотрите [max_compress_block_size](../../../operations/settings/settings.md#max-compress-block-size)). Настройка, которая задается при создании таблицы, имеет более высокий приоритет, чем глобальная.
 	-   `min_compress_block_size` — минимальный размер блоков несжатых данных, необходимых для сжатия при записи следующей засечки. Вы также можете задать этот параметр в глобальных настройках (смотрите [min_compress_block_size](../../../operations/settings/settings.md#min-compress-block-size)). Настройка, которая задается при создании таблицы, имеет более высокий приоритет, чем глобальная.
-    -   `max_partitions_to_read` — Ограничивает максимальное число партиций для чтения в одном запросе. Также возможно указать настройку [max_partitions_to_read](../../../operations/settings/merge-tree-settings.md#max-partitions-to-read) в глобальных настройках.
 
 **Пример задания секций**
 
@@ -447,28 +443,16 @@ ALTER TABLE example_table
 Для таблицы можно задать одно выражение для устаревания данных, а также несколько выражений, по срабатывании которых данные переместятся на [некоторый диск или том](#table_engine-mergetree-multiple-volumes). Когда некоторые данные в таблице устаревают, ClickHouse удаляет все соответствующие строки.
 
 ``` sql
-TTL expr 
-    [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
-    [WHERE conditions] 
-    [GROUP BY key_expr [SET v1 = aggr_func(v1) [, v2 = aggr_func(v2) ...]] ] 
+TTL expr [DELETE|TO DISK 'aaa'|TO VOLUME 'bbb'], ...
 ```
 
 За каждым TTL выражением может следовать тип действия, которое выполняется после достижения времени, соответствующего результату TTL выражения:
 
 -   `DELETE` - удалить данные (действие по умолчанию);
 -   `TO DISK 'aaa'` - переместить данные на диск `aaa`;
--   `TO VOLUME 'bbb'` - переместить данные на том `bbb`;
--   `GROUP BY` -  агрегировать данные.
+-   `TO VOLUME 'bbb'` - переместить данные на том `bbb`.
 
-В секции `WHERE` можно задать условие удаления или агрегирования устаревших строк (для перемещения условие `WHERE` не применимо).
-
-Колонки, по которым агрегируются данные в `GROUP BY`, должны являться префиксом первичного ключа таблицы. 
-
-Если колонка не является частью выражения `GROUP BY` и не задается напрямую в секции `SET`, в результирующих строках она будет содержать случайное значение, взятое из одной из сгруппированных строк (как будто к ней применяется агрегирующая функция `any`).
-
-**Примеры**
-
-Создание таблицы с TTL: 
+Примеры:
 
 ``` sql
 CREATE TABLE example_table
@@ -484,41 +468,11 @@ TTL d + INTERVAL 1 MONTH [DELETE],
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-Изменение TTL:
+Изменение TTL
 
 ``` sql
 ALTER TABLE example_table
     MODIFY TTL d + INTERVAL 1 DAY;
-```
-
-Создание таблицы, в которой строки устаревают через месяц. Устаревшие строки удаляются, если дата выпадает на понедельник:
-
-``` sql
-CREATE TABLE table_with_where
-(
-    d DateTime, 
-    a Int
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(d)
-ORDER BY d
-TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
-```
-
-Создание таблицы, где устаревшие строки агрегируются. В результирующих строках колонка `x` содержит максимальное значение по сгруппированным строкам, `y` — минимальное значение, а `d` — случайное значение из одной из сгуппированных строк.
-
-``` sql
-CREATE TABLE table_for_aggregation
-(
-    d DateTime, 
-    k1 Int, 
-    k2 Int, 
-    x Int, 
-    y Int
-)
-ENGINE = MergeTree
-ORDER BY k1, k2
-TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
 **Удаление данных**
@@ -712,4 +666,99 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 После выполнения фоновых слияний или мутаций старые куски не удаляются сразу, а через некоторое время (табличная настройка `old_parts_lifetime`). Также они не перемещаются на другие тома или диски, поэтому до момента удаления они продолжают учитываться при подсчёте занятого дискового пространства.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/mergetree-family/mergetree/) <!--hide-->
+
+## Использование сервиса S3 для хранения данных {#table_engine-mergetree-s3}
+
+Таблицы семейства `MergeTree` могут хранить данные в сервисе [S3](https://aws.amazon.com/s3/) при использовании диска типа `s3`.
+
+Конфигурация:
+
+``` xml
+<storage_configuration>
+    ...
+    <disks>
+        <s3>
+            <type>s3</type>
+            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
+            <access_key_id>your_access_key_id</access_key_id>
+            <secret_access_key>your_secret_access_key</secret_access_key>
+            <proxy>
+                <uri>http://proxy1</uri>
+                <uri>http://proxy2</uri>
+            </proxy>
+            <connect_timeout_ms>10000</connect_timeout_ms>
+            <request_timeout_ms>5000</request_timeout_ms>
+            <retry_attempts>10</retry_attempts>
+            <min_bytes_for_seek>1000</min_bytes_for_seek>
+            <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            <cache_enabled>true</cache_enabled>
+            <cache_path>/var/lib/clickhouse/disks/s3/cache/</cache_path>
+            <skip_access_check>false</skip_access_check>
+        </s3>
+    </disks>
+    ...
+</storage_configuration>
+```
+
+Обязательные параметры:
+
+-   `endpoint` — URL точки приема запроса на стороне S3 в [форматах](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) `path` или `virtual hosted`. URL точки должен содержать бакет и путь к корневой директории на сервере, где хранятся данные.
+-   `access_key_id` — id ключа доступа к S3. 
+-   `secret_access_key` — секретный ключ доступа к S3.
+
+Необязательные параметры:   
+
+-   `use_environment_credentials` — признак, нужно ли считывать учетные данные AWS из переменных окружения `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` и `AWS_SESSION_TOKEN`, если они есть. Значение по умолчанию: `false`.
+-   `proxy` — конфигурация прокси-сервера для конечной точки S3. Каждый элемент `uri` внутри блока `proxy` должен содержать URL прокси-сервера. 
+-   `connect_timeout_ms` — таймаут подключения к сокету в миллисекундах. Значение по умолчанию: 10 секунд. 
+-   `request_timeout_ms` — таймаут выполнения запроса в миллисекундах. Значение по умолчанию: 5 секунд. 
+-   `retry_attempts` — число попыток выполнения запроса в случае возникновения ошибки. Значение по умолчанию: `10`. 
+-   `min_bytes_for_seek` — минимальное количество байтов, которые используются для операций поиска вместо последовательного чтения. Значение по умолчанию: 1 МБайт. 
+-   `metadata_path` — путь к локальному файловому хранилищу для хранения файлов с метаданными для S3. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/`. 
+-   `cache_enabled` — признак, разрешено ли хранение кэша засечек и файлов индекса в локальной файловой системе. Значение по умолчанию: `true`. 
+-   `cache_path` — путь в локальной файловой системе, где будут храниться кэш засечек и файлы индекса. Значение по умолчанию: `/var/lib/clickhouse/disks/<disk_name>/cache/`. 
+-   `skip_access_check` — признак, выполнять ли проверку доступов при запуске диска. Если установлено значение `true`, то проверка не выполняется. Значение по умолчанию: `false`.
+
+
+Диск S3 может быть сконфигурирован как `main` или `cold`:
+
+``` xml
+<storage_configuration>
+    ...
+    <disks>
+        <s3>
+            <type>s3</type>
+            <endpoint>https://storage.yandexcloud.net/my-bucket/root-path/</endpoint>
+            <access_key_id>your_access_key_id</access_key_id>
+            <secret_access_key>your_secret_access_key</secret_access_key>
+        </s3>
+    </disks>
+    <policies>
+        <s3_main>
+            <volumes>
+                <main>
+                    <disk>s3</disk>
+                </main>
+            </volumes>
+        </s3_main>
+        <s3_cold>
+            <volumes>
+                <main>
+                    <disk>default</disk>
+                </main>
+                <external>
+                    <disk>s3</disk>
+                </external>
+            </volumes>
+            <move_factor>0.2</move_factor>
+        </s3_cold>
+    </policies>
+    ...
+</storage_configuration>
+```
+
+Если диск сконфигурирован как `cold`, данные будут переноситься в S3 при срабатывании правил TTL или когда свободное место на локальном диске станет меньше порогового значения, которое определяется как `move_factor * disk_size`. 
+
+
+[Оригинальная статья](https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/) <!--hide-->
+

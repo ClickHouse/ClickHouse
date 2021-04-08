@@ -243,12 +243,10 @@ ReturnType DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer
 {
     /// Little tricky, because we cannot discriminate null from first character.
 
-    if (istr.eof())
-        throw ParsingException("Unexpected end of stream, while parsing value of Nullable type", ErrorCodes::CANNOT_READ_ALL_DATA);
-
-    /// This is not null, surely.
-    if (*istr.position() != '\\')
+    if (istr.eof() || *istr.position() != '\\') /// Some data types can deserialize absence of data (e.g. empty string), so eof is ok.
     {
+        /// This is not null, surely.
+
         return safeDeserialize<ReturnType>(column, *nested_data_type,
             [] { return false; },
             [&nested_data_type, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeAsTextEscaped(nested, istr, settings); });
@@ -484,6 +482,33 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
         writeCString("\\N", ostr);
     else
         nested_data_type->serializeAsTextXML(col.getNestedColumn(), row_num, ostr, settings);
+}
+
+void DataTypeNullable::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+    if (!col.isNullAt(row_num))
+        nested_data_type->serializeProtobuf(col.getNestedColumn(), row_num, protobuf, value_index);
+}
+
+void DataTypeNullable::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    ColumnNullable & col = assert_cast<ColumnNullable &>(column);
+    IColumn & nested_column = col.getNestedColumn();
+    size_t old_size = nested_column.size();
+    try
+    {
+        nested_data_type->deserializeProtobuf(nested_column, protobuf, allow_add_row, row_added);
+        if (row_added)
+            col.getNullMapData().push_back(0);
+    }
+    catch (...)
+    {
+        nested_column.popBack(nested_column.size() - old_size);
+        col.getNullMapData().resize_assume_reserved(old_size);
+        row_added = false;
+        throw;
+    }
 }
 
 MutableColumnPtr DataTypeNullable::createColumn() const

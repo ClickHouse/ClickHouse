@@ -120,7 +120,7 @@ function clone_root
                 git checkout FETCH_HEAD
                 echo 'Clonned merge head'
             else
-                git fetch origin "+refs/pull/$PULL_REQUEST_NUMBER/head"
+                git fetch
                 git checkout "$COMMIT_SHA"
                 echo 'Checked out to commit'
             fi
@@ -163,7 +163,6 @@ function clone_submodules
             contrib/xz
             contrib/dragonbox
             contrib/fast_float
-            contrib/NuRaft
         )
 
         git submodule sync
@@ -183,7 +182,6 @@ function run_cmake
         "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
-        "-DENABLE_NURAFT=1"
     )
 
     # TODO remove this? we don't use ccache anyway. An option would be to download it
@@ -278,6 +276,7 @@ function run_tests
         01318_decrypt                           # Depends on OpenSSL
         01663_aes_msan                          # Depends on OpenSSL
         01667_aes_args_check                    # Depends on OpenSSL
+        01776_decrypt_aead_size_check           # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
@@ -343,10 +342,9 @@ function run_tests
 
         # JSON functions
         01666_blns
-        01674_htm_xml_coarse_parse
     )
 
-    (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
+    time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
 
     # substr is to remove semicolon after test name
     readarray -t FAILED_TESTS < <(awk '/\[ FAIL|TIMEOUT|ERROR \]/ { print substr($3, 1, length($3)-1) }' "$FASTTEST_OUTPUT/test_log.txt" | tee "$FASTTEST_OUTPUT/failed-parallel-tests.txt")

@@ -12,7 +12,7 @@ It represents an unbiased estimate of the skewness of a random variable if passe
 skewSamp(expr)
 ```
 
-**Arguments**
+**Parameters**
 
 `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 

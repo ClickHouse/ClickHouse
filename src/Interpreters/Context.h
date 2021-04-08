@@ -40,6 +40,7 @@ namespace Poco
 namespace zkutil
 {
     class ZooKeeper;
+    class TestKeeperStorageDispatcher;
 }
 
 
@@ -101,14 +102,11 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 using DisksMap = std::map<String, DiskPtr>;
-class IStoragePolicy;
-using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
-struct PartUUIDs;
-using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
-class NuKeeperStorageDispatcher;
 
 class IOutputFormat;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -254,7 +252,6 @@ private:
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context. Could be equal to this.
-    std::shared_ptr<Context> buffer_context;/// Buffer context. Could be equal to this.
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for
@@ -266,9 +263,6 @@ private:
 
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
-
-    PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
-    PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -543,8 +537,6 @@ public:
     Context & getGlobalContext();
     bool hasGlobalContext() const { return global_context != nullptr; }
 
-    const Context & getBufferContext() const;
-
     void setQueryContext(Context & context_) { query_context = &context_; }
     void setSessionContext(Context & context_) { session_context = &context_; }
 
@@ -581,11 +573,8 @@ public:
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
-#if USE_NURAFT
-    std::shared_ptr<NuKeeperStorageDispatcher> & getNuKeeperStorageDispatcher() const;
-#endif
-    void initializeNuKeeperStorageDispatcher() const;
-    void shutdownNuKeeperStorageDispatcher() const;
+
+    std::shared_ptr<zkutil::TestKeeperStorageDispatcher> & getTestKeeperStorageDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -745,9 +734,6 @@ public:
     };
 
     MySQLWireContext mysql;
-
-    PartUUIDsPtr getPartUUIDs();
-    PartUUIDsPtr getIgnoredPartUUIDs();
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 

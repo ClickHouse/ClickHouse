@@ -74,7 +74,7 @@ timeout $TIMEOUT bash -c thread5 2> /dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -n -q "
-    DROP TABLE alter_table;
-    DROP TABLE alter_table2
-"
+$CLICKHOUSE_CLIENT -n -q "DROP TABLE alter_table;" &
+$CLICKHOUSE_CLIENT -n -q "DROP TABLE alter_table2;" &
+
+wait

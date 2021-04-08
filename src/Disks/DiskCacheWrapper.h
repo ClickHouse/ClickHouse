@@ -32,6 +32,7 @@ public:
     void moveDirectory(const String & from_path, const String & to_path) override;
     void moveFile(const String & from_path, const String & to_path) override;
     void replaceFile(const String & from_path, const String & to_path) override;
+    void copyFile(const String & from_path, const String & to_path) override;
     std::unique_ptr<ReadBufferFromFileBase>
     readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const override;
     std::unique_ptr<WriteBufferFromFileBase>
@@ -45,6 +46,7 @@ public:
 
 private:
     std::shared_ptr<FileDownloadMetadata> acquireDownloadMetadata(const String & path) const;
+    static String getDirectoryPath(const String & path);
 
     /// Disk to cache files.
     std::shared_ptr<DiskLocal> cache_disk;

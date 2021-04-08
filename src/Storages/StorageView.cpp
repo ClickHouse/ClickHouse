@@ -105,6 +105,9 @@ void StorageView::read(
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)
 {
+    if (!select_query.tables() || select_query.tables()->children.empty())
+        throw Exception("Logical error: no table expression in view select AST", ErrorCodes::LOGICAL_ERROR);
+
     auto * select_element = select_query.tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)

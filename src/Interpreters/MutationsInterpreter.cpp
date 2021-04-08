@@ -273,10 +273,9 @@ MutationsInterpreter::MutationsInterpreter(
     , commands(std::move(commands_))
     , context(context_)
     , can_execute(can_execute_)
+    , select_limits(SelectQueryOptions().analyze(!can_execute).ignoreLimits())
 {
     mutation_ast = prepare(!can_execute);
-    SelectQueryOptions limits = SelectQueryOptions().analyze(!can_execute).ignoreLimits();
-    select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot_, limits);
 }
 
 static NameSet getKeyColumns(const StoragePtr & storage, const StorageMetadataPtr & metadata_snapshot)
@@ -767,6 +766,9 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
 
 void MutationsInterpreter::validate()
 {
+    if (!select_interpreter)
+        select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
+
     const Settings & settings = context.getSettingsRef();
 
     /// For Replicated* storages mutations cannot employ non-deterministic functions
@@ -793,6 +795,9 @@ BlockInputStreamPtr MutationsInterpreter::execute()
 {
     if (!can_execute)
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
+
+    if (!select_interpreter)
+        select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
 
     QueryPlan plan;
     select_interpreter->buildQueryPlan(plan);

@@ -120,17 +120,14 @@ public:
         return DecimalUtils::getFractionalPart(x, scale);
     }
 
-    T maxWholeValue() const { return getScaleMultiplier(precision - scale) - T(1); }
+    T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - T(1); }
 
-    template<typename U>
-    bool canStoreWhole(U x) const
+    bool canStoreWhole(T x) const
     {
-        static_assert(std::is_signed_v<typename T::NativeType>);
         T max = maxWholeValue();
-        if constexpr (std::is_signed_v<U>)
-            return -max <= x && x <= max;
-        else
-            return x <= static_cast<std::make_unsigned_t<typename T::NativeType>>(max.value);
+        if (x > max || x < -max)
+            return false;
+        return true;
     }
 
     /// @returns multiplier for U to become T with correct scale
