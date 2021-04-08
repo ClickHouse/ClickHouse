@@ -32,6 +32,8 @@ public:
     bool canBePruned(const DataPartPtr & part);
 
     bool isUseless() const { return useless; }
+
+    std::string toString() const { return partition_condition.toString(); }
 };
 
 }

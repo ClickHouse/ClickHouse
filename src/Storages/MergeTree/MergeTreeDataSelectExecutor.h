@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 
 namespace DB
@@ -51,6 +52,7 @@ private:
 
     QueryPlanPtr spreadMarkRangesAmongStreams(
         RangesInDataParts && parts,
+        ReadFromMergeTree::IndexStatPtr index_stats,
         size_t num_streams,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -65,6 +67,7 @@ private:
     /// out_projection - save projection only with columns, requested to read
     QueryPlanPtr spreadMarkRangesAmongStreamsWithOrder(
         RangesInDataParts && parts,
+        ReadFromMergeTree::IndexStatPtr index_stats,
         size_t num_streams,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
@@ -80,6 +83,7 @@ private:
 
     QueryPlanPtr spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
+        ReadFromMergeTree::IndexStatPtr index_stats,
         size_t num_streams,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
