@@ -2,10 +2,17 @@
 #include <Common/Exception.h>
 
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <DataStreams/SquashingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
 
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageAggregatingMemory.h>
+#include <Storages/StorageValues.h>
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
@@ -107,9 +114,11 @@ class AggregatingOutputStream : public IBlockOutputStream
 public:
     AggregatingOutputStream(
         StorageAggregatingMemory & storage_,
-        const StorageMetadataPtr & metadata_snapshot_)
+        const StorageMetadataPtr & metadata_snapshot_,
+        const Context & context_)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
+        , context(context_)
     {
     }
 
@@ -117,8 +126,62 @@ public:
 
     void write(const Block & block) override
     {
-        metadata_snapshot->check(block, true);
-        new_blocks.emplace_back(block);
+        // log panics here
+        // LOG_DEBUG(&Poco::Logger::get("Arthur"), "pre-write StorageAggregationMemory, structure={}, names={}, index={}", block.dumpStructure(), block.dumpNames(), block.dumpIndex());
+
+        BlockInputStreamPtr in;
+
+        /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
+        ///
+        /// - We copy Context inside InterpreterSelectQuery to support
+        ///   modification of context (Settings) for subqueries
+        /// - InterpreterSelectQuery lives shorter than query pipeline.
+        ///   It's used just to build the query pipeline and no longer needed
+        /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
+        ///   **can** take a reference to Context from InterpreterSelectQuery
+        ///   (the problem raises only when function uses context from the
+        ///    execute*() method, like FunctionDictGet do)
+        /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
+        std::optional<InterpreterSelectQuery> select;
+
+        if (metadata_snapshot->hasSelectQuery())
+        {
+            auto query = metadata_snapshot->getSelectQuery();
+            
+            /// We create a table with the same name as original table and the same alias columns,
+            ///  but it will contain single block (that is INSERT-ed into main table).
+            /// InterpreterSelectQuery will do processing of alias columns.
+
+            Context local_context = context;
+            local_context.addViewSource(
+                StorageValues::create(
+                    storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals())); // TODO: seems like storage -> src_storage (block source)
+            select.emplace(query.inner_query, local_context, SelectQueryOptions());
+            in = std::make_shared<MaterializingBlockInputStream>(select->execute().getInputStream());
+
+            /// Squashing is needed here because the materialized view query can generate a lot of blocks
+            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+            /// and two-level aggregation is triggered).
+            in = std::make_shared<SquashingBlockInputStream>(
+                    in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            in = std::make_shared<ConvertingBlockInputStream>(in, getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name);
+        }
+        else
+            in = std::make_shared<OneBlockInputStream>(block);
+
+        in->readPrefix();
+
+        while (Block result_block = in->read())
+        {
+            Nested::validateArraySizes(result_block);
+            LOG_DEBUG(&Poco::Logger::get("Arthur"), "pre-write to view (aggregated block)");
+            new_blocks.emplace_back(result_block);
+        }
+
+        in->readSuffix();
+
+        // metadata_snapshot->check(block, true);
+        // new_blocks.emplace_back(block);
     }
 
     void writeSuffix() override
@@ -147,6 +210,7 @@ private:
 
     StorageAggregatingMemory & storage;
     StorageMetadataPtr metadata_snapshot;
+    Context context;
 };
 
 
@@ -226,9 +290,9 @@ Pipe StorageAggregatingMemory::read(
 }
 
 
-BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    return std::make_shared<AggregatingOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<AggregatingOutputStream>(*this, metadata_snapshot, context);
 }
 
 
