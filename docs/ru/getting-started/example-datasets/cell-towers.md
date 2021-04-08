@@ -96,7 +96,7 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 
 Можно увидеть, что по количеству вышек лидируют следующие страны: США, Германия, Россия.
 
-Также вам может понадобится создать [внешний словарь](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) в ClickHouse для того, чтобы объяснить эти значения.
+Вы также можете создать [внешний словарь](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) в ClickHouse для того, чтобы расшифровать эти значения.
 
 ## Пример использования {#use-case}
 Рассмотрим применение функции `pointInPolygon`.
