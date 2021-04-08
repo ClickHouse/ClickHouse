@@ -1349,7 +1349,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPt
 /// Create actions which calculate conjunction of selected nodes.
 /// Assume conjunction nodes are predicates (and may be used as arguments of function AND).
 ///
-/// Result actions add single column with conjunction result (it is always last in index).
+/// Result actions add single column with conjunction result (it is always first in index).
 /// No other columns are added or removed.
 ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
@@ -1414,6 +1414,20 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
         }
     }
 
+    const Node * result_predicate = nodes_mapping[*conjunction.begin()];
+
+    if (conjunction.size() > 1)
+    {
+        NodeRawConstPtrs args;
+        args.reserve(conjunction.size());
+        for (const auto * predicate : conjunction)
+            args.emplace_back(nodes_mapping[predicate]);
+
+        result_predicate = &actions->addFunction(func_builder_and, std::move(args), {});
+    }
+
+    actions->index.push_back(result_predicate);
+
     for (const auto & col : all_inputs)
     {
         const Node * input;
@@ -1430,19 +1444,6 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(NodeRawConstPtrs conjunctio
         actions->index.push_back(input);
     }
 
-    const Node * result_predicate = nodes_mapping[*conjunction.begin()];
-
-    if (conjunction.size() > 1)
-    {
-        NodeRawConstPtrs args;
-        args.reserve(conjunction.size());
-        for (const auto * predicate : conjunction)
-            args.emplace_back(nodes_mapping[predicate]);
-
-        result_predicate = &actions->addFunction(func_builder_and, std::move(args), {});
-    }
-
-    actions->index.push_back(result_predicate);
     return actions;
 }
 
