@@ -84,8 +84,9 @@ public:
         const ClientInfo & client_info,
         bool with_pending_data) override;
 
-    void sendReadTaskResponce(const String &) override {
-        throw Exception("sendReadTaskResponce in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
+    void sendReadTaskResponse(const String &) override
+    {
+        throw Exception("sendReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
     }
 
     Packet receivePacket() override;

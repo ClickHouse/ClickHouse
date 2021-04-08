@@ -48,17 +48,15 @@ public:
         target = std::move(resolver);
     }
 
-
+    /// Do not erase anything from the map, because TaskSupervisor is stored
+    /// into context and will be deleted after query ends.
     Task getNextTaskForId(const QueryId & id)
     {
         std::lock_guard lock(mutex);
         auto it = dict.find(id);
         if (it == dict.end())
             return "";
-        auto answer = it->second->callback();
-        if (answer.empty())
-            dict.erase(it); 
-        return answer;
+        return it->second->callback();
     }
 
 private:

@@ -138,8 +138,6 @@ private:
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
-    std::mutex buffer_mutex;
-    
 
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_check_cancelled;
@@ -152,6 +150,7 @@ private:
     String cluster;
     String cluster_secret;
 
+    std::mutex task_callback_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;

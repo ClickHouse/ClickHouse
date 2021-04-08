@@ -110,7 +110,7 @@ Pipe StorageS3Distributed::read(
         }
         
         auto file_iterator = std::make_shared<DistributedFileIterator>(
-            context.getNextTaskCallback(), 
+            context.getReadTaskCallback(), 
             context.getClientInfo().task_identifier);
 
         return Pipe(std::make_shared<StorageS3Source>(
@@ -140,7 +140,7 @@ Pipe StorageS3Distributed::read(
     std::cout << "Generated UUID : " << task_identifier << std::endl;
 
     /// Register resolver, which will give other nodes a task std::make_unique
-    context.getReadTaskSupervisor()->registerNextTaskResolver(
+    context.getTaskSupervisor()->registerNextTaskResolver(
         std::make_unique<ReadTaskResolver>(task_identifier, std::move(callback)));
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)

@@ -2616,7 +2616,7 @@ PartUUIDsPtr Context::getPartUUIDs()
 }
 
 
-TaskSupervisorPtr Context::getReadTaskSupervisor() const
+TaskSupervisorPtr Context::getTaskSupervisor() const
 {
     return read_task_supervisor;
 }
@@ -2628,7 +2628,7 @@ void Context::setReadTaskSupervisor(TaskSupervisorPtr resolver)
 }
 
 
-NextTaskCallback Context::getNextTaskCallback() const
+ReadTaskCallback Context::getReadTaskCallback() const
 {
     if (!next_task_callback.has_value())
         throw Exception(fmt::format("Next task callback is not set for query {}", getInitialQueryId()), ErrorCodes::LOGICAL_ERROR);
@@ -2636,7 +2636,7 @@ NextTaskCallback Context::getNextTaskCallback() const
 }
 
 
-void Context::setNextTaskCallback(NextTaskCallback && callback)
+void Context::setReadTaskCallback(ReadTaskCallback && callback)
 {
     next_task_callback = callback;
 }

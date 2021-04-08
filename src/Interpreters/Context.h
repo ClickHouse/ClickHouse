@@ -131,7 +131,7 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Class which gives tasks to other nodes in cluster
 class TaskSupervisor;
 using TaskSupervisorPtr = std::shared_ptr<TaskSupervisor>;
-using NextTaskCallback = std::function<String(String)>;
+using ReadTaskCallback = std::function<String(String)>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -196,7 +196,7 @@ private:
 
     /// Fields for distributed s3 function
     TaskSupervisorPtr read_task_supervisor;
-    std::optional<NextTaskCallback> next_task_callback;
+    std::optional<ReadTaskCallback> next_task_callback;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -780,11 +780,11 @@ public:
     PartUUIDsPtr getIgnoredPartUUIDs();
 
     /// A bunch of functions for distributed s3 function
-    TaskSupervisorPtr getReadTaskSupervisor() const;
+    TaskSupervisorPtr getTaskSupervisor() const;
     void setReadTaskSupervisor(TaskSupervisorPtr);
 
-    NextTaskCallback getNextTaskCallback() const;
-    void setNextTaskCallback(NextTaskCallback && callback);
+    ReadTaskCallback getReadTaskCallback() const;
+    void setReadTaskCallback(ReadTaskCallback && callback);
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;

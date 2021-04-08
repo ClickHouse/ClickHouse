@@ -88,7 +88,7 @@ public:
 
     /// Set the query_id. For now, used by performance test to later find the query
     /// in the server query_log. Must be called before sending the query to the server.
-    void setQueryId(const std::string& query_id_) { assert(!sent_query); query_id = query_id_; }
+    void setQueryId(const std::string& query_id_) { assert(!sent_query); std::cout << query_id_ << std::endl; query_id = query_id_; }
 
     /// Specify how we allocate connections on a shard.
     void setPoolMode(PoolMode pool_mode_) { pool_mode = pool_mode_; }

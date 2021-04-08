@@ -156,7 +156,7 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
 }
 
 
-void MultiplexedConnections::sendReadTaskResponce(const String & response)
+void MultiplexedConnections::sendReadTaskResponse(const String & response)
 {
     /// No lock_guard because assume it is already called under lock
     current_connection->sendReadTaskResponse(response);
@@ -217,6 +217,7 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
+            case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
             case Protocol::Server::Progress:
