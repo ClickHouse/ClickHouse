@@ -1337,7 +1337,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     MergeTreeData::Transaction * out_transaction)
 {
     /// Rename new part, add to the set and remove original parts.
-    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, nullptr, out_transaction);
+    auto replaced_parts = data.renameTempPartAndReplace(new_data_part, nullptr, nullptr, out_transaction);
 
     /// Let's check that all original parts have been deleted and only them.
     if (replaced_parts.size() != parts.size())

@@ -226,7 +226,7 @@ BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Sto
 
     const auto & settings = context.getSettingsRef();
     return std::make_shared<MergeTreeBlockOutputStream>(
-        *this, metadata_snapshot, settings.max_partitions_per_insert_block, context.getSettingsRef().optimize_on_insert);
+        *this, metadata_snapshot, settings.max_partitions_per_insert_block, context.getSettingsRef().optimize_on_insert, context);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -933,7 +933,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
             future_part, metadata_snapshot, merge_mutate_entry.commands, *(merge_list_entry),
             time(nullptr), global_context, merge_mutate_entry.tagger->reserved_space, table_lock_holder);
 
-        renameTempPartAndReplace(new_part);
+        renameTempPartAndReplace(new_part, nullptr);
 
         updateMutationEntriesErrors(future_part, true, "");
         write_part_log({});
@@ -1231,7 +1231,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     {
         LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].second);
         String old_name = renamed_parts.old_and_new_names[i].first;
-        renameTempPartAndAdd(loaded_parts[i], &increment);
+        renameTempPartAndAdd(loaded_parts[i], context.getCurrentTransaction().get(), &increment);
         renamed_parts.old_and_new_names[i].first.clear();
 
         results.push_back(PartitionCommandResultInfo{
@@ -1303,7 +1303,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
             /// Populate transaction
             for (MutableDataPartPtr & part : dst_parts)
-                renameTempPartAndReplace(part, &increment, &transaction, data_parts_lock);
+                renameTempPartAndReplace(part, context.getCurrentTransaction().get(), &increment, &transaction, data_parts_lock);
 
             transaction.commit(&data_parts_lock);
 
@@ -1379,7 +1379,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             DataPartsLock lock(mutex);
 
             for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, &dest_table_storage->increment, &transaction, lock);
+                dest_table_storage->renameTempPartAndReplace(part, context.getCurrentTransaction().get(), &dest_table_storage->increment, &transaction, lock);
 
             removePartsFromWorkingSet(src_parts, true, lock);
             transaction.commit(&lock);

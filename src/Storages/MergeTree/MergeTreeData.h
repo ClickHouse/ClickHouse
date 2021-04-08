@@ -40,6 +40,7 @@ class MergeTreePartsMover;
 class MutationCommands;
 class Context;
 struct JobAndPool;
+class MergeTreeTransaction;
 
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
@@ -406,6 +407,9 @@ public:
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
 
+    DataPartsVector getDataPartsVector(const Context & context) const;
+    DataPartsVector getVisibleDataPartsVector(const MergeTreeTransaction & txn) const;
+
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name) const;
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info) const;
@@ -447,17 +451,19 @@ public:
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
     /// Returns true if part was added. Returns false if part is covered by bigger part.
-    bool renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
+    bool renameTempPartAndAdd(MutableDataPartPtr & part, MergeTreeTransaction * txn,
+                              SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
     /// If out_transaction == nullptr, marks covered parts as Outdated.
     DataPartsVector renameTempPartAndReplace(
-        MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
+        MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
     /// Low-level version of previous one, doesn't lock mutex
     bool renameTempPartAndReplace(
-            MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
+            MutableDataPartPtr & part, MergeTreeTransaction * txn,
+            SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
             DataPartsVector * out_covered_parts = nullptr);
 
 

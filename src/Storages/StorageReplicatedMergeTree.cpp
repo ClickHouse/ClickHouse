@@ -1442,7 +1442,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             Transaction transaction(*this);
 
-            renameTempPartAndReplace(part, nullptr, &transaction);
+            renameTempPartAndReplace(part, nullptr, nullptr, &transaction);
             checkPartChecksumsAndCommit(transaction, part);
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
@@ -1810,7 +1810,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
         new_part = merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, *merge_entry,
             entry.create_time, global_context, reserved_space, table_lock);
-        renameTempPartAndReplace(new_part, nullptr, &transaction);
+        renameTempPartAndReplace(new_part, nullptr, nullptr, &transaction);
 
         try
         {
@@ -2433,7 +2433,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         Coordination::Requests ops;
         for (PartDescriptionPtr & part_desc : final_parts)
         {
-            renameTempPartAndReplace(part_desc->res_part, nullptr, &transaction);
+            renameTempPartAndReplace(part_desc->res_part, nullptr, nullptr, &transaction);
             getCommitPartOps(ops, part_desc->res_part);
 
             if (ops.size() > zkutil::MULTI_BATCH_SIZE)
@@ -3802,7 +3802,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         if (!to_detached)
         {
             Transaction transaction(*this);
-            renameTempPartAndReplace(part, nullptr, &transaction);
+            renameTempPartAndReplace(part, nullptr, nullptr, &transaction);
 
             replaced_parts = checkPartChecksumsAndCommit(transaction, part);
 
@@ -6131,7 +6131,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             auto data_parts_lock = lockParts();
 
             for (MutableDataPartPtr & part : dst_parts)
-                renameTempPartAndReplace(part, nullptr, &transaction, data_parts_lock);
+                renameTempPartAndReplace(part, context.getCurrentTransaction().get(), nullptr, &transaction, data_parts_lock);
         }
 
         op_results = zookeeper->multi(ops);
@@ -6322,7 +6322,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             DataPartsLock lock(mutex);
 
             for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, nullptr, &transaction, lock);
+                dest_table_storage->renameTempPartAndReplace(part, query_context.getCurrentTransaction().get(), nullptr, &transaction, lock);
 
             op_results = zookeeper->multi(ops);
 

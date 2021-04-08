@@ -21,6 +21,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/MergeTreeTransaction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -979,6 +980,16 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         part->renameToDetached("");
 
 
+    for (auto it = data_parts_by_state_and_info.begin(); it != data_parts_by_state_and_info.end(); ++it)
+    {
+        /// We do not have version metadata and transactions history for old parts,
+        /// so let's consider that such parts were created by some ancient transaction
+        /// and were committed with some prehistoric CSN.
+        /// TODO Transactions: distinguish "prehistoric" parts from uncommitted parts in case of hard restart
+        (*it)->versions.setMinTID(Tx::PrehistoricTID);
+        (*it)->versions.mincsn.store(Tx::PrehistoricCSN, std::memory_order_relaxed);
+    }
+
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
     /// were merged), but that for some reason are still not deleted from the filesystem.
     /// Deletion of files will be performed later in the clearOldParts() method.
@@ -994,7 +1005,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
             modifyPartState(it, DataPartState::Outdated);
             (*it)->versions.maxtid = Tx::PrehistoricTID;
-            (*it)->versions.maxcsn = Tx::PrehistoricCSN;
+            (*it)->versions.maxcsn.store(Tx::PrehistoricCSN, std::memory_order_relaxed);
             removePartContributionToDataVolume(*it);
         };
 
@@ -1002,14 +1013,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         while (curr_jt != data_parts_by_state_and_info.end() && (*curr_jt)->getState() == DataPartState::Committed)
         {
-            /// We do not have version metadata and transactions history for old parts,
-            /// so let's consider that such parts were created by some ancient transaction
-            /// and were committed with some prehistoric CSN.
-            /// TODO Transactions: distinguish "prehistoric" parts from uncommitted parts in case of hard restart
-            (*curr_jt)->versions.mintid = Tx::PrehistoricTID;
-            (*curr_jt)->versions.mincsn = Tx::PrehistoricCSN;
-            (*curr_jt)->versions.maybe_visible = true;
-
             /// Don't consider data parts belonging to different partitions.
             if ((*curr_jt)->info.partition_id != (*prev_jt)->info.partition_id)
             {
@@ -2031,7 +2034,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 }
 
 
-bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction)
+bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment, Transaction * out_transaction)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
@@ -2040,7 +2043,7 @@ bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrem
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
-        if (!renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts))
+        if (!renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts))
             return false;
     }
     if (!covered_parts.empty())
@@ -2052,7 +2055,7 @@ bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrem
 
 
 bool MergeTreeData::renameTempPartAndReplace(
-    MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction,
+    MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment, Transaction * out_transaction,
     std::unique_lock<std::mutex> & lock, DataPartsVector * out_covered_parts)
 {
     if (out_transaction && &out_transaction->data != this)
@@ -2100,13 +2103,16 @@ bool MergeTreeData::renameTempPartAndReplace(
 
     DataPartPtr covering_part;
     DataPartsVector covered_parts = getActivePartsToReplace(part_info, part_name, covering_part, lock);
-    DataPartsVector covered_parts_in_memory;
 
     if (covering_part)
     {
         LOG_WARNING(log, "Tried to add obsolete part {} covered by {}", part_name, covering_part->getNameWithState());
         return false;
     }
+
+    /// FIXME Transactions: it's not the best place for checking and setting maxtid,
+    /// because it's too optimistic. We should lock maxtid of covered parts at the beginning of operation.
+    MergeTreeTransaction::addNewPartAndRemoveCovered(part, covered_parts, txn);
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
@@ -2164,7 +2170,7 @@ bool MergeTreeData::renameTempPartAndReplace(
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
-    MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction)
+    MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment, Transaction * out_transaction)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
@@ -2173,7 +2179,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
-        renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts);
+        renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts);
     }
     return covered_parts;
 }
@@ -3070,6 +3076,40 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     }
 
     return partition_id;
+}
+
+DataPartsVector MergeTreeData::getDataPartsVector(const Context & context) const
+{
+    if (auto txn = context.getCurrentTransaction())
+        return getVisibleDataPartsVector(*txn);
+    else
+        return getDataPartsVector();
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(const MergeTreeTransaction & txn) const
+{
+    DataPartsVector maybe_visible_parts = getDataPartsVector({DataPartState::PreCommitted, DataPartState::Committed, DataPartState::Outdated});
+    if (maybe_visible_parts.empty())
+        return maybe_visible_parts;
+
+    auto it = maybe_visible_parts.begin();
+    auto it_last = maybe_visible_parts.end() - 1;
+    while (it <= it_last)
+    {
+        if ((*it)->versions.isVisible(txn))
+        {
+            ++it;
+        }
+        else
+        {
+            std::swap(*it, *it_last);
+            --it_last;
+        }
+    }
+
+    size_t new_size = it_last - maybe_visible_parts.begin() + 1;
+    maybe_visible_parts.resize(new_size);
+    return maybe_visible_parts;
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector * out_states) const

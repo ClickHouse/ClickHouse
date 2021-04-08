@@ -2,6 +2,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <boost/noncopyable.hpp>
 #include <mutex>
+#include <unordered_map>
 
 namespace DB
 {
@@ -22,9 +23,22 @@ public:
 
     void rollbackTransaction(const MergeTreeTransactionPtr & txn);
 
+    CSN getCSN(const TransactionID & tid) const;
+    CSN getCSN(const TIDHash & tid) const;
+
+    MergeTreeTransactionPtr tryGetRunningTransaction(const TIDHash & tid);
+
 private:
+    std::atomic<CSN> latest_snapshot;
     std::atomic<CSN> csn_counter;
     std::atomic<LocalTID> local_tid_counter;
+
+    /// FIXME Transactions: it's probably a bad idea to use global mutex here
+    mutable std::mutex commit_mutex;
+    std::unordered_map<TIDHash, CSN> tid_to_csn;
+
+    mutable std::mutex running_list_mutex;
+    std::unordered_map<TIDHash, MergeTreeTransactionPtr> running_list;
 };
 
 }

@@ -44,6 +44,7 @@ class IMergeTreeReader;
 class IMergeTreeDataPartWriter;
 class MarkCache;
 class UncompressedCache;
+class MergeTreeTransaction;
 
 
 namespace ErrorCodes
@@ -301,17 +302,6 @@ public:
     NameSet expired_columns;
 
     CompressionCodecPtr default_codec;
-
-    struct VersionMetadata
-    {
-        TransactionID mintid = Tx::EmptyTID;
-        TransactionID maxtid = Tx::EmptyTID;
-
-        bool maybe_visible = false;
-
-        CSN mincsn = Tx::UnknownCSN;
-        CSN maxcsn = Tx::UnknownCSN;
-    };
 
     mutable VersionMetadata versions;
 
