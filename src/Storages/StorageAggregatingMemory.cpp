@@ -127,9 +127,6 @@ public:
 
     void write(const Block & block) override
     {
-        // log panics here
-        // LOG_DEBUG(&Poco::Logger::get("Arthur"), "pre-write StorageAggregationMemory, structure={}, names={}, index={}", block.dumpStructure(), block.dumpNames(), block.dumpIndex());
-
         BlockInputStreamPtr in;
 
         /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
@@ -182,7 +179,6 @@ public:
         while (Block result_block = in->read())
         {
             Nested::validateArraySizes(result_block);
-            LOG_DEBUG(&Poco::Logger::get("Arthur"), "pre-write to view (aggregated block)");
             new_blocks.emplace_back(result_block);
         }
 
@@ -225,12 +221,6 @@ private:
 StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query, const Context & context_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>())
 {
-    // TODO: this table must be created with original write structure, and aggregated read structure
-    // TODO: also i should add metadata to indicate that aggregation is not needed in this case.
-
-    LOG_DEBUG(&Poco::Logger::get("Arthur"), "create engine with query={}", serializeAST(query));
-    LOG_DEBUG(&Poco::Logger::get("Arthur"), "original columns description={}", columns_description_.toString());
-
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
