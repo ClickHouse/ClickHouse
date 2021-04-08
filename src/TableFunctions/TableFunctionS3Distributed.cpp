@@ -104,36 +104,6 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
     const ASTPtr & /*filename*/, const Context & context,
     const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    UInt64 max_connections = context.getSettingsRef().s3_max_connections;
-
-    /// Initiator specific logic
-    while (context.getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        auto poco_uri = Poco::URI{filename};
-        S3::URI s3_uri(poco_uri);
-        StorageS3::ClientAuthentificaiton client_auth{s3_uri, access_key_id, secret_access_key, max_connections, {}, {}};
-        StorageS3::updateClientAndAuthSettings(context, client_auth);
-        StorageS3Source::DisclosedGlobIterator iterator(*client_auth.client, client_auth.uri);
-
-        auto task_identifier = UUIDHelpers::generateV4();
-        const_cast<Context &>(context).getClientInfo().task_identifier = toString(task_identifier);
-
-        std::cout << "Created UUID: " << toString(context.getClientInfo().task_identifier) << std::endl;
-
-        auto callback = [iterator = std::move(iterator)]() mutable -> String
-        {
-            if (auto value = iterator.next())
-                return *value;
-            return {};
-        };
-
-        /// Register resolver, which will give other nodes a task std::make_unique
-        context.getReadTaskSupervisor()->registerNextTaskResolver(
-            std::make_unique<ReadTaskResolver>(context.getCurrentQueryId(), std::move(callback)));
-        break;
-    }
-
-
     StoragePtr storage = StorageS3Distributed::create(
             filename,
             access_key_id,
@@ -141,7 +111,7 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
             StorageID(getDatabaseName(), table_name),
             cluster_name,
             format,
-            max_connections,
+            context.getSettingsRef().s3_max_connections,
             getActualTableStructure(context),
             ConstraintsDescription{},
             context,

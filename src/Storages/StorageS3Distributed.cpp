@@ -108,12 +108,10 @@ Pipe StorageS3Distributed::read(
             if (column == "_file")
                 need_file_column = true;
         }
-
-        std::cout << "Got UUID on worker " << toString(context.getClientInfo().task_identifier) << std::endl;
         
         auto file_iterator = std::make_shared<DistributedFileIterator>(
             context.getNextTaskCallback(), 
-            context.getInitialQueryId());
+            context.getClientInfo().task_identifier);
 
         return Pipe(std::make_shared<StorageS3Source>(
             need_path_column, need_file_column, format_name, getName(),
@@ -127,6 +125,23 @@ Pipe StorageS3Distributed::read(
     }
 
     /// The code from here and below executes on initiator
+    S3::URI s3_uri(Poco::URI{filename});
+    StorageS3::updateClientAndAuthSettings(context, client_auth);
+
+    auto callback = [iterator = StorageS3Source::DisclosedGlobIterator(*client_auth.client, client_auth.uri)]() mutable -> String
+    {
+        if (auto value = iterator.next())
+            return *value;
+        return {};
+    };
+
+    auto task_identifier = toString(UUIDHelpers::generateV4());
+
+    std::cout << "Generated UUID : " << task_identifier << std::endl;
+
+    /// Register resolver, which will give other nodes a task std::make_unique
+    context.getReadTaskSupervisor()->registerNextTaskResolver(
+        std::make_unique<ReadTaskResolver>(task_identifier, std::move(callback)));
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
@@ -149,10 +164,11 @@ Pipe StorageS3Distributed::read(
                 node.secure
             ));
 
-            std::cout << "S3Distributed initiator " << toString(context.getClientInfo().task_identifier) << std::endl;
-
+            /// For unknown reason global context is passed to IStorage::read() method
+            /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    *connections.back(), queryToString(query_info.query), header, context, /*throttler=*/nullptr, scalars, Tables(), processed_stage);
+                    *connections.back(), queryToString(query_info.query), header, context, 
+                    /*throttler=*/nullptr, scalars, Tables(), processed_stage, task_identifier);
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, false, false)); 
         }
@@ -162,7 +178,8 @@ Pipe StorageS3Distributed::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-QueryProcessingStage::Enum StorageS3Distributed::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
+QueryProcessingStage::Enum StorageS3Distributed::getQueryProcessingStage(
+    const Context & context, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
     if (context.getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY) {
