@@ -4,7 +4,6 @@
 
 #    include <IO/WriteBufferFromS3.h>
 #    include <IO/WriteHelpers.h>
-#    include <Common/MemoryTracker.h>
 
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/CreateMultipartUploadRequest.h>
@@ -79,8 +78,6 @@ void WriteBufferFromS3::nextImpl()
 
 void WriteBufferFromS3::finalize()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
     finalizeImpl();
 }
 
@@ -107,7 +104,14 @@ void WriteBufferFromS3::finalizeImpl()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
-    finalizeImpl();
+    try
+    {
+        finalizeImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void WriteBufferFromS3::createMultipartUpload()

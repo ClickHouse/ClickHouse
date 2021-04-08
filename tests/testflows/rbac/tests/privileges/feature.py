@@ -7,7 +7,7 @@ from rbac.helper.common import *
 def feature(self):
 
     tasks = []
-    pool = Pool(10)
+    pool = Pool(16)
 
     try:
         try:
@@ -21,10 +21,6 @@ def feature(self):
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.kill_query", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.kill_mutation", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.role_admin", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.dictGet", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.introspection", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.sources", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.admin_option", "feature"), flags=TE), {})
 
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.show.show_tables", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.show.show_dictionaries", "feature"), flags=TE), {})
@@ -80,22 +76,7 @@ def feature(self):
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.detach.detach_dictionary", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.detach.detach_table", "feature"), flags=TE), {})
             run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.detach.detach_view", "feature"), flags=TE), {})
-
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.drop_cache", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.reload", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.flush", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.merges", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.moves", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.replication_queues", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.ttl_merges", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.restart_replica", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.sends", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.sync_replica", "feature"), flags=TE), {})
-            run_scenario(pool, tasks, Feature(test=load("rbac.tests.privileges.system.fetches", "feature"), flags=TE), {})
-
         finally:
             join(tasks)
     finally:
         pool.close()
-
-    Feature(test=load("rbac.tests.privileges.system.shutdown", "feature"), flags=TE)

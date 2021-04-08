@@ -72,7 +72,7 @@ public:
 
     /// Evaluate batch of expressions were parsed using template.
     /// If template was deduced with null_as_default == true, set bits in nulls for NULL values in column_idx, starting from offset.
-    ColumnPtr evaluateAll(BlockMissingValues & nulls, size_t column_idx, size_t offset = 0);
+    ColumnPtr evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset = 0);
 
     size_t rowsCount() const { return rows_count; }
 

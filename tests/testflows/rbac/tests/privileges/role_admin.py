@@ -95,10 +95,10 @@ def role_admin(self, grant_target_name, user_name, node=None):
 
         with user(node, target_user_name), role(node, role_admin_name):
 
-            with When(f"I grant ROLE ADMIN"):
+            with When(f"I grant ROLE ADMIN on the database"):
                 node.query(f"GRANT ROLE ADMIN ON *.* TO {grant_target_name}")
 
-            with And(f"I revoke ROLE ADMIN"):
+            with And(f"I revoke ROLE ADMIN on the database"):
                 node.query(f"REVOKE ROLE ADMIN ON *.* FROM {grant_target_name}")
 
             with Then("I check the user cannot grant a role"):

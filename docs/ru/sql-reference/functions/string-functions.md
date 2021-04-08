@@ -555,46 +555,4 @@ SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1
 └─────┘
 ```
 
-## encodeXMLComponent {#encode-xml-component}
-
-Экранирует символы для размещения строки в текстовом узле или атрибуте XML.
-
-Экранируются символы, которые в формате XML являются зарезервированными (служебными): `<`, `&`, `>`, `"`, `'`.
-
-**Синтаксис** 
-
-``` sql
-encodeXMLComponent(x)
-```
-
-**Параметры** 
-
--   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Строка, в которой зарезервированные символы экранированы.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT encodeXMLComponent('Hello, "world"!');
-SELECT encodeXMLComponent('<123>');
-SELECT encodeXMLComponent('&clickhouse');
-SELECT encodeXMLComponent('\'foo\'');
-```
-
-Результат:
-
-``` text
-Hello, &quot;world&quot;!
-&lt;123&gt;
-&amp;clickhouse
-&apos;foo&apos;
-```
-
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <math.h>
+
 #include <vector>
+
 #include <Common/ThreadPool.h>
-#include <Common/MemoryTracker.h>
 #include <IO/WriteBuffer.h>
 
 
@@ -51,14 +53,18 @@ public:
 
     ~AsynchronousWriteBuffer() override
     {
-        /// FIXME move final flush into the caller
-        MemoryTracker::LockExceptionInThread lock;
+        try
+        {
+            if (started)
+                pool.wait();
 
-        if (started)
-            pool.wait();
-
-        swapBuffers();
-        out.next();
+            swapBuffers();
+            out.next();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     /// That is executed in a separate thread

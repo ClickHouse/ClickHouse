@@ -41,7 +41,6 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
-    bool supportsSubcolumns() const override { return true; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
@@ -70,11 +69,11 @@ private:
     Files files;
 
     FileChecker file_checker;
-    mutable std::shared_timed_mutex rwlock;
+    std::shared_timed_mutex rwlock;
 
     Poco::Logger * log;
 
-    void addFiles(const NameAndTypePair & column);
+    void addFiles(const String & column_name, const IDataType & type);
 };
 
 }

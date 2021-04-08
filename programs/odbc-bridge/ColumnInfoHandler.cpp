@@ -4,14 +4,14 @@
 
 #    include <DataTypes/DataTypeFactory.h>
 #    include <DataTypes/DataTypeNullable.h>
-#    include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#    include <IO/WriteBufferFromHTTPServerResponse.h>
 #    include <IO/WriteHelpers.h>
 #    include <Parsers/ParserQueryWithOutput.h>
 #    include <Parsers/parseQuery.h>
 #    include <Poco/Data/ODBC/ODBCException.h>
 #    include <Poco/Data/ODBC/SessionImpl.h>
 #    include <Poco/Data/ODBC/Utility.h>
-#    include <Server/HTTP/HTMLForm.h>
+#    include <Poco/Net/HTMLForm.h>
 #    include <Poco/Net/HTTPServerRequest.h>
 #    include <Poco/Net/HTTPServerResponse.h>
 #    include <Poco/NumberParser.h>
@@ -59,16 +59,16 @@ namespace
     }
 }
 
-void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
-    HTMLForm params(request, request.getStream());
+    Poco::Net::HTMLForm params(request, request.stream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            *response.send() << message << std::endl;
+            response.send() << message << std::endl;
         LOG_WARNING(log, message);
     };
 
@@ -159,7 +159,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             columns.emplace_back(reinterpret_cast<char *>(column_name), std::move(column_type));
         }
 
-        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
         writeStringBinary(columns.toString(), out);
     }
     catch (...)

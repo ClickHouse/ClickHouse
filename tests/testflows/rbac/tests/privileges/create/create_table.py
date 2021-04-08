@@ -706,7 +706,7 @@ def create_as_merge(self, node=None):
                 with When("I grant CREATE TABLE privilege to a user"):
                     node.query(f"GRANT CREATE TABLE ON {table_name} TO {user_name}")
 
-                with And("I grant SELECT privilege on the source table"):
+                with And("I grant SELECT privilege to a user to allow executing the table function merge()"):
                     node.query(f"GRANT SELECT ON {source_table_name} TO {user_name}")
 
                 with Then("I try to create a table as another table"):
@@ -722,8 +722,6 @@ def create_as_merge(self, node=None):
 )
 @Name("create table")
 def feature(self, stress=None, parallel=None, node="clickhouse1"):
-    """Check the RBAC functionality of CREATE TABLE.
-    """
     self.context.node = self.context.cluster.node(node)
 
     if stress is not None:

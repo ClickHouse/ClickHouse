@@ -1,4 +1,7 @@
+#include <iomanip>
+#include <thread>
 #include <future>
+#include <Poco/Version.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
@@ -6,19 +9,25 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
+#include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <common/demangle.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/AggregateFunctionResample.h>
+#include <Disks/StoragePolicy.h>
 #include <IO/Operators.h>
 
 
@@ -1378,35 +1387,46 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
         for (size_t i = data_variants.aggregates_pools.size(); i < max_threads; ++i)
             data_variants.aggregates_pools.push_back(std::make_shared<Arena>());
 
-    auto converter = [&](size_t bucket, ThreadGroupStatusPtr thread_group)
+    std::atomic<UInt32> next_bucket_to_merge = 0;
+
+    auto converter = [&](size_t thread_id, ThreadGroupStatusPtr thread_group)
     {
         if (thread_group)
             CurrentThread::attachToIfDetached(thread_group);
 
-        /// Select Arena to avoid race conditions
-        size_t thread_number = static_cast<size_t>(bucket) % max_threads;
-        Arena * arena = data_variants.aggregates_pools.at(thread_number).get();
+        BlocksList blocks;
+        while (true)
+        {
+            UInt32 bucket = next_bucket_to_merge.fetch_add(1);
 
-        return convertOneBucketToBlock(data_variants, method, arena, final, bucket);
+            if (bucket >= Method::Data::NUM_BUCKETS)
+                break;
+
+            if (method.data.impls[bucket].empty())
+                continue;
+
+            /// Select Arena to avoid race conditions
+            Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
+            blocks.emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, bucket));
+        }
+        return blocks;
     };
 
     /// packaged_task is used to ensure that exceptions are automatically thrown into the main stream.
 
-    std::vector<std::packaged_task<Block()>> tasks(Method::Data::NUM_BUCKETS);
+    std::vector<std::packaged_task<BlocksList()>> tasks(max_threads);
 
     try
     {
-        for (size_t bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
+        for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
-            if (method.data.impls[bucket].empty())
-                continue;
-
-            tasks[bucket] = std::packaged_task<Block()>([group = CurrentThread::getGroup(), bucket, &converter]{ return converter(bucket, group); });
+            tasks[thread_id] = std::packaged_task<BlocksList()>(
+                [group = CurrentThread::getGroup(), thread_id, &converter] { return converter(thread_id, group); });
 
             if (thread_pool)
-                thread_pool->scheduleOrThrowOnError([bucket, &tasks] { tasks[bucket](); });
+                thread_pool->scheduleOrThrowOnError([thread_id, &tasks] { tasks[thread_id](); });
             else
-                tasks[bucket]();
+                tasks[thread_id]();
         }
     }
     catch (...)
@@ -1428,7 +1448,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
         if (!task.valid())
             continue;
 
-        blocks.emplace_back(task.get_future().get());
+        blocks.splice(blocks.end(), task.get_future().get());
     }
 
     return blocks;
@@ -2307,7 +2327,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 }
 
 
-void Aggregator::setCancellationHook(const CancellationHook & cancellation_hook)
+void Aggregator::setCancellationHook(const CancellationHook cancellation_hook)
 {
     isCancelled = cancellation_hook;
 }

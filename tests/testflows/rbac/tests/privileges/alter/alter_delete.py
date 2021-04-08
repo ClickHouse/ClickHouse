@@ -7,7 +7,7 @@ from rbac.requirements import *
 from rbac.helper.common import *
 import rbac.helper.errors as errors
 
-aliases = {"ALTER DELETE", "DELETE", "ALL"}
+aliases = {"ALTER DELETE", "DELETE"}
 
 @TestSuite
 def privilege_granted_directly_or_via_role(self, table_type, privilege, node=None):
@@ -65,7 +65,6 @@ def privilege_check(grant_target_name, user_name, table_type, privilege, node=No
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterDelete("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()

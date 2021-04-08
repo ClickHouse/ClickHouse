@@ -25,7 +25,6 @@ public:
     bool supportsPrewhere() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 

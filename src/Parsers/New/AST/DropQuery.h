@@ -15,8 +15,6 @@ class DropQuery : public DDLQuery
         createDropTable(bool detach, bool if_exists, bool temporary, PtrTo<TableIdentifier> identifier, PtrTo<ClusterClause> cluster);
         static PtrTo<DropQuery>
         createDropDictionary(bool detach, bool if_exists, PtrTo<TableIdentifier> identifier, PtrTo<ClusterClause> cluster);
-        static PtrTo<DropQuery>
-        createDropView(bool detach, bool if_exists, PtrTo<TableIdentifier> identifier, PtrTo<ClusterClause> cluster);
 
         ASTPtr convertToOld() const override;
 
@@ -31,7 +29,6 @@ class DropQuery : public DDLQuery
             DATABASE,
             DICTIONARY,
             TABLE,
-            VIEW,
         };
 
         const QueryType query_type;

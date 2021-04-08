@@ -153,7 +153,7 @@ CREATE TABLE table_name
 
 ```xml
 <default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
-<default_replica_name>{replica}</default_replica_name>
+<default_replica_name>{replica}</default_replica_path>
 ```
 
 В этом случае можно опустить аргументы при создании таблиц:

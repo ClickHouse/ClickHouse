@@ -40,17 +40,12 @@ public:
         unsigned num_streams) override;
 
     bool supportsParallelInsert() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-
-    /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
-    bool prefersLargeBlocks() const override { return false; }
-
-    bool hasEvenlyDistributedRead() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const Context & context) override;
 
     void drop() override;
 
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands & commands, const Context & context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;

@@ -73,7 +73,7 @@ def check_privilege(self, privilege, on, grant_target_name, user_name, table_nam
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_ShowTables_RequiredPrivilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_ShowTables_Query("1.0"),
 )
 def show_tables(self, privilege, on, grant_target_name, user_name, table_name, node=None):
     """Check that user is only able to see a table in SHOW TABLES when they have a privilege on that table.
@@ -112,7 +112,7 @@ def show_tables(self, privilege, on, grant_target_name, user_name, table_name, n
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_ExistsTable_RequiredPrivilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_ExistsTable("1.0"),
 )
 def exists(self, privilege, on, grant_target_name, user_name, table_name, node=None):
     """Check that user is able to execute EXISTS on a table if and only if the user has SHOW TABLE privilege
@@ -152,7 +152,7 @@ def exists(self, privilege, on, grant_target_name, user_name, table_name, node=N
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_CheckTable_RequiredPrivilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_CheckTable("1.0"),
 )
 def check(self, privilege, on, grant_target_name, user_name, table_name, node=None):
     """Check that user is able to execute CHECK on a table if and only if the user has SHOW TABLE privilege
@@ -193,7 +193,7 @@ def check(self, privilege, on, grant_target_name, user_name, table_name, node=No
 @TestFeature
 @Name("show tables")
 @Requirements(
-    RQ_SRS_006_RBAC_ShowTables_Privilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_ShowTables("1.0"),
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SHOW TABLES.

@@ -36,9 +36,8 @@ def privilege_check(grant_target_name, user_name, node=None):
         table_name = f"table_{getuid()}"
 
         try:
-
             with When("I attempt to attach a table without privilege"):
-                node.query(f"ATTACH TABLE {table_name}", settings = [("user", user_name)],
+                node.query(f"ATTACH TABLE {table_name} (x Int8) ENGINE = Memory", settings = [("user", user_name)],
                     exitcode=exitcode, message=message)
 
         finally:
@@ -49,12 +48,12 @@ def privilege_check(grant_target_name, user_name, node=None):
         table_name = f"table_{getuid()}"
 
         try:
-            with When("I grant create table privilege"):
+            with When("I grant create  table privilege"):
                 node.query(f"GRANT CREATE TABLE ON *.* TO {grant_target_name}")
 
             with Then("I attempt to attach a table"):
-                node.query(f"ATTACH TABLE {table_name}", settings = [("user", user_name)],
-                    exitcode=134, message=f"DB::Exception: Table `{table_name}` doesn't exist.")
+                node.query(f"ATTACH TABLE {table_name} (x Int8) ENGINE = Memory", settings = [("user", user_name)],
+                    exitcode=80, message="DB::Exception: Incorrect ATTACH TABLE query")
 
         finally:
             with Finally("I drop the table"):
@@ -71,7 +70,7 @@ def privilege_check(grant_target_name, user_name, node=None):
                 node.query(f"REVOKE CREATE TABLE ON *.* FROM {grant_target_name}")
 
             with Then("I attempt to attach a table"):
-                node.query(f"ATTACH TABLE {table_name}", settings = [("user", user_name)],
+                node.query(f"ATTACH TABLE {table_name} (x Int8) ENGINE = Memory", settings = [("user", user_name)],
                     exitcode=exitcode, message=message)
 
         finally:

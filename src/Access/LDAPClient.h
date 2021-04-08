@@ -30,10 +30,9 @@ public:
     LDAPClient & operator= (LDAPClient &&) = delete;
 
 protected:
-    MAYBE_NORETURN void diag(const int rc, String text = "");
+    MAYBE_NORETURN void diag(const int rc);
     MAYBE_NORETURN void openConnection();
     void closeConnection() noexcept;
-    LDAPSearchResults search(const LDAPSearchParams & search_params);
 
 protected:
     const LDAPServerParams params;
@@ -47,7 +46,7 @@ class LDAPSimpleAuthClient
 {
 public:
     using LDAPClient::LDAPClient;
-    bool authenticate(const LDAPSearchParamsList * search_params, LDAPSearchResultsList * search_results);
+    bool check();
 };
 
 }

@@ -27,12 +27,9 @@ if (GLIBC_COMPATIBILITY)
         list(APPEND glibc_compatibility_sources musl/getentropy.c)
     endif()
 
-    if (NOT ARCH_ARM)
-        # clickhouse_memcpy don't support ARCH_ARM, see https://github.com/ClickHouse/ClickHouse/issues/18951
-        add_library (clickhouse_memcpy OBJECT
-            ${ClickHouse_SOURCE_DIR}/contrib/FastMemcpy/memcpy_wrapper.c
-        )
-    endif()
+    add_library (clickhouse_memcpy OBJECT
+        ${ClickHouse_SOURCE_DIR}/contrib/FastMemcpy/memcpy_wrapper.c
+    )
 
     # Need to omit frame pointers to match the performance of glibc
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")

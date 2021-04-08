@@ -3,18 +3,15 @@
 #include <atomic>
 #include <memory>
 #include <variant>
-#include <optional>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Core/Block.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/HashSet.h>
 #include <sparsehash/sparse_hash_map>
 #include <ext/range.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-#include "DictionaryHelpers.h"
 
 /** This dictionary stores all content in a hash table in memory
   * (a separate Key -> Value map for each attribute)
@@ -23,6 +20,7 @@
 
 namespace DB
 {
+using BlockPtr = std::shared_ptr<Block>;
 
 class HashedDictionary final : public IDictionary
 {
@@ -68,16 +66,77 @@ public:
 
     void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::simple; }
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-    ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
-        const Columns & key_columns,
-        const DataTypes & key_types,
-        const ColumnPtr default_values_column) const override;
+#define DECLARE(TYPE) \
+    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
 
-    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
+    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
+
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const PaddedPODArray<Key> & ids, \
+        const PaddedPODArray<TYPE> & def, \
+        ResultArrayType<TYPE> & out) const;
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
+
+    void
+    getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out)
+        const;
+
+#define DECLARE(TYPE) \
+    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, ResultArrayType<TYPE> & out) \
+        const;
+    DECLARE(UInt8)
+    DECLARE(UInt16)
+    DECLARE(UInt32)
+    DECLARE(UInt64)
+    DECLARE(UInt128)
+    DECLARE(Int8)
+    DECLARE(Int16)
+    DECLARE(Int32)
+    DECLARE(Int64)
+    DECLARE(Float32)
+    DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
+#undef DECLARE
+
+    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
+
+    void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
     void isInVectorVector(
         const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
@@ -103,13 +162,9 @@ private:
     template <typename Value>
     using SparseCollectionPtrType = std::unique_ptr<SparseCollectionType<Value>>;
 
-    using NullableSet = HashSet<Key, DefaultHash<Key>>;
-
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::optional<NullableSet> nullable_set;
-
         std::variant<
             UInt8,
             UInt16,
@@ -125,7 +180,7 @@ private:
             Decimal128,
             Float32,
             Float64,
-            StringRef>
+            String>
             null_values;
         std::variant<
             CollectionPtrType<UInt8>,
@@ -180,21 +235,14 @@ private:
     template <typename T>
     void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
+    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
-    template <typename AttributeType, typename OutputType, typename MapType, typename ValueSetter, typename DefaultValueExtractor>
+    template <typename OutputType, typename AttrType, typename ValueSetter, typename DefaultGetter>
     void getItemsAttrImpl(
-        const MapType & attr,
-        const PaddedPODArray<Key> & ids,
-        ValueSetter && set_value,
-        DefaultValueExtractor & default_value_extractor) const;
-
-    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
+        const AttrType & attr, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
-        const Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        ValueSetter && set_value,
-        DefaultValueExtractor & default_value_extractor) const;
+        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
 
     template <typename T>
     bool setAttributeValueImpl(Attribute & attribute, const Key id, const T value);

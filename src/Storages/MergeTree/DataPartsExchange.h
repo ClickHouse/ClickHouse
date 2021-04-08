@@ -20,19 +20,21 @@ namespace DataPartsExchange
 class Service final : public InterserverIOEndpoint
 {
 public:
-    explicit Service(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
+    Service(MergeTreeData & data_)
+    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
 
     Service(const Service &) = delete;
     Service & operator=(const Service &) = delete;
 
     std::string getId(const std::string & node_id) const override;
-    void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
+    void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) override;
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
     void sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
     void sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, int client_protocol_version);
 
+private:
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
     MergeTreeData & data;
@@ -41,10 +43,13 @@ private:
 
 /** Client for getting the parts from the table *MergeTree.
   */
-class Fetcher final : private boost::noncopyable
+class Fetcher final
 {
 public:
-    explicit Fetcher(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get("Fetcher")) {}
+    Fetcher(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get("Fetcher")) {}
+
+    Fetcher(const Fetcher &) = delete;
+    Fetcher & operator=(const Fetcher &) = delete;
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
     MergeTreeData::MutableDataPartPtr fetchPart(
@@ -70,7 +75,7 @@ private:
             bool to_detached,
             const String & tmp_prefix_,
             bool sync,
-            ReservationPtr reservation,
+            const ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(

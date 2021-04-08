@@ -86,9 +86,6 @@ public:
     const ColumnArray & getNestedColumn() const { return assert_cast<const ColumnArray &>(*nested); }
     ColumnArray & getNestedColumn() { return assert_cast<ColumnArray &>(*nested); }
 
-    const ColumnPtr & getNestedColumnPtr() const { return nested; }
-    ColumnPtr & getNestedColumnPtr() { return nested; }
-
     const ColumnTuple & getNestedData() const { return assert_cast<const ColumnTuple &>(getNestedColumn().getData()); }
     ColumnTuple & getNestedData() { return assert_cast<ColumnTuple &>(getNestedColumn().getData()); }
 };

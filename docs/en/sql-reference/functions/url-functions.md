@@ -25,7 +25,7 @@ Extracts the hostname from a URL.
 domain(url)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
@@ -76,7 +76,7 @@ Extracts the the top-level domain from a URL.
 topLevelDomain(url)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `url` — URL. Type: [String](../../sql-reference/data-types/string.md).
 
@@ -133,9 +133,10 @@ For example:
 
 ### cutToFirstSignificantSubdomainCustom {#cuttofirstsignificantsubdomaincustom}
 
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain. Accepts custom [TLD list](https://en.wikipedia.org/wiki/List_of_Internet_top-level_domains) name.
+Same as `cutToFirstSignificantSubdomain` but accept custom TLD list name, useful if:
 
-Can be useful if you need fresh TLD list or you have custom.
+- you need fresh TLD list,
+- or you have custom.
 
 Configuration example:
 
@@ -148,150 +149,21 @@ Configuration example:
 </top_level_domains_lists>
 ```
 
-**Syntax**
+Example:
 
-``` sql
-cutToFirstSignificantSubdomain(URL, TLD)
-```
-
-**Parameters**
-
--   `URL` — URL. [String](../../sql-reference/data-types/string.md).
--   `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   Part of the domain that includes top-level subdomains up to the first significant subdomain.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');
-```
-
-Result:
-
-```text
-┌─cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
-│ foo.there-is-no-such-domain                                                                   │
-└───────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-**See Also**
-
--   [firstSignificantSubdomain](#firstsignificantsubdomain).
+-   `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/', 'public_suffix_list') = 'yandex.com.tr'`.
 
 ### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
 
-Returns the part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`. Accepts custom TLD list name.
-
-Can be useful if you need fresh TLD list or you have custom.
-
-Configuration example:
-
-```xml
-<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
-<top_level_domains_lists>
-    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
-    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- NOTE: path is under top_level_domains_path -->
-</top_level_domains_lists>
-```
-
-**Syntax**
-
-```sql
-cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
-```
-
-**Parameters**
-
--   `URL` — URL. [String](../../sql-reference/data-types/string.md).
--   `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   Part of the domain that includes top-level subdomains up to the first significant subdomain without stripping `www`.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list');
-```
-
-Result:
-
-```text
-┌─cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_list')─┐
-│ www.foo                                                                      │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-**See Also**
-
--   [firstSignificantSubdomain](#firstsignificantsubdomain).
+Same as `cutToFirstSignificantSubdomainWithWWW` but accept custom TLD list name.
 
 ### firstSignificantSubdomainCustom {#firstsignificantsubdomaincustom}
 
-Returns the first significant subdomain. Accepts customs TLD list name.
+Same as `firstSignificantSubdomain` but accept custom TLD list name.
 
-Can be useful if you need fresh TLD list or you have custom.
+### cutToFirstSignificantSubdomainCustomWithWWW {#cuttofirstsignificantsubdomaincustomwithwww}
 
-Configuration example:
-
-```xml
-<!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
-<top_level_domains_lists>
-    <!-- https://publicsuffix.org/list/public_suffix_list.dat -->
-    <public_suffix_list>public_suffix_list.dat</public_suffix_list>
-    <!-- NOTE: path is under top_level_domains_path -->
-</top_level_domains_lists>
-```
-
-**Syntax**
-
-```sql
-firstSignificantSubdomainCustom(URL, TLD)
-```
-
-**Parameters**
-
--   `URL` — URL. [String](../../sql-reference/data-types/string.md).
--   `TLD` — Custom TLD list name. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   First significant subdomain.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list');
-```
-
-Result:
-
-```text 
-┌─firstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', 'public_suffix_list')─┐
-│ foo                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-**See Also**
-
--   [firstSignificantSubdomain](#firstsignificantsubdomain).
+Same as `cutToFirstSignificantSubdomainWithWWW` but accept custom TLD list name.
 
 ### port(URL\[, default_port = 0\]) {#port}
 
@@ -370,7 +242,7 @@ Extracts network locality (`username:password@host:port`) from a URL.
 netloc(URL)
 ```
 
-**Arguments**
+**Parameters**
 
 -   `url` — URL. [String](../../sql-reference/data-types/string.md).
 

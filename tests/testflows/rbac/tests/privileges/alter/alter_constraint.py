@@ -17,7 +17,7 @@ subprivileges = {
 aliases = {
     "ADD CONSTRAINT" : ["ALTER ADD CONSTRAINT", "ADD CONSTRAINT"],
     "DROP CONSTRAINT": ["ALTER DROP CONSTRAINT", "DROP CONSTRAINT"],
-    "ALTER CONSTRAINT": ["ALTER CONSTRAINT", "CONSTRAINT", "ALL"] # super-privilege
+    "ALTER CONSTRAINT": ["ALTER CONSTRAINT", "CONSTRAINT"] # super-privilege
 }
 
 # Extra permutation is for 'ALTER CONSTRAINT' super-privilege
@@ -274,8 +274,7 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterConstraint("1.0"),
-    RQ_SRS_006_RBAC_Privileges_AlterConstraint_TableEngines("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0")
+    RQ_SRS_006_RBAC_Privileges_AlterConstraint_TableEngines("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()

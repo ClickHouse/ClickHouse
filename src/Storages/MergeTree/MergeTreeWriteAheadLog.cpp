@@ -179,7 +179,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 /// If file is broken, do not write new parts to it.
                 /// But if it contains any part rotate and save them.
                 if (max_block_number == -1)
-                    disk->removeFile(path);
+                    disk->remove(path);
                 else if (name == DEFAULT_WAL_FILE_NAME)
                     rotate(lock);
 
@@ -192,7 +192,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
         {
             MergedBlockOutputStream part_out(part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
 
-            part->minmax_idx.update(block, storage.minmax_idx_columns);
+            part->minmax_idx.update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0);
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);

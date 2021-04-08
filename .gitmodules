@@ -184,7 +184,7 @@
 	url = https://github.com/ClickHouse-Extras/krb5
 [submodule "contrib/cyrus-sasl"]
 	path = contrib/cyrus-sasl
-	url = https://github.com/ClickHouse-Extras/cyrus-sasl
+	url = https://github.com/cyrusimap/cyrus-sasl
 	branch = cyrus-sasl-2.1
 [submodule "contrib/croaring"]
 	path = contrib/croaring
@@ -209,15 +209,9 @@
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
-[submodule "contrib/libpqxx"]
-	path = contrib/libpqxx
-	url = https://github.com/jtv/libpqxx
-[submodule "contrib/libpq"]
-	path = contrib/libpq
-	url = https://github.com/ClickHouse-Extras/libpq
 [submodule "contrib/boringssl"]
 	path = contrib/boringssl
 	url = https://github.com/ClickHouse-Extras/boringssl.git
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
-	url = https://github.com/ClickHouse-Extras/NuRaft.git
+	url = https://github.com/eBay/NuRaft.git

@@ -32,7 +32,6 @@
                <value>extractURLParameters</value>
                <value>extractURLParameterNames</value>
                <value>decodeURLComponent</value>
-               <value>decodeXMLComponent</value>
                <value>cutWWW</value>
                <value>cutQueryString</value>
                <value>cutQueryStringAndFragment</value>

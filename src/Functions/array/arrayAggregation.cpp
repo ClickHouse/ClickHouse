@@ -5,7 +5,6 @@
 #include <Columns/ColumnDecimal.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
-#include <common/defines.h>
 
 
 namespace DB
@@ -122,7 +121,7 @@ struct ArrayAggregateImpl
     }
 
     template <typename Element>
-    static NO_SANITIZE_UNDEFINED bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
+    static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
     {
         using Result = ArrayAggregateResult<Element, aggregate_operation>;
         using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;

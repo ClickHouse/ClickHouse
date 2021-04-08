@@ -45,7 +45,6 @@ void registerFunctionTimeZone(FunctionFactory &);
 void registerFunctionRunningAccumulate(FunctionFactory &);
 void registerFunctionRunningDifference(FunctionFactory &);
 void registerFunctionRunningDifferenceStartingWithFirstValue(FunctionFactory &);
-void registerFunctionRunningConcurrency(FunctionFactory &);
 void registerFunctionFinalizeAggregation(FunctionFactory &);
 void registerFunctionToLowCardinality(FunctionFactory &);
 void registerFunctionLowCardinalityIndices(FunctionFactory &);
@@ -68,7 +67,6 @@ void registerFunctionInitializeAggregation(FunctionFactory &);
 void registerFunctionErrorCodeToName(FunctionFactory &);
 void registerFunctionTcpPort(FunctionFactory &);
 void registerFunctionByteSize(FunctionFactory &);
-void registerFunctionFile(FunctionFactory & factory);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -114,7 +112,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionRunningAccumulate(factory);
     registerFunctionRunningDifference(factory);
     registerFunctionRunningDifferenceStartingWithFirstValue(factory);
-    registerFunctionRunningConcurrency(factory);
     registerFunctionFinalizeAggregation(factory);
     registerFunctionToLowCardinality(factory);
     registerFunctionLowCardinalityIndices(factory);
@@ -137,7 +134,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionErrorCodeToName(factory);
     registerFunctionTcpPort(factory);
     registerFunctionByteSize(factory);
-    registerFunctionFile(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
