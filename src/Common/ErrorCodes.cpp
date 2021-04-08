@@ -590,7 +590,7 @@ namespace ErrorCodes
 
     void increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace)
     {
-        if (error_code >= end())
+        if (error_code < 0 || error_code >= end())
         {
             /// For everything outside the range, use END.
             /// (end() is the pointer pass the end, while END is the last value that has an element in values array).

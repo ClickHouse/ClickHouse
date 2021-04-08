@@ -101,7 +101,7 @@ void ArrowBlockInputFormat::prepareReader()
     record_batch_current = 0;
 }
 
-void registerInputFormatProcessorArrow(FormatFactory &factory)
+void registerInputFormatProcessorArrow(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor(
         "Arrow",
@@ -112,7 +112,7 @@ void registerInputFormatProcessorArrow(FormatFactory &factory)
         {
             return std::make_shared<ArrowBlockInputFormat>(buf, sample, false);
         });
-
+    factory.markFormatAsColumnOriented("Arrow");
     factory.registerInputFormatProcessor(
         "ArrowStream",
         [](ReadBuffer & buf,
