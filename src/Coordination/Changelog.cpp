@@ -515,7 +515,7 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, 
 {
     std::vector<nuraft::ptr<nuraft::buffer>> returned_logs;
 
-    uint64_t uint64_total = 0;
+    uint64_t size_total = 0;
     for (uint64_t i = index; i < index + count; ++i)
     {
         auto entry = logs.find(i);
@@ -523,11 +523,11 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Don't have log entry {}", i);
 
         nuraft::ptr<nuraft::buffer> buf = entry->second->serialize();
-        uint64_total += buf->size();
+        size_total += buf->size();
         returned_logs.push_back(buf);
     }
 
-    nuraft::ptr<nuraft::buffer> buf_out = nuraft::buffer::alloc(sizeof(int32_t) + count * sizeof(int32_t) + uint64_total);
+    nuraft::ptr<nuraft::buffer> buf_out = nuraft::buffer::alloc(sizeof(int32_t) + count * sizeof(int32_t) + size_total);
     buf_out->pos(0);
     buf_out->put(static_cast<int32_t>(count));
 
