@@ -79,10 +79,10 @@ private:
 
     struct DistributedFileIterator : public StorageS3Source::FileIterator
     {
-        DistributedFileIterator(NextTaskCallback callback_, String identifier_)
+        DistributedFileIterator(ReadTaskCallback callback_, String identifier_)
             : callback(callback_), identifier(identifier_) {}
 
-        NextTaskCallback callback;
+        ReadTaskCallback callback;
         String identifier;
 
         std::optional<String> next() override

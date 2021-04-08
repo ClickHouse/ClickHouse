@@ -101,21 +101,14 @@ ColumnsDescription TableFunctionS3Distributed::getActualTableStructure(const Con
 }
 
 StoragePtr TableFunctionS3Distributed::executeImpl(
-    const ASTPtr & /*filename*/, const Context & context,
+    const ASTPtr & /*function*/, const Context & context,
     const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     StoragePtr storage = StorageS3Distributed::create(
-            filename,
-            access_key_id,
-            secret_access_key,
-            StorageID(getDatabaseName(), table_name),
-            cluster_name,
-            format,
-            context.getSettingsRef().s3_max_connections,
-            getActualTableStructure(context),
-            ConstraintsDescription{},
-            context,
-            compression_method);
+        filename, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name),
+        cluster_name, format, context.getSettingsRef().s3_max_connections,
+        getActualTableStructure(context), ConstraintsDescription{},
+        context, compression_method);
 
     storage->startup();
 

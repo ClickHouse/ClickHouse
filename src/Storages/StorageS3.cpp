@@ -187,7 +187,6 @@ bool StorageS3Source::initialize()
             return false;
         }
         file_path = bucket + "/" + current_key;
-        std::cout << "StorageS3Source " << file_path << std::endl;
     }
     else
     {

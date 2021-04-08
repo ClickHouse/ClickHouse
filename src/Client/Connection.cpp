@@ -552,10 +552,10 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 }
 
 
-void Connection::sendReadTaskResponse(const std::string & responce)
+void Connection::sendReadTaskResponse(const std::string & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    writeStringBinary(responce, *out);
+    writeStringBinary(response, *out);
     out->next();
 }
 
@@ -843,9 +843,9 @@ Packet Connection::receivePacket()
 
 String Connection::receiveReadTaskRequest() const
 {
-    String next_task;
-    readStringBinary(next_task, *in);
-    return next_task;
+    String read_task;
+    readStringBinary(read_task, *in);
+    return read_task;
 }
 
 

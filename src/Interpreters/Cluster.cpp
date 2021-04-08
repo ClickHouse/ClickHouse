@@ -139,20 +139,11 @@ String Cluster::Address::toString() const
 }
 
 
-String Cluster::Address::getHash() const 
-{
-    SipHash hash;
-    hash.update(host_name);
-    hash.update(std::to_string(port));
-    hash.update(user);
-    hash.update(password);
-    return std::to_string(hash.get64());
-}
-
 String Cluster::Address::toString(const String & host_name, UInt16 port)
 {
     return escapeForFileName(host_name) + ':' + DB::toString(port);
 }
+
 
 String Cluster::Address::readableString() const
 {

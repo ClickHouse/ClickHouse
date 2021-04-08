@@ -288,15 +288,16 @@ void TCPHandler::runImpl()
 
             customizeContext(query_context);
 
+            /// Create task supervisor for distributed task processing
+            query_context->setReadTaskSupervisor(std::make_shared<TaskSupervisor>());
+
             /// This callback is needed for requsting read tasks inside pipeline for distributed processing
-            query_context->setNextTaskCallback([this](String request) -> String
+            query_context->setReadTaskCallback([this](String request) mutable -> String
             {
-                std::lock_guard lock(buffer_mutex);
+                std::lock_guard lock(task_callback_mutex);
                 sendReadTaskRequestAssumeLocked(request);
                 return receiveReadTaskResponseAssumeLocked();
             });
-
-            query_context->setReadTaskSupervisor(std::make_shared<TaskSupervisor>());
 
             bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
@@ -664,7 +665,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                 break;
             }
 
-            std::lock_guard lock(buffer_mutex);
+            std::lock_guard lock(task_callback_mutex);
 
             if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
             {

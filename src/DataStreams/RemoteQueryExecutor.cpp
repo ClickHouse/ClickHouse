@@ -383,9 +383,9 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 
 void RemoteQueryExecutor::processReadTaskRequest(const String & request)
 {
-    auto query_context = context->getQueryContext();
-    String responce = query_context->getReadTaskSupervisor()->getNextTaskForId(request);
-    connections->sendReadTaskResponce(responce);
+    Context & query_context = context.getQueryContext();
+    String response = query_context.getTaskSupervisor()->getNextTaskForId(request);
+    connections->sendReadTaskResponse(response);
 }
 
 void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
