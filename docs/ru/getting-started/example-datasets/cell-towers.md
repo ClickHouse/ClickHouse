@@ -93,7 +93,6 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 10 rows in set. Elapsed: 0.019 sec. Processed 43.28 million rows, 86.55 MB (2.33 billion rows/s., 4.65 GB/s.)
 ```
 
-Здесь можно заглянуть в словарь: [термин "мобильный код страны"](https://ru.wikipedia.org/wiki/Mobile_Country_Code).
 
 Можно увидеть, что по количеству вышек лидируют следующие страны: США, Германия, Россия.
 
