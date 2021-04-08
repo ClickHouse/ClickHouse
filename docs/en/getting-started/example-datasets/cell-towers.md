@@ -55,7 +55,7 @@ Insert the dataset:
 clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
 ```
 
-## Run some queries {#run-some-queries}
+## Examples {#examples}
 
 A number of cell towers by type:
 ```
