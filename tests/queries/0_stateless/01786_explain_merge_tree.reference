@@ -27,45 +27,40 @@
           Parts: 1
           Granules: 1
 -----------------
-            ReadFromMergeTree
-            ReadType: InOrder
-            Indexes:
-              None
-                Parts: 5
-                Granules: 12
-              MinMax
-                Description: unknown
-                Parts: 5
-                Granules: 12
-              Partition
-                Description: unknown
-                Parts: 5
-                Granules: 12
-              PrimaryKey
-                Description: (column 0 in [11, +inf))
-                Parts: 2
-                Granules: 6
-            ReadFromMergeTree
-            ReadType: InOrder
+          ReadFromMergeTree
+          ReadType: InOrder
+          Indexes:
+            None
+              Parts: 5
+              Granules: 12
+            MinMax
+              Description: unknown
+              Parts: 5
+              Granules: 12
+            Partition
+              Description: unknown
+              Parts: 5
+              Granules: 12
+            PrimaryKey
+              Description: (column 0 in [16, +inf))
+              Parts: 1
+              Granules: 3
 -----------------
-              ReadFromMergeTree
-              ReadType: InReverseOrder
-              Indexes:
-                None
-                  Parts: 5
-                  Granules: 12
-                MinMax
-                  Description: unknown
-                  Parts: 5
-                  Granules: 12
-                Partition
-                  Description: unknown
-                  Parts: 5
-                  Granules: 12
-                PrimaryKey
-                  Description: (column 0 in [11, +inf))
-                  Parts: 2
-                  Granules: 6
-            ReverseRows
-              ReadFromMergeTree
-              ReadType: InReverseOrder
+          ReadFromMergeTree
+          ReadType: InReverseOrder
+          Indexes:
+            None
+              Parts: 5
+              Granules: 12
+            MinMax
+              Description: unknown
+              Parts: 5
+              Granules: 12
+            Partition
+              Description: unknown
+              Parts: 5
+              Granules: 12
+            PrimaryKey
+              Description: (column 0 in [16, +inf))
+              Parts: 1
+              Granules: 3
