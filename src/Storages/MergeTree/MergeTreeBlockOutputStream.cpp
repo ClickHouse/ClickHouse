@@ -35,7 +35,7 @@ void MergeTreeBlockOutputStream::write(const Block & block)
         if (!part)
             continue;
 
-        storage.renameTempPartAndAdd(part, &storage.increment);
+        storage.renameTempPartAndAdd(part, context.getCurrentTransaction().get(), &storage.increment);
 
         PartLog::addNewPart(storage.global_context, part, watch.elapsed());
 

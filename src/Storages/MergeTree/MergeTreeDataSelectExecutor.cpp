@@ -158,7 +158,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
     return readFromParts(
-        data.getDataPartsVector(), column_names_to_return, metadata_snapshot,
+        data.getDataPartsVector(context), column_names_to_return, metadata_snapshot,
         query_info, context, max_block_size, num_streams,
         max_block_numbers_to_read);
 }

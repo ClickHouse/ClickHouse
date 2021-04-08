@@ -272,11 +272,11 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_tid_as_field(part->versions.mintid));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_tid_as_field(part->versions.maxtid));
+            columns[res_index++]->insert(get_tid_as_field(part->versions.getMaxTID()));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->versions.mincsn);
+            columns[res_index++]->insert(part->versions.mincsn.load(std::memory_order_relaxed));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->versions.maxcsn);
+            columns[res_index++]->insert(part->versions.maxcsn.load(std::memory_order_relaxed));
     }
 }
 

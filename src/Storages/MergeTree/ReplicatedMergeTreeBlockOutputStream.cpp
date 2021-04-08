@@ -380,7 +380,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
         bool renamed = false;
         try
         {
-            renamed = storage.renameTempPartAndAdd(part, nullptr, &transaction);
+            renamed = storage.renameTempPartAndAdd(part, nullptr, nullptr, &transaction);
         }
         catch (const Exception & e)
         {
