@@ -119,11 +119,13 @@ void PostgreSQLReplicationHandler::startSynchronization()
     }
     else
     {
+        LOG_TRACE(log, "Restoring tables...");
         for (const auto & [table_name, storage] : storages)
         {
             try
             {
                 nested_storages[table_name] = storage->getNested();
+                storage->setStorageMetadata();
                 storage->setNestedLoaded();
             }
             catch (...)

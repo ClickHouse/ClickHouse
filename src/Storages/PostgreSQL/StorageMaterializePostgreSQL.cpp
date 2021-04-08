@@ -152,6 +152,13 @@ ASTPtr StorageMaterializePostgreSQL::getColumnDeclaration(const DataTypePtr & da
 }
 
 
+void StorageMaterializePostgreSQL::setStorageMetadata()
+{
+    auto storage_metadata = getNested()->getInMemoryMetadataPtr();
+    setInMemoryMetadata(*storage_metadata);
+}
+
+
 /// For single storage MaterializePostgreSQL get columns and primary key columns from storage definition.
 /// For database engine MaterializePostgreSQL get columns and primary key columns by fetching from PostgreSQL, also using the same
 /// transaction with snapshot, which is used for initial tables dump.

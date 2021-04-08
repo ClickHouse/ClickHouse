@@ -9,7 +9,7 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=['configs/log_conf.xml'], with_postgres=True)
+instance = cluster.add_instance('instance', main_configs=['configs/log_conf.xml'], with_postgres=True, stay_alive=True)
 
 postgres_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
@@ -397,6 +397,36 @@ def test_connection_loss(started_cluster):
         result = instance.query('SELECT count() FROM test.postgresql_replica;')
 
     cursor.execute('DROP TABLE postgresql_replica;')
+    assert(int(result) == 100050)
+
+
+@pytest.mark.timeout(320)
+def test_clickhouse_restart(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica');
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
+
+    instance.query('''
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+            ENGINE = MaterializePostgreSQL(
+            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
+            PRIMARY KEY key; ''')
+
+    i = 50
+    while i < 100000:
+        instance.query("INSERT INTO postgres_database.postgresql_replica SELECT {} + number, number from numbers(10000)".format(i))
+        i += 10000
+
+    instance.restart_clickhouse()
+
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while int(result) < 100050:
+        time.sleep(1)
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+
+    cursor.execute('DROP TABLE postgresql_replica;')
+    print(result)
     assert(int(result) == 100050)
 
 
