@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/StoragePostgreSQL.h>
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -17,6 +16,7 @@
 #include <Poco/File.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
+#include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
 
 
 namespace DB
@@ -40,14 +40,14 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & dbname_,
         const String & postgres_dbname,
-        PostgreSQLConnectionPtr connection_,
+        postgres::PoolWithFailoverPtr pool_,
         const bool cache_tables_)
     : IDatabase(dbname_)
     , global_context(context.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , dbname(postgres_dbname)
-    , connection(std::move(connection_))
+    , pool(std::move(pool_))
     , cache_tables(cache_tables_)
 {
     cleaner_task = context.getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
@@ -59,6 +59,7 @@ bool DatabasePostgreSQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
+    auto connection = pool->get();
     auto tables_list = fetchPostgreSQLTablesList(connection->conn());
 
     for (const auto & table_name : tables_list)
@@ -75,6 +76,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(
     std::lock_guard<std::mutex> lock(mutex);
 
     Tables tables;
+    auto connection = pool->get();
     auto table_names = fetchPostgreSQLTablesList(connection->conn());
 
     for (const auto & table_name : table_names)
@@ -94,7 +96,8 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
             "PostgreSQL table name cannot contain single quote or backslash characters, passed {}", table_name);
     }
 
-    pqxx::nontransaction tx(*connection->conn());
+    auto connection = pool->get();
+    pqxx::nontransaction tx(connection->conn());
 
     try
     {
@@ -149,13 +152,14 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, const Conte
             return StoragePtr{};
 
         auto use_nulls = context.getSettingsRef().external_databases_use_nulls;
+        auto connection = pool->get();
         auto columns = fetchPostgreSQLTableStructure(connection->conn(), doubleQuoteString(table_name), use_nulls).columns;
 
         if (!columns)
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
-                StorageID(database_name, table_name), table_name, std::make_shared<PostgreSQLConnection>(*connection),
+                StorageID(database_name, table_name), *pool, table_name,
                 ColumnsDescription{*columns}, ConstraintsDescription{}, context);
 
         if (cache_tables)
@@ -286,6 +290,7 @@ void DatabasePostgreSQL::loadStoredObjects(Context & /* context */, bool, bool /
 void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard<std::mutex> lock{mutex};
+    auto connection = pool->get();
     auto actual_tables = fetchPostgreSQLTablesList(connection->conn());
 
     if (cache_tables)

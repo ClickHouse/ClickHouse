@@ -35,7 +35,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , allow_minimal_ddl(allow_minimal_ddl_)
     , is_postgresql_replica_database_engine(is_postgresql_replica_database_engine_)
     , tables_list(tables_list_)
-    , connection(std::make_shared<PostgreSQLConnection>(conn_str))
+    , connection(std::make_shared<postgres::Connection>(conn_str, ""))
 {
     replication_slot = fmt::format("{}_ch_replication_slot", database_name);
     publication_name = fmt::format("{}_ch_publication", database_name);
@@ -62,7 +62,7 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
     try
     {
         /// Will throw pqxx::broken_connection if no connection at the moment
-        connection->conn();
+        connection->get();
 
         startSynchronization();
     }
@@ -90,11 +90,11 @@ void PostgreSQLReplicationHandler::shutdown()
 
 void PostgreSQLReplicationHandler::startSynchronization()
 {
-    createPublicationIfNeeded(connection->conn());
+    createPublicationIfNeeded(connection->getRef());
 
-    auto replication_connection = std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", connection->conn_str()));
-    replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
-    auto tx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
+    auto replication_connection = std::make_shared<postgres::Connection>(fmt::format("{} replication=database", connection->getConnectionString()), "");
+    replication_connection->get()->set_variable("default_transaction_isolation", "'repeatable read'");
+    auto tx = std::make_shared<pqxx::nontransaction>(replication_connection->getRef());
 
     std::string snapshot_name, start_lsn;
 
@@ -158,11 +158,11 @@ NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_na
     {
         try
         {
-            auto tx = std::make_shared<pqxx::work>(*connection->conn());
+            auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection->getRef());
             const auto & table_name = storage_data.first;
 
             /// Specific isolation level is required to read from snapshot.
-            tx->set_variable("transaction_isolation", "'repeatable read'");
+            ///tx->set_variable("transaction_isolation", "'repeatable read'");
 
             std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
             tx->exec(query_str);
@@ -184,7 +184,7 @@ NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_na
             auto block_io = interpreter.execute();
 
             auto sample_block = storage_metadata.getSampleBlockNonMaterialized();
-            PostgreSQLBlockInputStream<pqxx::work> input(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
+            PostgreSQLTransactionBlockInputStream<pqxx::ReplicationTransaction> input(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
 
             assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica load from snapshot");
             copyData(input, *block_io.out);
@@ -241,13 +241,12 @@ bool PostgreSQLReplicationHandler::isPublicationExist(std::shared_ptr<pqxx::work
 }
 
 
-void PostgreSQLReplicationHandler::createPublicationIfNeeded(
-        PostgreSQLConnection::ConnectionPtr connection_)
+void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::connection & connection_)
 {
     if (new_publication_created)
         return;
 
-    auto tx = std::make_shared<pqxx::work>(*connection_);
+    auto tx = std::make_shared<pqxx::work>(connection_);
 
     if (!isPublicationExist(tx))
     {
@@ -352,8 +351,8 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     if (Poco::File(metadata_path).exists())
         Poco::File(metadata_path).remove();
 
-    connection = std::make_shared<PostgreSQLConnection>(connection_str);
-    auto tx = std::make_shared<pqxx::nontransaction>(*connection->conn());
+    connection = std::make_shared<postgres::Connection>(connection_str, "");
+    auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
 
     dropPublication(tx);
     if (isReplicationSlotExist(tx, replication_slot))
@@ -363,7 +362,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 }
 
 
-NameSet PostgreSQLReplicationHandler::fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_)
+NameSet PostgreSQLReplicationHandler::fetchRequiredTables(pqxx::connection & connection_)
 {
     if (tables_list.empty())
     {
@@ -377,11 +376,11 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(PostgreSQLConnection::
 }
 
 
-NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(PostgreSQLConnection::ConnectionPtr connection_)
+NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::connection & connection_)
 {
     std::string query = fmt::format("SELECT tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
     std::unordered_set<std::string> tables;
-    pqxx::read_transaction tx(*connection_);
+    pqxx::read_transaction tx(connection_);
 
     for (auto table_name : tx.stream<std::string>(query))
         tables.insert(std::get<0>(table_name));
@@ -391,7 +390,7 @@ NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(PostgreSQLConne
 
 
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
-        std::shared_ptr<pqxx::work> tx, const std::string & table_name)
+        std::shared_ptr<pqxx::ReplicationTransaction> tx, const std::string & table_name)
 {
     if (!is_postgresql_replica_database_engine)
         return nullptr;
@@ -407,7 +406,7 @@ std::unordered_map<Int32, String> PostgreSQLReplicationHandler::reloadFromSnapsh
     std::unordered_map<Int32, String> tables_start_lsn;
     try
     {
-        auto tx = std::make_shared<pqxx::work>(*connection->conn());
+        auto tx = std::make_shared<pqxx::work>(connection->getRef());
         Storages sync_storages;
         for (const auto & relation : relation_data)
         {
@@ -418,10 +417,10 @@ std::unordered_map<Int32, String> PostgreSQLReplicationHandler::reloadFromSnapsh
         }
         tx->commit();
 
-        auto replication_connection = std::make_shared<PostgreSQLConnection>(fmt::format("{} replication=database", connection_str));
-        replication_connection->conn()->set_variable("default_transaction_isolation", "'repeatable read'");
+        auto replication_connection = std::make_shared<postgres::Connection>(fmt::format("{} replication=database", connection_str), "");
+        replication_connection->get()->set_variable("default_transaction_isolation", "'repeatable read'");
 
-        auto r_tx = std::make_shared<pqxx::nontransaction>(*replication_connection->conn());
+        auto r_tx = std::make_shared<pqxx::nontransaction>(replication_connection->getRef());
         std::string snapshot_name, start_lsn;
         createReplicationSlot(r_tx, start_lsn, snapshot_name, true);
         /// This snapshot is valid up to the end of the transaction, which exported it.

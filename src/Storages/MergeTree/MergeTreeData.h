@@ -54,6 +54,7 @@ struct CurrentlySubmergingEmergingTagger;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
+class MergeTreeDeduplicationLog;
 
 namespace ErrorCodes
 {
@@ -447,23 +448,23 @@ public:
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
     /// Returns true if part was added. Returns false if part is covered by bigger part.
-    bool renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
+    bool renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
 
     /// The same as renameTempPartAndAdd but the block range of the part can contain existing parts.
     /// Returns all parts covered by the added part (in ascending order).
     /// If out_transaction == nullptr, marks covered parts as Outdated.
     DataPartsVector renameTempPartAndReplace(
-        MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
+        MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
 
     /// Low-level version of previous one, doesn't lock mutex
     bool renameTempPartAndReplace(
             MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
-            DataPartsVector * out_covered_parts = nullptr);
+            DataPartsVector * out_covered_parts = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
 
 
     /// Remove parts from working set immediately (without wait for background
     /// process). Transfer part state to temporary. Have very limited usage only
-    /// for new parts which don't already present in table.
+    /// for new parts which aren't already present in table.
     void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
 
     /// Removes parts from the working set parts.
@@ -544,13 +545,6 @@ public:
         const ASTPtr & new_settings,
         TableLockHolder & table_lock_holder);
 
-    /// Freezes all parts.
-    PartitionCommandsResultInfo freezeAll(
-        const String & with_name,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Context & context,
-        TableLockHolder & table_lock_holder);
-
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
     {
@@ -568,8 +562,32 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    PartitionCommandsResultInfo freezePartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context, TableLockHolder & table_lock_holder);
+    PartitionCommandsResultInfo freezePartition(
+        const ASTPtr & partition,
+        const StorageMetadataPtr & metadata_snapshot,
+        const String & with_name,
+        const Context & context,
+        TableLockHolder & table_lock_holder);
 
+    /// Freezes all parts.
+    PartitionCommandsResultInfo freezeAll(
+        const String & with_name,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Context & context,
+        TableLockHolder & table_lock_holder);
+
+    /// Unfreezes particular partition.
+    PartitionCommandsResultInfo unfreezePartition(
+        const ASTPtr & partition,
+        const String & backup_name,
+        const Context & context,
+        TableLockHolder & table_lock_holder);
+
+    /// Unfreezes all parts.
+    PartitionCommandsResultInfo unfreezeAll(
+        const String & backup_name,
+        const Context & context,
+        TableLockHolder & table_lock_holder);
 
 public:
     /// Moves partition to specified Disk
@@ -728,7 +746,7 @@ public:
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
     /// Get partition key expression on required columns
-    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key);
+    static ExpressionActionsPtr getMinMaxExpr(const KeyDescription & partition_key, const ExpressionActionsSettings & settings);
     /// Get column names required for partition key
     static Names getMinMaxColumnsNames(const KeyDescription & partition_key);
     /// Get column types required for partition key
@@ -876,6 +894,9 @@ protected:
         return {begin, end};
     }
 
+    std::optional<UInt64> totalRowsByPartitionPredicateImpl(
+        const SelectQueryInfo & query_info, const Context & context, const DataPartsVector & parts) const;
+
     static decltype(auto) getStateModifier(DataPartState state)
     {
         return [state] (const DataPartPtr & part) { part->setState(state); };
@@ -939,8 +960,9 @@ protected:
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Common part for |freezePartition()| and |freezeAll()|.
-    using MatcherFn = std::function<bool(const DataPartPtr &)>;
+    using MatcherFn = std::function<bool(const String &)>;
     PartitionCommandsResultInfo freezePartitionsByMatcher(MatcherFn matcher, const StorageMetadataPtr & metadata_snapshot, const String & with_name, const Context & context);
+    PartitionCommandsResultInfo unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, const Context & context);
 
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
@@ -1024,6 +1046,9 @@ private:
     // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
     mutable std::set<String> query_id_set;
     mutable std::mutex query_id_set_mutex;
+
+    // Get partition matcher for FREEZE / UNFREEZE queries.
+    MatcherFn getPartitionMatcher(const ASTPtr & partition, const Context & context) const;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

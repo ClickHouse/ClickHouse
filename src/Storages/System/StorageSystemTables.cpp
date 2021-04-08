@@ -62,7 +62,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
 }
 
 
-static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & context)
+static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, const Context & context)
 {
     MutableColumnPtr column = ColumnString::create();
 
@@ -76,7 +76,7 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
     }
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    VirtualColumnUtils::filterBlockWithQuery(query, block, context);
+    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block, context);
     return block.getByPosition(0).column;
 }
 
@@ -359,6 +359,7 @@ protected:
                     {
                         auto & create = ast->as<ASTCreateQuery &>();
                         create.uuid = UUIDHelpers::Nil;
+                        create.to_inner_uuid = UUIDHelpers::Nil;
                     }
 
                     if (columns_mask[src_index++])
@@ -524,7 +525,7 @@ Pipe StorageSystemTables::read(
         }
     }
 
-    ColumnPtr filtered_databases_column = getFilteredDatabases(query_info.query, context);
+    ColumnPtr filtered_databases_column = getFilteredDatabases(query_info, context);
 
     return Pipe(std::make_shared<TablesBlockSource>(
         std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));

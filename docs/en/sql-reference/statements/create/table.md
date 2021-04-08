@@ -47,6 +47,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 Creates a table with the same result as that of the [table function](../../../sql-reference/table-functions/index.md#table-functions) specified. The created table will also work in the same way as the corresponding table function that was specified.
 
+### From SELECT query {#from-select-query}
+
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 ```
@@ -285,7 +287,9 @@ REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
 
 ### Syntax
 
-{CREATE [OR REPLACE]|REPLACE} TABLE [db.]table_name
+``` sql
+{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
+```
 
 All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
 

@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class MergeTreeIndexGranuleBloomFilter : public IMergeTreeIndexGranule
+class MergeTreeIndexGranuleBloomFilter final : public IMergeTreeIndexGranule
 {
 public:
     MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_);

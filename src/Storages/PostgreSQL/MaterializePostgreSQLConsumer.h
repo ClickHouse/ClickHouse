@@ -28,7 +28,7 @@ public:
 
     MaterializePostgreSQLConsumer(
             const Context & context_,
-            PostgreSQLConnectionPtr connection_,
+            postgres::ConnectionPtr connection_,
             const std::string & replication_slot_name_,
             const std::string & publication_name_,
             const std::string & metadata_path,
@@ -106,7 +106,7 @@ private:
     const std::string replication_slot_name, publication_name;
 
     MaterializePostgreSQLMetadata metadata;
-    PostgreSQLConnectionPtr connection;
+    postgres::ConnectionPtr connection;
 
     std::string current_lsn, final_lsn;
     const size_t max_block_size;

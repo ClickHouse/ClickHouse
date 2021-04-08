@@ -18,14 +18,26 @@ namespace DB
 class ClickHouseDictionarySource final : public IDictionarySource
 {
 public:
+    struct Configuration
+    {
+        const bool secure;
+        const std::string host;
+        const UInt16 port;
+        const std::string user;
+        const std::string password;
+        const std::string db;
+        const std::string table;
+        const std::string where;
+        const std::string update_field;
+        const std::string invalidate_query;
+        const bool is_local;
+    };
+
     ClickHouseDictionarySource(
         const DictionaryStructure & dict_struct_,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & path_to_settings,
-        const std::string & config_prefix,
+        const Configuration & configuration_,
         const Block & sample_block_,
-        const Context & context,
-        const std::string & default_database);
+        const Context & context);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
@@ -50,7 +62,7 @@ public:
 
     /// Used for detection whether the hashtable should be preallocated
     /// (since if there is WHERE then it can filter out too much)
-    bool hasWhere() const { return !where.empty(); }
+    bool hasWhere() const { return !configuration.where.empty(); }
 
 private:
     std::string getUpdateFieldAndDate();
@@ -61,21 +73,11 @@ private:
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
-    const bool secure;
-    const std::string host;
-    const UInt16 port;
-    const std::string user;
-    const std::string password;
-    const std::string db;
-    const std::string table;
-    const std::string where;
-    const std::string update_field;
-    std::string invalidate_query;
+    const Configuration configuration;
     mutable std::string invalidate_query_response;
     ExternalQueryBuilder query_builder;
     Block sample_block;
     Context context;
-    const bool is_local;
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;
     Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");

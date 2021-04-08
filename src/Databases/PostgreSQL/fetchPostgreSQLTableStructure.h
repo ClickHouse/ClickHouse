@@ -12,7 +12,7 @@
 namespace DB
 {
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(PostgreSQLConnection::ConnectionPtr connection);
+std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection);
 
 struct PostgreSQLTableStructure
 {
@@ -23,7 +23,7 @@ struct PostgreSQLTableStructure
 using PostgreSQLTableStructurePtr = std::unique_ptr<PostgreSQLTableStructure>;
 
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-    PostgreSQLConnection::ConnectionPtr connection, const String & postgres_table_name, bool use_nulls, bool with_primary_key = false);
+    pqxx::connection & connection, const String & postgres_table_name, bool use_nulls, bool with_primary_key = false);
 
 template<typename T>
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(

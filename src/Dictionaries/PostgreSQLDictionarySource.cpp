@@ -31,7 +31,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     const Block & sample_block_)
     : dict_struct{dict_struct_}
     , sample_block(sample_block_)
-    , connection(std::make_shared<PostgreSQLReplicaConnection>(config_, config_prefix))
+    , connection(std::make_shared<postgres::PoolWithFailover>(config_, config_prefix))
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , db(config_.getString(fmt::format("{}.db", config_prefix), ""))
     , table(config_.getString(fmt::format("{}.table", config_prefix), ""))
@@ -93,8 +93,7 @@ BlockInputStreamPtr PostgreSQLDictionarySource::loadKeys(const Columns & key_col
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadBase(const String & query)
 {
-    auto tx = std::make_shared<pqxx::read_transaction>(*connection->get());
-    return std::make_shared<PostgreSQLBlockInputStream<pqxx::read_transaction>>(tx, query, sample_block, max_block_size);
+    return std::make_shared<PostgreSQLBlockInputStream<pqxx::ReadTransaction>>(connection->get(), query, sample_block, max_block_size);
 }
 
 
@@ -116,8 +115,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    auto tx = std::make_shared<pqxx::read_transaction>(*connection->get());
-    PostgreSQLBlockInputStream<pqxx::read_transaction> block_input_stream(tx, request, invalidate_sample_block, 1);
+    PostgreSQLBlockInputStream<pqxx::ReadTransaction> block_input_stream(connection->get(), request, invalidate_sample_block, 1);
     return readInvalidateQuery(block_input_stream);
 }
 

@@ -63,6 +63,10 @@ void registerStoragePostgreSQL(StorageFactory & factory);
 void registerStorageMaterializePostgreSQL(StorageFactory & factory);
 #endif
 
+#if USE_MYSQL || USE_LIBPQXX
+void registerStorageExternalDistributed(StorageFactory & factory);
+#endif
+
 void registerStorages()
 {
     auto & factory = StorageFactory::instance();
@@ -119,6 +123,10 @@ void registerStorages()
     #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
     registerStorageMaterializePostgreSQL(factory);
+    #endif
+
+    #if USE_MYSQL || USE_LIBPQXX
+    registerStorageExternalDistributed(factory);
     #endif
 }
 

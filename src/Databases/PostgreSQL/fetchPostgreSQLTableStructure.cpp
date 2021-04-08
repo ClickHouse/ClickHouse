@@ -25,12 +25,12 @@ namespace ErrorCodes
 }
 
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(PostgreSQLConnection::ConnectionPtr connection)
+std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection)
 {
     std::unordered_set<std::string> tables;
     std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
         "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
-    pqxx::read_transaction tx(*connection);
+    pqxx::read_transaction tx(connection);
 
     for (auto table_name : tx.stream<std::string>(query))
         tables.insert(std::get<0>(table_name));
@@ -54,6 +54,8 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
         res = std::make_shared<DataTypeInt32>();
     else if (type == "bigint")
         res = std::make_shared<DataTypeInt64>();
+    else if (type == "boolean")
+        res = std::make_shared<DataTypeUInt8>();
     else if (type == "real")
         res = std::make_shared<DataTypeFloat32>();
     else if (type == "double precision")
@@ -196,18 +198,18 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
 template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        std::shared_ptr<pqxx::read_transaction> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key);
+        std::shared_ptr<pqxx::ReadTransaction> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key);
 
 
 template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        std::shared_ptr<pqxx::work> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key);
+        std::shared_ptr<pqxx::ReplicationTransaction> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key);
 
 
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        PostgreSQLConnection::ConnectionPtr connection, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
+        pqxx::connection & connection, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
 {
-    auto tx = std::make_shared<pqxx::read_transaction>(*connection);
+    auto tx = std::make_shared<pqxx::ReadTransaction>(connection);
     auto table = fetchPostgreSQLTableStructure(tx, postgres_table_name, use_nulls, with_primary_key);
     tx->commit();
 

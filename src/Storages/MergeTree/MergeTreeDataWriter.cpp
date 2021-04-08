@@ -352,6 +352,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         new_data_part->uuid = UUIDHelpers::generateV4();
 
     new_data_part->setColumns(columns);
+    new_data_part->rows_count = block.rows();
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;

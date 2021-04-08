@@ -123,12 +123,13 @@ protected:
     bool tryDropPartitionPiece(ShardPartition & task_partition, const size_t current_piece_number,
             const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);
 
-    static constexpr UInt64 max_table_tries = 1000;
-    static constexpr UInt64 max_shard_partition_tries = 600;
-    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 100;
+    static constexpr UInt64 max_table_tries = 3;
+    static constexpr UInt64 max_shard_partition_tries = 3;
+    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 3;
 
     bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
 
+    TaskStatus tryCreateDestinationTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
     /// Job for copying partition from particular shard.
     TaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts,
                                        ShardPartition & task_partition,
@@ -148,6 +149,8 @@ protected:
     void dropLocalTableIfExists(const DatabaseAndTableName & table_name) const;
 
     void dropHelpingTables(const TaskTable & task_table);
+
+    void dropHelpingTablesByPieceNumber(const TaskTable & task_table, size_t current_piece_number);
 
     /// Is used for usage less disk space.
     /// After all pieces were successfully moved to original destination

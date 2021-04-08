@@ -1,12 +1,20 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
-QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & settings)
+QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const Settings & from)
 {
-    max_optimizations_to_apply = settings.query_plan_max_optimizations_to_apply;
+    QueryPlanOptimizationSettings settings;
+    settings.max_optimizations_to_apply = from.query_plan_max_optimizations_to_apply;
+    return settings;
+}
+
+QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromContext(const Context & from)
+{
+    return fromSettings(from.getSettingsRef());
 }
 
 }

@@ -42,7 +42,7 @@ public:
 
     void addStorage(const std::string & table_name, StorageMaterializePostgreSQL * storage);
 
-    NameSet fetchRequiredTables(PostgreSQLConnection::ConnectionPtr connection_);
+    NameSet fetchRequiredTables(pqxx::connection & connection_);
 
 private:
     using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
@@ -52,7 +52,7 @@ private:
 
     bool isReplicationSlotExist(NontransactionPtr ntx, std::string & slot_name);
 
-    void createPublicationIfNeeded(PostgreSQLConnection::ConnectionPtr connection_);
+    void createPublicationIfNeeded(pqxx::connection & connection_);
 
     void createReplicationSlot(NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name, bool temporary = false);
 
@@ -68,11 +68,11 @@ private:
 
     NameSet loadFromSnapshot(std::string & snapshot_name, Storages & sync_storages);
 
-    NameSet fetchTablesFromPublication(PostgreSQLConnection::ConnectionPtr connection_);
+    NameSet fetchTablesFromPublication(pqxx::connection & connection_);
 
     std::unordered_map<Int32, String> reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
-    PostgreSQLTableStructurePtr fetchTableStructure(std::shared_ptr<pqxx::work> tx, const std::string & table_name);
+    PostgreSQLTableStructurePtr fetchTableStructure(std::shared_ptr<pqxx::ReplicationTransaction> tx, const std::string & table_name);
 
     Poco::Logger * log;
     const Context & context;
@@ -81,7 +81,7 @@ private:
     bool allow_minimal_ddl, is_postgresql_replica_database_engine;
     std::string tables_list, replication_slot, publication_name;
 
-    PostgreSQLConnectionPtr connection;
+    postgres::ConnectionPtr connection;
     std::shared_ptr<MaterializePostgreSQLConsumer> consumer;
 
     BackgroundSchedulePool::TaskHolder startup_task, consumer_task;

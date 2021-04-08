@@ -4,11 +4,11 @@ toc_priority: 27
 toc_title: "Введение"
 ---
 
-# Движки баз данных {#dvizhki-baz-dannykh}
+# Движки баз данных {#database-engines}
 
 Движки баз данных обеспечивают работу с таблицами.
 
-По умолчанию ClickHouse использует собственный движок баз данных, который поддерживает конфигурируемые [движки таблиц](../../engines/database-engines/index.md) и [диалект SQL](../../engines/database-engines/index.md).
+По умолчанию ClickHouse использует движок [Atomic](../../engines/database-engines/atomic.md). Он поддерживает конфигурируемые [движки таблиц](../../engines/table-engines/index.md) и [диалект SQL](../../sql-reference/syntax.md).
 
 Также можно использовать следующие движки баз данных:
 
@@ -17,4 +17,6 @@ toc_title: "Введение"
 -   [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md)
 
 -   [Lazy](../../engines/database-engines/lazy.md)
+
+-   [PostgreSQL](../../engines/database-engines/postgresql.md)
 
