@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <Common/quoteString.h>
 #include <pqxx/pqxx>
 
 
@@ -161,21 +162,12 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 {
     PostgreSQLTableStructure table;
 
-    if (postgres_table_name.find('\'') != std::string::npos
-        || postgres_table_name.find('\\') != std::string::npos)
-    {
-        throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "PostgreSQL table name cannot contain single quote or backslash characters, passed {}",
-                postgres_table_name);
-    }
-
     std::string query = fmt::format(
            "SELECT attname AS name, format_type(atttypid, atttypmod) AS type, "
            "attnotnull AS not_null, attndims AS dims "
            "FROM pg_attribute "
-           "WHERE attrelid = '{}'::regclass "
-           "AND NOT attisdropped AND attnum > 0", postgres_table_name);
+           "WHERE attrelid = {}::regclass "
+           "AND NOT attisdropped AND attnum > 0", quoteString(postgres_table_name));
 
     table.columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, false);
 
