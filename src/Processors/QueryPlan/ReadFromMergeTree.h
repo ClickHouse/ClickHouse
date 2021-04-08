@@ -89,7 +89,7 @@ private:
 
     Pipe read();
     Pipe readFromPool();
-    Pipe readFromSeparateParts();
+    Pipe readInOrder();
 
     template<typename TSource>
     ProcessorPtr createSource(const RangesInDataPart & part);
