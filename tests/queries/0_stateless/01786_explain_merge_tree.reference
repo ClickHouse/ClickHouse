@@ -1,0 +1,71 @@
+      ReadFromMergeTree
+      ReadType: Default
+      Indexes:
+        None
+          Parts: 5
+          Granules: 12
+        MinMax
+          Description: unknown, unknown, and, (column 0 in [1, +inf)), unknown, and, unknown, and, and, unknown, unknown, and, and
+          Parts: 4
+          Granules: 11
+        Partition
+          Description: unknown, unknown, and, (column 0 in [1, +inf)), (column 1 not in [1, 1]), and, unknown, and, and, unknown, unknown, and, and
+          Parts: 3
+          Granules: 10
+        PrimaryKey
+          Description: unknown, unknown, and, (column 1 in [1, +inf)), unknown, and, (column 0 in [11, +inf)), and, and, unknown, unknown, and, and
+          Parts: 2
+          Granules: 6
+        Skip
+          Name: t_minmax
+          Description: minmax GRANULARITY 2
+          Parts: 1
+          Granules: 2
+        Skip
+          Name: t_set
+          Description: set GRANULARITY 2
+          Parts: 1
+          Granules: 1
+-----------------
+            ReadFromMergeTree
+            ReadType: InOrder
+            Indexes:
+              None
+                Parts: 5
+                Granules: 12
+              MinMax
+                Description: unknown
+                Parts: 5
+                Granules: 12
+              Partition
+                Description: unknown
+                Parts: 5
+                Granules: 12
+              PrimaryKey
+                Description: (column 0 in [11, +inf))
+                Parts: 2
+                Granules: 6
+            ReadFromMergeTree
+            ReadType: InOrder
+-----------------
+              ReadFromMergeTree
+              ReadType: InReverseOrder
+              Indexes:
+                None
+                  Parts: 5
+                  Granules: 12
+                MinMax
+                  Description: unknown
+                  Parts: 5
+                  Granules: 12
+                Partition
+                  Description: unknown
+                  Parts: 5
+                  Granules: 12
+                PrimaryKey
+                  Description: (column 0 in [11, +inf))
+                  Parts: 2
+                  Granules: 6
+            ReverseRows
+              ReadFromMergeTree
+              ReadType: InReverseOrder
