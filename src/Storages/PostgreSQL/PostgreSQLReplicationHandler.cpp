@@ -161,9 +161,6 @@ NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_na
             auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection->getRef());
             const auto & table_name = storage_data.first;
 
-            /// Specific isolation level is required to read from snapshot.
-            ///tx->set_variable("transaction_isolation", "'repeatable read'");
-
             std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
             tx->exec(query_str);
 
