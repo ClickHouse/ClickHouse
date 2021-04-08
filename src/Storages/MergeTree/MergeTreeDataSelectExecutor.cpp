@@ -29,7 +29,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ReverseRowsStep.h>
 #include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/MergingFinal.h>
@@ -1288,13 +1287,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             step_settings, num_streams, read_type);
 
         plan->addStep(std::move(step));
-
-        if (read_type == ReadFromMergeTree::ReadType::InReverseOrder)
-        {
-            auto reverse_step = std::make_unique<ReverseRowsStep>(plan->getCurrentDataStream());
-            plan->addStep(std::move(reverse_step));
-        }
-
         plans.emplace_back(std::move(plan));
     }
 

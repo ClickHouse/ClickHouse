@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/ConcatProcessor.h>
+#include <Processors/Transforms/ReverseTransform.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeReverseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputProcessor.h>
@@ -97,7 +98,7 @@ ProcessorPtr ReadFromMergeTree::createSource(const RangesInDataPart & part)
             prewhere_info, true, settings.reader_settings, virt_column_names, part.part_index_in_query);
 }
 
-Pipe ReadFromMergeTree::readFromSeparateParts()
+Pipe ReadFromMergeTree::readInOrder()
 {
     Pipes pipes;
     for (const auto & part : parts)
@@ -106,15 +107,20 @@ Pipe ReadFromMergeTree::readFromSeparateParts()
                     ? createSource<MergeTreeReverseSelectProcessor>(part)
                     : createSource<MergeTreeSelectProcessor>(part);
 
-        std::make_shared<MergeTreeSelectProcessor>(
-            storage, metadata_snapshot, part.data_part, settings.max_block_size, settings.preferred_block_size_bytes,
-            settings.preferred_max_column_in_block_size_bytes, required_columns, part.ranges, settings.use_uncompressed_cache,
-            prewhere_info, true, settings.reader_settings, virt_column_names, part.part_index_in_query);
-
         pipes.emplace_back(std::move(source));
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    if (read_type == ReadType::InReverseOrder)
+    {
+        pipe.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<ReverseTransform>(header);
+        });
+    }
+
+    return pipe;
 }
 
 Pipe ReadFromMergeTree::read()
@@ -122,7 +128,7 @@ Pipe ReadFromMergeTree::read()
     if (read_type == ReadType::Default && num_streams > 1)
         return readFromPool();
 
-    auto pipe = readFromSeparateParts();
+    auto pipe = readInOrder();
 
     /// Use ConcatProcessor to concat sources together.
     /// It is needed to read in parts order (and so in PK order) if single thread is used.
