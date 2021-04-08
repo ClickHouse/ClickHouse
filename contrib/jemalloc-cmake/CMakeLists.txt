@@ -1,10 +1,13 @@
-if (SANITIZE OR NOT (ARCH_AMD64 OR ARCH_ARM OR ARCH_PPC64LE) OR NOT (OS_LINUX OR OS_FREEBSD OR OS_DARWIN) OR (OS_DARWIN AND ARCH_AARCH64))
+if (SANITIZE OR NOT (
+    (OS_LINUX OR OS_FREEBSD) AND (ARCH_AMD64 OR ARCH_ARM OR ARCH_PPC64LE)) OR
+    (OS_DARWIN AND ARCH_AMD64 AND CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+))
     if (ENABLE_JEMALLOC)
         message (${RECONFIGURE_MESSAGE_LEVEL}
-                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64 or ppc64le on linux or freebsd.")
-    endif()
+                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64, or ppc64le Linux or FreeBSD builds and x86_64 RelWithDebInfo macOS builds.")
+    endif ()
     set (ENABLE_JEMALLOC OFF)
-else()
+else ()
     option (ENABLE_JEMALLOC "Enable jemalloc allocator" ${ENABLE_LIBRARIES})
 endif ()
 
