@@ -89,7 +89,8 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
         }
     }
 
-    writeBinary(task_identifier, out);
+    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_CLUSTER_PROCESSING)
+        writeBinary(task_identifier, out);
 }
 
 
@@ -166,7 +167,8 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
         }
     }
 
-    readBinary(task_identifier, in);
+    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLUSTER_PROCESSING)
+        readBinary(task_identifier, in);
 }
 
 

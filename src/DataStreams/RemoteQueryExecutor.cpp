@@ -29,14 +29,11 @@ namespace ErrorCodes
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
-    const String & query_,
-    const Block & header_,
-    ContextPtr context_,
-    ThrottlerPtr throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    const String & query_, const Block & header_, ContextPtr context_,
+    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::optional<String> task_identifier_)
+    : header(header_), query(query_), context(context_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_identifier(task_identifier_)
 {
     create_connections = [this, &connection, throttler]()
     {
@@ -46,14 +43,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
-    const String & query_,
-    const Block & header_,
-    ContextPtr context_,
-    const ThrottlerPtr & throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    const String & query_, const Block & header_, ContextPtr context_,
+    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::optional<String> task_identifier_)
+    : header(header_), query(query_), context(context_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_identifier(task_identifier_)
 {
     create_connections = [this, connections_, throttler]() mutable {
         return std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
@@ -62,14 +56,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
-    const String & query_,
-    const Block & header_,
-    ContextPtr context_,
-    const ThrottlerPtr & throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    const String & query_, const Block & header_, ContextPtr context_,
+    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::optional<String> task_identifier_)
+    : header(header_), query(query_), context(context_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_identifier(task_identifier_)
 {
     create_connections = [this, pool, throttler]()->std::unique_ptr<IConnections>
     {
@@ -189,6 +180,7 @@ void RemoteQueryExecutor::sendQuery()
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    modified_client_info.task_identifier = task_identifier ? *task_identifier : "";
     if (CurrentThread::isInitialized())
     {
         modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
@@ -199,8 +191,6 @@ void RemoteQueryExecutor::sendQuery()
         if (!duplicated_part_uuids.empty())
             connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
     }
-
-    std::cout << "RemoteQueryExecutor " << toString(context.getClientInfo().task_identifier) << std::endl;
 
     connections->sendQuery(timeouts, query, query_id, stage, modified_client_info, true);
 

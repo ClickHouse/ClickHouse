@@ -37,21 +37,21 @@ public:
         Connection & connection,
         const String & query_, const Block & header_, ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<String> task_identifier_ = {});
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections_,
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<String> task_identifier_ = {});
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<String> task_identifier_ = {});
 
     ~RemoteQueryExecutor();
 
@@ -119,6 +119,8 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
+    /// Initiator identifier for distributed task processing
+    std::optional<String> task_identifier;
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
