@@ -122,6 +122,8 @@ StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, const
         }
     }
 
+    /// Note: In select query we call MaterializePostgreSQL table and it calls tryGetTable from its nested.
+    std::lock_guard lock(tables_mutex);
     auto table = materialized_tables.find(name);
     /// Here it is possible that nested table is temporarily out of reach, but return storage anyway,
     /// it will not allow to read if nested is unavailable at the moment

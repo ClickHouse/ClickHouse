@@ -66,6 +66,7 @@ private:
 
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
     std::map<std::string, StoragePtr> materialized_tables;
+    mutable std::mutex tables_mutex;
 };
 
 }
