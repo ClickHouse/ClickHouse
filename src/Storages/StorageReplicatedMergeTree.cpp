@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/MergeTree/MergeTreeReaderCompact.h>
 
 
 #include <Databases/IDatabase.h>
@@ -51,6 +52,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/InterserverCredentials.h>
 
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -59,7 +61,7 @@
 
 #include <ext/range.h>
 #include <ext/scope_guard.h>
-#include "Storages/MergeTree/MergeTreeReaderCompact.h"
+#include <ext/scope_guard_safe.h>
 
 #include <ctime>
 #include <thread>
@@ -455,12 +457,12 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     if (replicas.empty())
         return;
 
-    zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
 
     std::set<String> inactive_replicas;
     for (const String & replica : replicas)
     {
         LOG_DEBUG(log, "Waiting for {} to apply mutation {}", replica, mutation_id);
+        zkutil::EventPtr wait_event = std::make_shared<Poco::Event>();
 
         while (!partial_shutdown_called)
         {
@@ -484,9 +486,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
             String mutation_pointer = zookeeper_path + "/replicas/" + replica + "/mutation_pointer";
             std::string mutation_pointer_value;
-            Coordination::Stat get_stat;
             /// Replica could be removed
-            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, &get_stat, wait_event))
+            if (!zookeeper->tryGet(mutation_pointer, mutation_pointer_value, nullptr, wait_event))
             {
                 LOG_WARNING(log, "Replica {} was removed", replica);
                 break;
@@ -496,8 +497,10 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
             /// Replica can become inactive, so wait with timeout and recheck it
             if (wait_event->tryWait(1000))
-                break;
+                continue;
 
+            /// Here we check mutation for errors or kill on local replica. If they happen on this replica
+            /// they will happen on each replica, so we can check only in-memory info.
             auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id);
             if (!mutation_status || !mutation_status->latest_fail_reason.empty())
                 break;
@@ -514,6 +517,8 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
         std::set<String> mutation_ids;
         mutation_ids.insert(mutation_id);
 
+        /// Here we check mutation for errors or kill on local replica. If they happen on this replica
+        /// they will happen on each replica, so we can check only in-memory info.
         auto mutation_status = queue.getIncompleteMutationsStatus(mutation_id, &mutation_ids);
         checkMutationStatus(mutation_status, mutation_ids);
 
@@ -2397,7 +2402,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
             auto timeouts = getFetchPartHTTPTimeouts(global_context);
 
-            auto [user, password] = global_context.getInterserverCredentials();
+            auto credentials = global_context.getInterserverCredentials();
             String interserver_scheme = global_context.getInterserverScheme();
 
             if (interserver_scheme != address.scheme)
@@ -2405,7 +2410,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
             part_desc->res_part = fetcher.fetchPart(
                 metadata_snapshot, part_desc->found_new_part_name, source_replica_path,
-                address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
+                address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
 
@@ -3690,7 +3695,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         }
     }
 
-    SCOPE_EXIT
+    SCOPE_EXIT_MEMORY
     ({
         std::lock_guard lock(currently_fetching_parts_mutex);
         currently_fetching_parts.erase(part_name);
@@ -3751,8 +3756,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
     ReplicatedMergeTreeAddress address;
     ConnectionTimeouts timeouts;
-    std::pair<String, String> user_password;
     String interserver_scheme;
+    InterserverCredentialsPtr credentials;
     std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
 
@@ -3768,10 +3773,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         address.fromString(zookeeper->get(source_replica_path + "/host"));
         timeouts = getFetchPartHTTPTimeouts(global_context);
 
-        user_password = global_context.getInterserverCredentials();
+        credentials = global_context.getInterserverCredentials();
         interserver_scheme = global_context.getInterserverScheme();
 
-        get_part = [&, address, timeouts, user_password, interserver_scheme]()
+        get_part = [&, address, timeouts, credentials, interserver_scheme]()
         {
             if (interserver_scheme != address.scheme)
                 throw Exception("Interserver schemes are different: '" + interserver_scheme
@@ -3785,8 +3790,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                 address.host,
                 address.replication_port,
                 timeouts,
-                user_password.first,
-                user_password.second,
+                credentials->getUser(),
+                credentials->getPassword(),
                 interserver_scheme,
                 to_detached,
                 "",
@@ -3898,7 +3903,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         }
     }
 
-    SCOPE_EXIT
+    SCOPE_EXIT_MEMORY
     ({
         std::lock_guard lock(currently_fetching_parts_mutex);
         currently_fetching_parts.erase(part_name);
@@ -3924,10 +3929,10 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
 
     ReplicatedMergeTreeAddress address(zookeeper->get(source_replica_path + "/host"));
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
-    auto user_password = global_context.getInterserverCredentials();
+    auto credentials = global_context.getInterserverCredentials();
     String interserver_scheme = global_context.getInterserverScheme();
 
-    get_part = [&, address, timeouts, user_password, interserver_scheme]()
+    get_part = [&, address, timeouts, interserver_scheme, credentials]()
     {
         if (interserver_scheme != address.scheme)
             throw Exception("Interserver schemes are different: '" + interserver_scheme
@@ -3937,7 +3942,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         return fetcher.fetchPart(
             metadata_snapshot, part_name, source_replica_path,
             address.host, address.replication_port,
-            timeouts, user_password.first, user_password.second, interserver_scheme, false, "", nullptr, true,
+            timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, "", nullptr, true,
             replaced_disk);
     };
 
