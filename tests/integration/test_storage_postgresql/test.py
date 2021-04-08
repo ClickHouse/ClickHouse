@@ -57,7 +57,7 @@ def started_cluster():
 
 
 def test_postgres_select_insert(started_cluster):
-    conn = get_postgres_conn(started_cluster, True)
+    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
     cursor = conn.cursor()
     table_name = 'test_many'
     table = f'''postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'clickhouse', '{table_name}', 'postgres', 'mysecretpassword')'''
@@ -77,7 +77,7 @@ def test_postgres_select_insert(started_cluster):
 
 
 def test_postgres_conversions(started_cluster):
-    conn = get_postgres_conn(started_cluster, True)
+    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
     cursor = conn.cursor()
     cursor.execute(
         '''CREATE TABLE IF NOT EXISTS test_types (
@@ -158,7 +158,7 @@ def test_postgres_conversions(started_cluster):
 
 
 def test_non_default_scema(started_cluster):
-    conn = get_postgres_conn(started_cluster, True)
+    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
     cursor = conn.cursor()
     cursor.execute('CREATE SCHEMA test_schema')
     cursor.execute('CREATE TABLE test_schema.test_table (a integer)')
@@ -190,7 +190,7 @@ def test_non_default_scema(started_cluster):
 
 
 def test_concurrent_queries(started_cluster):
-    conn = get_postgres_conn(started_cluster, True)
+    conn = get_postgres_conn(started_cluster, started_cluster.postgres_ip, True)
     cursor = conn.cursor()
 
     node1.query('''
