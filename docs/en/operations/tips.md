@@ -231,9 +231,8 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
     -XX:+PrintGCApplicationStoppedTime \
     -XX:+PrintGCApplicationConcurrentTime \
     -XX:+PrintSafepointStatistics \
-    -XX:+UseParNewGC \
     -XX:+UseConcMarkSweepGC \
--XX:+CMSParallelRemarkEnabled"
+    -XX:+CMSParallelRemarkEnabled"
 ```
 
 Salt init:
