@@ -54,7 +54,7 @@ ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
 clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
 ```
 
-## Как проверить некоторые запросы {#run-some-queries}
+## Примеры {#examples}
 
 Количество вышек по типам:
 
