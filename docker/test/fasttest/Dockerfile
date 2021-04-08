@@ -63,7 +63,6 @@ RUN apt-get update \
         software-properties-common \
         tzdata \
         unixodbc \
-        postgresql-client \
        --yes --no-install-recommends
 
 RUN pip3 install numpy scipy pandas
