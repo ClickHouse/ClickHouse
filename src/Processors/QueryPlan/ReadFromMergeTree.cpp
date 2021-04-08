@@ -150,17 +150,45 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
     pipeline.init(std::move(pipe));
 }
 
+static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
+{
+    switch (type)
+    {
+        case ReadFromMergeTree::IndexType::None:
+            return "None";
+        case ReadFromMergeTree::IndexType::MinMax:
+            return "MinMax";
+        case ReadFromMergeTree::IndexType::Partition:
+            return "Partition";
+        case ReadFromMergeTree::IndexType::PrimaryKey:
+            return "PrimaryKey";
+        case ReadFromMergeTree::IndexType::Skip:
+            return "Skip";
+    }
+
+    __builtin_unreachable();
+}
+
 void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 {
-    if (index_stats)
+    if (index_stats && !index_stats->empty())
     {
-        std::string prefix(format_settings.offset + format_settings.indent, format_settings.indent_char);
+        std::string prefix(format_settings.offset, format_settings.indent_char);
+        std::string indent(format_settings.indent, format_settings.indent_char);
+        format_settings.out << prefix << "Indexes:\n";
+
         for (const auto & stat : *index_stats)
         {
-            std::string pref(format_settings.indent, format_settings.indent_char);
-            format_settings.out << prefix << stat.description << '\n';
-            format_settings.out << prefix << pref << "Parts: " << stat.num_parts_after << '\n';
-            format_settings.out << prefix << pref << "Granules: " << stat.num_granules_after << '\n';
+            format_settings.out << prefix << indent << indexTypeToString(stat.type) << '\n';
+
+            if (!stat.name.empty())
+                format_settings.out << prefix << indent << indent << "Name: " << stat.name << '\n';
+
+            if (!stat.description.empty())
+                format_settings.out << prefix << indent << indent << "Description: " << stat.description << '\n';
+
+            format_settings.out << prefix << indent << indent << "Parts: " << stat.num_parts_after << '\n';
+            format_settings.out << prefix << indent << indent << "Granules: " << stat.num_granules_after << '\n';
         }
     }
 }
