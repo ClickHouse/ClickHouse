@@ -292,7 +292,8 @@ Pipe StorageAggregatingMemory::read(
 
 BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
 {
-    return std::make_shared<AggregatingOutputStream>(*this, metadata_snapshot, context);
+    auto out = std::make_shared<AggregatingOutputStream>(*this, metadata_snapshot, context);
+    return out;
 }
 
 
