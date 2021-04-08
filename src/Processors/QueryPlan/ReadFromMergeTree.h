@@ -45,6 +45,13 @@ public:
         MergeTreeReadPool::BackoffSettings backoff_settings;
     };
 
+    enum class ReadType
+    {
+        Default,
+        InOrder,
+        InReverseOrder,
+    };
+
     explicit ReadFromMergeTree(
         const MergeTreeData & storage_,
         StorageMetadataPtr metadata_snapshot_,
@@ -56,8 +63,7 @@ public:
         Names virt_column_names_,
         Settings settings_,
         size_t num_streams_,
-        bool allow_mix_streams_,
-        bool read_reverse_
+        ReadType read_type_
     );
 
     String getName() const override { return "ReadFromMergeTree"; }
@@ -79,8 +85,7 @@ private:
     Settings settings;
 
     size_t num_streams;
-    bool allow_mix_streams;
-    bool read_reverse;
+    ReadType read_type;
 
     Pipe read();
     Pipe readFromPool();
