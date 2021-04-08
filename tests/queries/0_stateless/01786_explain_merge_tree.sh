@@ -14,12 +14,12 @@ $CLICKHOUSE_CLIENT -q "
 echo "-----------------"
 
 $CLICKHOUSE_CLIENT -q "
-    explain actions = 1 select x from test_index where x > 10 order by x;
+    explain actions = 1 select x from test_index where x > 15 order by x;
     " | grep -A 100 "ReadFromMergeTree"
 
 echo "-----------------"
 
 $CLICKHOUSE_CLIENT -q "
-    explain actions = 1 select x from test_index where x > 10 order by x desc;
+    explain actions = 1 select x from test_index where x > 15 order by x desc;
     " | grep -A 100 "ReadFromMergeTree"
 
