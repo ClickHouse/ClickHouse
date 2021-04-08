@@ -10,7 +10,10 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=['configs/log_conf.xml'], user_configs = ['configs/users.xml'], with_postgres=True)
+instance = cluster.add_instance('instance',
+        main_configs=['configs/log_conf.xml'],
+        user_configs = ['configs/users.xml'],
+        with_postgres=True, stay_alive=True)
 
 postgres_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
@@ -55,6 +58,7 @@ def assert_nested_table_is_created(table_name):
 @pytest.mark.timeout(30)
 def check_tables_are_synchronized(table_name, order_by='key'):
         assert_nested_table_is_created(table_name)
+        print("nested ok")
 
         expected = instance.query('select * from postgres_database.{} order by {};'.format(table_name, order_by))
         result = instance.query('select * from test_database.{} order by {};'.format(table_name, order_by))
@@ -362,6 +366,32 @@ def test_changing_replica_identity_value(started_cluster):
     check_tables_are_synchronized('postgresql_replica');
     cursor.execute("UPDATE postgresql_replica SET key=key-25 WHERE key<100 ")
     check_tables_are_synchronized('postgresql_replica');
+
+
+@pytest.mark.timeout(320)
+def test_clickhouse_restart(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    NUM_TABLES = 5
+
+    for i in range(NUM_TABLES):
+        create_postgres_table(cursor, 'postgresql_replica_{}'.format(i));
+        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT number, {} from numbers(50)".format(i, i))
+
+    instance.query("CREATE DATABASE test_database ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+
+    for i in range(NUM_TABLES):
+        table_name = 'postgresql_replica_{}'.format(i)
+        check_tables_are_synchronized(table_name);
+
+    for i in range(NUM_TABLES):
+        instance.query("INSERT INTO postgres_database.postgresql_replica_{} SELECT 50 + number, {} from numbers(50000)".format(i, i))
+
+    instance.restart_clickhouse()
+
+    for i in range(NUM_TABLES):
+        check_tables_are_synchronized('postgresql_replica_{}'.format(i));
 
 
 if __name__ == '__main__':

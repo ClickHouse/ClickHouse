@@ -69,6 +69,8 @@ public:
 
     void dropNested();
 
+    void setStorageMetadata();
+
 protected:
     StorageMaterializePostgreSQL(
         const StorageID & table_id_,
