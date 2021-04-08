@@ -67,7 +67,7 @@ private:
     /// Also checks that replica still alive.
     void waitForQuorum(
         zkutil::ZooKeeperPtr & zookeeper, const std::string & part_name,
-        const std::string & quorum_path, const std::string & is_active_node_value);
+        const std::string & quorum_path, const std::string & is_active_node_value) const;
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
