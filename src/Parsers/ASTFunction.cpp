@@ -1,20 +1,30 @@
-#include <Common/typeid_cast.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTWithAlias.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <Common/SipHash.h>
-#include <IO/Operators.h>
 
+#include <Common/quoteString.h>
+#include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithAlias.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNEXPECTED_EXPRESSION;
+}
+
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
+    if (name == "view")
+        throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
+
     writeString(name, ostr);
 
     if (parameters)
@@ -38,6 +48,24 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
             (*it)->appendColumnName(ostr);
         }
     writeChar(')', ostr);
+
+    if (is_window_function)
+    {
+        writeCString(" OVER ", ostr);
+        if (!window_name.empty())
+        {
+            ostr << window_name;
+        }
+        else
+        {
+            FormatSettings settings{ostr, true /* one_line */};
+            FormatState state;
+            FormatStateStacked frame;
+            writeCString("(", ostr);
+            window_definition->formatImpl(settings, state, frame);
+            writeCString(")", ostr);
+        }
+    }
 }
 
 /** Get the text that identifies this element. */
@@ -53,6 +81,12 @@ ASTPtr ASTFunction::clone() const
 
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
+
+    if (window_definition)
+    {
+        res->window_definition = window_definition->clone();
+        res->children.push_back(res->window_definition);
+    }
 
     return res;
 }
@@ -188,27 +222,81 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (0 == strcmp(name.c_str(), func[0]))
+                if (strcmp(name.c_str(), func[0]) != 0)
                 {
-                    if (frame.need_parens)
-                        settings.ostr << '(';
-
-                    settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
-
-                    /** A particularly stupid case. If we have a unary minus before a literal that is a negative number
-                        * "-(-1)" or "- -1", this can not be formatted as `--1`, since this will be interpreted as a comment.
-                        * Instead, add a space.
-                        * PS. You can not just ask to add parentheses - see formatImpl for ASTLiteral.
-                        */
-                    if (name == "negate" && arguments->children[0]->as<ASTLiteral>())
-                        settings.ostr << ' ';
-
-                    arguments->formatImpl(settings, state, nested_need_parens);
-                    written = true;
-
-                    if (frame.need_parens)
-                        settings.ostr << ')';
+                    continue;
                 }
+
+                const auto * literal = arguments->children[0]->as<ASTLiteral>();
+                /* A particularly stupid case. If we have a unary minus before
+                 * a literal that is a negative number "-(-1)" or "- -1", this
+                 * can not be formatted as `--1`, since this will be
+                 * interpreted as a comment. Instead, negate the literal
+                 * in place. Another possible solution is to use parentheses,
+                 * but the old comment said it is impossible, without mentioning
+                 * the reason.
+                 */
+                if (literal && name == "negate")
+                {
+                    written = applyVisitor(
+                        [&settings](const auto & value)
+                        // -INT_MAX is negated to -INT_MAX by the negate()
+                        // function, so we can implement this behavior here as
+                        // well. Technically it is an UB to perform such negation
+                        // w/o a cast to unsigned type.
+                        NO_SANITIZE_UNDEFINED
+                        {
+                            using ValueType = std::decay_t<decltype(value)>;
+                            if constexpr (isDecimalField<ValueType>())
+                            {
+                                // The parser doesn't create decimal literals, but
+                                // they can be produced by constant folding or the
+                                // fuzzer.
+                                const auto int_value = value.getValue().value;
+                                // We compare to zero so we don't care about scale.
+                                if (int_value >= 0)
+                                {
+                                    return false;
+                                }
+
+                                settings.ostr << ValueType{-int_value,
+                                    value.getScale()};
+                            }
+                            else if constexpr (std::is_arithmetic_v<ValueType>)
+                            {
+                                if (value >= 0)
+                                {
+                                    return false;
+                                }
+                                // We don't need parentheses around a single
+                                // literal.
+                                settings.ostr << -value;
+                                return true;
+                            }
+
+                            return false;
+                        },
+                        literal->value);
+
+                    if (written)
+                    {
+                        break;
+                    }
+                }
+
+                // We don't need parentheses around a single literal.
+                if (!literal && frame.need_parens)
+                    settings.ostr << '(';
+
+                settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
+
+                arguments->formatImpl(settings, state, nested_need_parens);
+                written = true;
+
+                if (!literal && frame.need_parens)
+                    settings.ostr << ')';
+
+                break;
             }
         }
 
@@ -298,10 +386,14 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
-                /// It can be printed in a form of 'x.1' only if right hand side is unsigned integer literal.
+                // It can be printed in a form of 'x.1' only if right hand side
+                // is an unsigned integer lineral. We also allow nonnegative
+                // signed integer literals, because the fuzzer sometimes inserts
+                // them, and we want to have consistent formatting.
                 if (const auto * lit = arguments->children[1]->as<ASTLiteral>())
                 {
-                    if (lit->value.getType() == Field::Types::UInt64)
+                    if (isInt64FieldType(lit->value.getType())
+                        && lit->value.get<Int64>() >= 0)
                     {
                         if (frame.need_parens)
                             settings.ostr << '(';
@@ -399,56 +491,75 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
         if (!written && 0 == strcmp(name.c_str(), "map"))
         {
-            settings.ostr << (settings.hilite ? hilite_operator : "") << '{' << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_operator : "") << "map(" << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
                     settings.ostr << ", ";
                 arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
             }
-            settings.ostr << (settings.hilite ? hilite_operator : "") << '}' << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_operator : "") << ')' << (settings.hilite ? hilite_none : "");
             written = true;
         }
     }
 
-    if (!written)
+    if (written)
     {
-        settings.ostr << (settings.hilite ? hilite_function : "") << name;
+        return;
+    }
 
-        if (parameters)
+    settings.ostr << (settings.hilite ? hilite_function : "") << name;
+
+    if (parameters)
+    {
+        settings.ostr << '(' << (settings.hilite ? hilite_none : "");
+        parameters->formatImpl(settings, state, nested_dont_need_parens);
+        settings.ostr << (settings.hilite ? hilite_function : "") << ')';
+    }
+
+    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+        settings.ostr << '(' << (settings.hilite ? hilite_none : "");
+
+    if (arguments)
+    {
+        bool special_hilite_regexp = settings.hilite
+            && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne"
+                || name == "replaceRegexpAll");
+
+        for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
-            settings.ostr << '(' << (settings.hilite ? hilite_none : "");
-            parameters->formatImpl(settings, state, nested_dont_need_parens);
-            settings.ostr << (settings.hilite ? hilite_function : "") << ')';
+            if (i != 0)
+                settings.ostr << ", ";
+
+            bool special_hilite = false;
+            if (i == 1 && special_hilite_regexp)
+                special_hilite = highlightStringLiteralWithMetacharacters(arguments->children[i], settings, "|()^$.[]?*+{:-");
+
+            if (!special_hilite)
+                arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
         }
+    }
 
-        if ((arguments && !arguments->children.empty()) || !no_empty_args)
-            settings.ostr << '(' << (settings.hilite ? hilite_none : "");
+    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+        settings.ostr << (settings.hilite ? hilite_function : "") << ')';
 
-        if (arguments)
-        {
-            bool special_hilite_regexp = settings.hilite
-                && (name == "match" || name == "extract" || name == "extractAll" || name == "replaceRegexpOne"
-                    || name == "replaceRegexpAll");
+    settings.ostr << (settings.hilite ? hilite_none : "");
 
-            for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
-            {
-                if (i != 0)
-                    settings.ostr << ", ";
+    if (!is_window_function)
+    {
+        return;
+    }
 
-                bool special_hilite = false;
-                if (i == 1 && special_hilite_regexp)
-                    special_hilite = highlightStringLiteralWithMetacharacters(arguments->children[i], settings, "|()^$.[]?*+{:-");
-
-                if (!special_hilite)
-                    arguments->children[i]->formatImpl(settings, state, nested_dont_need_parens);
-            }
-        }
-
-        if ((arguments && !arguments->children.empty()) || !no_empty_args)
-            settings.ostr << (settings.hilite ? hilite_function : "") << ')';
-
-        settings.ostr << (settings.hilite ? hilite_none : "");
+    settings.ostr << " OVER ";
+    if (!window_name.empty())
+    {
+        settings.ostr << backQuoteIfNeed(window_name);
+    }
+    else
+    {
+        settings.ostr << "(";
+        window_definition->formatImpl(settings, state, frame);
+        settings.ostr << ")";
     }
 }
 

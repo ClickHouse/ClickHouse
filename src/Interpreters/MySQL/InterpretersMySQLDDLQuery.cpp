@@ -7,6 +7,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTAlterCommand.h>
 #include <Parsers/MySQL/ASTDeclareColumn.h>
@@ -202,10 +203,10 @@ static inline std::tuple<NamesAndTypesList, NamesAndTypesList, NamesAndTypesList
                 keys->arguments->children.insert(keys->arguments->children.end(),
                     index_columns->children.begin(), index_columns->children.end());
             else if (startsWith(declare_index->index_type, "UNIQUE_"))
-                unique_keys->arguments->children.insert(keys->arguments->children.end(),
+                unique_keys->arguments->children.insert(unique_keys->arguments->children.end(),
                     index_columns->children.begin(), index_columns->children.end());
             if (startsWith(declare_index->index_type, "PRIMARY_KEY_"))
-                primary_keys->arguments->children.insert(keys->arguments->children.end(),
+                primary_keys->arguments->children.insert(primary_keys->arguments->children.end(),
                     index_columns->children.begin(), index_columns->children.end());
         }
     }
@@ -411,12 +412,25 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
         return column_declaration;
     };
 
-    /// Add _sign and _version column.
+    /// Add _sign and _version columns.
     String sign_column_name = getUniqueColumnName(columns_name_and_type, "_sign");
     String version_column_name = getUniqueColumnName(columns_name_and_type, "_version");
     columns->set(columns->columns, InterpreterCreateQuery::formatColumns(columns_name_and_type));
     columns->columns->children.emplace_back(create_materialized_column_declaration(sign_column_name, "Int8", UInt64(1)));
     columns->columns->children.emplace_back(create_materialized_column_declaration(version_column_name, "UInt64", UInt64(1)));
+
+    /// Add minmax skipping index for _version column.
+    auto version_index = std::make_shared<ASTIndexDeclaration>();
+    version_index->name = version_column_name;
+    auto index_expr = std::make_shared<ASTIdentifier>(version_column_name);
+    auto index_type = makeASTFunction("minmax");
+    index_type->no_empty_args = true;
+    version_index->set(version_index->expr, index_expr);
+    version_index->set(version_index->type, index_type);
+    version_index->granularity = 1;
+    ASTPtr indices = std::make_shared<ASTExpressionList>();
+    indices->children.push_back(version_index);
+    columns->set(columns->indices, indices);
 
     auto storage = std::make_shared<ASTStorage>();
 

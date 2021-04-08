@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Disks/IStoragePolicy.h>
 #include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
@@ -23,14 +24,11 @@
 namespace DB
 {
 
-class StoragePolicy;
-using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
-
 /**
  * Contains all information about volumes configuration for Storage.
  * Can determine appropriate Volume and Disk for each reservation.
  */
-class StoragePolicy
+class StoragePolicy : public IStoragePolicy
 {
 public:
     StoragePolicy(String name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
@@ -38,62 +36,66 @@ public:
     StoragePolicy(String name_, Volumes volumes_, double move_factor_);
 
     StoragePolicy(
-        const StoragePolicy & storage_policy,
+        StoragePolicyPtr storage_policy,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         DiskSelectorPtr disks
     );
 
-    bool isDefaultPolicy() const;
+    bool isDefaultPolicy() const override;
 
     /// Returns disks ordered by volumes priority
-    Disks getDisks() const;
+    Disks getDisks() const override;
+
+    /// Returns disks by type ordered by volumes priority
+    Disks getDisksByType(DiskType::Type type) const override;
 
     /// Returns any disk
     /// Used when it's not important, for example for
     /// mutations files
-    DiskPtr getAnyDisk() const;
+    DiskPtr getAnyDisk() const override;
 
-    DiskPtr getDiskByName(const String & disk_name) const;
+    DiskPtr getDiskByName(const String & disk_name) const override;
 
     /// Get free space from most free disk
-    UInt64 getMaxUnreservedFreeSpace() const;
+    UInt64 getMaxUnreservedFreeSpace() const override;
 
-    const String & getName() const { return name; }
+    const String & getName() const override{ return name; }
 
     /// Returns valid reservation or nullptr
-    ReservationPtr reserve(UInt64 bytes) const;
+    ReservationPtr reserve(UInt64 bytes) const override;
 
     /// Reserves space on any volume or throws
-    ReservationPtr reserveAndCheck(UInt64 bytes) const;
+    ReservationPtr reserveAndCheck(UInt64 bytes) const override;
 
     /// Reserves space on any volume with index > min_volume_index or returns nullptr
-    ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const;
+    ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const override;
 
     /// Find volume index, which contains disk
-    size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const;
+    size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const override;
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size.
-    ReservationPtr makeEmptyReservationOnLargestDisk() const;
+    ReservationPtr makeEmptyReservationOnLargestDisk() const override;
 
-    const Volumes & getVolumes() const { return volumes; }
+    const Volumes & getVolumes() const  override{ return volumes; }
 
     /// Returns number [0., 1.] -- fraction of free space on disk
     /// which should be kept with help of background moves
-    double getMoveFactor() const { return move_factor; }
+    double getMoveFactor() const  override{ return move_factor; }
 
     /// Get volume by index.
-    VolumePtr getVolume(size_t index) const;
+    VolumePtr getVolume(size_t index) const override;
 
-    VolumePtr getVolumeByName(const String & volume_name) const;
+    VolumePtr getVolumeByName(const String & volume_name) const override;
 
     /// Checks if storage policy can be replaced by another one.
-    void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const;
+    void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const override;
 
     /// Check if we have any volume with stopped merges
-    bool hasAnyVolumeWithDisabledMerges() const;
+    bool hasAnyVolumeWithDisabledMerges() const override;
 
+    bool containsVolume(const String & volume_name) const override;
 private:
     Volumes volumes;
     const String name;

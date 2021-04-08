@@ -72,6 +72,7 @@ public:
     LogsLevel client_logs_level = LogsLevel::none;
 
     String query;
+    UInt64 normalized_query_hash;
 };
 
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
@@ -177,6 +178,11 @@ public:
         return query_id;
     }
 
+    const Context * getQueryContext() const
+    {
+        return query_context;
+    }
+
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
 
@@ -195,7 +201,7 @@ public:
     void setFatalErrorCallback(std::function<void()> callback);
     void onFatalError();
 
-    /// Sets query context for current thread and its thread group
+    /// Sets query context for current master thread and its thread group
     /// NOTE: query_context have to be alive until detachQuery() is called
     void attachQueryContext(Context & query_context);
 

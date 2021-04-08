@@ -4,6 +4,7 @@
 
 // I know that inclusion of .cpp is not good at all
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp> // NOLINT
+#include <Storages/MergeTree/MergeTreeDataPartWriterWide.cpp> // NOLINT
 
 using namespace DB;
 static Block getBlockWithSize(size_t required_size_in_bytes, size_t size_of_row_in_bytes)

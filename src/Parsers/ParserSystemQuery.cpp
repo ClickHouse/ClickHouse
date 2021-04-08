@@ -169,6 +169,20 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             parseDatabaseAndTableName(pos, expected, res->database, res->table);
             break;
 
+        case Type::SUSPEND:
+        {
+            ASTPtr seconds;
+            if (!(ParserKeyword{"FOR"}.ignore(pos, expected)
+                && ParserUnsignedInteger().parse(pos, seconds, expected)
+                && ParserKeyword{"SECOND"}.ignore(pos, expected)))   /// SECOND, not SECONDS to be consistent with INTERVAL parsing in SQL
+            {
+                return false;
+            }
+
+            res->seconds = seconds->as<ASTLiteral>()->value.get<UInt64>();
+            break;
+        }
+
         default:
             /// There are no [db.table] after COMMAND NAME
             break;

@@ -2,7 +2,9 @@
 set -exu
 set -o pipefail
 trap "exit" INT TERM
-trap 'kill $(jobs -pr) ||:' EXIT
+# The watchdog is in the separate process group, so we have to kill it separately
+# if the script terminates earlier.
+trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -36,6 +38,22 @@ function wait_for_server # port, pid
     fi
 }
 
+function left_or_right()
+{
+    local from=$1 && shift
+    local basename=$1 && shift
+
+    if [ -e "$from/$basename" ]; then
+        echo "$from/$basename"
+        return
+    fi
+
+    case "$from" in
+        left) echo "right/$basename" ;;
+        right) echo "left/$basename" ;;
+    esac
+}
+
 function configure
 {
     # Use the new config for both servers, so that we can change it in a PR.
@@ -55,7 +73,7 @@ function configure
         # server *config* directives overrides
         --path db0
         --user_files_path db0/user_files
-        --top_level_domains_path /top_level_domains
+        --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
     )
     left/clickhouse-server "${setup_left_server_opts[@]}" &> setup-server-log.log &
@@ -81,6 +99,7 @@ function configure
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
     rm -r db0/{data,metadata}/system ||:
+    rm db0/status ||:
     cp -al db0/ left/db/
     cp -al db0/ right/db/
 }
@@ -103,7 +122,7 @@ function restart
         # server *config* directives overrides
         --path left/db
         --user_files_path left/db/user_files
-        --top_level_domains_path /top_level_domains
+        --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
     )
     left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
@@ -118,7 +137,7 @@ function restart
         # server *config* directives overrides
         --path right/db
         --user_files_path right/db/user_files
-        --top_level_domains_path /top_level_domains
+        --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
     )
     right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
@@ -341,6 +360,8 @@ mkdir analyze analyze/tmp ||:
 build_log_column_definitions
 
 # Split the raw test output into files suitable for analysis.
+# To debug calculations only for a particular test, substitute a suitable
+# wildcard here, e.g. `for test_file in modulo-raw.tsv`.
 for test_file in *-raw.tsv
 do
     test_name=$(basename "$test_file" "-raw.tsv")
@@ -450,7 +471,13 @@ create view broken_queries as
 create table query_run_metrics_for_stats engine File(
         TSV, -- do not add header -- will parse with grep
         'analyze/query-run-metrics-for-stats.tsv')
-    as select test, query_index, 0 run, version, metric_values
+    as select test, query_index, 0 run, version,
+        -- For debugging, add a filter for a particular metric like this:
+        -- arrayFilter(m, n -> n = 'client_time', metric_values, metric_names)
+        --     metric_values
+        -- Note that further reporting may break, because the metric names are
+        -- not filtered.
+        metric_values
     from query_run_metric_arrays
     where (test, query_index) not in broken_queries
     order by test, query_index, run, version
@@ -568,8 +595,19 @@ create view query_metric_stats as
 -- Main statistics for queries -- query time as reported in query log.
 create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     as select
-        abs(diff) > report_threshold        and abs(diff) > stat_threshold as changed_fail,
-        abs(diff) > report_threshold - 0.05 and abs(diff) > stat_threshold as changed_show,
+        -- It is important to have a non-strict inequality with stat_threshold
+        -- here. The randomization distribution is actually discrete, and when
+        -- the number of runs is small, the quantile we need (e.g. 0.99) turns
+        -- out to be the maximum value of the distribution. We can also hit this
+        -- maximum possible value with our test run, and this obviously means
+        -- that we have observed the difference to the best precision possible
+        -- for the given number of runs. If we use a strict equality here, we
+        -- will miss such cases. This happened in the wild and lead to some
+        -- uncaught regressions, because for the default 7 runs we do for PRs,
+        -- the randomization distribution has only 16 values, so the max quantile
+        -- is actually 0.9375.
+        abs(diff) > report_threshold        and abs(diff) >= stat_threshold as changed_fail,
+        abs(diff) > report_threshold - 0.05 and abs(diff) >= stat_threshold as changed_show,
 
         not changed_fail and stat_threshold > report_threshold + 0.10 as unstable_fail,
         not changed_show and stat_threshold > report_threshold - 0.05 as unstable_show,
@@ -722,7 +760,7 @@ create view test_times_view as
         total_client_time,
         queries,
         query_max,
-        real / queries avg_real_per_query,
+        real / if(queries > 0, queries, 1) avg_real_per_query,
         query_min,
         runs
     from test_time
@@ -743,7 +781,7 @@ create view test_times_view_total as
         sum(total_client_time),
         sum(queries),
         max(query_max),
-        sum(real) / sum(queries) avg_real_per_query,
+        sum(real) / if(sum(queries) > 0, sum(queries), 1) avg_real_per_query,
         min(query_min),
         -- Totaling the number of runs doesn't make sense, but use the max so
         -- that the reporting script doesn't complain about queries being too

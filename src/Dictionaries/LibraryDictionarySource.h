@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Common/SharedLibrary.h>
+#include <Bridge/LibraryBridgeHelper.h>
 #include <common/LocalDateTime.h>
+#include <Core/UUID.h>
 #include "DictionaryStructure.h"
 #include <Core/ExternalResultDescription.h>
 #include "IDictionarySource.h"
@@ -17,18 +19,17 @@ namespace Util
 }
 }
 
-
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-class CStringsHolder;
 
-/// Allows loading dictionaries from dynamic libraries (.so)
-/// Experimental version
-/// Example: tests/external_dictionaries/dictionary_library/dictionary_library.cpp
+class CStringsHolder;
+using LibraryBridgeHelperPtr = std::shared_ptr<LibraryBridgeHelper>;
+
 class LibraryDictionarySource final : public IDictionarySource
 {
 public:
@@ -37,7 +38,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix_,
         Block & sample_block_,
-        const Context & context,
+        const Context & context_,
         bool check_config);
 
     LibraryDictionarySource(const LibraryDictionarySource & other);
@@ -68,18 +69,26 @@ public:
     std::string toString() const override;
 
 private:
-    Poco::Logger * log;
+    static String getDictIdsString(const std::vector<UInt64> & ids);
 
-    LocalDateTime getLastModification() const;
+    String getDictAttributesString();
+
+    static String getLibrarySettingsString(const Poco::Util::AbstractConfiguration & config, const std::string & config_root);
+
+    static Field getDictID() { return UUIDHelpers::generateV4(); }
+
+    Poco::Logger * log;
 
     const DictionaryStructure dict_struct;
     const std::string config_prefix;
     const std::string path;
+    const Field dictionary_id;
+
     Block sample_block;
-    SharedLibraryPtr library;
+    Context context;
+
+    LibraryBridgeHelperPtr bridge_helper;
     ExternalResultDescription description;
-    std::shared_ptr<CStringsHolder> settings;
-    void * lib_data = nullptr;
 };
 
 }

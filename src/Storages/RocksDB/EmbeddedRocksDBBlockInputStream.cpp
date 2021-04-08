@@ -48,7 +48,8 @@ Block EmbeddedRocksDBBlockInputStream::readImpl()
         size_t idx = 0;
         for (const auto & elem : sample_block)
         {
-            elem.type->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
+            auto serialization = elem.type->getDefaultSerialization();
+            serialization->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
             ++idx;
         }
     }
@@ -56,7 +57,7 @@ Block EmbeddedRocksDBBlockInputStream::readImpl()
     finished = !iterator->Valid();
     if (!iterator->status().ok())
     {
-        throw Exception("Engine " + getName() + " got error while seeking key value datas: " + iterator->status().ToString(),
+        throw Exception("Engine " + getName() + " got error while seeking key value data: " + iterator->status().ToString(),
             ErrorCodes::ROCKSDB_ERROR);
     }
     return sample_block.cloneWithColumns(std::move(columns));

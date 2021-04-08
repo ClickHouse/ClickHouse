@@ -230,19 +230,28 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (!is_dictionary)
     {
-        std::string what = "TABLE";
-        if (is_view)
+        String action = "CREATE";
+        if (attach)
+            action = "ATTACH";
+        else if (replace_view)
+            action = "CREATE OR REPLACE";
+        else if (replace_table && create_or_replace)
+            action = "CREATE OR REPLACE";
+        else if (replace_table)
+            action = "REPLACE";
+
+        String what = "TABLE";
+        if (is_ordinary_view)
             what = "VIEW";
-        if (is_materialized_view)
+        else if (is_materialized_view)
             what = "MATERIALIZED VIEW";
-        if (is_live_view)
+        else if (is_live_view)
             what = "LIVE VIEW";
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")
-                << (attach ? "ATTACH " : "CREATE ")
+                << action << " "
                 << (temporary ? "TEMPORARY " : "")
-                << (replace_view ? "OR REPLACE " : "")
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
@@ -260,6 +269,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         if (live_view_timeout)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
                           << *live_view_timeout;
+
+        if (live_view_periodic_refresh)
+        {
+            if (live_view_timeout)
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " AND" << (settings.hilite ? hilite_none : "");
+            else
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH" << (settings.hilite ? hilite_none : "");
+
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " PERIODIC REFRESH " << (settings.hilite ? hilite_none : "")
+                << *live_view_periodic_refresh;
+        }
+
         formatOnCluster(settings);
     }
     else
@@ -276,10 +297,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (to_table_id)
     {
+        assert(is_materialized_view && to_inner_uuid == UUIDHelpers::Nil);
         settings.ostr
             << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
             << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
             << backQuoteIfNeed(to_table_id.table_name);
+    }
+
+    if (to_inner_uuid != UUIDHelpers::Nil)
+    {
+        assert(is_materialized_view && !to_table_id);
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO INNER UUID " << (settings.hilite ? hilite_none : "")
+                      << quoteString(toString(to_inner_uuid));
     }
 
     if (!as_table.empty())

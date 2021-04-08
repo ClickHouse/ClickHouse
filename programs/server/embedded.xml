@@ -20,7 +20,7 @@
         <default>
             <password></password>
 
-            <networks incl="networks" replace="replace">
+            <networks>
                 <ip>::/0</ip>
             </networks>
 

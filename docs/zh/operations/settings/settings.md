@@ -988,15 +988,15 @@ ClickHouse生成异常
 
 ## count_distinct_implementation {#settings-count_distinct_implementation}
 
-指定其中的 `uniq*` 函数应用于执行 [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference.md#agg_function-count) 建筑。
+指定其中的 `uniq*` 函数应用于执行 [COUNT(DISTINCT …)](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) 建筑。
 
 可能的值:
 
--   [uniq](../../sql-reference/aggregate-functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined)
--   [uniqCombined64](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../sql-reference/aggregate-functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
 
 默认值: `uniqExact`.
 
@@ -1310,3 +1310,14 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 **另请参阅**
 
 -   [IN 运算符中的 NULL 处理](../../sql-reference/operators/in.md#in-null-processing)
+
+## max_final_threads {#max-final-threads}
+
+设置使用[FINAL](../../sql-reference/statements/select/from.md#select-from-final) 限定符的`SELECT`查询, 在数据读取阶段的最大并发线程数。
+
+可能的值:
+
+-   正整数。
+-   0 or 1 — 禁用。 此时`SELECT` 查询单线程执行。
+
+默认值: `16`。

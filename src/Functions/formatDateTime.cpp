@@ -46,9 +46,8 @@ template <> struct ActionValueTypeMap<DataTypeInt64>      { using ActionValueTyp
 template <> struct ActionValueTypeMap<DataTypeUInt64>     { using ActionValueType = UInt32; };
 template <> struct ActionValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
 template <> struct ActionValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
-// TODO(vnemkov): once there is support for Int64 in LUT, make that Int64.
 // TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
-template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = Int64; };
 
 
 /** formatDateTime(time, 'pattern')
@@ -272,6 +271,11 @@ private:
             writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
             writeNumber2(target + 6, ToSecondImpl::execute(source, timezone));
         }
+
+        static void quarter(char * target, Time source, const DateLUTImpl & timezone)
+        {
+            *target += ToQuarterImpl::execute(source, timezone);
+        }
     };
 
 public:
@@ -429,7 +433,6 @@ public:
             time_zone_tmp = &DateLUT::instance();
 
         const DateLUTImpl & time_zone = *time_zone_tmp;
-
         const auto & vec = times->getData();
 
         UInt32 scale [[maybe_unused]] = 0;
@@ -513,6 +516,8 @@ public:
         auto add_instruction_or_shift = [&](typename Action<T>::Func func [[maybe_unused]], size_t shift)
         {
             if constexpr (std::is_same_v<T, UInt32>)
+                instructions.emplace_back(func, shift);
+            else if constexpr (std::is_same_v<T, Int64>)
                 instructions.emplace_back(func, shift);
             else
                 add_shift(shift);
@@ -619,6 +624,12 @@ public:
                     case 'Y':
                         instructions.emplace_back(&Action<T>::year4, 4);
                         result.append("0000");
+                        break;
+
+                    // Quarter (1-4)
+                    case 'Q':
+                        instructions.template emplace_back(&Action<T>::quarter, 1);
+                        result.append("0");
                         break;
 
                     /// Time components. If the argument is Date, not a DateTime, then this components will have default value.

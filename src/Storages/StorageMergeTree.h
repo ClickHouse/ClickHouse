@@ -12,9 +12,10 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
+
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 
 
@@ -70,6 +71,7 @@ public:
         const ASTPtr & partition,
         bool final,
         bool deduplicate,
+        const Names & deduplicate_by_columns,
         const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
@@ -93,6 +95,8 @@ public:
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
     std::optional<JobAndPool> getDataProcessingJob() override;
+
+    MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -105,8 +109,10 @@ private:
     BackgroundJobsExecutor background_executor;
     BackgroundMovesExecutor background_moves_executor;
 
+    std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
+
     /// For block numbers.
-    SimpleIncrement increment{0};
+    SimpleIncrement increment;
 
     /// For clearOldParts, clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup;
@@ -128,12 +134,20 @@ private:
 
     void loadMutations();
 
+    /// Load and initialize deduplication logs. Even if deduplication setting
+    /// equals zero creates object with deduplication window equals zero.
+    void loadDeduplicationLog();
+
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
       */
-    bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr, bool optimize_skip_merged_partitions = false);
+    bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, const Names & deduplicate_by_columns, String * out_disable_reason = nullptr, bool optimize_skip_merged_partitions = false);
 
+    /// Make part state outdated and queue it to remove without timeout
+    /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
+    /// If not force, then take merges selector and check that part is not participating in background operations.
+    MergeTreeDataPartPtr outdatePart(const String & part_name, bool force);
     ActionLock stopMergesAndWait();
 
     /// Allocate block number for new mutation, write mutation to disk
@@ -146,8 +160,9 @@ private:
     {
         FutureMergedMutatedPart future_part;
         ReservationPtr reserved_space;
-
         StorageMergeTree & storage;
+        // Optional tagger to maintain volatile parts for the JBOD balancer
+        std::optional<CurrentlySubmergingEmergingTagger> tagger;
 
         CurrentlyMergingPartsTagger(
             FutureMergedMutatedPart & future_part_,
@@ -183,7 +198,8 @@ private:
         TableLockHolder & table_lock_holder,
         bool optimize_skip_merged_partitions = false,
         SelectPartsDecision * select_decision_out = nullptr);
-    bool mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);
+
+    bool mergeSelectedParts(const StorageMetadataPtr & metadata_snapshot, bool deduplicate, const Names & deduplicate_by_columns, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);
 
     std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder);
     bool mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);

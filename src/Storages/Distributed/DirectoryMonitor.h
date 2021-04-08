@@ -14,6 +14,9 @@ namespace CurrentMetrics { class Increment; }
 namespace DB
 {
 
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
 class StorageDistributed;
 class ActionBlocker;
 class BackgroundSchedulePool;
@@ -25,13 +28,18 @@ class StorageDistributedDirectoryMonitor
 {
 public:
     StorageDistributedDirectoryMonitor(
-        StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool);
+        StorageDistributed & storage_,
+        const DiskPtr & disk_,
+        const std::string & relative_path_,
+        ConnectionPoolPtr pool_,
+        ActionBlocker & monitor_blocker_,
+        BackgroundSchedulePool & bg_pool);
 
     ~StorageDistributedDirectoryMonitor();
 
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
-    void updatePath(const std::string & new_path);
+    void updatePath(const std::string & new_relative_path);
 
     void flushAllData();
 
@@ -40,7 +48,7 @@ public:
     static BlockInputStreamPtr createStreamFromFile(const String & file_name);
 
     /// For scheduling via DistributedBlockOutputStream
-    bool scheduleAfter(size_t ms);
+    bool addAndSchedule(size_t file_size, size_t ms);
 
     /// system.distribution_queue interface
     struct Status
@@ -52,7 +60,7 @@ public:
         size_t bytes_count;
         bool is_blocked;
     };
-    Status getStatus() const;
+    Status getStatus();
 
 private:
     void run();
@@ -62,17 +70,21 @@ private:
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 
-    static bool isFileBrokenErrorCode(int code);
-    void markAsBroken(const std::string & file_path) const;
-    bool maybeMarkAsBroken(const std::string & file_path, const Exception & e) const;
+    void markAsBroken(const std::string & file_path);
+    void markAsSend(const std::string & file_path);
+    bool maybeMarkAsBroken(const std::string & file_path, const Exception & e);
 
     std::string getLoggerName() const;
 
     StorageDistributed & storage;
     const ConnectionPoolPtr pool;
+
+    DiskPtr disk;
+    std::string relative_path;
     std::string path;
 
     const bool should_batch_inserts = false;
+    const bool dir_fsync = false;
     const size_t min_batched_block_size_rows = 0;
     const size_t min_batched_block_size_bytes = 0;
     String current_batch_file_path;
@@ -80,7 +92,7 @@ private:
     struct BatchHeader;
     struct Batch;
 
-    mutable std::mutex metrics_mutex;
+    std::mutex metrics_mutex;
     size_t error_count = 0;
     size_t files_count = 0;
     size_t bytes_count = 0;
@@ -98,9 +110,6 @@ private:
     BackgroundSchedulePoolTaskHolder task_handle;
 
     CurrentMetrics::Increment metric_pending_files;
-
-    /// Read insert query and insert settings for backward compatible.
-    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Poco::Logger * log);
 
     friend class DirectoryMonitorBlockInputStream;
 };

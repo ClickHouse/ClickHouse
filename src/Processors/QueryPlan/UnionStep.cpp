@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Sources/NullSource.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -18,7 +18,7 @@ UnionStep::UnionStep(DataStreams input_streams_, Block result_header, size_t max
         output_stream = DataStream{.header = header};
 }
 
-QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines)
+QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings)
 {
     auto pipeline = std::make_unique<QueryPipeline>();
     QueryPipelineProcessorsCollector collector(*pipeline, this);
@@ -30,7 +30,7 @@ QueryPipelinePtr UnionStep::updatePipeline(QueryPipelines pipelines)
         return pipeline;
     }
 
-    *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header, max_threads);
+    *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header, settings.getActionsSettings(), max_threads);
 
     processors = collector.detachProcessors();
     return pipeline;

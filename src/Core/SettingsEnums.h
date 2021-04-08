@@ -138,4 +138,15 @@ enum class UnionMode
 
 DECLARE_SETTING_ENUM(UnionMode)
 
+
+enum class DistributedDDLOutputMode
+{
+    NONE,
+    THROW,
+    NULL_STATUS_ON_TIMEOUT,
+    NEVER_THROW,
+};
+
+DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
+
 }

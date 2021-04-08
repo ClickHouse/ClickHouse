@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
@@ -22,8 +23,8 @@
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -56,6 +57,29 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
+    : Poco::Net::TCPServerConnection(socket_)
+    , server(server_)
+    , parse_proxy_protocol(parse_proxy_protocol_)
+    , log(&Poco::Logger::get("TCPHandler"))
+    , connection_context(server.context())
+    , query_context(server.context())
+    , server_display_name(std::move(server_display_name_))
+{
+}
+TCPHandler::~TCPHandler()
+{
+    try
+    {
+        state.reset();
+        if (out)
+            out->next();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
 
 void TCPHandler::runImpl()
 {
@@ -180,8 +204,14 @@ void TCPHandler::runImpl()
 
             /** If Query - process it. If Ping or Cancel - go back to the beginning.
              *  There may come settings for a separate query that modify `query_context`.
+             *  It's possible to receive part uuids packet before the query, so then receivePacket has to be called twice.
              */
             if (!receivePacket())
+                continue;
+
+            /** If part_uuids got received in previous packet, trying to read again.
+              */
+            if (state.empty() && state.part_uuids && !receivePacket())
                 continue;
 
             query_scope.emplace(*query_context);
@@ -528,6 +558,10 @@ void TCPHandler::processOrdinaryQuery()
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
+
+        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+            sendPartUUIDs();
+
         /// This allows the client to prepare output format
         if (Block header = state.io.in->getHeader())
             sendData(header);
@@ -591,6 +625,9 @@ void TCPHandler::processOrdinaryQuery()
 void TCPHandler::processOrdinaryQueryWithProcessors()
 {
     auto & pipeline = state.io.pipeline;
+
+    if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+        sendPartUUIDs();
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
@@ -681,7 +718,18 @@ void TCPHandler::processTablesStatusRequest()
         response.table_states_by_id.emplace(table_name, std::move(status));
     }
 
+
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
+
+    /// For testing hedged requests
+    const Settings & settings = query_context->getSettingsRef();
+    if (settings.sleep_in_send_tables_status_ms.totalMilliseconds())
+    {
+        out->next();
+        std::chrono::milliseconds ms(settings.sleep_in_send_tables_status_ms.totalMilliseconds());
+        std::this_thread::sleep_for(ms);
+    }
+
     response.write(*out, client_tcp_protocol_version);
 }
 
@@ -691,6 +739,20 @@ void TCPHandler::receiveUnexpectedTablesStatusRequest()
     skip_request.read(*in, client_tcp_protocol_version);
 
     throw NetException("Unexpected packet TablesStatusRequest received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+}
+
+void TCPHandler::sendPartUUIDs()
+{
+    auto uuids = query_context->getPartUUIDs()->get();
+    if (!uuids.empty())
+    {
+        for (const auto & uuid : uuids)
+            LOG_TRACE(log, "Sending UUID: {}", toString(uuid));
+
+        writeVarUInt(Protocol::Server::PartUUIDs, *out);
+        writeVectorBinary(uuids, *out);
+        out->next();
+    }
 }
 
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
@@ -905,6 +967,10 @@ bool TCPHandler::receivePacket()
 
     switch (packet_type)
     {
+        case Protocol::Client::IgnoredPartUUIDs:
+            /// Part uuids packet if any comes before query.
+            receiveIgnoredPartUUIDs();
+            return true;
         case Protocol::Client::Query:
             if (!state.empty())
                 receiveUnexpectedQuery();
@@ -938,6 +1004,16 @@ bool TCPHandler::receivePacket()
         default:
             throw Exception("Unknown packet " + toString(packet_type) + " from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
     }
+}
+
+void TCPHandler::receiveIgnoredPartUUIDs()
+{
+    state.part_uuids = true;
+    std::vector<UUID> uuids;
+    readVectorBinary(uuids, *in);
+
+    if (!uuids.empty())
+        query_context->getIgnoredPartUUIDs()->add(uuids);
 }
 
 void TCPHandler::receiveClusterNameAndSalt()
@@ -1069,6 +1145,14 @@ void TCPHandler::receiveQuery()
     }
     query_context->applySettingsChanges(settings_changes);
 
+    /// Disable function name normalization when it's a secondary query, because queries are either
+    /// already normalized on initiator node, or not normalized and should remain unnormalized for
+    /// compatibility.
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        query_context->setSetting("normalize_function_names", Field(0));
+    }
+
     // Use the received query id, or generate a random default. It is convenient
     // to also generate the default OpenTelemetry trace id at the same time, and
     // set the trace parent.
@@ -1139,33 +1223,44 @@ bool TCPHandler::receiveData(bool scalar)
     if (block)
     {
         if (scalar)
+        {
+            /// Scalar value
             query_context->addScalar(temporary_id.table_name, block);
+        }
+        else if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
+        {
+            /// Data for external tables
+
+            auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
+            StoragePtr storage;
+            /// If such a table does not exist, create it.
+            if (resolved)
+            {
+                storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
+            }
+            else
+            {
+                NamesAndTypesList columns = block.getNamesAndTypesList();
+                auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
+                storage = temporary_table.getTable();
+                query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+            }
+            auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+            /// The data will be written directly to the table.
+            auto temporary_table_out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
+            temporary_table_out->write(block);
+            temporary_table_out->writeSuffix();
+
+        }
+        else if (state.need_receive_data_for_input)
+        {
+            /// 'input' table function.
+            state.block_for_input = block;
+        }
         else
         {
-            /// If there is an insert request, then the data should be written directly to `state.io.out`.
-            /// Otherwise, we write the blocks in the temporary `external_table_name` table.
-            if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
-            {
-                auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
-                StoragePtr storage;
-                /// If such a table does not exist, create it.
-                if (resolved)
-                    storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
-                else
-                {
-                    NamesAndTypesList columns = block.getNamesAndTypesList();
-                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
-                    storage = temporary_table.getTable();
-                    query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
-                }
-                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                /// The data will be written directly to the table.
-                state.io.out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
-            }
-            if (state.need_receive_data_for_input)
-                state.block_for_input = block;
-            else
-                state.io.out->write(block);
+            /// INSERT query.
+            state.io.out->write(block);
         }
         return true;
     }
@@ -1181,7 +1276,7 @@ void TCPHandler::receiveUnexpectedData()
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
 
     if (last_block_in.compression == Protocol::Compression::Enable)
-        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+        maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true);
     else
         maybe_compressed_in = in;
 
@@ -1198,8 +1293,11 @@ void TCPHandler::initBlockInput()
 {
     if (!state.block_in)
     {
+        /// 'allow_different_codecs' is set to true, because some parts of compressed data can be precompressed in advance
+        /// with another codec that the rest of the data. Example: data sent by Distributed tables.
+
         if (state.compression == Protocol::Compression::Enable)
-            state.maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+            state.maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /* allow_different_codecs */ true);
         else
             state.maybe_compressed_in = in;
 
@@ -1312,13 +1410,49 @@ void TCPHandler::sendData(const Block & block)
 {
     initBlockOutput(block);
 
-    writeVarUInt(Protocol::Server::Data, *out);
-    /// Send external table name (empty name is the main table)
-    writeStringBinary("", *out);
+    auto prev_bytes_written_out = out->count();
+    auto prev_bytes_written_compressed_out = state.maybe_compressed_out->count();
 
-    state.block_out->write(block);
-    state.maybe_compressed_out->next();
-    out->next();
+    try
+    {
+        writeVarUInt(Protocol::Server::Data, *out);
+        /// Send external table name (empty name is the main table)
+        writeStringBinary("", *out);
+
+        /// For testing hedged requests
+        const Settings & settings = query_context->getSettingsRef();
+        if (block.rows() > 0 && settings.sleep_in_send_data_ms.totalMilliseconds())
+        {
+            out->next();
+            std::chrono::milliseconds ms(settings.sleep_in_send_data_ms.totalMilliseconds());
+            std::this_thread::sleep_for(ms);
+        }
+
+        state.block_out->write(block);
+        state.maybe_compressed_out->next();
+        out->next();
+    }
+    catch (...)
+    {
+        /// In case of unsuccessful write, if the buffer with written data was not flushed,
+        ///  we will rollback write to avoid breaking the protocol.
+        /// (otherwise the client will not be able to receive exception after unfinished data
+        ///  as it will expect the continuation of the data).
+        /// It looks like hangs on client side or a message like "Data compressed with different methods".
+
+        if (state.compression == Protocol::Compression::Enable)
+        {
+            auto extra_bytes_written_compressed = state.maybe_compressed_out->count() - prev_bytes_written_compressed_out;
+            if (state.maybe_compressed_out->offset() >= extra_bytes_written_compressed)
+                state.maybe_compressed_out->position() -= extra_bytes_written_compressed;
+        }
+
+        auto extra_bytes_written_out = out->count() - prev_bytes_written_out;
+        if (out->offset() >= extra_bytes_written_out)
+            out->position() -= extra_bytes_written_out;
+
+        throw;
+    }
 }
 
 

@@ -98,11 +98,21 @@ try
                 {
                     try /// We don't want exceptions in background pool
                     {
-                        job();
+                        bool job_success = job();
                         /// Job done, decrement metric and reset no_work counter
                         CurrentMetrics::values[pool_config.tasks_metric]--;
-                        /// Job done, new empty space in pool, schedule background task
-                        runTaskWithoutDelay();
+
+                        if (job_success)
+                        {
+                            /// Job done, new empty space in pool, schedule background task
+                            runTaskWithoutDelay();
+                        }
+                        else
+                        {
+                            /// Job done, but failed, schedule with backoff
+                            scheduleTask(/* with_backoff = */ true);
+                        }
+
                     }
                     catch (...)
                     {

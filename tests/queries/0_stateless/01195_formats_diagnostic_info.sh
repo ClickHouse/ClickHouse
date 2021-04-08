@@ -2,6 +2,7 @@
 # shellcheck disable=SC2206
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 PARSER=(${CLICKHOUSE_LOCAL} --query 'SELECT t, s, d FROM table' --structure 't DateTime, s String, d Decimal64(10)' --input-format CSV)
@@ -21,7 +22,7 @@ echo '2020-04-21 12:34:56, "Hello", 12345678,1' | "${PARSER[@]}" 2>&1| grep "ERR
 echo '2020-04-21 12:34:56,,123Hello' | "${PARSER[@]}" 2>&1| grep "ERROR"
 echo -e '2020-04-21 12:34:56, "Hello", 12345678\n\n\n\n   ' | "${PARSER[@]}" 2>&1| grep "ERROR" || echo "OK"
 
-PARSER=(${CLICKHOUSE_LOCAL} --query 'SELECT t, s, d FROM table' --structure 't DateTime, s String, d Decimal64(10)' --input-format TSV)
+PARSER=(${CLICKHOUSE_LOCAL} --input_format_null_as_default 0 --query 'SELECT t, s, d FROM table' --structure 't DateTime, s String, d Decimal64(10)' --input-format TSV)
 echo -e '2020-04-21 12:34:56\tHello\t12345678' | "${PARSER[@]}"  2>&1| grep "ERROR" || echo -e "\nTSV"
 echo -e '2020-04-21 12:34:56\tHello\t123456789' | "${PARSER[@]}" 2>&1| grep "ERROR"
 echo -e '2020-04-21 12:34:567\tHello\t123456789' | "${PARSER[@]}" 2>&1| grep "ERROR"

@@ -141,11 +141,6 @@ if(NOT EXTERNAL_PARQUET_FOUND AND NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT O
     else()
     set(USE_INTERNAL_PARQUET_LIBRARY 1)
 
-    if(USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
-        set(ARROW_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
-        set(PARQUET_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src" ${ClickHouse_BINARY_DIR}/contrib/arrow/cpp/src)
-    endif()
-
     if(MAKE_STATIC_LIBRARIES)
         set(FLATBUFFERS_LIBRARY flatbuffers)
         set(ARROW_LIBRARY arrow_static)
@@ -155,9 +150,6 @@ if(NOT EXTERNAL_PARQUET_FOUND AND NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT O
         set(FLATBUFFERS_LIBRARY flatbuffers_shared)
         set(ARROW_LIBRARY arrow_shared)
         set(PARQUET_LIBRARY parquet_shared)
-        if(USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
-            list(APPEND PARQUET_LIBRARY boost::regex)
-        endif()
         set(THRIFT_LIBRARY thrift)
     endif()
 

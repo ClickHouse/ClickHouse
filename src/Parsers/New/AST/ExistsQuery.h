@@ -13,16 +13,21 @@ class ExistsQuery : public Query
         {
             DICTIONARY,
             TABLE,
+            VIEW,
+            DATABASE,
         };
 
-        ExistsQuery(QueryType type, bool temporary, PtrTo<TableIdentifier> identifier);
+        static PtrTo<ExistsQuery> createTable(QueryType type, bool temporary, PtrTo<TableIdentifier> identifier);
+        static PtrTo<ExistsQuery> createDatabase(PtrTo<DatabaseIdentifier> identifier);
+
+        ExistsQuery(QueryType type, bool temporary, PtrList exprs);
 
         ASTPtr convertToOld() const override;
 
     private:
         enum ChildIndex : UInt8
         {
-            TABLE = 0,  // TableIdentifier
+            IDENTIFIER = 0,  // DatabaseIdentifier or TableIdentifier
         };
 
         const QueryType query_type;

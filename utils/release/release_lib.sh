@@ -48,11 +48,12 @@ function gen_revision_author {
                 VERSION_REVISION=$(($VERSION_REVISION + 1))
                 VERSION_MAJOR=$(($VERSION_MAJOR + 1))
                 VERSION_MINOR=1
-                VERSION_PATCH=0
+                # Version cannot be zero, otherwise is breaks CMake
+                VERSION_PATCH=1
             elif [ "$TYPE" == "minor" ] || [ "$TYPE" == "" ]; then
                 VERSION_REVISION=$(($VERSION_REVISION + 1))
                 VERSION_MINOR=$(($VERSION_MINOR + 1))
-                VERSION_PATCH=0
+                VERSION_PATCH=1
             elif [ "$TYPE" == "patch" ] || [ "$TYPE" == "bugfix" ]; then
                 # VERSION_REVISION not incremented in new scheme.
                 if [ "$VERSION_MAJOR" -eq "1" ] && [ "$VERSION_MINOR" -eq "1" ]; then
@@ -124,15 +125,6 @@ function gen_revision_author {
                         exit 1
                     fi
                 fi
-            fi
-
-
-            # Reset testing branch to current commit.
-            git checkout testing
-            git reset --hard "$tag"
-
-            if [ -z $NO_PUSH ]; then
-                git push
             fi
 
         else

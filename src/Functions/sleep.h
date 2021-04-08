@@ -78,8 +78,8 @@ public:
 
         Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), assert_cast<const ColumnConst &>(*col).getField());
 
-        if (seconds < 0)
-            throw Exception("Cannot sleep negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
+        if (seconds < 0 || !std::isfinite(seconds))
+            throw Exception("Cannot sleep infinite or negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
 
         size_t size = col->size();
 

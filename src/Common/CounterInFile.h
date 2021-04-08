@@ -87,7 +87,7 @@ public:
                 {
                     /// A more understandable error message.
                     if (e.code() == DB::ErrorCodes::CANNOT_READ_ALL_DATA || e.code() == DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
-                        throw DB::Exception("File " + path + " is empty. You must fill it manually with appropriate value.", e.code());
+                        throw DB::ParsingException("File " + path + " is empty. You must fill it manually with appropriate value.", e.code());
                     else
                         throw;
                 }
