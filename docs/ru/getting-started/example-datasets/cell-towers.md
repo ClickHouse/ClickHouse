@@ -95,7 +95,7 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 
 Здесь можно заглянуть в словарь: [термин "мобильный код страны"](https://ru.wikipedia.org/wiki/Mobile_Country_Code).
 
-В итоге получаем самые популярные страны: США, Германия, Россия.
+Можно увидеть, что по количеству вышек лидируют следующие страны: США, Германия, Россия.
 
 Также вам может понадобится создать [внешний словарь](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) в ClickHouse для того, чтобы объяснить эти значения.
 
