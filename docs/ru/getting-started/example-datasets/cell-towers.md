@@ -7,20 +7,20 @@ toc_title: Вышки сотовой связи
 
 Источник этого набора данных (dataset) - самая большая в мире открытая база данных о сотовых вышках - [OpenCellid](https://www.opencellid.org/). К 2021-му году здесь накопилось более, чем 40 миллионов записей о сотовых вышках (GSM, LTE, UMTS, и т.д.) по всему миру с их географическими координатами и метаданными (код страны, сети, и т.д.).
 
-OpenCelliD Project имеет лицензию Creative Commons Attribution-ShareAlike 4.0 International License, и мы распространяем снэпшот набора данных по условиям этой же лицензии. После авторизации можно загрузить последнюю версию датасета.
+OpenCelliD Project имеет лицензию Creative Commons Attribution-ShareAlike 4.0 International License, и мы распространяем снэпшот набора данных по условиям этой же лицензии. После авторизации можно загрузить последнюю версию набора данных.
 
-## Как получить датасет {#get-the-dataset}
+## Как получить набор данных {#get-the-dataset}
 
-1. Загрузите снэпшот датасета за февраль 2021 [отсюда](https://datasets.clickhouse.tech/cell_towers.csv.xz) (729 MB).
+1. Загрузите снэпшот набора данных за февраль 2021 [отсюда](https://datasets.clickhouse.tech/cell_towers.csv.xz) (729 MB).
 
-2. Если нужно, проверьте полноту при помощи команды:
+2. Если нужно, проверьте полноту и целостность при помощи команды:
 
 ```
 md5sum cell_towers.csv.xz
 8cf986f4a0d9f12c6f384a0e9192c908  cell_towers.csv.xz
 ```
 
-3. Распакуйте датасет при помощи команды:
+3. Распакуйте набор данных при помощи команды:
 
 ```
 xz -d cell_towers.csv.xz
@@ -49,7 +49,7 @@ CREATE TABLE cell_towers
 ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
 ```
 
-5. Добавьте датасет:
+5. Вставьте данные:
 ```
 clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
 ```
@@ -93,12 +93,12 @@ SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
 10 rows in set. Elapsed: 0.019 sec. Processed 43.28 million rows, 86.55 MB (2.33 billion rows/s., 4.65 GB/s.)
 ```
 
-
 Можно увидеть, что по количеству вышек лидируют следующие страны: США, Германия, Россия.
 
 Вы также можете создать [внешний словарь](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) в ClickHouse для того, чтобы расшифровать эти значения.
 
 ## Пример использования {#use-case}
+
 Рассмотрим применение функции `pointInPolygon`.
 
 1. Создаем таблицу, в которой будем хранить многоугольники:
@@ -125,6 +125,4 @@ SELECT count() FROM cell_towers WHERE pointInPolygon((lon, lat), (SELECT * FROM 
 1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
 ```
 
-Вы можете протестировать другие запросы с помощью интерактивного ресурса [Песочницы](https://gh-api.clickhouse.tech/play?user=play). Например, [вот так](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=). Однако, обратите внимание, что здесь нельзя создавать временные таблицы.
-
-[Original article](https://clickhouse.tech/docs/ru/getting_started/example_datasets/cell-towers/) <!--hide--> 
+Вы можете протестировать другие запросы с помощью интерактивного ресурса [Playground](https://gh-api.clickhouse.tech/play?user=play). Например, [вот так](https://gh-api.clickhouse.tech/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=). Однако, обратите внимание, что здесь нельзя создавать временные таблицы.
