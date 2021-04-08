@@ -365,6 +365,9 @@ function run_tests
 
         # JSON functions
         01666_blns
+
+        # Requires postgresql-client
+        01802_test_postgresql_protocol_with_row_policy
     )
 
     (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"
