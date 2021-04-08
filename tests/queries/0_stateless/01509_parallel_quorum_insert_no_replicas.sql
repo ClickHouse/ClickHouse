@@ -79,7 +79,6 @@ SET insert_quorum_timeout=0;
 INSERT INTO r1 VALUES (4, '4'); -- { serverError 319 }
 
 -- retry should fail despite the insert_deduplicate enabled
--- TODO: BUG HERE! it returns success while the record with key=4 does not exists on r2.
 INSERT INTO r1 VALUES (4, '4'); -- { serverError 319 }
 INSERT INTO r1 VALUES (4, '4'); -- { serverError 319 }
 SELECT * FROM r2 WHERE key=4;
