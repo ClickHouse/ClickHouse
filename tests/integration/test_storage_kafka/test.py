@@ -2836,9 +2836,10 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
         }
     }
 
+    topic_name_prefix = 'format_tests_4_stream_'
     for format_name, format_opts in list(all_formats.items()):
         print(('Set up {}'.format(format_name)))
-        topic_name = 'format_tests_{}'.format(format_name)
+        topic_name = topic_name_prefix + '{}'.format(format_name)
         data_sample = format_opts['data_sample']
         data_prefix = []
         raw_message = '_raw_message'
@@ -2859,8 +2860,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 val3 UInt8
             ) ENGINE = Kafka()
                 SETTINGS kafka_broker_list = 'kafka1:19092',
-                        kafka_topic_list = 'stream_{topic_name}',
-                        kafka_group_name = 'stream_{topic_name}_group',
+                        kafka_topic_list = '{topic_name}',
+                        kafka_group_name = '{topic_name}',
                         kafka_format = '{format_name}',
                         kafka_handle_error_mode = 'stream',
                         kafka_flush_interval_ms = 1000 {extra_settings};
@@ -2879,7 +2880,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
 
     for format_name, format_opts in list(all_formats.items()):
         print(('Checking {}'.format(format_name)))
-        topic_name = 'format_tests_{}'.format(format_name)
+        topic_name = topic_name_prefix + '{}'.format(format_name)
         # shift offsets by 1 if format supports empty value
         offsets = [1, 2, 3] if format_opts.get('supports_empty_value', False) else [0, 1, 2]
         result = instance.query('SELECT * FROM test.kafka_data_{format_name}_mv;'.format(format_name=format_name))
