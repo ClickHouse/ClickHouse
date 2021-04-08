@@ -1,16 +1,16 @@
-DROP TABLE IF EXISTS r1;
-DROP TABLE IF EXISTS r2;
+DROP TABLE IF EXISTS r1 SYNC;
+DROP TABLE IF EXISTS r2 SYNC;
 
 CREATE TABLE r1 (
     key UInt64, value String
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/01509_no_repliacs', '1')
+ENGINE = ReplicatedMergeTree('/clickhouse/01509_parallel_quorum_insert_no_replicas', '1')
 ORDER BY tuple();
 
 CREATE TABLE r2 (
     key UInt64, value String
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/01509_no_repliacs', '2')
+ENGINE = ReplicatedMergeTree('/clickhouse/01509_parallel_quorum_insert_no_replicas', '2')
 ORDER BY tuple();
 
 SET insert_quorum_parallel=1;
