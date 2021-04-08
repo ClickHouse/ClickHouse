@@ -12,6 +12,23 @@ class ReadFromMergeTree : public ISourceStep
 {
 public:
 
+    struct IndexStat
+    {
+        std::string description;
+        size_t num_parts_after;
+        size_t num_granules_after;
+
+        IndexStat(std::string description_, size_t num_parts_after_, size_t num_granules_after_)
+            : description(std::move(description_))
+            , num_parts_after(num_parts_after_)
+            , num_granules_after(num_granules_after_)
+        {
+        }
+    };
+
+    using IndexStats = std::vector<IndexStat>;
+    using IndexStatPtr = std::unique_ptr<IndexStats>;
+
     struct Settings
     {
         UInt64 max_block_size;
@@ -30,6 +47,7 @@ public:
         String query_id_,
         Names required_columns_,
         RangesInDataParts parts_,
+        IndexStatPtr index_stats_,
         PrewhereInfoPtr prewhere_info_,
         Names virt_column_names_,
         Settings settings_,
@@ -42,6 +60,8 @@ public:
 
     void initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
+    void describeActions(FormatSettings & format_settings) const override;
+
 private:
     const MergeTreeData & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -49,6 +69,7 @@ private:
 
     Names required_columns;
     RangesInDataParts parts;
+    IndexStatPtr index_stats;
     PrewhereInfoPtr prewhere_info;
     Names virt_column_names;
     Settings settings;

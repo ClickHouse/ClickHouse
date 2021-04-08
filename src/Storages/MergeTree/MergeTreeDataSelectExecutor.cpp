@@ -274,11 +274,33 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     const Context & query_context = context.hasQueryContext() ? context.getQueryContext() : context;
 
     PartFilterCounters part_filter_counters;
+    auto index_stats = std::make_unique<ReadFromMergeTree::IndexStats>();
 
     if (query_context.getSettingsRef().allow_experimental_query_deduplication)
         selectPartsToReadWithUUIDFilter(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, query_context, part_filter_counters);
     else
         selectPartsToRead(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, part_filter_counters);
+
+    index_stats->emplace_back(
+        "None",
+        part_filter_counters.num_initial_selected_parts,
+        part_filter_counters.num_initial_selected_granules);
+
+    if (minmax_idx_condition)
+    {
+        index_stats->emplace_back(
+            minmax_idx_condition->toString(),
+            part_filter_counters.num_parts_after_minmax,
+            part_filter_counters.num_granules_after_minmax);
+    }
+
+    if (partition_pruner)
+    {
+        index_stats->emplace_back(
+            partition_pruner->toString(),
+            part_filter_counters.num_parts_after_minmax,
+            part_filter_counters.num_granules_after_minmax);
+    }
 
     /// Sampling.
     Names column_names_to_read = real_column_names;
@@ -614,6 +636,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     RangesInDataParts parts_with_ranges(parts.size());
     size_t sum_marks = 0;
     std::atomic<size_t> sum_marks_pk = 0;
+    std::atomic<size_t> sum_parts_pk = 0;
     std::atomic<size_t> total_marks_pk = 0;
 
     size_t sum_ranges = 0;
@@ -648,6 +671,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
                 ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
+
+            if (!ranges.ranges.empty())
+                sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
 
             for (auto & index_and_condition : useful_indices)
             {
@@ -735,12 +761,25 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         parts_with_ranges.resize(next_part);
     }
 
+    if (metadata_snapshot->hasPrimaryKey())
+    {
+        index_stats->emplace_back(
+            key_condition.toString(),
+            sum_parts_pk.load(std::memory_order_relaxed),
+            sum_marks_pk.load(std::memory_order_relaxed));
+    }
+
     for (const auto & index_and_condition : useful_indices)
     {
         const auto & index_name = index_and_condition.index->index.name;
         LOG_DEBUG(log, "Index {} has dropped {}/{} granules.",
             backQuote(index_name),
             index_and_condition.granules_dropped, index_and_condition.total_granules);
+
+        index_stats->emplace_back(
+            index_name,
+            index_and_condition.total_parts - index_and_condition.parts_dropped,
+            index_and_condition.total_granules - index_and_condition.granules_dropped);
     }
 
     LOG_DEBUG(log, "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
@@ -807,6 +846,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
         plan = spreadMarkRangesAmongStreamsFinal(
             std::move(parts_with_ranges),
+            std::move(index_stats),
             num_streams,
             column_names_to_read,
             metadata_snapshot,
@@ -830,6 +870,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
         plan = spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges),
+            std::move(index_stats),
             num_streams,
             column_names_to_read,
             metadata_snapshot,
@@ -847,6 +888,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         plan = spreadMarkRangesAmongStreams(
             std::move(parts_with_ranges),
+            std::move(index_stats),
             num_streams,
             column_names_to_read,
             metadata_snapshot,
@@ -960,6 +1002,7 @@ size_t minMarksForConcurrentRead(
 
 QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts,
+    ReadFromMergeTree::IndexStatPtr index_stats,
     size_t num_streams,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1032,7 +1075,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     auto plan = std::make_unique<QueryPlan>();
     auto step = std::make_unique<ReadFromMergeTree>(
         data, metadata_snapshot, query_id,
-        column_names, std::move(parts), query_info.prewhere_info, virt_columns,
+        column_names, std::move(parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
         step_settings, num_streams, /*allow_mix_streams*/ true, /*read_reverse*/ false);
 
     plan->addStep(std::move(step));
@@ -1049,6 +1092,7 @@ static ActionsDAGPtr createProjection(const Block & header)
 
 QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts,
+    ReadFromMergeTree::IndexStatPtr index_stats,
     size_t num_streams,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1230,7 +1274,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
         auto plan = std::make_unique<QueryPlan>();
         auto step = std::make_unique<ReadFromMergeTree>(
             data, metadata_snapshot, query_id,
-            column_names, std::move(new_parts), query_info.prewhere_info, virt_columns,
+            column_names, std::move(new_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
             step_settings, num_streams, /*allow_mix_streams*/ false, /*read_reverse*/ read_reverse);
 
         plan->addStep(std::move(step));
@@ -1292,6 +1336,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
 QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts,
+    ReadFromMergeTree::IndexStatPtr index_stats,
     size_t num_streams,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1412,7 +1457,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             plan = std::make_unique<QueryPlan>();
             auto step = std::make_unique<ReadFromMergeTree>(
                 data, metadata_snapshot, query_id,
-                column_names, std::move(new_parts), query_info.prewhere_info, virt_columns,
+                column_names, std::move(new_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
                 step_settings, num_streams, /*allow_mix_streams*/ false, /*read_reverse*/ false);
 
             plan->addStep(std::move(step));
@@ -1495,7 +1540,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         auto plan = std::make_unique<QueryPlan>();
         auto step = std::make_unique<ReadFromMergeTree>(
             data, metadata_snapshot, query_id,
-            column_names, std::move(lonely_parts), query_info.prewhere_info, virt_columns,
+            column_names, std::move(lonely_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
             step_settings, num_streams_for_lonely_parts, /*allow_mix_streams*/ true, /*read_reverse*/ false);
 
         plan->addStep(std::move(step));

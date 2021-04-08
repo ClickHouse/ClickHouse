@@ -15,6 +15,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     String query_id_,
     Names required_columns_,
     RangesInDataParts parts_,
+    IndexStatPtr index_stats_,
     PrewhereInfoPtr prewhere_info_,
     Names virt_column_names_,
     Settings settings_,
@@ -30,6 +31,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , query_id(std::move(query_id_))
     , required_columns(std::move(required_columns_))
     , parts(std::move(parts_))
+    , index_stats(std::move(index_stats_))
     , prewhere_info(std::move(prewhere_info_))
     , virt_column_names(std::move(virt_column_names_))
     , settings(std::move(settings_))
@@ -146,6 +148,21 @@ void ReadFromMergeTree::initializePipeline(QueryPipeline & pipeline, const Build
         pipe.addQueryIdHolder(std::make_shared<QueryIdHolder>(query_id, storage));
 
     pipeline.init(std::move(pipe));
+}
+
+void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
+{
+    if (index_stats)
+    {
+        std::string prefix(format_settings.offset + format_settings.indent, format_settings.indent_char);
+        for (const auto & stat : *index_stats)
+        {
+            std::string pref(format_settings.indent, format_settings.indent_char);
+            format_settings.out << prefix << stat.description << '\n';
+            format_settings.out << prefix << pref << "Parts: " << stat.num_parts_after << '\n';
+            format_settings.out << prefix << pref << "Granules: " << stat.num_granules_after << '\n';
+        }
+    }
 }
 
 }
