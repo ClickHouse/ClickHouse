@@ -316,6 +316,8 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
+    MemoryTracker::LockExceptionInThread lock;
+
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
     {
         thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
