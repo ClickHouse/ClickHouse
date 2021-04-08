@@ -56,7 +56,7 @@ clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_t
 
 ## Примеры {#examples}
 
-Количество вышек по типам:
+1. Количество вышек по типам:
 
 ```
 SELECT radio, count() AS c FROM cell_towers GROUP BY radio ORDER BY c DESC
