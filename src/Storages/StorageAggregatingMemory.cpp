@@ -101,10 +101,10 @@ private:
 };
 
 
-class MemoryBlockOutputStream : public IBlockOutputStream
+class AggregatingOutputStream : public IBlockOutputStream
 {
 public:
-    MemoryBlockOutputStream(
+    AggregatingOutputStream(
         StorageAggregatingMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
         : storage(storage_)
@@ -194,7 +194,7 @@ Pipe StorageAggregatingMemory::read(
 
 BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
+    return std::make_shared<AggregatingOutputStream>(*this, metadata_snapshot);
 }
 
 

@@ -19,7 +19,7 @@ namespace DB
   */
 class StorageAggregatingMemory final : public ext::shared_ptr_helper<StorageAggregatingMemory>, public IStorage
 {
-friend class MemoryBlockOutputStream;
+friend class AggregatingOutputStream;
 friend struct ext::shared_ptr_helper<StorageAggregatingMemory>;
 
 public:
