@@ -517,7 +517,7 @@ void ReplicatedMergeTreeBlockOutputStream::waitForQuorum(
     zkutil::ZooKeeperPtr & zookeeper,
     const std::string & part_name,
     const std::string & quorum_path,
-    const std::string & is_active_node_value)
+    const std::string & is_active_node_value) const
 {
     /// We are waiting for quorum to be satisfied.
     LOG_TRACE(log, "Waiting for quorum");
