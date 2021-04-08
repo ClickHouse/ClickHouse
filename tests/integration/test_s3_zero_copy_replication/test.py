@@ -27,10 +27,10 @@ def cluster():
         cluster.shutdown()
 
 
-def get_large_objects_count(cluster, size=100):
+def get_large_objects_count(cluster, folder='data', size=100):
     minio = cluster.minio_client
     counter = 0
-    for obj in minio.list_objects(cluster.minio_bucket, 'data/'):
+    for obj in minio.list_objects(cluster.minio_bucket, '{}/'.format(folder)):
         if obj.size >= size:
             counter = counter + 1
     return counter
@@ -69,7 +69,7 @@ def test_s3_zero_copy_replication(cluster, policy):
     # Based on version 20.x - two parts
     assert get_large_objects_count(cluster) == 2
 
-    node1.query("OPTIMIZE TABLE s3_test")
+    node1.query("OPTIMIZE TABLE s3_test FINAL")
 
     time.sleep(1)
 
@@ -119,7 +119,7 @@ def test_s3_zero_copy_on_hybrid_storage(cluster):
     assert node2.query("SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values") == "('all','default')"
 
     # Total objects in S3
-    s3_objects = get_large_objects_count(cluster, 0)
+    s3_objects = get_large_objects_count(cluster, size=0)
 
     node2.query("ALTER TABLE hybrid_test MOVE PARTITION ID 'all' TO DISK 's31'")
 
@@ -127,10 +127,72 @@ def test_s3_zero_copy_on_hybrid_storage(cluster):
     assert node2.query("SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values") == "('all','s31')"
 
     # Check that after moving partition on node2 no new obects on s3
-    assert get_large_objects_count(cluster, 0) == s3_objects
+    assert get_large_objects_count(cluster, size=0) == s3_objects
 
     assert node1.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
     assert node2.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
 
     node1.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
     node2.query("DROP TABLE IF EXISTS hybrid_test NO DELAY")
+
+
+@pytest.mark.parametrize(
+    "storage_policy", ["tiered", "tiered_copy"]
+)
+def test_s3_zero_copy_with_ttl_move(cluster, storage_policy):
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    for i in range(10):
+        node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+        node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+
+        node1.query(
+            """
+            CREATE TABLE ttl_move_test ON CLUSTER test_cluster (d UInt64, d1 DateTime)
+            ENGINE=ReplicatedMergeTree('/clickhouse/tables/ttl_move_test', '{}')
+            ORDER BY d
+            TTL d1 + INTERVAL 2 DAY TO VOLUME 'external'
+            SETTINGS storage_policy='{}'
+            """
+                .format('{replica}', storage_policy)
+        )
+
+        node1.query("INSERT INTO ttl_move_test VALUES (10, now() - INTERVAL 3 DAY)")
+        node1.query("INSERT INTO ttl_move_test VALUES (11, now() - INTERVAL 1 DAY)")
+
+        assert node1.query("SELECT count() FROM ttl_move_test FORMAT Values") == "(2)"
+        assert node2.query("SELECT count() FROM ttl_move_test FORMAT Values") == "(2)"
+        assert node1.query("SELECT d FROM ttl_move_test ORDER BY d1 FORMAT Values") == "(10),(11)"
+        assert node2.query("SELECT d FROM ttl_move_test ORDER BY d1 FORMAT Values") == "(10),(11)"
+
+        node1.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+        node2.query("DROP TABLE IF EXISTS ttl_move_test NO DELAY")
+
+
+def test_s3_zero_copy_with_ttl_delete(cluster):
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    for i in range(10):
+        node1.query(
+            """
+            CREATE TABLE ttl_delete_test ON CLUSTER test_cluster (d UInt64, d1 DateTime)
+            ENGINE=ReplicatedMergeTree('/clickhouse/tables/ttl_delete_test', '{}')
+            ORDER BY d
+            TTL d1 + INTERVAL 2 DAY
+            SETTINGS storage_policy='tiered'
+            """
+                .format('{replica}')
+        )
+
+        node1.query("INSERT INTO ttl_delete_test VALUES (10, now() - INTERVAL 3 DAY)")
+        node1.query("INSERT INTO ttl_delete_test VALUES (11, now() - INTERVAL 1 DAY)")
+
+        assert node1.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1)"
+        assert node2.query("SELECT count() FROM ttl_delete_test FORMAT Values") == "(1)"
+        assert node1.query("SELECT d FROM ttl_delete_test ORDER BY d1 FORMAT Values") == "(11)"
+        assert node2.query("SELECT d FROM ttl_delete_test ORDER BY d1 FORMAT Values") == "(11)"
+
+        node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+        node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")

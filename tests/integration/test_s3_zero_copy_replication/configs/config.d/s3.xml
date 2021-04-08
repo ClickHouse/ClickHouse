@@ -8,6 +8,18 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
             </s31>
+            <s31_again>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s31_again>
+            <s32>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data2/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>minio123</secret_access_key>
+            </s32>
         </disks>
         <policies>
             <s3>
@@ -27,6 +39,26 @@
                     </external>
                 </volumes>
             </hybrid>
+            <tiered>
+                <volumes>
+                    <main>
+                        <disk>s31</disk>
+                    </main>
+                    <external>
+                        <disk>s32</disk>
+                    </external>
+                </volumes>
+            </tiered>
+            <tiered_copy>
+                <volumes>
+                    <main>
+                        <disk>s31</disk>
+                    </main>
+                    <external>
+                        <disk>s31_again</disk>
+                    </external>
+                </volumes>
+            </tiered_copy>
         </policies>
     </storage_configuration>
 
