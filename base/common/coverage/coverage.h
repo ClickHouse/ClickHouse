@@ -10,7 +10,7 @@
 #include <filesystem>
 #include <unordered_map>
 #include <vector>
-#include <sanitizer/coverage_interface.h>
+//#include <sanitizer/coverage_interface.h>
 
 namespace coverage
 {
@@ -23,7 +23,8 @@ public:
         return w;
     }
 
-    void initialized(uint32_t count, uint32_t * /*start*/)
+    //count, start
+    void initialized(uint32_t , uint32_t * /*start*/)
     {
         const struct sigaction sa = {
             .sa_sigaction =
@@ -75,7 +76,7 @@ public:
 
         for (const auto& [index, addr] : bb_edge_index_to_addr)
         {
-            __sanitizer_symbolize_pc(addr, "%p %F %L", symbolizer_buffer, sizeof(symbolizer_buffer));
+            //__sanitizer_symbolize_pc(addr, "%p %F %L", symbolizer_buffer, sizeof(symbolizer_buffer));
             ofs << index << " " << symbolizer_buffer << "\n";
         }
     }

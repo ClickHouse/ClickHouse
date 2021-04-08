@@ -117,9 +117,29 @@ endif ()
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 
 if (ENABLE_FUZZING)
-    message (STATUS "Fuzzing instrumentation enabled")
+    message (STATUS "Fuzzing instrumentation runtime: ON")
     set (WITH_COVERAGE ON)
     set (FUZZER "libfuzzer")
+else()
+    message (STATUS "Fuzzing instrumentation runtime: OFF")
+endif()
+
+# clang only.
+option(WITH_COVERAGE "Generate functional tests code coverage reports." OFF)
+
+# Must be set before sanitizers cmake inclusion as implies ASan.
+if (WITH_COVERAGE)
+    if (COMPILER_CLANG)
+        message(STATUS "Code coverage runtime: ON")
+
+        set(WITH_COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard")
+        set(WITHOUT_COVERAGE "-fno-sanitize-coverage=trace-pc-guard")
+        set(SANITIZE "address") # needed to symbolize the reports
+    else()
+        message(ERROR "As for now, the code coverage is supported in Clang only")
+    endif()
+else()
+    message(STATUS "Code coverage runtime: OFF")
 endif()
 
 # Global libraries
@@ -276,23 +296,6 @@ if (COMPILER_GCC OR COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 endif ()
-
-# Clang only.
-option(WITH_COVERAGE "Generate functional tests code coverage reports." OFF)
-
-if (WITH_COVERAGE)
-    if (COMPILER_CLANG)
-        message(STATUS "Code coverage runtime: attaching")
-
-        # addr sanitizer needed for symbolizer
-        set(WITH_COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard -fsanitize=address")
-        set(WITHOUT_COVERAGE "-fno-sanitize-coverage=trace-pc-guard -fno-sanitize=address")
-    else()
-        message(ERROR "As for now, the code coverage is supported in Clang only")
-    endif()
-else()
-    message(STATUS "Code coverage runtime: ignored")
-endif()
 
 set(COMPILER_FLAGS "${COMPILER_FLAGS}")
 
