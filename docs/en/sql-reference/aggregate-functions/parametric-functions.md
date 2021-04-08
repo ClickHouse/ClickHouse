@@ -684,7 +684,7 @@ SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', p
 ```
 
 ```SQL
-SELECT id, sequenceNextNode('backward', 'last_match')(dt, page = 'Gift', page, page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
 
                  dt   id   page
 1970-01-01 09:00:01    1   Home // Matched with Home, the result is null
@@ -721,7 +721,7 @@ INSERT INTO test_flow_basecond VALUES (1, 1, 'A', 'ref4') (2, 1, 'A', 'ref3') (3
 ```
 
 ```SQL
-SELECT id, sequenceNextNode('forward', 'head')(dt, ref = 'ref1', page, page = 'A') FROM test_flow_basecond GROUP BY id;
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, ref = 'ref1', page = 'A') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref 
  1970-01-01 09:00:01    1   A      ref4 // The head can't be base point becasue the ref column of the head unmatched with 'ref1'.
@@ -731,7 +731,7 @@ SELECT id, sequenceNextNode('forward', 'head')(dt, ref = 'ref1', page, page = 'A
  ```
 
 ```SQL
-SELECT id, sequenceNextNode('backward', 'tail')(dt, ref = 'ref4', page, page = 'B') FROM test_flow_basecond GROUP BY id;
+SELECT id, sequenceNextNode('backward', 'tail')(dt, page, ref = 'ref4', page = 'B') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref 
  1970-01-01 09:00:01    1   A      ref4
@@ -741,7 +741,7 @@ SELECT id, sequenceNextNode('backward', 'tail')(dt, ref = 'ref4', page, page = '
 ```
 
 ```SQL
-SELECT id, sequenceNextNode('forward', 'first_match')(dt, ref = 'ref3', page, page = 'A') FROM test_flow_basecond GROUP BY id;
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, ref = 'ref3', page = 'A') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref 
  1970-01-01 09:00:01    1   A      ref4 // This row can't be base point becasue the ref column unmatched with 'ref3'.
@@ -751,7 +751,7 @@ SELECT id, sequenceNextNode('forward', 'first_match')(dt, ref = 'ref3', page, pa
 ```
 
 ```SQL
-SELECT id, sequenceNextNode('backward', 'last_match')(dt, ref = 'ref2', page, page = 'B') FROM test_flow_basecond GROUP BY id;
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, ref = 'ref2', page = 'B') FROM test_flow_basecond GROUP BY id;
 
                   dt   id   page   ref 
  1970-01-01 09:00:01    1   A      ref4
