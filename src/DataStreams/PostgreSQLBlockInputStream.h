@@ -67,14 +67,14 @@ class PostgreSQLTransactionBlockInputStream : public PostgreSQLBlockInputStream<
 {
 
 public:
-    using Base = PostgreSQLBlockInputStream<pqxx::ReplicationTransaction>;
+    using Base = PostgreSQLBlockInputStream<T>;
 
     PostgreSQLTransactionBlockInputStream(
         std::shared_ptr<T> tx_,
         const std::string & query_str_,
         const Block & sample_block_,
         const UInt64 max_block_size_)
-        : PostgreSQLBlockInputStream<pqxx::ReplicationTransaction>(tx_, query_str_, sample_block_, max_block_size_, false) {}
+        : PostgreSQLBlockInputStream<T>(tx_, query_str_, sample_block_, max_block_size_, false) {}
 
     void readPrefix() override
     {
