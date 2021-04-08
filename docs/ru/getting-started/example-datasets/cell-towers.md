@@ -72,7 +72,7 @@ SELECT radio, count() AS c FROM cell_towers GROUP BY radio ORDER BY c DESC
 5 rows in set. Elapsed: 0.011 sec. Processed 43.28 million rows, 43.28 MB (3.83 billion rows/s., 3.83 GB/s.)
 ```
 
-Количество вышек по мобильному коду страны (MCC):
+2. Количество вышек по [мобильному коду страны (MCC)](https://ru.wikipedia.org/wiki/Mobile_Country_Code):
 
 ```
 SELECT mcc, count() FROM cell_towers GROUP BY mcc ORDER BY count() DESC LIMIT 10
