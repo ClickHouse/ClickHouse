@@ -14,7 +14,7 @@ namespace DB
  * Each working reader can read up to max_segments_per_worker chunks into temporary buffers.
  * Number of working readers limited by max_working_readers.
  */
-class ReadBufferFanIn : public ReadBuffer
+class ParallelReadBuffer : public ReadBuffer
 {
 private:
 
@@ -31,7 +31,7 @@ public:
         virtual ~ReadBufferFactory() = default;
     };
 
-    explicit ReadBufferFanIn(
+    explicit ParallelReadBuffer(
         std::unique_ptr<ReadBufferFactory> reader_factory_, size_t max_working_readers, size_t max_segments_per_worker_ = 0)
         : ReadBuffer(nullptr, 0)
         , max_segments_per_worker(max_segments_per_worker_)
@@ -46,7 +46,7 @@ public:
             });
     }
 
-    ~ReadBufferFanIn() override
+    ~ParallelReadBuffer() override
     {
         finishAndWait();
     }

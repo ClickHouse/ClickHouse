@@ -1,4 +1,4 @@
-#include "ReadBufferFanIn.h"
+#include "ParallelReadBuffer.h"
 
 
 namespace DB
@@ -10,7 +10,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-bool ReadBufferFanIn::nextImpl()
+bool ParallelReadBuffer::nextImpl()
 {
     if (all_done)
         return false;
@@ -53,7 +53,7 @@ bool ReadBufferFanIn::nextImpl()
     return true;
 }
 
-ReadBufferFanIn::ProcessingUnitPtr ReadBufferFanIn::chooseNextReader()
+ParallelReadBuffer::ProcessingUnitPtr ParallelReadBuffer::chooseNextReader()
 {
     std::lock_guard<std::mutex> lock(mutex);
     auto reader = reader_factory->getReader();
@@ -64,7 +64,7 @@ ReadBufferFanIn::ProcessingUnitPtr ReadBufferFanIn::chooseNextReader()
     return unit;
 }
 
-void ReadBufferFanIn::readerThreadFunction(ProcessingUnitPtr unit)
+void ParallelReadBuffer::readerThreadFunction(ProcessingUnitPtr unit)
 {
     try
     {
@@ -107,7 +107,7 @@ void ReadBufferFanIn::readerThreadFunction(ProcessingUnitPtr unit)
     }
 }
 
-void ReadBufferFanIn::onBackgroundException()
+void ParallelReadBuffer::onBackgroundException()
 {
     std::unique_lock<std::mutex> lock(mutex);
     if (!background_exception)
@@ -117,7 +117,7 @@ void ReadBufferFanIn::onBackgroundException()
     emergency_stop = true;
 }
 
-void ReadBufferFanIn::finishAndWait()
+void ParallelReadBuffer::finishAndWait()
 {
     emergency_stop = true;
     try
