@@ -13,6 +13,7 @@ toc_title: Client Libraries
     -   [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
     -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
+    -   [asynch](https://github.com/long2ice/asynch)
 -   PHP
     -   [smi2/phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
     -   [8bitov/clickhouse-php-client](https://packagist.org/packages/8bitov/clickhouse-php-client)
@@ -22,6 +23,7 @@ toc_title: Client Libraries
     -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
     -   [one-ck](https://github.com/lizhichao/one-ck)
     -   [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
+    -   [kolya7k ClickHouse PHP extension](https://github.com//kolya7k/clickhouse-php)
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
@@ -60,5 +62,7 @@ toc_title: Client Libraries
     -   [pillar](https://github.com/sofakingworld/pillar)
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
+-   Haskell
+    -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

@@ -1,0 +1,25 @@
+none
+Received exception from server:
+Code: 57. Error: Received from localhost:9000. Error: There was an error on [localhost:9000]: Code: 57, e.displayText() = Error: Table default.throw already exists
+Received exception from server:
+Code: 159. Error: Received from localhost:9000. Error: Watching task <task> is executing longer than distributed_ddl_task_timeout (=8) seconds. There are 1 unfinished hosts (0 of them are currently active), they are going to execute the query in background.
+throw
+localhost	9000	0		0	0
+localhost	9000	57	Code: 57, e.displayText() = Error: Table default.throw already exists.	0	0
+Received exception from server:
+Code: 57. Error: Received from localhost:9000. Error: There was an error on [localhost:9000]: Code: 57, e.displayText() = Error: Table default.throw already exists
+localhost	9000	0		1	0
+Received exception from server:
+Code: 159. Error: Received from localhost:9000. Error: Watching task <task> is executing longer than distributed_ddl_task_timeout (=8) seconds. There are 1 unfinished hosts (0 of them are currently active), they are going to execute the query in background.
+null_status_on_timeout
+localhost	9000	0		0	0
+localhost	9000	57	Code: 57, e.displayText() = Error: Table default.null_status already exists.	0	0
+Received exception from server:
+Code: 57. Error: Received from localhost:9000. Error: There was an error on [localhost:9000]: Code: 57, e.displayText() = Error: Table default.null_status already exists
+localhost	9000	0		1	0
+localhost	1	\N	\N	1	0
+never_throw
+localhost	9000	0		0	0
+localhost	9000	57	Code: 57, e.displayText() = Error: Table default.never_throw already exists.	0	0
+localhost	9000	0		1	0
+localhost	1	\N	\N	1	0

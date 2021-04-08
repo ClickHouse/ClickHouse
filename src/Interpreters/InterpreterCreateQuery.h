@@ -59,6 +59,8 @@ public:
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, const Context & context, const String & cluster_name);
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const override;
+
 private:
     struct TableProperties
     {
@@ -79,6 +81,7 @@ private:
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties);
+    BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties);
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 
@@ -92,5 +95,8 @@ private:
     /// Is this an internal query - not from the user.
     bool internal = false;
     bool force_attach = false;
+
+    mutable String as_database_saved;
+    mutable String as_table_saved;
 };
 }

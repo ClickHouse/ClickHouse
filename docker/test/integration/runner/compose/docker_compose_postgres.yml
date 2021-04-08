@@ -6,8 +6,8 @@ services:
         environment:
             POSTGRES_PASSWORD: mysecretpassword
         ports:
-          - 5432:5432
+            - 5432:5432
         networks:
-          default:
-            aliases:
-              - postgre-sql.local
+            default:
+                aliases:
+                    - postgre-sql.local

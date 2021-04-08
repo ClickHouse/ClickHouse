@@ -28,6 +28,8 @@ public:
 
     size_t getMaxStreams() const { return max_streams; }
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const override;
+
 protected:
     ASTPtr query_ptr;
     std::shared_ptr<Context> context;

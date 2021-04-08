@@ -25,6 +25,10 @@ issue_17147 = "https://github.com/ClickHouse/ClickHouse/issues/17147"
 issue_17653 = "https://github.com/ClickHouse/ClickHouse/issues/17653"
 issue_17655 = "https://github.com/ClickHouse/ClickHouse/issues/17655"
 issue_17766 = "https://github.com/ClickHouse/ClickHouse/issues/17766"
+issue_18110 = "https://github.com/ClickHouse/ClickHouse/issues/18110"
+issue_18206 = "https://github.com/ClickHouse/ClickHouse/issues/18206"
+issue_21083 = "https://github.com/ClickHouse/ClickHouse/issues/21083"
+issue_21084 = "https://github.com/ClickHouse/ClickHouse/issues/21084"
 
 xfails = {
     "syntax/show create quota/I show create quota current":
@@ -113,8 +117,26 @@ xfails = {
         [(Fail, issue_17147)],
     "privileges/show dictionaries/:/check privilege/:/exists/EXISTS with privilege":
         [(Fail, issue_17655)],
-    "privileges/public tables/query log":
-        [(Fail, issue_17766)]
+    "privileges/public tables/sensitive tables":
+        [(Fail, issue_18110)],
+    "privileges/system merges/:/:/:/:/SYSTEM:":
+        [(Fail, issue_18206)],
+    "privileges/system ttl merges/:/:/:/:/SYSTEM:":
+        [(Fail, issue_18206)],
+    "privileges/system moves/:/:/:/:/SYSTEM:":
+        [(Fail, issue_18206)],
+    "privileges/system sends/:/:/:/:/SYSTEM:":
+        [(Fail, issue_18206)],
+    "privileges/system fetches/:/:/:/:/SYSTEM:":
+        [(Fail, issue_18206)],
+    "privileges/system restart replica/:/:/:/:/SYSTEM:":
+        [(Fail, issue_18206)],
+    "privileges/system replication queues/:/:/:/:/SYSTEM:":
+        [(Fail, issue_18206)],
+    "privileges/: row policy/nested live:":
+        [(Fail, issue_21083)],
+    "privileges/: row policy/nested mat:":
+        [(Fail, issue_21084)],
 }
 
 xflags = {
@@ -144,9 +166,9 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
         if parallel is not None:
             self.context.parallel = parallel
 
-        Feature(run=load("rbac.tests.syntax.feature", "feature"), flags=TE)
-        Feature(run=load("rbac.tests.privileges.feature", "feature"), flags=TE)
-        Feature(run=load("rbac.tests.views.feature", "feature"), flags=TE)
+        Feature(run=load("rbac.tests.syntax.feature", "feature"))
+        Feature(run=load("rbac.tests.privileges.feature", "feature"))
+        Feature(run=load("rbac.tests.views.feature", "feature"))
 
 if main():
     regression()

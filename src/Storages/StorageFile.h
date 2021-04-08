@@ -64,6 +64,12 @@ public:
 
     static Strings getPathsList(const String & table_path, const String & user_files_path, const Context & context);
 
+    /// Check if the format is column-oriented.
+    /// Is is useful because column oriented formats could effectively skip unknown columns
+    /// So we can create a header of only required columns in read method and ask
+    /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
+    bool isColumnOriented() const;
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileBlockOutputStream;
@@ -98,7 +104,7 @@ private:
     std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
     off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
 
-    mutable std::shared_mutex rwlock;
+    mutable std::shared_timed_mutex rwlock;
 
     Poco::Logger * log = &Poco::Logger::get("StorageFile");
 };

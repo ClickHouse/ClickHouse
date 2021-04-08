@@ -252,6 +252,7 @@ if (NOT EXTERNAL_HYPERSCAN_LIBRARY_FOUND)
     target_compile_definitions (hyperscan PUBLIC USE_HYPERSCAN=1)
     target_compile_options (hyperscan
         PRIVATE -g0 # Library has too much debug information
+        -mno-avx -mno-avx2 # The library is using dynamic dispatch and is confused if AVX is enabled globally
         -march=corei7 -O2 -fno-strict-aliasing -fno-omit-frame-pointer -fvisibility=hidden # The options from original build system
         -fno-sanitize=undefined # Assume the library takes care of itself
     )

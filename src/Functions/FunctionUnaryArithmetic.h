@@ -79,8 +79,9 @@ struct InvalidType;
 template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
-    static constexpr bool allow_decimal = IsUnaryOperation<Op>::negate || IsUnaryOperation<Op>::abs;
+    static constexpr bool allow_decimal = IsUnaryOperation<Op>::negate || IsUnaryOperation<Op>::abs || IsUnaryOperation<Op>::sign;
     static constexpr bool allow_fixed_string = Op<UInt8>::allow_fixed_string;
+    static constexpr bool is_sign_function = IsUnaryOperation<Op>::sign;
 
     template <typename F>
     static bool castType(const IDataType * type, F && f)
@@ -137,7 +138,7 @@ public:
             {
                 using T0 = typename DataType::FieldType;
 
-                if constexpr (IsDataTypeDecimal<DataType>)
+                if constexpr (IsDataTypeDecimal<DataType> && !is_sign_function)
                 {
                     if constexpr (!allow_decimal)
                         return false;
@@ -183,12 +184,24 @@ public:
                 {
                     if (auto col = checkAndGetColumn<ColumnDecimal<T0>>(arguments[0].column.get()))
                     {
-                        auto col_res = ColumnDecimal<typename Op<T0>::ResultType>::create(0, type.getScale());
-                        auto & vec_res = col_res->getData();
-                        vec_res.resize(col->getData().size());
-                        UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
-                        result_column = std::move(col_res);
-                        return true;
+                        if constexpr (is_sign_function)
+                        {
+                            auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
+                            auto & vec_res = col_res->getData();
+                            vec_res.resize(col->getData().size());
+                            UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
+                            result_column = std::move(col_res);
+                            return true;
+                        }
+                        else
+                        {
+                            auto col_res = ColumnDecimal<typename Op<T0>::ResultType>::create(0, type.getScale());
+                            auto & vec_res = col_res->getData();
+                            vec_res.resize(col->getData().size());
+                            UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
+                            result_column = std::move(col_res);
+                            return true;
+                        }
                     }
                 }
             }

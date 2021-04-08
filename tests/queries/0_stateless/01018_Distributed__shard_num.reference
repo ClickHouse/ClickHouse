@@ -29,8 +29,6 @@ remote(Distributed)
 JOIN system.clusters
 1	10	localhost	::1	9000
 1	20	localhost	::1	9000
-1	10	localhost	::1	9000
-1	20	localhost	::1	9000
 dist_3
 100	foo
 foo	100	foo

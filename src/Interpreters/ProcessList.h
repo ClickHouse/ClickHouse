@@ -68,6 +68,7 @@ struct QueryStatusInfo
     std::vector<UInt64> thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
+    std::string current_database;
 };
 
 /// Query and information about its execution.
@@ -297,8 +298,6 @@ protected:
     QueryStatus * tryGetProcessListElement(const String & current_query_id, const String & current_user);
 
 public:
-    ProcessList(size_t max_size_ = 0);
-
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
 
     /** Register running query. Returns refcounted object, that will remove element from list in destructor.

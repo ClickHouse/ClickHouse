@@ -99,25 +99,6 @@ public:
     std::shared_ptr<const AccessRights> getAccessRights() const;
     std::shared_ptr<const AccessRights> getAccessRightsWithImplicit() const;
 
-    /// Checks if a specified access is granted.
-    bool isGranted(const AccessFlags & flags) const;
-    bool isGranted(const AccessFlags & flags, const std::string_view & database) const;
-    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
-    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
-    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
-    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
-    bool isGranted(const AccessRightsElement & element) const;
-    bool isGranted(const AccessRightsElements & elements) const;
-
-    bool hasGrantOption(const AccessFlags & flags) const;
-    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database) const;
-    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
-    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
-    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
-    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
-    bool hasGrantOption(const AccessRightsElement & element) const;
-    bool hasGrantOption(const AccessRightsElements & elements) const;
-
     /// Checks if a specified access is granted, and throws an exception if not.
     /// Empty database means the current database.
     void checkAccess(const AccessFlags & flags) const;
@@ -138,6 +119,26 @@ public:
     void checkGrantOption(const AccessRightsElement & element) const;
     void checkGrantOption(const AccessRightsElements & elements) const;
 
+    /// Checks if a specified access is granted, and returns false if not.
+    /// Empty database means the current database.
+    bool isGranted(const AccessFlags & flags) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    bool isGranted(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    bool isGranted(const AccessRightsElement & element) const;
+    bool isGranted(const AccessRightsElements & elements) const;
+
+    bool hasGrantOption(const AccessFlags & flags) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    bool hasGrantOption(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    bool hasGrantOption(const AccessRightsElement & element) const;
+    bool hasGrantOption(const AccessRightsElements & elements) const;
+
     /// Checks if a specified role is granted with admin option, and throws an exception if not.
     void checkAdminOption(const UUID & role_id) const;
     void checkAdminOption(const UUID & role_id, const String & role_name) const;
@@ -146,6 +147,7 @@ public:
     void checkAdminOption(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const;
     void checkAdminOption(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
 
+    /// Checks if a specified role is granted with admin option, and returns false if not.
     bool hasAdminOption(const UUID & role_id) const;
     bool hasAdminOption(const UUID & role_id, const String & role_name) const;
     bool hasAdminOption(const UUID & role_id, const std::unordered_map<UUID, String> & names_of_roles) const;
@@ -180,7 +182,10 @@ private:
     bool checkAccessImpl(const AccessRightsElements & elements) const;
 
     template <bool throw_if_denied, bool grant_option, typename... Args>
-    bool checkAccessImpl2(const AccessFlags & flags, const Args &... args) const;
+    bool checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const;
+
+    template <bool throw_if_denied, bool grant_option>
+    bool checkAccessImplHelper(const AccessRightsElement & element) const;
 
     template <bool throw_if_denied>
     bool checkAdminOptionImpl(const UUID & role_id) const;
@@ -201,7 +206,7 @@ private:
     bool checkAdminOptionImpl(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const;
 
     template <bool throw_if_denied, typename Container, typename GetNameFunction>
-    bool checkAdminOptionImpl2(const Container & role_ids, const GetNameFunction & get_name_function) const;
+    bool checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const;
 
     const AccessControlManager * manager = nullptr;
     const Params params;

@@ -12,7 +12,6 @@
 #include <chrono>
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
-#include <Poco/TaskNotification.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
@@ -24,9 +23,6 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/StatusFile.h>
 #include <loggers/Loggers.h>
-
-
-namespace Poco { class TaskManager; }
 
 
 /// \brief Base class for applications that can run as daemons.
@@ -52,31 +48,26 @@ public:
     BaseDaemon();
     ~BaseDaemon() override;
 
-    /// Загружает конфигурацию и "строит" логгеры на запись в файлы
+    /// Load configuration, prepare loggers, etc.
     void initialize(Poco::Util::Application &) override;
 
-    /// Читает конфигурацию
     void reloadConfiguration();
 
-    /// Определяет параметр командной строки
+    /// Process command line parameters
     void defineOptions(Poco::Util::OptionSet & new_options) override;
 
-    /// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
-    void exitOnTaskError();
+    /// Graceful shutdown
+    static void terminate();
 
-    /// Завершение демона ("мягкое")
-    void terminate();
+    /// Forceful shutdown
+    [[noreturn]] void kill();
 
-    /// Завершение демона ("жёсткое")
-    void kill();
-
-    /// Получен ли сигнал на завершение?
+    /// Cancellation request has been received.
     bool isCancelled() const
     {
         return is_cancelled;
     }
 
-    /// Получение ссылки на экземпляр демона
     static BaseDaemon & instance()
     {
         return dynamic_cast<BaseDaemon &>(Poco::Util::Application::instance());
@@ -85,12 +76,6 @@ public:
     /// return none if daemon doesn't exist, reference to the daemon otherwise
     static std::optional<std::reference_wrapper<BaseDaemon>> tryGetInstance() { return tryGetInstance<BaseDaemon>(); }
 
-    /// Спит заданное количество секунд или до события wakeup
-    void sleep(double seconds);
-
-    /// Разбудить
-    void wakeup();
-
     /// В Graphite компоненты пути(папки) разделяются точкой.
     /// У нас принят путь формата root_path.hostname_yandex_ru.key
     /// root_path по умолчанию one_min
@@ -98,7 +83,7 @@ public:
     template <class T>
     void writeToGraphite(const std::string & key, const T & value, const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME, time_t timestamp = 0, const std::string & custom_root_path = "")
     {
-        auto writer = getGraphiteWriter(config_name);
+        auto *writer = getGraphiteWriter(config_name);
         if (writer)
             writer->write(key, value, timestamp, custom_root_path);
     }
@@ -106,7 +91,7 @@ public:
     template <class T>
     void writeToGraphite(const GraphiteWriter::KeyValueVector<T> & key_vals, const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME, time_t timestamp = 0, const std::string & custom_root_path = "")
     {
-        auto writer = getGraphiteWriter(config_name);
+        auto *writer = getGraphiteWriter(config_name);
         if (writer)
             writer->write(key_vals, timestamp, custom_root_path);
     }
@@ -114,7 +99,7 @@ public:
     template <class T>
     void writeToGraphite(const GraphiteWriter::KeyValueVector<T> & key_vals, const std::chrono::system_clock::time_point & current_time, const std::string & custom_root_path)
     {
-        auto writer = getGraphiteWriter();
+        auto *writer = getGraphiteWriter();
         if (writer)
             writer->write(key_vals, std::chrono::system_clock::to_time_t(current_time), custom_root_path);
     }
@@ -131,16 +116,16 @@ public:
     /// also doesn't close global internal pipes for signal handling
     static void closeFDs();
 
+    /// If this method is called after initialization and before run,
+    /// will fork child process and setup watchdog that will print diagnostic info, if the child terminates.
+    /// argv0 is needed to change process name (consequently, it is needed for scripts involving "pgrep", "pidof" to work correctly).
+    void shouldSetupWatchdog(char * argv0_);
+
+    /// Hash of the binary for integrity checks.
+    String getStoredBinaryHash() const;
+
 protected:
-    /// Возвращает TaskManager приложения
-    /// все методы task_manager следует вызывать из одного потока
-    /// иначе возможен deadlock, т.к. joinAll выполняется под локом, а любой метод тоже берет лок
-    Poco::TaskManager & getTaskManager() { return *task_manager; }
-
     virtual void logRevision() const;
-
-    /// Используется при exitOnTaskError()
-    void handleNotification(Poco::TaskFailedNotification *);
 
     /// thread safe
     virtual void handleSignal(int signal_id);
@@ -148,7 +133,9 @@ protected:
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();
 
-    /// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
+    /// fork the main process and watch if it was killed
+    void setupWatchdog();
+
     void waitForTerminationRequest()
 #if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
     override
@@ -162,21 +149,13 @@ protected:
 
     virtual std::string getDefaultCorePath() const;
 
-    std::unique_ptr<Poco::TaskManager> task_manager;
-
-    std::optional<DB::StatusFile> pid;
+    std::optional<DB::StatusFile> pid_file;
 
     std::atomic_bool is_cancelled{false};
 
-    /// Флаг устанавливается по сообщению из Task (при аварийном завершении).
-    bool task_failed = false;
-
     bool log_to_console = false;
 
-    /// Событие, чтобы проснуться во время ожидания
-    Poco::Event wakeup_event;
-
-    /// Поток, в котором принимается сигнал HUP/USR1 для закрытия логов.
+    /// A thread that acts on HUP and USR1 signal (close logs).
     Poco::Thread signal_listener_thread;
     std::unique_ptr<Poco::Runnable> signal_listener;
 
@@ -192,8 +171,12 @@ protected:
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
     String build_id_info;
+    String stored_binary_hash;
 
     std::vector<int> handled_signals;
+
+    bool should_setup_watchdog = false;
+    char * argv0 = nullptr;
 };
 
 

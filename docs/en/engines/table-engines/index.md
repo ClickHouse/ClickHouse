@@ -47,11 +47,17 @@ Engines for communicating with other data storage and processing systems.
 
 Engines in the family:
 
--   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka)
--   [MySQL](../../engines/table-engines/integrations/mysql.md#mysql)
--   [ODBC](../../engines/table-engines/integrations/odbc.md#table-engine-odbc)
--   [JDBC](../../engines/table-engines/integrations/jdbc.md#table-engine-jdbc)
--   [HDFS](../../engines/table-engines/integrations/hdfs.md#hdfs)
+
+-   [ODBC](../../engines/table-engines/integrations/odbc.md)
+-   [JDBC](../../engines/table-engines/integrations/jdbc.md)
+-   [MySQL](../../engines/table-engines/integrations/mysql.md)
+-   [MongoDB](../../engines/table-engines/integrations/mongodb.md)
+-   [HDFS](../../engines/table-engines/integrations/hdfs.md)
+-   [S3](../../engines/table-engines/integrations/s3.md)
+-   [Kafka](../../engines/table-engines/integrations/kafka.md)
+-   [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md)
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md)
+-   [PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
 
 ### Special Engines {#special-engines}
 

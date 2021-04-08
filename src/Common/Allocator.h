@@ -28,7 +28,7 @@
 #include <common/mremap.h>
 #include <common/getPageSize.h>
 
-#include <Common/MemoryTracker.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -352,6 +352,12 @@ template<typename Base, size_t initial_bytes, size_t Alignment>
 constexpr size_t allocatorInitialBytes<AllocatorWithStackMemory<
     Base, initial_bytes, Alignment>> = initial_bytes;
 
+/// Prevent implicit template instantiation of Allocator
+
+extern template class Allocator<false, false>;
+extern template class Allocator<true, false>;
+extern template class Allocator<false, true>;
+extern template class Allocator<true, true>;
 
 #if !__clang__
 #pragma GCC diagnostic pop

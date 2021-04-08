@@ -24,6 +24,8 @@ public:
     /// Drop table or database.
     BlockIO execute() override;
 
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const override;
+
 private:
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;
@@ -32,8 +34,8 @@ private:
     BlockIO executeToDatabase(const ASTDropQuery & query);
     BlockIO executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait);
 
-    BlockIO executeToTable(const ASTDropQuery & query);
-    BlockIO executeToTableImpl(const ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait);
+    BlockIO executeToTable(ASTDropQuery & query);
+    BlockIO executeToTableImpl(ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait);
 
     static void waitForTableToBeActuallyDroppedOrDetached(const ASTDropQuery & query, const DatabasePtr & db, const UUID & uuid_to_wait);
 

@@ -57,3 +57,36 @@ SELECT '= 127.0.0.1', ipv6_ FROM ipv6_test
 -- TODO: Assert that invalid values can't be inserted into IPv6 column.
 
 DROP TABLE IF EXISTS ipv6_test;
+
+SELECT '0.0.0.0 is ipv4 string:                                 ', isIPv4String('0.0.0.0');
+SELECT '255.255.255.255 is ipv4 string:                         ', isIPv4String('255.255.255.255');
+SELECT '192.168.0.91 is ipv4 string:                            ', isIPv4String('192.168.0.91');
+SELECT '127.0.0.1 is ipv4 string:                               ', isIPv4String('127.0.0.1');
+SELECT '8.8.8.8 is ipv4 string:                                 ', isIPv4String('8.8.8.8');
+SELECT 'hello is ipv4 string:                                   ', isIPv4String('hello');
+SELECT '0:0:0:0:0:0:0:0 is ipv4 string:                         ', isIPv4String('0:0:0:0:0:0:0:0');
+SELECT '0000:0000:0000:0000:0000:FFFF:C1FC:110A is ipv4 string: ', isIPv4String('0000:0000:0000:0000:0000:FFFF:C1FC:110A');
+SELECT 'FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF is ipv4 string: ', isIPv4String('FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF');
+SELECT '::ffff:127.0.0.1 is ipv4 string:                        ', isIPv4String('::ffff:127.0.0.1');
+SELECT '::ffff:8.8.8.8 is ipv4 string:                          ', isIPv4String('::ffff:8.8.8.8');
+SELECT '2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D is ipv4 string: ', isIPv4String('2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D');
+
+SELECT '0.0.0.0 is ipv6 string:                                 ', isIPv6String('0.0.0.0');
+SELECT '255.255.255.255 is ipv6 string:                         ', isIPv6String('255.255.255.255');
+SELECT '192.168.0.91 is ipv6 string:                            ', isIPv6String('192.168.0.91');
+SELECT '127.0.0.1 is ipv6 string:                               ', isIPv6String('127.0.0.1');
+SELECT '8.8.8.8 is ipv6 string:                                 ', isIPv6String('8.8.8.8');
+SELECT 'hello is ipv6 string:                                   ', isIPv6String('hello');
+SELECT '0:0:0:0:0:0:0:0 is ipv6 string:                         ', isIPv6String('0:0:0:0:0:0:0:0');
+SELECT '0000:0000:0000:0000:0000:FFFF:C1FC:110A is ipv6 string: ', isIPv6String('0000:0000:0000:0000:0000:FFFF:C1FC:110A');
+SELECT 'FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF is ipv6 string: ', isIPv6String('FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF');
+SELECT '::ffff:127.0.0.1 is ipv6 string:                        ', isIPv6String('::ffff:127.0.0.1');
+SELECT '::ffff:8.8.8.8 is ipv6 string:                          ', isIPv6String('::ffff:8.8.8.8');
+SELECT '2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D is ipv6 string: ', isIPv6String('2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D');
+
+-- IPV6 functions parse IPv4 addresses.
+
+SELECT toIPv6('0.0.0.0');
+SELECT toIPv6('127.0.0.1');
+SELECT cutIPv6(IPv6StringToNum('127.0.0.1'), 0, 0);
+SELECT toIPv6('127.0.0.' || toString(number)) FROM numbers(13);

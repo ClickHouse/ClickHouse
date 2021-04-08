@@ -22,10 +22,13 @@ public:
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;
+    int execute(const std::string & command);
+    void openEditor();
 
     replxx::Replxx rx;
     replxx::Replxx::highlighter_callback_t highlighter;
 
     // used to call flock() to synchronize multiple clients using same history file
     int history_file_fd = -1;
+    bool bracketed_paste_enabled = false;
 };

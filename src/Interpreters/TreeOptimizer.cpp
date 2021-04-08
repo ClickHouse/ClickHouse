@@ -10,6 +10,7 @@
 #include <Interpreters/RewriteAnyFunctionVisitor.h>
 #include <Interpreters/RemoveInjectiveFunctionsVisitor.h>
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
+#include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
@@ -28,6 +29,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <Interpreters/RewriteSumIfFunctionVisitor.h>
 
 namespace DB
 {
@@ -133,8 +135,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                 const auto & dict_name = dict_name_ast->value.safeGet<String>();
                 const auto & attr_name = attr_name_ast->value.safeGet<String>();
 
-                String resolved_name = DatabaseCatalog::instance().resolveDictionaryName(dict_name);
-                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(resolved_name);
+                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name, context);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;
@@ -548,6 +549,18 @@ void optimizeAnyFunctions(ASTPtr & query)
     RewriteAnyFunctionVisitor(data).visit(query);
 }
 
+void optimizeSumIfFunctions(ASTPtr & query)
+{
+    RewriteSumIfFunctionVisitor::Data data = {};
+    RewriteSumIfFunctionVisitor(data).visit(query);
+}
+
+void optimizeCountConstantAndSumOne(ASTPtr & query)
+{
+    RewriteCountVariantsVisitor::visit(query);
+}
+
+
 void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & context)
 {
     RemoveInjectiveFunctionsVisitor::Data data = {context};
@@ -607,6 +620,12 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
     /// Move all operations out of any function
     if (settings.optimize_move_functions_out_of_any)
         optimizeAnyFunctions(query);
+
+    if (settings.optimize_normalize_count_variants)
+        optimizeCountConstantAndSumOne(query);
+
+    if (settings.optimize_rewrite_sum_if_to_count_if)
+        optimizeSumIfFunctions(query);
 
     /// Remove injective functions inside uniq
     if (settings.optimize_injective_functions_inside_uniq)

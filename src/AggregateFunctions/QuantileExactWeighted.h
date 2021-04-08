@@ -84,8 +84,15 @@ struct QuantileExactWeighted
         std::unique_ptr<Pair[]> array_holder(new Pair[size]);
         Pair * array = array_holder.get();
 
+        /// Note: 64-bit integer weight can overflow.
+        /// We do some implementation specific behaviour (return approximate or garbage results).
+        /// Float64 is used as accumulator here to get approximate results.
+        /// But weight can be already overflowed in computations in 'add' and 'merge' methods.
+        /// It will be reasonable to change the type of weight to Float64 in the map,
+        /// but we don't do that for compatibility of serialized data.
+
         size_t i = 0;
-        UInt64 sum_weight = 0;
+        Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
             sum_weight += pair.getMapped();
@@ -95,8 +102,8 @@ struct QuantileExactWeighted
 
         std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
-        UInt64 threshold = std::ceil(sum_weight * level);
-        UInt64 accumulated = 0;
+        Float64 threshold = std::ceil(sum_weight * level);
+        Float64 accumulated = 0;
 
         const Pair * it = array;
         const Pair * end = array + size;
@@ -135,7 +142,7 @@ struct QuantileExactWeighted
         Pair * array = array_holder.get();
 
         size_t i = 0;
-        UInt64 sum_weight = 0;
+        Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
             sum_weight += pair.getMapped();
@@ -145,13 +152,13 @@ struct QuantileExactWeighted
 
         std::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
 
-        UInt64 accumulated = 0;
+        Float64 accumulated = 0;
 
         const Pair * it = array;
         const Pair * end = array + size;
 
         size_t level_index = 0;
-        UInt64 threshold = std::ceil(sum_weight * levels[indices[level_index]]);
+        Float64 threshold = std::ceil(sum_weight * levels[indices[level_index]]);
 
         while (it < end)
         {

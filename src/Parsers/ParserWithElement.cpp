@@ -23,6 +23,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto with_element = std::make_shared<ASTWithElement>();
         tryGetIdentifierNameInto(name, with_element->name);
         with_element->subquery = subquery;
+        with_element->children.push_back(with_element->subquery);
         node = with_element;
     }
     else
