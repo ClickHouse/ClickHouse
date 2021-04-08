@@ -75,7 +75,7 @@ struct TableWithColumnNamesAndTypes
 
     void addMaterializedColumns(const NamesAndTypesList & addition)
     {
-        addAdditionalColumns(alias_columns, addition);
+        addAdditionalColumns(materialized_columns, addition);
     }
 
 private:
