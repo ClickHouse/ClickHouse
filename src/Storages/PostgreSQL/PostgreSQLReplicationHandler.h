@@ -5,9 +5,11 @@
 #endif
 
 #if USE_LIBPQXX
-#include "PostgreSQLConnection.h"
+
 #include "MaterializePostgreSQLConsumer.h"
 #include "MaterializePostgreSQLMetadata.h"
+
+#include <Core/PostgreSQL/PostgreSQLConnection.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 

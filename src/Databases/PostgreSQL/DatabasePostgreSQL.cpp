@@ -16,7 +16,6 @@
 #include <Poco/File.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
-#include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
 
 
 namespace DB

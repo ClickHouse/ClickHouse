@@ -2,7 +2,7 @@
 
 #if USE_LIBPQXX
 
-#include <Storages/PostgreSQL/PostgreSQLConnection.h>
+#include <Core/PostgreSQL/PostgreSQLConnection.h>
 #include <Storages/PostgreSQL/StorageMaterializePostgreSQL.h>
 
 #include <DataTypes/DataTypeNullable.h>
