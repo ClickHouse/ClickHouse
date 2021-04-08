@@ -1,4 +1,4 @@
-/* include/lber_types.h.  Generated from lber_types.hin by configure.  */
+/* include/lber_types.h. Generated from lber_types.hin by configure. */
 /* $OpenLDAP$ */
 /* This work is part of OpenLDAP Software <http://www.openldap.org/>.
  *
