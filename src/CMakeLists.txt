@@ -510,3 +510,8 @@ if (ENABLE_TESTS AND USE_GTEST)
 
     add_check(unit_tests_dbms)
 endif ()
+
+if (OS_DARWIN AND ARCH_AARCH64)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+crc+crypto")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto")
+endif()
