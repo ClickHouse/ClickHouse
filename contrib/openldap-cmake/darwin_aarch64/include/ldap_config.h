@@ -1,4 +1,4 @@
-/* Generated from ./ldap_config.hin on 2021年 4月 8日 星期四 10时21分48秒 CST */
+/* include/ldap_config.h. Generated from ldap_config.hin by configure. */
 /* $OpenLDAP$ */
 /* This work is part of OpenLDAP Software <http://www.openldap.org/>.
  *
@@ -33,7 +33,7 @@
 
 /* directory for temporary files */
 #if defined(_WIN32)
-# define LDAP_TMPDIR "C:\\."	/* we don't have much of a choice */
+# define LDAP_TMPDIR "C:\\." /* we don't have much of a choice */
 #elif defined( _P_tmpdir )
 # define LDAP_TMPDIR _P_tmpdir
 #elif defined( P_tmpdir )
@@ -46,28 +46,28 @@
 
 /* directories */
 #ifndef LDAP_BINDIR
-#define LDAP_BINDIR			"/usr/local/bin"
+#define LDAP_BINDIR        "/tmp/ldap-prefix/bin"
 #endif
 #ifndef LDAP_SBINDIR
-#define LDAP_SBINDIR		"/usr/local/sbin"
+#define LDAP_SBINDIR       "/tmp/ldap-prefix/sbin"
 #endif
 #ifndef LDAP_DATADIR
-#define LDAP_DATADIR		"/usr/local/share/openldap"
+#define LDAP_DATADIR       "/tmp/ldap-prefix/share/openldap"
 #endif
 #ifndef LDAP_SYSCONFDIR
-#define LDAP_SYSCONFDIR		"/usr/local/etc/openldap"
+#define LDAP_SYSCONFDIR    "/tmp/ldap-prefix/etc/openldap"
 #endif
 #ifndef LDAP_LIBEXECDIR
-#define LDAP_LIBEXECDIR		"/usr/local/libexec"
+#define LDAP_LIBEXECDIR    "/tmp/ldap-prefix/libexec"
 #endif
 #ifndef LDAP_MODULEDIR
-#define LDAP_MODULEDIR		"/usr/local/libexec/openldap"
+#define LDAP_MODULEDIR     "/tmp/ldap-prefix/libexec/openldap"
 #endif
 #ifndef LDAP_RUNDIR
-#define LDAP_RUNDIR			"/usr/local/var"
+#define LDAP_RUNDIR        "/tmp/ldap-prefix/var"
 #endif
 #ifndef LDAP_LOCALEDIR
-#define LDAP_LOCALEDIR		""
+#define LDAP_LOCALEDIR     ""
 #endif
 
 

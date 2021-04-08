@@ -1,5 +1,5 @@
-/* include/portable.h.  Generated from portable.hin by configure.  */
-/* include/portable.hin.  Generated from configure.in by autoheader.  */
+/* include/portable.h. Generated from portable.hin by configure. */
+/* include/portable.hin. Generated from configure.in by autoheader. */
 
 
 /* begin of portable.h.pre */
@@ -62,7 +62,7 @@
 #define CTIME_R_NARGS 2
 
 /* define if toupper() requires islower() */
-#define C_UPPER_LOWER 1
+/* #undef C_UPPER_LOWER */
 
 /* define if sys_errlist is not declared in stdio.h or errno.h */
 /* #undef DECL_SYS_ERRLIST */
@@ -122,7 +122,7 @@
 #define HAVE_CTIME_R 1
 
 /* define if you have Cyrus SASL */
-#define HAVE_CYRUS_SASL 1
+/* #undef HAVE_CYRUS_SASL */
 
 /* define if your system supports /dev/poll */
 /* #undef HAVE_DEVPOLL */
@@ -270,7 +270,7 @@
 /* #undef HAVE_IO_H */
 
 /* define if your system supports kqueue */
-/* #undef HAVE_KQUEUE */
+#define HAVE_KQUEUE 1
 
 /* Define to 1 if you have the `gen' library (-lgen). */
 /* #undef HAVE_LIBGEN */
@@ -366,19 +366,19 @@
 /* #undef HAVE_NT_THREADS */
 
 /* define if you have OpenSSL */
-/* #undef HAVE_OPENSSL */
+#define HAVE_OPENSSL 1
 
 /* Define to 1 if you have the <openssl/bn.h> header file. */
-/* #undef HAVE_OPENSSL_BN_H */
+#define HAVE_OPENSSL_BN_H 1
 
 /* define if you have OpenSSL with CRL checking capability */
-/* #undef HAVE_OPENSSL_CRL */
+#define HAVE_OPENSSL_CRL 1
 
 /* Define to 1 if you have the <openssl/crypto.h> header file. */
-/* #undef HAVE_OPENSSL_CRYPTO_H */
+#define HAVE_OPENSSL_CRYPTO_H 1
 
 /* Define to 1 if you have the <openssl/ssl.h> header file. */
-/* #undef HAVE_OPENSSL_SSL_H */
+#define HAVE_OPENSSL_SSL_H 1
 
 /* Define to 1 if you have the `pipe' function. */
 #define HAVE_PIPE 1
@@ -444,10 +444,10 @@
 #define HAVE_REGEX_H 1
 
 /* Define to 1 if you have the <resolv.h> header file. */
-#define HAVE_RESOLV_H 1
+/* #undef HAVE_RESOLV_H */
 
 /* define if you have res_query() */
-#define HAVE_RES_QUERY 1
+/* #undef HAVE_RES_QUERY */
 
 /* define if OpenSSL needs RSAref */
 /* #undef HAVE_RSAREF */
@@ -456,10 +456,10 @@
 /* #undef HAVE_SASL_H */
 
 /* Define to 1 if you have the <sasl/sasl.h> header file. */
-#define HAVE_SASL_SASL_H 1
+/* #undef HAVE_SASL_SASL_H */
 
 /* define if your SASL library has sasl_version() */
-#define HAVE_SASL_VERSION 1
+/* #undef HAVE_SASL_VERSION */
 
 /* Define to 1 if you have the <sched.h> header file. */
 #define HAVE_SCHED_H 1
@@ -734,7 +734,7 @@
 /* #undef HAVE_THR_YIELD */
 
 /* define if you have TLS */
-/* #undef HAVE_TLS */
+#define HAVE_TLS 1
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #define HAVE_UNISTD_H 1
@@ -743,13 +743,13 @@
 #define HAVE_UTIME_H 1
 
 /* define if you have uuid_generate() */
-#define HAVE_UUID_GENERATE 1
+/* #undef HAVE_UUID_GENERATE */
 
 /* define if you have uuid_to_str() */
 /* #undef HAVE_UUID_TO_STR */
 
 /* Define to 1 if you have the <uuid/uuid.h> header file. */
-#define HAVE_UUID_UUID_H 1
+/* #undef HAVE_UUID_UUID_H */
 
 /* Define to 1 if you have the `vprintf' function. */
 #define HAVE_VPRINTF 1
@@ -806,7 +806,7 @@
 /* #undef LDAP_API_FEATURE_X_OPENLDAP_V2_REFERRALS */
 
 /* define this to add debugging code */
-#define LDAP_DEBUG 1
+/* #undef LDAP_DEBUG */
 
 /* define if LDAP libs are dynamic */
 /* #undef LDAP_LIBS_DYNAMIC */
@@ -821,7 +821,7 @@
 /* #undef LDAP_SLAPI */
 
 /* define this to add syslog code */
-#define LDAP_SYSLOG 1
+/* #undef LDAP_SYSLOG */
 
 /* Version */
 #define LDAP_VENDOR_VERSION 20501
@@ -908,7 +908,7 @@
 /* #undef SLAPD_ASYNCMETA */
 
 /* define to support cleartext passwords */
-#define SLAPD_CLEARTEXT 1
+/* #undef SLAPD_CLEARTEXT */
 
 /* define to support crypt(3) passwords */
 /* #undef SLAPD_CRYPT */
@@ -920,7 +920,7 @@
 /* #undef SLAPD_LDAP */
 
 /* define to support MDB backend */
-#define SLAPD_MDB SLAPD_MOD_STATIC
+/* #undef SLAPD_MDB */
 
 /* define to support LDAP Metadirectory backend */
 /* #undef SLAPD_META */
@@ -935,7 +935,7 @@
 #define SLAPD_MOD_STATIC 1
 
 /* define to support cn=Monitor backend */
-#define SLAPD_MONITOR SLAPD_MOD_STATIC
+/* #undef SLAPD_MONITOR */
 
 /* define to support NDB backend */
 /* #undef SLAPD_NDB */
@@ -995,7 +995,7 @@
 /* #undef SLAPD_OVER_SSSVLV */
 
 /* define for Syncrepl Provider overlay */
-#define SLAPD_OVER_SYNCPROV SLAPD_MOD_STATIC
+/* #undef SLAPD_OVER_SYNCPROV */
 
 /* define for Translucent Proxy overlay */
 /* #undef SLAPD_OVER_TRANSLUCENT */
@@ -1013,7 +1013,7 @@
 /* #undef SLAPD_PERL */
 
 /* define to support relay backend */
-#define SLAPD_RELAY SLAPD_MOD_STATIC
+/* #undef SLAPD_RELAY */
 
 /* define to support reverse lookups */
 /* #undef SLAPD_RLOOKUPS */
@@ -1058,7 +1058,7 @@
 /* #undef USE_MP_LONG */
 
 /* define to use 'long long' for MP */
-#define USE_MP_LONG_LONG 1
+/* #undef USE_MP_LONG_LONG */
 
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
    significant byte first (like Motorola and SPARC, unlike Intel). */
@@ -1122,7 +1122,7 @@
 
 #ifdef _WIN32
 /* don't suck in all of the win32 api */
-#	define WIN32_LEAN_AND_MEAN 1
+# define WIN32_LEAN_AND_MEAN 1
 #endif
 
 #ifndef LDAP_NEEDS_PROTOTYPES
@@ -1140,7 +1140,7 @@
 #endif
 
 #ifdef HAVE_STDDEF_H
-#	include <stddef.h>
+# include <stddef.h>
 #endif
 
 #ifdef HAVE_EBCDIC
