@@ -52,6 +52,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/InterserverCredentials.h>
 
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -2401,7 +2402,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
             auto timeouts = getFetchPartHTTPTimeouts(global_context);
 
-            auto [user, password] = global_context.getInterserverCredentials();
+            auto credentials = global_context.getInterserverCredentials();
             String interserver_scheme = global_context.getInterserverScheme();
 
             if (interserver_scheme != address.scheme)
@@ -2409,7 +2410,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
             part_desc->res_part = fetcher.fetchPart(
                 metadata_snapshot, part_desc->found_new_part_name, source_replica_path,
-                address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
+                address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
 
@@ -3755,8 +3756,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
     ReplicatedMergeTreeAddress address;
     ConnectionTimeouts timeouts;
-    std::pair<String, String> user_password;
     String interserver_scheme;
+    InterserverCredentialsPtr credentials;
     std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
 
@@ -3772,10 +3773,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         address.fromString(zookeeper->get(source_replica_path + "/host"));
         timeouts = getFetchPartHTTPTimeouts(global_context);
 
-        user_password = global_context.getInterserverCredentials();
+        credentials = global_context.getInterserverCredentials();
         interserver_scheme = global_context.getInterserverScheme();
 
-        get_part = [&, address, timeouts, user_password, interserver_scheme]()
+        get_part = [&, address, timeouts, credentials, interserver_scheme]()
         {
             if (interserver_scheme != address.scheme)
                 throw Exception("Interserver schemes are different: '" + interserver_scheme
@@ -3789,8 +3790,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                 address.host,
                 address.replication_port,
                 timeouts,
-                user_password.first,
-                user_password.second,
+                credentials->getUser(),
+                credentials->getPassword(),
                 interserver_scheme,
                 to_detached,
                 "",
@@ -3928,10 +3929,10 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
 
     ReplicatedMergeTreeAddress address(zookeeper->get(source_replica_path + "/host"));
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
-    auto user_password = global_context.getInterserverCredentials();
+    auto credentials = global_context.getInterserverCredentials();
     String interserver_scheme = global_context.getInterserverScheme();
 
-    get_part = [&, address, timeouts, user_password, interserver_scheme]()
+    get_part = [&, address, timeouts, interserver_scheme, credentials]()
     {
         if (interserver_scheme != address.scheme)
             throw Exception("Interserver schemes are different: '" + interserver_scheme
@@ -3941,7 +3942,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         return fetcher.fetchPart(
             metadata_snapshot, part_name, source_replica_path,
             address.host, address.replication_port,
-            timeouts, user_password.first, user_password.second, interserver_scheme, false, "", nullptr, true,
+            timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, "", nullptr, true,
             replaced_disk);
     };
 
