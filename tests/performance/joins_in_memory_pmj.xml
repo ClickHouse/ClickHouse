@@ -3,6 +3,7 @@
 
     <settings>
         <join_algorithm>partial_merge</join_algorithm>
+        <query_plan_filter_push_down>0</query_plan_filter_push_down>
     </settings>
 
     <fill_query>INSERT INTO ints SELECT number AS i64, i64 AS i32, i64 AS i16, i64 AS i8 FROM numbers(10000)</fill_query>
