@@ -52,6 +52,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/InterserverCredentials.h>
 
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -2162,12 +2163,20 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
     struct PartDescription
     {
-        PartDescription(size_t index_, const String & src_part_name_, const String & new_part_name_, const String & checksum_hex_,
-                        MergeTreeDataFormatVersion format_version)
-            : index(index_),
-            src_part_name(src_part_name_), src_part_info(MergeTreePartInfo::fromPartName(src_part_name_, format_version)),
-            new_part_name(new_part_name_), new_part_info(MergeTreePartInfo::fromPartName(new_part_name_, format_version)),
-            checksum_hex(checksum_hex_) {}
+        PartDescription(
+            size_t index_,
+            const String & src_part_name_,
+            const String & new_part_name_,
+            const String & checksum_hex_,
+            MergeTreeDataFormatVersion format_version)
+            : index(index_)
+            , src_part_name(src_part_name_)
+            , src_part_info(MergeTreePartInfo::fromPartName(src_part_name_, format_version))
+            , new_part_name(new_part_name_)
+            , new_part_info(MergeTreePartInfo::fromPartName(new_part_name_, format_version))
+            , checksum_hex(checksum_hex_)
+        {
+        }
 
         size_t index; // in log entry arrays
         String src_part_name;
@@ -2400,7 +2409,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
             auto timeouts = getFetchPartHTTPTimeouts(getContext());
 
-            auto [user, password] = getContext()->getInterserverCredentials();
+            auto credentials = getContext()->getInterserverCredentials();
             String interserver_scheme = getContext()->getInterserverScheme();
 
             if (interserver_scheme != address.scheme)
@@ -2408,7 +2417,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
             part_desc->res_part = fetcher.fetchPart(
                 metadata_snapshot, part_desc->found_new_part_name, source_replica_path,
-                address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
+                address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
 
@@ -3754,8 +3763,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
 
     ReplicatedMergeTreeAddress address;
     ConnectionTimeouts timeouts;
-    std::pair<String, String> user_password;
     String interserver_scheme;
+    InterserverCredentialsPtr credentials;
     std::optional<CurrentlySubmergingEmergingTagger> tagger_ptr;
     std::function<MutableDataPartPtr()> get_part;
 
@@ -3771,10 +3780,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         address.fromString(zookeeper->get(source_replica_path + "/host"));
         timeouts = getFetchPartHTTPTimeouts(getContext());
 
-        user_password = getContext()->getInterserverCredentials();
+        credentials = getContext()->getInterserverCredentials();
         interserver_scheme = getContext()->getInterserverScheme();
 
-        get_part = [&, address, timeouts, user_password, interserver_scheme]()
+        get_part = [&, address, timeouts, credentials, interserver_scheme]()
         {
             if (interserver_scheme != address.scheme)
                 throw Exception("Interserver schemes are different: '" + interserver_scheme
@@ -3788,8 +3797,8 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
                 address.host,
                 address.replication_port,
                 timeouts,
-                user_password.first,
-                user_password.second,
+                credentials->getUser(),
+                credentials->getPassword(),
                 interserver_scheme,
                 to_detached,
                 "",
@@ -3927,10 +3936,10 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
 
     ReplicatedMergeTreeAddress address(zookeeper->get(source_replica_path + "/host"));
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(getContext());
-    auto user_password = getContext()->getInterserverCredentials();
+    auto credentials = getContext()->getInterserverCredentials();
     String interserver_scheme = getContext()->getInterserverScheme();
 
-    get_part = [&, address, timeouts, user_password, interserver_scheme]()
+    get_part = [&, address, timeouts, interserver_scheme, credentials]()
     {
         if (interserver_scheme != address.scheme)
             throw Exception("Interserver schemes are different: '" + interserver_scheme
@@ -3940,7 +3949,7 @@ bool StorageReplicatedMergeTree::fetchExistsPart(const String & part_name, const
         return fetcher.fetchPart(
             metadata_snapshot, part_name, source_replica_path,
             address.host, address.replication_port,
-            timeouts, user_password.first, user_password.second, interserver_scheme, false, "", nullptr, true,
+            timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, false, "", nullptr, true,
             replaced_disk);
     };
 

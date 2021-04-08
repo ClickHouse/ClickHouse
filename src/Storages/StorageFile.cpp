@@ -681,9 +681,12 @@ void registerStorageFile(StorageFactory & factory)
             StorageFile::CommonArguments storage_args
             {
                 WithContext(factory_args.getContext()),
-                .table_id = factory_args.table_id,
-                .columns = factory_args.columns,
-                .constraints = factory_args.constraints,
+                factory_args.table_id,
+                {},
+                {},
+                {},
+                factory_args.columns,
+                factory_args.constraints,
             };
 
             ASTs & engine_args_ast = factory_args.engine_args;

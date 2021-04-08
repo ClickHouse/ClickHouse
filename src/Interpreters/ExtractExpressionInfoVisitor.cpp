@@ -86,7 +86,8 @@ bool hasNonRewritableFunction(const ASTPtr & node, ContextPtr context)
 {
     for (const auto & select_expression : node->children)
     {
-        ExpressionInfoVisitor::Data expression_info{WithContext{context}, .tables = {}};
+        TablesWithColumns tables;
+        ExpressionInfoVisitor::Data expression_info{WithContext{context}, tables};
         ExpressionInfoVisitor(expression_info).visit(select_expression);
 
         if (expression_info.is_stateful_function

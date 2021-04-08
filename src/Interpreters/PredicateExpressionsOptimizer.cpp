@@ -87,7 +87,7 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
 
     for (const auto & predicate_expression : splitConjunctionPredicate({where, prewhere}))
     {
-        ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, .tables = tables_with_columns};
+        ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables_with_columns};
         ExpressionInfoVisitor(expression_info).visit(predicate_expression);
 
         if (expression_info.is_stateful_function
@@ -187,7 +187,8 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
 
     for (const auto & moving_predicate: splitConjunctionPredicate({select_query.having()}))
     {
-        ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, .tables = {}};
+        TablesWithColumns tables;
+        ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables};
         ExpressionInfoVisitor(expression_info).visit(moving_predicate);
 
         /// TODO: If there is no group by, where, and prewhere expression, we can push down the stateful function
