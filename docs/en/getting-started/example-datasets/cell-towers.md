@@ -99,7 +99,8 @@ So, the top countries are: the USA, Germany, and Russia.
 You may want to create an [External Dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) in ClickHouse to decode these values.
 
 
-### Example of using `pointInPolygon` function {#example-of-using}
+## Use-case {#use-case}
+Using `pointInPolygon` function.
 
 Create a table where we will store polygons:
 
