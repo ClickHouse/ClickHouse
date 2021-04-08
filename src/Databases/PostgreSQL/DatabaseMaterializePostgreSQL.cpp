@@ -34,33 +34,7 @@ namespace ErrorCodes
 
 static const auto METADATA_SUFFIX = ".postgresql_replica_metadata";
 
-template<>
-DatabaseMaterializePostgreSQL<DatabaseOrdinary>::DatabaseMaterializePostgreSQL(
-        const Context & context,
-        const String & metadata_path_,
-        UUID /* uuid */,
-        const ASTStorage * database_engine_define_,
-        const String & database_name_,
-        const String & postgres_database_name,
-        const String & connection_string,
-        std::unique_ptr<MaterializePostgreSQLSettings> settings_)
-    : DatabaseOrdinary(
-            database_name_, metadata_path_, "data/" + escapeForFileName(database_name_) + "/",
-            "DatabaseMaterializePostgreSQL<Ordinary> (" + database_name_ + ")", context)
-    , log(&Poco::Logger::get("MaterializePostgreSQLDatabaseEngine"))
-    , global_context(context.getGlobalContext())
-    , metadata_path(metadata_path_)
-    , database_engine_define(database_engine_define_->clone())
-    , database_name(database_name_)
-    , remote_database_name(postgres_database_name)
-    , connection(std::make_shared<postgres::Connection>(connection_string, ""))
-    , settings(std::move(settings_))
-{
-}
-
-
-template<>
-DatabaseMaterializePostgreSQL<DatabaseAtomic>::DatabaseMaterializePostgreSQL(
+DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
         const Context & context,
         const String & metadata_path_,
         UUID uuid,
@@ -70,8 +44,6 @@ DatabaseMaterializePostgreSQL<DatabaseAtomic>::DatabaseMaterializePostgreSQL(
         const String & connection_string,
         std::unique_ptr<MaterializePostgreSQLSettings> settings_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializePostgreSQL<Atomic> (" + database_name_ + ")", context)
-    , global_context(context.getGlobalContext())
-    , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , remote_database_name(postgres_database_name)
     , connection(std::make_shared<postgres::Connection>(connection_string, ""))
@@ -80,8 +52,7 @@ DatabaseMaterializePostgreSQL<DatabaseAtomic>::DatabaseMaterializePostgreSQL(
 }
 
 
-template<typename Base>
-void DatabaseMaterializePostgreSQL<Base>::startSynchronization()
+void DatabaseMaterializePostgreSQL::startSynchronization()
 {
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
@@ -104,27 +75,24 @@ void DatabaseMaterializePostgreSQL<Base>::startSynchronization()
         }
 
         replication_handler->addStorage(table_name, storage->template as<StorageMaterializePostgreSQL>());
-        tables[table_name] = storage;
+        materialized_tables[table_name] = storage;
     }
 
-    LOG_TRACE(log, "Loaded {} tables. Starting synchronization", tables.size());
+    LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
     replication_handler->startup();
 }
 
 
-template<typename Base>
-void DatabaseMaterializePostgreSQL<Base>::shutdown()
+void DatabaseMaterializePostgreSQL::shutdown()
 {
     if (replication_handler)
         replication_handler->shutdown();
 }
 
 
-template<typename Base>
-void DatabaseMaterializePostgreSQL<Base>::loadStoredObjects(
-        Context & context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseMaterializePostgreSQL::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
 {
-    Base::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
+    DatabaseAtomic::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
 
     try
     {
@@ -132,7 +100,7 @@ void DatabaseMaterializePostgreSQL<Base>::loadStoredObjects(
     }
     catch (...)
     {
-        tryLogCurrentException(Base::log, "Cannot load nested database objects for PostgreSQL database engine.");
+        tryLogCurrentException(log, "Cannot load nested database objects for PostgreSQL database engine.");
 
         if (!force_attach)
             throw;
@@ -141,8 +109,7 @@ void DatabaseMaterializePostgreSQL<Base>::loadStoredObjects(
 }
 
 
-template<typename Base>
-StoragePtr DatabaseMaterializePostgreSQL<Base>::tryGetTable(const String & name, const Context & context) const
+StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, const Context & context) const
 {
     /// When a nested ReplacingMergeTree table is managed from PostgreSQLReplicationHandler, its context is modified
     /// to show the type of managed table.
@@ -151,29 +118,28 @@ StoragePtr DatabaseMaterializePostgreSQL<Base>::tryGetTable(const String & name,
         auto storage_set = context.getQueryContext().getQueryFactoriesInfo().storages;
         if (storage_set.find("ReplacingMergeTree") != storage_set.end())
         {
-            return Base::tryGetTable(name, context);
+            return DatabaseAtomic::tryGetTable(name, context);
         }
     }
 
-    auto table = tables.find(name);
+    auto table = materialized_tables.find(name);
     /// Here it is possible that nested table is temporarily out of reach, but return storage anyway,
     /// it will not allow to read if nested is unavailable at the moment
-    if (table != tables.end())
+    if (table != materialized_tables.end())
         return table->second;
 
     return StoragePtr{};
 }
 
 
-template<typename Base>
-void DatabaseMaterializePostgreSQL<Base>::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
+void DatabaseMaterializePostgreSQL::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
 {
     if (context.hasQueryContext())
     {
         auto storage_set = context.getQueryContext().getQueryFactoriesInfo().storages;
         if (storage_set.find("ReplacingMergeTree") != storage_set.end())
         {
-            Base::createTable(context, name, table, query);
+            DatabaseAtomic::createTable(context, name, table, query);
             return;
         }
     }
@@ -183,8 +149,7 @@ void DatabaseMaterializePostgreSQL<Base>::createTable(const Context & context, c
 }
 
 
-template<typename Base>
-void DatabaseMaterializePostgreSQL<Base>::drop(const Context & context)
+void DatabaseMaterializePostgreSQL::drop(const Context & context)
 {
     if (replication_handler)
     {
@@ -193,21 +158,20 @@ void DatabaseMaterializePostgreSQL<Base>::drop(const Context & context)
     }
 
     /// Remove metadata
-    Poco::File metadata(Base::getMetadataPath() + METADATA_SUFFIX);
+    Poco::File metadata(getMetadataPath() + METADATA_SUFFIX);
 
     if (metadata.exists())
         metadata.remove(false);
 
-    Base::drop(context);
+    DatabaseAtomic::drop(context);
 }
 
 
-template<typename Base>
-DatabaseTablesIteratorPtr DatabaseMaterializePostgreSQL<Base>::getTablesIterator(
+DatabaseTablesIteratorPtr DatabaseMaterializePostgreSQL::getTablesIterator(
         const Context & /* context */, const DatabaseOnDisk::FilterByNameFunction & /* filter_by_table_name */)
 {
     Tables nested_tables;
-    for (const auto & [table_name, storage] : tables)
+    for (const auto & [table_name, storage] : materialized_tables)
     {
         auto nested_storage = storage->template as<StorageMaterializePostgreSQL>()->tryGetNested();
 

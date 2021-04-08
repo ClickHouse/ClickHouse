@@ -294,20 +294,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (engine_define->settings)
             postgresql_replica_settings->loadFromQuery(*engine_define);
 
-        if (create.uuid == UUIDHelpers::Nil)
-        {
-            return std::make_shared<DatabaseMaterializePostgreSQL<DatabaseOrdinary>>(
-                    context, metadata_path, uuid, engine_define,
-                    database_name, postgres_database_name, connection_string,
-                    std::move(postgresql_replica_settings));
-        }
-        else
-        {
-            return std::make_shared<DatabaseMaterializePostgreSQL<DatabaseAtomic>>(
-                    context, metadata_path, uuid, engine_define,
-                    database_name, postgres_database_name, connection_string,
-                    std::move(postgresql_replica_settings));
-        }
+        return std::make_shared<DatabaseMaterializePostgreSQL>(
+                context, metadata_path, uuid, engine_define,
+                database_name, postgres_database_name, connection_string,
+                std::move(postgresql_replica_settings));
     }
 
 

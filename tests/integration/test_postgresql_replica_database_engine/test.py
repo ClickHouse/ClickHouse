@@ -58,7 +58,6 @@ def assert_nested_table_is_created(table_name):
 @pytest.mark.timeout(30)
 def check_tables_are_synchronized(table_name, order_by='key'):
         assert_nested_table_is_created(table_name)
-        print("nested ok")
 
         expected = instance.query('select * from postgres_database.{} order by {};'.format(table_name, order_by))
         result = instance.query('select * from test_database.{} order by {};'.format(table_name, order_by))
@@ -81,7 +80,6 @@ def started_cluster():
         instance.query('''
                 CREATE DATABASE postgres_database
                 ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')''')
-
         yield cluster
 
     finally:

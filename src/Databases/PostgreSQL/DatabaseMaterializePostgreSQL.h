@@ -14,6 +14,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/DatabaseAtomic.h>
 
 
 namespace DB
@@ -24,8 +25,7 @@ class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 
-template<typename Base>
-class DatabaseMaterializePostgreSQL : public Base
+class DatabaseMaterializePostgreSQL : public DatabaseAtomic
 {
 
 public:
@@ -59,17 +59,13 @@ public:
 private:
     void startSynchronization();
 
-    Poco::Logger * log;
-    const Context & global_context;
-    String metadata_path;
     ASTPtr database_engine_define;
-
-    String database_name, remote_database_name;
+    String remote_database_name;
     postgres::ConnectionPtr connection;
     std::unique_ptr<MaterializePostgreSQLSettings> settings;
 
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
-    std::map<std::string, StoragePtr> tables;
+    std::map<std::string, StoragePtr> materialized_tables;
 };
 
 }
