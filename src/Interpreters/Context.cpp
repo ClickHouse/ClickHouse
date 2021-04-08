@@ -2358,7 +2358,7 @@ void Context::setQueryParameter(const String & name, const String & value)
 }
 
 
-void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
+void Context::addBridgeCommand(std::unique_ptr<ShellCommand> cmd) const
 {
     auto lock = getLock();
     shared->bridge_commands.emplace_back(std::move(cmd));
