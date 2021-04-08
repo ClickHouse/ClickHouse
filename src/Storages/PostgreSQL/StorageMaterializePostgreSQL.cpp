@@ -75,8 +75,7 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     : IStorage(table_id_)
     , global_context(context_)
     , nested_storage(nested_storage_)
-    , is_postgresql_replica_database(
-            DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "MaterializePostgreSQL")
+    , is_postgresql_replica_database(true)
 {
 
 }
