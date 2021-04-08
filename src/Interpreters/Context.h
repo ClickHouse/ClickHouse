@@ -61,6 +61,8 @@ class AccessRightsElements;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
+class InterserverCredentials;
+using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class BackgroundSchedulePool;
 class MergeList;
@@ -522,8 +524,8 @@ public:
     std::pair<String, UInt16> getInterserverIOAddress() const;
 
     /// Credentials which server will use to communicate with others
-    void setInterserverCredentials(const String & user, const String & password);
-    std::pair<String, String> getInterserverCredentials() const;
+    void updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config);
+    InterserverCredentialsPtr getInterserverCredentials();
 
     /// Interserver requests scheme (http or https)
     void setInterserverScheme(const String & scheme);
@@ -788,6 +790,9 @@ private:
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
+
+    /// If the password is not set, the password will not be checked
+    void setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address);
 };
 
 
