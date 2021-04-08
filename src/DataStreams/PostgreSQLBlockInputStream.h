@@ -17,7 +17,7 @@
 namespace DB
 {
 
-template <typename T>
+template <typename T = pqxx::ReadTransaction>
 class PostgreSQLBlockInputStream : public IBlockInputStream
 {
 

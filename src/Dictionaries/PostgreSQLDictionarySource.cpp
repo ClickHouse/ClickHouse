@@ -93,7 +93,7 @@ BlockInputStreamPtr PostgreSQLDictionarySource::loadKeys(const Columns & key_col
 
 BlockInputStreamPtr PostgreSQLDictionarySource::loadBase(const String & query)
 {
-    return std::make_shared<PostgreSQLBlockInputStream<pqxx::ReadTransaction>>(connection->get(), query, sample_block, max_block_size);
+    return std::make_shared<PostgreSQLBlockInputStream<>>(connection->get(), query, sample_block, max_block_size);
 }
 
 
@@ -115,7 +115,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    PostgreSQLBlockInputStream<pqxx::ReadTransaction> block_input_stream(connection->get(), request, invalidate_sample_block, 1);
+    PostgreSQLBlockInputStream<> block_input_stream(connection->get(), request, invalidate_sample_block, 1);
     return readInvalidateQuery(block_input_stream);
 }
 

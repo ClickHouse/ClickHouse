@@ -89,7 +89,7 @@ Pipe StoragePostgreSQL::read(
     }
 
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<PostgreSQLBlockInputStream<pqxx::ReadTransaction>>(pool->get(), query, sample_block, max_block_size_)));
+            std::make_shared<PostgreSQLBlockInputStream<>>(pool->get(), query, sample_block, max_block_size_)));
 }
 
 
