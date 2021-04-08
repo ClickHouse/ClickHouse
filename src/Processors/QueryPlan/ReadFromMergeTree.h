@@ -12,18 +12,22 @@ class ReadFromMergeTree : public ISourceStep
 {
 public:
 
+    enum class IndexType
+    {
+        None,
+        MinMax,
+        Partition,
+        PrimaryKey,
+        Skip,
+    };
+
     struct IndexStat
     {
+        IndexType type;
+        std::string name;
         std::string description;
         size_t num_parts_after;
         size_t num_granules_after;
-
-        IndexStat(std::string description_, size_t num_parts_after_, size_t num_granules_after_)
-            : description(std::move(description_))
-            , num_parts_after(num_parts_after_)
-            , num_granules_after(num_granules_after_)
-        {
-        }
     };
 
     using IndexStats = std::vector<IndexStat>;

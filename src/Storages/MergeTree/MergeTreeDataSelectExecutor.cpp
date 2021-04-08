@@ -281,25 +281,27 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     else
         selectPartsToRead(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, part_filter_counters);
 
-    index_stats->emplace_back(
-        "None",
-        part_filter_counters.num_initial_selected_parts,
-        part_filter_counters.num_initial_selected_granules);
+    index_stats->emplace_back(ReadFromMergeTree::IndexStat{
+        .type = ReadFromMergeTree::IndexType::None,
+        .num_parts_after = part_filter_counters.num_initial_selected_parts,
+        .num_granules_after = part_filter_counters.num_initial_selected_granules});
 
     if (minmax_idx_condition)
     {
-        index_stats->emplace_back(
-            minmax_idx_condition->toString(),
-            part_filter_counters.num_parts_after_minmax,
-            part_filter_counters.num_granules_after_minmax);
+        index_stats->emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::MinMax,
+            .description = minmax_idx_condition->toString(),
+            .num_parts_after = part_filter_counters.num_parts_after_minmax,
+            .num_granules_after = part_filter_counters.num_granules_after_minmax});
     }
 
     if (partition_pruner)
     {
-        index_stats->emplace_back(
-            partition_pruner->toString(),
-            part_filter_counters.num_parts_after_minmax,
-            part_filter_counters.num_granules_after_minmax);
+        index_stats->emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Partition,
+            .description = partition_pruner->toString(),
+            .num_parts_after = part_filter_counters.num_parts_after_partition_pruner,
+            .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
     }
 
     /// Sampling.
@@ -763,10 +765,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     if (metadata_snapshot->hasPrimaryKey())
     {
-        index_stats->emplace_back(
-            key_condition.toString(),
-            sum_parts_pk.load(std::memory_order_relaxed),
-            sum_marks_pk.load(std::memory_order_relaxed));
+        index_stats->emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::PrimaryKey,
+            .description = key_condition.toString(),
+            .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
+            .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed)});
     }
 
     for (const auto & index_and_condition : useful_indices)
@@ -776,10 +779,15 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
             backQuote(index_name),
             index_and_condition.granules_dropped, index_and_condition.total_granules);
 
-        index_stats->emplace_back(
-            index_name,
-            index_and_condition.total_parts - index_and_condition.parts_dropped,
-            index_and_condition.total_granules - index_and_condition.granules_dropped);
+        std::string description = index_and_condition.index->index.type
+            + " GRANULARITY " + std::to_string(index_and_condition.index->index.granularity);
+
+        index_stats->emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Skip,
+            .name = index_name,
+            .description = std::move(description),
+            .num_parts_after = index_and_condition.total_parts - index_and_condition.parts_dropped,
+            .num_granules_after = index_and_condition.total_granules - index_and_condition.granules_dropped});
     }
 
     LOG_DEBUG(log, "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
@@ -1889,8 +1897,8 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
                 continue;
         }
 
-        counters.num_parts_after_partition += 1;
-        counters.num_granules_after_partition += num_granules;
+        counters.num_parts_after_partition_pruner += 1;
+        counters.num_granules_after_partition_pruner += num_granules;
 
         parts.push_back(part);
     }
@@ -1959,8 +1967,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
                     continue;
             }
 
-            counters.num_parts_after_partition += 1;
-            counters.num_granules_after_partition += num_granules;
+            counters.num_parts_after_partition_pruner += 1;
+            counters.num_granules_after_partition_pruner += num_granules;
 
             /// populate UUIDs and exclude ignored parts if enabled
             if (part->uuid != UUIDHelpers::Nil)
