@@ -41,7 +41,7 @@ public:
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_,
-        BlockPtr saved_block_ = nullptr);
+        BlockPtr previously_loaded_block_ = nullptr);
 
     std::string getTypeName() const override
     {
@@ -67,7 +67,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
+        return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, previously_loaded_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -219,8 +219,7 @@ private:
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
 
-    /// TODO: Remove
-    BlockPtr saved_block;
+    BlockPtr previously_loaded_block;
     Arena complex_key_arena;
 };
 
