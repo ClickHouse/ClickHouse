@@ -1459,6 +1459,11 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
                             "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
                             filter_name, dumpDAG());
 
+    /// If condition is constant let's do nothing.
+    /// It means there is nothing to push down or optimization was already applied.
+    if (predicate->type == ActionType::COLUMN)
+        return nullptr;
+
     std::unordered_set<const Node *> allowed_nodes;
 
     /// Get input nodes from available_inputs names.
@@ -1508,7 +1513,19 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             node.result_name = std::move(predicate->result_name);
             node.result_type = std::move(predicate->result_type);
             node.column = node.result_type->createColumnConst(0, 1);
-            *predicate = std::move(node);
+
+            if (predicate->type != ActionType::INPUT)
+                *predicate = std::move(node);
+            else
+            {
+                /// Special case. We cannot replace input to constant inplace.
+                /// Because we cannot affect inputs list for actions.
+                /// So we just add a new constant and update index.
+                const auto * new_predicate = &addNode(node);
+                for (auto & index_node : index)
+                    if (index_node == predicate)
+                        index_node = new_predicate;
+            }
         }
 
         removeUnusedActions(false);
