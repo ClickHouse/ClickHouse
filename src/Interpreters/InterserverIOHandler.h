@@ -7,18 +7,14 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ActionBlocker.h>
-#include <common/types.h>
-
-#include <atomic>
+#include <Core/Types.h>
 #include <map>
-#include <shared_mutex>
+#include <atomic>
 #include <utility>
+#include <shared_mutex>
+#include <Poco/Net/HTMLForm.h>
 
-namespace zkutil
-{
-    class ZooKeeper;
-    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
-}
+namespace Poco { namespace Net { class HTTPServerResponse; } }
 
 namespace DB
 {
@@ -29,16 +25,13 @@ namespace ErrorCodes
     extern const int NO_SUCH_INTERSERVER_IO_ENDPOINT;
 }
 
-class HTMLForm;
-class HTTPServerResponse;
-
 /** Query processor from other servers.
   */
 class InterserverIOEndpoint
 {
 public:
     virtual std::string getId(const std::string & path) const = 0;
-    virtual void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) = 0;
+    virtual void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) = 0;
     virtual ~InterserverIOEndpoint() = default;
 
     /// You need to stop the data transfer if blocker is activated.

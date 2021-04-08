@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <DataTypes/IDataType.h>
 
 namespace DB
@@ -29,6 +29,8 @@ public:
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
     void flush() override;
+
+    static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit);
 
     String getContentType() const override { return "application/octet-stream"; }
 

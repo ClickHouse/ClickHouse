@@ -4,7 +4,7 @@
 #include <vector>
 #include <stdint.h>
 #include <string.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Poco/Unicode.h>
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -60,7 +60,7 @@ namespace VolnitskyTraits
     static inline Ngram toNGram(const UInt8 * const pos) { return unalignedLoad<Ngram>(pos); }
 
     template <typename Callback>
-    static inline void putNGramASCIICaseInsensitive(const UInt8 * pos, int offset, Callback && putNGramBase)
+    static inline void putNGramASCIICaseInsensitive(const UInt8 * const pos, const int offset, const Callback & putNGramBase)
     {
         struct Chars
         {
@@ -109,233 +109,198 @@ namespace VolnitskyTraits
             putNGramBase(n, offset);
     }
 
-    template <typename Callback>
-    static inline void putNGramUTF8CaseInsensitive(
-        const UInt8 * pos, int offset, const UInt8 * begin, size_t size, Callback && putNGramBase)
+    template <bool CaseSensitive, bool ASCII, typename Callback>
+    static inline void putNGram(const UInt8 * const pos, const int offset, [[maybe_unused]] const UInt8 * const begin, const Callback & putNGramBase)
     {
-        const UInt8 * end = begin + size;
-
-        struct Chars
+        if constexpr (CaseSensitive)
         {
-            UInt8 c0;
-            UInt8 c1;
-        };
-
-        union
-        {
-            VolnitskyTraits::Ngram n;
-            Chars chars;
-        };
-
-        n = toNGram(pos);
-
-        if (isascii(chars.c0) && isascii(chars.c1))
-        {
-            putNGramASCIICaseInsensitive(pos, offset, putNGramBase);
+            putNGramBase(toNGram(pos), offset);
         }
         else
         {
-            /** n-gram (in the case of n = 2)
-                *  can be entirely located within one code point,
-                *  or intersect with two code points.
-                *
-                * In the first case, you need to consider up to two alternatives - this code point in upper and lower case,
-                *  and in the second case - up to four alternatives - fragments of two code points in all combinations of cases.
-                *
-                * It does not take into account the dependence of the case-transformation from the locale (for example - Turkish `Ii`)
-                *  as well as composition / decomposition and other features.
-                *
-                * It also does not work if characters with lower and upper cases are represented by different number of bytes or code points.
-                */
-
-            using Seq = UInt8[6];
-
-            if (UTF8::isContinuationOctet(chars.c1))
+            if constexpr (ASCII)
             {
-                /// ngram is inside a sequence
-                auto seq_pos = pos;
-                UTF8::syncBackward(seq_pos, begin);
-
-                auto u32 = UTF8::convertUTF8ToCodePoint(seq_pos, end - seq_pos);
-                /// Invalid UTF-8
-                if (!u32)
-                {
-                    putNGramBase(n, offset);
-                }
-                else
-                {
-                    int l_u32 = Poco::Unicode::toLower(*u32);
-                    int u_u32 = Poco::Unicode::toUpper(*u32);
-
-                    /// symbol is case-independent
-                    if (l_u32 == u_u32)
-                    {
-                        putNGramBase(n, offset);
-                    }
-                    else
-                    {
-                        /// where is the given ngram in respect to the start of UTF-8 sequence?
-                        size_t seq_ngram_offset = pos - seq_pos;
-
-                        Seq seq;
-
-                        /// put ngram for lowercase
-                        size_t length_l [[maybe_unused]] = UTF8::convertCodePointToUTF8(l_u32, seq, sizeof(seq));
-                        assert(length_l >= 2);
-                        chars.c0 = seq[seq_ngram_offset];
-                        chars.c1 = seq[seq_ngram_offset + 1];
-                        putNGramBase(n, offset);
-
-                        /// put ngram for uppercase
-                        size_t length_r [[maybe_unused]] = UTF8::convertCodePointToUTF8(u_u32, seq, sizeof(seq));
-                        assert(length_r >= 2);
-                        chars.c0 = seq[seq_ngram_offset]; //-V519
-                        chars.c1 = seq[seq_ngram_offset + 1]; //-V519
-                        putNGramBase(n, offset);
-                    }
-                }
+                putNGramASCIICaseInsensitive(pos, offset, putNGramBase);
             }
             else
             {
-                /// ngram is on the boundary of two sequences
-                /// first sequence may start before u_pos if it is not ASCII
-                auto first_seq_pos = pos;
-                UTF8::syncBackward(first_seq_pos, begin);
-                /// where is the given ngram in respect to the start of first UTF-8 sequence?
-                size_t seq_ngram_offset = pos - first_seq_pos;
-
-                auto first_u32 = UTF8::convertUTF8ToCodePoint(first_seq_pos, end - first_seq_pos);
-                int first_l_u32 = 0;
-                int first_u_u32 = 0;
-
-                if (first_u32)
+                struct Chars
                 {
-                    first_l_u32 = Poco::Unicode::toLower(*first_u32);
-                    first_u_u32 = Poco::Unicode::toUpper(*first_u32);
-                }
+                    UInt8 c0;
+                    UInt8 c1;
+                };
 
-                /// second sequence always start immediately after u_pos
-                auto second_seq_pos = pos + 1;
-
-                auto second_u32 = UTF8::convertUTF8ToCodePoint(second_seq_pos, end - second_seq_pos);
-                int second_l_u32 = 0;
-                int second_u_u32 = 0;
-
-                if (second_u32)
+                union
                 {
-                    second_l_u32 = Poco::Unicode::toLower(*second_u32);
-                    second_u_u32 = Poco::Unicode::toUpper(*second_u32);
-                }
+                    VolnitskyTraits::Ngram n;
+                    Chars chars;
+                };
 
-                /// both symbols are case-independent
-                if (first_l_u32 == first_u_u32 && second_l_u32 == second_u_u32)
-                {
-                    putNGramBase(n, offset);
-                }
-                else if (first_l_u32 == first_u_u32)
-                {
-                    /// first symbol is case-independent
-                    Seq seq;
+                n = toNGram(pos);
 
-                    /// put ngram for lowercase
-                    size_t size_l [[maybe_unused]] = UTF8::convertCodePointToUTF8(second_l_u32, seq, sizeof(seq));
-                    assert(size_l >= 1);
-                    chars.c1 = seq[0];
-                    putNGramBase(n, offset);
-
-                    /// put ngram from uppercase, if it is different
-                    size_t size_u [[maybe_unused]] = UTF8::convertCodePointToUTF8(second_u_u32, seq, sizeof(seq));
-                    assert(size_u >= 1);
-                    if (chars.c1 != seq[0])
-                    {
-                        chars.c1 = seq[0];
-                        putNGramBase(n, offset);
-                    }
-                }
-                else if (second_l_u32 == second_u_u32)
-                {
-                    /// second symbol is case-independent
-                    Seq seq;
-
-                    /// put ngram for lowercase
-                    size_t size_l [[maybe_unused]] = UTF8::convertCodePointToUTF8(first_l_u32, seq, sizeof(seq));
-                    assert(size_l > seq_ngram_offset);
-                    chars.c0 = seq[seq_ngram_offset];
-                    putNGramBase(n, offset);
-
-                    /// put ngram for uppercase, if it is different
-                    size_t size_u [[maybe_unused]] = UTF8::convertCodePointToUTF8(first_u_u32, seq, sizeof(seq));
-                    assert(size_u > seq_ngram_offset);
-                    if (chars.c0 != seq[seq_ngram_offset])
-                    {
-                        chars.c0 = seq[seq_ngram_offset];
-                        putNGramBase(n, offset);
-                    }
-                }
+                if (isascii(chars.c0) && isascii(chars.c1))
+                    putNGramASCIICaseInsensitive(pos, offset, putNGramBase);
                 else
                 {
-                    Seq first_l_seq;
-                    Seq first_u_seq;
-                    Seq second_l_seq;
-                    Seq second_u_seq;
+                    /** n-gram (in the case of n = 2)
+                      *  can be entirely located within one code point,
+                      *  or intersect with two code points.
+                      *
+                      * In the first case, you need to consider up to two alternatives - this code point in upper and lower case,
+                      *  and in the second case - up to four alternatives - fragments of two code points in all combinations of cases.
+                      *
+                      * It does not take into account the dependence of the case-transformation from the locale (for example - Turkish `Ii`)
+                      *  as well as composition / decomposition and other features.
+                      *
+                      * It also does not work if characters with lower and upper cases are represented by different number of bytes or code points.
+                      */
 
-                    size_t size_first_l [[maybe_unused]] = UTF8::convertCodePointToUTF8(first_l_u32, first_l_seq, sizeof(first_l_seq));
-                    size_t size_first_u [[maybe_unused]] = UTF8::convertCodePointToUTF8(first_u_u32, first_u_seq, sizeof(first_u_seq));
-                    size_t size_second_l [[maybe_unused]] = UTF8::convertCodePointToUTF8(second_l_u32, second_l_seq, sizeof(second_l_seq));
-                    size_t size_second_u [[maybe_unused]] = UTF8::convertCodePointToUTF8(second_u_u32, second_u_seq, sizeof(second_u_seq));
+                    using Seq = UInt8[6];
 
-                    assert(size_first_l > seq_ngram_offset);
-                    assert(size_first_u > seq_ngram_offset);
-                    assert(size_second_l > 0);
-                    assert(size_second_u > 0);
-
-                    auto c0l = first_l_seq[seq_ngram_offset];
-                    auto c0u = first_u_seq[seq_ngram_offset];
-                    auto c1l = second_l_seq[0];
-                    auto c1u = second_u_seq[0];
-
-                    /// ngram for ll
-                    chars.c0 = c0l;
-                    chars.c1 = c1l;
-                    putNGramBase(n, offset);
-
-                    if (c0l != c0u)
+                    if (UTF8::isContinuationOctet(chars.c1))
                     {
-                        /// ngram for Ul
-                        chars.c0 = c0u;
-                        chars.c1 = c1l;
-                        putNGramBase(n, offset);
+                        /// ngram is inside a sequence
+                        auto seq_pos = pos;
+                        UTF8::syncBackward(seq_pos, begin);
+
+                        const auto u32 = UTF8::convert(seq_pos);
+                        const auto l_u32 = Poco::Unicode::toLower(u32);
+                        const auto u_u32 = Poco::Unicode::toUpper(u32);
+
+                        /// symbol is case-independent
+                        if (l_u32 == u_u32)
+                            putNGramBase(n, offset);
+                        else
+                        {
+                            /// where is the given ngram in respect to the start of UTF-8 sequence?
+                            const auto seq_ngram_offset = pos - seq_pos;
+
+                            Seq seq;
+
+                            /// put ngram for lowercase
+                            UTF8::convert(l_u32, seq, sizeof(seq));
+                            chars.c0 = seq[seq_ngram_offset];
+                            chars.c1 = seq[seq_ngram_offset + 1];
+                            putNGramBase(n, offset);
+
+                            /// put ngram for uppercase
+                            UTF8::convert(u_u32, seq, sizeof(seq));
+                            chars.c0 = seq[seq_ngram_offset]; //-V519
+                            chars.c1 = seq[seq_ngram_offset + 1]; //-V519
+                            putNGramBase(n, offset);
+                        }
                     }
-
-                    if (c1l != c1u)
+                    else
                     {
-                        /// ngram for lU
-                        chars.c0 = c0l;
-                        chars.c1 = c1u;
-                        putNGramBase(n, offset);
-                    }
+                        /// ngram is on the boundary of two sequences
+                        /// first sequence may start before u_pos if it is not ASCII
+                        auto first_seq_pos = pos;
+                        UTF8::syncBackward(first_seq_pos, begin);
+                        /// where is the given ngram in respect to the start of first UTF-8 sequence?
+                        const auto seq_ngram_offset = pos - first_seq_pos;
 
-                    if (c0l != c0u && c1l != c1u)
-                    {
-                        /// ngram for UU
-                        chars.c0 = c0u;
-                        chars.c1 = c1u;
-                        putNGramBase(n, offset);
+                        const auto first_u32 = UTF8::convert(first_seq_pos);
+                        const auto first_l_u32 = Poco::Unicode::toLower(first_u32);
+                        const auto first_u_u32 = Poco::Unicode::toUpper(first_u32);
+
+                        /// second sequence always start immediately after u_pos
+                        auto second_seq_pos = pos + 1;
+
+                        const auto second_u32 = UTF8::convert(second_seq_pos); /// TODO This assumes valid UTF-8 or zero byte after needle.
+                        const auto second_l_u32 = Poco::Unicode::toLower(second_u32);
+                        const auto second_u_u32 = Poco::Unicode::toUpper(second_u32);
+
+                        /// both symbols are case-independent
+                        if (first_l_u32 == first_u_u32 && second_l_u32 == second_u_u32)
+                        {
+                            putNGramBase(n, offset);
+                        }
+                        else if (first_l_u32 == first_u_u32)
+                        {
+                            /// first symbol is case-independent
+                            Seq seq;
+
+                            /// put ngram for lowercase
+                            UTF8::convert(second_l_u32, seq, sizeof(seq));
+                            chars.c1 = seq[0];
+                            putNGramBase(n, offset);
+
+                            /// put ngram from uppercase, if it is different
+                            UTF8::convert(second_u_u32, seq, sizeof(seq));
+                            if (chars.c1 != seq[0])
+                            {
+                                chars.c1 = seq[0];
+                                putNGramBase(n, offset);
+                            }
+                        }
+                        else if (second_l_u32 == second_u_u32)
+                        {
+                            /// second symbol is case-independent
+                            Seq seq;
+
+                            /// put ngram for lowercase
+                            UTF8::convert(first_l_u32, seq, sizeof(seq));
+                            chars.c0 = seq[seq_ngram_offset];
+                            putNGramBase(n, offset);
+
+                            /// put ngram for uppercase, if it is different
+                            UTF8::convert(first_u_u32, seq, sizeof(seq));
+                            if (chars.c0 != seq[seq_ngram_offset])
+                            {
+                                chars.c0 = seq[seq_ngram_offset];
+                                putNGramBase(n, offset);
+                            }
+                        }
+                        else
+                        {
+                            Seq first_l_seq;
+                            Seq first_u_seq;
+                            Seq second_l_seq;
+                            Seq second_u_seq;
+
+                            UTF8::convert(first_l_u32, first_l_seq, sizeof(first_l_seq));
+                            UTF8::convert(first_u_u32, first_u_seq, sizeof(first_u_seq));
+                            UTF8::convert(second_l_u32, second_l_seq, sizeof(second_l_seq));
+                            UTF8::convert(second_u_u32, second_u_seq, sizeof(second_u_seq));
+
+                            auto c0l = first_l_seq[seq_ngram_offset];
+                            auto c0u = first_u_seq[seq_ngram_offset];
+                            auto c1l = second_l_seq[0];
+                            auto c1u = second_u_seq[0];
+
+                            /// ngram for ll
+                            chars.c0 = c0l;
+                            chars.c1 = c1l;
+                            putNGramBase(n, offset);
+
+                            if (c0l != c0u)
+                            {
+                                /// ngram for Ul
+                                chars.c0 = c0u;
+                                chars.c1 = c1l;
+                                putNGramBase(n, offset);
+                            }
+
+                            if (c1l != c1u)
+                            {
+                                /// ngram for lU
+                                chars.c0 = c0l;
+                                chars.c1 = c1u;
+                                putNGramBase(n, offset);
+                            }
+
+                            if (c0l != c0u && c1l != c1u)
+                            {
+                                /// ngram for UU
+                                chars.c0 = c0u;
+                                chars.c1 = c1u;
+                                putNGramBase(n, offset);
+                            }
+                        }
                     }
                 }
             }
         }
-    }
-
-    template <bool CaseSensitive, bool ASCII, typename Callback>
-    static inline void putNGram(const UInt8 * pos, int offset, [[maybe_unused]] const UInt8 * begin, size_t size, Callback && putNGramBase)
-    {
-        if constexpr (CaseSensitive)
-            putNGramBase(toNGram(pos), offset);
-        else if constexpr (ASCII)
-            putNGramASCIICaseInsensitive(pos, offset, std::forward<Callback>(putNGramBase));
-        else
-            putNGramUTF8CaseInsensitive(pos, offset, begin, size, std::forward<Callback>(putNGramBase));
     }
 }
 
@@ -345,17 +310,17 @@ template <bool CaseSensitive, bool ASCII, typename FallbackSearcher>
 class VolnitskyBase
 {
 protected:
-    const UInt8 * needle;
-    size_t needle_size;
-    const UInt8 * needle_end = needle + needle_size;
+    const UInt8 * const needle;
+    const size_t needle_size;
+    const UInt8 * const needle_end = needle + needle_size;
     /// For how long we move, if the n-gram from haystack is not found in the hash table.
-    size_t step = needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
+    const size_t step = needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
 
     /** max needle length is 255, max distinct ngrams for case-sensitive is (255 - 1), case-insensitive is 4 * (255 - 1)
       *  storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
     std::unique_ptr<VolnitskyTraits::Offset[]> hash; /// Hash table.
 
-    bool fallback; /// Do we need to use the fallback algorithm.
+    const bool fallback; /// Do we need to use the fallback algorithm.
 
     FallbackSearcher fallback_searcher;
 
@@ -381,7 +346,7 @@ public:
         /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
         /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
         for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
-            VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, i + 1, needle, needle_size, callback);
+            VolnitskyTraits::putNGram<CaseSensitive, ASCII>(this->needle + i, i + 1, this->needle, callback);
     }
 
 
@@ -528,7 +493,6 @@ public:
                         reinterpret_cast<const UInt8 *>(cur_needle_data) + i,
                         i + 1,
                         reinterpret_cast<const UInt8 *>(cur_needle_data),
-                        cur_needle_size,
                         callback);
                 }
             }

@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# shellcheck source=./mergetree_mutations.lib
 . "$CURDIR"/mergetree_mutations.lib
 
 function wait_mutation_to_start()
@@ -47,7 +45,7 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS table_for_mutations"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS replicated_table_for_mutations"
 
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE replicated_table_for_mutations(k UInt32, v1 UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/replicated_table_for_mutations', '1') ORDER BY k PARTITION BY modulo(k, 2)"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE replicated_table_for_mutations(k UInt32, v1 UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_01045/replicated_table_for_mutations', '1') ORDER BY k PARTITION BY modulo(k, 2)"
 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM STOP MERGES replicated_table_for_mutations"
 

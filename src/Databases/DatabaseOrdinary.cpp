@@ -33,6 +33,11 @@ static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace
 {
     void tryAttachTable(
@@ -62,14 +67,14 @@ namespace
     }
 
 
-    void tryAttachDictionary(const ASTPtr & query, DatabaseOrdinary & database, const String & metadata_path, const Context & context)
+    void tryAttachDictionary(const ASTPtr & query, DatabaseOrdinary & database, const String & metadata_path)
     {
         auto & create_query = query->as<ASTCreateQuery &>();
         assert(create_query.is_dictionary);
         try
         {
             Poco::File meta_file(metadata_path);
-            auto config = getDictionaryConfigurationFromAST(create_query, context, database.getDatabaseName());
+            auto config = getDictionaryConfigurationFromAST(create_query, database.getDatabaseName());
             time_t modification_time = meta_file.getLastModified().epochTime();
             database.attachDictionary(create_query.table, DictionaryAttachInfo{query, config, modification_time});
         }
@@ -130,19 +135,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
                 create_query->database = database_name;
-
-                auto detached_permanently_flag = Poco::File(full_path.string() + detached_suffix);
-                if (detached_permanently_flag.exists())
-                {
-                    /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
-                    /// if (create_query->uuid != UUIDHelpers::Nil)
-                    ///     DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
-
-                    const std::string table_name = file_name.substr(0, file_name.size() - 4);
-                    LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
-                    return;
-                }
-
                 std::lock_guard lock{file_names_mutex};
                 file_names[file_name] = ast;
                 total_dictionaries += create_query->is_dictionary;
@@ -166,26 +158,6 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
     std::atomic<size_t> dictionaries_processed{0};
 
     ThreadPool pool;
-
-    /// We must attach dictionaries before attaching tables
-    /// because while we're attaching tables we may need to have some dictionaries attached
-    /// (for example, dictionaries can be used in the default expressions for some tables).
-    /// On the other hand we can attach any dictionary (even sourced from ClickHouse table)
-    /// without having any tables attached. It is so because attaching of a dictionary means
-    /// loading of its config only, it doesn't involve loading the dictionary itself.
-
-    /// Attach dictionaries.
-    for (const auto & [name, query] : file_names)
-    {
-        auto create_query = query->as<const ASTCreateQuery &>();
-        if (create_query.is_dictionary)
-        {
-            tryAttachDictionary(query, *this, getMetadataPath() + name, context);
-
-            /// Messages, so that it's not boring to wait for the server to load for a long time.
-            logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
-        }
-    }
 
     /// Attach tables.
     for (const auto & name_with_query : file_names)
@@ -211,6 +183,19 @@ void DatabaseOrdinary::loadStoredObjects(Context & context, bool has_force_resto
 
     /// After all tables was basically initialized, startup them.
     startupTables(pool);
+
+    /// Attach dictionaries.
+    for (const auto & [name, query] : file_names)
+    {
+        auto create_query = query->as<const ASTCreateQuery &>();
+        if (create_query.is_dictionary)
+        {
+            tryAttachDictionary(query, *this, getMetadataPath() + name);
+
+            /// Messages, so that it's not boring to wait for the server to load for a long time.
+            logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
+        }
+    }
 }
 
 
@@ -267,7 +252,50 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
         0,
         context.getSettingsRef().max_parser_depth);
 
-    applyMetadataChangesToCreateQuery(ast, metadata);
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
+
+    if (ast_create_query.as_table_function)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function", backQuote(table_name));
+
+    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
+    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
+
+    ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
+
+    if (metadata.select.select_query)
+    {
+        ast->replace(ast_create_query.select, metadata.select.select_query);
+    }
+
+    /// MaterializedView is one type of CREATE query without storage.
+    if (ast_create_query.storage)
+    {
+        ASTStorage & storage_ast = *ast_create_query.storage;
+
+        bool is_extended_storage_def
+            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
+
+        if (is_extended_storage_def)
+        {
+            if (metadata.sorting_key.definition_ast)
+                storage_ast.set(storage_ast.order_by, metadata.sorting_key.definition_ast);
+
+            if (metadata.primary_key.definition_ast)
+                storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
+
+            if (metadata.sampling_key.definition_ast)
+                storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
+
+            if (metadata.table_ttl.definition_ast)
+                storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
+
+            if (metadata.settings_changes)
+                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+        }
+    }
 
     statement = getObjectDefinitionFromCreateQuery(ast);
     {
@@ -279,10 +307,10 @@ void DatabaseOrdinary::alterTable(const Context & context, const StorageID & tab
         out.close();
     }
 
-    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, context);
+    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path);
 }
 
-void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & /*statement*/, const Context & /*query_context*/)
+void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path)
 {
     try
     {

@@ -215,7 +215,7 @@ ColumnPtr fillColumnWithRandomData(
             column->getData().resize(limit);
 
             for (size_t i = 0; i < limit; ++i)
-                column->getData()[i] = rng() % (DATE_LUT_MAX_DAY_NUM + 1);
+                column->getData()[i] = rng() % (DATE_LUT_MAX_DAY_NUM + 1);   /// Slow
 
             return column;
         }
@@ -319,7 +319,7 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::DateTime64:
         {
             auto column = type->createColumn();
-            auto & column_concrete = typeid_cast<ColumnDecimal<DateTime64> &>(*column);
+            auto & column_concrete = typeid_cast<ColumnDecimal<Decimal64> &>(*column);
             column_concrete.getData().resize(limit);
 
             UInt64 range = (1ULL << 32) * intExp10(typeid_cast<const DataTypeDateTime64 &>(*type).getScale());
@@ -441,7 +441,7 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 Pipe StorageGenerateRandom::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,

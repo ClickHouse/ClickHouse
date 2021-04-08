@@ -5,7 +5,6 @@ set -e
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 cur_name=$(basename "${BASH_SOURCE[0]}")
@@ -48,7 +47,7 @@ SELECT
     threads_realtime >= threads_time_user_system_io,
     any(length(thread_ids)) >= 1
     FROM
-        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-2 AND current_database = currentDatabase() AND type=2 ORDER BY event_time DESC LIMIT 1)
+        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND type=2 ORDER BY event_time DESC LIMIT 1)
     ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV"
 
 # Clean

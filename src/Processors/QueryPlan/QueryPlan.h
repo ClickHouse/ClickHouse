@@ -2,9 +2,6 @@
 #include <memory>
 #include <list>
 #include <vector>
-#include <set>
-
-#include <Core/Names.h>
 
 namespace DB
 {
@@ -20,42 +17,25 @@ using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 class Context;
 class WriteBuffer;
 
-class QueryPlan;
-using QueryPlanPtr = std::unique_ptr<QueryPlan>;
-
-class Pipe;
-
-struct QueryPlanOptimizationSettings;
-struct BuildQueryPipelineSettings;
-
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
-/// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimizations.
+/// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimisations.
 class QueryPlan
 {
 public:
     QueryPlan();
     ~QueryPlan();
-    QueryPlan(QueryPlan &&);
-    QueryPlan & operator=(QueryPlan &&);
 
-    void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
+    void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlan> plans);
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
 
-    void optimize(const QueryPlanOptimizationSettings & optimization_settings);
+    void optimize();
 
-    QueryPipelinePtr buildQueryPipeline(
-        const QueryPlanOptimizationSettings & optimization_settings,
-        const BuildQueryPipelineSettings & build_pipeline_settings);
-
-    /// If initialized, build pipeline and convert to pipe. Otherwise, return empty pipe.
-    Pipe convertToPipe(
-        const QueryPlanOptimizationSettings & optimization_settings,
-        const BuildQueryPipelineSettings & build_pipeline_settings);
+    QueryPipelinePtr buildQueryPipeline();
 
     struct ExplainPlanOptions
     {
@@ -79,7 +59,6 @@ public:
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
-    size_t getMaxThreads() const { return max_threads; }
 
     void addInterpreterContext(std::shared_ptr<Context> context);
 
@@ -103,7 +82,5 @@ private:
     size_t max_threads = 0;
     std::vector<std::shared_ptr<Context>> interpreter_context;
 };
-
-std::string debugExplainStep(const IQueryPlanStep & step);
 
 }

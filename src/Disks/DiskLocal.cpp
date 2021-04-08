@@ -5,11 +5,9 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
-#include <Disks/LocalDirectorySyncGuard.h>
 
 #include <IO/createReadBufferFromFileBase.h>
-#include <common/logger_useful.h>
-#include <unistd.h>
+#include <IO/createWriteBufferFromFileBase.h>
 
 
 namespace DB
@@ -22,8 +20,6 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
     extern const int INCORRECT_DISK_INDEX;
     extern const int CANNOT_TRUNCATE_FILE;
-    extern const int CANNOT_UNLINK;
-    extern const int CANNOT_RMDIR;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -218,39 +214,27 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
         from_file.renameTo(to_file.path());
 }
 
-std::unique_ptr<ReadBufferFromFileBase>
-DiskLocal::readFile(
-    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
+void DiskLocal::copyFile(const String & from_path, const String & to_path)
 {
-    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size);
+    Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
+}
+
+std::unique_ptr<ReadBufferFromFileBase>
+DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
+{
+    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, buf_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
+    return createWriteBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, buf_size, flags);
 }
 
-void DiskLocal::removeFile(const String & path)
+void DiskLocal::remove(const String & path)
 {
-    auto fs_path = disk_path + path;
-    if (0 != unlink(fs_path.c_str()))
-        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
-}
-
-void DiskLocal::removeFileIfExists(const String & path)
-{
-    auto fs_path = disk_path + path;
-    if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
-        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
-}
-
-void DiskLocal::removeDirectory(const String & path)
-{
-    auto fs_path = disk_path + path;
-    if (0 != rmdir(fs_path.c_str()))
-        throwFromErrnoWithPath("Cannot rmdir " + fs_path, fs_path, ErrorCodes::CANNOT_RMDIR);
+    Poco::File(disk_path + path).remove(false);
 }
 
 void DiskLocal::removeRecursive(const String & path)
@@ -306,11 +290,6 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         Poco::File(disk_path + from_path).copyTo(to_disk->getPath() + to_path); /// Use more optimal way.
     else
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
-}
-
-SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
-{
-    return std::make_unique<LocalDirectorySyncGuard>(disk_path + path);
 }
 
 DiskPtr DiskLocalReservation::getDisk(size_t i) const
@@ -383,7 +362,7 @@ void registerDiskLocal(DiskFactory & factory)
 
         if (Poco::File disk{path}; !disk.canRead() || !disk.canWrite())
         {
-            throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
+            throw Exception("There is no RW access to disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
         }
 
         bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");

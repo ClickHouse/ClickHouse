@@ -4,13 +4,12 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/XDBCBridgeHelper.h>
 #include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
@@ -20,7 +19,7 @@
 #include "registerDictionaries.h"
 
 #if USE_ODBC
-#    include <Poco/Data/ODBC/Connector.h> // Y_IGNORE
+#    include <Poco/Data/ODBC/Connector.h>
 #endif
 
 namespace DB
@@ -47,8 +46,8 @@ namespace
             : name(name_)
         {
             read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, callback, timeouts);
-            auto format = FormatFactory::instance().getInput(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
-            reader = std::make_shared<InputStreamFromInputFormat>(format);
+            reader
+                = FormatFactory::instance().getInput(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
         }
 
         Block getHeader() const override { return reader->getHeader(); }
@@ -121,7 +120,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}
     , bridge_helper{bridge_}
     , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_)}
-    , global_context(context_.getGlobalContext())
+    , global_context(context_)
 {
     bridge_url = bridge_helper->getMainURI();
 
@@ -155,9 +154,10 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
 {
     if (update_time != std::chrono::system_clock::from_time_t(0))
     {
-        time_t hr_time = std::chrono::system_clock::to_time_t(update_time) - 1;
-        std::string str_time = DateLUT::instance().timeToString(hr_time);
+        auto tmp_time = update_time;
         update_time = std::chrono::system_clock::now();
+        time_t hr_time = std::chrono::system_clock::to_time_t(tmp_time) - 1;
+        std::string str_time = std::to_string(LocalDateTime(hr_time));
         return query_builder.composeUpdateQuery(update_field, str_time);
     }
     else

@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
@@ -74,7 +73,7 @@ BlockInputStreamPtr FileDictionarySource::loadAll()
 
 std::string FileDictionarySource::toString() const
 {
-    return fmt::format("File: {}, {}", filepath, format);
+    return "File: " + filepath + ' ' + format;
 }
 
 

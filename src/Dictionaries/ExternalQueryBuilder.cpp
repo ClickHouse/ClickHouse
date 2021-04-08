@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -240,14 +239,11 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 }
 
 
-std::string ExternalQueryBuilder::composeLoadKeysQuery(
-    const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix)
+std::string
+ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix)
 {
     if (!dict_struct.key)
         throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
-
-    if (key_columns.size() != dict_struct.key->size())
-        throw Exception{"The size of key_columns does not equal to the size of dictionary key", ErrorCodes::LOGICAL_ERROR};
 
     WriteBufferFromOwnString out;
     writeString("SELECT ", out);
@@ -358,7 +354,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
         /// key_i=value_i
         writeQuoted(key_description.name, out);
         writeString("=", out);
-        key_description.serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
+        key_description.type->serializeAsTextQuoted(*key_columns[i], row, out, format_settings);
     }
 }
 
@@ -415,7 +411,7 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const si
             writeString(", ", out);
 
         first = false;
-        (*dict_struct.key)[i].serialization->serializeTextQuoted(*key_columns[i], row, out, format_settings);
+        (*dict_struct.key)[i].type->serializeAsTextQuoted(*key_columns[i], row, out, format_settings);
     }
 
     writeString(")", out);

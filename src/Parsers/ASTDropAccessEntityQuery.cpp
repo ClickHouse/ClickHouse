@@ -1,7 +1,6 @@
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Parsers/ASTRowPolicyName.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -54,9 +53,9 @@ void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, Forma
 }
 
 
-void ASTDropAccessEntityQuery::replaceEmptyDatabase(const String & current_database) const
+void ASTDropAccessEntityQuery::replaceEmptyDatabaseWithCurrent(const String & current_database) const
 {
     if (row_policy_names)
-        row_policy_names->replaceEmptyDatabase(current_database);
+        row_policy_names->replaceEmptyDatabaseWithCurrent(current_database);
 }
 }

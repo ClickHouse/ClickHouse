@@ -23,11 +23,8 @@ public:
     DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context);
     DiskSelector(const DiskSelector & from) : disks(from.disks) { }
 
-    DiskSelectorPtr updateFromConfig(
-        const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix,
-        const Context & context
-    ) const;
+    DiskSelectorPtr
+    updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context) const;
 
     /// Get disk by name
     DiskPtr get(const String & name) const;

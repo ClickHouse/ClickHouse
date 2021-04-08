@@ -1,7 +1,6 @@
 #include <Poco/Net/NetException.h>
 
 #include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/TimeoutSetter.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
@@ -15,6 +14,7 @@ namespace ProfileEvents
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
@@ -31,12 +31,6 @@ bool ReadBufferFromPocoSocket::nextImpl()
     /// Add more details to exceptions.
     try
     {
-        /// If async_callback is specified, and read will block, run async_callback and try again later.
-        /// It is expected that file descriptor may be polled externally.
-        /// Note that receive timeout is not checked here. External code should check it while polling.
-        while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ))
-            async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), socket_description);
-
         bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
     }
     catch (const Poco::Net::NetException & e)
@@ -67,16 +61,13 @@ bool ReadBufferFromPocoSocket::nextImpl()
 }
 
 ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
-    : BufferWithOwnMemory<ReadBuffer>(buf_size)
-    , socket(socket_)
-    , peer_address(socket.peerAddress())
-    , socket_description("socket (" + peer_address.toString() + ")")
+    : BufferWithOwnMemory<ReadBuffer>(buf_size), socket(socket_), peer_address(socket.peerAddress())
 {
 }
 
-bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds) const
+bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds)
 {
-    return available() || socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
+    return offset() != buffer().size() || socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
 }
 
 }

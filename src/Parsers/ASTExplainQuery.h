@@ -19,9 +19,12 @@ public:
         QueryPipeline, /// 'EXPLAIN PIPELINE ...'
     };
 
-    explicit ASTExplainQuery(ExplainKind kind_) : kind(kind_) {}
+    ASTExplainQuery(ExplainKind kind_, bool old_syntax_)
+        : kind(kind_), old_syntax(old_syntax_)
+    {
+    }
 
-    String getID(char delim) const override { return "Explain" + (delim + toString(kind)); }
+    String getID(char delim) const override { return "Explain" + (delim + toString(kind, old_syntax)); }
     ExplainKind getKind() const { return kind; }
     ASTPtr clone() const override
     {
@@ -50,7 +53,7 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << toString(kind, old_syntax) << (settings.hilite ? hilite_none : "");
 
         if (ast_settings)
         {
@@ -64,16 +67,17 @@ protected:
 
 private:
     ExplainKind kind;
+    bool old_syntax; /// "EXPLAIN AST" -> "AST", "EXPLAIN SYNTAX" -> "ANALYZE"
 
     ASTPtr query;
     ASTPtr ast_settings;
 
-    static String toString(ExplainKind kind)
+    static String toString(ExplainKind kind, bool old_syntax)
     {
         switch (kind)
         {
-            case ParsedAST: return "EXPLAIN AST";
-            case AnalyzedSyntax: return "EXPLAIN SYNTAX";
+            case ParsedAST: return old_syntax ? "AST" : "EXPLAIN AST";
+            case AnalyzedSyntax: return old_syntax ? "ANALYZE" : "EXPLAIN SYNTAX";
             case QueryPlan: return "EXPLAIN";
             case QueryPipeline: return "EXPLAIN PIPELINE";
         }

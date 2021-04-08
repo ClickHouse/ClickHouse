@@ -12,7 +12,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 
 
 namespace ProfileEvents
@@ -43,7 +42,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     if (expected_checksum == calculated_checksum)
         return;
 
-    WriteBufferFromOwnString message;
+    std::stringstream message;
 
     /// TODO mess up of endianness in error message.
     message << "Checksum doesn't match: corrupted data."
@@ -51,41 +50,27 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
         + ". Actual: " + getHexUIntLowercase(calculated_checksum.first) + getHexUIntLowercase(calculated_checksum.second)
         + ". Size of compressed block: " + toString(size);
 
-    const char * message_hardware_failure = "This is most likely due to hardware failure. "
-                                            "If you receive broken data over network and the error does not repeat every time, "
-                                            "this can be caused by bad RAM on network interface controller or bad controller itself "
-                                            "or bad RAM on network switches or bad CPU on network switches "
-                                            "(look at the logs on related network switches; note that TCP checksums don't help) "
-                                            "or bad RAM on host (look at dmesg or kern.log for enormous amount of EDAC errors, "
-                                            "ECC-related reports, Machine Check Exceptions, mcelog; note that ECC memory can fail "
-                                            "if the number of errors is huge) or bad CPU on host. If you read data from disk, "
-                                            "this can be caused by disk bit rott. This exception protects ClickHouse "
-                                            "from data corruption due to hardware failures.";
+    const char * message_hardware_failure = "This is most likely due to hardware failure. If you receive broken data over network and the error does not repeat every time, this can be caused by bad RAM on network interface controller or bad controller itself or bad RAM on network switches or bad CPU on network switches (look at the logs on related network switches; note that TCP checksums don't help) or bad RAM on host (look at dmesg or kern.log for enormous amount of EDAC errors, ECC-related reports, Machine Check Exceptions, mcelog; note that ECC memory can fail if the number of errors is huge) or bad CPU on host. If you read data from disk, this can be caused by disk bit rott. This exception protects ClickHouse from data corruption due to hardware failures.";
 
     auto flip_bit = [](char * buf, size_t pos)
     {
         buf[pos / 8] ^= 1 << pos % 8;
     };
 
-    /// If size is too huge, then this may be caused by corruption.
-    /// And anyway this is pretty heavy, so avoid burning too much CPU here.
-    if (size < (1ULL << 20))
+    /// Check if the difference caused by single bit flip in data.
+    for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
     {
-        /// Check if the difference caused by single bit flip in data.
-        for (size_t bit_pos = 0; bit_pos < size * 8; ++bit_pos)
+        flip_bit(data, bit_pos);
+
+        auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
+        if (expected_checksum == checksum_of_data_with_flipped_bit)
         {
-            flip_bit(data, bit_pos);
-
-            auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
-            if (expected_checksum == checksum_of_data_with_flipped_bit)
-            {
-                message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
-                    << message_hardware_failure;
-                throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
-            }
-
-            flip_bit(data, bit_pos);    /// Restore
+            message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
+                << message_hardware_failure;
+            throw Exception(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
         }
+
+        flip_bit(data, bit_pos);    /// Restore
     }
 
     /// Check if the difference caused by single bit flip in stored checksum.
@@ -105,18 +90,19 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
 /// Returns number of compressed bytes read.
-size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum, bool always_copy)
+size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum)
 {
     if (compressed_in->eof())
         return 0;
 
+    Checksum checksum;
+    compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(Checksum));
+
     UInt8 header_size = ICompressionCodec::getHeaderSize();
-    own_compressed_buffer.resize(header_size + sizeof(Checksum));
+    own_compressed_buffer.resize(header_size);
+    compressed_in->readStrict(own_compressed_buffer.data(), header_size);
 
-    compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
-    char * compressed_header = own_compressed_buffer.data() + sizeof(Checksum);
-
-    uint8_t method = ICompressionCodec::readMethod(compressed_header);
+    uint8_t method = ICompressionCodec::readMethod(own_compressed_buffer.data());
 
     if (!codec)
     {
@@ -138,8 +124,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         }
     }
 
-    size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(compressed_header);
-    size_decompressed = ICompressionCodec::readDecompressedBlockSize(compressed_header);
+    size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(own_compressed_buffer.data());
+    size_decompressed = ICompressionCodec::readDecompressedBlockSize(own_compressed_buffer.data());
 
     /// This is for clang static analyzer.
     assert(size_decompressed > 0);
@@ -159,9 +145,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
     /// Is whole compressed block located in 'compressed_in->' buffer?
-    if (!always_copy &&
-        compressed_in->offset() >= header_size + sizeof(Checksum) &&
-        compressed_in->available() >= (size_compressed_without_checksum - header_size) + additional_size_at_the_end_of_buffer + sizeof(Checksum))
+    if (compressed_in->offset() >= header_size &&
+        compressed_in->position() + size_compressed_without_checksum + additional_size_at_the_end_of_buffer  - header_size <= compressed_in->buffer().end())
     {
         compressed_in->position() -= header_size;
         compressed_buffer = compressed_in->position();
@@ -169,22 +154,19 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     }
     else
     {
-        own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
-        compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
+        own_compressed_buffer.resize(size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
+        compressed_buffer = own_compressed_buffer.data();
         compressed_in->readStrict(compressed_buffer + header_size, size_compressed_without_checksum - header_size);
     }
 
     if (!disable_checksum)
-    {
-        Checksum & checksum = *reinterpret_cast<Checksum *>(own_compressed_buffer.data());
         validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
-    }
 
     return size_compressed_without_checksum + sizeof(Checksum);
 }
 
 
-static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec, bool allow_different_codecs)
+void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
 {
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
@@ -203,42 +185,15 @@ static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_de
         }
         else
         {
-            throw Exception("Data compressed with different methods, given method byte 0x"
+            throw Exception("Data compressed with different methods, given method byte "
                             + getHexUIntLowercase(method)
-                            + ", previous method byte 0x"
+                            + ", previous method byte "
                             + getHexUIntLowercase(codec->getMethodByte()),
                             ErrorCodes::CANNOT_DECOMPRESS);
         }
     }
-}
 
-
-void CompressedReadBufferBase::decompressTo(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
-{
-    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
     codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
-}
-
-
-void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum)
-{
-    readHeaderAndGetCodec(compressed_buffer, size_decompressed, codec, allow_different_codecs);
-
-    if (codec->isNone())
-    {
-        /// Shortcut for NONE codec to avoid extra memcpy.
-        /// We doing it by changing the buffer `to` to point to existing uncompressed data.
-
-        UInt8 header_size = ICompressionCodec::getHeaderSize();
-        if (size_compressed_without_checksum < header_size)
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Can't decompress data: the compressed data size ({}, this should include header size) is less than the header size ({})",
-                    size_compressed_without_checksum, static_cast<size_t>(header_size));
-
-        to = BufferBase::Buffer(compressed_buffer + header_size, compressed_buffer + size_compressed_without_checksum);
-    }
-    else
-        codec->decompress(compressed_buffer, size_compressed_without_checksum, to.begin());
 }
 
 

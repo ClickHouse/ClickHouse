@@ -22,16 +22,7 @@ set_source_files_properties(${LIBUNWIND_C_SOURCES} PROPERTIES COMPILE_FLAGS "-st
 set(LIBUNWIND_ASM_SOURCES
     ${LIBUNWIND_SOURCE_DIR}/src/UnwindRegistersRestore.S
     ${LIBUNWIND_SOURCE_DIR}/src/UnwindRegistersSave.S)
-
-# CMake doesn't pass the correct architecture for Apple prior to CMake 3.19 [1]
-# Workaround these two issues by compiling as C.
-#
-#   [1]: https://gitlab.kitware.com/cmake/cmake/-/issues/20771
-if (APPLE AND CMAKE_VERSION VERSION_LESS 3.19)
-    set_source_files_properties(${LIBUNWIND_ASM_SOURCES} PROPERTIES LANGUAGE C)
-else()
-    enable_language(ASM)
-endif()
+set_source_files_properties(${LIBUNWIND_ASM_SOURCES} PROPERTIES LANGUAGE C)
 
 set(LIBUNWIND_SOURCES
     ${LIBUNWIND_CXX_SOURCES}

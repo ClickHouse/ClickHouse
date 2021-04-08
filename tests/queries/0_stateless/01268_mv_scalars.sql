@@ -36,5 +36,3 @@ drop table dest_table_mv;
 drop table left_table;
 drop table right_table;
 drop table dest_table;
-drop table src_table;
-drop view dst_mv;

@@ -9,6 +9,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
+
 namespace DB
 {
 
@@ -49,7 +50,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         for (const NameAndTypePair & column : columns)
         {
             auto column_from_part = getColumnFromPart(column);
-            addStreams(column_from_part, profile_callback_, clock_type_);
+            addStreams(column_from_part.name, *column_from_part.type, profile_callback_, clock_type_);
         }
     }
     catch (...)
@@ -72,26 +73,48 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         /// If append is true, then the value will be equal to nullptr and will be used only to
         /// check that the offsets column has been already read.
         OffsetColumns offset_columns;
-        std::unordered_map<String, ISerialization::SubstreamsCache> caches;
 
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            auto column_from_part = getColumnFromPart(*name_and_type);
-            const auto & [name, type] = column_from_part;
+            auto [name, type] = getColumnFromPart(*name_and_type);
 
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
                 res_columns[pos] = type->createColumn();
 
-            auto & column = res_columns[pos];
+            /// To keep offsets shared. TODO Very dangerous. Get rid of this.
+            MutableColumnPtr column = res_columns[pos]->assumeMutable();
+
+            bool read_offsets = true;
+
+            /// For nested data structures collect pointers to offset columns.
+            if (const auto * type_arr = typeid_cast<const DataTypeArray *>(type.get()))
+            {
+                String table_name = Nested::extractTableName(name);
+
+                auto it_inserted = offset_columns.emplace(table_name, nullptr);
+
+                /// offsets have already been read on the previous iteration and we don't need to read it again
+                if (!it_inserted.second)
+                    read_offsets = false;
+
+                /// need to create new offsets
+                if (it_inserted.second && !append)
+                    it_inserted.first->second = ColumnArray::ColumnOffsets::create();
+
+                /// share offsets in all elements of nested structure
+                if (!append)
+                    column = ColumnArray::create(type_arr->getNestedType()->createColumn(),
+                                                 it_inserted.first->second)->assumeMutable();
+            }
+
             try
             {
                 size_t column_size_before_reading = column->size();
-                auto & cache = caches[column_from_part.getNameInStorage()];
 
-                readData(column_from_part, column, from_mark, continue_reading, max_rows_to_read, cache);
+                readData(name, *type, *column, from_mark, continue_reading, max_rows_to_read, read_offsets);
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
@@ -107,6 +130,8 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
 
             if (column->empty())
                 res_columns[pos] = nullptr;
+            else
+                res_columns[pos] = std::move(column);
         }
 
         /// NOTE: positions for all streams must be kept in sync.
@@ -134,12 +159,12 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
     return read_rows;
 }
 
-void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
+void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
-    ISerialization::StreamCallback callback = [&] (const ISerialization::SubstreamPath & substream_path)
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+        String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
         if (streams.count(stream_name))
             return;
@@ -160,26 +185,25 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
             profile_callback, clock_type));
     };
 
-    auto serialization = data_part->getSerializationForColumn(name_and_type);
-    serialization->enumerateStreams(callback);
-    serializations.emplace(name_and_type.name, std::move(serialization));
+    IDataType::SubstreamPath substream_path;
+    type.enumerateStreams(callback, substream_path);
 }
 
 
 void MergeTreeReaderWide::readData(
-    const NameAndTypePair & name_and_type, ColumnPtr & column,
+    const String & name, const IDataType & type, IColumn & column,
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-    ISerialization::SubstreamsCache & cache)
+    bool with_offsets)
 {
-    auto get_stream_getter = [&](bool stream_for_prefix) -> ISerialization::InputStreamGetter
+    auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
     {
-        return [&, stream_for_prefix](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
+        return [&, stream_for_prefix](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
         {
-            /// If substream have already been read.
-            if (cache.count(ISerialization::getSubcolumnNameForStream(substream_path)))
+            /// If offsets for arrays have already been read.
+            if (!with_offsets && substream_path.size() == 1 && substream_path[0].type == IDataType::Substream::ArraySizes)
                 return nullptr;
 
-            String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+            String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
             auto it = streams.find(stream_name);
             if (it == streams.end())
@@ -199,25 +223,21 @@ void MergeTreeReaderWide::readData(
         };
     };
 
-    double & avg_value_size_hint = avg_value_size_hints[name_and_type.name];
-    ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+    double & avg_value_size_hint = avg_value_size_hints[name];
+    IDataType::DeserializeBinaryBulkSettings deserialize_settings;
     deserialize_settings.avg_value_size_hint = avg_value_size_hint;
-
-    const auto & name = name_and_type.name;
-    auto serialization = serializations[name];
 
     if (deserialize_binary_bulk_state_map.count(name) == 0)
     {
         deserialize_settings.getter = get_stream_getter(true);
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
+        type.deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
     }
 
     deserialize_settings.getter = get_stream_getter(false);
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name];
-
-    serializations[name]->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
-    IDataType::updateAvgValueSizeHint(*column, avg_value_size_hint);
+    type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, deserialize_settings, deserialize_state);
+    IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
 }
 
 }

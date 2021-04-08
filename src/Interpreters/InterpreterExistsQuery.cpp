@@ -10,6 +10,7 @@
 #include <Access/AccessFlags.h>
 #include <Common/typeid_cast.h>
 
+
 namespace DB
 {
 
@@ -39,7 +40,6 @@ BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
 {
     ASTQueryWithTableAndOutput * exists_query;
     bool result = false;
-
     if ((exists_query = query_ptr->as<ASTExistsTableQuery>()))
     {
         if (exists_query->temporary)
@@ -52,19 +52,6 @@ BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
             context.checkAccess(AccessType::SHOW_TABLES, database, exists_query->table);
             result = DatabaseCatalog::instance().isTableExist({database, exists_query->table}, context);
         }
-    }
-    else if ((exists_query = query_ptr->as<ASTExistsViewQuery>()))
-    {
-        String database = context.resolveDatabase(exists_query->database);
-        context.checkAccess(AccessType::SHOW_TABLES, database, exists_query->table);
-        auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->table}, context);
-        result = table && table->isView();
-    }
-    else if ((exists_query = query_ptr->as<ASTExistsDatabaseQuery>()))
-    {
-        String database = context.resolveDatabase(exists_query->database);
-        context.checkAccess(AccessType::SHOW_DATABASES, database);
-        result = DatabaseCatalog::instance().isDatabaseExist(database);
     }
     else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))
     {

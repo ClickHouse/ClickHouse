@@ -1,8 +1,3 @@
----
-toc_priority: 41
-toc_title: URL
----
-
 # URL(URL, Format) {#table_engines-url}
 
 Управляет данными на удаленном HTTP/HTTPS сервере. Данный движок похож
@@ -22,7 +17,7 @@ toc_title: URL
 соответственно. Для обработки `POST`-запросов удаленный сервер должен поддерживать
 [Chunked transfer encoding](https://ru.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-Максимальное количество переходов по редиректам при выполнении HTTP-запроса методом GET можно ограничить с помощью настройки [max_http_get_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects).
+Максимальное количество переходов по редиректам при выполнении HTTP-запроса методом GET можно ограничить с помощью настройки [max\_http\_get\_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects).
 
 **Пример:**
 
@@ -77,3 +72,4 @@ SELECT * FROM url_engine_table
     -   индексы;
     -   репликация.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/url/) <!--hide-->

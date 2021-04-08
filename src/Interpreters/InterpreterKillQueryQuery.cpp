@@ -2,7 +2,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/CancellationCode.h>
@@ -300,7 +300,8 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    auto stream = executeQuery(select_query, context.getGlobalContext(), true).getInputStream();
+    BlockIO block_io = executeQuery(select_query, context.getGlobalContext(), true);
+    auto stream = block_io.getInputStream();
     Block res = stream->read();
 
     if (res && stream->read())

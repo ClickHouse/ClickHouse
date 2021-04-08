@@ -5,11 +5,9 @@
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/join_common.h>
 #include <Interpreters/asof.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <Storages/IStorage_fwd.h>
 
 #include <utility>
@@ -24,9 +22,6 @@ struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryReader;
 
-struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
-
 struct Settings;
 
 class IVolume;
@@ -34,11 +29,6 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 class TableJoin
 {
-
-public:
-    using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
-
-private:
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
       * The join is made by column k.
       * During the JOIN,
@@ -66,38 +56,22 @@ private:
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
-
     ASTs key_asts_left;
     ASTs key_asts_right;
     ASTTableJoin table_join;
-
     ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
 
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
-    /// Columns will be added to block by JOIN.
-    /// It's a subset of columns_from_joined_table with corrected Nullability and type (if inplace type conversion is required)
+    /// Columns will be added to block by JOIN. It's a subset of columns_from_joined_table with corrected Nullability
     NamesAndTypesList columns_added_by_join;
-
-    /// Target type to convert key columns before join
-    NameToTypeMap left_type_map;
-    NameToTypeMap right_type_map;
-
-    ActionsDAGPtr left_converting_actions;
-    ActionsDAGPtr right_converting_actions;
 
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
-    /// Original name -> name. Only renamed columns.
+    /// Original name -> name. Only ranamed columns.
     std::unordered_map<String, String> renames;
 
     VolumePtr tmp_volume;
-
-    Names requiredJoinedNames() const;
-
-    /// Create converting actions and change key column names if required
-    ActionsDAGPtr applyKeyConvertToTable(
-        const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const;
 
 public:
     TableJoin() = default;
@@ -148,6 +122,7 @@ public:
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
 
+    NameSet getQualifiedColumnsSet() const;
     NamesWithAliases getNamesWithAliases(const NameSet & required_columns) const;
     NamesWithAliases getRequiredColumns(const Block & sample, const Names & action_required_columns) const;
 
@@ -158,23 +133,7 @@ public:
     bool leftBecomeNullable(const DataTypePtr & column_type) const;
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
-
-    void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability = true) const;
-    void addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns, bool correct_nullability = true) const;
-
-    /// Calculates common supertypes for corresponding join key columns.
-    bool inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right);
-
-    /// Calculate converting actions, rename key columns in required
-    /// For `USING` join we will convert key columns inplace and affect into types in the result table
-    /// For `JOIN ON` we will create new columns with converted keys to join by.
-    bool applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
-
-    bool needConvert() const { return !left_type_map.empty(); }
-
-    /// Key columns should be converted before join.
-    ActionsDAGPtr leftConvertingActions() const { return left_converting_actions; }
-    ActionsDAGPtr rightConvertingActions() const { return right_converting_actions; }
+    void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }
@@ -182,16 +141,11 @@ public:
     ASTPtr leftKeysList() const;
     ASTPtr rightKeysList() const; /// For ON syntax only
 
+    Names requiredJoinedNames() const;
     const Names & keyNamesLeft() const { return key_names_left; }
     const Names & keyNamesRight() const { return key_names_right; }
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
-    Names columnsAddedByJoin() const
-    {
-        Names res;
-        for (const auto & col : columns_added_by_join)
-            res.push_back(col.name);
-        return res;
-    }
+    const NamesAndTypesList & columnsAddedByJoin() const { return columns_added_by_join; }
 
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { key_names_right = keys; }
@@ -199,6 +153,8 @@ public:
     /// Split key and other columns by keys name list
     void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
+
+    static bool sameJoin(const TableJoin * x, const TableJoin * y);
 };
 
 }

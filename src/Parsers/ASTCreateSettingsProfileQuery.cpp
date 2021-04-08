@@ -2,7 +2,6 @@
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Common/quoteString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -86,9 +85,9 @@ void ASTCreateSettingsProfileQuery::formatImpl(const FormatSettings & format, Fo
 }
 
 
-void ASTCreateSettingsProfileQuery::replaceCurrentUserTag(const String & current_user_name) const
+void ASTCreateSettingsProfileQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
 {
     if (to_roles)
-        to_roles->replaceCurrentUserTag(current_user_name);
+        to_roles->replaceCurrentUserTagWithName(current_user_name);
 }
 }

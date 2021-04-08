@@ -9,12 +9,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 
 
-namespace zkutil
-{
-    class ZooKeeper;
-    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
-}
-
 namespace DB
 {
 
@@ -26,20 +20,21 @@ namespace DataPartsExchange
 class Service final : public InterserverIOEndpoint
 {
 public:
-    explicit Service(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
+    Service(MergeTreeData & data_)
+    : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
 
     Service(const Service &) = delete;
     Service & operator=(const Service &) = delete;
 
     std::string getId(const std::string & node_id) const override;
-    void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
+    void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) override;
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
     void sendPartFromMemory(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
-    void sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out, int client_protocol_version);
-    void sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
+    void sendPartFromDisk(const MergeTreeData::DataPartPtr & part, WriteBuffer & out);
 
+private:
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
     MergeTreeData & data;
@@ -48,10 +43,13 @@ private:
 
 /** Client for getting the parts from the table *MergeTree.
   */
-class Fetcher final : private boost::noncopyable
+class Fetcher final
 {
 public:
-    explicit Fetcher(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get("Fetcher")) {}
+    Fetcher(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get("Fetcher")) {}
+
+    Fetcher(const Fetcher &) = delete;
+    Fetcher & operator=(const Fetcher &) = delete;
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
     MergeTreeData::MutableDataPartPtr fetchPart(
@@ -65,10 +63,7 @@ public:
         const String & password,
         const String & interserver_scheme,
         bool to_detached = false,
-        const String & tmp_prefix_ = "",
-        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
-        bool try_use_s3_copy = true,
-        const DiskPtr disk_s3 = nullptr);
+        const String & tmp_prefix_ = "");
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
@@ -79,23 +74,13 @@ private:
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
-            bool sync,
-            ReservationPtr reservation,
+            const ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData::MutableDataPartPtr downloadPartToMemory(
             const String & part_name,
-            const UUID & part_uuid,
             const StorageMetadataPtr & metadata_snapshot,
             ReservationPtr reservation,
-            PooledReadWriteBufferFromHTTP & in);
-
-    MergeTreeData::MutableDataPartPtr downloadPartToS3(
-            const String & part_name,
-            const String & replica_path,
-            bool to_detached,
-            const String & tmp_prefix_,
-            const Disks & disks_s3,
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData & data;

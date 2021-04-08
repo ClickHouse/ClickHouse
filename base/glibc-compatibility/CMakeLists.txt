@@ -1,8 +1,5 @@
 if (GLIBC_COMPATIBILITY)
-    add_subdirectory(memcpy)
-    if(TARGET memcpy)
-        set(MEMCPY_LIBRARY memcpy)
-    endif()
+    set (ENABLE_FASTMEMCPY ON)
 
     enable_language(ASM)
     include(CheckIncludeFile)
@@ -47,16 +44,15 @@ if (GLIBC_COMPATIBILITY)
         target_compile_options(glibc-compatibility PRIVATE -fPIC)
     endif ()
 
-    target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
+    target_link_libraries(global-libs INTERFACE glibc-compatibility)
 
     install(
-        TARGETS glibc-compatibility ${MEMCPY_LIBRARY}
+        TARGETS glibc-compatibility
         EXPORT global
         ARCHIVE DESTINATION lib
     )
 
     message (STATUS "Some symbols from glibc will be replaced for compatibility")
-
 elseif (YANDEX_OFFICIAL_BUILD)
     message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")
 endif ()

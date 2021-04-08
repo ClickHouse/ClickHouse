@@ -90,9 +90,7 @@ void MySQLHandler::run()
     setThreadName("MySQLHandler");
     ThreadStatus thread_status;
     connection_context.makeSessionContext();
-    connection_context.getClientInfo().interface = ClientInfo::Interface::MYSQL;
     connection_context.setDefaultFormat("MySQLWire");
-    connection_context.getClientInfo().connection_id = connection_id;
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
@@ -189,7 +187,6 @@ void MySQLHandler::run()
             }
             catch (...)
             {
-                tryLogCurrentException(log, "MySQLHandler: Cannot read packet: ");
                 packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)), true);
             }
         }
@@ -268,7 +265,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
         packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()), true);
         throw;
     }
-    LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
+    LOG_INFO(log, "Authentication for user {} succeeded.", user_name);
 }
 
 void MySQLHandler::comInitDB(ReadBuffer & payload)
@@ -290,7 +287,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
-            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0, true
+            database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
         );
         packet_endpoint->sendPacket(column_definition);
     }
@@ -412,7 +409,6 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
         "|(^(SET AUTOCOMMIT(.*)))"
         "|(^(SET sql_mode(.*)))"
-        "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
         , std::regex::icase};
     return 1 == std::regex_match(query, expr);

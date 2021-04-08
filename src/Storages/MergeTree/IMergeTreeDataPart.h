@@ -4,7 +4,7 @@
 
 #include <Core/Row.h>
 #include <Core/Block.h>
-#include <common/types.h>
+#include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -16,16 +16,11 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Columns/IColumn.h>
 
 #include <Poco/Path.h>
 
 #include <shared_mutex>
-
-namespace zkutil
-{
-    class ZooKeeper;
-    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
-}
 
 namespace DB
 {
@@ -53,8 +48,6 @@ namespace ErrorCodes
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
-    static constexpr auto DATA_FILE_EXTENSION = ".bin";
-
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
     using ValueSizeMap = std::map<std::string, double>;
@@ -63,7 +56,7 @@ public:
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
-    using NameToNumber = std::unordered_map<std::string, size_t>;
+    using NameToPosition = std::unordered_map<std::string, size_t>;
 
     using Type = MergeTreeDataPartType;
 
@@ -131,7 +124,7 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove(bool keep_s3 = false) const;
+    void remove() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -152,30 +145,24 @@ public:
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
-    String getColumnNameWithMinimumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
+    String getColumnNameWithMinumumCompressedSize(const StorageMetadataPtr & metadata_snapshot) const;
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
-    /// If the partition key includes date column (a common case), this function will return min and max values for that column.
-    std::pair<DayNum, DayNum> getMinMaxDate() const;
+    /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
+    DayNum getMinDate() const;
+    DayNum getMaxDate() const;
 
-    /// otherwise, if the partition key includes dateTime column (also a common case), this function will return min and max values for that column.
-    std::pair<time_t, time_t> getMinMaxTime() const;
+    /// otherwise, if the partition key includes dateTime column (also a common case), these functions will return min and max values for this column.
+    time_t getMinTime() const;
+    time_t getMaxTime() const;
 
     bool isEmpty() const { return rows_count == 0; }
-
-    /// Compute part block id for zero level part. Otherwise throws an exception.
-    String getZeroLevelPartBlockID() const;
 
     const MergeTreeData & storage;
 
     String name;
     MergeTreePartInfo info;
-
-    /// Part unique identifier.
-    /// The intention is to use it for identifying cases where the same part is
-    /// processed by multiple shards.
-    UUID uuid = UUIDHelpers::Nil;
 
     VolumePtr volume;
 
@@ -206,8 +193,8 @@ public:
      *
      * Possible state transitions:
      * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:    we could not add a part to active set and are doing a rollback (for example it is duplicated part)
-     * Precommitted -> Committed:   we successfully committed a part to active dataset
+     * Precommitted -> Outdated:    we could not to add a part to active set and doing a rollback (for example it is duplicated part)
+     * Precommitted -> Committed:    we successfully committed a part to active dataset
      * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
      * Outdated -> Deleting:        a cleaner selected this part for deletion
      * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
@@ -229,8 +216,7 @@ public:
     TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
-    void setState(State new_state) const;
-    State getState() const;
+    mutable State state{State::Temporary};
 
     /// Returns name of state
     static String stateToString(State state);
@@ -302,8 +288,6 @@ public:
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
-    CompressionCodecPtr default_codec;
-
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
@@ -330,19 +314,15 @@ public:
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Makes full clone of part in specified subdirectory (relative to storage data directory, e.g. "detached") on another disk
-    void makeCloneOnDisk(const DiskPtr & disk, const String & directory_name) const;
+    /// Makes full clone of part in detached/ on another disk
+    void makeCloneOnDiskDetached(const ReservationPtr & reservation) const;
 
     /// Checks that .bin and .mrk files exist.
     ///
     /// NOTE: Doesn't take column renames into account, if some column renames
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
-    virtual bool hasColumnFiles(const NameAndTypePair & /* column */) const { return false; }
-
-    /// Returns true if this part shall participate in merges according to
-    /// settings of given storage policy.
-    bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
+    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
@@ -350,34 +330,7 @@ public:
 
     String getRelativePathForPrefix(const String & prefix) const;
 
-
-    /// Return set of metadat file names without checksums. For example,
-    /// columns.txt or checksums.txt itself.
-    NameSet getFileNamesWithoutChecksums() const;
-
-    /// File with compression codec name which was used to compress part columns
-    /// by default. Some columns may have their own compression codecs, but
-    /// default will be stored in this file.
-    static inline constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
-
-    static inline constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME = "delete-on-destroy.txt";
-
-    static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
-
-    /// Checks that all TTLs (table min/max, column ttls, so on) for part
-    /// calculated. Part without calculated TTL may exist if TTL was added after
-    /// part creation (using alter query with materialize_ttl setting).
-    bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
-
-    /// Returns serialization for column according to files in which column is written in part.
-    SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
-
-    /// Return some uniq string for file
-    /// Required for distinguish different copies of the same part on S3
-    String getUniqueId() const;
-
 protected:
-
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
     ColumnSize total_columns_size;
 
@@ -405,10 +358,7 @@ protected:
 
 private:
     /// In compact parts order of columns is necessary
-    NameToNumber column_name_to_position;
-
-    /// Reads part unique identifier (if exists) from uuid.txt
-    void loadUUID();
+    NameToPosition column_name_to_position;
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
@@ -430,17 +380,6 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
-
-    /// Load default compression codec from file default_compression_codec.txt
-    /// if it not exists tries to deduce codec from compressed column without
-    /// any specifial compression.
-    void loadDefaultCompressionCodec();
-
-    /// Found column without specific compression and return codec
-    /// for this column with default parameters.
-    CompressionCodecPtr detectDefaultCompressionCodec() const;
-
-    mutable State state{State::Temporary};
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;

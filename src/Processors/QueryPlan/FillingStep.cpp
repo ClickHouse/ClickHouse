@@ -28,14 +28,14 @@ static ITransformingStep::Traits getTraits()
 }
 
 FillingStep::FillingStep(const DataStream & input_stream_, SortDescription sort_description_)
-    : ITransformingStep(input_stream_, FillingTransform::transformHeader(input_stream_.header, sort_description_), getTraits())
+    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , sort_description(std::move(sort_description_))
 {
     if (!input_stream_.has_single_port)
         throw Exception("FillingStep expects single input", ErrorCodes::LOGICAL_ERROR);
 }
 
-void FillingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void FillingStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {

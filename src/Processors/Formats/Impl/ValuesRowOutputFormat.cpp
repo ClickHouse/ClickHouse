@@ -10,14 +10,14 @@ namespace DB
 {
 
 
-ValuesRowOutputFormat::ValuesRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_)
+ValuesRowOutputFormat::ValuesRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_)
 {
 }
 
-void ValuesRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
+void ValuesRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    serialization.serializeTextQuoted(column, row_num, out, format_settings);
+    type.serializeAsTextQuoted(column, row_num, out, format_settings);
 }
 
 void ValuesRowOutputFormat::writeFieldDelimiter()
@@ -46,10 +46,10 @@ void registerOutputFormatProcessorValues(FormatFactory & factory)
     factory.registerOutputFormatProcessor("Values", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
+        FormatFactory::WriteCallback callback,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<ValuesRowOutputFormat>(buf, sample, callback, settings);
     });
 }
 

@@ -1,8 +1,3 @@
----
-toc_priority: 60
-toc_title: Nothing
----
-
 # Nothing {#nothing}
 
 Этот тип данных предназначен только для того, чтобы представлять [NULL](../../../sql-reference/data-types/special-data-types/nothing.md), т.е. отсутствие значения.
@@ -19,3 +14,4 @@ SELECT toTypeName(Array())
 └─────────────────────┘
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/special_data_types/nothing/) <!--hide-->

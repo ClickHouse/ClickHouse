@@ -73,7 +73,7 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         if (version_column_number == -1
             || selected_row.empty()
             || current->all_columns[version_column_number]->compareAt(
-                current->getRow(), selected_row.row_num,
+                current->pos, selected_row.row_num,
                 *(*selected_row.all_columns)[version_column_number],
                 /* nan_direction_hint = */ 1) >= 0)
         {

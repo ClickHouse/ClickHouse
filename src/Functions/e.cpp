@@ -3,8 +3,6 @@
 
 namespace DB
 {
-namespace
-{
 
 struct EImpl
 {
@@ -13,8 +11,6 @@ struct EImpl
 };
 
 using FunctionE = FunctionMathConstFloat64<EImpl>;
-
-}
 
 void registerFunctionE(FunctionFactory & factory)
 {

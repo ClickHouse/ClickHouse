@@ -1,13 +1,13 @@
 import pytest
+import os
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
-ENABLE_DICT_CONFIG = ['configs/enable_dictionaries.xml']
-DICTIONARY_FILES = ['configs/dictionaries/dep_x.xml', 'configs/dictionaries/dep_y.xml',
-                    'configs/dictionaries/dep_z.xml']
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+DICTIONARY_FILES = ['configs/dictionaries/dep_x.xml', 'configs/dictionaries/dep_y.xml', 'configs/dictionaries/dep_z.xml']
 
-cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=ENABLE_DICT_CONFIG + DICTIONARY_FILES, )
+cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
+instance = cluster.add_instance('instance', main_configs=DICTIONARY_FILES)
 
 
 @pytest.fixture(scope="module")
@@ -60,14 +60,14 @@ def test_get_data(started_cluster):
     query("INSERT INTO test.elements VALUES (3, 'fire', 30, 8)")
 
     # Wait for dictionaries to be reloaded.
-    assert_eq_with_retry(instance, "SELECT dictHas('dep_y', toUInt64(3))", "1", sleep_time=2, retry_count=10)
+    assert_eq_with_retry(instance, "SELECT dictHas('dep_y', toUInt64(3))", "1", sleep_time = 2, retry_count = 10)
     assert query("SELECT dictGetString('dep_x', 'a', toUInt64(3))") == "XX\n"
     assert query("SELECT dictGetString('dep_y', 'a', toUInt64(3))") == "fire\n"
     assert query("SELECT dictGetString('dep_z', 'a', toUInt64(3))") == "ZZ\n"
 
-    # dep_x and dep_z are updated only when there `intDiv(count(), 5)`  is changed.
+    # dep_x and dep_z are updated only when there `intDiv(count(), 4)`  is changed.
     query("INSERT INTO test.elements VALUES (4, 'ether', 404, 0.001)")
-    assert_eq_with_retry(instance, "SELECT dictHas('dep_x', toUInt64(4))", "1", sleep_time=2, retry_count=10)
+    assert_eq_with_retry(instance, "SELECT dictHas('dep_x', toUInt64(4))", "1", sleep_time = 2, retry_count = 10)
     assert query("SELECT dictGetString('dep_x', 'a', toUInt64(3))") == "fire\n"
     assert query("SELECT dictGetString('dep_y', 'a', toUInt64(3))") == "fire\n"
     assert query("SELECT dictGetString('dep_z', 'a', toUInt64(3))") == "fire\n"

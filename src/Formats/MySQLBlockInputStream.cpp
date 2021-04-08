@@ -1,33 +1,24 @@
 #if !defined(ARCADIA_BUILD)
-#include "config_core.h"
+#    include "config_core.h"
 #endif
 
 #if USE_MYSQL
-#include <vector>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnFixedString.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <Common/assert_cast.h>
-#include <ext/range.h>
-#include <common/logger_useful.h>
-#include "MySQLBlockInputStream.h"
+#    include <vector>
+#    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <IO/ReadHelpers.h>
+#    include <IO/WriteHelpers.h>
+#    include <Common/assert_cast.h>
+#    include <ext/range.h>
+#    include "MySQLBlockInputStream.h"
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
-    extern const int NOT_IMPLEMENTED;
 }
 
 MySQLBlockInputStream::Connection::Connection(
@@ -39,86 +30,30 @@ MySQLBlockInputStream::Connection::Connection(
 {
 }
 
-/// Used in MaterializeMySQL and in doInvalidateQuery for dictionary source.
 MySQLBlockInputStream::MySQLBlockInputStream(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
     const Block & sample_block,
     const UInt64 max_block_size_,
-    const bool auto_close_,
-    const bool fetch_by_name_)
-    : log(&Poco::Logger::get("MySQLBlockInputStream"))
-    , connection{std::make_unique<Connection>(entry, query_str)}
+    const bool auto_close_)
+    : connection{std::make_unique<Connection>(entry, query_str)}
     , max_block_size{max_block_size_}
     , auto_close{auto_close_}
-    , fetch_by_name(fetch_by_name_)
 {
+    if (sample_block.columns() != connection->result.getNumFields())
+        throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
+                            + toString(sample_block.columns()) + " expected",
+                        ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
+
     description.init(sample_block);
-    initPositionMappingFromQueryResultStructure();
 }
 
-/// For descendant MySQLWithFailoverBlockInputStream
-MySQLBlockInputStream::MySQLBlockInputStream(
-    const Block & sample_block_,
-    UInt64 max_block_size_,
-    bool auto_close_,
-    bool fetch_by_name_)
-    : log(&Poco::Logger::get("MySQLBlockInputStream"))
-    , max_block_size(max_block_size_)
-    , auto_close(auto_close_)
-    , fetch_by_name(fetch_by_name_)
-{
-    description.init(sample_block_);
-}
-
-/// Used by MySQL storage / table function and dictionary source.
-MySQLWithFailoverBlockInputStream::MySQLWithFailoverBlockInputStream(
-    mysqlxx::PoolWithFailoverPtr pool_,
-    const std::string & query_str_,
-    const Block & sample_block_,
-    const UInt64 max_block_size_,
-    const bool auto_close_,
-    const bool fetch_by_name_,
-    const size_t max_tries_)
-    : MySQLBlockInputStream(sample_block_, max_block_size_, auto_close_, fetch_by_name_)
-    , pool(pool_)
-    , query_str(query_str_)
-    , max_tries(max_tries_)
-{
-}
-
-void MySQLWithFailoverBlockInputStream::readPrefix()
-{
-    size_t count_connect_attempts = 0;
-
-    /// For recovering from "Lost connection to MySQL server during query" errors
-    while (true)
-    {
-        try
-        {
-            connection = std::make_unique<Connection>(pool->get(), query_str);
-            break;
-        }
-        catch (const mysqlxx::ConnectionLost & ecl)  /// There are two retriable failures: CR_SERVER_GONE_ERROR, CR_SERVER_LOST
-        {
-            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, max_tries, ecl.displayText());
-        }
-
-        if (++count_connect_attempts > max_tries)
-        {
-            LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, max_tries);
-            throw;
-        }
-    }
-
-    initPositionMappingFromQueryResultStructure();
-}
 
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value)
+    void insertValue(IColumn & column, const ValueType type, const mysqlxx::Value & value)
     {
         switch (type)
         {
@@ -159,33 +94,11 @@ namespace
                 assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
                 break;
             case ValueType::vtDateTime:
-            {
-                ReadBufferFromString in(value);
-                time_t time = 0;
-                readDateTimeText(time, in);
-                if (time < 0)
-                    time = 0;
-                assert_cast<ColumnUInt32 &>(column).insertValue(time);
+                assert_cast<ColumnUInt32 &>(column).insertValue(UInt32(value.getDateTime()));
                 break;
-            }
             case ValueType::vtUUID:
                 assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
                 break;
-            case ValueType::vtDateTime64:[[fallthrough]];
-            case ValueType::vtDecimal32: [[fallthrough]];
-            case ValueType::vtDecimal64: [[fallthrough]];
-            case ValueType::vtDecimal128:[[fallthrough]];
-            case ValueType::vtDecimal256:
-            {
-                ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
-                data_type.getDefaultSerialization()->deserializeWholeText(column, buffer, FormatSettings{});
-                break;
-            }
-            case ValueType::vtFixedString:
-                assert_cast<ColumnFixedString &>(column).insertData(value.data(), value.size());
-                break;
-            default:
-                throw Exception("Unsupported value type", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -200,7 +113,6 @@ Block MySQLBlockInputStream::readImpl()
     {
         if (auto_close)
            connection->entry.disconnect();
-
         return {};
     }
 
@@ -211,37 +123,22 @@ Block MySQLBlockInputStream::readImpl()
     size_t num_rows = 0;
     while (row)
     {
-        for (size_t index = 0; index < position_mapping.size(); ++index)
+        for (const auto idx : ext::range(0, row.size()))
         {
-            const auto value = row[position_mapping[index]];
-            const auto & sample = description.sample_block.getByPosition(index);
-
-            bool is_type_nullable = description.types[index].second;
-
+            const auto value = row[idx];
             if (!value.isNull())
             {
-                if (is_type_nullable)
+                if (description.types[idx].second)
                 {
-                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
-                    const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
-                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value);
-                    column_nullable.getNullMapData().emplace_back(false);
+                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[idx]);
+                    insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
+                    column_nullable.getNullMapData().emplace_back(0);
                 }
                 else
-                {
-                    insertValue(*sample.type, *columns[index], description.types[index].first, value);
-                }
+                    insertValue(*columns[idx], description.types[idx].first, value);
             }
             else
-            {
-                insertDefaultValue(*columns[index], *sample.column);
-
-                if (is_type_nullable)
-                {
-                    ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
-                    column_nullable.getNullMapData().back() = true;
-                }
-            }
+                insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
         }
 
         ++num_rows;
@@ -253,51 +150,35 @@ Block MySQLBlockInputStream::readImpl()
     return description.sample_block.cloneWithColumns(std::move(columns));
 }
 
-void MySQLBlockInputStream::initPositionMappingFromQueryResultStructure()
+MySQLBlockInputStream::MySQLBlockInputStream(
+    const Block & sample_block_,
+    UInt64 max_block_size_,
+    bool auto_close_)
+    : max_block_size(max_block_size_)
+    , auto_close(auto_close_)
 {
-    position_mapping.resize(description.sample_block.columns());
+    description.init(sample_block_);
+}
 
-    if (!fetch_by_name)
-    {
-        if (description.sample_block.columns() != connection->result.getNumFields())
-            throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
-                + toString(description.sample_block.columns()) + " expected", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
+MySQLLazyBlockInputStream::MySQLLazyBlockInputStream(
+    mysqlxx::Pool & pool_,
+    const std::string & query_str_,
+    const Block & sample_block_,
+    const UInt64 max_block_size_,
+    const bool auto_close_)
+    : MySQLBlockInputStream(sample_block_, max_block_size_, auto_close_)
+    , pool(pool_)
+    , query_str(query_str_)
+{
+}
 
-        for (const auto idx : ext::range(0, connection->result.getNumFields()))
-            position_mapping[idx] = idx;
-    }
-    else
-    {
-        const auto & sample_names = description.sample_block.getNames();
-        std::unordered_set<std::string> missing_names(sample_names.begin(), sample_names.end());
-
-        size_t fields_size = connection->result.getNumFields();
-
-        for (const size_t & idx : ext::range(0, fields_size))
-        {
-            const auto & field_name = connection->result.getFieldName(idx);
-            if (description.sample_block.has(field_name))
-            {
-                const auto & position = description.sample_block.getPositionByName(field_name);
-                position_mapping[position] = idx;
-                missing_names.erase(field_name);
-            }
-        }
-
-        if (!missing_names.empty())
-        {
-            WriteBufferFromOwnString exception_message;
-            for (auto iter = missing_names.begin(); iter != missing_names.end(); ++iter)
-            {
-                if (iter != missing_names.begin())
-                    exception_message << ", ";
-                exception_message << *iter;
-            }
-
-            throw Exception("mysqlxx::UseQueryResult must be contain the" + exception_message.str() + " columns.",
-                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-        }
-    }
+void MySQLLazyBlockInputStream::readPrefix()
+{
+    connection = std::make_unique<Connection>(pool.get(), query_str);
+    if (description.sample_block.columns() != connection->result.getNumFields())
+        throw Exception{"mysqlxx::UseQueryResult contains " + toString(connection->result.getNumFields()) + " columns while "
+                            + toString(description.sample_block.columns()) + " expected",
+                        ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 }
 
 }
