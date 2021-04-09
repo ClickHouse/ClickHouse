@@ -1330,7 +1330,7 @@ ColumnsWithTypeAndName prepareFunctionArguments(const std::vector<ActionsDAG::No
 /// Create actions which calculate conjunction of selected nodes.
 /// Assume conjunction nodes are predicates (and may be used as arguments of function AND).
 ///
-/// Result actions add single column with conjunction result (it is always last in index).
+/// Result actions add single column with conjunction result (it is always first in index).
 /// No other columns are added or removed.
 ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunction, const ColumnsWithTypeAndName & all_inputs)
 {
@@ -1396,6 +1396,20 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunc
         }
     }
 
+    Node * result_predicate = nodes_mapping[*conjunction.begin()];
+
+    if (conjunction.size() > 1)
+    {
+        std::vector<Node *> args;
+        args.reserve(conjunction.size());
+        for (const auto * predicate : conjunction)
+            args.emplace_back(nodes_mapping[predicate]);
+
+        result_predicate = &actions->addFunction(func_builder_and, args, {}, true, false);
+    }
+
+    actions->index.insert(result_predicate);
+
     /// Actions must have the same inputs as in all_inputs list.
     /// See comment to cloneActionsForFilterPushDown.
     for (const auto & col : all_inputs)
@@ -1414,19 +1428,6 @@ ActionsDAGPtr ActionsDAG::cloneActionsForConjunction(std::vector<Node *> conjunc
         actions->index.insert(input);
     }
 
-    Node * result_predicate = nodes_mapping[*conjunction.begin()];
-
-    if (conjunction.size() > 1)
-    {
-        std::vector<Node *> args;
-        args.reserve(conjunction.size());
-        for (const auto * predicate : conjunction)
-            args.emplace_back(nodes_mapping[predicate]);
-
-        result_predicate = &actions->addFunction(func_builder_and, args, {}, true, false);
-    }
-
-    actions->index.insert(result_predicate);
     return actions;
 }
 
@@ -1451,6 +1452,11 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
 
         predicate = *it;
     }
+
+    /// If condition is constant let's do nothing.
+    /// It means there is nothing to push down or optimization was already applied.
+    if (predicate->type == ActionType::COLUMN)
+        return nullptr;
 
     std::unordered_set<const Node *> allowed_nodes;
 
@@ -1501,7 +1507,19 @@ ActionsDAGPtr ActionsDAG::cloneActionsForFilterPushDown(
             node.result_name = std::move(predicate->result_name);
             node.result_type = std::move(predicate->result_type);
             node.column = node.result_type->createColumnConst(0, 1);
-            *predicate = std::move(node);
+
+            if (predicate->type != ActionType::INPUT)
+                *predicate = std::move(node);
+            else
+            {
+                /// Special case. We cannot replace input to constant inplace.
+                /// Because we cannot affect inputs list for actions.
+                /// So we just add a new constant and update index.
+                auto * new_predicate = &addNode(node, true, false);
+                for (auto it = index.begin(); it != index.end(); ++it)
+                    if (*it == predicate)
+                        index.replace(it, new_predicate);
+            }
         }
 
         removeUnusedActions(false);

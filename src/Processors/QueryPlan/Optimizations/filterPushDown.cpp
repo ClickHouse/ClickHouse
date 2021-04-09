@@ -79,8 +79,8 @@ static size_t tryAddNewFilterStep(
     child_node->children.emplace_back(&node);
     /// Expression/Filter -> Aggregating -> Filter -> Something
 
-    /// New filter column is added to the end.
-    auto split_filter_column_name = (*split_filter->getIndex().rbegin())->result_name;
+    /// New filter column is the first one.
+    auto split_filter_column_name = (*split_filter->getIndex().begin())->result_name;
     node.step = std::make_unique<FilterStep>(
             node.children.at(0)->step->getOutputStream(),
             std::move(split_filter), std::move(split_filter_column_name), true);
