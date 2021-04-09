@@ -12,7 +12,6 @@ class CreatingSetStep : public ITransformingStep
 public:
     CreatingSetStep(
             const DataStream & input_stream_,
-            Block header,
             String description_,
             SubqueryForSet subquery_for_set_,
             SizeLimits network_transfer_limits_,
@@ -20,7 +19,7 @@ public:
 
     String getName() const override { return "CreatingSet"; }
 
-    void transformPipeline(QueryPipeline & pipeline) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(FormatSettings & settings) const override;
 
@@ -34,11 +33,11 @@ private:
 class CreatingSetsStep : public IQueryPlanStep
 {
 public:
-    CreatingSetsStep(DataStreams input_streams_);
+    explicit CreatingSetsStep(DataStreams input_streams_);
 
     String getName() const override { return "CreatingSets"; }
 
-    QueryPipelinePtr updatePipeline(QueryPipelines pipelines) override;
+    QueryPipelinePtr updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &) override;
 
     void describePipeline(FormatSettings & settings) const override;
 

@@ -53,7 +53,7 @@ def invalid_ciphertext(self):
             d_iv = None if not iv_len else f"'{iv[:iv_len]}'"
 
             for datatype, ciphertext in invalid_ciphertexts:
-                if datatype in ["NULL"]:
+                if datatype == "NULL" or datatype.endswith("Null"):
                     continue
                 with When(f"invalid ciphertext={ciphertext}"):
                     if "cfb" in mode or "ofb" in mode or "ctr" in mode:
@@ -364,17 +364,10 @@ def decryption(self):
                 ciphertext = f"unhex({ciphertext})"
                 compare = plaintext
 
-                if datatype == "IPv4":
-                    cast = "toIPv4(IPv4NumToString(reinterpretAsUInt32"
-                    endcast = "))"
-                elif datatype in ["DateTime64", "UUID", "IPv6", "LowCardinality", "Enum8", "Enum16", "Decimal32", "Decimal64", "Decimal128", "Array"]:
-                    xfail(reason="no conversion")
-                elif datatype == "NULL":
+                if datatype == "NULL" or datatype.endswith("Null"):
                     ciphertext = "NULL"
                     cast = "isNull"
                     compare = None
-                elif datatype in ["Float32", "Float64", "Date", "DateTime"] or "Int" in datatype:
-                    cast = f"reinterpretAs{datatype}"
 
                 aes_decrypt_mysql(ciphertext=ciphertext, key=f"'{key[:key_len]}'", mode=mode,
                     iv=(None if not iv_len else f"'{iv[:iv_len]}'"),

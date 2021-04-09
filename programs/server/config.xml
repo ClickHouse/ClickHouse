@@ -204,7 +204,7 @@
             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
-                  openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 
+                  openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
                  Only file format with BEGIN DH PARAMETERS is supported.
               -->
             <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
@@ -284,6 +284,10 @@
          In bytes. Cache is single for server. Memory is allocated only on demand.
          Cache is used when 'use_uncompressed_cache' user setting turned on (off by default).
          Uncompressed cache is advantageous only for very short queries and in rare cases.
+
+         Note: uncompressed cache can be pointless for lz4, because memory bandwidth
+         is slower than multi-core decompression on some server configurations.
+         Enabling it can sometimes paradoxically make queries slower.
       -->
     <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 
@@ -292,6 +296,25 @@
          You should not lower this value.
       -->
     <mark_cache_size>5368709120</mark_cache_size>
+
+
+    <!-- If you enable the `min_bytes_to_use_mmap_io` setting,
+         the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
+         It makes sense only for large files and helps only if data reside in page cache.
+         To avoid frequent open/mmap/munmap/close calls (which are very expensive due to consequent page faults)
+         and to reuse mappings from several threads and queries,
+         the cache of mapped files is maintained. Its size is the number of mapped regions (usually equal to the number of mapped files).
+         The amount of data in mapped files can be monitored
+         in system.metrics, system.metric_log by the MMappedFiles, MMappedFileBytes metrics
+         and in system.asynchronous_metrics, system.asynchronous_metrics_log by the MMapCacheCells metric,
+         and also in system.events, system.processes, system.query_log, system.query_thread_log by the
+         CreatedReadBufferMMap, CreatedReadBufferMMapFailed, MMappedFileCacheHits, MMappedFileCacheMisses events.
+         Note that the amount of data in mapped files does not consume memory directly and is not accounted
+         in query or server memory usage - because this memory can be discarded similar to OS page cache.
+         The cache is dropped (the files are closed) automatically on removal of old parts in MergeTree,
+         also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
+      -->
+    <mmap_cache_size>1000</mmap_cache_size>
 
 
     <!-- Path to data directory, with trailing slash. -->
@@ -321,9 +344,12 @@
              Parameters:
                 host - LDAP server hostname or IP, this parameter is mandatory and cannot be empty.
                 port - LDAP server port, default is 636 if enable_tls is set to true, 389 otherwise.
-                auth_dn_prefix, auth_dn_suffix - prefix and suffix used to construct the DN to bind to.
-                        Effectively, the resulting DN will be constructed as auth_dn_prefix + escape(user_name) + auth_dn_suffix string.
-                        Note, that this implies that auth_dn_suffix should usually have comma ',' as its first non-space character.
+                bind_dn - template used to construct the DN to bind to.
+                        The resulting DN will be constructed by replacing all '{user_name}' substrings of the template with the actual
+                         user name during each authentication attempt.
+                verification_cooldown - a period of time, in seconds, after a successful bind attempt, during which a user will be assumed
+                         to be successfully authenticated for all consecutive requests without contacting the LDAP server.
+                        Specify 0 (the default) to disable caching and force contacting the LDAP server for each authentication request.
                 enable_tls - flag to trigger use of secure connection to the LDAP server.
                         Specify 'no' for plain text (ldap://) protocol (not recommended).
                         Specify 'yes' for LDAP over SSL/TLS (ldaps://) protocol (recommended, the default).
@@ -341,8 +367,8 @@
                 <my_ldap_server>
                     <host>localhost</host>
                     <port>636</port>
-                    <auth_dn_prefix>uid=</auth_dn_prefix>
-                    <auth_dn_suffix>,ou=users,dc=example,dc=com</auth_dn_suffix>
+                    <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
+                    <verification_cooldown>300</verification_cooldown>
                     <enable_tls>yes</enable_tls>
                     <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
                     <tls_require_cert>demand</tls_require_cert>
@@ -354,6 +380,27 @@
                 </my_ldap_server>
         -->
     </ldap_servers>
+
+    <!-- To enable Kerberos authentication support for HTTP requests (GSS-SPNEGO), for those users who are explicitly configured
+          to authenticate via Kerberos, define a single 'kerberos' section here.
+         Parameters:
+            principal - canonical service principal name, that will be acquired and used when accepting security contexts.
+                    This parameter is optional, if omitted, the default principal will be used.
+                    This parameter cannot be specified together with 'realm' parameter.
+            realm - a realm, that will be used to restrict authentication to only those requests whose initiator's realm matches it.
+                    This parameter is optional, if omitted, no additional filtering by realm will be applied.
+                    This parameter cannot be specified together with 'principal' parameter.
+         Example:
+            <kerberos />
+         Example:
+            <kerberos>
+                <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
+            </kerberos>
+         Example:
+            <kerberos>
+                <realm>EXAMPLE.COM</realm>
+            </kerberos>
+    -->
 
     <!-- Sources to read users, roles, access rights, profiles of settings, quotas. -->
     <user_directories>
@@ -371,9 +418,29 @@
                 server - one of LDAP server names defined in 'ldap_servers' config section above.
                         This parameter is mandatory and cannot be empty.
                 roles - section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
-                        If no roles are specified, user will not be able to perform any actions after authentication.
-                        If any of the listed roles is not defined locally at the time of authentication, the authenthication attempt
-                         will fail as if the provided password was incorrect.
+                        If no roles are specified here or assigned during role mapping (below), user will not be able to perform any
+                         actions after authentication.
+                role_mapping - section with LDAP search parameters and mapping rules.
+                        When a user authenticates, while still bound to LDAP, an LDAP search is performed using search_filter and the
+                         name of the logged in user. For each entry found during that search, the value of the specified attribute is
+                         extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the
+                         value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by
+                         CREATE ROLE command.
+                        There can be multiple 'role_mapping' sections defined inside the same 'ldap' section. All of them will be
+                         applied.
+                    base_dn - template used to construct the base DN for the LDAP search.
+                            The resulting DN will be constructed by replacing all '{user_name}' and '{bind_dn}' substrings
+                             of the template with the actual user name and bind DN during each LDAP search.
+                    scope - scope of the LDAP search.
+                            Accepted values are: 'base', 'one_level', 'children', 'subtree' (the default).
+                    search_filter - template used to construct the search filter for the LDAP search.
+                            The resulting filter will be constructed by replacing all '{user_name}', '{bind_dn}', and '{base_dn}'
+                             substrings of the template with the actual user name, bind DN, and base DN during each LDAP search.
+                            Note, that the special characters must be escaped properly in XML.
+                    attribute - attribute name whose values will be returned by the LDAP search.
+                    prefix - prefix, that will be expected to be in front of each string in the original list of strings returned by
+                             the LDAP search. Prefix will be removed from the original strings and resulting strings will be treated
+                             as local role names. Empty, by default.
              Example:
                 <ldap>
                     <server>my_ldap_server</server>
@@ -381,6 +448,13 @@
                         <my_local_role1 />
                         <my_local_role2 />
                     </roles>
+                    <role_mapping>
+                        <base_dn>ou=groups,dc=example,dc=com</base_dn>
+                        <scope>subtree</scope>
+                        <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                        <attribute>cn</attribute>
+                        <prefix>clickhouse_</prefix>
+                    </role_mapping>
                 </ldap>
         -->
     </user_directories>
@@ -391,8 +465,14 @@
     <!-- Comma-separated list of prefixes for user-defined settings. -->
     <custom_settings_prefixes></custom_settings_prefixes>
 
-    <!-- System profile of settings. This settings are used by internal processes (Buffer storage, Distributed DDL worker and so on). -->
+    <!-- System profile of settings. This settings are used by internal processes (Distributed DDL worker and so on). -->
     <!-- <system_profile>default</system_profile> -->
+
+    <!-- Buffer profile of settings.
+         This settings are used by Buffer storage to flush data to the underlying table.
+         Default: used from system_profile directive.
+    -->
+    <!-- <buffer_profile>default</buffer_profile> -->
 
     <!-- Default database. -->
     <default_database>default</default_database>
@@ -428,7 +508,7 @@
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
-    <remote_servers incl="clickhouse_remote_servers" >
+    <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <!-- Inter-server per-cluster secret for Distributed queries
@@ -538,7 +618,7 @@
     <!-- The list of hosts allowed to use in URL-related storage engines and table functions.
         If this section is not present in configuration, all hosts are allowed.
     -->
-    <remote_url_allow_hosts>
+    <!--<remote_url_allow_hosts>-->
         <!-- Host should be specified exactly as in URL. The name is checked before DNS resolution.
             Example: "yandex.ru", "yandex.ru." and "www.yandex.ru" are different hosts.
                     If port is explicitly specified in URL, the host:port is checked as a whole.
@@ -552,7 +632,7 @@
             Regexps are not aligned: don't forget to add ^ and $. Also don't forget to escape dot (.) metacharacter
             (forgetting to do so is a common source of error).
         -->
-    </remote_url_allow_hosts>
+    <!--</remote_url_allow_hosts>-->
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
@@ -562,17 +642,37 @@
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/
+         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/
       -->
 
-    <zookeeper incl="zookeeper-servers" optional="true" />
+    <!--
+    <zookeeper>
+        <node>
+            <host>example1</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example2</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example3</host>
+            <port>2181</port>
+        </node>
+    </zookeeper>
+    -->
 
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.yandex/docs/en/table_engines/replication/#creating-replicated-tables
+         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
       -->
-    <macros incl="macros" optional="true" />
+    <!--
+    <macros>
+        <shard>01</shard>
+        <replica>example01-01-1</replica>
+    </macros>
+    -->
 
 
     <!-- Reloading interval for embedded dictionaries, in seconds. Default: 3600. -->
@@ -652,7 +752,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/custom_partitioning_key/
+            PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/mergetree-family/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -806,8 +906,8 @@
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
       -->
-    <compression incl="clickhouse_compression">
     <!--
+    <compression>
         <!- - Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used. - ->
         <case>
 
@@ -818,8 +918,8 @@
             <!- - What compression method to use. - ->
             <method>zstd</method>
         </case>
-    -->
     </compression>
+    -->
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
@@ -832,6 +932,19 @@
 
         <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
         <!-- <pool_size>1</pool_size> -->
+
+        <!--
+             Cleanup settings (active tasks will not be removed)
+        -->
+
+        <!-- Controls task TTL (default 1 week) -->
+        <!-- <task_max_lifetime>604800</task_max_lifetime> -->
+
+        <!-- Controls how often cleanup should be performed (in seconds) -->
+        <!-- <cleanup_delay_period>60</cleanup_delay_period> -->
+
+        <!-- Controls how many tasks could be in the queue -->
+        <!-- <max_tasks_in_queue>1000</max_tasks_in_queue> -->
     </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->

@@ -31,8 +31,8 @@ The supported formats are:
 | [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
-| [JSONStringEachRow](#jsonstringeachrow)                                                 | ✔     | ✔      |
-| [JSONStringEachRowWithProgress](#jsonstringeachrowwithprogress)                         | ✗     | ✔      |
+| [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
 | [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
 | [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
@@ -50,7 +50,7 @@ The supported formats are:
 | [Parquet](#data-format-parquet)                                                         | ✔     | ✔      |
 | [Arrow](#data-format-arrow)                                                             | ✔     | ✔      |
 | [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
-| [ORC](#data-format-orc)                                                                 | ✔     | ✗      |
+| [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
 | [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
 | [Native](#native)                                                                       | ✔     | ✔      |
@@ -515,9 +515,9 @@ Example:
 
 ## JSONAsString {#jsonasstring}
 
-In this format, a single JSON object is interpreted as a single value. If input has several JSON objects (comma separated) they will be interpreted as a sepatate rows.
+In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated) they will be interpreted as separate rows.
 
-This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to  [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](../sql-reference/functions/json-functions.md) to process it.
+This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](../sql-reference/functions/json-functions.md) to process it.
 
 **Example**
 
@@ -526,7 +526,7 @@ Query:
 ``` sql
 DROP TABLE IF EXISTS json_as_string;
 CREATE TABLE json_as_string (json String) ENGINE = Memory;
-INSERT INTO json_as_string FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
 SELECT * FROM json_as_string;
 ```
 
@@ -539,7 +539,6 @@ Result:
 │ {"any json stucture":1}           │
 └───────────────────────────────────┘
 ```
-
 
 ## JSONCompact {#jsoncompact}
 ## JSONCompactString {#jsoncompactstring}
@@ -613,7 +612,7 @@ Example:
 ```
 
 ## JSONEachRow {#jsoneachrow}
-## JSONStringEachRow {#jsonstringeachrow}
+## JSONStringsEachRow {#jsonstringseachrow}
 ## JSONCompactEachRow {#jsoncompacteachrow}
 ## JSONCompactStringEachRow {#jsoncompactstringeachrow}
 
@@ -628,9 +627,9 @@ When using these formats, ClickHouse outputs rows as separated, newline-delimite
 When inserting the data, you should provide a separate JSON value for each row.
 
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
-## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
+## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
 
-Differs from `JSONEachRow`/`JSONStringEachRow` in that ClickHouse will also yield progress information as JSON values.
+Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yield progress information as JSON values.
 
 ```json
 {"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
@@ -1255,7 +1254,7 @@ ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query
 
 Unsupported Parquet data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
 ### Inserting and Selecting Data {#inserting-and-selecting-data}
 
@@ -1285,32 +1284,33 @@ To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-e
 
 ## ORC {#data-format-orc}
 
-[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. You can only insert data in this format to ClickHouse.
+[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the [Hadoop](https://hadoop.apache.org/) ecosystem.
 
 ### Data Types Matching {#data_types-matching-3}
 
-The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` queries.
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
-| ORC data type (`INSERT`) | ClickHouse data type                                |
-|--------------------------|-----------------------------------------------------|
-| `UINT8`, `BOOL`          | [UInt8](../sql-reference/data-types/int-uint.md)    |
-| `INT8`                   | [Int8](../sql-reference/data-types/int-uint.md)     |
-| `UINT16`                 | [UInt16](../sql-reference/data-types/int-uint.md)   |
-| `INT16`                  | [Int16](../sql-reference/data-types/int-uint.md)    |
-| `UINT32`                 | [UInt32](../sql-reference/data-types/int-uint.md)   |
-| `INT32`                  | [Int32](../sql-reference/data-types/int-uint.md)    |
-| `UINT64`                 | [UInt64](../sql-reference/data-types/int-uint.md)   |
-| `INT64`                  | [Int64](../sql-reference/data-types/int-uint.md)    |
-| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     |
-| `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     |
-| `DATE32`                 | [Date](../sql-reference/data-types/date.md)         |
-| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) |
-| `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     |
-| `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   |
+| ORC data type (`INSERT`) | ClickHouse data type                                | ORC data type (`SELECT`) |
+|--------------------------|-----------------------------------------------------|--------------------------|
+| `UINT8`, `BOOL`          | [UInt8](../sql-reference/data-types/int-uint.md)    | `UINT8`                  |
+| `INT8`                   | [Int8](../sql-reference/data-types/int-uint.md)     | `INT8`                   |
+| `UINT16`                 | [UInt16](../sql-reference/data-types/int-uint.md)   | `UINT16`                 |
+| `INT16`                  | [Int16](../sql-reference/data-types/int-uint.md)    | `INT16`                  |
+| `UINT32`                 | [UInt32](../sql-reference/data-types/int-uint.md)   | `UINT32`                 |
+| `INT32`                  | [Int32](../sql-reference/data-types/int-uint.md)    | `INT32`                  |
+| `UINT64`                 | [UInt64](../sql-reference/data-types/int-uint.md)   | `UINT64`                 |
+| `INT64`                  | [Int64](../sql-reference/data-types/int-uint.md)    | `INT64`                  |
+| `FLOAT`, `HALF_FLOAT`    | [Float32](../sql-reference/data-types/float.md)     | `FLOAT`                  |
+| `DOUBLE`                 | [Float64](../sql-reference/data-types/float.md)     | `DOUBLE`                 |
+| `DATE32`                 | [Date](../sql-reference/data-types/date.md)         | `DATE32`                 |
+| `DATE64`, `TIMESTAMP`    | [DateTime](../sql-reference/data-types/datetime.md) | `TIMESTAMP`              |
+| `STRING`, `BINARY`       | [String](../sql-reference/data-types/string.md)     | `BINARY`                 |
+| `DECIMAL`                | [Decimal](../sql-reference/data-types/decimal.md)   | `DECIMAL`                |
+| `-`                      | [Array](../sql-reference/data-types/array.md)       | `LIST`                   |
 
 ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` query treats the ORC `DECIMAL` type as the ClickHouse `Decimal128` type.
 
-Unsupported ORC data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+Unsupported ORC data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
 The data types of ClickHouse table columns don’t have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
@@ -1320,6 +1320,14 @@ You can insert ORC data from a file into ClickHouse table by the following comma
 
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
+```
+
+### Selecting Data {#selecting-data-2}
+
+You can select data from a ClickHouse table and save them into some file in the ORC format by the following command:
+
+``` bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
 ```
 
 To exchange data with Hadoop, you can use [HDFS table engine](../engines/table-engines/integrations/hdfs.md).
@@ -1360,15 +1368,15 @@ When working with the `Regexp` format, you can use the following settings:
     - Escaped (similarly to [TSV](#tabseparated))
     - Quoted (similarly to [Values](#data-format-values))
     - Raw (extracts subpatterns as a whole, no escaping rules)
-- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`. 
+- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
-**Usage** 
+**Usage**
 
-The regular expression from `format_regexp` setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset. 
+The regular expression from `format_regexp` setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
 
-Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`. 
+Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`.
 
-The content of every matched subpattern is parsed with the method of corresponding data type, according to `format_regexp_escaping_rule` setting. 
+The content of every matched subpattern is parsed with the method of corresponding data type, according to `format_regexp_escaping_rule` setting.
 
 If the regular expression does not match the line and `format_regexp_skip_unmatched` is set to 1, the line is silently skipped. If `format_regexp_skip_unmatched` is set to 0, exception is thrown.
 

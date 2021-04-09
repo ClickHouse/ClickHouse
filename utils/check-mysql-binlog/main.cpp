@@ -69,21 +69,27 @@ static DB::MySQLReplication::BinlogEventPtr parseSingleEventBody(
         case DB::MySQLReplication::WRITE_ROWS_EVENT_V1:
         case DB::MySQLReplication::WRITE_ROWS_EVENT_V2:
         {
-            event = std::make_shared<DB::MySQLReplication::WriteRowsEvent>(last_table_map_event, std::move(header));
+            DB::MySQLReplication::RowsEventHeader rows_header(header.type);
+            rows_header.parse(*event_payload);
+            event = std::make_shared<DB::MySQLReplication::WriteRowsEvent>(last_table_map_event, std::move(header), rows_header);
             event->parseEvent(*event_payload);
             break;
         }
         case DB::MySQLReplication::DELETE_ROWS_EVENT_V1:
         case DB::MySQLReplication::DELETE_ROWS_EVENT_V2:
         {
-            event = std::make_shared<DB::MySQLReplication::DeleteRowsEvent>(last_table_map_event, std::move(header));
+            DB::MySQLReplication::RowsEventHeader rows_header(header.type);
+            rows_header.parse(*event_payload);
+            event = std::make_shared<DB::MySQLReplication::DeleteRowsEvent>(last_table_map_event, std::move(header), rows_header);
             event->parseEvent(*event_payload);
             break;
         }
         case DB::MySQLReplication::UPDATE_ROWS_EVENT_V1:
         case DB::MySQLReplication::UPDATE_ROWS_EVENT_V2:
         {
-            event = std::make_shared<DB::MySQLReplication::UpdateRowsEvent>(last_table_map_event, std::move(header));
+            DB::MySQLReplication::RowsEventHeader rows_header(header.type);
+            rows_header.parse(*event_payload);
+            event = std::make_shared<DB::MySQLReplication::UpdateRowsEvent>(last_table_map_event, std::move(header), rows_header);
             event->parseEvent(*event_payload);
             break;
         }

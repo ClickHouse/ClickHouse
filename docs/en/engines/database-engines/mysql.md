@@ -51,6 +51,23 @@ All other MySQL data types are converted into [String](../../sql-reference/data-
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
+## Global Variables Support {#global-variables-support}
+
+For better compatibility you may address global variables in MySQL style, as `@@identifier`. 
+
+These variables are supported:
+- `version`
+- `max_allowed_packet`
+
+!!! warning "Warning"
+    By now these variables are stubs and don't correspond to anything.
+
+Example:
+
+``` sql
+SELECT @@version;
+```
+
 ## Examples of Use {#examples-of-use}
 
 Table in MySQL:

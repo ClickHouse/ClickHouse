@@ -36,6 +36,9 @@ option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data t
 option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
     ${ENABLE_CLICKHOUSE_ALL})
 
+option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source"
+    ${ENABLE_CLICKHOUSE_ALL})
+
 # https://presentations.clickhouse.tech/matemarketing_2020/
 option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories"
     ${ENABLE_CLICKHOUSE_ALL})
@@ -107,6 +110,12 @@ if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     message(STATUS "ODBC bridge mode: ON")
 else()
     message(STATUS "ODBC bridge mode: OFF")
+endif()
+
+if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
+    message(STATUS "Library bridge mode: ON")
+else()
+    message(STATUS "Library bridge mode: OFF")
 endif()
 
 if (ENABLE_CLICKHOUSE_INSTALL)
@@ -188,9 +197,14 @@ add_subdirectory (format)
 add_subdirectory (obfuscator)
 add_subdirectory (install)
 add_subdirectory (git-import)
+add_subdirectory (bash-completion)
 
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
+endif ()
+
+if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
+    add_subdirectory (library-bridge)
 endif ()
 
 if (CLICKHOUSE_ONE_SHARED)
@@ -208,6 +222,10 @@ if (CLICKHOUSE_SPLIT_BINARY)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
     endif ()
 
+    if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
+        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-library-bridge)
+    endif ()
+
     set_target_properties(${CLICKHOUSE_ALL_TARGETS} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_ALL_TARGETS})
@@ -216,7 +234,13 @@ if (CLICKHOUSE_SPLIT_BINARY)
     install(PROGRAMS clickhouse-split-helper DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME clickhouse COMPONENT clickhouse)
 else ()
     add_executable (clickhouse main.cpp)
-    target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils)
+
+    # A library that prevent usage of several functions from libc.
+    if (ARCH_AMD64 AND OS_LINUX AND NOT OS_ANDROID)
+        set (HARMFUL_LIB harmful)
+    endif ()
+
+    target_link_libraries (clickhouse PRIVATE clickhouse_common_io string_utils ${HARMFUL_LIB})
     target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
     if (ENABLE_CLICKHOUSE_SERVER)
@@ -312,10 +336,14 @@ else ()
     if (USE_GDB_ADD_INDEX)
         add_custom_command(TARGET clickhouse POST_BUILD COMMAND ${GDB_ADD_INDEX_EXE} clickhouse COMMENT "Adding .gdb-index to clickhouse" VERBATIM)
     endif()
+
+    if (USE_BINARY_HASH)
+        add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .note.ClickHouse.hash=hash clickhouse COMMENT "Adding .note.ClickHouse.hash to clickhouse" VERBATIM)
+    endif()
 endif ()
 
 if (ENABLE_TESTS AND USE_GTEST)
-    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_libcommon unit_tests_dbms)
+    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()

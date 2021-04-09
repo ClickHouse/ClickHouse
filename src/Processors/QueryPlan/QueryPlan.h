@@ -25,9 +25,12 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 class Pipe;
 
+struct QueryPlanOptimizationSettings;
+struct BuildQueryPipelineSettings;
+
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
-/// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimisations.
+/// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimizations.
 class QueryPlan
 {
 public:
@@ -43,12 +46,16 @@ public:
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const DataStream & getCurrentDataStream() const; /// Checks that (isInitialized() && !isCompleted())
 
-    void optimize();
+    void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
-    QueryPipelinePtr buildQueryPipeline();
+    QueryPipelinePtr buildQueryPipeline(
+        const QueryPlanOptimizationSettings & optimization_settings,
+        const BuildQueryPipelineSettings & build_pipeline_settings);
 
     /// If initialized, build pipeline and convert to pipe. Otherwise, return empty pipe.
-    Pipe convertToPipe();
+    Pipe convertToPipe(
+        const QueryPlanOptimizationSettings & optimization_settings,
+        const BuildQueryPipelineSettings & build_pipeline_settings);
 
     struct ExplainPlanOptions
     {
@@ -96,5 +103,7 @@ private:
     size_t max_threads = 0;
     std::vector<std::shared_ptr<Context>> interpreter_context;
 };
+
+std::string debugExplainStep(const IQueryPlanStep & step);
 
 }

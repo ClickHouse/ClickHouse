@@ -89,12 +89,16 @@ MergeTreeReaderStream::MergeTreeReaderStream(
                     buffer_size,
                     sum_mark_range_bytes,
                     settings.min_bytes_to_use_direct_io,
-                    settings.min_bytes_to_use_mmap_io);
+                    settings.min_bytes_to_use_mmap_io,
+                    settings.mmap_cache.get());
             },
             uncompressed_cache);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
+
+        if (!settings.checksum_on_read)
+            buffer->disableChecksumming();
 
         cached_buffer = std::move(buffer);
         data_buffer = cached_buffer.get();
@@ -102,12 +106,20 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            disk->readFile(path_prefix + data_file_extension, buffer_size,
-                sum_mark_range_bytes, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io)
+            disk->readFile(
+                path_prefix + data_file_extension,
+                buffer_size,
+                sum_mark_range_bytes,
+                settings.min_bytes_to_use_direct_io,
+                settings.min_bytes_to_use_mmap_io,
+                settings.mmap_cache.get())
         );
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
+
+        if (!settings.checksum_on_read)
+            buffer->disableChecksumming();
 
         non_cached_buffer = std::move(buffer);
         data_buffer = non_cached_buffer.get();

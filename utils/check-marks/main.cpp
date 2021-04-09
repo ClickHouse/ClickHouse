@@ -13,13 +13,13 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 
 
-/** This program checks correctness of .mrk (marks) file for corresponding compressed .bin file.
+/** This program checks correctness of .mrk/.mrk2 (marks) file for corresponding compressed .bin file.
   */
 
 static void checkByCompressedReadBuffer(const std::string & mrk_path, const std::string & bin_path)
 {
     DB::ReadBufferFromFile mrk_in(mrk_path);
-    DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0);
+    DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0, nullptr);
 
     DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
     bool mrk2_format = boost::algorithm::ends_with(mrk_path, ".mrk2");
@@ -42,9 +42,10 @@ static void checkByCompressedReadBuffer(const std::string & mrk_path, const std:
             out << ", has rows after " << index_granularity_rows;
         }
 
-        out << ".\n" << DB::flush;
-
         bin_in.seek(offset_in_compressed_file, offset_in_decompressed_block);
+        out << ", decompressed size " << bin_in.available();
+
+        out << ".\n" << DB::flush;
     }
 }
 
@@ -61,7 +62,7 @@ int main(int argc, char ** argv)
 
     if (options.count("help") || argc != 3)
     {
-        std::cout << "Usage: " << argv[0] << " file.mrk file.bin" << std::endl;
+        std::cout << "Usage: " << argv[0] << " file.mrk[2] file.bin" << std::endl;
         std::cout << desc << std::endl;
         return 1;
     }

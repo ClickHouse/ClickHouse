@@ -6,4 +6,3 @@ toc_priority: 2
 
 Вычисляет минимум.
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/min/) <!--hide-->

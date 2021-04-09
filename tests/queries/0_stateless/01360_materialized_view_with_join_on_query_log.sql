@@ -8,6 +8,7 @@ SET log_queries=1;
 SELECT 1;
 SYSTEM FLUSH LOGS;
 
+-- NOTE: can be rewritten using log_queries_min_query_duration_ms
 CREATE MATERIALIZED VIEW slow_log Engine=Memory AS
 (
         SELECT * FROM
@@ -16,7 +17,7 @@ CREATE MATERIALIZED VIEW slow_log Engine=Memory AS
                 extract(query,'/\\*\\s*QUERY_GROUP_ID:(.*?)\\s*\\*/') as QUERY_GROUP_ID,
                 *
             FROM system.query_log
-            WHERE type<>1 and event_date >= yesterday() and event_time > now() - 120
+            WHERE type<>1 and event_date >= yesterday()
         ) as ql
         INNER JOIN expected_times USING (QUERY_GROUP_ID)
         WHERE query_duration_ms > max_query_duration_ms
@@ -37,7 +38,7 @@ SELECT
     extract(query,'/\\*\\s*QUERY_GROUP_ID:(.*?)\\s*\\*/') as QUERY_GROUP_ID,
     count()
 FROM system.query_log
-WHERE type<>1 and event_date >= yesterday() and event_time > now() - 20 and QUERY_GROUP_ID<>''
+WHERE current_database = currentDatabase() AND type<>1 and event_date >= yesterday() and QUERY_GROUP_ID<>''
 GROUP BY QUERY_GROUP_ID
 ORDER BY QUERY_GROUP_ID;
 
@@ -47,6 +48,7 @@ SELECT
     QUERY_GROUP_ID,
     count()
 FROM slow_log
+WHERE current_database = currentDatabase()
 GROUP BY QUERY_GROUP_ID
 ORDER BY QUERY_GROUP_ID;
 

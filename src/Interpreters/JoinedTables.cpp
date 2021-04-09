@@ -161,6 +161,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
     if (isLeftTableFunction())
         return context.getQueryContext().executeTableFunction(left_table_expression);
 
+    StorageID table_id = StorageID::createEmpty();
     if (left_db_and_table)
     {
         table_id = context.resolveStorageID(StorageID(left_db_and_table->database, left_db_and_table->table, left_db_and_table->uuid));

@@ -82,6 +82,10 @@ public:
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
+    String http_referer;
+
+    /// For mysql
+    UInt64 connection_id = 0;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
@@ -91,6 +95,8 @@ public:
 
     /// Common
     String quota_key;
+
+    UInt64 distributed_depth = 0;
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 

@@ -1,15 +1,17 @@
 #include "FileDictionarySource.h"
+
+#include <Poco/File.h>
+#include <filesystem>
+
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
-#include <Poco/File.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
-
 
 namespace DB
 {
@@ -32,9 +34,19 @@ FileDictionarySource::FileDictionarySource(
 {
     if (check_config)
     {
-        const String user_files_path = context.getUserFilesPath();
-        if (!startsWith(filepath, user_files_path))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
+        auto source_file_path = std::filesystem::path(filepath);
+        auto source_file_absolute_path = std::filesystem::canonical(source_file_path);
+
+        String user_files_path_string_value = context.getUserFilesPath();
+        auto user_files_path = std::filesystem::path(user_files_path_string_value);
+        auto user_files_absolute_path = std::filesystem::canonical(user_files_path);
+
+        auto [_, user_files_absolute_path_mismatch_it] = std::mismatch(source_file_absolute_path.begin(), source_file_absolute_path.end(), user_files_absolute_path.begin(), user_files_absolute_path.end());
+
+        bool user_files_absolute_path_include_source_file_absolute_path = user_files_absolute_path_mismatch_it == user_files_absolute_path.end();
+
+        if (!user_files_absolute_path_include_source_file_absolute_path)
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path_string_value);
     }
 }
 
