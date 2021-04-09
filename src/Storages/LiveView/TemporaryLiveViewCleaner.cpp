@@ -165,10 +165,8 @@ void TemporaryLiveViewCleaner::backgroundThreadFunc()
             ++it;
         }
 
-        lock.unlock();
         for (const auto & storage_id : storages_to_drop)
             executeDropQuery(storage_id, global_context);
-        lock.lock();
     }
 }
 
