@@ -7,7 +7,8 @@
 namespace DB
 {
 
-/// Create source from prepared pipe.
+/// This step is created to read from MergeTree* table.
+/// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree : public ISourceStep
 {
 public:
@@ -21,6 +22,8 @@ public:
         Skip,
     };
 
+    /// This is a struct with information about applied indexes.
+    /// Is used for introspection only, in EXPLAIN query.
     struct IndexStat
     {
         IndexType type;
@@ -33,6 +36,7 @@ public:
     using IndexStats = std::vector<IndexStat>;
     using IndexStatPtr = std::unique_ptr<IndexStats>;
 
+    /// Part of settings which are needed for reading.
     struct Settings
     {
         UInt64 max_block_size;
@@ -47,8 +51,16 @@ public:
 
     enum class ReadType
     {
+        /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
+        /// If num_streams == 1, will read without pool, in order specified in parts.
         Default,
+        /// Read in sorting key order.
+        /// Returned pipe will have the number of ports equals to parts.size().
+        /// Parameter num_streams_ is ignored in this case.
+        /// User should add MergingSorted itself if needed.
         InOrder,
+        /// The same as InOrder, but in reverse order.
+        /// For every part, read ranges and granules from end to begin. Also add ReverseTransform.
         InReverseOrder,
     };
 
