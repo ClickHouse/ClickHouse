@@ -10,6 +10,7 @@
 
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageAggregatingMemory.h>
 #include <Storages/StorageValues.h>
@@ -246,7 +247,6 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
         columns_after_aggr.add(column_description);
     }
 
-
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(std::move(columns_after_aggr));
     storage_metadata.setConstraints(std::move(constraints_));
@@ -256,6 +256,18 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
     StorageInMemoryMetadata src_metadata;
     src_metadata.setColumns(std::move(columns_description_));
     src_sample_block = src_metadata.getSampleBlock();
+
+    Names required_result_column_names; // TODO:
+
+    auto syntax_analyzer_result = TreeRewriter(*select_context).analyzeSelect(
+            select_ptr,
+            TreeRewriterResult(src_sample_block.getNamesAndTypesList()),
+            {}, {}, required_result_column_names, {});
+
+    auto query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
+                select_ptr, syntax_analyzer_result, select_context, src_metadata,
+                NameSet(required_result_column_names.begin(), required_result_column_names.end()),
+                !options.only_analyze, options, std::move(subquery_for_sets));
 }
 
 
