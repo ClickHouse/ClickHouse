@@ -147,9 +147,13 @@ bool RemoteQueryExecutorReadContext::checkTimeoutImpl(bool blocking)
 
     /// Wait for epoll_fd will not block if it was polled externally.
     int timeout = blocking ? -1 : 0;
-    int num_events = epoll_wait(epoll_fd, events, 3, timeout);
-    if (num_events == -1)
-        throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+    int num_events = 0;
+    while (num_events <= 0)
+    {
+        num_events = epoll_wait(epoll_fd, events, 3, timeout);
+        if (num_events == -1 && errno != EINTR)
+            throwFromErrno("Failed to epoll_wait", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+    }
 
     bool is_socket_ready = false;
     bool is_pipe_alarmed = false;
