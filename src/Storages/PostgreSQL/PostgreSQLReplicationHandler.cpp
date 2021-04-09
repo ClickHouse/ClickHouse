@@ -17,6 +17,8 @@ namespace DB
 static const auto reschedule_ms = 500;
 
 
+/// TODO: fetch replica identity index
+
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & database_name_,
     const postgres::ConnectionInfo & connection_info_,
@@ -279,9 +281,8 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
     if (result.empty())
         return false;
 
-    bool is_active = result[0][0].as<bool>();
     LOG_TRACE(log, "Replication slot {} already exists (active: {}). Restart lsn position is {}",
-            slot_name, is_active, result[0][0].as<std::string>());
+            slot_name, result[0][0].as<bool>(), result[0][0].as<std::string>());
 
     return true;
 }

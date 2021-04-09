@@ -61,11 +61,10 @@ private:
 };
 
 
-/// Passes transaction object into PostgreSQLBlockInputStream and does not close transaction after read if finished.
+/// Passes transaction object into PostgreSQLBlockInputStream and does not close transaction after read is finished.
 template <typename T>
 class PostgreSQLTransactionBlockInputStream : public PostgreSQLBlockInputStream<T>
 {
-
 public:
     using Base = PostgreSQLBlockInputStream<T>;
 

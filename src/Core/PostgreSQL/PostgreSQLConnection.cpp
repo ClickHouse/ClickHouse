@@ -42,13 +42,6 @@ ConnectionPtr createReplicationConnection(const ConnectionInfo & connection_info
 }
 
 
-template <typename T>
-std::shared_ptr<T> createTransaction(pqxx::connection & connection)
-{
-    return std::make_shared<T>(connection);
-}
-
-
 Connection::Connection(const ConnectionInfo & connection_info_)
     : connection_info(connection_info_)
 {
