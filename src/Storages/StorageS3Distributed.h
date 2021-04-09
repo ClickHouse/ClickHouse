@@ -87,11 +87,7 @@ private:
 
         std::optional<String> next() override
         {
-            std::cout << "DistributedFileIterator" << std::endl;
-            std::cout << identifier << std::endl;
-            auto answer = callback(identifier);
-            std::cout << answer << std::endl;
-            return answer;
+            return callback(identifier);
         }
     };
 };

@@ -137,8 +137,6 @@ Pipe StorageS3Distributed::read(
 
     auto task_identifier = toString(UUIDHelpers::generateV4());
 
-    std::cout << "Generated UUID : " << task_identifier << std::endl;
-
     /// Register resolver, which will give other nodes a task std::make_unique
     context.getTaskSupervisor()->registerNextTaskResolver(
         std::make_unique<ReadTaskResolver>(task_identifier, std::move(callback)));
