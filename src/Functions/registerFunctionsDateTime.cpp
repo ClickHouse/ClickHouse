@@ -69,6 +69,8 @@ void registerFunctionFormatDateTime(FunctionFactory &);
 void registerFunctionFromModifiedJulianDay(FunctionFactory &);
 void registerFunctionDateTrunc(FunctionFactory &);
 
+void registerFunctiontimezoneOffset(FunctionFactory &);
+
 void registerFunctionsDateTime(FunctionFactory & factory)
 {
     registerFunctionToYear(factory);
@@ -136,6 +138,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionFormatDateTime(factory);
     registerFunctionFromModifiedJulianDay(factory);
     registerFunctionDateTrunc(factory);
+    registerFunctiontimezoneOffset(factory);
 }
 
 }

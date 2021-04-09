@@ -56,9 +56,7 @@ public:
             const std::string & marks_path_,
             const std::string & marks_file_extension_,
             const CompressionCodecPtr & compression_codec_,
-            size_t max_compress_block_size_,
-            size_t estimated_size_,
-            size_t aio_threshold_);
+            size_t max_compress_block_size_);
 
         String escaped_column_name;
         std::string data_file_extension;
@@ -133,6 +131,9 @@ protected:
     std::vector<StreamPtr> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
+
+    using SerializationsMap = std::unordered_map<String, SerializationPtr>;
+    SerializationsMap serializations;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;

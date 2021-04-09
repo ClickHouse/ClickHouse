@@ -16,8 +16,8 @@ struct GreatestBaseImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return bigint_cast<Result>(a) > bigint_cast<Result>(b) ?
-               bigint_cast<Result>(a) : bigint_cast<Result>(b);
+        return static_cast<Result>(a) > static_cast<Result>(b) ?
+               static_cast<Result>(a) : static_cast<Result>(b);
     }
 
 #if USE_EMBEDDED_COMPILER

@@ -74,7 +74,8 @@ protected:
 
     StorageSystemPartsBase(const StorageID & table_id_, NamesAndTypesList && columns_);
 
-    virtual void processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column) = 0;
+    virtual void
+    processNextStorage(MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column) = 0;
 };
 
 }

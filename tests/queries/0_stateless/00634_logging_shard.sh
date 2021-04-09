@@ -5,6 +5,7 @@ set -e
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 cur_name=$(basename "${BASH_SOURCE[0]}")

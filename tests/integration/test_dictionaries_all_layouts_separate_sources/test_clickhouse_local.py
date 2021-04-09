@@ -69,14 +69,14 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-@pytest.mark.parametrize("layout_name", LAYOUTS_SIMPLE)
+@pytest.mark.parametrize("layout_name", sorted(LAYOUTS_SIMPLE))
 def test_simple(started_cluster, layout_name):
     simple_tester.execute(layout_name, node)
 
-@pytest.mark.parametrize("layout_name", LAYOUTS_COMPLEX)
+@pytest.mark.parametrize("layout_name", sorted(LAYOUTS_COMPLEX))
 def test_complex(started_cluster, layout_name):
     complex_tester.execute(layout_name, node)
     
-@pytest.mark.parametrize("layout_name", LAYOUTS_RANGED)
+@pytest.mark.parametrize("layout_name", sorted(LAYOUTS_RANGED))
 def test_ranged(started_cluster, layout_name):
     ranged_tester.execute(layout_name, node)

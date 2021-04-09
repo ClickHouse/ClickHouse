@@ -1,6 +1,6 @@
 ---
 toc_priority: 41
-toc_title: "\u0425\u0440\u0430\u043d\u0435\u043d\u0438\u0435\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u0435\u0439\u0020\u0432\u0020\u043f\u0430\u043c\u044f\u0442\u0438"
+toc_title: "Хранение словарей в памяти"
 ---
 
 # Хранение словарей в памяти {#dicts-external-dicts-dict-layout}
@@ -205,8 +205,8 @@ RANGE(MIN first MAX last)
 Особенности алгоритма:
 
 -   Если не найден `id` или для найденного `id` не найден диапазон, то возвращается значение по умолчанию для словаря.
--   Если есть перекрывающиеся диапазоны, то можно использовать любой подходящий.
--   Если граница диапазона `NULL` или некорректная дата (1900-01-01, 2039-01-01), то диапазон считается открытым. Диапазон может быть открытым с обеих сторон.
+-   Если есть перекрывающиеся диапазоны, то возвращается значение из любого (случайного) подходящего диапазона.
+-   Если граница диапазона `NULL` или некорректная дата (1900-01-01), то диапазон считается открытым. Диапазон может быть открытым с обеих сторон.
 
 Пример конфигурации:
 
@@ -318,8 +318,6 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
         <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
-        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
-        <max_stored_keys>1048576</max_stored_keys>
     </ssd_cache>
 </layout>
 ```
@@ -327,8 +325,8 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 или
 
 ``` sql
-LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}
@@ -443,4 +441,3 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Данные должны полностью помещаться в оперативной памяти.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

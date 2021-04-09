@@ -7,15 +7,14 @@ toc_title: ROW POLICY
 
 Изменяет политику доступа к строкам.
 
-## Синтаксис {#alter-row-policy-syntax}
+Синтаксис:
 
 ``` sql
-ALTER [ROW] POLICY [IF EXISTS] name [ON CLUSTER cluster_name] ON [database.]table
-    [RENAME TO new_name]
+ALTER [ROW] POLICY [IF EXISTS] name1 [ON CLUSTER cluster_name1] ON [database1.]table1 [RENAME TO new_name1] 
+        [, name2 [ON CLUSTER cluster_name2] ON [database2.]table2 [RENAME TO new_name2] ...]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT]
     [USING {condition | NONE}][,...]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/row-policy/) <!--hide-->

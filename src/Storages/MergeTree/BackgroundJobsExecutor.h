@@ -36,10 +36,12 @@ enum class PoolType
     FETCH,
 };
 
+using BackgroundJobFunc = std::function<bool()>;
+
 /// Result from background job providers. Function which will be executed in pool and pool type.
 struct JobAndPool
 {
-    ThreadPool::Job job;
+    BackgroundJobFunc job;
     PoolType pool_type;
 };
 

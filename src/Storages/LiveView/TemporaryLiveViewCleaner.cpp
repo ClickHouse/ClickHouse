@@ -48,18 +48,24 @@ void TemporaryLiveViewCleaner::init(Context & global_context_)
     the_instance.reset(new TemporaryLiveViewCleaner(global_context_));
 }
 
+void TemporaryLiveViewCleaner::startup()
+{
+    background_thread_can_start = true;
+
+    std::lock_guard lock{mutex};
+    if (!views.empty())
+        startBackgroundThread();
+}
 
 void TemporaryLiveViewCleaner::shutdown()
 {
     the_instance.reset();
 }
 
-
 TemporaryLiveViewCleaner::TemporaryLiveViewCleaner(Context & global_context_)
     : global_context(global_context_)
 {
 }
-
 
 TemporaryLiveViewCleaner::~TemporaryLiveViewCleaner()
 {
@@ -75,34 +81,29 @@ void TemporaryLiveViewCleaner::addView(const std::shared_ptr<StorageLiveView> & 
     auto current_time = std::chrono::system_clock::now();
     auto time_of_next_check = current_time + view->getTimeout();
 
-    std::lock_guard lock{mutex};
-    if (background_thread_should_exit)
-        return;
-
-    /// If views.empty() the background thread isn't running or it's going to stop right now.
-    bool background_thread_is_running = !views.empty();
-
     /// Keep the vector `views` sorted by time of next check.
     StorageAndTimeOfCheck storage_and_time_of_check{view, time_of_next_check};
+    std::lock_guard lock{mutex};
     views.insert(std::upper_bound(views.begin(), views.end(), storage_and_time_of_check), storage_and_time_of_check);
 
-    if (!background_thread_is_running)
+    if (background_thread_can_start)
     {
-        if (background_thread.joinable())
-            background_thread.join();
-        background_thread = ThreadFromGlobalPool{&TemporaryLiveViewCleaner::backgroundThreadFunc, this};
+        startBackgroundThread();
+        background_thread_wake_up.notify_one();
     }
-
-    background_thread_wake_up.notify_one();
 }
 
 
 void TemporaryLiveViewCleaner::backgroundThreadFunc()
 {
     std::unique_lock lock{mutex};
-    while (!background_thread_should_exit && !views.empty())
+    while (!background_thread_should_exit)
     {
-        background_thread_wake_up.wait_until(lock, views.front().time_of_check);
+        if (views.empty())
+            background_thread_wake_up.wait(lock);
+        else
+            background_thread_wake_up.wait_until(lock, views.front().time_of_check);
+
         if (background_thread_should_exit)
             break;
 
@@ -147,14 +148,18 @@ void TemporaryLiveViewCleaner::backgroundThreadFunc()
 }
 
 
+void TemporaryLiveViewCleaner::startBackgroundThread()
+{
+    if (!background_thread.joinable() && background_thread_can_start && !background_thread_should_exit)
+        background_thread = ThreadFromGlobalPool{&TemporaryLiveViewCleaner::backgroundThreadFunc, this};
+}
+
 void TemporaryLiveViewCleaner::stopBackgroundThread()
 {
+    background_thread_should_exit = true;
+    background_thread_wake_up.notify_one();
     if (background_thread.joinable())
-    {
-        background_thread_should_exit = true;
-        background_thread_wake_up.notify_one();
         background_thread.join();
-    }
 }
 
 }

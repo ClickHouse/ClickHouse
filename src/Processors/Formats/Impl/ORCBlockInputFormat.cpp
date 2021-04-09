@@ -28,7 +28,7 @@ Chunk ORCBlockInputFormat::generate()
     Chunk res;
     const Block & header = getPort().getHeader();
 
-    if (in.eof())
+    if (file_reader)
         return res;
 
     arrow::Status open_status = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(in), arrow::default_memory_pool(), &file_reader);
@@ -64,6 +64,7 @@ void registerInputFormatProcessorORC(FormatFactory &factory)
             {
                 return std::make_shared<ORCBlockInputFormat>(buf, sample);
             });
+    factory.markFormatAsColumnOriented("ORC");
 }
 
 }

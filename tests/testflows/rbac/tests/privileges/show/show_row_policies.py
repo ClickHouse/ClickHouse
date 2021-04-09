@@ -29,7 +29,7 @@ def privileges_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=check_privilege, flags=TE,
+        Suite(run=check_privilege,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in check_privilege.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
@@ -50,13 +50,14 @@ def privileges_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=check_privilege, flags=TE,
+        Suite(run=check_privilege,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in check_privilege.examples
             ], args=Args(name="privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
+    ("ALL",),
     ("ACCESS MANAGEMENT",),
     ("SHOW ACCESS",),
     ("SHOW ROW POLICIES",),
@@ -71,12 +72,12 @@ def check_privilege(self, privilege, grant_target_name, user_name, node=None):
     if node is None:
         node = self.context.node
 
-    Suite(test=show_row_policies, setup=instrument_clickhouse_server_log)(privilege=privilege, grant_target_name=grant_target_name, user_name=user_name)
-    Suite(test=show_create, setup=instrument_clickhouse_server_log)(privilege=privilege, grant_target_name=grant_target_name, user_name=user_name)
+    Suite(test=show_row_policies)(privilege=privilege, grant_target_name=grant_target_name, user_name=user_name)
+    Suite(test=show_create)(privilege=privilege, grant_target_name=grant_target_name, user_name=user_name)
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowRowPolicies_Query("1.0"),
+    RQ_SRS_006_RBAC_ShowRowPolicies_RequiredPrivilege("1.0"),
 )
 def show_row_policies(self, privilege, grant_target_name, user_name, node=None):
     """Check that user is only able to execute `SHOW ROW POLICIES` when they have the necessary privilege.
@@ -88,7 +89,13 @@ def show_row_policies(self, privilege, grant_target_name, user_name, node=None):
 
     with Scenario("SHOW ROW POLICIES without privilege"):
 
-        with When("I check the user can't use SHOW ROW POLICIES"):
+        with When("I grant the user NONE privilege"):
+            node.query(f"GRANT NONE TO {grant_target_name}")
+
+        with And("I grant the user USAGE privilege"):
+            node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+        with Then("I check the user can't use SHOW ROW POLICIES"):
             node.query(f"SHOW ROW POLICIES", settings=[("user",user_name)],
                 exitcode=exitcode, message=message)
 
@@ -114,7 +121,7 @@ def show_row_policies(self, privilege, grant_target_name, user_name, node=None):
 
 @TestSuite
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowCreateRowPolicy("1.0"),
+    RQ_SRS_006_RBAC_ShowCreateRowPolicy_RequiredPrivilege("1.0"),
 )
 def show_create(self, privilege, grant_target_name, user_name, node=None):
     """Check that user is only able to execute `SHOW CREATE ROW POLICY` when they have the necessary privilege.
@@ -130,7 +137,13 @@ def show_create(self, privilege, grant_target_name, user_name, node=None):
 
         with row_policy(node, target_row_policy_name, table_name):
 
-            with When("I check the user can't use SHOW CREATE ROW POLICY"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I check the user can't use SHOW CREATE ROW POLICY"):
                 node.query(f"SHOW CREATE ROW POLICY {target_row_policy_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
@@ -165,7 +178,9 @@ def show_create(self, privilege, grant_target_name, user_name, node=None):
 @TestFeature
 @Name("show row policies")
 @Requirements(
-    RQ_SRS_006_RBAC_Privileges_ShowRowPolicies("1.0"),
+    RQ_SRS_006_RBAC_ShowRowPolicies_Privilege("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of SHOW ROW POLICYS.

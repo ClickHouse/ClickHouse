@@ -312,7 +312,7 @@ Enables or disables parsing enum values as enum ids for TSV input format.
 Possible values:
 
 -   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs
+-   1 — Enum values are parsed as enum IDs.
 
 Default value: 0.
 
@@ -428,7 +428,7 @@ Possible values:
 
 -   `'basic'` — Use basic parser.
 
-    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `'2019-08-20 10:18:56'` or `2019-08-20`.
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
 
 Default value: `'basic'`.
 
@@ -443,19 +443,19 @@ Allows choosing different output formats of the text representation of date and 
 
 Possible values:
 
--   `'simple'` - Simple output format.
+-   `simple` - Simple output format.
 
-    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `'2019-08-20 10:18:56'`. Calculation is performed according to the data type's time zone (if present) or server time zone.
+    Clickhouse output date and time `YYYY-MM-DD hh:mm:ss` format. For example, `2019-08-20 10:18:56`. The calculation is performed according to the data type's time zone (if present) or server time zone.
 
--   `'iso'` - ISO output format.
+-   `iso` - ISO output format.
 
-    Clickhouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `'2019-08-20T10:18:56Z'`. Note that output is in UTC (`Z` means UTC).
+    Clickhouse output date and time in [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) `YYYY-MM-DDThh:mm:ssZ` format. For example, `2019-08-20T10:18:56Z`. Note that output is in UTC (`Z` means UTC).
 
--   `'unix_timestamp'` - Unix timestamp output format.
+-   `unix_timestamp` - Unix timestamp output format.
 
-    Clickhouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `'1566285536'`.
+    Clickhouse output date and time in [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time) format. For example `1566285536`.
 
-Default value: `'simple'`.
+Default value: `simple`.
 
 See also:
 
@@ -726,7 +726,7 @@ log_queries=1
 
 ## log_queries_min_query_duration_ms {#settings-log-queries-min-query-duration-ms}
 
-Minimal time for the query to run to get to the following tables:
+If enabled (non-zero), queries faster then the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html)), and this basically means that you will not find them in the following tables:
 
 - `system.query_log`
 - `system.query_thread_log`
@@ -767,6 +767,38 @@ Example:
 
 ``` text
 log_query_threads=1
+```
+
+## log_comment {#settings-log-comment}
+
+Specifies the value for the `log_comment` field of the [system.query_log](../system-tables/query_log.md) table and comment text for the server log.
+
+It can be used to improve the readability of server logs. Additionally, it helps to select queries related to the test from the `system.query_log` after running [clickhouse-test](../../development/tests.md).
+
+Possible values:
+
+-   Any string no longer than [max_query_size](#settings-max_query_size). If length is exceeded, the server throws an exception.
+
+Default value: empty string.
+
+**Example**
+
+Query:
+
+``` sql
+SET log_comment = 'log_comment test', log_queries = 1;
+SELECT 1;
+SYSTEM FLUSH LOGS;
+SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 2;
+```
+
+Result:
+
+``` text
+┌─type────────┬─query─────┐
+│ QueryStart  │ SELECT 1; │
+│ QueryFinish │ SELECT 1; │
+└─────────────┴───────────┘
 ```
 
 ## max_insert_block_size {#settings-max_insert_block_size}
@@ -844,23 +876,27 @@ Higher values will lead to higher memory usage.
 
 ## max_compress_block_size {#max-compress-block-size}
 
-The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). If the size is reduced, the compression rate is significantly reduced, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced. There usually isn’t any reason to change this setting.
+The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
+
+!!! note "Warning"
+    This is an expert-level setting, and you shouldn't change it if you're just getting started with Clickhouse.
 
 Don’t confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
 ## min_compress_block_size {#min-compress-block-size}
 
-For [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least ‘min_compress_block_size’. By default, 65,536.
+For [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
 
-The actual size of the block, if the uncompressed data is less than ‘max_compress_block_size’, is no less than this value and no less than the volume of data for one mark.
+The actual size of the block, if the uncompressed data is less than `max_compress_block_size`, is no less than this value and no less than the volume of data for one mark.
 
-Let’s look at an example. Assume that ‘index_granularity’ was set to 8192 during table creation.
+Let’s look at an example. Assume that `index_granularity` was set to 8192 during table creation.
 
 We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows, the total will be 32 KB of data. Since min_compress_block_size = 65,536, a compressed block will be formed for every two marks.
 
 We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
 
-There usually isn’t any reason to change this setting.
+!!! note "Warning"
+    This is an expert-level setting, and you shouldn't change it if you're just getting started with Clickhouse.
 
 ## max_query_size {#settings-max_query_size}
 
@@ -1093,14 +1129,25 @@ See the section “WITH TOTALS modifier”.
 
 ## max_parallel_replicas {#settings-max_parallel_replicas}
 
-The maximum number of replicas for each shard when executing a query. In limited circumstances, this can make a query faster by executing it on more servers. This setting is only useful for replicated tables with a sampling key. There are cases where performance will not improve or even worsen:
+The maximum number of replicas for each shard when executing a query.
 
-- the position of the sampling key in the partitioning key's order doesn't allow efficient range scans
-- adding a sampling key to the table makes filtering by other columns less efficient
-- the sampling key is an expression that is expensive to calculate
-- the cluster's latency distribution has a long tail, so that querying more servers increases the query's overall latency
+Possible values:
 
-In addition, this setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain conditions. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
+-   Positive integer.
+
+Default value: `1`.
+
+**Additional Info** 
+
+This setting is useful for replicated tables with a sampling key. A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
+
+- The position of the sampling key in the partitioning key doesn't allow efficient range scans.
+- Adding a sampling key to the table makes filtering by other columns less efficient.
+- The sampling key is an expression that is expensive to calculate.
+- The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
+
+!!! warning "Warning"
+    This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md#max_parallel_replica-subqueries) for more details.
 
 ## compile {#compile}
 
@@ -1312,7 +1359,7 @@ See also:
 
 Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
-Default value: 600000 milliseconds (ten minutes).
+Default value: 600 000 milliseconds (ten minutes).
 
 See also:
 
@@ -1498,6 +1545,14 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 Default value: 0
+
+## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
+
+Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
+
+Too many values may require significant amount for processing, while the benefit is doubtful, since if you have huge number of values in `IN (...)`, then most likely the query will be sent to all shards anyway.
+
+Default value: 1000
 
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
@@ -1859,7 +1914,7 @@ Default value: `0`.
 
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md#distributed) table when there is no distributed key.
 
-By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
+By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will reject any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
 
 Possible values:
 
@@ -1867,6 +1922,53 @@ Possible values:
 -   1 — Insertion is done randomly among all available shards when no distributed key is given.
 
 Default value: `0`.
+
+## insert_shard_id {#insert_shard_id}
+
+If not `0`, specifies the shard of [Distributed](../../engines/table-engines/special/distributed.md#distributed) table into which the data will be inserted synchronously.
+
+If `insert_shard_id` value is incorrect, the server will throw an exception.
+
+To get the number of shards on `requested_cluster`, you can check server config or use this query:
+
+``` sql
+SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
+```
+
+Possible values:
+
+-   0 — Disabled.
+-   Any number from `1` to `shards_num` of corresponding [Distributed](../../engines/table-engines/special/distributed.md#distributed) table.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE x AS system.numbers ENGINE = MergeTree ORDER BY number;
+CREATE TABLE x_dist AS x ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), x);
+INSERT INTO x_dist SELECT * FROM numbers(5) SETTINGS insert_shard_id = 1;
+SELECT * FROM x_dist ORDER BY number ASC;
+```
+
+Result:
+
+``` text
+┌─number─┐
+│      0 │
+│      0 │
+│      1 │
+│      1 │
+│      2 │
+│      2 │
+│      3 │
+│      3 │
+│      4 │
+│      4 │
+└────────┘
+```
 
 ## use_compact_format_in_distributed_parts_names {#use_compact_format_in_distributed_parts_names}
 
@@ -1939,6 +2041,21 @@ Possible values:
 -   Any positive integer.
 
 Default value: 16.
+
+## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
+
+Sets the number of threads performing background tasks for message streaming. This setting is applied at the ClickHouse server start and can’t be changed in a user session.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 16.
+
+**See Also**
+
+-   [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) engine.
+-   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md#rabbitmq-engine) engine.
 
 ## validate_polygons {#validate_polygons}
 
@@ -2129,6 +2246,21 @@ Default value: `1`.
 **See Also**
 
 -   [ORDER BY Clause](../../sql-reference/statements/select/order-by.md#optimize_read_in_order)
+
+## optimize_aggregation_in_order {#optimize_aggregation_in_order}
+
+Enables [GROUP BY](../../sql-reference/statements/select/group-by.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+
+Possible values:
+
+-   0 — `GROUP BY` optimization is disabled.
+-   1 — `GROUP BY` optimization is enabled.
+
+Default value: `0`.
+
+**See Also**
+
+-   [GROUP BY optimization](../../sql-reference/statements/select/group-by.md#aggregation-in-order)
 
 ## mutations_sync {#mutations_sync}
 
@@ -2470,6 +2602,64 @@ Possible values:
 
 Default value: `0`.
 
+## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
+
+Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
+It is implemented via query rewrite (similar to [count_distinct_implementation](#settings-count_distinct_implementation) setting) to get consistent results for distributed queries. 
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 0.
+
+**Example**
+
+Consider the following query with aggregate functions:
+```sql
+SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
+```
+
+With `aggregate_functions_null_for_empty = 0` it would produce:
+```text
+┌─SUM(-1)─┬─MAX(0)─┐
+│       0 │      0 │
+└─────────┴────────┘
+```
+
+With `aggregate_functions_null_for_empty = 1` the result would be:
+```text
+┌─SUMOrNull(-1)─┬─MAXOrNull(0)─┐
+│          NULL │         NULL │
+└───────────────┴──────────────┘
+```
+
+## union_default_mode {#union-default-mode}
+
+Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
+
+Possible values:
+
+-   `'DISTINCT'` — ClickHouse outputs rows as a result of combining queries removing duplicate rows.
+-   `'ALL'` — ClickHouse outputs all rows as a result of combining queries including duplicate rows.
+-   `''` — Clickhouse generates an exception when used with `UNION`.
+
+Default value: `''`.
+
+See examples in [UNION](../../sql-reference/statements/select/union.md).
+
+## data_type_default_nullable {#data_type_default_nullable}
+
+Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
+
+Possible values:
+
+- 1 — The data types in column definitions are set to `Nullable` by default.
+- 0 — The data types in column definitions are set to not `Nullable` by default.
+
+Default value: `0`.
+
 ## execute_merges_on_single_replica_time_threshold {#execute-merges-on-single-replica-time-threshold}
 
 Enables special logic to perform merges on replicas.
@@ -2488,5 +2678,181 @@ Selects one replica to perform the merge on. Sets the time threshold from the st
 High values for that threshold may lead to replication delays.
 
 It can be useful when merges are CPU bounded not IO bounded (performing heavy data compression, calculating aggregate functions or default expressions that require a large amount of calculations, or just very high number of tiny merges).
+
+## max_final_threads {#max-final-threads}
+
+Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
+
+Possible values:
+
+-   Positive integer.
+-   0 or 1 — Disabled. `SELECT` queries are executed in a single thread.
+
+Default value: `16`.
+
+## opentelemetry_start_trace_probability {#opentelemetry-start-trace-probability}
+
+Sets the probability that the ClickHouse can start a trace for executed queries (if no parent [trace context](https://www.w3.org/TR/trace-context/) is supplied).
+
+Possible values:
+
+-   0 — The trace for all executed queries is disabled (if no parent trace context is supplied).
+-   Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
+-   1 — The trace for all executed queries is enabled.
+
+Default value: `0`.
+
+## optimize_on_insert {#optimize-on-insert}
+
+Enables or disables data transformation before the insertion, as if merge was done on this block (according to table engine).
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+**Example**
+
+The difference between enabled and disabled:
+
+Query:
+
+```sql
+SET optimize_on_insert = 1;
+
+CREATE TABLE test1 (`FirstTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY FirstTable;
+
+INSERT INTO test1 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test1;
+
+SET optimize_on_insert = 0;
+
+CREATE TABLE test2 (`SecondTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY SecondTable;
+
+INSERT INTO test2 SELECT number % 2 FROM numbers(5);
+
+SELECT * FROM test2;
+```
+
+Result:
+
+``` text
+┌─FirstTable─┐
+│          0 │
+│          1 │
+└────────────┘
+
+┌─SecondTable─┐
+│           0 │
+│           0 │
+│           0 │
+│           1 │
+│           1 │
+└─────────────┘
+```
+
+Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md#materialized) and [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md) behaviour.
+
+## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
+
+Allows to select data from a file engine table without file.
+
+Possible values:
+- 0 — `SELECT` throws exception.
+- 1 — `SELECT` returns empty result.
+
+Default value: `0`.
+
+## engine_file_truncate_on_insert {#engine-file-truncate-on-insert}
+
+Enables or disables truncate before insert in [File](../../engines/table-engines/special/file.md) engine tables.
+
+Possible values:
+- 0 — `INSERT` query appends new data to the end of the file.
+- 1 — `INSERT` replaces existing content of the file with the new data.
+
+Default value: `0`.
+
+## allow_experimental_geo_types {#allow-experimental-geo-types}
+
+Allows working with experimental [geo data types](../../sql-reference/data-types/geo.md).
+
+Possible values:
+
+-   0 — Working with geo data types is disabled.
+-   1 — Working with geo data types is enabled.
+
+Default value: `0`.
+
+## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
+
+Adds a modifier `SYNC` to all `DROP` and `DETACH` queries. 
+
+Possible values:
+
+-   0 — Queries will be executed with delay.
+-   1 — Queries will be executed without delay.
+
+Default value: `0`.
+
+## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil}
+
+Sets the `SHOW TABLE` query display.
+
+Possible values:
+
+-   0 — The query will be displayed without table UUID.
+-   1 — The query will be displayed with table UUID.
+
+Default value: `0`.
+
+## allow_experimental_live_view {#allow-experimental-live-view}
+
+Allows creation of experimental [live views](../../sql-reference/statements/create/view.md#live-view).
+
+Possible values:
+
+-   0 — Working with live views is disabled.
+-   1 — Working with live views is enabled.
+
+Default value: `0`.
+
+## live_view_heartbeat_interval {#live-view-heartbeat-interval}
+
+Sets the heartbeat interval in seconds to indicate [live view](../../sql-reference/statements/create/view.md#live-view) is alive .
+
+Default value: `15`.
+
+## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
+
+Sets the maximum number of inserted blocks after which mergeable blocks are dropped and query for [live view](../../sql-reference/statements/create/view.md#live-view) is re-executed.
+
+Default value: `64`.
+
+## temporary_live_view_timeout {#temporary-live-view-timeout}
+
+Sets the interval in seconds after which [live view](../../sql-reference/statements/create/view.md#live-view) with timeout is deleted.
+
+Default value: `5`.
+
+## periodic_live_view_refresh {#periodic-live-view-refresh}
+
+Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md#live-view) is forced to refresh.
+
+Default value: `60`.
+
+## check_query_single_value_result {#check_query_single_value_result}
+
+Defines the level of detail for the [CHECK TABLE](../../sql-reference/statements/check-table.md#checking-mergetree-tables) query result for `MergeTree` family engines .
+
+Possible values:
+
+-   0 — the query shows a check status for every individual data part of a table.
+-   1 — the query shows the general table check status.
+
+Default value: `0`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

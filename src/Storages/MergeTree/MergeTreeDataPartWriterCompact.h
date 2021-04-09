@@ -37,7 +37,7 @@ private:
 
     void addToChecksums(MergeTreeDataPartChecksums & checksums);
 
-    void addStreams(const String & name, const IDataType & type, const ASTPtr & effective_codec_desc);
+    void addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc);
 
     Block header;
 

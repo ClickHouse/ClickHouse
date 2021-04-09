@@ -1,0 +1,32 @@
+#!/usr/bin/expect -f
+
+log_user 0
+set timeout 5
+match_max 100000
+# A default timeout action is to do nothing, change it to fail
+expect_after {
+    timeout {
+        exit 1
+    }
+}
+
+set basedir [file dirname $argv0]
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
+expect ":) "
+
+# Make a query with syntax error
+send -- "select \r"
+expect "Syntax error: failed at position 7 (end of query):"
+expect "Expected one of: "
+
+# Make another query with syntax error
+send -- "CREATE TABLE t4 UUID '57f27aa5-141c-47c5-888a-9563681717f5' AS t1 (`rowNumberInAllBlocks()` UInt64, `toLowCardinality(arrayJoin(\['exchange', 'tables'\]))` LowCardinality(String)) ENGINE = MergeTree \r"
+expect "Syntax error: failed at position 93 ('UInt64'):*"
+
+# Make a query with unmatched parentheses
+send -- "select (1, 2\r"
+expect "Syntax error: failed at position 8 ('('):"
+expect "Unmatched parentheses: ("
+
+send -- "\4"
+expect eof

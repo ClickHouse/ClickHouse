@@ -58,16 +58,17 @@ public:
         return key;
     }
 
-    MappedPtr get(const Key & key)
+    template <typename LoadFunc>
+    MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {
-        MappedPtr res = Base::get(key);
+        auto result = Base::getOrSet(key, std::forward<LoadFunc>(load));
 
-        if (res)
-            ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
-        else
+        if (result.second)
             ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
 
-        return res;
+        return result.first;
     }
 
 private:

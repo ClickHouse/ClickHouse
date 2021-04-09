@@ -111,12 +111,13 @@ private:
 
         if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
         {
-            auto dwarf_it = cache.dwarfs.try_emplace(object->name, *object->elf).first;
+            auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
             if (!std::filesystem::exists(object->name))
                 return {};
 
             Dwarf::LocationInfo location;
-            if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, Dwarf::LocationInfoMode::FAST))
+            std::vector<Dwarf::SymbolizedFrame> frames;  // NOTE: not used in FAST mode.
+            if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, Dwarf::LocationInfoMode::FAST, frames))
             {
                 const char * arena_begin = nullptr;
                 WriteBufferFromArena out(cache.arena, arena_begin);

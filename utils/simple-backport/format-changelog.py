@@ -78,7 +78,7 @@ def parse_one_pull_request(item):
 # This array gives the preferred category order, and is also used to
 # normalize category names.
 categories_preferred_order = ['Backward Incompatible Change',
-    'New Feature', 'Bug Fix', 'Improvement', 'Performance Improvement',
+    'New Feature', 'Performance Improvement', 'Improvement', 'Bug Fix',
     'Build/Testing/Packaging Improvement', 'Other']
 
 category_to_pr = collections.defaultdict(lambda: [])

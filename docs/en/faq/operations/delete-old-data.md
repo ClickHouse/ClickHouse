@@ -39,4 +39,4 @@ More details on [manipulating partitions](../../sql-reference/statements/alter/p
 
 It’s rather radical to drop all data from a table, but in some cases it might be exactly what you need.
 
-More details on [table truncation](../../sql-reference/statements/alter/partition.md#alter_drop-partition).
+More details on [table truncation](../../sql-reference/statements/truncate.md).

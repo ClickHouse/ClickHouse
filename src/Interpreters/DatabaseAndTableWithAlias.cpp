@@ -44,7 +44,15 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & 
     else if (table_expression.table_function)
         alias = table_expression.table_function->tryGetAlias();
     else if (table_expression.subquery)
+    {
+        const auto & cte_name = table_expression.subquery->as<const ASTSubquery &>().cte_name;
+        if (!cte_name.empty())
+        {
+            database = current_database;
+            table = cte_name;
+        }
         alias = table_expression.subquery->tryGetAlias();
+    }
     else
         throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
 }

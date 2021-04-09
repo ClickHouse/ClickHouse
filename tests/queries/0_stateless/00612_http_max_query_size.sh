@@ -2,6 +2,7 @@
 # shellcheck disable=SC2028
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 echo 'select 1' | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}&max_query_size=8" -d @- 2>&1 | grep -o "Max query size exceeded"

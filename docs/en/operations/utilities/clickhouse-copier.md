@@ -71,8 +71,8 @@ Parameters:
     <remote_servers>
         <source_cluster>
             <!--
-                source cluster & destination clusters accepts exactly the same
-                parameters as parameters for usual Distributed table
+                source cluster & destination clusters accept exactly the same
+                parameters as parameters for the usual Distributed table
                 see https://clickhouse.tech/docs/en/engines/table-engines/special/distributed/
             --> 
             <shard>

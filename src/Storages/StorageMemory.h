@@ -40,11 +40,18 @@ public:
         unsigned num_streams) override;
 
     bool supportsParallelInsert() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
+
+    /// Smaller blocks (e.g. 64K rows) are better for CPU cache.
+    bool prefersLargeBlocks() const override { return false; }
+
+    bool hasEvenlyDistributedRead() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const Context & context) override;
 
     void drop() override;
 
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
     void mutate(const MutationCommands & commands, const Context & context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
@@ -90,7 +97,8 @@ public:
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
 private:
-    /// MultiVersion data storage, so that we can copy the list of blocks to readers.
+    /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
+
     MultiVersion<Blocks> data;
 
     mutable std::mutex mutex;
@@ -100,8 +108,14 @@ private:
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
 
+    bool compress;
+
 protected:
-    StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
+    StorageMemory(
+        const StorageID & table_id_,
+        ColumnsDescription columns_description_,
+        ConstraintsDescription constraints_,
+        bool compress_ = false);
 };
 
 }

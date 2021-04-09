@@ -62,10 +62,10 @@ private:
 
     void writeSplitAsync(const Block & block);
 
-    void writeAsyncImpl(const Block & block, const size_t shard_id = 0);
+    void writeAsyncImpl(const Block & block, size_t shard_id = 0);
 
     /// Increments finished_writings_count after each repeat.
-    void writeToLocal(const Block & block, const size_t repeats);
+    void writeToLocal(const Block & block, size_t repeats);
 
     void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
@@ -84,7 +84,7 @@ private:
     std::string getCurrentStateDescription();
 
 private:
-    const Context & context;
+    std::unique_ptr<Context> context;
     StorageDistributed & storage;
     StorageMetadataPtr metadata_snapshot;
     ASTPtr query_ast;

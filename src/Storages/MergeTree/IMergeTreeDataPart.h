@@ -16,11 +16,16 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Columns/IColumn.h>
 
 #include <Poco/Path.h>
 
 #include <shared_mutex>
+
+namespace zkutil
+{
+    class ZooKeeper;
+    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
+}
 
 namespace DB
 {
@@ -48,6 +53,8 @@ namespace ErrorCodes
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
+    static constexpr auto DATA_FILE_EXTENSION = ".bin";
+
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
     using ValueSizeMap = std::map<std::string, double>;
@@ -56,7 +63,7 @@ public:
     using MergeTreeWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
-    using NameToPosition = std::unordered_map<std::string, size_t>;
+    using NameToNumber = std::unordered_map<std::string, size_t>;
 
     using Type = MergeTreeDataPartType;
 
@@ -124,7 +131,7 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove() const;
+    void remove(bool keep_s3 = false) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -149,15 +156,16 @@ public:
 
     bool contains(const IMergeTreeDataPart & other) const { return info.contains(other.info); }
 
-    /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
-    DayNum getMinDate() const;
-    DayNum getMaxDate() const;
+    /// If the partition key includes date column (a common case), this function will return min and max values for that column.
+    std::pair<DayNum, DayNum> getMinMaxDate() const;
 
-    /// otherwise, if the partition key includes dateTime column (also a common case), these functions will return min and max values for this column.
-    time_t getMinTime() const;
-    time_t getMaxTime() const;
+    /// otherwise, if the partition key includes dateTime column (also a common case), this function will return min and max values for that column.
+    std::pair<time_t, time_t> getMinMaxTime() const;
 
     bool isEmpty() const { return rows_count == 0; }
+
+    /// Compute part block id for zero level part. Otherwise throws an exception.
+    String getZeroLevelPartBlockID() const;
 
     const MergeTreeData & storage;
 
@@ -198,8 +206,8 @@ public:
      *
      * Possible state transitions:
      * Temporary -> Precommitted:   we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:    we could not to add a part to active set and doing a rollback (for example it is duplicated part)
-     * Precommitted -> Committed:    we successfully committed a part to active dataset
+     * Precommitted -> Outdated:    we could not add a part to active set and are doing a rollback (for example it is duplicated part)
+     * Precommitted -> Committed:   we successfully committed a part to active dataset
      * Precommitted -> Outdated:    a part was replaced by a covering part or DROP PARTITION
      * Outdated -> Deleting:        a cleaner selected this part for deletion
      * Deleting -> Outdated:        if an ZooKeeper error occurred during the deletion, we will retry deletion
@@ -221,7 +229,8 @@ public:
     TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
-    mutable State state{State::Temporary};
+    void setState(State new_state) const;
+    State getState() const;
 
     /// Returns name of state
     static String stateToString(State state);
@@ -329,7 +338,7 @@ public:
     /// NOTE: Doesn't take column renames into account, if some column renames
     /// take place, you must take original name of column for this part from
     /// storage and pass it to this method.
-    virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const { return false; }
+    virtual bool hasColumnFiles(const NameAndTypePair & /* column */) const { return false; }
 
     /// Returns true if this part shall participate in merges according to
     /// settings of given storage policy.
@@ -360,6 +369,13 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
+    /// Returns serialization for column according to files in which column is written in part.
+    SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
+
+    /// Return some uniq string for file
+    /// Required for distinguish different copies of the same part on S3
+    String getUniqueId() const;
+
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -389,7 +405,7 @@ protected:
 
 private:
     /// In compact parts order of columns is necessary
-    NameToPosition column_name_to_position;
+    NameToNumber column_name_to_position;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
@@ -423,6 +439,8 @@ private:
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
+
+    mutable State state{State::Temporary};
 };
 
 using MergeTreeDataPartState = IMergeTreeDataPart::State;
