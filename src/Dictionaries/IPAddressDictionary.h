@@ -20,7 +20,7 @@
 
 namespace DB
 {
-class IPAddressDictionary final : public IDictionary
+class IPAddressDictionary final : public IDictionaryBase
 {
 public:
     IPAddressDictionary(

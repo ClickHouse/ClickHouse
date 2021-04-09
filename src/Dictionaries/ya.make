@@ -26,7 +26,7 @@ SRCS(
     CassandraDictionarySource.cpp
     CassandraHelpers.cpp
     ClickHouseDictionarySource.cpp
-    DictionaryBlockInputStream.cpp
+    ComplexKeyHashedDictionary.cpp
     DictionaryBlockInputStreamBase.cpp
     DictionaryFactory.cpp
     DictionarySourceFactory.cpp
@@ -48,7 +48,6 @@ SRCS(
     FlatDictionary.cpp
     HTTPDictionarySource.cpp
     HashedDictionary.cpp
-    HierarchyDictionariesUtils.cpp
     IPAddressDictionary.cpp
     LibraryDictionarySource.cpp
     LibraryDictionarySourceExternal.cpp

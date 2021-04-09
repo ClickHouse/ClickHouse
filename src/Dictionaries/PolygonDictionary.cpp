@@ -30,7 +30,7 @@ IPolygonDictionary::IPolygonDictionary(
         const DictionaryLifetime dict_lifetime_,
         InputType input_type_,
         PointType point_type_)
-        : IDictionary(dict_id_)
+        : IDictionaryBase(dict_id_)
         , dict_struct(dict_struct_)
         , source_ptr(std::move(source_ptr_))
         , dict_lifetime(dict_lifetime_)
@@ -141,6 +141,7 @@ ColumnPtr IPolygonDictionary::getColumn(
 
         callOnDictionaryAttributeType(attribute.underlying_type, type_call);
     }
+
 
     query_count.fetch_add(requested_key_points.size(), std::memory_order_relaxed);
 

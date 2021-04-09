@@ -15,7 +15,7 @@ class IExternalLoaderConfigRepository;
 class ExternalDictionariesLoader : public ExternalLoader
 {
 public:
-    using DictPtr = std::shared_ptr<const IDictionary>;
+    using DictPtr = std::shared_ptr<const IDictionaryBase>;
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     explicit ExternalDictionariesLoader(Context & global_context_);

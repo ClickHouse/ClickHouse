@@ -5,11 +5,13 @@
 
 #if USE_LIBPQXX
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
 
 
 namespace DB
 {
+
+class PostgreSQLConnectionPool;
+using PostgreSQLConnectionPoolPtr = std::shared_ptr<PostgreSQLConnectionPool>;
 
 class TableFunctionPostgreSQL : public ITableFunction
 {
@@ -29,7 +31,7 @@ private:
 
     String connection_str;
     String remote_table_name, remote_table_schema;
-    postgres::PoolWithFailoverPtr connection_pool;
+    PostgreSQLConnectionPoolPtr connection_pool;
 };
 
 }
