@@ -30,12 +30,12 @@ class DatabaseMaterializePostgreSQL : public DatabaseAtomic
 
 public:
     DatabaseMaterializePostgreSQL(
-        const Context & context,
+        const Context & context_,
         const String & metadata_path_,
-        UUID uuid,
-        const ASTStorage * database_engine_define,
-        const String & dbname_,
-        const String & postgres_dbname,
+        UUID uuid_,
+        const ASTStorage * database_engine_define_,
+        const String & database_name_,
+        const String & postgres_database_name,
         const String & connection_string,
         std::unique_ptr<MaterializePostgreSQLSettings> settings_);
 
