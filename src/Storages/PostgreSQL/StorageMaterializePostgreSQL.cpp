@@ -77,7 +77,6 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     , nested_storage(nested_storage_)
     , is_postgresql_replica_database(true)
 {
-
 }
 
 
