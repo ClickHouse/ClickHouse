@@ -31,9 +31,9 @@ public:
     /// This constructor needs only to provide backward compatibility with some other projects (hello, Arcadia).
     /// Never use this in the ClickHouse codebase.
     AsynchronousMetrics(
-        Context & global_context_,
+        ContextPtr global_context_,
         int update_period_seconds = 60)
-        : global_context(global_context_)
+        : WithContext(global_context_)
         , update_period(update_period_seconds)
     {
     }

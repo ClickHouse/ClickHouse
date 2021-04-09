@@ -283,7 +283,7 @@ void TCPHandler::runImpl()
                 return state.block_for_input;
             });
 
-            customizeContext(*query_context);
+            customizeContext(query_context);
 
             bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query

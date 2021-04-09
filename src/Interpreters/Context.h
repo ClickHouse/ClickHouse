@@ -273,7 +273,7 @@ private:
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
                                    /// logger, some query identification information, profiling guards, etc. This field is
-                                   /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
+                                   /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::ContextPtr)
                                    /// methods.
 
     ZooKeeperMetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,

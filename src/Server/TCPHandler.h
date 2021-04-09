@@ -119,7 +119,7 @@ public:
     void run() override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(DB::Context & /*context*/) {}
+    virtual void customizeContext(ContextPtr /*context*/) {}
 
 private:
     IServer & server;
