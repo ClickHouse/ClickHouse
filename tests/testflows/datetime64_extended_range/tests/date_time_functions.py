@@ -60,7 +60,7 @@ def to_date_part(self, py_func, ch_func):
                             with And(f"converting {tz1} local datetime {dt} to {tz2} timezone"):
                                 time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
                             with And(f"calling the '{py_func}' method of the datetime object to get expected result"):
-                                result = eval(f"time_tz2.{py_func}")
+                                result = eval(f"(time_tz2.{py_func}")
                             expected = f"{result}"
                         with And(f"Forming a {ch_func} ClickHouse query"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -78,7 +78,7 @@ def to_year(self):
     """Check the toYear() and toRelativeYearNum() [which is just an alias for toYear]
     function with DateTime64 extended range.
     """
-    to_date_part(py_func="year", ch_func="toYear")
+    to_date_part(py_func="year)", ch_func="toYear")
 
 
 @TestScenario
@@ -88,7 +88,7 @@ def to_year(self):
 def to_month(self):
     """Check the toMonth() function with DateTime64 extended range.
     """
-    to_date_part(py_func="month", ch_func="toMonth")
+    to_date_part(py_func="month)", ch_func="toMonth")
 
 
 @TestScenario
@@ -102,7 +102,7 @@ def to_quarter(self):
     divided by 3 (because each quarter has 3 month) plus 1
     (because we starting the count from 1).
     """
-    to_date_part(py_func="month//3 + 1", ch_func="toQuarter")
+    to_date_part(py_func="month - 1)//3 + 1", ch_func="toQuarter")
 
 
 @TestOutline
