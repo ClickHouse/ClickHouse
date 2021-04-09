@@ -3,6 +3,8 @@
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
+#include <boost/property_tree/ptree_fwd.hpp>
+
 namespace DB
 {
 
@@ -95,6 +97,8 @@ public:
         const char indent_char = ' ';
         const bool write_header = false;
     };
+
+    virtual void describeActions(boost::property_tree::ptree & /*tree*/) const {}
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
     virtual void describeActions(FormatSettings & /*settings*/) const {}
