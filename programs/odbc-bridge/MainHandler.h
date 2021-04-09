@@ -10,6 +10,7 @@
 #include <Poco/Data/SessionPool.h>
 #pragma GCC diagnostic pop
 
+#include <mutex>
 #include <unordered_map>
 
 
