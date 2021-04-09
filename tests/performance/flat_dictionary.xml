@@ -21,7 +21,7 @@
         )
         PRIMARY KEY id
         SOURCE(CLICKHOUSE(DB 'default' TABLE 'simple_key_flat_dictionary_source_table'))
-        LAYOUT(FLAT())
+        LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
         LIFETIME(MIN 0 MAX 1000)
     </create_query>
 

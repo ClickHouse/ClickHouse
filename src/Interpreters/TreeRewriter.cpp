@@ -408,7 +408,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
                           const TablesWithColumns & tables, const Aliases & aliases, ASTPtr & new_where_conditions)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
-    if (!node)
+    if (!node || tables.size() < 2)
         return;
 
     auto & table_join = node->table_join->as<ASTTableJoin &>();
