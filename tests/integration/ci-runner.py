@@ -455,7 +455,6 @@ class ClickhouseIntegrationTestsRunner:
         self._install_clickhouse(build_path)
         logging.info("Dump iptables before run %s", subprocess.check_output("iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
-        all_tests = all_tests[:4] # TODO: remove
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
         grouped_tests = self.group_test_by_file(all_tests)
         logging.info("Found %s tests groups", len(grouped_tests))
