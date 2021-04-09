@@ -35,15 +35,15 @@ namespace ErrorCodes
 static const auto METADATA_SUFFIX = ".postgresql_replica_metadata";
 
 DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
-        const Context & context,
+        const Context & context_,
         const String & metadata_path_,
-        UUID uuid,
+        UUID uuid_,
         const ASTStorage * database_engine_define_,
         const String & database_name_,
         const String & postgres_database_name,
         const String & connection_string,
         std::unique_ptr<MaterializePostgreSQLSettings> settings_)
-    : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializePostgreSQL<Atomic> (" + database_name_ + ")", context)
+    : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializePostgreSQL<Atomic> (" + database_name_ + ")", context_)
     , database_engine_define(database_engine_define_->clone())
     , remote_database_name(postgres_database_name)
     , connection(std::make_shared<postgres::Connection>(connection_string, ""))
