@@ -697,7 +697,7 @@ QueryPipelinePtr StorageDistributed::distributedWrite(const ASTInsertQuery & que
     }
 
     return std::make_unique<QueryPipeline>(
-        QueryPipeline::unitePipelines(std::move(pipelines), {}, ExpressionActionsSettings::fromContext(context)));
+        QueryPipeline::unitePipelines(std::move(pipelines)));
 }
 
 
