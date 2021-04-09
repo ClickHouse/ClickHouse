@@ -1,5 +1,6 @@
 #pragma once
 #include <Common/TransactionMetadata.h>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -8,7 +9,7 @@ class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using DataPartsVector = std::vector<DataPartPtr>;
 
-class MergeTreeTransaction
+class MergeTreeTransaction : public std::enable_shared_from_this<MergeTreeTransaction>, private boost::noncopyable
 {
     friend class TransactionLog;
 public:
@@ -20,7 +21,7 @@ public:
     };
 
     Snapshot getSnapshot() const { return snapshot; }
-    State getState() const { return state; }
+    State getState() const;
 
     const TransactionID tid;
 
@@ -36,18 +37,19 @@ public:
 
     bool isReadOnly() const;
 
+    void onException();
+
 private:
     void beforeCommit();
-    void afterCommit();
-    void rollback();
+    void afterCommit(CSN assigned_csn) noexcept;
+    void rollback() noexcept;
 
     Snapshot snapshot;
-    State state;
 
     DataPartsVector creating_parts;
     DataPartsVector removing_parts;
 
-    CSN csn = Tx::UnknownCSN;
+    CSN csn;
 };
 
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;

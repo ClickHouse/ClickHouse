@@ -62,27 +62,25 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
         latest_snapshot.store(new_csn, std::memory_order_relaxed);
     }
 
-    txn->csn = new_csn;
-    txn->state = MergeTreeTransaction::COMMITTED;
-    txn->afterCommit();
+    txn->afterCommit(new_csn);
+
     {
         std::lock_guard lock{running_list_mutex};
         bool removed = running_list.erase(txn->tid.getHash());
         if (!removed)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} doesn't exist", txn->tid.getHash(), txn->tid);
     }
-    return txn->csn;
+    return new_csn;
 }
 
-void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn)
+void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
 {
-    txn->csn = Tx::RolledBackCSN;
-    txn->state = MergeTreeTransaction::ROLLED_BACK;
+    txn->rollback();
     {
         std::lock_guard lock{running_list_mutex};
         bool removed = running_list.erase(txn->tid.getHash());
         if (!removed)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} doesn't exist", txn->tid.getHash(), txn->tid);
+            abort();
     }
 }
 

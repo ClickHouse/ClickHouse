@@ -23,6 +23,7 @@
 #include <optional>
 #include <thread>
 #include <Common/RemoteHostFilter.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -122,8 +123,6 @@ struct BackgroundTaskSchedulingSettings;
 
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
-class MergeTreeTransaction;
-using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;
 
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
@@ -293,6 +292,8 @@ private:
                                                     /// And I hope it will be replaced with more common Transaction sometime.
 
     MergeTreeTransactionPtr merge_tree_transaction;     /// Current transaction context. Can be inside session or query context.
+                                                        /// It's shared with all children contexts.
+    MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
     /// Use copy constructor or createGlobal() instead
     Context();
@@ -761,6 +762,7 @@ public:
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
 
+    void initCurrentTransaction(MergeTreeTransactionPtr txn);
     void setCurrentTransaction(MergeTreeTransactionPtr txn);
     MergeTreeTransactionPtr getCurrentTransaction() const;
 
