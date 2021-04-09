@@ -5,6 +5,7 @@
 #include <set>
 
 #include <Core/Names.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -24,9 +25,6 @@ class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
 class Pipe;
-
-struct QueryPlanOptimizationSettings;
-struct BuildQueryPipelineSettings;
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -48,14 +46,10 @@ public:
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
-    QueryPipelinePtr buildQueryPipeline(
-        const QueryPlanOptimizationSettings & optimization_settings,
-        const BuildQueryPipelineSettings & build_pipeline_settings);
+    QueryPipelinePtr buildQueryPipeline(const QueryPlanOptimizationSettings & optimization_settings);
 
     /// If initialized, build pipeline and convert to pipe. Otherwise, return empty pipe.
-    Pipe convertToPipe(
-        const QueryPlanOptimizationSettings & optimization_settings,
-        const BuildQueryPipelineSettings & build_pipeline_settings);
+    Pipe convertToPipe(const QueryPlanOptimizationSettings & optimization_settings);
 
     struct ExplainPlanOptions
     {

@@ -3,7 +3,6 @@
 #include <type_traits>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
-#include <DataTypes/Serializations/SerializationNumber.h>
 
 
 namespace DB
@@ -25,11 +24,6 @@ class DataTypeNumber final : public DataTypeNumberBase<T>
     {
         using PromotedType = DataTypeNumber<NearestFieldType<T>>;
         return std::make_shared<PromotedType>();
-    }
-
-    SerializationPtr doGetDefaultSerialization() const override
-    {
-        return std::make_shared<SerializationNumber<T>>();
     }
 };
 

@@ -4,8 +4,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPipeline.h>
 #include <Core/Defines.h>
 
@@ -35,7 +33,7 @@ public:
             std::move(*MergeTreeDataSelectExecutor(part->storage)
                       .readFromParts({part}, column_names, metadata_snapshot, query_info, context, max_block_size, num_streams));
 
-        return query_plan.convertToPipe(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        return query_plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
     }
 
 

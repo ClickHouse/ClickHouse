@@ -10,7 +10,6 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/MySQL/ConnectionMySQLSettings.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <mysqlxx/PoolWithFailover.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -37,13 +36,9 @@ public:
     ~DatabaseConnectionMySQL() override;
 
     DatabaseConnectionMySQL(
-        const Context & context,
-        const String & database_name,
-        const String & metadata_path,
-        const ASTStorage * database_engine_define,
-        const String & database_name_in_mysql,
-        std::unique_ptr<ConnectionMySQLSettings> settings_,
-        mysqlxx::PoolWithFailover && pool);
+        const Context & context, const String & database_name, const String & metadata_path,
+        const ASTStorage * database_engine_define, const String & database_name_in_mysql, std::unique_ptr<ConnectionMySQLSettings> settings_,
+        mysqlxx::Pool && pool);
 
     String getEngineName() const override { return "MySQL"; }
 
@@ -96,7 +91,7 @@ private:
     std::atomic<bool> quit{false};
     std::condition_variable cond;
 
-    using MySQLPool = mysqlxx::PoolWithFailover;
+    using MySQLPool = mysqlxx::Pool;
     using ModifyTimeAndStorage = std::pair<UInt64, StoragePtr>;
 
     mutable MySQLPool mysql_pool;

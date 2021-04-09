@@ -10,7 +10,6 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -44,46 +43,19 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
     }
 }
 
-void DDLLogEntry::assertVersion() const
-{
-    constexpr UInt64 max_version = 2;
-    if (version == 0 || max_version < version)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}."
-                                                            "Maximum supported version is {}", version, max_version);
-}
-
-void DDLLogEntry::setSettingsIfRequired(const Context & context)
-{
-    version = context.getSettingsRef().distributed_ddl_entry_format_version;
-    if (version == 2)
-        settings.emplace(context.getSettingsRef().changes());
-}
 
 String DDLLogEntry::toString() const
 {
     WriteBufferFromOwnString wb;
 
+    Strings host_id_strings(hosts.size());
+    std::transform(hosts.begin(), hosts.end(), host_id_strings.begin(), HostID::applyToString);
+
+    auto version = CURRENT_VERSION;
     wb << "version: " << version << "\n";
     wb << "query: " << escape << query << "\n";
-
-    bool write_hosts = version == 1 || !hosts.empty();
-    if (write_hosts)
-    {
-        Strings host_id_strings(hosts.size());
-        std::transform(hosts.begin(), hosts.end(), host_id_strings.begin(), HostID::applyToString);
-        wb << "hosts: " << host_id_strings << "\n";
-    }
-
+    wb << "hosts: " << host_id_strings << "\n";
     wb << "initiator: " << initiator << "\n";
-
-    bool write_settings = 1 <= version && settings && !settings->empty();
-    if (write_settings)
-    {
-        ASTSetQuery ast;
-        ast.is_standalone = false;
-        ast.changes = *settings;
-        wb << "settings: " << serializeAST(ast) << "\n";
-    }
 
     return wb.str();
 }
@@ -92,46 +64,25 @@ void DDLLogEntry::parse(const String & data)
 {
     ReadBufferFromString rb(data);
 
+    int version;
     rb >> "version: " >> version >> "\n";
-    assertVersion();
+
+    if (version != CURRENT_VERSION)
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown DDLLogEntry format version: {}", version);
 
     Strings host_id_strings;
     rb >> "query: " >> escape >> query >> "\n";
-    if (version == 1)
-    {
-        rb >> "hosts: " >> host_id_strings >> "\n";
+    rb >> "hosts: " >> host_id_strings >> "\n";
 
-        if (!rb.eof())
-            rb >> "initiator: " >> initiator >> "\n";
-        else
-            initiator.clear();
-    }
-    else if (version == 2)
-    {
-
-        if (!rb.eof() && *rb.position() == 'h')
-            rb >> "hosts: " >> host_id_strings >> "\n";
-        if (!rb.eof() && *rb.position() == 'i')
-            rb >> "initiator: " >> initiator >> "\n";
-        if (!rb.eof() && *rb.position() == 's')
-        {
-            String settings_str;
-            rb >> "settings: " >> settings_str >> "\n";
-            ParserSetQuery parser{true};
-            constexpr UInt64 max_size = 4096;
-            constexpr UInt64 max_depth = 16;
-            ASTPtr settings_ast = parseQuery(parser, settings_str, max_size, max_depth);
-            settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
-        }
-    }
+    if (!rb.eof())
+        rb >> "initiator: " >> initiator >> "\n";
+    else
+        initiator.clear();
 
     assertEOF(rb);
 
-    if (!host_id_strings.empty())
-    {
-        hosts.resize(host_id_strings.size());
-        std::transform(host_id_strings.begin(), host_id_strings.end(), hosts.begin(), HostID::fromString);
-    }
+    hosts.resize(host_id_strings.size());
+    std::transform(host_id_strings.begin(), host_id_strings.end(), hosts.begin(), HostID::fromString);
 }
 
 
@@ -151,8 +102,6 @@ std::unique_ptr<Context> DDLTaskBase::makeQueryContext(Context & from_context, c
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    if (entry.settings)
-        query_context->applySettingsChanges(*entry.settings);
     return query_context;
 }
 
@@ -344,17 +293,6 @@ String DatabaseReplicatedTask::getShardID() const
     return database->shard_name;
 }
 
-void DatabaseReplicatedTask::parseQueryFromEntry(const Context & context)
-{
-    DDLTaskBase::parseQueryFromEntry(context);
-    if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
-    {
-        /// Update database name with actual name of local database
-        assert(ddl_query->database.empty());
-        ddl_query->database = database->getDatabaseName();
-    }
-}
-
 std::unique_ptr<Context> DatabaseReplicatedTask::makeQueryContext(Context & from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
@@ -405,13 +343,6 @@ void ZooKeeperMetadataTransaction::commit()
     state = FAILED;
     current_zookeeper->multi(ops);
     state = COMMITTED;
-}
-
-ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
-{
-    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(cluster_name).get()))
-        return replicated_db->getCluster();
-    return {};
 }
 
 }

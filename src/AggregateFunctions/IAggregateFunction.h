@@ -267,15 +267,14 @@ public:
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = 0; i < batch_size; ++i)
             {
-                if (flags[i] && places[i])
+                if (flags[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
             }
         }
         else
         {
             for (size_t i = 0; i < batch_size; ++i)
-                if (places[i])
-                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
         }
     }
 
@@ -350,8 +349,7 @@ public:
         {
             size_t next_offset = offsets[i];
             for (size_t j = current_offset; j < next_offset; ++j)
-                if (places[i])
-                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
         }
     }

@@ -12,8 +12,6 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
-#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
-
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
@@ -95,8 +93,6 @@ public:
     CheckResults checkData(const ASTPtr & query, const Context & context) override;
 
     std::optional<JobAndPool> getDataProcessingJob() override;
-
-    MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -108,8 +104,6 @@ private:
     MergeTreeDataMergerMutator merger_mutator;
     BackgroundJobsExecutor background_executor;
     BackgroundMovesExecutor background_moves_executor;
-
-    std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
 
     /// For block numbers.
     SimpleIncrement increment;
@@ -134,10 +128,6 @@ private:
 
     void loadMutations();
 
-    /// Load and initialize deduplication logs. Even if deduplication setting
-    /// equals zero creates object with deduplication window equals zero.
-    void loadDeduplicationLog();
-
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
@@ -160,9 +150,8 @@ private:
     {
         FutureMergedMutatedPart future_part;
         ReservationPtr reserved_space;
+
         StorageMergeTree & storage;
-        // Optional tagger to maintain volatile parts for the JBOD balancer
-        std::optional<CurrentlySubmergingEmergingTagger> tagger;
 
         CurrentlyMergingPartsTagger(
             FutureMergedMutatedPart & future_part_,
