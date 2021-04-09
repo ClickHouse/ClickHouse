@@ -18,6 +18,9 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/printPipeline.h>
 
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
+
 namespace DB
 {
 
@@ -121,6 +124,7 @@ struct QueryPlanSettings
 
     /// Apply query plan optimizations.
     bool optimize = true;
+    bool json = false;
 
     constexpr static char name[] = "PLAN";
 
@@ -130,6 +134,7 @@ struct QueryPlanSettings
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
             {"optimize", optimize},
+            {"json", json}
     };
 };
 
@@ -255,7 +260,15 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         if (settings.optimize)
             plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
-        plan.explainPlan(buf, settings.query_plan_options);
+        if (settings.json)
+        {
+            auto tree = plan.explainPlan();
+            std::stringstream out;
+            boost::property_tree::json_parser::write_json(out, tree);
+            buf.str() = out.str();
+        }
+        else
+            plan.explainPlan(buf, settings.query_plan_options);
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
     {

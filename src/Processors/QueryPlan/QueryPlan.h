@@ -3,6 +3,7 @@
 #include <list>
 #include <vector>
 #include <set>
+#include <boost/property_tree/ptree_fwd.hpp>
 
 #include <Core/Names.h>
 
@@ -73,6 +74,7 @@ public:
         bool header = false;
     };
 
+    boost::property_tree::ptree explainPlan();
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
 

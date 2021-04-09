@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <boost/property_tree/ptree.hpp>
 
 namespace DB
 {
@@ -199,6 +200,65 @@ void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
     interpreter_context.emplace_back(std::move(context));
 }
 
+
+static boost::property_tree::ptree explainStep(const IQueryPlanStep & step)
+{
+    boost::property_tree::ptree tree;
+    tree.put("Node Type", step.getName());
+
+    const auto & description = step.getStepDescription();
+    if (!description.empty())
+        tree.put("Description", description);
+
+    step.describeActions(tree);
+
+    return tree;
+}
+
+boost::property_tree::ptree QueryPlan::explainPlan()
+{
+    checkInitialized();
+
+    struct Frame
+    {
+        Node * node;
+        size_t next_child = 0;
+        boost::property_tree::ptree node_tree = {};
+        boost::property_tree::ptree children_trees = {};
+    };
+
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = root});
+
+    boost::property_tree::ptree tree;
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+
+        if (frame.next_child == 0)
+            frame.node_tree = explainStep(*frame.node->step);
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push(Frame{frame.node->children[frame.next_child]});
+            ++frame.next_child;
+        }
+        else
+        {
+            if (!frame.children_trees.empty())
+                frame.node_tree.add_child("Plans", frame.children_trees);
+
+            tree.swap(frame.node_tree);
+            stack.pop();
+
+            if (!stack.empty())
+                stack.top().children_trees.add_child("", tree);
+        }
+    }
+
+    return tree;
+}
 
 static void explainStep(
     const IQueryPlanStep & step,
