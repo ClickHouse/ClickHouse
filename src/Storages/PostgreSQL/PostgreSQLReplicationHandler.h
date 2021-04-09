@@ -106,7 +106,7 @@ private:
 
     postgres::ConnectionPtr connection;
 
-    /// Replication consumer. Manages deconding of replication stream and syncing into tables.
+    /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     std::shared_ptr<MaterializePostgreSQLConsumer> consumer;
 
     BackgroundSchedulePool::TaskHolder startup_task, consumer_task;
