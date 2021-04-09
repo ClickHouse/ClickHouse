@@ -37,7 +37,6 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 
 #include <Processors/Pipe.h>
-#include <Processors/QueryPlan/AddingDelayedSourceStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -1081,26 +1080,14 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             if (expressions.hasJoin())
             {
-                JoinPtr join = expressions.join;
-
                 QueryPlanStepPtr join_step = std::make_unique<JoinStep>(
                     query_plan.getCurrentDataStream(),
-                    expressions.join);
+                    expressions.join,
+                    expressions.join_has_delayed_stream,
+                    settings.max_block_size);
 
                 join_step->setStepDescription("JOIN");
                 query_plan.addStep(std::move(join_step));
-
-                if (expressions.join_has_delayed_stream)
-                {
-                    const Block & join_result_sample = query_plan.getCurrentDataStream().header;
-                    auto stream = std::make_shared<LazyNonJoinedBlockInputStream>(*join, join_result_sample, settings.max_block_size);
-                    auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
-                    auto add_non_joined_rows_step = std::make_unique<AddingDelayedSourceStep>(
-                            query_plan.getCurrentDataStream(), std::move(source));
-
-                    add_non_joined_rows_step->setStepDescription("Add non-joined rows after JOIN");
-                    query_plan.addStep(std::move(add_non_joined_rows_step));
-                }
             }
 
             if (expressions.hasWhere())
