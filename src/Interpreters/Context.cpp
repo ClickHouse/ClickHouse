@@ -2581,6 +2581,12 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
     return metadata_transaction;
 }
 
+void Context::initCurrentTransaction(MergeTreeTransactionPtr txn)
+{
+    merge_tree_transaction_holder = MergeTreeTransactionHolder(txn, false);
+    setCurrentTransaction(std::move(txn));
+}
+
 void Context::setCurrentTransaction(MergeTreeTransactionPtr txn)
 {
     assert(!merge_tree_transaction || !txn);

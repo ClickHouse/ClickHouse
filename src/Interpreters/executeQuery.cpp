@@ -50,7 +50,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/TransactionLog.h>
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
@@ -825,6 +825,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                  log_queries_min_query_duration_ms = settings.log_queries_min_query_duration_ms.totalMilliseconds(),
                  quota(quota), status_info_to_query_log] () mutable
             {
+                if (auto txn = context.getCurrentTransaction())
+                    txn->onException();
+
                 if (quota)
                     quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
@@ -888,6 +891,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
+        if (auto txn = context.getCurrentTransaction())
+            txn->onException();
+
         if (!internal)
         {
             if (query_for_logging.empty())

@@ -37,7 +37,7 @@ BlockIO InterpreterTransactionControlQuery::executeBegin(Context & context)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Nested transactions are not supported");
 
     auto txn = TransactionLog::instance().beginTransaction();
-    context.setCurrentTransaction(txn);
+    context.initCurrentTransaction(txn);
     query_context.setCurrentTransaction(txn);
     return {};
 }

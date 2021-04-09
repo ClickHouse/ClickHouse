@@ -1,6 +1,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Interpreters/TransactionLog.h>
 
 namespace DB
 {
@@ -8,8 +9,17 @@ namespace DB
 MergeTreeTransaction::MergeTreeTransaction(Snapshot snapshot_, LocalTID local_tid_, UUID host_id)
     : tid({snapshot_, local_tid_, host_id})
     , snapshot(snapshot_)
-    , state(RUNNING)
+    , csn(Tx::UnknownCSN)
 {
+}
+
+MergeTreeTransaction::State MergeTreeTransaction::getState() const
+{
+    if (csn == Tx::UnknownCSN)
+        return RUNNING;
+    if (csn == Tx::RolledBackCSN)
+        return ROLLED_BACK;
+    return COMMITTED;
 }
 
 void MergeTreeTransaction::addNewPart(const DataPartPtr & new_part, MergeTreeTransaction * txn)
@@ -69,25 +79,35 @@ bool MergeTreeTransaction::isReadOnly() const
 
 void MergeTreeTransaction::beforeCommit()
 {
-    assert(state == RUNNING);
+    assert(csn == Tx::UnknownCSN);
 }
 
-void MergeTreeTransaction::afterCommit()
+void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
-    assert(state == COMMITTED);
+    assert(csn == Tx::UnknownCSN);
+    csn = assigned_csn;
     for (const auto & part : creating_parts)
         part->versions.mincsn.store(csn);
     for (const auto & part : removing_parts)
         part->versions.maxcsn.store(csn);
 }
 
-void MergeTreeTransaction::rollback()
+void MergeTreeTransaction::rollback() noexcept
 {
-    assert(state == RUNNING);
+    assert(csn == Tx::UnknownCSN);
+    csn = Tx::RolledBackCSN;
     for (const auto & part : creating_parts)
         part->versions.mincsn.store(Tx::RolledBackCSN);
     for (const auto & part : removing_parts)
         part->versions.unlockMaxTID(tid);
+}
+
+void MergeTreeTransaction::onException()
+{
+    if (csn)
+        return;
+
+    TransactionLog::instance().rollbackTransaction(shared_from_this());
 }
 
 }

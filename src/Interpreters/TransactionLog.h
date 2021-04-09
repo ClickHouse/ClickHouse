@@ -21,7 +21,7 @@ public:
 
     CSN commitTransaction(const MergeTreeTransactionPtr & txn);
 
-    void rollbackTransaction(const MergeTreeTransactionPtr & txn);
+    void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept;
 
     CSN getCSN(const TransactionID & tid) const;
     CSN getCSN(const TIDHash & tid) const;
