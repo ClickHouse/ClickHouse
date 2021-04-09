@@ -279,13 +279,13 @@ def test_put_get_with_globs(cluster):
         "450\t450\t900\t0.csv\t{bucket}/{max_path}".format(bucket=bucket, max_path=max_path)]
 
 
-# Test multipart put.
+# Test multipart
 @pytest.mark.parametrize("maybe_auth,positive", [
     ("", True),
     # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
     ("'wrongid','wrongkey',", False),
 ])
-def test_multipart_put(cluster, maybe_auth, positive):
+def test_multipart(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
 
     bucket = cluster.minio_bucket if not maybe_auth else cluster.minio_restricted_bucket
@@ -299,10 +299,12 @@ def test_multipart_put(cluster, maybe_auth, positive):
 
     one_line_length = 6  # 3 digits, 2 commas, 1 line separator.
 
-    # Generate data having size more than one part
-    int_data = [[1, 2, 3] for i in range(csv_size_bytes // one_line_length)]
-    csv_data = "".join(["{},{},{}\n".format(x, y, z) for x, y, z in int_data])
+    total_rows = csv_size_bytes // one_line_length
 
+    # Generate data having size more than one part
+    int_data = [[1, 2, 3] for _ in range(total_rows)]
+    csv_data = "".join(["{},{},{}\n".format(x, y, z) for x, y, z in int_data])
+    
     assert len(csv_data) > min_part_size_bytes
 
     filename = "test_multipart.csv"
@@ -324,6 +326,24 @@ def test_multipart_put(cluster, maybe_auth, positive):
 
         assert csv_data == get_s3_file_content(cluster, bucket, filename)
 
+    # select uploaded data from many threads
+    select_query = "select sum(column1), sum(column2), sum(column3) " \
+        "from s3('http://{host}:{port}/{bucket}/{filename}', {auth}'CSV', '{table_format}')".format(
+        host=cluster.minio_redirect_host, 
+        port=cluster.minio_redirect_port, 
+        bucket=bucket, 
+        filename=filename, 
+        auth=maybe_auth, 
+        table_format=table_format)
+    try:
+        select_result = run_query(instance, select_query, settings={'max_download_threads': random.randint(4, 16),
+                                                                    'max_download_buffer_size': 1024 * 1024})
+    except helpers.client.QueryRuntimeException:
+        if positive:
+            raise
+    else:
+        assert positive
+        select_result == ",".join(map(str, [total_rows, total_rows * 2, total_rows * 3])) + "\n"
 
 def test_remote_host_filter(cluster):
     instance = cluster.instances["restricted_dummy"]
