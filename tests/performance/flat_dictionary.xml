@@ -50,9 +50,9 @@
         <substitution>
             <name>elements_count</name>
             <values>
-                <value>50000000</value>
-                <value>75000000</value>
-                <value>100000000</value>
+                <value>5000000</value>
+                <value>7500000</value>
+                <value>10000000</value>
             </values>
         </substitution>
     </substitutions>
