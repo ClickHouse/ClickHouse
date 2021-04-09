@@ -16,6 +16,10 @@ from datetime64_extended_range.common import *
 # https://github.com/ClickHouse/ClickHouse/issues/22852 : formatDateTime wrong value
 # https://github.com/ClickHouse/ClickHouse/issues/22854 : timeSlot(), toMonday() wrong when out of normal
 # https://github.com/ClickHouse/ClickHouse/issues/16260 : timeSlots(), dateDiff() not working with DT64
+# https://github.com/ClickHouse/ClickHouse/issues/22927#issuecomment-816574952 : toRelative...Num() wrong when out of normal range
+# https://github.com/ClickHouse/ClickHouse/issues/22928 : toStartOf...() wrong when out of normal range
+# https://github.com/ClickHouse/ClickHouse/issues/22929 : toUnixTimestamp() exception when out of normal
+# https://github.com/ClickHouse/ClickHouse/issues/22930 : toWeek()
 
 xfails = {
     "type conversion/to int 8 16 32 64 128 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
@@ -26,6 +30,10 @@ xfails = {
     "date time funcs/time slot/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22854")],
     "date time funcs/to monday/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22854")],
     "date time funcs/time slots/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16260")],
+    "date time funcs/to relative :/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22927#issuecomment-816574952")],
+    "date time funcs/to start of :/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22928")],
+    "date time funcs/to unix timestamp/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22929")],
+    "date time funcs/to week/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22930")],
 }
 
 

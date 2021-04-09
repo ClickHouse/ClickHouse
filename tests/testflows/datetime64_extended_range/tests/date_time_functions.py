@@ -711,7 +711,7 @@ def to_time(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with When(f"{dt} {tz}"):
                         with By("computing expected result using python"):
                             expected = f"1970-01-02 {dt.strftime('%H:%M:%S')}"
                         with And("forming ClickHouse query"):
@@ -737,7 +737,7 @@ def to_relative_quarter_num(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with When(f"{dt} {tz}"):
                         with By("computing expected result using python"):
                             expected = f"{(year-1970)*4 + (dt.month - 1) // 3}"
                         with And("forming ClickHouse query"):
@@ -762,7 +762,7 @@ def to_relative_week_num(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with When(f"{dt} {tz}"):
                         with By("computing expected result using python"):
                             week_num = ((dt + datetime.timedelta(days=8) - datetime.timedelta(days=dt.weekday())) - datetime.datetime(1970, 1, 1, 0, 0, 0)).days // 7
                             expected = f"{week_num}"
@@ -789,7 +789,7 @@ def to_relative_month_num(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with When(f"{dt} {tz}"):
                         with By("computing expected result using python"):
                             month_num = (year - 1970) * 12 + dt.month
                             expected = f"{month_num}"
@@ -816,14 +816,14 @@ def to_relative_day_num(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with When(f"{dt} {tz}"):
                         with By("Computing the expected result using python"):
                             day_num = (dt - datetime.datetime(1970, 1, 1, 0, 0, 0)).days
                             expected = f"{day_num}"
                         with And(f"Forming a toRelativeDayNum query to ClickHouse"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                             query = f"SELECT toRelativeDayNum(toDateTime64('{dt_str}', 0, '{tz}'))"
-                        with When("I execute toRelativeDayNum query"):
+                        with Then("I execute toRelativeDayNum query"):
                             exec_query(request=query, expected=f"{expected}")
 
 
@@ -842,7 +842,7 @@ def to_relative_time(self, divisor, func):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with When(f"{dt} {tz}"):
                         with By("Computing the expected result using python"):
                             result = (dt - datetime.datetime(1970, 1, 1, 0, 0, 0)).total_seconds() // divisor
                             expected = f"{result}"
@@ -987,7 +987,7 @@ def to_week_year_week(self, clh_func, ret_year):
             for dt in datetimes:
                 for tz in timezones:
                     for mode in range(0, 10):
-                        with Example(f"{dt} {tz}"):
+                        with When(f"{dt} {tz}, mode={mode}"):
                             with By("Computing expected output using python"):
                                 expected = to_week_compute_expected(dt=dt, mode=mode, ret_year=ret_year)
                             with And(f"Forming a {clh_func} query"):
