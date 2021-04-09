@@ -273,6 +273,7 @@ if (USE_FASTOPS)
 endif()
 
 if (USE_AMQPCPP OR USE_CASSANDRA)
+    set (LIBUV_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/libuv")
     add_subdirectory (libuv)
 endif()
 if (USE_AMQPCPP)
