@@ -70,8 +70,8 @@ private:
     String compression_method;
     std::shared_ptr<Aws::S3::S3Client> client;
     String name;
-    size_t max_read_threads;
-    size_t max_read_buffer_size;
+    size_t max_download_threads;
+    size_t max_download_buffer_size;
 
     S3AuthSettings auth_settings;
     void updateAuthSettings(const Context & context);

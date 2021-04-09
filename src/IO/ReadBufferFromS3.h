@@ -81,6 +81,7 @@ public:
         assert(range_step < object_size);
     }
 
+    size_t totalRanges() const;
     virtual ReadBufferPtr getReader() override;
 
 private:
