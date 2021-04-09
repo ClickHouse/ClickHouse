@@ -191,8 +191,9 @@ dynamicConfigFile=/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/zoo.
 Java version:
 
 ``` text
-Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
-Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
+openjdk 11.0.5-shenandoah 2019-10-15
+OpenJDK Runtime Environment (build 11.0.5-shenandoah+10-adhoc.heretic.src)
+OpenJDK 64-Bit Server VM (build 11.0.5-shenandoah+10-adhoc.heretic.src, mixed mode)
 ```
 
 JVM parameters:
