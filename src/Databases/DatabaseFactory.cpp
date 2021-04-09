@@ -287,7 +287,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
 
         auto parsed_host_port = parseAddress(host_port, 5432);
-        auto connection_string = postgres::ConnectionPool::formatConnectionString(postgres_database_name, parsed_host_port.first, parsed_host_port.second, username, password);
+        auto connection_info = postgres::formatConnectionString(postgres_database_name, parsed_host_port.first, parsed_host_port.second, username, password);
 
         auto postgresql_replica_settings = std::make_unique<MaterializePostgreSQLSettings>();
 
@@ -296,7 +296,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
         return std::make_shared<DatabaseMaterializePostgreSQL>(
                 context, metadata_path, uuid, engine_define,
-                database_name, postgres_database_name, connection_string,
+                database_name, postgres_database_name, connection_info,
                 std::move(postgresql_replica_settings));
     }
 

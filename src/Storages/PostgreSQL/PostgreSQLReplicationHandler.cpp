@@ -19,7 +19,7 @@ static const auto reschedule_ms = 500;
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & database_name_,
-    const std::string & conn_str,
+    const postgres::ConnectionInfo & connection_info_,
     const std::string & metadata_path_,
     const Context & context_,
     const size_t max_block_size_,
@@ -29,13 +29,13 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     : log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
     , context(context_)
     , database_name(database_name_)
-    , connection_str(conn_str)
     , metadata_path(metadata_path_)
+    , connection_info(connection_info_)
     , max_block_size(max_block_size_)
     , allow_minimal_ddl(allow_minimal_ddl_)
     , is_postgresql_replica_database_engine(is_postgresql_replica_database_engine_)
     , tables_list(tables_list_)
-    , connection(std::make_shared<postgres::Connection>(conn_str, ""))
+    , connection(std::make_shared<postgres::Connection>(connection_info_))
 {
     replication_slot = fmt::format("{}_ch_replication_slot", database_name);
     publication_name = fmt::format("{}_ch_publication", database_name);
@@ -63,14 +63,11 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
     {
         /// Will throw pqxx::broken_connection if no connection at the moment
         connection->get();
-
         startSynchronization();
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
-        LOG_ERROR(log, "Unable to set up connection. Reconnection attempt will continue. Error message: {}",
-                pqxx_error.what());
-
+        LOG_ERROR(log, "Unable to set up connection. Reconnection attempt will continue. Error message: {}", pqxx_error.what());
         startup_task->scheduleAfter(reschedule_ms);
     }
     catch (...)
@@ -92,20 +89,19 @@ void PostgreSQLReplicationHandler::startSynchronization()
 {
     createPublicationIfNeeded(connection->getRef());
 
-    auto replication_connection = std::make_shared<postgres::Connection>(fmt::format("{} replication=database", connection->getConnectionString()), "");
-    replication_connection->get()->set_variable("default_transaction_isolation", "'repeatable read'");
-    auto tx = std::make_shared<pqxx::nontransaction>(replication_connection->getRef());
+    auto replication_connection = postgres::createReplicationConnection(connection_info);
+    postgres::Transaction<pqxx::nontransaction> tx(replication_connection->getRef());
 
     std::string snapshot_name, start_lsn;
 
     auto initial_sync = [&]()
     {
-        createReplicationSlot(tx, start_lsn, snapshot_name);
+        createReplicationSlot(tx.getRef(), start_lsn, snapshot_name);
         loadFromSnapshot(snapshot_name, storages);
     };
 
     /// Replication slot should be deleted with drop table only and created only once, reused after detach.
-    if (!isReplicationSlotExist(tx, replication_slot))
+    if (!isReplicationSlotExist(tx.getRef(), replication_slot))
     {
         initial_sync();
     }
@@ -114,12 +110,12 @@ void PostgreSQLReplicationHandler::startSynchronization()
         /// In case of some failure, the following cases are possible (since publication and replication slot are reused):
         /// 1. If replication slot exists and metadata file (where last synced version is written) does not exist, it is not ok.
         /// 2. If created a new publication and replication slot existed before it was created, it is not ok.
-        dropReplicationSlot(tx);
+        dropReplicationSlot(tx.getRef());
         initial_sync();
     }
     else
     {
-        LOG_TRACE(log, "Restoring tables...");
+        LOG_TRACE(log, "Restoring {} tables...", storages.size());
         for (const auto & [table_name, storage] : storages)
         {
             try
@@ -134,8 +130,6 @@ void PostgreSQLReplicationHandler::startSynchronization()
             }
         }
     }
-
-    tx->commit();
 
     consumer = std::make_shared<MaterializePostgreSQLConsumer>(
             context,
@@ -226,10 +220,10 @@ void PostgreSQLReplicationHandler::consumerFunc()
 }
 
 
-bool PostgreSQLReplicationHandler::isPublicationExist(std::shared_ptr<pqxx::work> tx)
+bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::work & tx)
 {
     std::string query_str = fmt::format("SELECT exists (SELECT 1 FROM pg_publication WHERE pubname = '{}')", publication_name);
-    pqxx::result result{tx->exec(query_str)};
+    pqxx::result result{tx.exec(query_str)};
     assert(!result.empty());
     bool publication_exists = (result[0][0].as<std::string>() == "t");
 
@@ -245,9 +239,9 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::connection & 
     if (new_publication_created)
         return;
 
-    auto tx = std::make_shared<pqxx::work>(connection_);
+    postgres::Transaction<pqxx::work> tx(connection_);
 
-    if (!isPublicationExist(tx))
+    if (!isPublicationExist(tx.getRef()))
     {
         if (tables_list.empty())
         {
@@ -263,7 +257,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::connection & 
         std::string query_str = fmt::format("CREATE PUBLICATION {} FOR TABLE ONLY {}", publication_name, tables_list);
         try
         {
-            tx->exec(query_str);
+            tx.exec(query_str);
             new_publication_created = true;
             LOG_TRACE(log, "Created publication {} with tables list: {}", publication_name, tables_list);
         }
@@ -273,15 +267,13 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::connection & 
             throw;
         }
     }
-
-    tx->commit();
 }
 
 
-bool PostgreSQLReplicationHandler::isReplicationSlotExist(NontransactionPtr tx, std::string & slot_name)
+bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction & tx, std::string & slot_name)
 {
     std::string query_str = fmt::format("SELECT active, restart_lsn FROM pg_replication_slots WHERE slot_name = '{}'", slot_name);
-    pqxx::result result{tx->exec(query_str)};
+    pqxx::result result{tx.exec(query_str)};
 
     /// Replication slot does not exist
     if (result.empty())
@@ -296,7 +288,7 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(NontransactionPtr tx, 
 
 
 void PostgreSQLReplicationHandler::createReplicationSlot(
-        NontransactionPtr tx, std::string & start_lsn, std::string & snapshot_name, bool temporary)
+        pqxx::nontransaction & tx, std::string & start_lsn, std::string & snapshot_name, bool temporary)
 {
     std::string query_str;
 
@@ -310,7 +302,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 
     try
     {
-        pqxx::result result{tx->exec(query_str)};
+        pqxx::result result{tx.exec(query_str)};
         start_lsn = result[0][1].as<std::string>();
         snapshot_name = result[0][2].as<std::string>();
         LOG_TRACE(log, "Created replication slot: {}, start lsn: {}", replication_slot, start_lsn);
@@ -323,7 +315,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 }
 
 
-void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr tx, bool temporary)
+void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx, bool temporary)
 {
     std::string slot_name;
     if (temporary)
@@ -333,15 +325,15 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(NontransactionPtr tx, boo
 
     std::string query_str = fmt::format("SELECT pg_drop_replication_slot('{}')", slot_name);
 
-    tx->exec(query_str);
+    tx.exec(query_str);
     LOG_TRACE(log, "Dropped replication slot: {}", slot_name);
 }
 
 
-void PostgreSQLReplicationHandler::dropPublication(NontransactionPtr tx)
+void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 {
     std::string query_str = fmt::format("DROP PUBLICATION IF EXISTS {}", publication_name);
-    tx->exec(query_str);
+    tx.exec(query_str);
 }
 
 
@@ -350,14 +342,12 @@ void PostgreSQLReplicationHandler::shutdownFinal()
     if (Poco::File(metadata_path).exists())
         Poco::File(metadata_path).remove();
 
-    connection = std::make_shared<postgres::Connection>(connection_str, "");
-    auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
+    connection = std::make_shared<postgres::Connection>(connection_info);
+    postgres::Transaction<pqxx::nontransaction> tx(connection->getRef());
 
-    dropPublication(tx);
-    if (isReplicationSlotExist(tx, replication_slot))
-        dropReplicationSlot(tx);
-
-    tx->commit();
+    dropPublication(tx.getRef());
+    if (isReplicationSlotExist(tx.getRef(), replication_slot))
+        dropReplicationSlot(tx.getRef());
 }
 
 
@@ -379,9 +369,9 @@ NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::connectio
 {
     std::string query = fmt::format("SELECT tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
     std::unordered_set<std::string> tables;
-    pqxx::read_transaction tx(connection_);
+    postgres::Transaction<pqxx::read_transaction> tx(connection_);
 
-    for (auto table_name : tx.stream<std::string>(query))
+    for (auto table_name : tx.getRef().stream<std::string>(query))
         tables.insert(std::get<0>(table_name));
 
     return tables;
@@ -405,7 +395,6 @@ std::unordered_map<Int32, String> PostgreSQLReplicationHandler::reloadFromSnapsh
     std::unordered_map<Int32, String> tables_start_lsn;
     try
     {
-        auto tx = std::make_shared<pqxx::work>(connection->getRef());
         Storages sync_storages;
         for (const auto & relation : relation_data)
         {
@@ -414,17 +403,14 @@ std::unordered_map<Int32, String> PostgreSQLReplicationHandler::reloadFromSnapsh
             sync_storages[table_name] = storage;
             storage->dropNested();
         }
-        tx->commit();
 
-        auto replication_connection = std::make_shared<postgres::Connection>(fmt::format("{} replication=database", connection_str), "");
-        replication_connection->get()->set_variable("default_transaction_isolation", "'repeatable read'");
+        auto replication_connection = postgres::createReplicationConnection(connection_info);
+        postgres::Transaction<pqxx::nontransaction> tx(replication_connection->getRef());
 
-        auto r_tx = std::make_shared<pqxx::nontransaction>(replication_connection->getRef());
         std::string snapshot_name, start_lsn;
-        createReplicationSlot(r_tx, start_lsn, snapshot_name, true);
+        createReplicationSlot(tx.getRef(), start_lsn, snapshot_name, true);
         /// This snapshot is valid up to the end of the transaction, which exported it.
         auto success_tables = loadFromSnapshot(snapshot_name, sync_storages);
-        r_tx->commit();
 
         for (const auto & relation : relation_data)
         {

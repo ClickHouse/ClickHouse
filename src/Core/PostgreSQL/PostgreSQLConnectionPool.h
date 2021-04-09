@@ -41,9 +41,6 @@ public:
 
     ConnectionHolderPtr get();
 
-    static std::string formatConnectionString(
-        std::string dbname, std::string host, UInt16 port, std::string user, std::string password);
-
 private:
     using Pool = ConcurrentBoundedQueue<ConnectionPtr>;
     using PoolPtr = std::shared_ptr<Pool>;
@@ -51,7 +48,7 @@ private:
     void initialize();
 
     PoolPtr pool;
-    std::string connection_str, address;
+    ConnectionInfo connection_info;
     size_t pool_size;
     int64_t pool_wait_timeout;
     bool block_on_empty_pool;

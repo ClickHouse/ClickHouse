@@ -41,12 +41,12 @@ DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
         const ASTStorage * database_engine_define_,
         const String & database_name_,
         const String & postgres_database_name,
-        const String & connection_string,
+        const postgres::ConnectionInfo & connection_info,
         std::unique_ptr<MaterializePostgreSQLSettings> settings_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializePostgreSQL<Atomic> (" + database_name_ + ")", context_)
     , database_engine_define(database_engine_define_->clone())
     , remote_database_name(postgres_database_name)
-    , connection(std::make_shared<postgres::Connection>(connection_string, ""))
+    , connection(std::make_shared<postgres::Connection>(connection_info))
     , settings(std::move(settings_))
 {
 }
@@ -56,7 +56,7 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
 {
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
-            connection->getConnectionString(),
+            connection->getConnectionInfo(),
             metadata_path + METADATA_SUFFIX,
             global_context,
             settings->postgresql_replica_max_block_size.value,
