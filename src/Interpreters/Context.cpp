@@ -49,6 +49,7 @@
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/SystemLog.h>
@@ -322,9 +323,8 @@ struct ContextShared
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
-    String interserver_io_user;
-    String interserver_io_password;
     String interserver_scheme;                              /// http or https
+    MultiVersion<InterserverCredentials> interserver_io_credentials;
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
@@ -1734,6 +1734,17 @@ bool Context::hasAuxiliaryZooKeeper(const String & name) const
     return getConfigRef().has("auxiliary_zookeepers." + name);
 }
 
+InterserverCredentialsPtr Context::getInterserverCredentials()
+{
+    return shared->interserver_io_credentials.get();
+}
+
+void Context::updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config)
+{
+    auto credentials = InterserverCredentials::make(config, "interserver_http_credentials");
+    shared->interserver_io_credentials.set(std::move(credentials));
+}
+
 void Context::setInterserverIOAddress(const String & host, UInt16 port)
 {
     shared->interserver_io_host = host;
@@ -1747,17 +1758,6 @@ std::pair<String, UInt16> Context::getInterserverIOAddress() const
                         ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return { shared->interserver_io_host, shared->interserver_io_port };
-}
-
-void Context::setInterserverCredentials(const String & user_, const String & password)
-{
-    shared->interserver_io_user = user_;
-    shared->interserver_io_password = password;
-}
-
-std::pair<String, String> Context::getInterserverCredentials() const
-{
-    return { shared->interserver_io_user, shared->interserver_io_password };
 }
 
 void Context::setInterserverScheme(const String & scheme)
