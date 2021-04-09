@@ -84,7 +84,7 @@ private:
     std::string getCurrentStateDescription();
 
 private:
-    const Context & context;
+    std::unique_ptr<Context> context;
     StorageDistributed & storage;
     StorageMetadataPtr metadata_snapshot;
     ASTPtr query_ast;
