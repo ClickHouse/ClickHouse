@@ -16,6 +16,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+}
+
 namespace ClusterProxy
 {
 
@@ -92,6 +97,9 @@ void executeQuery(
 
     const Settings & settings = context.getSettingsRef();
 
+    if (settings.max_distributed_depth && context.getClientInfo().distributed_depth > settings.max_distributed_depth)
+        throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
+
     std::vector<QueryPlanPtr> plans;
     Pipes remote_pipes;
     Pipes delayed_pipes;
@@ -99,6 +107,8 @@ void executeQuery(
     const std::string query = queryToString(query_ast);
 
     auto new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
+
+    new_context->getClientInfo().distributed_depth += 1;
 
     ThrottlerPtr user_level_throttler;
     if (auto * process_list_element = context.getProcessListElement())
@@ -156,8 +166,7 @@ void executeQuery(
     for (auto & plan : plans)
         input_streams.emplace_back(plan->getCurrentDataStream());
 
-    auto header = input_streams.front().header;
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), header);
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
