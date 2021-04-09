@@ -8,6 +8,8 @@
 #    include "config_core.h"
 #endif
 
+#include <boost/property_tree/ptree_fwd.hpp>
+
 namespace DB
 {
 
@@ -54,6 +56,8 @@ public:
         FUNCTION,
     };
 
+    static const char * typeToString(ActionType type);
+
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
@@ -80,6 +84,8 @@ public:
         /// Some functions like `ignore()` always return constant but can't be replaced by constant it.
         /// We calculate such constants in order to avoid unnecessary materialization, but prohibit it's folding.
         bool allow_constant_folding = true;
+
+        boost::property_tree::ptree toTree() const;
     };
 
     /// NOTE: std::list is an implementation detail.
