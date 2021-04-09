@@ -23,8 +23,7 @@ public:
     static void init(Context & global_context_);
     static void shutdown();
 
-    void startupIfNecessary();
-    void startupIfNecessaryImpl(const std::lock_guard<std::mutex> &);
+    void startup();
 
 private:
     friend std::unique_ptr<TemporaryLiveViewCleaner>::deleter_type;
@@ -33,6 +32,7 @@ private:
     ~TemporaryLiveViewCleaner();
 
     void backgroundThreadFunc();
+    void startBackgroundThread();
     void stopBackgroundThread();
 
     struct StorageAndTimeOfCheck
@@ -47,7 +47,7 @@ private:
     std::mutex mutex;
     std::vector<StorageAndTimeOfCheck> views;
     ThreadFromGlobalPool background_thread;
-    bool can_start_background_thread = false;
+    std::atomic<bool> background_thread_can_start = false;
     std::atomic<bool> background_thread_should_exit = false;
     std::condition_variable background_thread_wake_up;
 };
