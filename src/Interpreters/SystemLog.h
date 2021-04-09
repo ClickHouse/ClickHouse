@@ -327,8 +327,10 @@ void SystemLog<LogElement>::flush(bool force)
     LOG_DEBUG(log, "Requested flush up to offset {}",
         this_thread_requested_offset);
 
-    // Use an arbitrary timeout to avoid endless waiting.
-    const int timeout_seconds = 60;
+    // Use an arbitrary timeout to avoid endless waiting. 60s proved to be
+    // too fast for our parallel functional tests, probably because they
+    // heavily load the disk.
+    const int timeout_seconds = 180;
     std::unique_lock lock(mutex);
     bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds),
         [&] { return flushed_up_to >= this_thread_requested_offset
