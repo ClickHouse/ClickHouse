@@ -1,5 +1,5 @@
 ---
-toc_priority: 8
+toc_priority: 5
 toc_title: Kafka
 ---
 
@@ -194,4 +194,4 @@ Example:
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 -   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
-[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/kafka/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/kafka/) <!--hide-->

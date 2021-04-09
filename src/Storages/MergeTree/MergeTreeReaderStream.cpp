@@ -89,8 +89,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
                     buffer_size,
                     sum_mark_range_bytes,
                     settings.min_bytes_to_use_direct_io,
-                    settings.min_bytes_to_use_mmap_io,
-                    settings.mmap_cache.get());
+                    settings.min_bytes_to_use_mmap_io);
             },
             uncompressed_cache);
 
@@ -106,13 +105,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            disk->readFile(
-                path_prefix + data_file_extension,
-                buffer_size,
-                sum_mark_range_bytes,
-                settings.min_bytes_to_use_direct_io,
-                settings.min_bytes_to_use_mmap_io,
-                settings.mmap_cache.get())
+            disk->readFile(path_prefix + data_file_extension, buffer_size,
+                sum_mark_range_bytes, settings.min_bytes_to_use_direct_io, settings.min_bytes_to_use_mmap_io)
         );
 
         if (profile_callback)

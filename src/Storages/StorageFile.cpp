@@ -22,8 +22,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -151,11 +149,6 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     return paths;
 }
 
-bool StorageFile::isColumnOriented() const
-{
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
-}
-
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
@@ -234,8 +227,6 @@ static std::chrono::seconds getLockTimeout(const Context & context)
     return std::chrono::seconds{lock_timeout};
 }
 
-using StorageFilePtr = std::shared_ptr<StorageFile>;
-
 
 class StorageFileSource : public SourceWithProgress
 {
@@ -266,18 +257,6 @@ public:
         return header;
     }
 
-    static Block getBlockForSource(
-        const StorageFilePtr & storage,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ColumnsDescription & columns_description,
-        const FilesInfoPtr & files_info)
-    {
-        if (storage->isColumnOriented())
-            return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
-        else
-            return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
-    }
-
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
         const StorageMetadataPtr & metadata_snapshot_,
@@ -285,7 +264,7 @@ public:
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_)
-        : SourceWithProgress(getBlockForSource(storage_, metadata_snapshot_, columns_description_, files_info_))
+        : SourceWithProgress(getHeader(metadata_snapshot_, files_info_->need_path_column, files_info_->need_file_column))
         , storage(std::move(storage_))
         , metadata_snapshot(metadata_snapshot_)
         , files_info(std::move(files_info_))
@@ -365,16 +344,8 @@ public:
                 }
 
                 read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
-
-                auto get_block_for_format = [&]() -> Block
-                {
-                    if (storage->isColumnOriented())
-                        return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-                    return metadata_snapshot->getSampleBlock();
-                };
-
                 auto format = FormatFactory::instance().getInput(
-                    storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
+                        storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size, storage->format_settings);
 
                 reader = std::make_shared<InputStreamFromInputFormat>(format);
 
@@ -441,6 +412,7 @@ private:
     std::unique_lock<std::shared_timed_mutex> unique_lock;
 };
 
+
 Pipe StorageFile::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -485,16 +457,9 @@ Pipe StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        const auto get_columns_for_format = [&]() -> ColumnsDescription
-        {
-            if (isColumnOriented())
-                return ColumnsDescription{
-                    metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
-            else
-                return metadata_snapshot->getColumns();
-        };
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format()));
+            this_ptr, metadata_snapshot, context, max_block_size, files_info,
+            metadata_snapshot->getColumns()));
     }
 
     return Pipe::unitePipes(std::move(pipes));

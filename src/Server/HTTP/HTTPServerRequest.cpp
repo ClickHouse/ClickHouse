@@ -15,8 +15,8 @@
 
 namespace DB
 {
+
 HTTPServerRequest::HTTPServerRequest(const Context & context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
-    : max_uri_size(context.getSettingsRef().http_max_uri_size)
 {
     response.attachRequest(this);
 
@@ -92,10 +92,10 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
 
     skipWhitespaceIfAny(in);
 
-    while (in.read(ch) && !Poco::Ascii::isSpace(ch) && uri.size() <= max_uri_size)
+    while (in.read(ch) && !Poco::Ascii::isSpace(ch) && uri.size() <= MAX_URI_LENGTH)
         uri += ch;
 
-    if (uri.size() > max_uri_size)
+    if (uri.size() > MAX_URI_LENGTH)
         throw Poco::Net::MessageException("HTTP request URI invalid or too long");
 
     skipWhitespaceIfAny(in);

@@ -180,17 +180,7 @@ String FieldVisitorToString::operator() (const Tuple & x) const
 {
     WriteBufferFromOwnString wb;
 
-    // For single-element tuples we must use the explicit tuple() function,
-    // or they will be parsed back as plain literals.
-    if (x.size() > 1)
-    {
-        wb << '(';
-    }
-    else
-    {
-        wb << "tuple(";
-    }
-
+    wb << '(';
     for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())

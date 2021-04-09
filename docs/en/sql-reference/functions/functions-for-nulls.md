@@ -38,7 +38,7 @@ Input table
 Query
 
 ``` sql
-SELECT x FROM t_null WHERE isNull(y);
+SELECT x FROM t_null WHERE isNull(y)
 ```
 
 ``` text
@@ -78,7 +78,7 @@ Input table
 Query
 
 ``` sql
-SELECT x FROM t_null WHERE isNotNull(y);
+SELECT x FROM t_null WHERE isNotNull(y)
 ```
 
 ``` text
@@ -120,7 +120,7 @@ The `mail` and `phone` fields are of type String, but the `icq` field is `UInt32
 Get the first available contact method for the customer from the contact list:
 
 ``` sql
-SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook;
+SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 ```
 
 ``` text
@@ -151,7 +151,7 @@ ifNull(x,alt)
 **Example**
 
 ``` sql
-SELECT ifNull('a', 'b');
+SELECT ifNull('a', 'b')
 ```
 
 ``` text
@@ -161,7 +161,7 @@ SELECT ifNull('a', 'b');
 ```
 
 ``` sql
-SELECT ifNull(NULL, 'b');
+SELECT ifNull(NULL, 'b')
 ```
 
 ``` text
@@ -190,7 +190,7 @@ nullIf(x, y)
 **Example**
 
 ``` sql
-SELECT nullIf(1, 1);
+SELECT nullIf(1, 1)
 ```
 
 ``` text
@@ -200,7 +200,7 @@ SELECT nullIf(1, 1);
 ```
 
 ``` sql
-SELECT nullIf(1, 2);
+SELECT nullIf(1, 2)
 ```
 
 ``` text
@@ -231,7 +231,7 @@ assumeNotNull(x)
 Consider the `t_null` table.
 
 ``` sql
-SHOW CREATE TABLE t_null;
+SHOW CREATE TABLE t_null
 ```
 
 ``` text
@@ -250,7 +250,7 @@ SHOW CREATE TABLE t_null;
 Apply the `assumeNotNull` function to the `y` column.
 
 ``` sql
-SELECT assumeNotNull(y) FROM t_null;
+SELECT assumeNotNull(y) FROM t_null
 ```
 
 ``` text
@@ -261,7 +261,7 @@ SELECT assumeNotNull(y) FROM t_null;
 ```
 
 ``` sql
-SELECT toTypeName(assumeNotNull(y)) FROM t_null;
+SELECT toTypeName(assumeNotNull(y)) FROM t_null
 ```
 
 ``` text
@@ -290,7 +290,7 @@ toNullable(x)
 **Example**
 
 ``` sql
-SELECT toTypeName(10);
+SELECT toTypeName(10)
 ```
 
 ``` text
@@ -300,7 +300,7 @@ SELECT toTypeName(10);
 ```
 
 ``` sql
-SELECT toTypeName(toNullable(10));
+SELECT toTypeName(toNullable(10))
 ```
 
 ``` text
@@ -309,3 +309,4 @@ SELECT toTypeName(toNullable(10));
 └────────────────────────────┘
 ```
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->

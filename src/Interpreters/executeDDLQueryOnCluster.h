@@ -21,10 +21,9 @@ bool isSupportedAlterType(int type);
 /// Pushes distributed DDL query to the queue.
 /// Returns DDLQueryStatusInputStream, which reads results of query execution on each host in the cluster.
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access);
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option = false);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option = false);
 
-BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, const Context & context, const std::optional<Strings> & hosts_to_wait = {});
 
 class DDLQueryStatusInputStream final : public IBlockInputStream
 {
@@ -45,8 +44,6 @@ private:
 
     Strings getNewAndUpdate(const Strings & current_list_of_finished_hosts);
 
-    std::pair<String, UInt16> parseHostAndPort(const String & host_id) const;
-
     String node_path;
     const Context & context;
     Stopwatch watch;
@@ -65,8 +62,6 @@ private:
 
     Int64 timeout_seconds = 120;
     bool by_hostname = true;
-    bool throw_on_timeout = true;
-    bool timeout_exceeded = false;
 };
 
 }

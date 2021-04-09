@@ -34,9 +34,6 @@ SRCS(
     LimitReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
-    MMapReadBufferFromFileWithCache.cpp
-    MMappedFile.cpp
-    MMappedFileDescriptor.cpp
     MemoryReadWriteBuffer.cpp
     MySQLBinlogEventReadBuffer.cpp
     MySQLPacketPayloadReadBuffer.cpp
@@ -53,7 +50,6 @@ SRCS(
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
     SeekAvoidingReadBuffer.cpp
-    TimeoutSetter.cpp
     UseSSL.cpp
     WriteBufferFromFile.cpp
     WriteBufferFromFileBase.cpp
