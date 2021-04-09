@@ -152,7 +152,7 @@ void DatabaseCatalog::loadDatabases()
 
     /// Another background thread which drops temporary LiveViews.
     /// We should start it after loadMarkedAsDroppedTables() to avoid race condition.
-    TemporaryLiveViewCleaner::instance().startupIfNecessary();
+    TemporaryLiveViewCleaner::instance().startup();
 }
 
 void DatabaseCatalog::shutdownImpl()
