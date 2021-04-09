@@ -1360,8 +1360,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     for (const auto & plan : plans)
         input_streams.emplace_back(plan->getCurrentDataStream());
 
-    const auto & common_header = plans.front()->getCurrentDataStream().header;
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), common_header);
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
 
     auto plan = std::make_unique<QueryPlan>();
     plan->unitePlans(std::move(union_step), std::move(plans));
