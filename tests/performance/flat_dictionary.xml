@@ -25,7 +25,7 @@
         )
         PRIMARY KEY id
         SOURCE(CLICKHOUSE(DB 'default' TABLE 'simple_key_flat_dictionary_source_table'))
-        LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+        LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 50000000))
         LIFETIME(MIN 0 MAX 1000)
     </create_query>
 
@@ -33,7 +33,7 @@
         INSERT INTO simple_key_flat_dictionary_source_table
         SELECT number, number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
-        LIMIT 5000000;
+        LIMIT 50000000;
     </fill_query>
 
     <substitutions>
@@ -50,30 +50,22 @@
         <substitution>
             <name>elements_count</name>
             <values>
-                <value>2500000</value>
-                <value>5000000</value>
-                <value>7500000</value>
-                <value>10000000</value>
+                <value>25000000</value>
+                <value>50000000</value>
+                <value>75000000</value>
+                <value>100000000</value>
             </values>
         </substitution>
     </substitutions>
 
     <query>
-        SELECT dictGet('default.simple_key_flat_dictionary', {column_name}, number)
-        FROM system.numbers
-        LIMIT {elements_count}
-        FORMAT Null;
-    </query>
-
-    <query>
-        SELECT dictHas('default.simple_key_flat_dictionary', number)
+        SELECT dictGet('default.simple_key_flat_dictionary', ('value_int', 'value_string', 'value_decimal', 'value_string_nullable'), number)
         FROM system.numbers
         LIMIT {elements_count}
         FORMAT Null;
     </query>
 
     <drop_query>DROP TABLE IF EXISTS simple_key_flat_dictionary_source_table</drop_query>
-
     <drop_query>DROP DICTIONARY IF EXISTS simple_key_flat_dictionary</drop_query>
 
 </test>
