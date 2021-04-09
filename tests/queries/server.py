@@ -75,7 +75,7 @@ class ServerThread(threading.Thread):
                     time.sleep(ServerThread.DEFAULT_SERVER_DELAY)
                     s = socket.create_connection(('localhost', self.tcp_port), ServerThread.DEFAULT_CONNECTION_TIMEOUT)
                     s.sendall(b'G')  # trigger expected "bad" HELLO response
-                    print('Successful server response:', s.recv(1024))  # FIXME: read whole buffered response
+                    s.recv(1024)  # FIXME: read whole buffered response
                     s.shutdown(socket.SHUT_RDWR)
                     s.close()
                 except Exception:
@@ -116,7 +116,7 @@ class ServerThread(threading.Thread):
         if self._proc.returncode is None:
             self._proc.terminate()
         self.join()
-        print('Stop clickhouse-server')
+        print('Stopped clickhouse-server')
 
 
 ServerThread.DEFAULT_SERVER_CONFIG = \

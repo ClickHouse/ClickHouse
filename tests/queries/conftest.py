@@ -25,7 +25,7 @@ RE_TEST_NAME = re.compile(r"\[(.*)\]")
 def pytest_itemcollected(item):
     match = RE_TEST_NAME.search(item.name)
     if match:
-        item.name = match.group(1)
+        item._nodeid = match.group(1)
 
 
 # Fixtures
