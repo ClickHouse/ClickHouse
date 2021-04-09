@@ -42,7 +42,7 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     const StorageID & table_id_,
     const String & remote_database_name,
     const String & remote_table_name_,
-    const String & connection_str,
+    const postgres::ConnectionInfo & connection_info,
     const StorageInMemoryMetadata & storage_metadata,
     const Context & context_,
     std::unique_ptr<MaterializePostgreSQLSettings> replication_settings_)
@@ -60,7 +60,7 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
-            connection_str,
+            connection_info,
             metadata_path,
             global_context,
             replication_settings->postgresql_replica_max_block_size.value,
@@ -445,7 +445,7 @@ void registerStorageMaterializePostgreSQL(StorageFactory & factory)
         const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         /// No connection is made here, see Storages/PostgreSQL/PostgreSQLConnection.cpp
-        auto connection_string = postgres::ConnectionPool::formatConnectionString(
+        auto connection_info = postgres::formatConnectionString(
             remote_database,
             parsed_host_port.first,
             parsed_host_port.second,
@@ -453,7 +453,7 @@ void registerStorageMaterializePostgreSQL(StorageFactory & factory)
             engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
 
         return StorageMaterializePostgreSQL::create(
-                args.table_id, remote_database, remote_table, connection_string,
+                args.table_id, remote_database, remote_table, connection_info,
                 metadata, args.context,
                 std::move(postgresql_replication_settings));
     };

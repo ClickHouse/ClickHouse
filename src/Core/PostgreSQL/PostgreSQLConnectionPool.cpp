@@ -3,8 +3,6 @@
 #endif
 
 #if USE_LIBPQXX
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 #include "PostgreSQLConnectionPool.h"
 #include "PostgreSQLConnection.h"
 #include <common/logger_useful.h>
@@ -31,16 +29,14 @@ ConnectionPool::ConnectionPool(
         "New connection pool. Size: {}, blocks on empty pool: {}",
         pool_size, block_on_empty_pool);
 
-    address = host + ':' + std::to_string(port);
-    connection_str = formatConnectionString(std::move(dbname), std::move(host), port, std::move(user), std::move(password));
+    connection_info = formatConnectionString(std::move(dbname), std::move(host), port, std::move(user), std::move(password));
     initialize();
 }
 
 
 ConnectionPool::ConnectionPool(const ConnectionPool & other)
         : pool(std::make_shared<Pool>(other.pool_size))
-        , connection_str(other.connection_str)
-        , address(other.address)
+        , connection_info(other.connection_info)
         , pool_size(other.pool_size)
         , pool_wait_timeout(other.pool_wait_timeout)
         , block_on_empty_pool(other.block_on_empty_pool)
@@ -53,20 +49,7 @@ void ConnectionPool::initialize()
 {
     /// No connection is made, just fill pool with non-connected connection objects.
     for (size_t i = 0; i < pool_size; ++i)
-        pool->push(std::make_shared<Connection>(connection_str, address));
-}
-
-
-std::string ConnectionPool::formatConnectionString(
-    std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
-{
-    DB::WriteBufferFromOwnString out;
-    out << "dbname=" << DB::quote << dbname
-        << " host=" << DB::quote << host
-        << " port=" << port
-        << " user=" << DB::quote << user
-        << " password=" << DB::quote << password;
-    return out.str();
+        pool->push(std::make_shared<Connection>(connection_info));
 }
 
 
@@ -87,7 +70,7 @@ ConnectionHolderPtr ConnectionPool::get()
         return std::make_shared<ConnectionHolder>(connection, *pool);
     }
 
-    connection = std::make_shared<Connection>(connection_str, address);
+    connection = std::make_shared<Connection>(connection_info);
     return std::make_shared<ConnectionHolder>(connection, *pool);
 }
 

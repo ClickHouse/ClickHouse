@@ -28,7 +28,7 @@ class PostgreSQLReplicationHandler
 public:
     PostgreSQLReplicationHandler(
             const std::string & database_name_,
-            const std::string & conn_str_,
+            const postgres::ConnectionInfo & connection_info_,
             const std::string & metadata_path_,
             const Context & context_,
             const size_t max_block_size_,
@@ -38,29 +38,31 @@ public:
 
     void startup();
 
+    /// Stop replication without cleanup.
     void shutdown();
 
+    /// Clean up replication: remove publication and replication slots.
     void shutdownFinal();
 
     void addStorage(const std::string & table_name, StorageMaterializePostgreSQL * storage);
 
+    /// Fetch list of tables which are going to be replicated. Used for database engine.
     NameSet fetchRequiredTables(pqxx::connection & connection_);
 
 private:
-    using NontransactionPtr = std::shared_ptr<pqxx::nontransaction>;
     using Storages = std::unordered_map<String, StorageMaterializePostgreSQL *>;
-
-    bool isPublicationExist(std::shared_ptr<pqxx::work> tx);
-
-    bool isReplicationSlotExist(NontransactionPtr ntx, std::string & slot_name);
 
     void createPublicationIfNeeded(pqxx::connection & connection_);
 
-    void createReplicationSlot(NontransactionPtr ntx, std::string & start_lsn, std::string & snapshot_name, bool temporary = false);
+    bool isPublicationExist(pqxx::work & tx);
 
-    void dropReplicationSlot(NontransactionPtr tx, bool temporary = false);
+    bool isReplicationSlotExist(pqxx::nontransaction & tx, std::string & slot_name);
 
-    void dropPublication(NontransactionPtr ntx);
+    void createReplicationSlot(pqxx::nontransaction & tx, std::string & start_lsn, std::string & snapshot_name, bool temporary = false);
+
+    void dropReplicationSlot(pqxx::nontransaction & tx, bool temporary = false);
+
+    void dropPublication(pqxx::nontransaction & ntx);
 
     void waitConnectionAndStart();
 
@@ -78,19 +80,48 @@ private:
 
     Poco::Logger * log;
     const Context & context;
-    const std::string database_name, connection_str, metadata_path;
+
+    /// Remote database name.
+    const String database_name;
+
+    /// Path for replication metadata.
+    const String metadata_path;
+
+    /// Connection string and address for logs.
+    postgres::ConnectionInfo connection_info;
+
+    /// max_block_size for replication stream.
     const size_t max_block_size;
-    bool allow_minimal_ddl, is_postgresql_replica_database_engine;
-    std::string tables_list, replication_slot, publication_name;
+
+    /// Table structure changes are always tracked. By default, table with changed schema will get into a skip list.
+    bool allow_minimal_ddl = false;
+
+    /// To distinguish whether current replication handler belongs to a MaterializePostgreSQL database engine or single storage.
+    bool is_postgresql_replica_database_engine;
+
+    /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
+    String tables_list;
+
+    String replication_slot, publication_name;
 
     postgres::ConnectionPtr connection;
+
+    /// Replication consumer. Manages deconding of replication stream and syncing into tables.
     std::shared_ptr<MaterializePostgreSQLConsumer> consumer;
 
     BackgroundSchedulePool::TaskHolder startup_task, consumer_task;
-    std::atomic<bool> tables_loaded = false, stop_synchronization = false;
+
+    std::atomic<bool> stop_synchronization = false;
+
+    /// For database engine there are 2 places where it is checked for publication:
+    /// 1. to fetch tables list from already created publication when database is loaded
+    /// 2. at replication startup
     bool new_publication_created = false;
 
+    /// MaterializePostgreSQL tables. Used for managing all operations with its internal nested tables.
     Storages storages;
+
+    /// List of nested tables, which is passed to replication consumer.
     std::unordered_map<String, StoragePtr> nested_storages;
 };
 

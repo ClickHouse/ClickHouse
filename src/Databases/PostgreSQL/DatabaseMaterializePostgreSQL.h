@@ -36,7 +36,7 @@ public:
         const ASTStorage * database_engine_define_,
         const String & database_name_,
         const String & postgres_database_name,
-        const String & connection_string,
+        const postgres::ConnectionInfo & connection_info,
         std::unique_ptr<MaterializePostgreSQLSettings> settings_);
 
     String getEngineName() const override { return "MaterializePostgreSQL"; }

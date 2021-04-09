@@ -76,7 +76,7 @@ protected:
         const StorageID & table_id_,
         const String & remote_database_name,
         const String & remote_table_name,
-        const String & connection_str,
+        const postgres::ConnectionInfo & connection_info,
         const StorageInMemoryMetadata & storage_metadata,
         const Context & context_,
         std::unique_ptr<MaterializePostgreSQLSettings> replication_settings_);

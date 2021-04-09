@@ -8,6 +8,7 @@
 #include <pqxx/pqxx> // Y_IGNORE
 #include <Core/Types.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace pqxx
@@ -20,13 +21,40 @@ namespace pqxx
 namespace postgres
 {
 
+class Connection;
+using ConnectionPtr = std::shared_ptr<Connection>;
+
+
+/// Connection string and address without login/password (for error logs)
+using ConnectionInfo = std::pair<std::string, std::string>;
+
+ConnectionInfo formatConnectionString(
+    std::string dbname, std::string host, UInt16 port, std::string user, std::string password);
+
+ConnectionPtr createReplicationConnection(const ConnectionInfo & connection_info);
+
+
+template <typename T>
+class Transaction
+{
+public:
+    Transaction(pqxx::connection & connection) : transaction(connection) {}
+
+    ~Transaction() { transaction.commit(); }
+
+    T & getRef() { return transaction; }
+
+    void exec(const String & query) { transaction.exec(query); }
+
+private:
+    T transaction;
+};
+
+
 class Connection
 {
-
 public:
-    Connection(
-        const String & connection_str_,
-        const String & address_);
+    Connection(const ConnectionInfo & connection_info_);
 
     Connection(const Connection & other) = delete;
 
@@ -38,20 +66,17 @@ public:
 
     bool isConnected() { return tryConnectIfNeeded(); }
 
-    const String & getConnectionString() { return connection_str; }
+    const ConnectionInfo & getConnectionInfo() { return connection_info; }
 
 private:
     void connectIfNeeded();
 
     bool tryConnectIfNeeded();
 
-    const std::string & getAddress() { return address; }
-
     pqxx::ConnectionPtr connection;
-    std::string connection_str, address;
+    ConnectionInfo connection_info;
 };
 
-using ConnectionPtr = std::shared_ptr<Connection>;
 
 class ConnectionHolder
 {
