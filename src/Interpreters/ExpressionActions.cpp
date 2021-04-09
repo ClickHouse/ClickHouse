@@ -15,6 +15,7 @@
 #include <Columns/ColumnSet.h>
 #include <queue>
 #include <stack>
+#include <boost/property_tree/ptree.hpp>
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
@@ -256,6 +257,31 @@ std::string ExpressionActions::Action::toString() const
     out << " -> " << node->result_name
         << " " << (node->result_type ? node->result_type->getName() : "(no type)") << " : " << result_position;
     return out.str();
+}
+
+boost::property_tree::ptree ExpressionActions::Action::toTree() const
+{
+    boost::property_tree::ptree tree;
+
+    if (node)
+        tree = node->toTree();
+
+    boost::property_tree::ptree args;
+    boost::property_tree::ptree dropped_args;
+    for (auto arg : arguments)
+    {
+        boost::property_tree::ptree arg_tree;
+        arg_tree.put("", arg.pos);
+        args.add_child("", arg_tree);
+        if (!arg.needed_later)
+            dropped_args.add_child("", arg_tree);
+    }
+
+    tree.add_child("Arguments", args);
+    tree.add_child("RemovedArguments", dropped_args);
+    tree.put("Result", result_position);
+
+    return tree;
 }
 
 void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) const
@@ -565,6 +591,54 @@ std::string ExpressionActions::dumpActions() const
     ss << "\n";
 
     return ss.str();
+}
+
+boost::property_tree::ptree ExpressionActions::toTree() const
+{
+    boost::property_tree::ptree inputs_tree;
+
+    for (const auto & input_column : required_columns)
+    {
+        boost::property_tree::ptree tree;
+        tree.add("Name", input_column.name);
+        if (input_column.type)
+            tree.add("Type", input_column.type->getName());
+
+        inputs_tree.add_child("", tree);
+    }
+
+    boost::property_tree::ptree outputs_tree;
+
+    for (const auto & output_column : sample_block)
+    {
+        boost::property_tree::ptree tree;
+        tree.add("Name", output_column.name);
+        if (output_column.type)
+            tree.add("Type", output_column.type->getName());
+
+        outputs_tree.add_child("", tree);
+    }
+
+    boost::property_tree::ptree actions_tree;
+    for (const auto & action : actions)
+        actions_tree.add_child("", action.toTree());
+
+    boost::property_tree::ptree positions_tree;
+    for (auto pos : result_positions)
+    {
+        boost::property_tree::ptree pos_tree;
+        pos_tree.put("", pos);
+        positions_tree.add_child("", pos_tree);
+    }
+
+    boost::property_tree::ptree tree;
+    tree.add_child("Inputs", inputs_tree);
+    tree.add_child("Actions", actions_tree);
+    tree.add_child("Outputs", outputs_tree);
+    tree.add_child("Positions", positions_tree);
+    tree.put("ProjectInput", actions_dag->isInputProjected());
+
+    return tree;
 }
 
 bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) const

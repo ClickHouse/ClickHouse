@@ -30,6 +30,8 @@ public:
 
     const ActionsDAGPtr & getExpression() const { return actions_dag; }
 
+    void describeActions(boost::property_tree::ptree & tree) const override;
+
 private:
     ActionsDAGPtr actions_dag;
 };

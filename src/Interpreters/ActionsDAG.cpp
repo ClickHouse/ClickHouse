@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 
 #include <stack>
+#include <boost/property_tree/ptree.hpp>
 
 namespace DB
 {
@@ -25,6 +26,50 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_COLUMN;
+}
+
+const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
+{
+    switch (type)
+    {
+        case ActionType::INPUT:
+            return "Input";
+        case ActionType::COLUMN:
+            return "Column";
+        case ActionType::ALIAS:
+            return "Alias";
+        case ActionType::ARRAY_JOIN:
+            return "ArrayJoin";
+        case ActionType::FUNCTION:
+            return "Function";
+    }
+
+    __builtin_unreachable();
+}
+
+boost::property_tree::ptree ActionsDAG::Node::toTree() const
+{
+    boost::property_tree::ptree tree;
+    tree.add("NodeType", ActionsDAG::typeToString(type));
+
+    if (result_type)
+        tree.add("ResultType", result_type->getName());
+
+    if (!result_name.empty())
+        tree.add("ResultType", ActionsDAG::typeToString(type));
+
+    if (column)
+        tree.add("Column", column->getName());
+
+    if (function_base)
+        tree.add("Function", function_base->getName());
+    else if (function_builder)
+        tree.add("Function", function_base->getName());
+
+    if (type == ActionType::FUNCTION)
+        tree.add("Compiled", is_function_compiled);
+
+    return tree;
 }
 
 
