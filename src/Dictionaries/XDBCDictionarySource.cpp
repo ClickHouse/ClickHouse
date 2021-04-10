@@ -40,7 +40,7 @@ namespace
             const Poco::URI & uri,
             std::function<void(std::ostream &)> callback,
             const Block & sample_block,
-            const Context & context,
+            ContextPtr context,
             UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
             const String name_)
@@ -105,9 +105,10 @@ XDBCDictionarySource::XDBCDictionarySource(
     const Poco::Util::AbstractConfiguration & config_,
     const std::string & config_prefix_,
     const Block & sample_block_,
-    const Context & context_,
+    ContextPtr context_,
     const BridgeHelperPtr bridge_)
-    : log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
+    : WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get(bridge_->getName() + "DictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , db{config_.getString(config_prefix_ + ".db", "")}
@@ -121,7 +122,6 @@ XDBCDictionarySource::XDBCDictionarySource(
     , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}
     , bridge_helper{bridge_}
     , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_)}
-    , global_context(context_.getGlobalContext())
 {
     bridge_url = bridge_helper->getMainURI();
 
@@ -132,7 +132,8 @@ XDBCDictionarySource::XDBCDictionarySource(
 
 /// copy-constructor is provided in order to support cloneability
 XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
-    : log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
+    : WithContext(other.getContext())
+    , log(&Poco::Logger::get(other.bridge_helper->getName() + "DictionarySource"))
     , update_time{other.update_time}
     , dict_struct{other.dict_struct}
     , db{other.db}
@@ -147,7 +148,6 @@ XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
     , bridge_helper{other.bridge_helper}
     , bridge_url{other.bridge_url}
     , timeouts{other.timeouts}
-    , global_context{other.global_context}
 {
 }
 
@@ -243,7 +243,7 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
         invalidate_url,
         [request](std::ostream & os) { os << "query=" << request; },
         invalidate_sample_block,
-        global_context,
+        getContext(),
         max_block_size,
         timeouts,
         bridge_helper->getName() + "BlockInputStream");
@@ -258,7 +258,7 @@ BlockInputStreamPtr XDBCDictionarySource::loadBase(const std::string & query) co
         bridge_url,
         [query](std::ostream & os) { os << "query=" << query; },
         sample_block,
-        global_context,
+        getContext(),
         max_block_size,
         timeouts,
         bridge_helper->getName() + "BlockInputStream");
@@ -274,12 +274,12 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
-                                   const Context & context,
+                                   ContextPtr context,
                                    const std::string & /* default_database */,
                                    bool /* check_config */) -> DictionarySourcePtr {
 #if USE_ODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
-            context, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
+            context, context->getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
         return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context, bridge);
 #else
         (void)dict_struct;
@@ -300,7 +300,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & /* config */,
                                  const std::string & /* config_prefix */,
                                  Block & /* sample_block */,
-                                 const Context & /* context */,
+                                 ContextPtr /* context */,
                                  const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr {
         throw Exception{"Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.",

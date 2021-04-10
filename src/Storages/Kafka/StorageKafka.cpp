@@ -169,20 +169,19 @@ namespace
 }
 
 StorageKafka::StorageKafka(
-    const StorageID & table_id_,
-    const Context & context_,
-    const ColumnsDescription & columns_,
-    std::unique_ptr<KafkaSettings> kafka_settings_)
+    const StorageID & table_id_, ContextPtr context_, const ColumnsDescription & columns_, std::unique_ptr<KafkaSettings> kafka_settings_)
     : IStorage(table_id_)
-    , global_context(context_.getGlobalContext())
+    , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
-    , topics(parseTopics(global_context.getMacros()->expand(kafka_settings->kafka_topic_list.value)))
-    , brokers(global_context.getMacros()->expand(kafka_settings->kafka_broker_list.value))
-    , group(global_context.getMacros()->expand(kafka_settings->kafka_group_name.value))
-    , client_id(kafka_settings->kafka_client_id.value.empty() ? getDefaultClientId(table_id_) : global_context.getMacros()->expand(kafka_settings->kafka_client_id.value))
-    , format_name(global_context.getMacros()->expand(kafka_settings->kafka_format.value))
+    , topics(parseTopics(getContext()->getMacros()->expand(kafka_settings->kafka_topic_list.value)))
+    , brokers(getContext()->getMacros()->expand(kafka_settings->kafka_broker_list.value))
+    , group(getContext()->getMacros()->expand(kafka_settings->kafka_group_name.value))
+    , client_id(
+          kafka_settings->kafka_client_id.value.empty() ? getDefaultClientId(table_id_)
+                                                        : getContext()->getMacros()->expand(kafka_settings->kafka_client_id.value))
+    , format_name(getContext()->getMacros()->expand(kafka_settings->kafka_format.value))
     , row_delimiter(kafka_settings->kafka_row_delimiter.value)
-    , schema_name(global_context.getMacros()->expand(kafka_settings->kafka_schema.value))
+    , schema_name(getContext()->getMacros()->expand(kafka_settings->kafka_schema.value))
     , num_consumers(kafka_settings->kafka_num_consumers.value)
     , log(&Poco::Logger::get("StorageKafka (" + table_id_.table_name + ")"))
     , semaphore(0, num_consumers)
@@ -201,7 +200,7 @@ StorageKafka::StorageKafka(
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = global_context.getMessageBrokerSchedulePool().createTask(log->name(), [this, i]{ threadFunc(i); });
+        auto task = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this, i]{ threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
@@ -260,7 +259,7 @@ Pipe StorageKafka::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /* query_info */,
-    const Context & context,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     unsigned /* num_streams */)
@@ -271,7 +270,7 @@ Pipe StorageKafka::read(
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
     pipes.reserve(num_created_consumers);
-    auto modified_context = std::make_shared<Context>(context);
+    auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
 
     // Claim as many consumers as requested, but don't block
@@ -289,9 +288,9 @@ Pipe StorageKafka::read(
 }
 
 
-BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context & context)
+BlockOutputStreamPtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    auto modified_context = std::make_shared<Context>(context);
+    auto modified_context = Context::createCopy(local_context);
     modified_context->applySettingsChanges(settings_adjustments);
 
     if (topics.size() > 1)
@@ -387,7 +386,7 @@ ProducerBufferPtr StorageKafka::createWriteBuffer(const Block & header)
     updateConfiguration(conf);
 
     auto producer = std::make_shared<cppkafka::Producer>(conf);
-    const Settings & settings = global_context.getSettingsRef();
+    const Settings & settings = getContext()->getSettingsRef();
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
     return std::make_shared<WriteBufferToKafkaProducer>(
@@ -443,14 +442,14 @@ size_t StorageKafka::getMaxBlockSize() const
 {
     return kafka_settings->kafka_max_block_size.changed
         ? kafka_settings->kafka_max_block_size.value
-        : (global_context.getSettingsRef().max_insert_block_size.value / num_consumers);
+        : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
 }
 
 size_t StorageKafka::getPollMaxBatchSize() const
 {
     size_t batch_size = kafka_settings->kafka_poll_max_batch_size.changed
                         ? kafka_settings->kafka_poll_max_batch_size.value
-                        : global_context.getSettingsRef().max_block_size.value;
+                        : getContext()->getSettingsRef().max_block_size.value;
 
     return std::min(batch_size,getMaxBlockSize());
 }
@@ -459,13 +458,13 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
 {
     return kafka_settings->kafka_poll_timeout_ms.changed
         ? kafka_settings->kafka_poll_timeout_ms.totalMilliseconds()
-        : global_context.getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
+        : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
 void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 {
     // Update consumer configuration from the configuration
-    const auto & config = global_context.getConfigRef();
+    const auto & config = getContext()->getConfigRef();
     if (config.has(CONFIG_PREFIX))
         loadFromConfig(conf, config, CONFIG_PREFIX);
 
@@ -517,7 +516,7 @@ bool StorageKafka::checkDependencies(const StorageID & table_id)
     // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
-        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, global_context);
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab, getContext());
         if (!table)
             return false;
 
@@ -587,7 +586,7 @@ void StorageKafka::threadFunc(size_t idx)
 bool StorageKafka::streamToViews()
 {
     auto table_id = getStorageID();
-    auto table = DatabaseCatalog::instance().getTable(table_id, global_context);
+    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -598,13 +597,13 @@ bool StorageKafka::streamToViews()
 
     size_t block_size = getMaxBlockSize();
 
-    auto kafka_context = std::make_shared<Context>(global_context);
+    auto kafka_context = Context::createCopy(getContext());
     kafka_context->makeQueryContext();
     kafka_context->applySettingsChanges(settings_adjustments);
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
-    InterpreterInsertQuery interpreter(insert, *kafka_context, false, true, true);
+    InterpreterInsertQuery interpreter(insert, kafka_context, false, true, true);
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
@@ -622,7 +621,7 @@ bool StorageKafka::streamToViews()
 
         limits.speed_limits.max_execution_time = kafka_settings->kafka_flush_interval_ms.changed
                                                  ? kafka_settings->kafka_flush_interval_ms
-                                                 : global_context.getSettingsRef().stream_flush_interval_ms;
+                                                 : getContext()->getSettingsRef().stream_flush_interval_ms;
 
         limits.timeout_overflow_mode = OverflowMode::BREAK;
         stream->setLimits(limits);
@@ -695,14 +694,14 @@ void registerStorageKafka(StorageFactory & factory)
                         engine_args[(ARG_NUM)-1] =                          \
                             evaluateConstantExpressionAsLiteral(            \
                                 engine_args[(ARG_NUM)-1],                   \
-                                args.local_context);                        \
+                                args.getLocalContext());                    \
                     }                                                       \
                     if ((EVAL) == 2)                                        \
                     {                                                       \
                         engine_args[(ARG_NUM)-1] =                          \
                            evaluateConstantExpressionOrIdentifierAsLiteral( \
                                 engine_args[(ARG_NUM)-1],                   \
-                                args.local_context);                        \
+                                args.getLocalContext());                    \
                     }                                                       \
                     kafka_settings->PAR_NAME =                              \
                         engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
@@ -757,7 +756,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception("kafka_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageKafka::create(args.table_id, args.context, args.columns, std::move(kafka_settings));
+        return StorageKafka::create(args.table_id, args.getContext(), args.columns, std::move(kafka_settings));
     };
 
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

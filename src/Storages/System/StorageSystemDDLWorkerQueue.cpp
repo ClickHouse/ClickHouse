@@ -95,7 +95,7 @@ NamesAndTypesList StorageSystemDDLWorkerQueue::getNamesAndTypes()
     };
 }
 
-static String clusterNameFromDDLQuery(const Context & context, const DDLLogEntry & entry)
+static String clusterNameFromDDLQuery(ContextPtr context, const DDLLogEntry & entry)
 {
     const char * begin = entry.query.data();
     const char * end = begin + entry.query.size();
@@ -104,15 +104,15 @@ static String clusterNameFromDDLQuery(const Context & context, const DDLLogEntry
     String cluster_name;
     ParserQuery parser_query(end);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, context.getSettingsRef().max_parser_depth);
+    query = parseQuery(parser_query, begin, end, description, 0, context->getSettingsRef().max_parser_depth);
     if (query && (query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query.get())))
         cluster_name = query_on_cluster->cluster;
     return cluster_name;
 }
 
-void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
     Coordination::Error zk_exception_code = Coordination::Error::ZOK;
     String ddl_zookeeper_path = config.getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
     String ddl_query_path;
@@ -130,7 +130,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, const C
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
         zk_exception_code = code;
 
-    const auto & clusters = context.getClusters();
+    const auto & clusters = context->getClusters();
     for (const auto & name_and_cluster : clusters.getContainer())
     {
         const ClusterPtr & cluster = name_and_cluster.second;

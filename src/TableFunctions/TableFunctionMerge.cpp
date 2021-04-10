@@ -33,7 +33,7 @@ namespace
 }
 
 
-void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, const Context & context)
+void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     ASTs & args_func = ast_function->children;
 
@@ -57,7 +57,7 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, const Conte
 }
 
 
-const Strings & TableFunctionMerge::getSourceTables(const Context & context) const
+const Strings & TableFunctionMerge::getSourceTables(ContextPtr context) const
 {
     if (source_tables)
         return *source_tables;
@@ -67,7 +67,7 @@ const Strings & TableFunctionMerge::getSourceTables(const Context & context) con
     OptimizedRegularExpression re(source_table_regexp);
     auto table_name_match = [&](const String & table_name_) { return re.match(table_name_); };
 
-    auto access = context.getAccess();
+    auto access = context->getAccess();
     bool granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, source_database);
     bool granted_select_on_all_tables = access->isGranted(AccessType::SELECT, source_database);
 
@@ -91,7 +91,7 @@ const Strings & TableFunctionMerge::getSourceTables(const Context & context) con
 }
 
 
-ColumnsDescription TableFunctionMerge::getActualTableStructure(const Context & context) const
+ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr context) const
 {
     for (const auto & table_name : getSourceTables(context))
     {
@@ -104,7 +104,7 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(const Context & c
 }
 
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto res = StorageMerge::create(
         StorageID(getDatabaseName(), table_name),

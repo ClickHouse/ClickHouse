@@ -70,9 +70,9 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
 }
 
 
-void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    ProcessList::Info info = context.getProcessList().getInfo(true, true, true);
+    ProcessList::Info info = context->getProcessList().getInfo(true, true, true);
 
     for (const auto & process : info)
     {

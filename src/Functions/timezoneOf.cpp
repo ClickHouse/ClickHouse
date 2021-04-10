@@ -82,7 +82,7 @@ class FunctionTimezoneOfBuilder : public IFunctionOverloadResolverImpl
 public:
     static constexpr auto name = "timezoneOf";
     String getName() const override { return name; }
-    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<FunctionTimezoneOfBuilder>(); }
+    static FunctionOverloadResolverImplPtr create(ContextPtr) { return std::make_unique<FunctionTimezoneOfBuilder>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
 

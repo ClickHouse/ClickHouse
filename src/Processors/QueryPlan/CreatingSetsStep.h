@@ -1,13 +1,15 @@
 #pragma once
+
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <DataStreams/SizeLimits.h>
 #include <Interpreters/SubqueryForSet.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
 /// Creates sets for subqueries and JOIN. See CreatingSetsTransform.
-class CreatingSetStep : public ITransformingStep
+class CreatingSetStep : public ITransformingStep, WithContext
 {
 public:
     CreatingSetStep(
@@ -15,7 +17,7 @@ public:
             String description_,
             SubqueryForSet subquery_for_set_,
             SizeLimits network_transfer_limits_,
-            const Context & context_);
+            ContextPtr context_);
 
     String getName() const override { return "CreatingSet"; }
 
@@ -27,7 +29,6 @@ private:
     String description;
     SubqueryForSet subquery_for_set;
     SizeLimits network_transfer_limits;
-    const Context & context;
 };
 
 class CreatingSetsStep : public IQueryPlanStep
@@ -49,6 +50,6 @@ void addCreatingSetsStep(
     QueryPlan & query_plan,
     SubqueriesForSets subqueries_for_sets,
     const SizeLimits & limits,
-    const Context & context);
+    ContextPtr context);
 
 }
