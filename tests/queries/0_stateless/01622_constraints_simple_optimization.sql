@@ -61,6 +61,15 @@ SELECT count() FROM constraint_test.transitivity2 WHERE a = d; ---> assumption -
 
 DROP TABLE constraint_test.transitivity2;
 
+CREATE TABLE constraint_test.transitivity3 (a Int64, b Int64, c Int64, CONSTRAINT c1 ASSUME b > 10 AND 1 > a) ENGINE = TinyLog;
+
+INSERT INTO constraint_test.transitivity3 (a, b, c) VALUES (4, 0, 2);
+
+SELECT count() FROM constraint_test.transitivity3 WHERE a < b; ---> assumption -> 1
+SELECT count() FROM constraint_test.transitivity3 WHERE b >= a; ---> assumption -> 1
+
+DROP TABLE constraint_test.transitivity3;
+
 
 CREATE TABLE constraint_test.constants_repl (a Int64, b Int64, c Int64, d Int64, CONSTRAINT c1 ASSUME a - b = 10 AND c + d = 20) ENGINE = TinyLog;
 
