@@ -601,6 +601,7 @@ private:
             PaddedPODArray<Decimal32>,
             PaddedPODArray<Decimal64>,
             PaddedPODArray<Decimal128>,
+            PaddedPODArray<Decimal256>,
             PaddedPODArray<Float32>,
             PaddedPODArray<Float64>,
             PaddedPODArray<StringRef>,
