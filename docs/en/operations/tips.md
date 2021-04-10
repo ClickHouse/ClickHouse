@@ -218,8 +218,8 @@ JAVA=/usr/local/jdk-11/bin/java
 ZOOMAIN="org.apache.zookeeper.server.quorum.QuorumPeerMain"
 ZOO_LOG4J_PROP="INFO,ROLLINGFILE"
 JMXLOCALONLY=false
-JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
-    -Xmx{{ cluster.get('xmx','1G') }} \
+JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
+    -Xmx{{ '{{' }} cluster.get('xmx','1G') {{ '}}' }} \
     -Xlog:safepoint,gc*=info,age*=debug:file=/var/log/$NAME/zookeeper-gc.log:time,level,tags:filecount=16,filesize=16M
     -verbose:gc \
     -XX:+UseG1GC \
