@@ -38,14 +38,19 @@ public:
     /// Find constants lessOrEqual and greaterOrEqual.
     /// For int and double linear programming can be applied here.
     // TODO: implement
-    //ASTPtr getUpperBound(const ASTPtr &) const { return nullptr; } // sup
-    //ASTPtr getLowerBound(const ASTPtr &) const { return nullptr; } // inf
+    ASTPtr getUpperBound(const ASTPtr &) const { return nullptr; } // sup
+    ASTPtr getLowerBound(const ASTPtr &) const { return nullptr; } // inf
 
 private:
     /// strongly connected component
     struct EqualComponent
     {
         std::vector<ASTPtr> asts;
+        ssize_t constant_index = -1;
+
+        bool hasConstant() const;
+        ASTPtr getConstant() const;
+        void buildConstants();
     };
 
     /// TODO: move to diff for int and double:
@@ -98,6 +103,8 @@ private:
 
     Graph graph;
     std::map<std::pair<size_t, size_t>, Path> dists;
+    //std::vector<ssize_t> ast_lower_bound;
+    //std::vector<ssize_t> ast_upper_bound;
 };
 
 }

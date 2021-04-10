@@ -13,7 +13,7 @@ using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
 struct ConstraintsDescription
 {
     std::vector<ASTPtr> constraints;
-    std::vector<CNFQuery> cnf_constraints;
+    //std::vector<CNFQuery> cnf_constraints;
 
     // TODO: перенести преобразование в КНФ + get constraitns
     ConstraintsDescription() = default;
