@@ -142,14 +142,14 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
   endif(HAS_ALTIVEC)
 endif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|AARCH64")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|AARCH64|arm64|ARM64")
   CHECK_C_COMPILER_FLAG("-march=armv8-a+crc+crypto" HAS_ARMV8_CRC)
   if(HAS_ARMV8_CRC)
     message(STATUS " HAS_ARMV8_CRC yes")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
   endif(HAS_ARMV8_CRC)
-endif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|AARCH64")
+endif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|AARCH64|arm64|ARM64")
 
 
 include(CheckCXXSourceCompiles)
