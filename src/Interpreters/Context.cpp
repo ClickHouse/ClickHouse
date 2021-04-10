@@ -225,7 +225,6 @@ private:
     void cleanThread()
     {
         setThreadName("SessionCleaner");
-
         std::unique_lock lock{mutex};
 
         while (true)
