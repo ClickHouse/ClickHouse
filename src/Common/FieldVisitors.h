@@ -188,9 +188,16 @@ public:
         }
 
         if constexpr (std::is_same_v<Decimal256, T>)
+        {
             return Int256(x);
+        }
         else
+        {
+            if (x > std::numeric_limits<T>::max() || x < std::numeric_limits<T>::lowest())
+                throw Exception("Cannot convert out of range floating point value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
+
             return T(x);
+        }
     }
 
     T operator() (const UInt128 &) const
