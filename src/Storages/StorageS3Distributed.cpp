@@ -1,7 +1,8 @@
 #include "Storages/StorageS3Distributed.h"
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#include "Processors/Sources/SourceWithProgress.h"
+#endif
 
 #if USE_AWS_S3
 
@@ -30,6 +31,7 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include "Processors/Sources/SourceWithProgress.h"
 #include <Processors/Sources/RemoteSource.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
