@@ -33,7 +33,7 @@ def test_limited_fetches(started_cluster):
         Test checks that that we utilize all available threads for fetches
     """
     node1.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/custom_settings.xml"), '/etc/clickhouse-server/users.d/fetches.xml')
-    node1.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/custom_settings.xml"), '/etc/clickhouse-server/users.d/fetches.xml')
+    node2.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/custom_settings.xml"), '/etc/clickhouse-server/users.d/fetches.xml')
 
     node1.query("CREATE TABLE t (key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/test/t', '1') ORDER BY tuple() PARTITION BY key")
     node2.query("CREATE TABLE t (key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/test/t', '2') ORDER BY tuple() PARTITION BY key")
