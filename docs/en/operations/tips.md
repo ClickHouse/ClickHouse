@@ -199,7 +199,7 @@ OpenJDK 64-Bit Server VM (build 11.0.5-shenandoah+10-adhoc.heretic.src, mixed mo
 JVM parameters:
 
 ``` bash
-NAME=zookeeper-{{ cluster['name'] }}
+NAME=zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}
 ZOOCFGDIR=/etc/$NAME/conf
 
 # TODO this is really ugly
