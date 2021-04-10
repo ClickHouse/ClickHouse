@@ -129,11 +129,11 @@ def comparison_check(self):
             dt1 = pytz.timezone(tz1).localize(dt_1)
             dt2 = pytz.timezone(tz2).localize(dt_2)
 
-            with Example(f"{dt1_str} {tz1}, {dt2_str} {tz2}"):
+            with When(f"{dt1_str} {tz1}, {dt2_str} {tz2}"):
                 for c in comparators:
                     expr = f"dt1 {c} dt2"
                     expected = str(int(eval(expr)))
-                    with When(f"I check {dt1_str} {c} {dt2_str}"):
+                    with Then(f"I check {dt1_str} {c} {dt2_str}"):
                         query = f"SELECT toDateTime64('{dt1_str}', 0, '{tz1}') {c} toDateTime64('{dt2_str}', 0, '{tz2}')"
                         exec_query(request=query, expected=expected)
 
@@ -154,7 +154,7 @@ def timezones_support(self):
 
         for dt in datetimes:
             for tz in timezones:
-                with Example(f"{dt} {tz}"):
+                with Step(f"{dt} {tz}"):
                     with By("computing expected output using python"):
                         dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                     with And("forming a toTimeZone ClickHouse query"):

@@ -73,7 +73,7 @@ def to_uint_8_16_32_64_256(self, cast):
             for tz in timezones:
                 dt = pytz.timezone(tz).localize(d)
                 for int_type in (8, 16, 32, 64, 256):
-                    with Example(f"{dt} {tz}, int{int_type}"):
+                    with Step(f"{dt} {tz}, int{int_type}"):
                         with By("converting datetime to string"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                         with And("computing the expected result using python"):
@@ -114,7 +114,7 @@ def to_float_32_64(self, cast):
             for tz in timezones:
                 dt = pytz.timezone(tz).localize(d)
                 for float_type in (32, 64):
-                    with Example(f"{dt} {tz}, int{float_type}"):
+                    with Step(f"{dt} {tz}, int{float_type}"):
                         with By("converting datetime to string"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                         with And("computing the expected result using python"):
@@ -147,7 +147,7 @@ def to_datetime64_from_string_missing_time(self):
 
         for dt in datetimes:
             for tz in timezones:
-                with Example(f"{dt} {tz}"):
+                with Step(f"{dt} {tz}"):
                     with By("converting datetime to string"):
                         dt_str = dt.strftime("%Y-%m-%d")
                     with And("figure out expected result in python"):
@@ -201,7 +201,7 @@ def to_date(self, cast):
 
         for dt in datetimes:
             for tz in timezones:
-                with Example(f"{dt} {tz}"):
+                with Step(f"{dt} {tz}"):
                     expected = None # by default - not checked, checking the exitcode
                     with By("converting datetime to string"):
                         dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -276,7 +276,7 @@ def to_string(self, cast):
 
         for dt in datetimes:
             for tz in timezones:
-                with Example(f"{dt} {tz}"):
+                with Step(f"{dt} {tz}"):
                     with By("converting datetime to string"):
                         dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                     with When(f"making a query string for ClickHouse"):
@@ -319,7 +319,7 @@ def to_decimal_32_64_128_256(self, cast):
                 dt = pytz.timezone(tz).localize(d)
                 for decimal_type in (32, 64, 128, 256):
                     for scale in range(scales[decimal_type]):
-                        with With(f"{dt} {tz}, Decimal{decimal_type}({scale})"):
+                        with When(f"{dt} {tz}, Decimal{decimal_type}({scale})"):
                             valid_range = valid_decimal_range(bit_depth=decimal_type, S=scale)
                             with By("computing the expected result using python"):
                                 expected = decimal.Decimal(time.mktime(dt.timetuple()))
