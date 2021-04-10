@@ -82,4 +82,18 @@ SELECT count() FROM constraint_test.constants_repl WHERE (a - b) * 2 = c + d; --
 
 DROP TABLE constraint_test.constants_repl;
 
+CREATE TABLE constraint_test.constants (a Int64, b Int64, c Int64, CONSTRAINT c1 ASSUME b > 10 AND a >= 10) ENGINE = TinyLog;
+
+INSERT INTO constraint_test.constants (a, b, c) VALUES (0, 0, 0);
+
+SELECT count() FROM constraint_test.constants WHERE 9 < b; ---> assumption -> 1
+SELECT count() FROM constraint_test.constants WHERE 11 < b; ---> assumption -> 0
+SELECT count() FROM constraint_test.constants WHERE 10 <= b; ---> assumption -> 1
+SELECT count() FROM constraint_test.constants WHERE 9 < a; ---> assumption -> 1
+SELECT count() FROM constraint_test.constants WHERE 10 < a; ---> assumption -> 0
+SELECT count() FROM constraint_test.constants WHERE 9 <= a; ---> assumption -> 1
+SELECT count() FROM constraint_test.constants WHERE 11 <= a; ---> assumption -> 0
+
+DROP TABLE constraint_test.constants;
+
 DROP DATABASE constraint_test;
