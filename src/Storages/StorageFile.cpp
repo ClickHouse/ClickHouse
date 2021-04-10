@@ -22,8 +22,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -36,7 +34,6 @@
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
-#include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
 
 namespace fs = std::filesystem;
@@ -151,11 +148,6 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     return paths;
 }
 
-bool StorageFile::isColumnOriented() const
-{
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
-}
-
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
@@ -234,8 +226,6 @@ static std::chrono::seconds getLockTimeout(const Context & context)
     return std::chrono::seconds{lock_timeout};
 }
 
-using StorageFilePtr = std::shared_ptr<StorageFile>;
-
 
 class StorageFileSource : public SourceWithProgress
 {
@@ -266,18 +256,6 @@ public:
         return header;
     }
 
-    static Block getBlockForSource(
-        const StorageFilePtr & storage,
-        const StorageMetadataPtr & metadata_snapshot,
-        const ColumnsDescription & columns_description,
-        const FilesInfoPtr & files_info)
-    {
-        if (storage->isColumnOriented())
-            return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
-        else
-            return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
-    }
-
     StorageFileSource(
         std::shared_ptr<StorageFile> storage_,
         const StorageMetadataPtr & metadata_snapshot_,
@@ -285,7 +263,7 @@ public:
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
         ColumnsDescription columns_description_)
-        : SourceWithProgress(getBlockForSource(storage_, metadata_snapshot_, columns_description_, files_info_))
+        : SourceWithProgress(getHeader(metadata_snapshot_, files_info_->need_path_column, files_info_->need_file_column))
         , storage(std::move(storage_))
         , metadata_snapshot(metadata_snapshot_)
         , files_info(std::move(files_info_))
@@ -365,16 +343,8 @@ public:
                 }
 
                 read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
-
-                auto get_block_for_format = [&]() -> Block
-                {
-                    if (storage->isColumnOriented())
-                        return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
-                    return metadata_snapshot->getSampleBlock();
-                };
-
                 auto format = FormatFactory::instance().getInput(
-                    storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
+                        storage->format_name, *read_buf, metadata_snapshot->getSampleBlock(), context, max_block_size, storage->format_settings);
 
                 reader = std::make_shared<InputStreamFromInputFormat>(format);
 
@@ -441,6 +411,7 @@ private:
     std::unique_lock<std::shared_timed_mutex> unique_lock;
 };
 
+
 Pipe StorageFile::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -456,12 +427,7 @@ Pipe StorageFile::read(
         paths = {""};   /// when use fd, paths are empty
     else
         if (paths.size() == 1 && !Poco::File(paths[0]).exists())
-        {
-            if (context.getSettingsRef().engine_file_empty_if_not_exists)
-                return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
-            else
-                throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-        }
+            throw Exception("File " + paths[0] + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
 
 
     auto files_info = std::make_shared<StorageFileSource::FilesInfo>();
@@ -485,16 +451,9 @@ Pipe StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        const auto get_columns_for_format = [&]() -> ColumnsDescription
-        {
-            if (isColumnOriented())
-                return ColumnsDescription{
-                    metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
-            else
-                return metadata_snapshot->getColumns();
-        };
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, metadata_snapshot, context, max_block_size, files_info, get_columns_for_format()));
+            this_ptr, metadata_snapshot, context, max_block_size, files_info,
+            metadata_snapshot->getColumns()));
     }
 
     return Pipe::unitePipes(std::move(pipes));
@@ -510,8 +469,7 @@ public:
         std::unique_lock<std::shared_timed_mutex> && lock_,
         const CompressionMethod compression_method,
         const Context & context,
-        const std::optional<FormatSettings> & format_settings,
-        int & flags)
+        const std::optional<FormatSettings> & format_settings)
         : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
@@ -527,14 +485,13 @@ public:
               * INSERT data; SELECT *; last SELECT returns only insert_data
               */
             storage.table_fd_was_used = true;
-            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd, DBMS_DEFAULT_BUFFER_SIZE);
+            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd);
         }
         else
         {
             if (storage.paths.size() != 1)
                 throw Exception("Table '" + storage.getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
-            flags |= O_WRONLY | O_APPEND | O_CREAT;
-            naked_buffer = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, flags);
+            naked_buffer = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
         /// In case of CSVWithNames we have already written prefix.
@@ -589,12 +546,7 @@ BlockOutputStreamPtr StorageFile::write(
     if (format_name == "Distributed")
         throw Exception("Method write is not implemented for Distributed format", ErrorCodes::NOT_IMPLEMENTED);
 
-    int flags = 0;
-
     std::string path;
-    if (context.getSettingsRef().engine_file_truncate_on_insert)
-        flags |= O_TRUNC;
-
     if (!paths.empty())
     {
         path = paths[0];
@@ -607,8 +559,7 @@ BlockOutputStreamPtr StorageFile::write(
         std::unique_lock{rwlock, getLockTimeout(context)},
         chooseCompressionMethod(path, compression_method),
         context,
-        format_settings,
-        flags);
+        format_settings);
 }
 
 bool StorageFile::storesDataOnDisk() const

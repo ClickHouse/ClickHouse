@@ -12,7 +12,6 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/SelectQueryDescription.h>
-#include <Processors/QueryPipeline.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -35,7 +34,6 @@ class Context;
 using StorageActionBlockType = size_t;
 
 class ASTCreateQuery;
-class ASTInsertQuery;
 
 struct Settings;
 
@@ -52,17 +50,12 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
-
-class IStoragePolicy;
-using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
+class StoragePolicy;
+using StoragePolicyPtr = std::shared_ptr<const StoragePolicy>;
 
 struct StreamLocalLimits;
 class EnabledQuota;
 struct SelectQueryInfo;
-
-using NameDependencies = std::unordered_map<String, std::vector<String>>;
 
 struct ColumnSize
 {
@@ -138,10 +131,6 @@ public:
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
 
-    /// Requires squashing small blocks to large for optimal storage.
-    /// This is true for most storages that store data on disk.
-    virtual bool prefersLargeBlocks() const { return true; }
-
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -180,10 +169,8 @@ public:
     virtual NamesAndTypesList getVirtuals() const;
 
     Names getAllRegisteredNames() const override;
-
-    NameDependencies getDependentViewsByColumn(const Context & context) const;
-
 protected:
+
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
@@ -324,19 +311,6 @@ public:
         throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Writes the data to a table in distributed manner.
-      * It is supposed that implementation looks into SELECT part of the query and executes distributed
-      * INSERT SELECT if it is possible with current storage as a receiver and query SELECT part as a producer.
-      *
-      * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
-      */
-    virtual QueryPipelinePtr distributedWrite(
-        const ASTInsertQuery & /*query*/,
-        const Context & /*context*/)
-    {
-        return nullptr;
-    }
-
     /** Delete the table data. Called before deleting the directory with the data.
       * The method can be called only after detaching table from Context (when no queries are performed with table).
       * The table is not usable during and after call to this method.
@@ -384,7 +358,7 @@ public:
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
       */
-    virtual void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const;
+    virtual void checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const;
 
     /**
       * Checks that mutation commands can be applied to storage.

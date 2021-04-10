@@ -48,7 +48,7 @@ private:
         SingleExpressionEvaluation
     };
 
-    using ConstantExpressionTemplates = std::vector<std::optional<ConstantExpressionTemplate>>;
+    typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
 
     Chunk generate() override;
 
@@ -89,7 +89,6 @@ private:
     ConstantExpressionTemplate::Cache templates_cache;
 
     const DataTypes types;
-    Serializations serializations;
 
     BlockMissingValues block_missing_values;
 };

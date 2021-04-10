@@ -47,8 +47,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/ExpressionJIT.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -61,6 +59,7 @@
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/TestKeeperTCPHandlerFactory.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -71,7 +70,6 @@
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
-#include <Server/HTTP/HTTPServer.h>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -97,16 +95,12 @@
 #   include <Server/GRPCServer.h>
 #endif
 
-#if USE_NURAFT
-#   include <Server/KeeperTCPHandlerFactory.h>
-#endif
 
 namespace CurrentMetrics
 {
     extern const Metric Revision;
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
-    extern const Metric MaxDDLEntryID;
 }
 
 
@@ -689,8 +683,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    LOG_DEBUG(log, "Initiailizing interserver credentials.");
-    global_context->updateInterserverCredentials(config());
+    if (config().has("interserver_http_credentials"))
+    {
+        String user = config().getString("interserver_http_credentials.user", "");
+        String password = config().getString("interserver_http_credentials.password", "");
+
+        if (user.empty())
+            throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+        global_context->setInterserverCredentials(user, password);
+    }
 
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
@@ -709,7 +711,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
         main_config_zk_changed_event,
-        [&](ConfigurationPtr config, bool initial_loading)
+        [&](ConfigurationPtr config)
         {
             Settings::checkNoSettingNamesAtTopLevel(*config, config_path);
 
@@ -759,20 +761,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (config->has("max_partition_size_to_drop"))
                 global_context->setMaxPartitionSizeToDrop(config->getUInt64("max_partition_size_to_drop"));
 
-            if (!initial_loading)
-            {
-                /// We do not load ZooKeeper configuration on the first config loading
-                /// because TestKeeper server is not started yet.
-                if (config->has("zookeeper"))
-                    global_context->reloadZooKeeperIfChanged(config);
+            if (config->has("zookeeper"))
+                global_context->reloadZooKeeperIfChanged(config);
 
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
-            }
+            global_context->reloadAuxiliaryZooKeepersConfigIfChanged(config);
 
             global_context->updateStorageConfiguration(*config);
-            global_context->updateInterserverCredentials(*config);
         },
-        /* already_loaded = */ false);  /// Reload it right now (initial loading)
+        /* already_loaded = */ true);
 
     auto & access_control = global_context->getAccessControlManager();
     if (config().has("custom_settings_prefixes"))
@@ -823,14 +819,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     global_context->setMarkCache(mark_cache_size);
 
-    /// A cache for mmapped files.
-    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
-    if (mmap_cache_size)
-        global_context->setMMappedFileCache(mmap_cache_size);
-
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
+    if (compiled_expression_cache_size)
+        global_context->setCompiledExpressionCache(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
@@ -861,33 +853,23 @@ int Server::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
-    if (config().has("keeper_server"))
+    for (const auto & listen_host : listen_hosts)
     {
-#if USE_NURAFT
-        /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperStorageDispatcher();
-        for (const auto & listen_host : listen_hosts)
+        /// TCP TestKeeper
+        const char * port_name = "test_keeper_server.tcp_port";
+        createServer(listen_host, port_name, listen_try, [&](UInt16 port)
         {
-            /// TCP Keeper
-            const char * port_name = "keeper_server.tcp_port";
-            createServer(listen_host, port_name, listen_try, [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port);
-                socket.setReceiveTimeout(settings.receive_timeout);
-                socket.setSendTimeout(settings.send_timeout);
-                servers_to_start_before_tables->emplace_back(
-                    port_name,
-                    std::make_unique<Poco::Net::TCPServer>(
-                        new KeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+            Poco::Net::ServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port);
+            socket.setReceiveTimeout(settings.receive_timeout);
+            socket.setSendTimeout(settings.send_timeout);
+            servers_to_start_before_tables->emplace_back(
+                port_name,
+                std::make_unique<Poco::Net::TCPServer>(
+                    new TestKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
 
-                LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
-            });
-        }
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
-#endif
-
+            LOG_INFO(log, "Listening for connections to fake zookeeper (tcp): {}", address.toString());
+        });
     }
 
     for (auto & server : *servers_to_start_before_tables)
@@ -927,8 +909,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
-
-            global_context->shutdownKeeperStorageDispatcher();
         }
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
@@ -980,7 +960,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     ///
     /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
     ///
-#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER) && defined(__x86_64__)
+#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -1015,10 +995,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if defined(SANITIZER)
     LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work under sanitizers"
         " when two different stack unwinding methods will interfere with each other.");
-#endif
-
-#if !defined(__x86_64__)
-    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())
@@ -1081,10 +1057,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
 
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<HTTPServer>(
-                        context(), createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
+                    createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for http://{}", address.toString());
             });
@@ -1098,10 +1072,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<HTTPServer>(
-                        context(), createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
+                    createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for https://{}", address.toString());
 #else
@@ -1175,14 +1147,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<HTTPServer>(
-                        context(),
-                        createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
+                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
+                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for replica communication (interserver): http://{}", address.toString());
             });
@@ -1195,14 +1161,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<HTTPServer>(
-                        context(),
-                        createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
+                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
+                    createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver): https://{}", address.toString());
 #else
@@ -1262,14 +1222,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socketBindListen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                servers->emplace_back(
-                    port_name,
-                    std::make_unique<HTTPServer>(
-                        context(),
-                        createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
+                servers->emplace_back(port_name, std::make_unique<Poco::Net::HTTPServer>(
+                    createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
 
                 LOG_INFO(log, "Listening for Prometheus: http://{}", address.toString());
             });
@@ -1331,11 +1285,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (pool_size < 1)
                 throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, *global_context, &config(),
-                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
+                                                                     "distributed_ddl"));
         }
 
         for (auto & server : *servers)
             server.start();
+
         LOG_INFO(log, "Ready for connections.");
 
         SCOPE_EXIT({

@@ -9,6 +9,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 from helpers.cluster import ClickHouseCluster
 
+
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', stay_alive=True, main_configs=['config/models_config.xml'])
 

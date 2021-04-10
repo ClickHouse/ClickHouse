@@ -15,8 +15,6 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 
 namespace ProfileEvents
@@ -286,9 +284,7 @@ void SelectStreamFactory::createForShard(
             if (try_results.empty() || local_delay < max_remote_delay)
             {
                 auto plan = createLocalPlan(modified_query_ast, header, context, stage);
-                return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(*context_ptr),
-                    BuildQueryPipelineSettings::fromContext(*context_ptr))));
+                return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline()));
             }
             else
             {

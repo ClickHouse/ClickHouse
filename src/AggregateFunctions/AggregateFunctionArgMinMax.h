@@ -39,8 +39,6 @@ class AggregateFunctionArgMinMax final : public IAggregateFunctionTupleArgHelper
 private:
     const DataTypePtr & type_res;
     const DataTypePtr & type_val;
-    const SerializationPtr serialization_res;
-    const SerializationPtr serialization_val;
     bool tuple_argument;
 
     using Base = IAggregateFunctionTupleArgHelper<Data, AggregateFunctionArgMinMax<Data>, 2>;
@@ -50,8 +48,6 @@ public:
         : Base({type_res_, type_val_}, {}, tuple_argument_)
         , type_res(this->argument_types[0])
         , type_val(this->argument_types[1])
-        , serialization_res(type_res->getDefaultSerialization())
-        , serialization_val(type_val->getDefaultSerialization())
     {
         if (!type_val->isComparable())
             throw Exception(
@@ -74,33 +70,33 @@ public:
         return type_res;
     }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (this->data(place).value.changeIfBetter(*columns[1], row_num, arena))
             this->data(place).result.change(*columns[0], row_num, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (this->data(place).value.changeIfBetter(this->data(rhs).value, arena))
             this->data(place).result.change(this->data(rhs).result, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        this->data(place).result.write(buf, *serialization_res);
-        this->data(place).value.write(buf, *serialization_val);
+        this->data(place).result.write(buf, *type_res);
+        this->data(place).value.write(buf, *type_val);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
-        this->data(place).result.read(buf, *serialization_res, arena);
-        this->data(place).value.read(buf, *serialization_val, arena);
+        this->data(place).result.read(buf, *type_res, arena);
+        this->data(place).value.read(buf, *type_val, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         if (tuple_argument)
         {

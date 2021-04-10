@@ -3,7 +3,6 @@
 #include <Common/TerminalSize.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Formats/registerFormats.h>
-#include <ext/scope_guard_safe.h>
 #include <unistd.h>
 
 
@@ -113,7 +112,7 @@ void ClusterCopierApp::mainImpl()
     SharedContextHolder shared_context = Context::createShared();
     auto context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
     context->makeGlobalContext();
-    SCOPE_EXIT_SAFE(context->shutdown());
+    SCOPE_EXIT(context->shutdown());
 
     context->setConfig(loaded_config.configuration);
     context->setApplicationType(Context::ApplicationType::LOCAL);

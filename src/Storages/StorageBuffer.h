@@ -93,13 +93,21 @@ public:
         const Context & context) override;
 
     bool supportsSampling() const override { return true; }
-    bool supportsPrewhere() const override;
+    bool supportsPrewhere() const override
+    {
+        if (!destination_id)
+            return false;
+        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, global_context);
+        if (dest && dest.get() != this)
+            return dest->supportsPrewhere();
+        return false;
+    }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
     void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
@@ -112,21 +120,13 @@ public:
 
 
 private:
-    const Context & buffer_context;
+    const Context & global_context;
 
     struct Buffer
     {
         time_t first_write_time = 0;
         Block data;
-
-        std::unique_lock<std::mutex> lockForReading() const;
-        std::unique_lock<std::mutex> lockForWriting() const;
-        std::unique_lock<std::mutex> tryLock() const;
-
-    private:
         mutable std::mutex mutex;
-
-        std::unique_lock<std::mutex> lockImpl(bool read) const;
     };
 
     /// There are `num_shards` of independent buffers.

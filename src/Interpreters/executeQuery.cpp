@@ -525,14 +525,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             quota = context.getQuota();
             if (quota)
             {
-                if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-                {
-                    quota->used(Quota::QUERY_SELECTS, 1);
-                }
-                else if (ast->as<ASTInsertQuery>())
-                {
-                    quota->used(Quota::QUERY_INSERTS, 1);
-                }
                 quota->used(Quota::QUERIES, 1);
                 quota->checkExceeded(Quota::ERRORS);
             }
@@ -1014,7 +1006,7 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
-            auto out = context.getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader());
+            auto out = context.getOutputStream(format_name, *out_buf, streams.in->getHeader());
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context.getProgressCallback();
@@ -1059,7 +1051,7 @@ void executeQuery(
                     return std::make_shared<MaterializingTransform>(header);
                 });
 
-                auto out = context.getOutputFormatParallelIfPossible(format_name, *out_buf, pipeline.getHeader());
+                auto out = context.getOutputFormat(format_name, *out_buf, pipeline.getHeader());
                 out->setAutoFlush();
 
                 /// Save previous progress callback if any. TODO Do it more conveniently.

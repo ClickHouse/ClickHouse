@@ -16,7 +16,7 @@
 
 namespace DB
 {
-class RangeHashedDictionary final : public IDictionary
+class RangeHashedDictionary final : public IDictionaryBase
 {
 public:
     RangeHashedDictionary(
@@ -61,7 +61,7 @@ public:
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        const ColumnPtr default_values_column) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -92,6 +92,8 @@ private:
     using Collection = HashMap<UInt64, Values<T>>;
     template <typename T>
     using Ptr = std::unique_ptr<Collection<T>>;
+
+    using NullableSet = HashSet<Key, DefaultHash<Key>>;
 
     struct Attribute final
     {
@@ -157,35 +159,29 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename AttributeType>
-    ColumnUInt8::Ptr hasKeysImpl(
-        const Attribute & attribute,
-        const PaddedPODArray<UInt64> & ids,
-        const PaddedPODArray<RangeStorageType> & dates) const;
-
     template <typename T>
-    static void setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
+    static void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value);
 
-    static void setAttributeValue(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
+    static void setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
     template <typename RangeType>
-    void getIdsAndDates(PaddedPODArray<UInt64> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
+    void getIdsAndDates(PaddedPODArray<Key> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename T, typename RangeType>
     void getIdsAndDates(
         const Attribute & attribute,
-        PaddedPODArray<UInt64> & ids,
+        PaddedPODArray<Key> & ids,
         PaddedPODArray<RangeType> & start_dates,
         PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename RangeType>
     BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
 
-    friend struct RangeHashedDictionaryCallGetBlockInputStreamImpl;
+    friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

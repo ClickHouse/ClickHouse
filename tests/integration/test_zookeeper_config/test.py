@@ -130,7 +130,7 @@ def test_secure_connection():
     # We need absolute path in zookeeper volumes. Generate it dynamically.
     TEMPLATE = '''
     zoo{zoo_id}:
-        image: zookeeper:3.6.2
+        image: zookeeper:3.5.6
         restart: always
         environment:
             ZOO_TICK_TIME: 500

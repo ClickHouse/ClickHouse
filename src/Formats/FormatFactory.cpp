@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -412,25 +413,10 @@ void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & na
 {
     auto & target = dict[name].supports_parallel_formatting;
     if (target)
-        throw Exception("FormatFactory: Output format " + name + " is already marked as supporting parallel formatting", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("FormatFactory: Output format " + name + " is already marked as supporting parallel formatting.", ErrorCodes::LOGICAL_ERROR);
     target = true;
 }
 
-
-void FormatFactory::markFormatAsColumnOriented(const String & name)
-{
-    auto & target = dict[name].is_column_oriented;
-    if (target)
-        throw Exception("FormatFactory: Format " + name + " is already marked as column oriented", ErrorCodes::LOGICAL_ERROR);
-    target = true;
-}
-
-
-bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
-{
-    const auto & target = getCreators(name);
-    return target.is_column_oriented;
-}
 
 FormatFactory & FormatFactory::instance()
 {

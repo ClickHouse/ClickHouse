@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 
-#include <Interpreters/WindowDescription.h>
+#include <Interpreters/AggregateDescription.h>
 
 namespace DB
 {
@@ -20,7 +20,7 @@ public:
 
     String getName() const override { return "Window"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
     void describeActions(FormatSettings & settings) const override;
 

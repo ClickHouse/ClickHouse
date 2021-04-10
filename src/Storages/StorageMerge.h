@@ -38,7 +38,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) const override;
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
@@ -59,7 +59,7 @@ private:
     StorageListWithLocks getSelectedTables(const String & query_id, const Settings & settings) const;
 
     StorageMerge::StorageListWithLocks getSelectedTables(
-        const SelectQueryInfo & query_info, bool has_virtual_column, const String & query_id, const Settings & settings) const;
+            const ASTPtr & query, bool has_virtual_column, const String & query_id, const Settings & settings) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
