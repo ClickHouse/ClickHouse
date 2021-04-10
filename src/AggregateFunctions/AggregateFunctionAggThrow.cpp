@@ -60,6 +60,8 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         if (std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= throw_probability)

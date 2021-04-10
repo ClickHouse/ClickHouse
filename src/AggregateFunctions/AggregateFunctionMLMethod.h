@@ -323,6 +323,8 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     /// This function is called from evalMLMethod function for correct predictValues call
     DataTypePtr getReturnTypeToPredict() const override
     {
