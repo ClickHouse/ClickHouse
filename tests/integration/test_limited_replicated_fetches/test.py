@@ -6,6 +6,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 import random
 import string
+import os
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=True)
