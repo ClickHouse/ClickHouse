@@ -138,12 +138,10 @@ String Cluster::Address::toString() const
     return toString(host_name, port);
 }
 
-
 String Cluster::Address::toString(const String & host_name, UInt16 port)
 {
     return escapeForFileName(host_name) + ':' + DB::toString(port);
 }
-
 
 String Cluster::Address::readableString() const
 {

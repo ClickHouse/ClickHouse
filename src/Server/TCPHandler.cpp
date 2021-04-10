@@ -663,7 +663,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                 break;
             }
 
-
             if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
             {
                 /// Some time passed and there is a progress.
@@ -1026,7 +1025,6 @@ bool TCPHandler::receivePacket()
     }
 }
 
-
 void TCPHandler::receiveIgnoredPartUUIDs()
 {
     state.part_uuids = true;
@@ -1125,7 +1123,6 @@ void TCPHandler::receiveQuery()
                                                                                                       : SettingsWriteFormat::BINARY;
     Settings passed_settings;
     passed_settings.read(*in, settings_format);
-
 
     /// Interserver secret.
     std::string received_hash;
