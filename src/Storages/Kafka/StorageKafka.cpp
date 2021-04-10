@@ -190,6 +190,11 @@ StorageKafka::StorageKafka(
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
 {
+    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    {
+        kafka_settings->input_format_allow_errors_num = 0;
+        kafka_settings->input_format_allow_errors_ratio = 0;
+    }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     setInMemoryMetadata(storage_metadata);
@@ -760,7 +765,7 @@ void registerStorageKafka(StorageFactory & factory)
 
 NamesAndTypesList StorageKafka::getVirtuals() const
 {
-    return NamesAndTypesList{
+    auto result = NamesAndTypesList{
         {"_topic", std::make_shared<DataTypeString>()},
         {"_key", std::make_shared<DataTypeString>()},
         {"_offset", std::make_shared<DataTypeUInt64>()},
@@ -770,6 +775,32 @@ NamesAndTypesList StorageKafka::getVirtuals() const
         {"_headers.name", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"_headers.value", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
     };
+    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    {
+        result.push_back({"_raw_message", std::make_shared<DataTypeString>()});
+        result.push_back({"_error", std::make_shared<DataTypeString>()});
+    }
+    return result;
+}
+
+Names StorageKafka::getVirtualColumnNames() const
+{
+    auto result = Names {
+        "_topic",
+        "_key",
+        "_offset",
+        "_partition",
+        "_timestamp",
+        "_timestamp_ms",
+        "_headers.name",
+        "_headers.value",
+    };
+    if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
+    {
+        result.push_back({"_raw_message"});
+        result.push_back({"_error"});
+    }
+    return result;
 }
 
 }

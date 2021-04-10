@@ -64,6 +64,8 @@ public:
     const auto & getFormatName() const { return format_name; }
 
     NamesAndTypesList getVirtuals() const override;
+    Names getVirtualColumnNames() const;
+    HandleKafkaErrorMode getHandleKafkaErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
 protected:
     StorageKafka(
         const StorageID & table_id_,
@@ -111,6 +113,9 @@ private:
     /// For memory accounting in the librdkafka threads.
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
+
+    /// Handle error mode
+    HandleKafkaErrorMode handle_error_mode;
 
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
