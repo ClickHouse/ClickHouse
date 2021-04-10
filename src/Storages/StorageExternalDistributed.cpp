@@ -36,7 +36,7 @@ StorageExternalDistributed::StorageExternalDistributed(
     const String & password,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context)
+    ContextPtr context)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -44,7 +44,7 @@ StorageExternalDistributed::StorageExternalDistributed(
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 
-    size_t max_addresses = context.getSettingsRef().glob_expansion_max_elements;
+    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
     std::vector<String> shards_descriptions = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
     std::vector<std::pair<std::string, UInt16>> addresses;
 
@@ -87,8 +87,8 @@ StorageExternalDistributed::StorageExternalDistributed(
                     remote_database,
                     addresses,
                     username, password,
-                    context.getSettingsRef().postgresql_connection_pool_size,
-                    context.getSettingsRef().postgresql_connection_pool_wait_timeout);
+                    context->getSettingsRef().postgresql_connection_pool_size,
+                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
                 shard = StoragePostgreSQL::create(
                     table_id_,
@@ -113,7 +113,7 @@ Pipe StorageExternalDistributed::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
@@ -148,7 +148,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
         const String & engine_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         const String & cluster_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
@@ -177,7 +177,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             password,
             args.columns,
             args.constraints,
-            args.context);
+            args.getContext());
     },
     {
         .source_access_type = AccessType::MYSQL,

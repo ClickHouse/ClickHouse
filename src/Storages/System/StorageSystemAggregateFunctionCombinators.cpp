@@ -12,7 +12,7 @@ NamesAndTypesList StorageSystemAggregateFunctionCombinators::getNamesAndTypes()
     };
 }
 
-void StorageSystemAggregateFunctionCombinators::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemAggregateFunctionCombinators::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     const auto & combinators = AggregateFunctionCombinatorFactory::instance().getAllAggregateFunctionCombinators();
     for (const auto & pair : combinators)

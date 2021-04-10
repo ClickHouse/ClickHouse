@@ -1,19 +1,26 @@
 #pragma once
 
+#include <Access/RowPolicy.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
-#include <common/types.h>
 #include <Core/UUID.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST_fwd.h>
-#include <Access/RowPolicy.h>
-#include <Common/MultiVersion.h>
-#include <Common/ThreadPool.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/IStorage_fwd.h>
+#include <Common/MultiVersion.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/ThreadPool.h>
+#include <common/types.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -22,32 +29,16 @@
 #include <mutex>
 #include <optional>
 #include <thread>
-#include <Common/RemoteHostFilter.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
 
 
-namespace Poco
-{
-    namespace Net
-    {
-        class IPAddress;
-    }
-}
-
-namespace zkutil
-{
-    class ZooKeeper;
-}
+namespace Poco::Net { class IPAddress; }
+namespace zkutil { class ZooKeeper; }
 
 
 namespace DB
 {
 
-struct ContextShared;
-class Context;
+struct ContextSharedPart;
 class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
@@ -130,15 +121,12 @@ class CompiledExpressionCache;
 #endif
 
 /// Callback for external tables initializer
-using ExternalTablesInitializer = std::function<void(Context &)>;
+using ExternalTablesInitializer = std::function<void(ContextPtr)>;
 
 /// Callback for initialize input()
-using InputInitializer = std::function<void(Context &, const StoragePtr &)>;
+using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
 /// Callback for reading blocks of data from client for function input()
-using InputBlocksReader = std::function<Block(Context &)>;
-
-/// Scalar results of sub queries
-using Scalars = std::map<String, Block>;
+using InputBlocksReader = std::function<Block(ContextPtr)>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -155,15 +143,16 @@ struct SharedContextHolder
 {
     ~SharedContextHolder();
     SharedContextHolder();
-    SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
+    explicit SharedContextHolder(std::unique_ptr<ContextSharedPart> shared_context);
     SharedContextHolder(SharedContextHolder &&) noexcept;
 
     SharedContextHolder & operator=(SharedContextHolder &&);
 
-    ContextShared * get() const { return shared.get(); }
+    ContextSharedPart * get() const { return shared.get(); }
     void reset();
+
 private:
-    std::unique_ptr<ContextShared> shared;
+    std::unique_ptr<ContextSharedPart> shared;
 };
 
 /** A set of known objects that can be used in the query.
@@ -172,10 +161,10 @@ private:
   *
   * Everything is encapsulated for all sorts of checks and locks.
   */
-class Context
+class Context: public std::enable_shared_from_this<Context>
 {
 private:
-    ContextShared * shared;
+    ContextSharedPart * shared;
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -254,18 +243,19 @@ private:
     /// Needs to be chandged while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
 
-    //TODO maybe replace with temporary tables?
+    /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
 
-    Context * query_context = nullptr;
-    Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
-    Context * global_context = nullptr;     /// Global context. Could be equal to this.
-    std::shared_ptr<Context> buffer_context;/// Buffer context. Could be equal to this.
+    ContextWeakPtr query_context;
+    ContextWeakPtr session_context;  /// Session context or nullptr. Could be equal to this.
+    ContextWeakPtr global_context;   /// Global context. Could be equal to this.
+
+    /// XXX: move this stuff to shared part instead.
+    ContextPtr buffer_context;  /// Buffer context. Could be equal to this.
 
 public:
-    // Top-level OpenTelemetry trace context for the query. Makes sense only for
-    // a query context.
+    // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
 
 private:
@@ -283,7 +273,7 @@ private:
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
                                    /// logger, some query identification information, profiling guards, etc. This field is
-                                   /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
+                                   /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::ContextPtr)
                                    /// methods.
 
     ZooKeeperMetadataTransactionPtr metadata_transaction;    /// Distributed DDL context. I'm not sure if it's a suitable place for this,
@@ -292,16 +282,20 @@ private:
                                                     /// thousands of signatures.
                                                     /// And I hope it will be replaced with more common Transaction sometime.
 
-    /// Use copy constructor or createGlobal() instead
     Context();
+    Context(const Context &);
+    Context & operator=(const Context &);
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal(ContextShared * shared);
+    static ContextPtr createGlobal(ContextSharedPart * shared);
+    static ContextPtr createCopy(const ContextWeakConstPtr & other);
+    static ContextPtr createCopy(const ContextConstPtr & other);
+    static ContextPtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
 
-    Context(const Context &);
-    Context & operator=(const Context &);
+    void copyFrom(const ContextPtr & other);
+
     ~Context();
 
     String getPath() const;
@@ -548,27 +542,29 @@ public:
 
     /// For methods below you may need to acquire the context lock by yourself.
 
-    const Context & getQueryContext() const;
-    Context & getQueryContext();
-    bool hasQueryContext() const { return query_context != nullptr; }
-    bool isInternalSubquery() const { return hasQueryContext() && query_context != this; }
+    ContextPtr getQueryContext() const;
+    bool hasQueryContext() const { return !query_context.expired(); }
+    bool isInternalSubquery() const;
 
-    const Context & getSessionContext() const;
-    Context & getSessionContext();
-    bool hasSessionContext() const { return session_context != nullptr; }
+    ContextPtr getSessionContext() const;
+    bool hasSessionContext() const { return !session_context.expired(); }
 
-    const Context & getGlobalContext() const;
-    Context & getGlobalContext();
-    bool hasGlobalContext() const { return global_context != nullptr; }
+    ContextPtr getGlobalContext() const;
+    bool hasGlobalContext() const { return !global_context.expired(); }
+    bool isGlobalContext() const
+    {
+        auto ptr = global_context.lock();
+        return ptr && ptr.get() == this;
+    }
 
-    const Context & getBufferContext() const;
+    ContextPtr getBufferContext() const;
 
-    void setQueryContext(Context & context_) { query_context = &context_; }
-    void setSessionContext(Context & context_) { session_context = &context_; }
+    void setQueryContext(ContextPtr context_) { query_context = context_; }
+    void setSessionContext(ContextPtr context_) { session_context = context_; }
 
-    void makeQueryContext() { query_context = this; }
-    void makeSessionContext() { session_context = this; }
-    void makeGlobalContext() { initGlobal(); global_context = this; }
+    void makeQueryContext() { query_context = shared_from_this(); }
+    void makeSessionContext() { session_context = shared_from_this(); }
+    void makeGlobalContext() { initGlobal(); global_context = shared_from_this(); }
 
     const Settings & getSettingsRef() const { return settings; }
 
@@ -677,7 +673,7 @@ public:
     std::shared_ptr<TraceLog> getTraceLog();
     std::shared_ptr<TextLog> getTextLog();
     std::shared_ptr<MetricLog> getMetricLog();
-    std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog();
+    std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog();
 
     /// Returns an object used to log operations with parts if it possible.
@@ -806,12 +802,12 @@ struct NamedSession
 {
     NamedSessionKey key;
     UInt64 close_cycle = 0;
-    Context context;
+    ContextPtr context;
     std::chrono::steady_clock::duration timeout;
     NamedSessions & parent;
 
-    NamedSession(NamedSessionKey key_, Context & context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
-        : key(key_), context(context_), timeout(timeout_), parent(parent_)
+    NamedSession(NamedSessionKey key_, ContextPtr context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
+        : key(key_), context(Context::createCopy(context_)), timeout(timeout_), parent(parent_)
     {
     }
 

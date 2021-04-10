@@ -62,7 +62,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     Block & sample_block_,
-    const Context & context_)
+    ContextPtr context_)
     : log(&Poco::Logger::get("ExecutableDictionarySource"))
     , dict_struct{dict_struct_}
     , implicit_key{config.getBool(config_prefix + ".implicit_key", false)}
@@ -97,7 +97,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
     , update_field{other.update_field}
     , format{other.format}
     , sample_block{other.sample_block}
-    , context(other.context)
+    , context(Context::createCopy(other.context))
 {
 }
 
@@ -108,7 +108,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 
     LOG_TRACE(log, "loadAll {}", toString());
     auto process = ShellCommand::execute(command);
-    auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
+    auto input_stream = context->getInputFormat(format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(log, input_stream, std::move(process));
 }
 
@@ -126,7 +126,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
 
     LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
     auto process = ShellCommand::execute(command_with_update_field);
-    auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
+    auto input_stream = context->getInputFormat(format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(log, input_stream, std::move(process));
 }
 
@@ -139,7 +139,7 @@ namespace
     {
     public:
         BlockInputStreamWithBackgroundThread(
-            const Context & context,
+            ContextPtr context,
             const std::string & format,
             const Block & sample_block,
             const std::string & command_str,
@@ -150,7 +150,7 @@ namespace
             send_data(std::move(send_data_)),
             thread([this] { send_data(command->in); })
         {
-            stream = context.getInputFormat(format, command->out, sample_block, max_block_size);
+            stream = context->getInputFormat(format, command->out, sample_block, max_block_size);
         }
 
         ~BlockInputStreamWithBackgroundThread() override
@@ -222,7 +222,7 @@ BlockInputStreamPtr ExecutableDictionarySource::getStreamForBlock(const Block & 
         context, format, sample_block, command, log,
         [block, this](WriteBufferFromFile & out) mutable
         {
-            auto output_stream = context.getOutputStream(format, out, block.cloneEmpty());
+            auto output_stream = context->getOutputStream(format, out, block.cloneEmpty());
             formatBlock(output_stream, block);
             out.close();
         });
@@ -264,7 +264,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool check_config) -> DictionarySourcePtr
     {
@@ -277,7 +277,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         if (check_config)
             throw Exception(ErrorCodes::DICTIONARY_ACCESS_DENIED, "Dictionaries with executable dictionary source are not allowed to be created from DDL query");
 
-        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+        auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
         return std::make_unique<ExecutableDictionarySource>(
             dict_struct, config, config_prefix + ".executable",

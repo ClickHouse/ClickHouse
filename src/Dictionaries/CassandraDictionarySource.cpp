@@ -17,7 +17,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
-                                                    const Context & /* context */,
+                                                    ContextPtr /* context */,
                                                     const std::string & /* default_database */,
                                                     bool /*check_config*/) -> DictionarySourcePtr
     {
