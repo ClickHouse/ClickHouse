@@ -215,7 +215,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_replicated to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
-    if (create.storage->engine->name == "MaterializePostgreSQL" && !context.getSettingsRef().allow_experimental_database_postgresql_replica && !internal)
+    if (create.storage->engine->name == "MaterializePostgreSQL" && !context.getSettingsRef().allow_experimental_database_materialize_postgresql && !internal)
     {
         throw Exception("MaterializePostgreSQL is an experimental database engine. "
                         "Enable allow_experimental_database_postgresql_replica to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);

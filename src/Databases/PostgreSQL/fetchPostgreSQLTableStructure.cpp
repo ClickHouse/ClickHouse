@@ -158,7 +158,7 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
 
 template<typename T>
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        std::shared_ptr<T> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
+        std::shared_ptr<T> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key, bool with_replica_identity_index)
 {
     PostgreSQLTableStructure table;
 
@@ -171,18 +171,43 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
     table.columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, false);
 
-    if (!with_primary_key)
-        return table;
+    if (with_primary_key)
+    {
+        /// wiki.postgresql.org/wiki/Retrieve_primary_key_columns
+        query = fmt::format(
+                "SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS data_type "
+                "FROM pg_index i "
+                "JOIN pg_attribute a ON a.attrelid = i.indrelid "
+                "AND a.attnum = ANY(i.indkey) "
+                "WHERE  i.indrelid = '{}'::regclass AND i.indisprimary", postgres_table_name);
 
-    /// wiki.postgresql.org/wiki/Retrieve_primary_key_columns
-    query = fmt::format(
-            "SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS data_type "
-            "FROM pg_index i "
-            "JOIN pg_attribute a ON a.attrelid = i.indrelid "
-            "AND a.attnum = ANY(i.indkey) "
-            "WHERE  i.indrelid = '{}'::regclass AND i.indisprimary", postgres_table_name);
+        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, true);
+    }
 
-    table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, true);
+    if (with_replica_identity_index)
+    {
+        query = fmt::format(
+            "SELECT "
+            "a.attname AS column_name, " /// column name
+            "format_type(a.atttypid, a.atttypmod) as type " /// column type
+            "FROM "
+            "pg_class t, "
+            "pg_class i, "
+            "pg_index ix, "
+            "pg_attribute a "
+            "WHERE "
+            "t.oid = ix.indrelid "
+            "and i.oid = ix.indexrelid "
+            "and a.attrelid = t.oid "
+            "and a.attnum = ANY(ix.indkey) "
+            "and t.relkind = 'r' " /// simple tables
+            "and t.relname = '{}' "
+            "and ix.indisreplident = 't' " /// index is is replica identity index
+            "ORDER BY a.attname", /// column names
+        postgres_table_name);
+
+        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, true);
+    }
 
     return table;
 }
@@ -190,19 +215,21 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
 template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        std::shared_ptr<pqxx::ReadTransaction> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key);
+        std::shared_ptr<pqxx::ReadTransaction> tx, const String & postgres_table_name, bool use_nulls,
+        bool with_primary_key, bool with_replica_identity_index);
 
 
 template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        std::shared_ptr<pqxx::ReplicationTransaction> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key);
+        std::shared_ptr<pqxx::ReplicationTransaction> tx, const String & postgres_table_name, bool use_nulls,
+        bool with_primary_key, bool with_replica_identity_index);
 
 
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        pqxx::connection & connection, const String & postgres_table_name, bool use_nulls, bool with_primary_key)
+        pqxx::connection & connection, const String & postgres_table_name, bool use_nulls)
 {
     auto tx = std::make_shared<pqxx::ReadTransaction>(connection);
-    auto table = fetchPostgreSQLTableStructure(tx, postgres_table_name, use_nulls, with_primary_key);
+    auto table = fetchPostgreSQLTableStructure(tx, postgres_table_name, use_nulls, false, false);
     tx->commit();
 
     return table;

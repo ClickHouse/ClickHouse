@@ -31,7 +31,6 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     const std::string & start_lsn,
     const size_t max_block_size_,
     bool allow_minimal_ddl_,
-    bool is_postgresql_replica_database_engine_,
     Storages storages_)
     : log(&Poco::Logger::get("PostgreSQLReaplicaConsumer"))
     , context(context_)
@@ -42,7 +41,6 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     , current_lsn(start_lsn)
     , max_block_size(max_block_size_)
     , allow_minimal_ddl(allow_minimal_ddl_)
-    , is_postgresql_replica_database_engine(is_postgresql_replica_database_engine_)
     , storages(storages_)
 {
     for (const auto & [table_name, storage] : storages)
@@ -401,15 +399,13 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
             /// 'n' - nothing
             /// 'f' - all columns (set replica identity full)
             /// 'i' - user defined index with indisreplident set
-            /// For database engine now supported only 'd', for table engine 'f' is also allowed.
+            /// Only 'd' and 'i' - are supported.
             char replica_identity = readInt8(replication_message, pos, size);
 
-            if (replica_identity != 'd' && (replica_identity != 'f' || is_postgresql_replica_database_engine))
+            if (replica_identity != 'd' && replica_identity != 'i')
             {
                 LOG_WARNING(log,
-                        "Table has replica identity {} - not supported. "
-                        "For database engine only default (with primary keys) replica identity is supported."
-                        "For table engine full replica identity is also supported. Table will be skipped.");
+                        "Table has replica identity {} - not supported. A table must have a primary key or a replica identity index");
                 markTableAsSkipped(relation_id, relation_name);
                 return;
             }

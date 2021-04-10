@@ -15,19 +15,18 @@ Each replicated table must have one of the following **replica identity**:
 
 2. **index**
 
-```
+``` bash
 postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
 postgres# CREATE unique INDEX postgres_table_index on postgres_table(a, c, e);
 postgres# ALTER TABLE postgres_table REPLICA IDENTITY USING INDEX postgres_table_index;
-
 ```
 
-3. **full** (all columns, very inefficient)
 
-
+Primary key is always checked first. If it is absent, then index, defined as replica identity index, is checked.
+If index is used as replica identity, there has to be only one such index in a table.
 You can check what type is used for a specific table with the following command:
 
-``` sql
+``` bash
 postgres# SELECT CASE relreplident
           WHEN 'd' THEN 'default'
           WHEN 'n' THEN 'nothing'

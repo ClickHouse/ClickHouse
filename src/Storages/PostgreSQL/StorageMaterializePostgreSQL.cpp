@@ -200,18 +200,22 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
         storage_metadata.setColumns(ColumnsDescription(ordinary_columns_and_types));
         setInMemoryMetadata(storage_metadata);
 
-        if (!table_structure->primary_key_columns)
+        if (!table_structure->primary_key_columns && !table_structure->replica_identity_columns)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "No primary key columns returned for table {}.{}", table_id.database_name, table_id.table_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Table {}.{} has no primary key and no replica identity index", table_id.database_name, table_id.table_name);
         }
 
-        auto primary_key_columns = *table_structure->primary_key_columns;
+        NamesAndTypesList merging_columns;
+        if (table_structure->primary_key_columns)
+            merging_columns = *table_structure->primary_key_columns;
+        else
+            merging_columns = *table_structure->replica_identity_columns;
 
         order_by_expression->name = "tuple";
         order_by_expression->arguments = std::make_shared<ASTExpressionList>();
 
-        for (const auto & column : primary_key_columns)
+        for (const auto & column : merging_columns)
             order_by_expression->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
     }
 
