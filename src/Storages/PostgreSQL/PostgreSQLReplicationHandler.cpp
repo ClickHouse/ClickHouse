@@ -4,10 +4,10 @@
 #include <DataStreams/PostgreSQLBlockInputStream.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/StorageMaterializePostgreSQL.h>
-
+#include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Common/setThreadName.h>
 #include <DataStreams/copyData.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Poco/File.h>
 
 
@@ -124,7 +124,7 @@ void PostgreSQLReplicationHandler::startSynchronization()
             {
                 nested_storages[table_name] = storage->getNested();
                 storage->setStorageMetadata();
-                storage->setNestedLoaded();
+                storage->setNestedStatus(true);
             }
             catch (...)
             {
@@ -183,7 +183,7 @@ NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_na
             assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica load from snapshot");
             copyData(input, *block_io.out);
 
-            storage_data.second->setNestedLoaded();
+            storage_data.second->setNestedStatus(true);
             nested_storages[table_name] = nested_storage;
 
             /// This is needed if this method is called from reloadFromSnapshot() method below.
@@ -401,7 +401,9 @@ std::unordered_map<Int32, String> PostgreSQLReplicationHandler::reloadFromSnapsh
             const auto & table_name = relation.second;
             auto * storage = storages[table_name];
             sync_storages[table_name] = storage;
-            storage->dropNested();
+            auto nested_storage = storage->getNested();
+            storage->setNestedStatus(false);
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, context, context, nested_storage->getStorageID(), true);
         }
 
         auto replication_connection = postgres::createReplicationConnection(connection_info);

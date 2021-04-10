@@ -108,12 +108,10 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
 
 void DatabaseAtomic::dropTable(const Context & context, const String & table_name, bool no_delay)
 {
-    if (auto * mv = dynamic_cast<StorageMaterializedView *>(tryGetTable(table_name, context).get()))
-    {
-        /// Remove the inner table (if any) to avoid deadlock
-        /// (due to attempt to execute DROP from the worker thread)
-        mv->dropInnerTable(no_delay, context);
-    }
+    auto * storage = tryGetTable(table_name, context).get();
+    /// Remove the inner table (if any) to avoid deadlock
+    /// (due to attempt to execute DROP from the worker thread)
+    storage->dropInnerTableIfAny(no_delay, context);
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop;
@@ -594,4 +592,3 @@ void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
 }
 
 }
-

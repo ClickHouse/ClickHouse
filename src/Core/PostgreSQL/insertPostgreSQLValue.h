@@ -1,5 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#include "config_core.h"
+#endif
+
+#if USE_LIBPQXX
+
 #include <Core/Block.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Core/ExternalResultDescription.h>
@@ -28,3 +34,5 @@ void preparePostgreSQLArrayInfo(
 void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_column);
 
 }
+
+#endif
