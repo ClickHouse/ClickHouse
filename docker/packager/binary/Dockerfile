@@ -14,8 +14,8 @@ RUN apt-get update \
         lsb-release \
         wget \
         --yes --no-install-recommends --verbose-versions \
-    && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
+    && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
@@ -32,41 +32,39 @@ RUN apt-get update \
         software-properties-common \
         --yes --no-install-recommends
 
-RUN apt-get update \
+RUN cat /etc/resolv.conf \
+    && apt-get update \
     && apt-get install \
         bash \
-        build-essential \
+        cmake \
         ccache \
-        clang-10 \
-        clang-11 \
-        clang-tidy-10 \
-        clang-tidy-11 \
-        cmake \
-        cmake \
         curl \
-        g++-9 \
         gcc-9 \
-        gdb \
-        git \
-        gperf \
-        gperf \
-        intel-opencl-icd \
-        libicu-dev \
-        libreadline-dev \
+        g++-9 \
+        clang-10 \
+        clang-tidy-10 \
         lld-10 \
-        lld-11 \
         llvm-10 \
         llvm-10-dev \
+        clang-11 \
+        clang-tidy-11 \
+        lld-11 \
         llvm-11 \
         llvm-11-dev \
-        moreutils \
+        libicu-dev \
+        libreadline-dev \
         ninja-build \
-        ocl-icd-libopencl1 \
+        gperf \
+        git \
         opencl-headers \
-        pigz \
-        pixz \
-        rename \
+        ocl-icd-libopencl1 \
+        intel-opencl-icd \
         tzdata \
+        gperf \
+        cmake \
+        gdb \
+        rename \
+        build-essential \
         --yes --no-install-recommends
 
 # This symlink required by gcc to find lld compiler
@@ -93,7 +91,7 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && rm -rf cctools-port
 
 # Download toolchain for Darwin
-RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/10.15/MacOSX10.15.sdk.tar.xz
+RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOSX10.14.sdk.tar.xz
 
 # Download toolchain for ARM
 # It contains all required headers and libraries. Note that it's named as "gcc" but actually we are using clang for cross compiling.
@@ -114,4 +112,4 @@ RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
 
 COPY build.sh /
-CMD ["bash", "-c", "/build.sh 2>&1 | ts"]
+CMD ["/bin/bash", "/build.sh"]

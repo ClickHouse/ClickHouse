@@ -9,7 +9,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <ext/scope_guard_safe.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -132,7 +132,7 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
         }
     }
 
-    SCOPE_EXIT_MEMORY_SAFE({
+    SCOPE_EXIT({
         for (size_t i = 0; i < input_rows_count; ++i)
             agg_func.destroy(places[i]);
     });

@@ -31,7 +31,6 @@ RUN apt-get update \
     software-properties-common \
     libkrb5-dev \
     krb5-user \
-    g++ \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \

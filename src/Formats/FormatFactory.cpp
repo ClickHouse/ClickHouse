@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -277,9 +278,6 @@ InputFormatPtr FormatFactory::getInputFormat(
 
     const Settings & settings = context.getSettingsRef();
 
-    if (context.hasQueryContext() && settings.log_queries)
-        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
-
     auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
 
@@ -322,9 +320,6 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
 
         ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings.max_threads};
 
-        if (context.hasQueryContext() && settings.log_queries)
-            context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
-
         return std::make_shared<ParallelFormattingOutputFormat>(builder);
     }
 
@@ -340,9 +335,6 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
         throw Exception("Format " + name + " is not suitable for output (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
-
-    if (context.hasQueryContext() && context.getSettingsRef().log_queries)
-        context.getQueryContext().addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
     RowOutputFormatParams params;
     params.callback = std::move(callback);
@@ -412,25 +404,10 @@ void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & na
 {
     auto & target = dict[name].supports_parallel_formatting;
     if (target)
-        throw Exception("FormatFactory: Output format " + name + " is already marked as supporting parallel formatting", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("FormatFactory: Output format " + name + " is already marked as supporting parallel formatting.", ErrorCodes::LOGICAL_ERROR);
     target = true;
 }
 
-
-void FormatFactory::markFormatAsColumnOriented(const String & name)
-{
-    auto & target = dict[name].is_column_oriented;
-    if (target)
-        throw Exception("FormatFactory: Format " + name + " is already marked as column oriented", ErrorCodes::LOGICAL_ERROR);
-    target = true;
-}
-
-
-bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
-{
-    const auto & target = getCreators(name);
-    return target.is_column_oriented;
-}
 
 FormatFactory & FormatFactory::instance()
 {

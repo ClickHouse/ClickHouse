@@ -3,7 +3,7 @@
 #include <Storages/StorageXDBC.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Bridge/XDBCBridgeHelper.h>
+#include <Common/XDBCBridgeHelper.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -29,12 +29,10 @@ private:
 
     void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
-    void startBridgeIfNot(const Context & context) const;
-
     String connection_string;
     String schema_name;
     String remote_table_name;
-    mutable BridgeHelperPtr helper;
+    BridgeHelperPtr helper;
 };
 
 class TableFunctionJDBC : public ITableFunctionXDBC

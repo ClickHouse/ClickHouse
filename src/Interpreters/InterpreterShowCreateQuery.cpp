@@ -82,7 +82,6 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     {
         auto & create = create_query->as<ASTCreateQuery &>();
         create.uuid = UUIDHelpers::Nil;
-        create.to_inner_uuid = UUIDHelpers::Nil;
     }
 
     WriteBufferFromOwnString buf;

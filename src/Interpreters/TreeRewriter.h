@@ -77,7 +77,6 @@ struct TreeRewriterResult
     void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query, bool is_select);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
-    NameSet getArrayJoinSourceNameSet() const;
     const Scalars & getScalars() const { return scalars; }
 };
 
@@ -119,7 +118,7 @@ public:
 private:
     const Context & context;
 
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, const Settings & settings);
+    static void normalize(ASTPtr & query, Aliases & aliases, const Settings & settings);
 };
 
 }

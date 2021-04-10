@@ -116,7 +116,7 @@ public:
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
 
-    /** List of names, types and lengths of columns. Designed for debugging. */
+     /** List of names, types and lengths of columns. Designed for debugging. */
     std::string dumpStructure() const;
 
     /** List of column names and positions from index */
@@ -129,7 +129,6 @@ public:
     void setColumns(const Columns & columns);
     Block cloneWithColumns(const Columns & columns) const;
     Block cloneWithoutColumns() const;
-    Block cloneWithCutColumns(size_t start, size_t length) const;
 
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
@@ -164,7 +163,6 @@ private:
     friend class ActionsDAG;
 };
 
-using BlockPtr = std::shared_ptr<Block>;
 using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
 using BlocksPtr = std::shared_ptr<Blocks>;

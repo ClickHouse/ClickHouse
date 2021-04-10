@@ -22,11 +22,10 @@
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Disks/StoragePolicy.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <optional>
 
 namespace CurrentMetrics
@@ -93,8 +92,6 @@ StorageMergeTree::StorageMergeTree(
     increment.set(getMaxBlockNumber());
 
     loadMutations();
-
-    loadDeduplicationLog();
 }
 
 
@@ -202,9 +199,7 @@ Pipe StorageMergeTree::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
+    return plan.convertToPipe();
 }
 
 std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
@@ -214,8 +209,18 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, const Context & context) const
 {
-    auto parts = getDataPartsVector({DataPartState::Committed});
-    return totalRowsByPartitionPredicateImpl(query_info, context, parts);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
+    if (partition_pruner.isUseless())
+        return {};
+    size_t res = 0;
+    auto lock = lockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (!partition_pruner.canBePruned(part))
+            res += part->rows_count;
+    }
+    return res;
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(const Settings &) const
@@ -267,7 +272,6 @@ void StorageMergeTree::alter(
     TableLockHolder & table_lock_holder)
 {
     auto table_id = getStorageID();
-    auto old_storage_settings = getSettings();
 
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
@@ -302,21 +306,6 @@ void StorageMergeTree::alter(
         if (!maybe_mutation_commands.empty())
             waitForMutation(mutation_version, mutation_file_name);
     }
-
-    {
-        /// Some additional changes in settings
-        auto new_storage_settings = getSettings();
-
-        if (old_storage_settings->non_replicated_deduplication_window != new_storage_settings->non_replicated_deduplication_window)
-        {
-            /// We cannot place this check into settings sanityCheck because it depends on format_version.
-            /// sanityCheck must work event without storage.
-            if (new_storage_settings->non_replicated_deduplication_window != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-                throw Exception("Deduplication for non-replicated MergeTree in old syntax is not supported", ErrorCodes::BAD_ARGUMENTS);
-
-            deduplication_log->setDeduplicationWindowSize(new_storage_settings->non_replicated_deduplication_window);
-        }
-    }
 }
 
 
@@ -344,25 +333,12 @@ StorageMergeTree::CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             max_volume_index = std::max(max_volume_index, storage.getStoragePolicy()->getVolumeIndexByDisk(part_ptr->volume->getDisk()));
         }
 
-        reserved_space = storage.balancedReservation(
-            metadata_snapshot,
-            total_size,
-            max_volume_index,
-            future_part.name,
-            future_part.part_info,
-            future_part.parts,
-            &tagger,
-            &ttl_infos);
-
-        if (!reserved_space)
-            reserved_space
-                = storage.tryReserveSpacePreferringTTLRules(metadata_snapshot, total_size, ttl_infos, time(nullptr), max_volume_index);
+        reserved_space = storage.tryReserveSpacePreferringTTLRules(metadata_snapshot, total_size, ttl_infos, time(nullptr), max_volume_index);
     }
-
     if (!reserved_space)
     {
         if (is_mutation)
-            throw Exception("Not enough space for mutating part '" + future_part.parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
+            throw Exception("Not enough space for mutating part '" + future_part_.parts[0]->name + "'", ErrorCodes::NOT_ENOUGH_SPACE);
         else
             throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
     }
@@ -632,16 +608,6 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     return CancellationCode::CancelSent;
 }
 
-void StorageMergeTree::loadDeduplicationLog()
-{
-    auto settings = getSettings();
-    if (settings->non_replicated_deduplication_window != 0 && format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        throw Exception("Deduplication for non-replicated MergeTree in old syntax is not supported", ErrorCodes::BAD_ARGUMENTS);
-
-    std::string path = getDataPaths()[0] + "/deduplication_logs";
-    deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, settings->non_replicated_deduplication_window, format_version);
-    deduplication_log->load();
-}
 
 void StorageMergeTree::loadMutations()
 {
@@ -659,7 +625,7 @@ void StorageMergeTree::loadMutations()
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                disk->removeFile(it->path());
+                disk->remove(it->path());
             }
         }
     }
@@ -765,10 +731,6 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
 
         return {};
     }
-
-    /// Account TTL merge here to avoid exceeding the max_number_of_merges_with_ttl_in_pool limit
-    if (isTTLMergeType(future_part.merge_type))
-        global_context.getMergeList().bookMergeWithTTL();
 
     merging_tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this, metadata_snapshot, false);
     return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(merging_tagger), MutationCommands{});
@@ -1237,12 +1199,6 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool
             }
         }
 
-        if (deduplication_log)
-        {
-            for (const auto & part : parts_to_remove)
-                deduplication_log->dropPart(part->info);
-        }
-
         if (detach)
             LOG_INFO(log, "Detached {} parts.", parts_to_remove.size());
         else
@@ -1413,7 +1369,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             DataPartsLock lock(mutex);
 
             for (MutableDataPartPtr & part : dst_parts)
-                dest_table_storage->renameTempPartAndReplace(part, &dest_table_storage->increment, &transaction, lock);
+                dest_table_storage->renameTempPartAndReplace(part, &increment, &transaction, lock);
 
             removePartsFromWorkingSet(src_parts, true, lock);
             transaction.commit(&lock);
@@ -1484,7 +1440,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
             catch (const Exception & ex)
             {
                 if (disk->exists(tmp_checksums_path))
-                    disk->removeFile(tmp_checksums_path);
+                    disk->remove(tmp_checksums_path);
 
                 results.emplace_back(part->name, false,
                     "Check of part finished with error: '" + ex.message() + "'");

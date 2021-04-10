@@ -26,8 +26,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 
 namespace DB
 {
@@ -85,16 +84,14 @@ StorageMaterializedView::StorageMaterializedView(
     else if (attach_)
     {
         /// If there is an ATTACH request, then the internal table must already be created.
-        target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()), query.to_inner_uuid);
+        target_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     }
     else
     {
         /// We will create a query to create an internal table.
-        auto create_context = Context(local_context);
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
         manual_create_query->database = getStorageID().database_name;
         manual_create_query->table = generateInnerTableName(getStorageID());
-        manual_create_query->uuid = query.to_inner_uuid;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
@@ -102,7 +99,7 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
         manual_create_query->set(manual_create_query->storage, query.storage->ptr());
 
-        InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
+        InterpreterCreateQuery create_interpreter(manual_create_query, local_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
@@ -129,9 +126,7 @@ Pipe StorageMaterializedView::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
+    return plan.convertToPipe();
 }
 
 void StorageMaterializedView::read(
@@ -149,7 +144,8 @@ void StorageMaterializedView::read(
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
 
     if (query_info.order_optimizer)
-        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
+        query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot);
+
 
     storage->read(query_plan, column_names, target_metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
 
@@ -198,9 +194,9 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 }
 
 
-static void executeDropQuery(ASTDropQuery::Kind kind, const Context & global_context, const Context & current_context, const StorageID & target_table_id, bool no_delay)
+static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id, bool no_delay)
 {
-    if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
+    if (DatabaseCatalog::instance().tryGetTable(target_table_id, global_context))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
@@ -210,19 +206,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, const Context & global_con
         drop_query->no_delay = no_delay;
         drop_query->if_exists = true;
         ASTPtr ast_drop_query = drop_query;
-        /// FIXME We have to use global context to execute DROP query for inner table
-        /// to avoid "Not enough privileges" error if current user has only DROP VIEW ON mat_view_name privilege
-        /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
-        /// looks like expected behaviour and we have tests for it.
-        auto drop_context = Context(global_context);
-        drop_context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        if (auto txn = current_context.getZooKeeperMetadataTransaction())
-        {
-            /// For Replicated database
-            drop_context.setQueryContext(const_cast<Context &>(current_context));
-            drop_context.initZooKeeperMetadataTransaction(txn, true);
-        }
-        InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
+        InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
     }
 }
@@ -235,19 +219,19 @@ void StorageMaterializedView::drop()
     if (!select_query.select_table_id.empty())
         DatabaseCatalog::instance().removeDependency(select_query.select_table_id, table_id);
 
-    dropInnerTable(true, global_context);
+    dropInnerTable(true);
 }
 
-void StorageMaterializedView::dropInnerTable(bool no_delay, const Context & context)
+void StorageMaterializedView::dropInnerTable(bool no_delay)
 {
     if (has_inner_table && tryGetTargetTable())
-        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, context, target_table_id, no_delay);
+        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id, no_delay);
 }
 
-void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context & context, TableExclusiveLockHolder &)
+void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     if (has_inner_table)
-        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, context, target_table_id, true);
+        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_table_id, true);
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
@@ -300,9 +284,8 @@ void StorageMaterializedView::alter(
 }
 
 
-void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
+void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings) const
 {
-    const auto & settings = context.getSettingsRef();
     if (settings.allow_experimental_alter_materialized_view_structure)
     {
         for (const auto & command : commands)
@@ -411,6 +394,32 @@ Strings StorageMaterializedView::getDataPaths() const
     if (auto table = tryGetTargetTable())
         return table->getDataPaths();
     return {};
+}
+
+void StorageMaterializedView::checkTableCanBeDropped() const
+{
+    /// Don't drop the target table if it was created manually via 'TO inner_table' statement
+    if (!has_inner_table)
+        return;
+
+    auto target_table = tryGetTargetTable();
+    if (!target_table)
+        return;
+
+    target_table->checkTableCanBeDropped();
+}
+
+void StorageMaterializedView::checkPartitionCanBeDropped(const ASTPtr & partition)
+{
+    /// Don't drop the partition in target table if it was created manually via 'TO inner_table' statement
+    if (!has_inner_table)
+        return;
+
+    auto target_table = tryGetTargetTable();
+    if (!target_table)
+        return;
+
+    target_table->checkPartitionCanBeDropped(partition);
 }
 
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)

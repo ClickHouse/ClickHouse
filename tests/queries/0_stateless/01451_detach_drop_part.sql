@@ -1,42 +1,42 @@
-DROP TABLE IF EXISTS mt_01451;
+DROP TABLE IF EXISTS mt;
 
-CREATE TABLE mt_01451 (v UInt8) ENGINE = MergeTree() order by tuple();
-SYSTEM STOP MERGES mt_01451;
+CREATE TABLE mt (v UInt8) ENGINE = MergeTree() order by tuple();
+SYSTEM STOP MERGES mt;
 
-INSERT INTO mt_01451 VALUES (0);
-INSERT INTO mt_01451 VALUES (1);
-INSERT INTO mt_01451 VALUES (2);
+INSERT INTO mt VALUES (0);
+INSERT INTO mt VALUES (1);
+INSERT INTO mt VALUES (2);
 
-SELECT v FROM mt_01451 ORDER BY v;
+SELECT v FROM mt ORDER BY v;
 
-ALTER TABLE mt_01451 DETACH PART 'all_100_100_0'; -- { serverError 232 }
+ALTER TABLE mt DETACH PART 'all_100_100_0'; -- { serverError 232 }
 
-ALTER TABLE mt_01451 DETACH PART 'all_2_2_0';
+ALTER TABLE mt DETACH PART 'all_2_2_0';
 
-SELECT v FROM mt_01451 ORDER BY v;
+SELECT v FROM mt ORDER BY v;
 
-SELECT name FROM system.detached_parts WHERE table = 'mt_01451';
+SELECT name FROM system.detached_parts WHERE table = 'mt';
 
-ALTER TABLE mt_01451 ATTACH PART 'all_2_2_0';
+ALTER TABLE mt ATTACH PART 'all_2_2_0';
 
-SELECT v FROM mt_01451 ORDER BY v;
+SELECT v FROM mt ORDER BY v;
 
-SELECT name FROM system.detached_parts WHERE table = 'mt_01451';
+SELECT name FROM system.detached_parts WHERE table = 'mt';
 
 SELECT '-- drop part --';
 
-ALTER TABLE mt_01451 DROP PART 'all_4_4_0';
+ALTER TABLE mt DROP PART 'all_4_4_0';
 
-ALTER TABLE mt_01451 ATTACH PART 'all_4_4_0'; -- { serverError 233 }
+ALTER TABLE mt ATTACH PART 'all_4_4_0'; -- { serverError 233 }
 
-SELECT v FROM mt_01451 ORDER BY v;
+SELECT v FROM mt ORDER BY v;
 
 SELECT '-- resume merges --';
-SYSTEM START MERGES mt_01451;
-OPTIMIZE TABLE mt_01451 FINAL;
+SYSTEM START MERGES mt;
+OPTIMIZE TABLE mt FINAL;
 
-SELECT v FROM mt_01451 ORDER BY v;
+SELECT v FROM mt ORDER BY v;
 
-SELECT name FROM system.parts WHERE table = 'mt_01451' AND active;
+SELECT name FROM system.parts WHERE table = 'mt' AND active;
 
-DROP TABLE mt_01451;
+DROP TABLE mt;
