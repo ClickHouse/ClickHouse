@@ -6,10 +6,24 @@
 #include <mysqlxx/PoolWithFailover.h>
 #include <mysqlxx/Query.h>
 #include <Core/ExternalResultDescription.h>
-
+#include <Core/Settings.h>
 
 namespace DB
 {
+
+struct StreamSettings
+{
+    size_t max_read_mysql_rows;
+    size_t max_read_bytes_size;
+    bool auto_close = false;
+    bool fetch_by_name = false;
+    size_t default_num_tries_on_connection_loss = 5;
+
+    StreamSettings(const Settings & settings);
+    StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_);
+    StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_);
+
+};
 
 /// Allows processing results of a MySQL query as a sequence of Blocks, simplifies chaining
 class MySQLBlockInputStream : public IBlockInputStream
@@ -19,16 +33,14 @@ public:
         const mysqlxx::PoolWithFailover::Entry & entry,
         const std::string & query_str,
         const Block & sample_block,
-        const UInt64 max_block_size_,
-        const bool auto_close_ = false,
-        const bool fetch_by_name_ = false);
+        const StreamSettings & settings_);
 
     String getName() const override { return "MySQL"; }
 
     Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
 protected:
-    MySQLBlockInputStream(const Block & sample_block_, UInt64 max_block_size_, bool auto_close_, bool fetch_by_name_);
+    MySQLBlockInputStream(const Block & sample_block_, const struct StreamSettings & settings);
     Block readImpl() override;
     void initPositionMappingFromQueryResultStructure();
 
@@ -44,9 +56,7 @@ protected:
     Poco::Logger * log;
     std::unique_ptr<Connection> connection;
 
-    const UInt64 max_block_size;
-    const bool auto_close;
-    const bool fetch_by_name;
+    const std::unique_ptr<StreamSettings> settings;
     std::vector<size_t> position_mapping;
     ExternalResultDescription description;
 };
@@ -57,23 +67,18 @@ protected:
 class MySQLWithFailoverBlockInputStream final : public MySQLBlockInputStream
 {
 public:
-    static constexpr inline auto MAX_TRIES_MYSQL_CONNECT = 5;
 
     MySQLWithFailoverBlockInputStream(
         mysqlxx::PoolWithFailoverPtr pool_,
         const std::string & query_str_,
         const Block & sample_block_,
-        const UInt64 max_block_size_,
-        const bool auto_close_ = false,
-        const bool fetch_by_name_ = false,
-        const size_t max_tries_ = MAX_TRIES_MYSQL_CONNECT);
+        const StreamSettings & settings_);
 
 private:
     void readPrefix() override;
 
     mysqlxx::PoolWithFailoverPtr pool;
     std::string query_str;
-    size_t max_tries;
 };
 
 }
