@@ -142,7 +142,6 @@ void PostgreSQLReplicationHandler::startSynchronization()
             start_lsn,
             max_block_size,
             allow_minimal_ddl,
-            is_postgresql_replica_database_engine,
             nested_storages);
 
     consumer_task->activateAndSchedule();
@@ -386,7 +385,7 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         return nullptr;
 
     auto use_nulls = context.getSettingsRef().external_databases_use_nulls;
-    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, use_nulls, true));
+    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, use_nulls, true, true));
 }
 
 

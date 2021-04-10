@@ -11,7 +11,7 @@ from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-        main_configs=['configs/log_conf.xml'],
+        main_configs = ['configs/log_conf.xml'],
         user_configs = ['configs/users.xml'],
         with_postgres=True, stay_alive=True)
 
@@ -22,6 +22,10 @@ postgres_table_template = """
 postgres_table_template_2 = """
     CREATE TABLE IF NOT EXISTS {} (
     key Integer NOT NULL, value1 Integer, value2 Integer, value3 Integer, PRIMARY KEY(key))
+    """
+postgres_table_template_3 = """
+    CREATE TABLE IF NOT EXISTS {} (
+    key1 Integer NOT NULL, value1 Integer, key2 Integer NOT NULL, value2 Integer NOT NULL)
     """
 
 def get_postgres_conn(database=False):
@@ -299,7 +303,7 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
     assert 'test_database' not in instance.query('SHOW DATABASES')
 
 
-@pytest.mark.timeout(240)
+@pytest.mark.timeout(320)
 def test_table_schema_changes(started_cluster):
     instance.query("DROP DATABASE IF EXISTS test_database")
     conn = get_postgres_conn(True)
@@ -390,6 +394,32 @@ def test_clickhouse_restart(started_cluster):
 
     for i in range(NUM_TABLES):
         check_tables_are_synchronized('postgresql_replica_{}'.format(i));
+
+
+@pytest.mark.timeout(120)
+def test_replica_identity_index(started_cluster):
+    instance.query("DROP DATABASE IF EXISTS test_database")
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+
+    create_postgres_table(cursor, 'postgresql_replica', template=postgres_table_template_3);
+    cursor.execute("CREATE unique INDEX idx on postgresql_replica(key1, key2);")
+    cursor.execute("ALTER TABLE postgresql_replica REPLICA IDENTITY USING INDEX idx")
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number, number, number from numbers(50, 10)")
+
+    instance.query(
+        "CREATE DATABASE test_database ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')")
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number, number, number from numbers(100, 10)")
+    check_tables_are_synchronized('postgresql_replica', order_by='key1');
+
+    cursor.execute("UPDATE postgresql_replica SET key1=key1-25 WHERE key1<100 ")
+    cursor.execute("UPDATE postgresql_replica SET key2=key2-25 WHERE key2>100 ")
+    cursor.execute("UPDATE postgresql_replica SET value1=value1+100 WHERE key1<100 ")
+    cursor.execute("UPDATE postgresql_replica SET value2=value2+200 WHERE key2>100 ")
+    check_tables_are_synchronized('postgresql_replica', order_by='key1');
+
+    cursor.execute('DELETE FROM postgresql_replica WHERE key2<75;')
+    check_tables_are_synchronized('postgresql_replica', order_by='key1');
 
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@
 <yandex>
     <profiles>
         <default>
-            <allow_experimental_database_postgresql_replica>1</allow_experimental_database_postgresql_replica>
+            <allow_experimental_database_materialize_postgresql>1</allow_experimental_database_materialize_postgresql>
         </default>
     </profiles>
 </yandex>

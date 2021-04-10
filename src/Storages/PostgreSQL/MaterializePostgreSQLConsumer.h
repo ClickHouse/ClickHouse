@@ -35,7 +35,6 @@ public:
             const std::string & start_lsn,
             const size_t max_block_size_,
             bool allow_minimal_ddl_,
-            bool is_postgresql_replica_database_engine_,
             Storages storages_);
 
     void readMetadata();
@@ -110,7 +109,7 @@ private:
 
     std::string current_lsn, final_lsn;
     const size_t max_block_size;
-    bool allow_minimal_ddl, is_postgresql_replica_database_engine;
+    bool allow_minimal_ddl;
 
     std::string table_to_insert;
 
