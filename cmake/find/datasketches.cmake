@@ -22,6 +22,8 @@ endif()
 
 if (DATASKETCHES_LIBRARY AND DATASKETCHES_INCLUDE_DIR)
     set(USE_DATASKETCHES 1)
+else()
+    set(USE_DATASKETCHES 0)
 endif()
 
 endif()
