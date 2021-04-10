@@ -2538,7 +2538,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
     if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
     {
         size_t inactive_parts_count_in_partition = getMaxInactivePartsCountForPartition();
-        if (inactive_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
+        if (settings->inactive_parts_to_throw_insert > 0 && inactive_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
