@@ -18,13 +18,13 @@ def invalid_date(self):
     if self.context.stress:
         date_range = range(1925, 2238)
 
-    with Step("I check 31st day of a 30-day month"):
+    with When("I check 31st day of a 30-day month"):
         for year in date_range:
             for month in (4, 6, 9, 11):
                 datetime = f"{year}-{str(month).zfill(2)}-31 12:23:34"
                 expected = f"{year}-{str(month + 1).zfill(2)}-01 12:23:34"
 
-                with Example(f"{datetime}", description=f"expected {expected}", flags=TE):
+                with Then(f"{datetime}", description=f"expected {expected}", flags=TE):
                     select_check_datetime(datetime=datetime, expected=expected)
 
 
@@ -124,7 +124,7 @@ def dst_time_zone_switch(self):
     for timezone in timezones:
         if timezone == 'UTC':
             continue
-        with Example(f"{timezone}"):
+        with Step(f"{timezone}"):
             tz = pytz.timezone(timezone)
             transition_times = tz._utc_transition_times
             transition_info = tz._transition_info

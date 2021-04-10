@@ -278,7 +278,7 @@ class Cluster(object):
         if not os.path.exists(docker_compose_file_path):
             raise TypeError("docker compose file '{docker_compose_file_path}' does not exist")
 
-        self.docker_compose += f" --no-ansi --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
+        self.docker_compose += f" --project-directory \"{docker_compose_project_dir}\" --file \"{docker_compose_file_path}\""
         self.lock = threading.Lock()
 
     def shell(self, node, timeout=300):

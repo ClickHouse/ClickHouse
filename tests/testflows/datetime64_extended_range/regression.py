@@ -23,6 +23,9 @@ from datetime64_extended_range.common import *
 # https://github.com/ClickHouse/ClickHouse/issues/22948 : toYearWeek()
 # https://github.com/ClickHouse/ClickHouse/issues/22959 : toUnixTimestamp64*() wrong fractal seconds treatment
 
+# For `reference times` test it is unclear how to evaluate correctness - majority of test cases are correct, and ONLY
+# Juba and Monrovia timezones are damaged - probably, due to wrong DST shifts lookup tables
+
 xfails = {
     "type conversion/to int 8 16 32 64 128 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
     "type conversion/to uint 8 16 32 64 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
@@ -40,6 +43,7 @@ xfails = {
     "type conversion/to unix timestamp64 */:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22959")],
     "type conversion/from unix timestamp64 */:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22959")],
     "type conversion/to int 8 16 32 64 128 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
+    "reference times/:": [(Fail, "check procedure unclear")],
 }
 
 

@@ -27,7 +27,7 @@ def to_time_zone(self):
 
         for dt in datetimes:
             for tz1, tz2 in itertools.product(timezones, timezones):
-                with Example(f"{dt} {tz1} -> {tz2}"):
+                with Step(f"{dt} {tz1} -> {tz2}"):
                     with By("Computing expected output using pytz"):
                         dt_local = pytz.timezone(tz1).localize(dt)
                         dt_transformed = dt_local.astimezone(pytz.timezone(tz2))
@@ -53,7 +53,7 @@ def to_date_part(self, py_func, ch_func):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
-                    with Example(f"{dt} {tz1}, {tz2}"):
+                    with Step(f"{dt} {tz1}, {tz2}"):
                         with Given("I compute expected output using pytz"):
                             with By(f"localizing {dt} using {tz1} timezone"):
                                 time_tz1 = pytz.timezone(tz1).localize(dt)
@@ -178,7 +178,7 @@ def to_time_part(self, py_func, ch_func):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
-                    with Example(f"{dt} {tz1} -> {tz2}"):
+                    with Step(f"{dt} {tz1} -> {tz2}"):
                         with By("computing expected result using pytz"):
                             time_tz1 = pytz.timezone(tz1).localize(dt)
                             time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
@@ -238,7 +238,7 @@ def to_unix_timestamp(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("computing expected result using python"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                             expected = f"{int(time.mktime(datetime.datetime.now().timetuple()))}"
@@ -264,7 +264,7 @@ def to_start_of_year(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
-                    with Example(f"{dt} {tz1} -> {tz2}"):
+                    with Step(f"{dt} {tz1} -> {tz2}"):
                         with By("computing expected time using python"):
                             time_tz1 = pytz.timezone(tz1).localize(dt)
                             time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
@@ -300,7 +300,7 @@ def to_start_of_iso_year(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("Computing expected result using Python"):
                             expected = iso_year_start(dt)
                         with And("Forming a toStartOfISOYear ClickHouse query"):
@@ -327,7 +327,7 @@ def to_start_of_quarter(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
-                    with Example(f"{dt} {tz1} -> {tz2}"):
+                    with Step(f"{dt} {tz1} -> {tz2}"):
                         with By("computing expected result with python"):
                             time_tz1 = pytz.timezone(tz1).localize(dt)
                             time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
@@ -356,7 +356,7 @@ def to_start_of_month(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
-                    with Example(f"{dt} {tz1} -> {tz2}"):
+                    with Step(f"{dt} {tz1} -> {tz2}"):
                         with By("computing expected result with python"):
                             time_tz1 = pytz.timezone(tz1).localize(dt)
                             time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
@@ -385,7 +385,7 @@ def to_monday(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
-                    with Example(f"{dt} {tz1} -> {tz2}"):
+                    with Step(f"{dt} {tz1} -> {tz2}"):
                         with By("computing expected result with python"):
                             time_tz1 = pytz.timezone(tz1).localize(dt)
                             time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
@@ -414,7 +414,7 @@ def to_start_of_week(self):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     for mode in (0, 1):   # mode - week beginning, either 0 (Sunday) or 1 (Monday)
-                        with Example(f"{dt} {tz1} -> {tz2}"):
+                        with Step(f"{dt} {tz1} -> {tz2}"):
                             with By("computing expected result with python"):
                                 time_tz1 = pytz.timezone(tz1).localize(dt)
                                 time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
@@ -443,7 +443,7 @@ def to_start_of_day(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("computing expected result with python"):
                             expected = f"{dt.strftime('%Y-%m-%d')} 00:00:00"
                         with And("forming ClickHouse query"):
@@ -469,7 +469,7 @@ def to_start_of_hour(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("computing expected result with python"):
                             expected = f"{dt.strftime('%Y-%m-%d %H')}:00:00"
                         with And("forming ClickHouse query"):
@@ -495,7 +495,7 @@ def to_start_of_minute(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("computing expected result with python"):
                             expected = f"{dt.strftime('%Y-%m-%d %H:%M')}:00"
                         with And("forming ClickHouse query"):
@@ -521,7 +521,7 @@ def to_start_of_second(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("computing expected result with python"):
                             expected = f"{dt.strftime('%Y-%m-%d %H:%M:%S')}.000000"
                         with And("forming ClickHouse query"):
@@ -544,7 +544,7 @@ def to_start_of_minutes_interval(self, interval, func):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("Computing expected result using python"):
                             mins = dt.minute // interval * interval
                             expected = f"{dt.strftime('%Y-%m-%d %H:')}{str(mins).zfill(2)}:00"
@@ -646,7 +646,7 @@ def to_start_of_interval(self):
                 for tz in timezones:
                     for interval in intervals_testing_ranges.keys():
                         for value in intervals_testing_ranges[interval]:
-                            with Example(f"{dt} {tz} {interval}: {value}"):
+                            with Step(f"{dt} {tz} {interval}: {value}"):
                                 with By("Computing expected result using python"):
                                     expected = to_start_of_interval_helper(dt, interval, value)
                                 with And(f"Forming a toStartOfInterval() query to ClickHouse"):
@@ -669,7 +669,7 @@ def to_iso(self, func, isocalendar_pos):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("computimg expected result uning python"):
                             expected = f"{dt.isocalendar()[isocalendar_pos]}"
                         with And("forming ClickHouse query"):
@@ -1035,7 +1035,7 @@ def to_yyyymm(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("computing expected result in python"):
                             expected = f"{dt.strftime('%Y%m')}"
                         with And("forming ClickHouse query"):
@@ -1063,7 +1063,7 @@ def to_yyyymmdd(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("computing expected result in python"):
                             expected = f"{dt.strftime('%Y%m%d')}"
                         with And("forming ClickHouse query"):
@@ -1091,7 +1091,7 @@ def to_yyyymmddhhmmss(self):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz in timezones:
-                    with Example(f"{dt} {tz}"):
+                    with Step(f"{dt} {tz}"):
                         with By("computing expected result in python"):
                             expected = f"{dt.strftime('%Y%m%d%H%M%S')}"
                         with And("forming ClickHouse query"):
@@ -1118,7 +1118,7 @@ def now(self):
             dt = datetime.datetime.now(tzlocal())
             dt = dt.astimezone(pytz.timezone(tz))
 
-        with Example(f"{dt} {tz}"):
+        with Step(f"{dt} {tz}"):
             with When("I execute query and format its result to string"):
                 r = self.context.node.query(f"SELECT toDateTime64(now(), 0, '{tz}')")
                 query_result = r.output
@@ -1150,7 +1150,7 @@ def today(self):
             dt = datetime.datetime.now(tzlocal())
             dt = dt.astimezone(pytz.timezone(tz))
 
-        with Example(f"{dt} {tz}"):
+        with Step(f"{dt} {tz}"):
             with When("I execute query and format its result to string"):
                 r = self.context.node.query(f"SELECT toDateTime64(today(), 0, '{tz}')")
                 query_result = r.output
@@ -1183,7 +1183,7 @@ def yesterday(self):
             dt = datetime.datetime.now(tzlocal())
             dt = dt.astimezone(pytz.timezone(tz))
 
-        with Example(f"{dt} {tz}"):
+        with Step(f"{dt} {tz}"):
             with When("I execute query and format its result to string"):
                 r = self.context.node.query(f"SELECT toDateTime64(yesterday(), 0, '{tz}')")
                 query_result = r.output
@@ -1224,7 +1224,7 @@ def add_subtract_functions(self, clh_func, py_key, test_range, years_padding=(1,
             for dt in datetimes:
                 for tz in timezones:
                     for incr in test_range:
-                        with Example(f"{dt} {tz}"):
+                        with Step(f"{dt} {tz}"):
                             with By("converting datetime to string"):
                                 dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                             with And("computing the expected result using pytz"):
@@ -1508,7 +1508,7 @@ def time_slots(self):
             for dt in datetimes:
                 for duration in range(1, 100, 9):
                     for size in range(1, 50, 3):
-                        with Example(f"{dt}, dur={duration}, size={size}"):
+                        with Step(f"{dt}, dur={duration}, size={size}"):
                             with By("getting an expected array using python"):
                                 expected = time_slots_get_expected(dt=dt, duration=duration, size=size)
                             with And("forming a ClickHouse query"):
