@@ -119,11 +119,13 @@ def to_day_of(self, py_func, ch_func):
         with When("I check each of the datetimes"):
             for dt in datetimes:
                 for tz1, tz2 in itertools.product(timezones, timezones):
-                    with Example(f"{dt} {tz1} -> {tz2}"):
+                    with When(f"{dt} {tz1} -> {tz2}"):
                         with By("Computing expected result using pytz"):
                             time_tz1 = pytz.timezone(tz1).localize(dt)
                             time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
                             result = eval(f"time_tz2.timetuple().{py_func}")
+                            if py_func == "tm_wday":
+                                result += 1
                             expected = f"{result}"
                         with And(f"Forming a {ch_func} ClickHouse query"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
