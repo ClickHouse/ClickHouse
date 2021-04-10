@@ -9,13 +9,14 @@
 #include <Databases/DatabasesCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
 
 
 namespace DB
 {
 
 class Context;
+class PostgreSQLConnection;
+using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 
 /** Real-time access to table list and table structure from remote PostgreSQL.
@@ -33,7 +34,7 @@ public:
         const ASTStorage * database_engine_define,
         const String & dbname_,
         const String & postgres_dbname,
-        postgres::PoolWithFailoverPtr connection_pool_,
+        PostgreSQLConnectionPtr connection_,
         const bool cache_tables_);
 
     String getEngineName() const override { return "PostgreSQL"; }
@@ -71,7 +72,7 @@ private:
     String metadata_path;
     ASTPtr database_engine_define;
     String dbname;
-    postgres::PoolWithFailoverPtr connection_pool;
+    PostgreSQLConnectionPtr connection;
     const bool cache_tables;
 
     mutable Tables cached_tables;

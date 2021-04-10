@@ -110,7 +110,7 @@ public:
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = 0; i < batch_size; ++i)
             {
-                if (flags[i] && places[i])
+                if (flags[i])
                     add(places[i] + place_offset, columns, i, arena);
             }
         }
@@ -118,8 +118,7 @@ public:
         {
             nested_function->addBatch(batch_size, places, place_offset, columns, arena, if_argument_pos);
             for (size_t i = 0; i < batch_size; ++i)
-                if (places[i])
-                    (places[i] + place_offset)[size_of_data] = 1;
+                (places[i] + place_offset)[size_of_data] = 1;
         }
     }
 

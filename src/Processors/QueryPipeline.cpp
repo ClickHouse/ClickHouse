@@ -212,7 +212,6 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
 QueryPipeline QueryPipeline::unitePipelines(
     std::vector<std::unique_ptr<QueryPipeline>> pipelines,
     const Block & common_header,
-    const ExpressionActionsSettings & settings,
     size_t max_threads_limit,
     Processors * collected_processors)
 {
@@ -235,7 +234,7 @@ QueryPipeline QueryPipeline::unitePipelines(
                     pipeline.getHeader().getColumnsWithTypeAndName(),
                     common_header.getColumnsWithTypeAndName(),
                     ActionsDAG::MatchColumnsMode::Position);
-            auto actions = std::make_shared<ExpressionActions>(actions_dag, settings);
+            auto actions = std::make_shared<ExpressionActions>(actions_dag);
 
             pipeline.addSimpleTransform([&](const Block & header)
             {

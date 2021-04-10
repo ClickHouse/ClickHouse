@@ -1,11 +1,9 @@
 #include <Interpreters/join_common.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/getLeastSupertype.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteHelpers.h>
 
@@ -299,13 +297,6 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
         type->insertDefaultInto(column);
 }
 
-bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
-{
-    DataTypePtr left_type_strict = removeNullable(recursiveRemoveLowCardinality(left_type));
-    DataTypePtr right_type_strict = removeNullable(recursiveRemoveLowCardinality(right_type));
-    return left_type_strict->equals(*right_type_strict);
-}
-
 }
 
 
@@ -320,21 +311,19 @@ NotJoined::NotJoined(const TableJoin & table_join, const Block & saved_block_sam
     table_join.splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
     Block required_right_keys = table_join.getRequiredRightKeys(right_table_keys, tmp);
 
+    bool remap_keys = table_join.hasUsing();
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
-    if (table_join.hasUsing())
+    for (size_t i = 0; i < table_join.keyNamesLeft().size(); ++i)
     {
-        for (size_t i = 0; i < table_join.keyNamesLeft().size(); ++i)
-        {
-            const String & left_key_name = table_join.keyNamesLeft()[i];
-            const String & right_key_name = table_join.keyNamesRight()[i];
+        const String & left_key_name = table_join.keyNamesLeft()[i];
+        const String & right_key_name = table_join.keyNamesRight()[i];
 
-            size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
-            size_t right_key_pos = saved_block_sample.getPositionByName(right_key_name);
+        size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
+        size_t right_key_pos = saved_block_sample.getPositionByName(right_key_name);
 
-            if (!required_right_keys.has(right_key_name))
-                left_to_right_key_remap[left_key_pos] = right_key_pos;
-        }
+        if (remap_keys && !required_right_keys.has(right_key_name))
+            left_to_right_key_remap[left_key_pos] = right_key_pos;
     }
 
     /// result_sample_block: left_sample_block + left expressions, right not key columns, required right keys

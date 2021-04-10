@@ -47,8 +47,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/ExpressionJIT.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
@@ -98,7 +96,7 @@
 #endif
 
 #if USE_NURAFT
-#   include <Server/KeeperTCPHandlerFactory.h>
+#   include <Server/NuKeeperTCPHandlerFactory.h>
 #endif
 
 namespace CurrentMetrics
@@ -689,8 +687,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    LOG_DEBUG(log, "Initiailizing interserver credentials.");
-    global_context->updateInterserverCredentials(config());
+    if (config().has("interserver_http_credentials"))
+    {
+        String user = config().getString("interserver_http_credentials.user", "");
+        String password = config().getString("interserver_http_credentials.password", "");
+
+        if (user.empty())
+            throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+        global_context->setInterserverCredentials(user, password);
+    }
 
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
@@ -770,7 +776,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
 
             global_context->updateStorageConfiguration(*config);
-            global_context->updateInterserverCredentials(*config);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -823,14 +828,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     global_context->setMarkCache(mark_cache_size);
 
-    /// A cache for mmapped files.
-    size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
-    if (mmap_cache_size)
-        global_context->setMMappedFileCache(mmap_cache_size);
-
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
+    if (compiled_expression_cache_size)
+        global_context->setCompiledExpressionCache(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
@@ -861,15 +862,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
         listen_try = true;
     }
 
-    if (config().has("keeper_server"))
+    if (config().has("test_keeper_server"))
     {
 #if USE_NURAFT
         /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperStorageDispatcher();
+        global_context->initializeNuKeeperStorageDispatcher();
         for (const auto & listen_host : listen_hosts)
         {
-            /// TCP Keeper
-            const char * port_name = "keeper_server.tcp_port";
+            /// TCP NuKeeper
+            const char * port_name = "test_keeper_server.tcp_port";
             createServer(listen_host, port_name, listen_try, [&](UInt16 port)
             {
                 Poco::Net::ServerSocket socket;
@@ -879,9 +880,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers_to_start_before_tables->emplace_back(
                     port_name,
                     std::make_unique<Poco::Net::TCPServer>(
-                        new KeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+                        new NuKeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
 
-                LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
+                LOG_INFO(log, "Listening for connections to NuKeeper (tcp): {}", address.toString());
             });
         }
 #else
@@ -928,7 +929,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
 
-            global_context->shutdownKeeperStorageDispatcher();
+            global_context->shutdownNuKeeperStorageDispatcher();
         }
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
@@ -980,7 +981,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     ///
     /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
     ///
-#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER) && defined(__x86_64__)
+#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -1015,10 +1016,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if defined(SANITIZER)
     LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work under sanitizers"
         " when two different stack unwinding methods will interfere with each other.");
-#endif
-
-#if !defined(__x86_64__)
-    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())

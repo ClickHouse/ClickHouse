@@ -48,13 +48,38 @@ void TemporaryLiveViewCleaner::init(Context & global_context_)
     the_instance.reset(new TemporaryLiveViewCleaner(global_context_));
 }
 
-void TemporaryLiveViewCleaner::startup()
+void TemporaryLiveViewCleaner::startupIfNecessary()
 {
-    background_thread_can_start = true;
-
     std::lock_guard lock{mutex};
+    if (background_thread_should_exit)
+        return;
     if (!views.empty())
-        startBackgroundThread();
+        startupIfNecessaryImpl(lock);
+    else
+        can_start_background_thread = true;
+}
+
+void TemporaryLiveViewCleaner::startupIfNecessaryImpl(const std::lock_guard<std::mutex> &)
+{
+    /// If views.empty() the background thread isn't running or it's going to stop right now.
+    /// If can_start_background_thread is false, then the thread has not been started previously.
+    bool background_thread_is_running;
+    if (can_start_background_thread)
+    {
+        background_thread_is_running = !views.empty();
+    }
+    else
+    {
+        can_start_background_thread = true;
+        background_thread_is_running = false;
+    }
+
+    if (!background_thread_is_running)
+    {
+        if (background_thread.joinable())
+            background_thread.join();
+        background_thread = ThreadFromGlobalPool{&TemporaryLiveViewCleaner::backgroundThreadFunc, this};
+    }
 }
 
 void TemporaryLiveViewCleaner::shutdown()
@@ -62,10 +87,12 @@ void TemporaryLiveViewCleaner::shutdown()
     the_instance.reset();
 }
 
+
 TemporaryLiveViewCleaner::TemporaryLiveViewCleaner(Context & global_context_)
     : global_context(global_context_)
 {
 }
+
 
 TemporaryLiveViewCleaner::~TemporaryLiveViewCleaner()
 {
@@ -81,29 +108,27 @@ void TemporaryLiveViewCleaner::addView(const std::shared_ptr<StorageLiveView> & 
     auto current_time = std::chrono::system_clock::now();
     auto time_of_next_check = current_time + view->getTimeout();
 
+    std::lock_guard lock{mutex};
+    if (background_thread_should_exit)
+        return;
+
+    if (can_start_background_thread)
+        startupIfNecessaryImpl(lock);
+
     /// Keep the vector `views` sorted by time of next check.
     StorageAndTimeOfCheck storage_and_time_of_check{view, time_of_next_check};
-    std::lock_guard lock{mutex};
     views.insert(std::upper_bound(views.begin(), views.end(), storage_and_time_of_check), storage_and_time_of_check);
 
-    if (background_thread_can_start)
-    {
-        startBackgroundThread();
-        background_thread_wake_up.notify_one();
-    }
+    background_thread_wake_up.notify_one();
 }
 
 
 void TemporaryLiveViewCleaner::backgroundThreadFunc()
 {
     std::unique_lock lock{mutex};
-    while (!background_thread_should_exit)
+    while (!background_thread_should_exit && !views.empty())
     {
-        if (views.empty())
-            background_thread_wake_up.wait(lock);
-        else
-            background_thread_wake_up.wait_until(lock, views.front().time_of_check);
-
+        background_thread_wake_up.wait_until(lock, views.front().time_of_check);
         if (background_thread_should_exit)
             break;
 
@@ -148,18 +173,14 @@ void TemporaryLiveViewCleaner::backgroundThreadFunc()
 }
 
 
-void TemporaryLiveViewCleaner::startBackgroundThread()
-{
-    if (!background_thread.joinable() && background_thread_can_start && !background_thread_should_exit)
-        background_thread = ThreadFromGlobalPool{&TemporaryLiveViewCleaner::backgroundThreadFunc, this};
-}
-
 void TemporaryLiveViewCleaner::stopBackgroundThread()
 {
-    background_thread_should_exit = true;
-    background_thread_wake_up.notify_one();
     if (background_thread.joinable())
+    {
+        background_thread_should_exit = true;
+        background_thread_wake_up.notify_one();
         background_thread.join();
+    }
 }
 
 }

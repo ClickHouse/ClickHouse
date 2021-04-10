@@ -44,7 +44,6 @@ static size_t tryAddNewFilterStep(
     // std::cerr << "Filter: \n" << expression->dumpDAG() << std::endl;
 
     const auto & all_inputs = child->getInputStreams().front().header.getColumnsWithTypeAndName();
-
     auto split_filter = expression->cloneActionsForFilterPushDown(filter_column_name, removes_filter, allowed_inputs, all_inputs);
     if (!split_filter)
         return 0;
@@ -52,17 +51,24 @@ static size_t tryAddNewFilterStep(
     // std::cerr << "===============\n" << expression->dumpDAG() << std::endl;
     // std::cerr << "---------------\n" << split_filter->dumpDAG() << std::endl;
 
-    const auto * filter_node = expression->tryFindInIndex(filter_column_name);
-    if (!filter_node && !removes_filter)
+    const auto & index = expression->getIndex();
+    auto it = index.begin();
+    for (; it != index.end(); ++it)
+        if ((*it)->result_name == filter_column_name)
+            break;
+
+    const bool found_filter_column = it != expression->getIndex().end();
+
+    if (!found_filter_column && !removes_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Filter column {} was removed from ActionsDAG but it is needed in result. DAG:\n{}",
                         filter_column_name, expression->dumpDAG());
 
     /// Filter column was replaced to constant.
-    const bool filter_is_constant = filter_node && filter_node->column && isColumnConst(*filter_node->column);
+    const bool filter_is_constant = found_filter_column && (*it)->column && isColumnConst(*(*it)->column);
 
-    if (!filter_node || filter_is_constant)
-        /// This means that all predicates of filter were pushed down.
+    if (!found_filter_column || filter_is_constant)
+        /// This means that all predicates of filter were pused down.
         /// Replace current actions to expression, as we don't need to filter anything.
         parent = std::make_unique<ExpressionStep>(child->getOutputStream(), expression);
 
@@ -73,8 +79,8 @@ static size_t tryAddNewFilterStep(
     child_node->children.emplace_back(&node);
     /// Expression/Filter -> Aggregating -> Filter -> Something
 
-    /// New filter column is the first one.
-    auto split_filter_column_name = (*split_filter->getIndex().begin())->result_name;
+    /// New filter column is added to the end.
+    auto split_filter_column_name = (*split_filter->getIndex().rbegin())->result_name;
     node.step = std::make_unique<FilterStep>(
             node.children.at(0)->step->getOutputStream(),
             std::move(split_filter), std::move(split_filter_column_name), true);

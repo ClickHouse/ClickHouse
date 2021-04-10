@@ -673,24 +673,16 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
             for (const auto & kv : stage.column_to_updated)
                 stage.analyzer->appendExpression(actions_chain, kv.second, dry_run);
 
-            auto & actions = actions_chain.getLastStep().actions();
-
             for (const auto & kv : stage.column_to_updated)
             {
-                auto column_name = kv.second->getColumnName();
-                const auto & dag_node = actions->findInIndex(column_name);
-                const auto & alias = actions->addAlias(dag_node, kv.first);
-                actions->addOrReplaceInIndex(alias);
+                actions_chain.getLastStep().actions()->addAlias(
+                        kv.second->getColumnName(), kv.first, /* can_replace = */ true);
             }
         }
 
         /// Remove all intermediate columns.
         actions_chain.addStep();
-        actions_chain.getLastStep().required_output.clear();
-        ActionsDAG::NodeRawConstPtrs new_index;
-        for (const auto & name : stage.output_columns)
-            actions_chain.getLastStep().addRequiredOutput(name);
-
+        actions_chain.getLastStep().required_output.assign(stage.output_columns.begin(), stage.output_columns.end());
         actions_chain.getLastActions();
 
         actions_chain.finalize();
@@ -763,10 +755,7 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
         }
     }
 
-    auto pipeline = plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
-
+    auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context.getSettingsRef()));
     pipeline->addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<MaterializingTransform>(header);

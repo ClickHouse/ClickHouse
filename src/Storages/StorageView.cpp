@@ -17,8 +17,6 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -61,9 +59,7 @@ Pipe StorageView::read(
 {
     QueryPlan plan;
     read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
-    return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
+    return plan.convertToPipe(QueryPlanOptimizationSettings(context.getSettingsRef()));
 }
 
 void StorageView::read(

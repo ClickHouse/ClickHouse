@@ -152,17 +152,6 @@ const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
-const char * ColumnNullable::skipSerializedInArena(const char * pos) const
-{
-    UInt8 val = unalignedLoad<UInt8>(pos);
-    pos += sizeof(val);
-
-    if (val == 0)
-        return getNestedColumn().skipSerializedInArena(pos);
-
-    return pos;
-}
-
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(src);

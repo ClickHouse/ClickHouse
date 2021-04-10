@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/StorageURL.h>
-#include <Bridge/XDBCBridgeHelper.h>
+#include <Common/XDBCBridgeHelper.h>
 
 
 namespace DB
