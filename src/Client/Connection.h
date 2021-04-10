@@ -65,9 +65,6 @@ struct Packet
     Progress progress;
     BlockStreamProfileInfo profile_info;
     std::vector<UUID> part_uuids;
-    /// String describes an identifier for a request.
-    /// Used for dynamic distributed data processing (S3 downloading)
-    String read_task_request;
 
     Packet() : type(Protocol::Server::Hello) {}
 };
@@ -162,7 +159,7 @@ public:
     /// Send parts' uuids to excluded them from query processing
     void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
 
-    void sendReadTaskResponse(const std::string &);
+    void sendReadTaskResponse(const std::optional<String> &);
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.
@@ -305,7 +302,6 @@ private:
 #endif
     bool ping();
 
-    String receiveReadTaskRequest() const;
     Block receiveData();
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);

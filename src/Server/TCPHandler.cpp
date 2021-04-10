@@ -26,7 +26,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Distributed.h>
-#include <Storages/TaskSupervisor.h>
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -288,14 +287,11 @@ void TCPHandler::runImpl()
 
             customizeContext(query_context);
 
-            /// Create task supervisor for distributed task processing
-            query_context->setReadTaskSupervisor(std::make_shared<TaskSupervisor>());
-
             /// This callback is needed for requsting read tasks inside pipeline for distributed processing
-            query_context->setReadTaskCallback([this](String request) mutable -> String
+            query_context->setReadTaskCallback([this]() -> std::optional<String>
             {
                 std::lock_guard lock(task_callback_mutex);
-                sendReadTaskRequestAssumeLocked(request);
+                sendReadTaskRequestAssumeLocked();
                 return receiveReadTaskResponseAssumeLocked();
             });
 
@@ -658,6 +654,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         Block block;
         while (executor.pull(block, query_context->getSettingsRef().interactive_delay / 1000))
         {
+            std::lock_guard lock(task_callback_mutex);
+
             if (isQueryCancelled())
             {
                 /// A packet was received requesting to stop execution of the request.
@@ -665,7 +663,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                 break;
             }
 
-            std::lock_guard lock(task_callback_mutex);
 
             if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
             {
@@ -772,10 +769,9 @@ void TCPHandler::sendPartUUIDs()
 }
 
 
-void TCPHandler::sendReadTaskRequestAssumeLocked(const String & request)
+void TCPHandler::sendReadTaskRequestAssumeLocked()
 {
     writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
-    writeStringBinary(request, *out);
     out->next();
 }
 
@@ -1042,17 +1038,31 @@ void TCPHandler::receiveIgnoredPartUUIDs()
 }
 
 
-String TCPHandler::receiveReadTaskResponseAssumeLocked()
+std::optional<String> TCPHandler::receiveReadTaskResponseAssumeLocked()
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
-    
     if (packet_type != Protocol::Client::ReadTaskResponse)
-        throw Exception(fmt::format("Received {} packet after requesting read task",
-                Protocol::Client::toString(packet_type)), ErrorCodes::LOGICAL_ERROR);
-
+    {
+        if (packet_type == Protocol::Client::Cancel)
+        {
+            state.is_cancelled = true;
+            return {};
+        }
+        else
+        {
+            throw Exception(fmt::format("Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        }
+    }
+    UInt64 version;
+    readVarUInt(version, *in);
+    if (version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
+        throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::LOGICAL_ERROR);
     String response;
     readStringBinary(response, *in);
+    if (response.empty())
+        return std::nullopt;
     return response;
 }
 

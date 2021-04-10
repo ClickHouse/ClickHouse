@@ -552,10 +552,11 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 }
 
 
-void Connection::sendReadTaskResponse(const std::string & response)
+void Connection::sendReadTaskResponse(const std::optional<String> & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    writeStringBinary(response, *out);
+    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
+    writeStringBinary(response.has_value() ? String(*response) : "", *out);
     out->next();
 }
 
@@ -816,7 +817,6 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::ReadTaskRequest:
-                res.read_task_request = receiveReadTaskRequest();
                 return res;
 
             default:
@@ -838,14 +838,6 @@ Packet Connection::receivePacket()
 
         throw;
     }
-}
-
-
-String Connection::receiveReadTaskRequest() const
-{
-    String read_task;
-    readStringBinary(read_task, *in);
-    return read_task;
 }
 
 

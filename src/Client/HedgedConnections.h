@@ -84,7 +84,7 @@ public:
         const ClientInfo & client_info,
         bool with_pending_data) override;
 
-    void sendReadTaskResponse(const String &) override
+    void sendReadTaskResponse(const std::optional<String> &) override
     {
         throw Exception("sendReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
     }

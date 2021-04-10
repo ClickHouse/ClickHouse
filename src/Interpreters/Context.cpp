@@ -2616,18 +2616,6 @@ PartUUIDsPtr Context::getPartUUIDs()
 }
 
 
-TaskSupervisorPtr Context::getTaskSupervisor() const
-{
-    return read_task_supervisor;
-}
-
-
-void Context::setReadTaskSupervisor(TaskSupervisorPtr resolver)
-{
-    read_task_supervisor = resolver;
-}
-
-
 ReadTaskCallback Context::getReadTaskCallback() const
 {
     if (!next_task_callback.has_value())

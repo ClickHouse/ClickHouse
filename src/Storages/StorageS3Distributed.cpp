@@ -109,9 +109,11 @@ Pipe StorageS3Distributed::read(
                 need_file_column = true;
         }
         
-        auto file_iterator = std::make_shared<DistributedFileIterator>(
-            context.getReadTaskCallback(), 
-            context.getClientInfo().task_identifier);
+        /// Save callback not to capture context by reference of copy it.
+        auto file_iterator = std::make_shared<StorageS3Source::IteratorWrapper>(
+            [callback = context.getReadTaskCallback()]() -> std::optional<String> {
+                return callback();
+        });
 
         return Pipe(std::make_shared<StorageS3Source>(
             need_path_column, need_file_column, format_name, getName(),
@@ -128,18 +130,11 @@ Pipe StorageS3Distributed::read(
     S3::URI s3_uri(Poco::URI{filename});
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
-    auto callback = [iterator = StorageS3Source::DisclosedGlobIterator(*client_auth.client, client_auth.uri)]() mutable -> String
+    auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
+    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> std::optional<String>
     {
-        if (auto value = iterator.next())
-            return *value;
-        return {};
-    };
-
-    auto task_identifier = toString(UUIDHelpers::generateV4());
-
-    /// Register resolver, which will give other nodes a task std::make_unique
-    context.getTaskSupervisor()->registerNextTaskResolver(
-        std::make_unique<ReadTaskResolver>(task_identifier, std::move(callback)));
+        return iterator->next();
+    });
 
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
     Block header =
@@ -166,7 +161,7 @@ Pipe StorageS3Distributed::read(
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                     *connections.back(), queryToString(query_info.query), header, context, 
-                    /*throttler=*/nullptr, scalars, Tables(), processed_stage, task_identifier);
+                    /*throttler=*/nullptr, scalars, Tables(), processed_stage, callback);
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, false, false)); 
         }
