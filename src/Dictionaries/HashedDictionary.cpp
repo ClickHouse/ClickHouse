@@ -123,7 +123,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 [&](const size_t row, const auto value) { return out[row] = value; },
                 [&](const size_t row)
                 {
-                    out[row] = 0;
+                    out[row] = ValueType();
                     (*vec_null_map_to)[row] = true;
                 },
                 default_value_extractor);
