@@ -75,21 +75,6 @@ private:
 
     String format_name;
     String compression_method;
-    
-
-    struct DistributedFileIterator : public StorageS3Source::FileIterator
-    {
-        DistributedFileIterator(ReadTaskCallback callback_, String identifier_)
-            : callback(callback_), identifier(identifier_) {}
-
-        ReadTaskCallback callback;
-        String identifier;
-
-        std::optional<String> next() override
-        {
-            return callback(identifier);
-        }
-    };
 };
 
 

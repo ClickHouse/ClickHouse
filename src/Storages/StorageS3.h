@@ -42,12 +42,7 @@ public:
             std::shared_ptr<Impl> pimpl;
     };
 
-    struct FileIterator
-    {
-        virtual ~FileIterator() = default;
-        virtual std::optional<String> next() = 0;
-    };
-    
+    using IteratorWrapper = std::function<std::optional<String>()>;
 
     static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column);
 
@@ -63,7 +58,7 @@ public:
         const String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
-        std::shared_ptr<FileIterator> file_iterator_);
+        std::shared_ptr<IteratorWrapper> file_iterator_);
 
     String getName() const override;
 
@@ -87,7 +82,7 @@ private:
     bool initialized = false;
     bool with_file_column = false;
     bool with_path_column = false;
-    std::shared_ptr<FileIterator> file_iterator;
+    std::shared_ptr<IteratorWrapper> file_iterator;
 
     /// Recreate ReadBuffer and BlockInputStream for each file.
     bool initialize();
@@ -156,23 +151,6 @@ private:
     size_t max_single_part_upload_size;
     String compression_method;
     String name;
-
-    struct LocalFileIterator : public StorageS3Source::FileIterator
-    {
-        explicit LocalFileIterator(StorageS3Source::DisclosedGlobIterator glob_iterator_)
-            : glob_iterator(glob_iterator_) {}
-
-        StorageS3Source::DisclosedGlobIterator glob_iterator;
-        /// Several files could be processed in parallel
-        /// from different sources
-        std::mutex iterator_mutex;
-
-        std::optional<String> next() override
-        {
-            std::lock_guard lock(iterator_mutex);
-            return glob_iterator.next();
-        }
-    };
 
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentificaiton &);
 };

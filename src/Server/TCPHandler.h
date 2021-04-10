@@ -170,7 +170,7 @@ private:
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
-    String receiveReadTaskResponseAssumeLocked();
+    std::optional<String> receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & connection_settings);
@@ -201,7 +201,7 @@ private:
     void sendLogs();
     void sendEndOfStream();
     void sendPartUUIDs();
-    void sendReadTaskRequestAssumeLocked(const String &);
+    void sendReadTaskRequestAssumeLocked();
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);

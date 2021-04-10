@@ -9,7 +9,6 @@
 #include "Parsers/IAST_fwd.h"
 #include "Processors/Sources/SourceFromInputStream.h"
 #include "Storages/StorageS3Distributed.h"
-#include <Storages/TaskSupervisor.h>
 
 #if USE_AWS_S3
 

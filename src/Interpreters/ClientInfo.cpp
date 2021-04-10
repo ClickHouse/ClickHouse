@@ -88,9 +88,6 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
             writeBinary(uint8_t(0), out);
         }
     }
-
-    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_CLUSTER_PROCESSING)
-        writeBinary(task_identifier, out);
 }
 
 
@@ -166,9 +163,6 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
             readBinary(client_trace_context.trace_flags, in);
         }
     }
-
-    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_CLUSTER_PROCESSING)
-        readBinary(task_identifier, in);
 }
 
 

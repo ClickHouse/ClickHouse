@@ -128,10 +128,8 @@ using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
 /// Callback for reading blocks of data from client for function input()
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
-/// Class which gives tasks to other nodes in cluster
-class TaskSupervisor;
-using TaskSupervisorPtr = std::shared_ptr<TaskSupervisor>;
-using ReadTaskCallback = std::function<String(String)>;
+/// Used in distributed task processing
+using ReadTaskCallback = std::function<std::optional<String>()>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -195,7 +193,6 @@ private:
     Scalars scalars;
 
     /// Fields for distributed s3 function
-    TaskSupervisorPtr read_task_supervisor;
     std::optional<ReadTaskCallback> next_task_callback;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
@@ -778,10 +775,6 @@ public:
 
     PartUUIDsPtr getPartUUIDs();
     PartUUIDsPtr getIgnoredPartUUIDs();
-
-    /// A bunch of functions for distributed s3 function
-    TaskSupervisorPtr getTaskSupervisor() const;
-    void setReadTaskSupervisor(TaskSupervisorPtr);
 
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);

@@ -16,7 +16,6 @@
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/TaskSupervisor.h>
 
 namespace DB
 {
@@ -31,9 +30,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_, const Block & header_, ContextPtr context_,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::optional<String> task_identifier_)
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_identifier(task_identifier_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
 {
     create_connections = [this, &connection, throttler]()
     {
@@ -45,9 +44,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::optional<String> task_identifier_)
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_identifier(task_identifier_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
 {
     create_connections = [this, connections_, throttler]() mutable {
         return std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
@@ -58,9 +57,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::optional<String> task_identifier_)
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_identifier(task_identifier_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
 {
     create_connections = [this, pool, throttler]()->std::unique_ptr<IConnections>
     {
@@ -180,7 +179,6 @@ void RemoteQueryExecutor::sendQuery()
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-    modified_client_info.task_identifier = task_identifier ? *task_identifier : "";
     if (CurrentThread::isInitialized())
     {
         modified_client_info.client_trace_context = CurrentThread::get().thread_trace_context;
@@ -301,7 +299,7 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
     switch (packet.type)
     {
         case Protocol::Server::ReadTaskRequest:
-            processReadTaskRequest(packet.read_task_request);
+            processReadTaskRequest();
             break;
         case Protocol::Server::PartUUIDs:
             if (!setPartUUIDs(packet.part_uuids))
@@ -381,10 +379,11 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
     return true;
 }
 
-void RemoteQueryExecutor::processReadTaskRequest(const String & request)
+void RemoteQueryExecutor::processReadTaskRequest()
 {
-    Context & query_context = context.getQueryContext();
-    String response = query_context.getTaskSupervisor()->getNextTaskForId(request);
+    if (!task_iterator)
+        throw Exception("Distributed task iterator is not initialized", ErrorCodes::LOGICAL_ERROR);
+    auto response = (*task_iterator)();
     connections->sendReadTaskResponse(response);
 }
 

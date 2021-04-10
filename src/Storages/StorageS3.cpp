@@ -45,13 +45,14 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int S3_ERROR;
 }
-
 class StorageS3Source::DisclosedGlobIterator::Impl
 {
 
 public:
     Impl(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
         : client(client_), globbed_uri(globbed_uri_) {
+
+        std::lock_guard lock(mutex);
 
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
             throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
@@ -72,6 +73,14 @@ public:
 
     std::optional<String> next()
     {
+        std::lock_guard lock(mutex);
+        return nextAssumeLocked();
+    }
+
+private:
+
+    std::optional<String> nextAssumeLocked()
+    {
         if (buffer_iter != buffer.end())
         {
             auto answer = *buffer_iter;
@@ -82,14 +91,12 @@ public:
         if (is_finished)
             return std::nullopt; // Or throw?
 
-        fillInternalBuffer();
+        fillInternalBufferAssumeLocked();
 
-        return next();
+        return nextAssumeLocked();
     }
 
-private:
-
-    void fillInternalBuffer()
+    void fillInternalBufferAssumeLocked()
     {
         buffer.clear();
 
@@ -117,6 +124,7 @@ private:
         is_finished = !outcome.GetResult().GetIsTruncated();
     }
 
+    std::mutex mutex;
     Strings buffer;
     Strings::iterator buffer_iter;
     Aws::S3::S3Client client;
@@ -128,7 +136,7 @@ private:
 };
 
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
-    : pimpl(std::make_unique<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_)) {}
+    : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_)) {}
 
 std::optional<String> StorageS3Source::DisclosedGlobIterator::next()
 {
@@ -158,7 +166,7 @@ StorageS3Source::StorageS3Source(
     const String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
-    std::shared_ptr<FileIterator> file_iterator_)
+    std::shared_ptr<IteratorWrapper> file_iterator_)
     : SourceWithProgress(getHeader(sample_block_, need_path, need_file))
     , name(std::move(name_))
     , bucket(bucket_)
@@ -180,12 +188,9 @@ StorageS3Source::StorageS3Source(
 bool StorageS3Source::initialize()
 {
     String current_key;
-    if (auto result = file_iterator->next())
+    if (auto result = (*file_iterator)())
     {
         current_key = result.value();
-        if (current_key.empty()) {
-            return false;
-        }
         file_path = bucket + "/" + current_key;
     }
     else
@@ -359,9 +364,12 @@ Pipe StorageS3::read(
     }
 
     /// Iterate through disclosed globs and make a source for each file
-    StorageS3Source::DisclosedGlobIterator glob_iterator(*client_auth.client, client_auth.uri);
+    auto glob_iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
+    auto iterator_wrapper = std::make_shared<StorageS3Source::IteratorWrapper>([glob_iterator]()
+    {
+        return glob_iterator->next();
+    });
 
-    auto file_iterator = std::make_shared<LocalFileIterator>(glob_iterator);
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
@@ -376,7 +384,7 @@ Pipe StorageS3::read(
             compression_method,
             client_auth.client,
             client_auth.uri.bucket,
-            file_iterator));
+            iterator_wrapper));
     }
     return Pipe::unitePipes(std::move(pipes));
 }

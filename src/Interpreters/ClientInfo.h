@@ -98,8 +98,6 @@ public:
     String quota_key;
 
     UInt64 distributed_depth = 0;
-    /// For distributed file processing (e.g. s3Distributed)
-    String task_identifier;
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
