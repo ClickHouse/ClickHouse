@@ -85,6 +85,7 @@ std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomicConstraint
     std::vector<CNFQuery::AtomicFormula> constraint_data;
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
+        Poco::Logger::get("atomic_formula: initial:").information(constraint->as<ASTConstraintDeclaration>()->expr->ptr()->dumpTree());
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
             .pullNotOutFunctions();
         for (const auto & group : cnf.getStatements()) {
@@ -105,12 +106,14 @@ ComparisonGraph ConstraintsDescription::getGraph() const
     auto atomic_formulas = getAtomicConstraintData();
     for (auto & atomic_formula : atomic_formulas)
     {
+        Poco::Logger::get("atomic_formula: before:").information(atomic_formula.ast->dumpTree() + " " + std::to_string(atomic_formula.negative));
         pushNotIn(atomic_formula);
         auto * func = atomic_formula.ast->as<ASTFunction>();
         if (func && relations.count(func->name))
         {
             if (atomic_formula.negative)
                 throw Exception(": ", ErrorCodes::LOGICAL_ERROR);
+            Poco::Logger::get("atomic_formula: after:").information(atomic_formula.ast->dumpTree() + " " + std::to_string(atomic_formula.negative));
             constraints_for_graph.push_back(atomic_formula.ast);
         }
     }
