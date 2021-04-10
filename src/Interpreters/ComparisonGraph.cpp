@@ -104,6 +104,10 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
     dists = BuildDistsFromGraph(graph);
 }
 
+/// resturns {is less, is strict}
+/// {true, true} = <
+/// {true, false} = =<
+/// {false, ...} = ?
 std::pair<bool, bool> ComparisonGraph::findPath(const size_t start, const size_t finish) const
 {
     const auto it = dists.find(std::make_pair(start, finish));
@@ -143,16 +147,13 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
     if (start == finish)
         return CompareResult::EQUAL;
 
-    /// TODO: precalculate using Floyd–Warshall O(n^3) algorithm where < = -1 and =< = 0.
-    /// TODO: use it for less, greater and so on
-
     auto [has_path, is_strict] = findPath(start, finish);
     if (has_path)
         return is_strict ? CompareResult::GREATER : CompareResult::GREATER_OR_EQUAL;
 
-    auto [has_path_r, is_strict_r] = findPath(finish, start);
-    if (has_path_r)
-        return is_strict_r ? CompareResult::LESS : CompareResult::LESS_OR_EQUAL;
+    auto [has_path_reverse, is_strict_reverse] = findPath(finish, start);
+    if (has_path_reverse)
+        return is_strict_reverse ? CompareResult::LESS : CompareResult::LESS_OR_EQUAL;
 
     return CompareResult::UNKNOWN;
 }
@@ -177,19 +178,35 @@ std::vector<ASTPtr> ComparisonGraph::getEqual(const ASTPtr & ast) const
     }
 }
 
+bool ComparisonGraph::EqualComponent::hasConstant() const {
+    return constant_index != -1;
+}
+
+ASTPtr ComparisonGraph::EqualComponent::getConstant() const {
+    return asts[constant_index];
+}
+
+void ComparisonGraph::EqualComponent::buildConstants() {
+    constant_index = -1;
+    for (size_t i = 0; i < asts.size(); ++i)
+    {
+        if (asts[i]->as<ASTLiteral>())
+        {
+            constant_index = i;
+            return;
+        }
+    }
+}
+
 std::optional<ASTPtr> ComparisonGraph::getEqualConst(const ASTPtr & ast) const
 {
     const auto hash_it = graph.ast_hash_to_component.find(ast->getTreeHash());
     if (hash_it == std::end(graph.ast_hash_to_component))
         return std::nullopt;
     const size_t index = hash_it->second;
-    for (const auto & term : graph.vertexes[index].asts)
-    {
-        const ASTLiteral * lit = term->as<ASTLiteral>();
-        if (lit)
-            return term;
-    }
-    return std::nullopt;
+    return graph.vertexes[index].hasConstant()
+        ? std::optional<ASTPtr>{graph.vertexes[index].getConstant()}
+        : std::nullopt;
 }
 
 void ComparisonGraph::dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order) const
@@ -281,6 +298,12 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
             std::end(asts_graph.vertexes[index].asts)); // asts_graph has only one ast per vertex
     }
 
+    /// Calculate constants
+    for (auto & vertex : result.vertexes)
+    {
+        vertex.buildConstants();
+    }
+
     Poco::Logger::get("Graph").information("components: " + std::to_string(component));
 
     for (size_t v = 0; v < n; ++v)
@@ -290,6 +313,29 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
             result.edges[components[v]].push_back(Edge{edge.type, components[edge.to]});
         }
         // TODO: make edges unique (left most strict)
+    }
+
+    for (size_t v = 0; v < result.vertexes.size(); ++v)
+    {
+        for (size_t u = 0; u < result.vertexes.size(); ++u)
+        {
+            if (v == u)
+                continue;
+            if (result.vertexes[v].hasConstant() && result.vertexes[u].hasConstant())
+            {
+                const auto * left = result.vertexes[v].getConstant()->as<ASTLiteral>();
+                const auto * right = result.vertexes[u].getConstant()->as<ASTLiteral>();
+                Poco::Logger::get("Graph").information("kek");
+                Poco::Logger::get("Graph").information(left->value.dump() + " " + right->value.dump());
+
+                /// Only less. Equal constant fields = equal literals so it was already considered above.
+                if (left->value > right->value)
+                {
+                    result.edges[v].push_back(Edge{Edge::LESS, u});
+                    Poco::Logger::get("Graph").information("1111 > ");
+                }
+            }
+        }
     }
 
     Poco::Logger::get("Graph").information("finish");
