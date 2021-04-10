@@ -365,7 +365,7 @@ function run_tests
         01622_defaults_for_url_engine
 
         # JSON functions
-        01666_blnsi
+        01666_blns
 
         # Depends on AWS
         01801_s3_distributed

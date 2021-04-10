@@ -1,0 +1,27 @@
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x00007fb11d0bedd7 in __GI___select (nfds=0, readfds=0x0, writefds=0x0, exceptfds=0x0, timeout=0x7fff4e474300) at ../sysdeps/unix/sysv/linux/select.c:41
+
+Thread 1 (Thread 0x7fb11d5ad740 (LWP 38888)):
+#0  0x00007fb11d0bedd7 in __GI___select (nfds=0, readfds=0x0, writefds=0x0, exceptfds=0x0, timeout=0x7fff4e474300) at ../sysdeps/unix/sysv/linux/select.c:41
+#1  0x00000000005bbd3a in ?? ()
+#2  0x000000000050a2cc in ?? ()
+#3  0x000000000050bf44 in _PyEval_EvalFrameDefault ()
+#4  0x00000000005096c8 in ?? ()
+#5  0x000000000050a3fd in ?? ()
+#6  0x000000000050bf44 in _PyEval_EvalFrameDefault ()
+#7  0x0000000000507cd4 in ?? ()
+#8  0x0000000000509a00 in ?? ()
+#9  0x000000000050a3fd in ?? ()
+#10 0x000000000050bf44 in _PyEval_EvalFrameDefault ()
+#11 0x0000000000507cd4 in ?? ()
+#12 0x0000000000509a00 in ?? ()
+#13 0x000000000050a3fd in ?? ()
+#14 0x000000000050bf44 in _PyEval_EvalFrameDefault ()
+#15 0x0000000000507cd4 in ?? ()
+#16 0x000000000050ae13 in PyEval_EvalCode ()
+#17 0x0000000000635262 in ?? ()
+#18 0x0000000000635317 in PyRun_FileExFlags ()
+#19 0x0000000000638acf in PyRun_SimpleFileExFlags ()
+#20 0x0000000000639671 in Py_Main ()
+#21 0x00000000004b0e40 in main ()

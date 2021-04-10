@@ -67,8 +67,7 @@ public:
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
 
-        /// Don't forget about iterator invalidation
-        buffer_iter = buffer.begin();
+        fillInternalBufferAssumeLocked();
     }
 
     std::optional<String> next()
@@ -386,7 +385,10 @@ Pipe StorageS3::read(
             client_auth.uri.bucket,
             iterator_wrapper));
     }
-    return Pipe::unitePipes(std::move(pipes));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    narrowPipe(pipe, num_streams);
+    return pipe;
 }
 
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
