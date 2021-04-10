@@ -37,9 +37,9 @@ public:
 
     /// Find constants lessOrEqual and greaterOrEqual.
     /// For int and double linear programming can be applied here.
-    // TODO: implement
-    ASTPtr getUpperBound(const ASTPtr &) const { return nullptr; } // sup
-    ASTPtr getLowerBound(const ASTPtr &) const { return nullptr; } // inf
+    /// Returns: {constant, is strict less/greater}
+    std::optional<std::pair<Field, bool>> getConstUpperBound(const ASTPtr & ast) const;
+    std::optional<std::pair<Field, bool>> getConstLowerBound(const ASTPtr & ast) const;
 
 private:
     /// strongly connected component
@@ -100,11 +100,12 @@ private:
     };
 
     std::map<std::pair<size_t, size_t>, Path> BuildDistsFromGraph(const Graph & g) const;
+    std::pair<std::vector<ssize_t>, std::vector<ssize_t>> buildConstBounds() const;
 
     Graph graph;
     std::map<std::pair<size_t, size_t>, Path> dists;
-    //std::vector<ssize_t> ast_lower_bound;
-    //std::vector<ssize_t> ast_upper_bound;
+    std::vector<ssize_t> ast_const_lower_bound;
+    std::vector<ssize_t> ast_const_upper_bound;
 };
 
 }
