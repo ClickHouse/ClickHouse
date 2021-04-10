@@ -9,6 +9,7 @@ import string
 import os
 
 cluster = ClickHouseCluster(__file__)
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 node1 = cluster.add_instance('node1', with_zookeeper=True)
 node2 = cluster.add_instance('node2', with_zookeeper=True)
 
