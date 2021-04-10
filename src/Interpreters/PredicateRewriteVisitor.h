@@ -4,7 +4,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
@@ -25,13 +24,12 @@ public:
         return true;
     }
 
-    PredicateRewriteVisitorData(const Context & context_, const ASTs & predicates_,
-                                const TableWithColumnNamesAndTypes & table_columns_, bool optimize_final_, bool optimize_with_);
+    PredicateRewriteVisitorData(const Context & context_, const ASTs & predicates_, Names && column_names_, bool optimize_final_, bool optimize_with_);
 
 private:
     const Context & context;
     const ASTs & predicates;
-    const TableWithColumnNamesAndTypes & table_columns;
+    const Names column_names;
     bool optimize_final;
     bool optimize_with;
 
@@ -39,7 +37,7 @@ private:
 
     void visitOtherInternalSelect(ASTSelectQuery & select_query, ASTPtr &);
 
-    bool rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns);
+    bool rewriteSubquery(ASTSelectQuery & subquery, const Names & outer_columns, const Names & inner_columns);
 };
 
 using PredicateRewriteMatcher = OneTypeMatcher<PredicateRewriteVisitorData, PredicateRewriteVisitorData::needChild>;

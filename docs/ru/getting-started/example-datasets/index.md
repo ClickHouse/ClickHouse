@@ -16,5 +16,4 @@ toc_title: "Введение"
 -   [AMPLab Big Data Benchmark](amplab-benchmark.md)
 -   [Данные о такси в Нью-Йорке](nyc-taxi.md)
 -   [OnTime](ontime.md)
--   [Вышки сотовой связи](../../getting-started/example-datasets/cell-towers.md)
 

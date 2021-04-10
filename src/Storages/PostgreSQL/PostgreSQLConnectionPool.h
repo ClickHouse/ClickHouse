@@ -8,41 +8,42 @@
 #include "PostgreSQLConnection.h"
 
 
-namespace postgres
+namespace DB
 {
 
-class PoolWithFailover;
+class PostgreSQLReplicaConnection;
+
 
 /// Connection pool size is defined by user with setting `postgresql_connection_pool_size` (default 16).
 /// If pool is empty, it will block until there are available connections.
 /// If setting `connection_pool_wait_timeout` is defined, it will not block on empty pool and will
 /// wait until the timeout and then create a new connection. (only for storage/db engine)
-class ConnectionPool
+class PostgreSQLConnectionPool
 {
 
-friend class PoolWithFailover;
+friend class PostgreSQLReplicaConnection;
 
 static constexpr inline auto POSTGRESQL_POOL_DEFAULT_SIZE = 16;
 
 public:
 
-    ConnectionPool(
-        std::string dbname,
-        std::string host,
-        UInt16 port,
-        std::string user,
-        std::string password,
-        size_t pool_size_ = POSTGRESQL_POOL_DEFAULT_SIZE,
-        int64_t pool_wait_timeout_ = -1);
+    PostgreSQLConnectionPool(
+            std::string dbname,
+            std::string host,
+            UInt16 port,
+            std::string user,
+            std::string password,
+            size_t pool_size_ = POSTGRESQL_POOL_DEFAULT_SIZE,
+            int64_t pool_wait_timeout_ = -1);
 
-    ConnectionPool(const ConnectionPool & other);
+    PostgreSQLConnectionPool(const PostgreSQLConnectionPool & other);
 
-    ConnectionPool operator =(const ConnectionPool &) = delete;
+    PostgreSQLConnectionPool operator =(const PostgreSQLConnectionPool &) = delete;
 
-    ConnectionHolderPtr get();
+    PostgreSQLConnectionHolderPtr get();
 
 private:
-    using Pool = ConcurrentBoundedQueue<ConnectionPtr>;
+    using Pool = ConcurrentBoundedQueue<PostgreSQLConnectionPtr>;
     using PoolPtr = std::shared_ptr<Pool>;
 
     static std::string formatConnectionString(
@@ -57,7 +58,7 @@ private:
     bool block_on_empty_pool;
 };
 
-using ConnectionPoolPtr = std::shared_ptr<ConnectionPool>;
+using PostgreSQLConnectionPoolPtr = std::shared_ptr<PostgreSQLConnectionPool>;
 
 }
 

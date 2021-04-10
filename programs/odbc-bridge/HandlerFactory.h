@@ -20,10 +20,10 @@ namespace DB
 /** Factory for '/ping', '/', '/columns_info', '/identifier_quote', '/schema_allowed' handlers.
   * Also stores Session pools for ODBC connections
   */
-class ODBCBridgeHandlerFactory : public HTTPRequestHandlerFactory
+class HandlerFactory : public HTTPRequestHandlerFactory
 {
 public:
-    ODBCBridgeHandlerFactory(const std::string & name_, size_t keep_alive_timeout_, Context & context_)
+    HandlerFactory(const std::string & name_, size_t keep_alive_timeout_, Context & context_)
         : log(&Poco::Logger::get(name_)), name(name_), keep_alive_timeout(keep_alive_timeout_), context(context_)
     {
         pool_map = std::make_shared<ODBCHandler::PoolMap>();
@@ -38,5 +38,4 @@ private:
     Context & context;
     std::shared_ptr<ODBCHandler::PoolMap> pool_map;
 };
-
 }

@@ -10,10 +10,10 @@
 #include <common/logger_useful.h>
 
 
-namespace postgres
+namespace DB
 {
 
-ConnectionPool::ConnectionPool(
+PostgreSQLConnectionPool::PostgreSQLConnectionPool(
         std::string dbname,
         std::string host,
         UInt16 port,
@@ -37,7 +37,7 @@ ConnectionPool::ConnectionPool(
 }
 
 
-ConnectionPool::ConnectionPool(const ConnectionPool & other)
+PostgreSQLConnectionPool::PostgreSQLConnectionPool(const PostgreSQLConnectionPool & other)
         : pool(std::make_shared<Pool>(other.pool_size))
         , connection_str(other.connection_str)
         , address(other.address)
@@ -49,46 +49,46 @@ ConnectionPool::ConnectionPool(const ConnectionPool & other)
 }
 
 
-void ConnectionPool::initialize()
+void PostgreSQLConnectionPool::initialize()
 {
     /// No connection is made, just fill pool with non-connected connection objects.
     for (size_t i = 0; i < pool_size; ++i)
-        pool->push(std::make_shared<Connection>(connection_str, address));
+        pool->push(std::make_shared<PostgreSQLConnection>(connection_str, address));
 }
 
 
-std::string ConnectionPool::formatConnectionString(
+std::string PostgreSQLConnectionPool::formatConnectionString(
     std::string dbname, std::string host, UInt16 port, std::string user, std::string password)
 {
-    DB::WriteBufferFromOwnString out;
-    out << "dbname=" << DB::quote << dbname
-        << " host=" << DB::quote << host
+    WriteBufferFromOwnString out;
+    out << "dbname=" << quote << dbname
+        << " host=" << quote << host
         << " port=" << port
-        << " user=" << DB::quote << user
-        << " password=" << DB::quote << password;
+        << " user=" << quote << user
+        << " password=" << quote << password;
     return out.str();
 }
 
 
-ConnectionHolderPtr ConnectionPool::get()
+PostgreSQLConnectionHolderPtr PostgreSQLConnectionPool::get()
 {
-    ConnectionPtr connection;
+    PostgreSQLConnectionPtr connection;
 
     /// Always blocks by default.
     if (block_on_empty_pool)
     {
         /// pop to ConcurrentBoundedQueue will block until it is non-empty.
         pool->pop(connection);
-        return std::make_shared<ConnectionHolder>(connection, *pool);
+        return std::make_shared<PostgreSQLConnectionHolder>(connection, *pool);
     }
 
     if (pool->tryPop(connection, pool_wait_timeout))
     {
-        return std::make_shared<ConnectionHolder>(connection, *pool);
+        return std::make_shared<PostgreSQLConnectionHolder>(connection, *pool);
     }
 
-    connection = std::make_shared<Connection>(connection_str, address);
-    return std::make_shared<ConnectionHolder>(connection, *pool);
+    connection = std::make_shared<PostgreSQLConnection>(connection_str, address);
+    return std::make_shared<PostgreSQLConnectionHolder>(connection, *pool);
 }
 
 }

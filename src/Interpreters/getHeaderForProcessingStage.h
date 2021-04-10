@@ -14,7 +14,6 @@ struct SelectQueryInfo;
 class Context;
 class ASTSelectQuery;
 
-bool hasJoin(const ASTSelectQuery & select);
 bool removeJoin(ASTSelectQuery & select);
 
 Block getHeaderForProcessingStage(

@@ -40,8 +40,6 @@ namespace ProfileEvents
     extern const Event StorageBufferPassedTimeMaxThreshold;
     extern const Event StorageBufferPassedRowsMaxThreshold;
     extern const Event StorageBufferPassedBytesMaxThreshold;
-    extern const Event StorageBufferLayerLockReadersWaitMilliseconds;
-    extern const Event StorageBufferLayerLockWritersWaitMilliseconds;
 }
 
 namespace CurrentMetrics
@@ -62,36 +60,6 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
-}
-
-
-std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
-{
-    return lockImpl(/* read= */true);
-}
-std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForWriting() const
-{
-    return lockImpl(/* read= */false);
-}
-std::unique_lock<std::mutex> StorageBuffer::Buffer::tryLock() const
-{
-    std::unique_lock lock(mutex, std::try_to_lock);
-    return lock;
-}
-std::unique_lock<std::mutex> StorageBuffer::Buffer::lockImpl(bool read) const
-{
-    std::unique_lock lock(mutex, std::defer_lock);
-
-    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-    lock.lock();
-    UInt64 elapsed = watch.elapsedMilliseconds();
-
-    if (read)
-        ProfileEvents::increment(ProfileEvents::StorageBufferLayerLockReadersWaitMilliseconds, elapsed);
-    else
-        ProfileEvents::increment(ProfileEvents::StorageBufferLayerLockWritersWaitMilliseconds, elapsed);
-
-    return lock;
 }
 
 
@@ -143,7 +111,7 @@ protected:
             return res;
         has_been_read = true;
 
-        std::unique_lock lock(buffer.lockForReading());
+        std::lock_guard lock(buffer.mutex);
 
         if (!buffer.data.rows())
             return res;
@@ -560,7 +528,7 @@ public:
 
         for (size_t try_no = 0; try_no < storage.num_shards; ++try_no)
         {
-            std::unique_lock lock(storage.buffers[shard_num].tryLock());
+            std::unique_lock lock(storage.buffers[shard_num].mutex, std::try_to_lock);
 
             if (lock.owns_lock())
             {
@@ -580,7 +548,7 @@ public:
         if (!least_busy_buffer)
         {
             least_busy_buffer = &storage.buffers[start_shard_num];
-            least_busy_lock = least_busy_buffer->lockForWriting();
+            least_busy_lock = std::unique_lock(least_busy_buffer->mutex);
         }
         insertIntoBuffer(block, *least_busy_buffer);
         least_busy_lock.unlock();
@@ -772,9 +740,9 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     size_t bytes = 0;
     time_t time_passed = 0;
 
-    std::optional<std::unique_lock<std::mutex>> lock;
+    std::unique_lock lock(buffer.mutex, std::defer_lock);
     if (!locked)
-        lock.emplace(buffer.lockForReading());
+        lock.lock();
 
     block_to_write = buffer.data.cloneEmpty();
 
@@ -942,7 +910,7 @@ void StorageBuffer::reschedule()
         /// try_to_lock is also ok for background flush, since if there is
         /// INSERT contended, then the reschedule will be done after
         /// INSERT will be done.
-        std::unique_lock lock(buffer.tryLock());
+        std::unique_lock lock(buffer.mutex, std::try_to_lock);
         if (lock.owns_lock())
         {
             min_first_write_time = buffer.first_write_time;
@@ -999,7 +967,7 @@ std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
     UInt64 rows = 0;
     for (const auto & buffer : buffers)
     {
-        const auto lock(buffer.lockForReading());
+        std::lock_guard lock(buffer.mutex);
         rows += buffer.data.rows();
     }
     return rows + *underlying_rows;
@@ -1010,7 +978,7 @@ std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) c
     UInt64 bytes = 0;
     for (const auto & buffer : buffers)
     {
-        const auto lock(buffer.lockForReading());
+        std::lock_guard lock(buffer.mutex);
         bytes += buffer.data.allocatedBytes();
     }
     return bytes;

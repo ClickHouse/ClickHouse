@@ -20,13 +20,13 @@ public:
 
     void init();
 
-    nuraft::ptr<nuraft::buffer> pre_commit(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
+    nuraft::ptr<nuraft::buffer> pre_commit(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
-    nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override;
+    nuraft::ptr<nuraft::buffer> commit(const size_t log_idx, nuraft::buffer & data) override;
 
-    void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
+    void rollback(const size_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
 
-    uint64_t last_commit_index() override { return last_committed_idx; }
+    size_t last_commit_index() override { return last_committed_idx; }
 
     bool apply_snapshot(nuraft::snapshot & s) override;
 
@@ -38,7 +38,7 @@ public:
 
     void save_logical_snp_obj(
         nuraft::snapshot & s,
-        uint64_t & obj_id,
+        size_t & obj_id,
         nuraft::buffer & data,
         bool is_first_obj,
         bool is_last_obj) override;
@@ -46,7 +46,7 @@ public:
     int read_logical_snp_obj(
         nuraft::snapshot & s,
         void* & user_snp_ctx,
-        uint64_t obj_id,
+        ulong obj_id,
         nuraft::ptr<nuraft::buffer> & data_out,
         bool & is_last_obj) override;
 
@@ -82,7 +82,7 @@ private:
     std::mutex storage_lock;
 
     /// Last committed Raft log number.
-    std::atomic<uint64_t> last_committed_idx;
+    std::atomic<size_t> last_committed_idx;
     Poco::Logger * log;
 };
 

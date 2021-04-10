@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/XDBCBridgeHelper.h>
 #include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"

@@ -34,32 +34,31 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
 # Libraries from OS are only needed to test the "unbundled" build (this is not used in production).
 RUN apt-get update \
     && apt-get install \
-        alien \
-        clang-10 \
-        clang-11 \
-        clang-tidy-10 \
-        clang-tidy-11 \
-        cmake \
-        debhelper \
-        devscripts \
-        g++-9 \
         gcc-9 \
-        gdb  \
-        git \
-        gperf \
-        lld-10 \
+        g++-9 \
+        clang-11 \
+        clang-tidy-11 \
         lld-11 \
-        llvm-10 \
-        llvm-10-dev \
         llvm-11 \
         llvm-11-dev \
-        moreutils \
+        clang-10 \
+        clang-tidy-10 \
+        lld-10 \
+        llvm-10 \
+        llvm-10-dev \
         ninja-build \
         perl \
-        pigz \
-        pixz \
         pkg-config \
+        devscripts \
+        debhelper \
+        git \
         tzdata \
+        gperf \
+        alien \
+        cmake \
+        gdb  \
+        moreutils \
+        pigz \
         --yes --no-install-recommends
 
 # NOTE: For some reason we have outdated version of gcc-10 in ubuntu 20.04 stable.

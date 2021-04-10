@@ -47,7 +47,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -689,8 +688,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
     }
 
-    LOG_DEBUG(log, "Initiailizing interserver credentials.");
-    global_context->updateInterserverCredentials(config());
+    if (config().has("interserver_http_credentials"))
+    {
+        String user = config().getString("interserver_http_credentials.user", "");
+        String password = config().getString("interserver_http_credentials.password", "");
+
+        if (user.empty())
+            throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+        global_context->setInterserverCredentials(user, password);
+    }
 
     if (config().has("macros"))
         global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
@@ -770,7 +777,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
 
             global_context->updateStorageConfiguration(*config);
-            global_context->updateInterserverCredentials(*config);
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -980,7 +986,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     ///
     /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
     ///
-#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER) && defined(__x86_64__)
+#if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -1015,10 +1021,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if defined(SANITIZER)
     LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they cannot work under sanitizers"
         " when two different stack unwinding methods will interfere with each other.");
-#endif
-
-#if !defined(__x86_64__)
-    LOG_INFO(log, "Query Profiler is only tested on x86_64. It also known to not work under qemu-user.");
 #endif
 
     if (!hasPHDRCache())

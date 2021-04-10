@@ -291,10 +291,9 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 {
     Block res;
 
-    auto all_columns = getColumns().getAllWithSubcolumns();
     std::unordered_map<String, DataTypePtr> columns_map;
-    columns_map.reserve(all_columns.size());
 
+    auto all_columns = getColumns().getAllWithSubcolumns();
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
 
@@ -307,11 +306,15 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
     {
         auto it = columns_map.find(name);
         if (it != columns_map.end())
+        {
             res.insert({it->second->createColumn(), it->second, it->first});
+        }
         else
+        {
             throw Exception(
-                "Column " + backQuote(name) + " not found in table " + (storage_id.empty() ? "" : storage_id.getNameForLogs()),
+                "Column " + backQuote(name) + " not found in table " + storage_id.getNameForLogs(),
                 ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        }
     }
 
     return res;
