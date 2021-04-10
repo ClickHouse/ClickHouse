@@ -32,7 +32,7 @@ def to_int_8_16_32_64_128_256(self, cast):
             for tz in timezones:
                 dt = pytz.timezone(tz).localize(d)
                 for int_type in (8, 16, 32, 64, 128, 256):
-                    with Example(f"{dt} {tz}, int{int_type}"):
+                    with When(f"{dt} {tz}, int{int_type}"):
                         with By("converting datetime to string"):
                             dt_str = dt.strftime("%Y-%m-%d %H:%M:%S")
                         with And("computing the expected result using python"):
@@ -319,7 +319,7 @@ def to_decimal_32_64_128_256(self, cast):
                 dt = pytz.timezone(tz).localize(d)
                 for decimal_type in (32, 64, 128, 256):
                     for scale in range(scales[decimal_type]):
-                        with Example(f"{dt} {tz}, Decimal{decimal_type}({scale})"):
+                        with With(f"{dt} {tz}, Decimal{decimal_type}({scale})"):
                             valid_range = valid_decimal_range(bit_depth=decimal_type, S=scale)
                             with By("computing the expected result using python"):
                                 expected = decimal.Decimal(time.mktime(dt.timetuple()))
@@ -351,13 +351,13 @@ def to_unix_timestamp64_milli_micro_nano(self, scale):
         for d in datetimes:
             for tz in timezones:
                 dt = pytz.timezone(tz).localize(d)
-                with Example(f"{dt} {tz}"):
+                with When(f"{dt} {tz}"):
                     with By("converting datetime to string"):
                         dt_str = dt.strftime("%Y-%m-%d %H:%M:%S.%f")
                     with And("converting DateTime to UTC"):
                         dt = dt.astimezone(pytz.timezone('UTC'))
                     with And("computing the expected result using python"):
-                        expected = int(time.mktime(dt.timetuple()) * (10**scale))
+                        expected = int(dt.timestamp() * (10**scale))
                         if expected >= 0:
                             expected += dt.microsecond * 10 ** (scale - 6)
                         else:
@@ -414,19 +414,19 @@ def from_unix_timestamp64_milli_micro_nano(self, scale):
         for d in datetimes:
             for tz in timezones:
                 dt = pytz.timezone(tz).localize(d)
-                with Example(f"{dt} {tz}"):
+                with When(f"{dt} {tz}"):
                     with By("converting datetime to string"):
                         d_str = d.strftime("%Y-%m-%d %H:%M:%S.%f")
                         d_str += "0" * (scale-3)
-                    with And("converting DateTime to UTC"):
+                    with And("converting DateTime64 to UTC"):
                         dt = dt.astimezone(pytz.timezone('UTC'))
                     with And("computing the expected result using python"):
-                        ts = int(time.mktime(dt.timetuple()) * (10**scale))
+                        ts = int(dt.timestamp() * (10**scale))
                         if ts >= 0:
                             ts += dt.microsecond * 10 ** (scale - 6)
                         else:
                             ts -= dt.microsecond * 10 ** (scale - 6)
-                    with When(f"making a query string for ClickHouse"):
+                    with And(f"making a query string for ClickHouse"):
                         query = f"SELECT fromUnixTimestamp64{func[scale]}(CAST({ts}, 'Int64'), '{tz}')"
                     with Then(f"I execute fromUnixTimestamp64{func[scale]}() query"):
                         exec_query(request=query, expected=f"{d_str}")

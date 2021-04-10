@@ -21,6 +21,7 @@ from datetime64_extended_range.common import *
 # https://github.com/ClickHouse/ClickHouse/issues/22929 : toUnixTimestamp() exception when out of normal
 # https://github.com/ClickHouse/ClickHouse/issues/22930 : toWeek()
 # https://github.com/ClickHouse/ClickHouse/issues/22948 : toYearWeek()
+# https://github.com/ClickHouse/ClickHouse/issues/22959 : toUnixTimestamp64*() wrong fractal seconds treatment
 
 xfails = {
     "type conversion/to int 8 16 32 64 128 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
@@ -36,6 +37,9 @@ xfails = {
     "date time funcs/to unix timestamp/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22929")],
     "date time funcs/to week/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22930")],
     "date time funcs/to year week/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22948")],
+    "type conversion/to unix timestamp64 */:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22959")],
+    "type conversion/from unix timestamp64 */:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/22959")],
+    "type conversion/to int 8 16 32 64 128 256/:": [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/16581#issuecomment-804360350")],
 }
 
 
