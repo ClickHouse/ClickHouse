@@ -184,7 +184,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, true);
     }
 
-    if (with_replica_identity_index)
+    if (with_replica_identity_index && !table.primary_key_columns)
     {
         query = fmt::format(
             "SELECT "
@@ -201,7 +201,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and a.attrelid = t.oid "
             "and a.attnum = ANY(ix.indkey) "
             "and t.relkind = 'r' " /// simple tables
-            "and t.relname = '{}' "
+            "and t.relname = '{}' " /// Connection is alread done to a needed database, only table name is needed.
             "and ix.indisreplident = 't' " /// index is is replica identity index
             "ORDER BY a.attname", /// column names
         postgres_table_name);

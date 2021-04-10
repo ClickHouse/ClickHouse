@@ -31,13 +31,15 @@ class StorageMaterializePostgreSQL final : public ext::shared_ptr_helper<Storage
 public:
     StorageMaterializePostgreSQL(
         const StorageID & table_id_,
-        StoragePtr nested_storage_,
         const Context & context_);
 
     String getName() const override { return "MaterializePostgreSQL"; }
 
     void startup() override;
+
     void shutdown() override;
+
+    void dropInnerTableIfAny(bool no_delay, const Context & context) override;
 
     NamesAndTypesList getVirtuals() const override;
 
@@ -50,24 +52,17 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    /// Called right after shutdown() in case of drop query
-    void shutdownFinal();
-
     void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure);
 
-    /// Can be nullptr
-    StoragePtr tryGetNested();
+    StoragePtr getNested() const;
 
-    /// Throw if impossible to get
-    StoragePtr getNested();
+    StoragePtr tryGetNested() const;
 
     Context makeNestedTableContext() const;
 
-    void setNestedLoaded() { nested_loaded.store(true); }
+    void setNestedStatus(bool loaded) { nested_loaded.store(loaded); }
 
     bool isNestedLoaded() { return nested_loaded.load(); }
-
-    void dropNested();
 
     void setStorageMetadata();
 
@@ -98,10 +93,9 @@ private:
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
 
     std::atomic<bool> nested_loaded = false;
-    StoragePtr nested_storage;
-    std::mutex nested_mutex;
-
     bool is_postgresql_replica_database = false;
+    StorageID nested_table_id;
+    const Context nested_context;
 };
 
 }

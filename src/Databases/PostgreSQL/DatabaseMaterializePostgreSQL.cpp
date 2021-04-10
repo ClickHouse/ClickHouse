@@ -70,9 +70,7 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
         auto storage = tryGetTable(table_name, global_context);
 
         if (!storage)
-        {
-            storage = StorageMaterializePostgreSQL::create(StorageID(database_name, table_name), StoragePtr{}, global_context);
-        }
+            storage = StorageMaterializePostgreSQL::create(StorageID(database_name, table_name), global_context);
 
         replication_handler->addStorage(table_name, storage->template as<StorageMaterializePostgreSQL>());
         materialized_tables[table_name] = storage;
@@ -151,13 +149,17 @@ void DatabaseMaterializePostgreSQL::createTable(const Context & context, const S
 }
 
 
+void DatabaseMaterializePostgreSQL::stopReplication()
+{
+    if (replication_handler)
+        replication_handler->shutdown();
+}
+
+
 void DatabaseMaterializePostgreSQL::drop(const Context & context)
 {
     if (replication_handler)
-    {
-        replication_handler->shutdown();
         replication_handler->shutdownFinal();
-    }
 
     /// Remove metadata
     Poco::File metadata(getMetadataPath() + METADATA_SUFFIX);

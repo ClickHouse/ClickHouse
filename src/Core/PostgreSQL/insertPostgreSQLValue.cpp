@@ -1,5 +1,6 @@
 #include "insertPostgreSQLValue.h"
 
+#if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -233,3 +234,5 @@ void preparePostgreSQLArrayInfo(
     array_info[column_idx] = {count_dimensions, default_value, parser};
 }
 }
+
+#endif

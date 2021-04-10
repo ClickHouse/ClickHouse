@@ -26,6 +26,8 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const override;
 
+    static void executeDropQuery(ASTDropQuery::Kind kind, const Context & global_context, const Context & current_context, const StorageID & target_table_id, bool no_delay);
+
 private:
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;

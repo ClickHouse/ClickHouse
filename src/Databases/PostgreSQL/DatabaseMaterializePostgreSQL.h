@@ -56,6 +56,8 @@ public:
 
     void shutdown() override;
 
+    void stopReplication();
+
 private:
     void startSynchronization();
 

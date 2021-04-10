@@ -23,6 +23,7 @@
 #include <common/logger_useful.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Core/PostgreSQL/PostgreSQLConnectionPool.h>
+#include <Interpreters/InterpreterDropQuery.h>
 
 
 namespace DB
@@ -52,6 +53,8 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     , replication_settings(std::move(replication_settings_))
     , is_postgresql_replica_database(
             DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "MaterializePostgreSQL")
+    , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
+    , nested_context(makeNestedTableContext())
 {
     setInMemoryMetadata(storage_metadata);
 
@@ -70,13 +73,25 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
 
 StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     const StorageID & table_id_,
-    StoragePtr nested_storage_,
     const Context & context_)
     : IStorage(table_id_)
     , global_context(context_)
-    , nested_storage(nested_storage_)
     , is_postgresql_replica_database(true)
+    , nested_table_id(table_id_)
+    , nested_context(makeNestedTableContext())
 {
+}
+
+
+StoragePtr StorageMaterializePostgreSQL::getNested() const
+{
+    return DatabaseCatalog::instance().getTable(nested_table_id, nested_context);
+}
+
+
+StoragePtr StorageMaterializePostgreSQL::tryGetNested() const
+{
+    return DatabaseCatalog::instance().tryGetTable(nested_table_id, nested_context);
 }
 
 
@@ -88,6 +103,17 @@ std::string StorageMaterializePostgreSQL::getNestedTableName() const
         table_name += NESTED_STORAGE_SUFFIX;
 
     return table_name;
+}
+
+
+void StorageMaterializePostgreSQL::setStorageMetadata()
+{
+    /// If it is a MaterializePostgreSQL database engine, then storage with engine MaterializePostgreSQL
+    /// gets its metadata when it is fetch from postges, but if inner tables exist (i.e. it is a server restart)
+    /// then metadata for storage needs to be set from inner table metadata.
+    auto nested_table = getNested();
+    auto storage_metadata = nested_table->getInMemoryMetadataPtr();
+    setInMemoryMetadata(*storage_metadata);
 }
 
 
@@ -147,13 +173,6 @@ ASTPtr StorageMaterializePostgreSQL::getColumnDeclaration(const DataTypePtr & da
     }
 
     return std::make_shared<ASTIdentifier>(data_type->getName());
-}
-
-
-void StorageMaterializePostgreSQL::setStorageMetadata()
-{
-    auto storage_metadata = getNested()->getInMemoryMetadataPtr();
-    setInMemoryMetadata(*storage_metadata);
 }
 
 
@@ -231,8 +250,8 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
 
     columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
 
-    columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_sign", "Int8", UInt64(1)));
-    columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_version", "UInt64", UInt64(1)));
+    columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_sign", "Int8", 1));
+    columns_declare_list->columns->children.emplace_back(getMaterializedColumnsDeclaration("_version", "UInt64", 1));
 
     create_table_query->set(create_table_query->columns_list, columns_declare_list);
 
@@ -255,14 +274,6 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
 
 void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure)
 {
-    if (nested_loaded)
-    {
-        nested_storage = tryGetNested();
-
-        if (nested_storage)
-            return;
-    }
-
     auto context = makeNestedTableContext();
     const auto ast_create = getCreateNestedTableQuery(std::move(table_structure));
 
@@ -275,8 +286,6 @@ void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructure
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-
-    nested_storage = getNested();
 }
 
 
@@ -287,32 +296,6 @@ Context StorageMaterializePostgreSQL::makeNestedTableContext() const
     context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 
     return context;
-}
-
-
-StoragePtr StorageMaterializePostgreSQL::getNested()
-{
-    if (nested_storage)
-        return nested_storage;
-
-    auto context = makeNestedTableContext();
-    nested_storage = DatabaseCatalog::instance().getTable(
-            StorageID(getStorageID().database_name, getNestedTableName()), context);
-
-    return nested_storage;
-}
-
-
-StoragePtr StorageMaterializePostgreSQL::tryGetNested()
-{
-    if (nested_storage)
-        return nested_storage;
-
-    auto context = makeNestedTableContext();
-    nested_storage = DatabaseCatalog::instance().tryGetTable(
-            StorageID(getStorageID().database_name, getNestedTableName()), context);
-
-    return nested_storage;
 }
 
 
@@ -333,47 +316,23 @@ void StorageMaterializePostgreSQL::shutdown()
 }
 
 
-void StorageMaterializePostgreSQL::shutdownFinal()
+void StorageMaterializePostgreSQL::dropInnerTableIfAny(bool no_delay, const Context & context)
 {
-    if (is_postgresql_replica_database)
-        return;
-
     if (replication_handler)
         replication_handler->shutdownFinal();
 
-    if (nested_storage)
-        dropNested();
-}
-
-
-void StorageMaterializePostgreSQL::dropNested()
-{
-    std::lock_guard lock(nested_mutex);
-    nested_loaded = false;
-
-    auto table_id = nested_storage->getStorageID();
-    auto ast_drop = std::make_shared<ASTDropQuery>();
-
-    ast_drop->kind = ASTDropQuery::Drop;
-    ast_drop->table = table_id.table_name;
-    ast_drop->database = table_id.database_name;
-    ast_drop->if_exists = true;
-
-    auto context = makeNestedTableContext();
-    auto interpreter = InterpreterDropQuery(ast_drop, context);
-    interpreter.execute();
-
-    nested_storage = nullptr;
-    LOG_TRACE(&Poco::Logger::get("StorageMaterializePostgreSQL"), "Dropped (possibly temporarily) nested table {}", getNestedTableName());
+    auto nested_table = getNested();
+    if (nested_table && !is_postgresql_replica_database)
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, global_context, context, nested_table_id, no_delay);
 }
 
 
 NamesAndTypesList StorageMaterializePostgreSQL::getVirtuals() const
 {
-    if (nested_storage)
-        return nested_storage->getVirtuals();
-
-    return {};
+    return NamesAndTypesList{
+            {"_sign", std::make_shared<DataTypeInt8>()},
+            {"_version", std::make_shared<DataTypeUInt64>()}
+    };
 }
 
 
@@ -386,26 +345,20 @@ Pipe StorageMaterializePostgreSQL::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    std::unique_lock lock(nested_mutex, std::defer_lock);
+    if (!nested_loaded)
+        return Pipe();
 
-    if (nested_loaded && lock.try_lock())
-    {
-        if (!nested_storage)
-            getNested();
+    auto nested_table = getNested();
 
-        return readFinalFromNestedStorage(
-                nested_storage,
-                column_names,
-                metadata_snapshot,
-                query_info,
-                context,
-                processed_stage,
-                max_block_size,
-                num_streams);
-    }
-
-    LOG_WARNING(&Poco::Logger::get("StorageMaterializePostgreSQL"), "Nested table {} is unavailable or is not loaded yet", getNestedTableName());
-    return Pipe();
+    return readFinalFromNestedStorage(
+            nested_table,
+            column_names,
+            metadata_snapshot,
+            query_info,
+            context,
+            processed_stage,
+            max_block_size,
+            num_streams);
 }
 
 
