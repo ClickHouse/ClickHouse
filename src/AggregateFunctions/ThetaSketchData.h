@@ -1,10 +1,14 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_DATASKETCHES
+
 #include <boost/noncopyable.hpp>
+#include <memory>
 #include <theta_sketch.hpp>
 #include <theta_union.hpp>
 
-#include <memory>
 
 namespace DB
 {
@@ -17,14 +21,14 @@ private:
     std::unique_ptr<datasketches::update_theta_sketch> sk_update;
     std::unique_ptr<datasketches::theta_union> sk_union;
 
-    inline datasketches::update_theta_sketch * get_sk_update()
+    inline datasketches::update_theta_sketch * getSkUpdate()
     {
         if (!sk_update)
             sk_update = std::make_unique<datasketches::update_theta_sketch>(datasketches::update_theta_sketch::builder().build());
         return sk_update.get();
     }
     
-    inline datasketches::theta_union * get_sk_union()
+    inline datasketches::theta_union * getSkUnion()
     {
         if (!sk_union)
             sk_union = std::make_unique<datasketches::theta_union>(datasketches::theta_union::builder().build());
@@ -38,15 +42,15 @@ public:
     ~ThetaSketchData() = default;
 
     /// Insert original value without hash, as `datasketches::update_theta_sketch.update` will do the hash internal.
-    void insert_original(const StringRef & value)
+    void insertOriginal(const StringRef & value)
     {
-        get_sk_update()->update(value.data, value.size);
+        getSkUpdate()->update(value.data, value.size);
     }
 
     /// Note that `datasketches::update_theta_sketch.update` will do the hash again.
     void insert(Key value)
     {
-        get_sk_update()->update(value);
+        getSkUpdate()->update(value);
     }
 
     UInt64 size() const
@@ -61,7 +65,7 @@ public:
 
     void merge(const ThetaSketchData & rhs)
     {
-        datasketches::theta_union * u = get_sk_union();
+        datasketches::theta_union * u = getSkUnion();
         
         if (sk_update)
         {
@@ -83,7 +87,7 @@ public:
         if (!bytes.empty())
         {
             auto sk = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
-            get_sk_union()->update(sk);
+            getSkUnion()->update(sk);
         }
     }
 
@@ -109,3 +113,5 @@ public:
 
 
 }
+
+#endif
