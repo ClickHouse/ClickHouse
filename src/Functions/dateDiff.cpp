@@ -238,7 +238,6 @@ private:
              - Int64(transform_x.execute(x, timezone_x));
     }
 
-private:
     template <typename T>
     static UInt32 getScale(const T & v)
     {
