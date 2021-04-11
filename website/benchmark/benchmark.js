@@ -178,6 +178,8 @@ function format_number_cell(value, ratio) {
  */
 var ratios = [];
 
+/// With large number of systems, generation of comparison table becomes too slow. Simply keep the top N.
+const max_systems_to_show_in_comparison_table = 5;
 
 function generate_comparison_table() {
     ratios = [];
@@ -188,8 +190,8 @@ function generate_comparison_table() {
             return x.data_size == current_data_size;
         });
     }
-    filtered_results = filtered_results.filter(function (x) {
-        return current_systems.indexOf(x.system) != -1;
+    filtered_results = filtered_results.filter(function (x, index) {
+        return index < max_systems_to_show_in_comparison_table && current_systems.indexOf(x.system) != -1;
     });
 
     var html = "";
