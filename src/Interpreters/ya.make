@@ -50,6 +50,7 @@ SRCS(
     EmbeddedDictionaries.cpp
     ExecuteScalarSubqueriesVisitor.cpp
     ExpressionActions.cpp
+    ExpressionActionsSettings.cpp
     ExpressionAnalyzer.cpp
     ExternalDictionariesLoader.cpp
     ExternalLoader.cpp
@@ -102,6 +103,7 @@ SRCS(
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
     InterpreterWatchQuery.cpp
+    InterserverCredentials.cpp
     JoinSwitcher.cpp
     JoinToSubqueryTransformVisitor.cpp
     JoinedTables.cpp

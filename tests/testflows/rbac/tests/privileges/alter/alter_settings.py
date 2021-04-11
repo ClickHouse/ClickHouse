@@ -1,7 +1,5 @@
 import json
 
-from multiprocessing.dummy import Pool
-
 from testflows.core import *
 from testflows.asserts import error
 
@@ -10,7 +8,7 @@ from rbac.helper.common import *
 import rbac.helper.errors as errors
 from rbac.helper.tables import table_types
 
-aliases = {"ALTER SETTINGS", "ALTER SETTING", "ALTER MODIFY SETTING", "MODIFY SETTING"}
+aliases = {"ALTER SETTINGS", "ALTER SETTING", "ALTER MODIFY SETTING", "MODIFY SETTING", "ALL"}
 
 def check_alter_settings_when_privilege_is_granted(table, user, node):
     """Ensures ADD SETTINGS runs as expected when the privilege is granted to the specified user
@@ -21,7 +19,7 @@ def check_alter_settings_when_privilege_is_granted(table, user, node):
 
     with And(f"I modify settings"):
         node.query(f"ALTER TABLE {table} MODIFY SETTING merge_with_ttl_timeout=5",
-            settings = [("user", user)])
+            settings=[("user", user)])
 
     with Then("I verify that the setting is in the table"):
         output = json.loads(node.query(f"SHOW CREATE TABLE {table} FORMAT JSONEachRow").output)
@@ -30,10 +28,16 @@ def check_alter_settings_when_privilege_is_granted(table, user, node):
 def check_alter_settings_when_privilege_is_not_granted(table, user, node):
     """Ensures CLEAR SETTINGS runs as expected when the privilege is granted to the specified user
     """
-    with When("I try to use ALTER SETTING, has not been granted"):
+    with When("I grant the user NONE privilege"):
+        node.query(f"GRANT NONE TO {user}")
+
+    with And("I grant the user USAGE privilege"):
+        node.query(f"GRANT USAGE ON *.* TO {user}")
+
+    with Then("I try to use ALTER SETTING, has not been granted"):
         exitcode, message = errors.not_enough_privileges(user)
         node.query(f"ALTER TABLE {table} MODIFY SETTING merge_with_ttl_timeout=5",
-            settings = [("user", user)], exitcode=exitcode, message=message)
+            settings=[("user", user)], exitcode=exitcode, message=message)
 
 @TestScenario
 def user_with_privileges(self, privilege, table_type, node=None):
@@ -52,6 +56,7 @@ def user_with_privileges(self, privilege, table_type, node=None):
 
         with Then(f"I try to ALTER SETTINGS"):
             check_alter_settings_when_privilege_is_granted(table_name, user_name, node)
+
 
 @TestScenario
 @Requirements(
@@ -180,7 +185,9 @@ def scenario_parallelization(self, table_type, privilege):
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterSettings("1.0"),
-    RQ_SRS_006_RBAC_Privileges_AlterSettings_TableEngines("1.0")
+    RQ_SRS_006_RBAC_Privileges_AlterSettings_TableEngines("1.0"),
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
@@ -208,7 +215,9 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
                 tasks = []
                 try:
                     for alias in aliases:
-                        run_scenario(pool, tasks, Suite(test=scenario_parallelization, name=alias, setup=instrument_clickhouse_server_log), {"table_type": table_type, "privilege": alias})
+                        run_scenario(pool, tasks, Suite(test=scenario_parallelization, name=alias,
+                                                        setup=instrument_clickhouse_server_log),
+                                     {"table_type": table_type, "privilege": alias})
                 finally:
                     join(tasks)
             finally:

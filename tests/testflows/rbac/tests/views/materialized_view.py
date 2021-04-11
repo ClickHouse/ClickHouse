@@ -612,13 +612,17 @@ def create_with_populate_privilege_granted_directly_or_via_role(self, node=None)
 
     if node is None:
         node = self.context.node
+
     with user(node, f"{user_name}"):
+
         Scenario(test=create_with_populate,
             name="create with populate privilege granted directly")(grant_target_name=user_name, user_name=user_name)
 
     with user(node, f"{user_name}"), role(node, f"{role_name}"):
+
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
+
         Scenario(test=create_with_populate,
             name="create with populate privilege granted through a role")(grant_target_name=role_name, user_name=user_name)
 
@@ -632,17 +636,22 @@ def create_with_populate(self, user_name, grant_target_name, node=None):
 
     if node is None:
         node = self.context.node
+
     try:
+
         with When("I grant CREATE VIEW privilege"):
             node.query(f"GRANT CREATE VIEW ON {view_name} TO {grant_target_name}")
+
         with Then("I attempt to create a view as the user"):
             node.query(f"CREATE MATERIALIZED VIEW {view_name} ENGINE = Memory POPULATE AS SELECT 1",
                 settings = [("user", f"{user_name}")], exitcode=exitcode, message=message)
 
         with When("I grant INSERT privilege on the view"):
             node.query(f"GRANT INSERT ON {view_name} TO {grant_target_name}")
+
         with Given("I don't have a view"):
             node.query(f"DROP VIEW IF EXISTS {view_name}")
+
         with Then("I attempt to create a view as the user"):
             node.query(f"CREATE MATERIALIZED VIEW {view_name} ENGINE = Memory POPULATE AS SELECT 1",
                 settings = [("user", f"{user_name}")])
@@ -2262,7 +2271,10 @@ def feature(self, stress=None, parallel=None, node="clickhouse1"):
     pool = Pool(3)
 
     try:
-        for suite in loads(current_module(), Suite):
-            run_scenario(pool, tasks, suite)
+        try:
+            for suite in loads(current_module(), Suite):
+                run_scenario(pool, tasks, suite)
+        finally:
+            join(tasks)
     finally:
-        join(tasks)
+        pool.close()

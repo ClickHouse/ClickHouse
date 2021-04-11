@@ -8,10 +8,10 @@
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
+#include <IO/TimeoutSetter.h>
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context.h>
-#include <Client/TimeoutSetter.h>
 
 #include "IServer.h"
 
@@ -113,14 +113,13 @@ public:
       *  because it allows to check the IP ranges of the trusted proxy.
       * Proxy-forwarded (original client) IP address is used for quota accounting if quota is keyed by forwarded IP.
       */
-    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_,
-        std::string server_display_name_);
+    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_);
     ~TCPHandler() override;
 
     void run() override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(DB::Context & /*context*/) {}
+    virtual void customizeContext(ContextPtr /*context*/) {}
 
 private:
     IServer & server;
@@ -133,8 +132,8 @@ private:
     UInt64 client_version_patch = 0;
     UInt64 client_tcp_protocol_version = 0;
 
-    Context connection_context;
-    std::optional<Context> query_context;
+    ContextPtr connection_context;
+    ContextPtr query_context;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;

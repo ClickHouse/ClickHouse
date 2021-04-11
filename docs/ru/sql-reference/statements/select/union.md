@@ -78,4 +78,3 @@ SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
 
 Запросы, которые являются частью `UNION/UNION ALL/UNION DISTINCT`, выполняются параллельно, и их результаты могут быть смешаны вместе.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/select/union/) <!-- hide -->

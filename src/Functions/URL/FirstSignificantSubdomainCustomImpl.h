@@ -17,10 +17,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-struct FirstSignificantSubdomainCustomtLookup
+struct FirstSignificantSubdomainCustomLookup
 {
     const TLDList & tld_list;
-    FirstSignificantSubdomainCustomtLookup(const std::string & tld_list_name)
+    FirstSignificantSubdomainCustomLookup(const std::string & tld_list_name)
         : tld_list(TLDListsHolder::getInstance().getTldList(tld_list_name))
     {
     }
@@ -36,7 +36,7 @@ class FunctionCutToFirstSignificantSubdomainCustomImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionCutToFirstSignificantSubdomainCustomImpl>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCutToFirstSignificantSubdomainCustomImpl>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -63,7 +63,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         const ColumnConst * column_tld_list_name = checkAndGetColumnConstStringOrFixedString(arguments[1].column.get());
-        FirstSignificantSubdomainCustomtLookup tld_lookup(column_tld_list_name->getValue<String>());
+        FirstSignificantSubdomainCustomLookup tld_lookup(column_tld_list_name->getValue<String>());
 
         /// FIXME: convertToFullColumnIfConst() is suboptimal
         auto column = arguments[0].column->convertToFullColumnIfConst();
@@ -79,7 +79,7 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    static void vector(FirstSignificantSubdomainCustomtLookup & tld_lookup,
+    static void vector(FirstSignificantSubdomainCustomLookup & tld_lookup,
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
