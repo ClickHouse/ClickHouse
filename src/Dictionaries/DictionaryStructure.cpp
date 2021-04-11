@@ -65,6 +65,7 @@ AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
         case TypeIndex::Decimal32:      return AttributeUnderlyingType::utDecimal32;
         case TypeIndex::Decimal64:      return AttributeUnderlyingType::utDecimal64;
         case TypeIndex::Decimal128:     return AttributeUnderlyingType::utDecimal128;
+        case TypeIndex::Decimal256:     return AttributeUnderlyingType::utDecimal256;
 
         case TypeIndex::Date:           return AttributeUnderlyingType::utUInt16;
         case TypeIndex::DateTime:       return AttributeUnderlyingType::utUInt32;
@@ -85,7 +86,7 @@ AttributeUnderlyingType getAttributeUnderlyingType(const DataTypePtr & type)
 }
 
 
-std::string toString(const AttributeUnderlyingType type)
+std::string toString(AttributeUnderlyingType type)
 {
     switch (type)
     {
@@ -117,6 +118,8 @@ std::string toString(const AttributeUnderlyingType type)
             return "Decimal64";
         case AttributeUnderlyingType::utDecimal128:
             return "Decimal128";
+        case AttributeUnderlyingType::utDecimal256:
+            return "Decimal256";
         case AttributeUnderlyingType::utString:
             return "String";
     }
