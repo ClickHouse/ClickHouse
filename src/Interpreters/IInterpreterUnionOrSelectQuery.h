@@ -10,9 +10,9 @@ namespace DB
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const Context & context_, const SelectQueryOptions & options_)
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_)
         : query_ptr(query_ptr_)
-        , context(std::make_shared<Context>(context_))
+        , context(Context::createCopy(context_))
         , options(options_)
         , max_streams(context->getSettingsRef().max_threads)
     {
@@ -28,11 +28,11 @@ public:
 
     size_t getMaxStreams() const { return max_streams; }
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const override;
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
 
 protected:
     ASTPtr query_ptr;
-    std::shared_ptr<Context> context;
+    ContextPtr context;
     Block result_header;
     SelectQueryOptions options;
     size_t max_streams = 1;

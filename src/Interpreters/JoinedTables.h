@@ -22,11 +22,11 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class JoinedTables
 {
 public:
-    JoinedTables(Context && context, const ASTSelectQuery & select_query);
+    JoinedTables(ContextPtr context, const ASTSelectQuery & select_query);
 
     void reset(const ASTSelectQuery & select_query)
     {
-        *this = JoinedTables(std::move(context), select_query);
+        *this = JoinedTables(Context::createCopy(context), select_query);
     }
 
     StoragePtr getLeftTableStorage();
@@ -48,7 +48,7 @@ public:
     std::unique_ptr<InterpreterSelectWithUnionQuery> makeLeftTableSubquery(const SelectQueryOptions & select_options);
 
 private:
-    Context context;
+    ContextPtr context;
     std::vector<const ASTTableExpression *> table_expressions;
     TablesWithColumns tables_with_columns;
 

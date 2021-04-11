@@ -30,7 +30,7 @@ constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
 std::shared_ptr<TSystemLog> createSystemLog(
-    Context & context,
+    ContextPtr context,
     const String & default_database_name,
     const String & default_table_name,
     const Poco::Util::AbstractConfiguration & config,
@@ -88,7 +88,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 }
 
 
-SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfiguration & config)
+SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
     query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
     query_thread_log = createSystemLog<QueryThreadLog>(global_context, "system", "query_thread_log", config, "query_thread_log");

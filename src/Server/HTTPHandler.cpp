@@ -277,7 +277,7 @@ HTTPHandler::~HTTPHandler()
 
 
 bool HTTPHandler::authenticateUser(
-    Context & context,
+    ContextPtr context,
     HTTPServerRequest & request,
     HTMLForm & params,
     HTTPServerResponse & response)
@@ -381,7 +381,7 @@ bool HTTPHandler::authenticateUser(
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
 
-    ClientInfo & client_info = context.getClientInfo();
+    ClientInfo & client_info = context->getClientInfo();
     client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
     client_info.interface = ClientInfo::Interface::HTTP;
 
@@ -398,7 +398,7 @@ bool HTTPHandler::authenticateUser(
 
     try
     {
-        context.setUser(*request_credentials, request.clientAddress());
+        context->setUser(*request_credentials, request.clientAddress());
     }
     catch (const Authentication::Require<BasicCredentials> & required_credentials)
     {
@@ -430,7 +430,7 @@ bool HTTPHandler::authenticateUser(
     request_credentials.reset();
 
     if (!quota_key.empty())
-        context.setQuotaKey(quota_key);
+        context->setQuotaKey(quota_key);
 
     /// Query sent through HTTP interface is initial.
     client_info.initial_user = client_info.current_user;
@@ -441,7 +441,7 @@ bool HTTPHandler::authenticateUser(
 
 
 void HTTPHandler::processQuery(
-    Context & context,
+    ContextPtr context,
     HTTPServerRequest & request,
     HTMLForm & params,
     HTTPServerResponse & response,
@@ -470,10 +470,10 @@ void HTTPHandler::processQuery(
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
 
-        session = context.acquireNamedSession(session_id, session_timeout, session_check == "1");
+        session = context->acquireNamedSession(session_id, session_timeout, session_check == "1");
 
-        context = session->context;
-        context.setSessionContext(session->context);
+        context->copyFrom(session->context);  /// FIXME: maybe move this part to HandleRequest(), copyFrom() is used only here.
+        context->setSessionContext(session->context);
     }
 
     SCOPE_EXIT({
@@ -489,7 +489,7 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!context.getClientInfo().client_trace_context.parseTraceparentHeader(
+        if (!context->getClientInfo().client_trace_context.parseTraceparentHeader(
             opentelemetry_traceparent, error))
         {
             throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
@@ -497,14 +497,14 @@ void HTTPHandler::processQuery(
                 opentelemetry_traceparent, error);
         }
 
-        context.getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
+        context->getClientInfo().client_trace_context.tracestate = request.get("tracestate", "");
     }
 #endif
 
     // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
-    context.setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
+    context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
 
-    ClientInfo & client_info = context.getClientInfo();
+    ClientInfo & client_info = context->getClientInfo();
     client_info.initial_query_id = client_info.current_query_id;
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
@@ -570,7 +570,7 @@ void HTTPHandler::processQuery(
 
         if (buffer_until_eof)
         {
-            const std::string tmp_path(context.getTemporaryVolume()->getDisk()->getPath());
+            const std::string tmp_path(context->getTemporaryVolume()->getDisk()->getPath());
             const std::string tmp_path_template(tmp_path + "http_buffers/");
 
             auto create_tmp_disk_buffer = [tmp_path_template] (const WriteBufferPtr &)
@@ -658,13 +658,13 @@ void HTTPHandler::processQuery(
 
     /// In theory if initially readonly = 0, the client can change any setting and then set readonly
     /// to some other value.
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
     if (request.getMethod() == HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
-            context.setSetting("readonly", 2);
+            context->setSetting("readonly", 2);
     }
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
@@ -707,14 +707,14 @@ void HTTPHandler::processQuery(
     }
 
     if (!database.empty())
-        context.setCurrentDatabase(database);
+        context->setCurrentDatabase(database);
 
     if (!default_format.empty())
-        context.setDefaultFormat(default_format);
+        context->setDefaultFormat(default_format);
 
     /// For external data we also want settings
-    context.checkSettingsConstraints(settings_changes);
-    context.applySettingsChanges(settings_changes);
+    context->checkSettingsConstraints(settings_changes);
+    context->applySettingsChanges(settings_changes);
 
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
@@ -737,11 +737,11 @@ void HTTPHandler::processQuery(
     /// Origin header.
     used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
 
-    auto append_callback = [&context] (ProgressCallback callback)
+    auto append_callback = [context] (ProgressCallback callback)
     {
-        auto prev = context.getProgressCallback();
+        auto prev = context->getProgressCallback();
 
-        context.setProgressCallback([prev, callback] (const Progress & progress)
+        context->setProgressCallback([prev, callback] (const Progress & progress)
         {
             if (prev)
                 prev(progress);
@@ -756,12 +756,12 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        append_callback([&context, &request](const Progress &)
+        append_callback([context, &request](const Progress &)
         {
             /// Assume that at the point this method is called no one is reading data from the socket any more:
             /// should be true for read-only queries.
             if (!request.checkPeerConnected())
-                context.killCurrentQuery();
+                context->killCurrentQuery();
         });
     }
 
@@ -877,7 +877,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     if (!request_context)
     {
         // Context should be initialized before anything, for correct memory accounting.
-        request_context = std::make_unique<Context>(server.context());
+        request_context = Context::createCopy(server.context());
         request_credentials.reset();
     }
 
@@ -899,6 +899,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         HTMLForm params(request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
 
+        /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
         if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
@@ -907,7 +908,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
                 ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
-        processQuery(*request_context, request, params, response, used_output, query_scope);
+        processQuery(request_context, request, params, response, used_output, query_scope);
         LOG_DEBUG(log, (request_credentials ? "Authentication in progress..." : "Done processing query"));
     }
     catch (...)
@@ -936,7 +937,7 @@ DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & 
 {
 }
 
-bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::string & key, const std::string & value)
+bool DynamicQueryHandler::customizeQueryParam(ContextPtr context, const std::string & key, const std::string & value)
 {
     if (key == param_name)
         return true;    /// do nothing
@@ -945,14 +946,14 @@ bool DynamicQueryHandler::customizeQueryParam(Context & context, const std::stri
     {
         /// Save name and values of substitution in dictionary.
         const String parameter_name = key.substr(strlen("param_"));
-        context.setQueryParameter(parameter_name, value);
+        context->setQueryParameter(parameter_name, value);
         return true;
     }
 
     return false;
 }
 
-std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context)
+std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextPtr context)
 {
     if (likely(!startsWith(request.getContentType(), "multipart/form-data")))
     {
@@ -978,25 +979,31 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
 }
 
 PredefinedQueryHandler::PredefinedQueryHandler(
-    IServer & server_, const NameSet & receive_params_, const std::string & predefined_query_
-    , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
-    : HTTPHandler(server_, "PredefinedQueryHandler"), receive_params(receive_params_), predefined_query(predefined_query_)
-    , url_regex(url_regex_), header_name_with_capture_regex(header_name_with_regex_)
+    IServer & server_,
+    const NameSet & receive_params_,
+    const std::string & predefined_query_,
+    const CompiledRegexPtr & url_regex_,
+    const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_)
+    : HTTPHandler(server_, "PredefinedQueryHandler")
+    , receive_params(receive_params_)
+    , predefined_query(predefined_query_)
+    , url_regex(url_regex_)
+    , header_name_with_capture_regex(header_name_with_regex_)
 {
 }
 
-bool PredefinedQueryHandler::customizeQueryParam(Context & context, const std::string & key, const std::string & value)
+bool PredefinedQueryHandler::customizeQueryParam(ContextPtr context, const std::string & key, const std::string & value)
 {
     if (receive_params.count(key))
     {
-        context.setQueryParameter(key, value);
+        context->setQueryParameter(key, value);
         return true;
     }
 
     return false;
 }
 
-void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, DB::Context & context)
+void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, ContextPtr context)
 {
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
@@ -1014,7 +1021,7 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, DB::C
                 const auto & capturing_value = matches[capturing_index];
 
                 if (capturing_value.data())
-                    context.setQueryParameter(capturing_name, String(capturing_value.data(), capturing_value.size()));
+                    context->setQueryParameter(capturing_name, String(capturing_value.data(), capturing_value.size()));
             }
         }
     };
@@ -1032,7 +1039,7 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, DB::C
     }
 }
 
-std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, Context & context)
+std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextPtr context)
 {
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {

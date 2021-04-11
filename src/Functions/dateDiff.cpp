@@ -44,7 +44,7 @@ class FunctionDateDiff : public IFunction
 {
 public:
     static constexpr auto name = "dateDiff";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateDiff>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
 
     String getName() const override
     {

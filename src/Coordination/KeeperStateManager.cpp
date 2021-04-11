@@ -64,7 +64,7 @@ KeeperStateManager::KeeperStateManager(
         throw Exception(ErrorCodes::RAFT_ERROR, "At least one of servers should be able to start as leader (without <start_as_follower>)");
 }
 
-void KeeperStateManager::loadLogStore(size_t last_commited_index, size_t logs_to_keep)
+void KeeperStateManager::loadLogStore(uint64_t last_commited_index, uint64_t logs_to_keep)
 {
     log_store->init(last_commited_index, logs_to_keep);
 }

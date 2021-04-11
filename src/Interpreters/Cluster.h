@@ -1,9 +1,11 @@
 #pragma once
 
-#include <map>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+
 #include <Poco/Net/SocketAddress.h>
+
+#include <map>
 
 namespace Poco
 {
