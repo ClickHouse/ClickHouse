@@ -47,7 +47,10 @@ add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
-add_subdirectory (xz)
+
+if (USE_INTERNAL_XZ_LIBRARY)
+    add_subdirectory (xz)
+endif()
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)

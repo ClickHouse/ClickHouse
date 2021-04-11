@@ -57,6 +57,7 @@ SRCS(
     MergeTree/MergeTreeDataPartWriterWide.cpp
     MergeTree/MergeTreeDataSelectExecutor.cpp
     MergeTree/MergeTreeDataWriter.cpp
+    MergeTree/MergeTreeDeduplicationLog.cpp
     MergeTree/MergeTreeIndexAggregatorBloomFilter.cpp
     MergeTree/MergeTreeIndexBloomFilter.cpp
     MergeTree/MergeTreeIndexConditionBloomFilter.cpp

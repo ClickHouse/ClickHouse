@@ -18,7 +18,7 @@ class FunctionIsNull : public IFunction
 public:
     static constexpr auto name = "isNull";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionIsNull>();
     }

@@ -252,10 +252,10 @@ static Pipes removeEmptyPipes(Pipes pipes)
 
 Pipe Pipe::unitePipes(Pipes pipes)
 {
-    return Pipe::unitePipes(std::move(pipes), nullptr);
+    return Pipe::unitePipes(std::move(pipes), nullptr, false);
 }
 
-Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors)
+Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header)
 {
     Pipe res;
 
@@ -275,12 +275,25 @@ Pipe Pipe::unitePipes(Pipes pipes, Processors * collected_processors)
 
     OutputPortRawPtrs totals;
     OutputPortRawPtrs extremes;
-    res.header = pipes.front().header;
     res.collected_processors = collected_processors;
+    res.header = pipes.front().header;
+    if (allow_empty_header && !res.header)
+    {
+        for (const auto & pipe : pipes)
+        {
+            if (const auto & header = pipe.getHeader())
+            {
+                res.header = header;
+                break;
+            }
+        }
+    }
 
     for (auto & pipe : pipes)
     {
-        assertBlocksHaveEqualStructure(res.header, pipe.header, "Pipe::unitePipes");
+        if (!allow_empty_header || pipe.header)
+            assertBlocksHaveEqualStructure(res.header, pipe.header, "Pipe::unitePipes");
+
         res.processors.insert(res.processors.end(), pipe.processors.begin(), pipe.processors.end());
         res.output_ports.insert(res.output_ports.end(), pipe.output_ports.begin(), pipe.output_ports.end());
 
