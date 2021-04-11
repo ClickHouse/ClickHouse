@@ -99,17 +99,26 @@ namespace DB
     static void fillArrowArrayWithArrayColumnData(
         const String & column_name,
         ColumnPtr & nested_column,
-        const std::shared_ptr<const IDataType> & column_nested_type,
+        const std::shared_ptr<const IDataType> & column_type,
         std::shared_ptr<arrow::Array> arrow_array,
         const PaddedPODArray<UInt8> * null_bytemap,
         arrow::ArrayBuilder * array_builder,
         String format_name)
     {
-        const auto * nested_array = typeid_cast<const DataTypeArray *>(column_nested_type.get());
-        const DataTypePtr & nested_data_type = nested_array->getNestedType();
-        const String array_nested_type_name = nested_data_type->getFamilyName();
+        const auto * column_array = static_cast<const ColumnArray *>(nested_column.get());
+        const bool is_column_array_nullable = column_array->getData().isNullable();
+        const IColumn & array_nested_column =
+            is_column_array_nullable ? static_cast<const ColumnNullable &>(column_array->getData()).getNestedColumn() :
+            column_array->getData();
+        const String column_array_nested_type_name = array_nested_column.getFamilyName();
+
+        const auto * column_array_type = static_cast<const DataTypeArray *>(column_type.get());
+        const DataTypePtr & array_nested_type =
+            is_column_array_nullable ? static_cast<const DataTypeNullable *>(column_array_type->getNestedType().get())->getNestedType() :
+            column_array_type->getNestedType();
+
         const auto * arrow_type_it = std::find_if(internal_type_to_arrow_type.begin(), internal_type_to_arrow_type.end(),
-                                                  [=](auto && elem) { return elem.first == array_nested_type_name; });
+                                                  [=](auto && elem) { return elem.first == column_array_nested_type_name; });
         if (arrow_type_it != internal_type_to_arrow_type.end())
         {
             std::shared_ptr<arrow::DataType> list_type = arrow::list(arrow_type_it->second);
@@ -141,7 +150,23 @@ namespace DB
                     if (offset_length > 0)
                     {
                         auto cut_data = data.cut(offset_start, offset_length);
-                        CHColumnToArrowColumn::fillArrowArray(column_name, cut_data, nested_data_type, array_nested_type_name, arrow_array, null_bytemap, value_builder, format_name);
+                        if (null_bytemap == nullptr)
+                        {
+                            CHColumnToArrowColumn::fillArrowArray(column_name, cut_data, array_nested_type,
+                                                                  column_array_nested_type_name, arrow_array,
+                                                                  nullptr, value_builder, format_name);
+                        }
+                        else
+                        {
+                            PaddedPODArray<UInt8> * array_nested_null_bytemap = new PaddedPODArray<UInt8>();
+                            for (size_t pidx = offset_start; pidx < offset_start + offset_length; ++pidx)
+                            {
+                                array_nested_null_bytemap->push_back((*null_bytemap)[pidx]);
+                            }
+                            CHColumnToArrowColumn::fillArrowArray(column_name, cut_data, array_nested_type,
+                                                                  column_array_nested_type_name, arrow_array, array_nested_null_bytemap, value_builder, format_name);
+                            delete array_nested_null_bytemap;
+                        }
                     }
                     offset_start = offsets[idx];
                 }
@@ -334,13 +359,13 @@ namespace DB
             column.type = recursiveRemoveLowCardinality(column.type);
 
             const bool is_column_nullable = column.type->isNullable();
+            bool is_column_array_nullable = false;
             const auto & column_nested_type
                 = is_column_nullable ? static_cast<const DataTypeNullable *>(column.type.get())->getNestedType() : column.type;
             const String column_nested_type_name = column_nested_type->getFamilyName();
 
             if (isDecimal(column_nested_type))
             {
-
                 const auto add_decimal_field = [&](const auto & types) -> bool {
                     using Types = std::decay_t<decltype(types)>;
                     using ToDataType = typename Types::LeftType;
@@ -361,18 +386,22 @@ namespace DB
             }
             else if (isArray(column_nested_type))
             {
-                const auto * nested_array = typeid_cast<const DataTypeArray *>(column_nested_type.get());
-                const DataTypePtr & nested_data_type = nested_array->getNestedType();
-                const String array_nested_type_name = nested_data_type->getFamilyName();
+                const auto * column_array_type = static_cast<const DataTypeArray *>(column_nested_type.get());
+                is_column_array_nullable = column_array_type->getNestedType()->isNullable();
+                const DataTypePtr & column_array_nested_type =
+                    is_column_array_nullable ? static_cast<const DataTypeNullable *>(column_array_type->getNestedType().get())->getNestedType() :
+                    column_array_type->getNestedType();
+                const String column_array_nested_type_name = column_array_nested_type->getFamilyName();
+
                 if (const auto * arrow_type_it = std::find_if(internal_type_to_arrow_type.begin(), internal_type_to_arrow_type.end(),
-                                                              [=](auto && elem) { return elem.first == array_nested_type_name; });
+                                                              [=](auto && elem) { return elem.first == column_array_nested_type_name; });
                     arrow_type_it != internal_type_to_arrow_type.end())
                 {
                     arrow_fields.emplace_back(std::make_shared<arrow::Field>(
-                        column.name, arrow::list(arrow_type_it->second), is_column_nullable));
+                        column.name, arrow::list(arrow_type_it->second), is_column_array_nullable));
                 } else
                 {
-                    throw Exception{"The type \"" + array_nested_type_name + "\" of a array column \"" + column.name + "\""
+                    throw Exception{"The type \"" + column_array_nested_type_name + "\" of a array column \"" + column.name + "\""
                                                                                                                   " is not supported for conversion into a " + format_name + " data format",
                                     ErrorCodes::UNKNOWN_TYPE};
                 }
@@ -394,7 +423,10 @@ namespace DB
 
             ColumnPtr nested_column
                 = is_column_nullable ? assert_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
-            const PaddedPODArray<UInt8> * null_bytemap = is_column_nullable ? extractNullBytemapPtr(column.column) : nullptr;
+
+            const PaddedPODArray<UInt8> * null_bytemap =
+                is_column_nullable ? extractNullBytemapPtr(column.column) :
+                is_column_array_nullable ? extractNullBytemapPtr(assert_cast<const ColumnArray &>(*nested_column).getDataPtr()) : nullptr;
 
             arrow::MemoryPool* pool = arrow::default_memory_pool();
             std::unique_ptr<arrow::ArrayBuilder> array_builder;
