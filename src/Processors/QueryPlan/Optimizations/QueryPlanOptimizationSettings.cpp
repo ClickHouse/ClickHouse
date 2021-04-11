@@ -14,9 +14,9 @@ QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromSettings(const 
     return settings;
 }
 
-QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromContext(const Context & from)
+QueryPlanOptimizationSettings QueryPlanOptimizationSettings::fromContext(ContextPtr from)
 {
-    return fromSettings(from.getSettingsRef());
+    return fromSettings(from->getSettingsRef());
 }
 
 }

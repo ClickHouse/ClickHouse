@@ -15,7 +15,7 @@ class Context;
 class SchemaAllowedHandler : public HTTPRequestHandler
 {
 public:
-    SchemaAllowedHandler(size_t keep_alive_timeout_, Context &)
+    SchemaAllowedHandler(size_t keep_alive_timeout_, ContextPtr)
         : log(&Poco::Logger::get("SchemaAllowedHandler")), keep_alive_timeout(keep_alive_timeout_)
     {
     }
