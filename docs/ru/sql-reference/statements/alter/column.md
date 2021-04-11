@@ -117,7 +117,7 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | F
 
 -   TTL
 
-        Примеры изменения TTL столбца смотрите в разделе [TTL столбца](ttl.md#mergetree-column-ttl).
+        Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
 
 Если указано `IF EXISTS`, запрос не возвращает ошибку, если столбца не существует.
 

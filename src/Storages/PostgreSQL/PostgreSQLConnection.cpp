@@ -8,10 +8,10 @@
 #include <IO/Operators.h>
 
 
-namespace DB
+namespace postgres
 {
 
-PostgreSQLConnection::PostgreSQLConnection(
+Connection::Connection(
         const String & connection_str_,
         const String & address_)
     : connection_str(connection_str_)
@@ -20,14 +20,14 @@ PostgreSQLConnection::PostgreSQLConnection(
 }
 
 
-PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::get()
+pqxx::ConnectionPtr Connection::get()
 {
     connectIfNeeded();
     return connection;
 }
 
 
-PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::tryGet()
+pqxx::ConnectionPtr Connection::tryGet()
 {
     if (tryConnectIfNeeded())
         return connection;
@@ -35,7 +35,7 @@ PostgreSQLConnection::ConnectionPtr PostgreSQLConnection::tryGet()
 }
 
 
-void PostgreSQLConnection::connectIfNeeded()
+void Connection::connectIfNeeded()
 {
     if (!connection || !connection->is_open())
     {
@@ -45,7 +45,7 @@ void PostgreSQLConnection::connectIfNeeded()
 }
 
 
-bool PostgreSQLConnection::tryConnectIfNeeded()
+bool Connection::tryConnectIfNeeded()
 {
     try
     {

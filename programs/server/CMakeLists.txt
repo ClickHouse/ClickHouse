@@ -42,11 +42,16 @@ if (OS_LINUX)
         set(RESOURCE_OBJS ${RESOURCE_OBJS} ${RESOURCE_OBJ})
 
         # https://stackoverflow.com/questions/14776463/compile-and-add-an-object-file-from-a-binary-with-cmake
-        add_custom_command(OUTPUT ${RESOURCE_OBJ}
-            COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS} ${RESOURCE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}
-            COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
-                ${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ} ${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ})
-
+        # PPC64LE fails to do this with objcopy, use ld or lld instead
+        if (ARCH_PPC64LE)
+            add_custom_command(OUTPUT ${RESOURCE_OBJ}
+                COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${CMAKE_LINKER} -m elf64lppc -r -b binary -o ${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ} ${RESOURCE_FILE})
+        else()
+            add_custom_command(OUTPUT ${RESOURCE_OBJ}
+                COMMAND cd ${CMAKE_CURRENT_SOURCE_DIR} && ${OBJCOPY_PATH} -I binary ${OBJCOPY_ARCH_OPTIONS} ${RESOURCE_FILE} ${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ}
+                COMMAND ${OBJCOPY_PATH} --rename-section .data=.rodata,alloc,load,readonly,data,contents
+                    ${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ} ${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_OBJ})
+        endif()
         set_source_files_properties(${RESOURCE_OBJ} PROPERTIES EXTERNAL_OBJECT true GENERATED true)
     endforeach(RESOURCE_FILE)
 

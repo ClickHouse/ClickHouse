@@ -101,7 +101,8 @@ ThreadStatus::~ThreadStatus()
 
 #if !defined(ARCADIA_BUILD)
     /// It may cause segfault if query_context was destroyed, but was not detached
-    assert((!query_context && query_id.empty()) || (query_context && query_id == query_context->getCurrentQueryId()));
+    auto query_context_ptr = query_context.lock();
+    assert((!query_context_ptr && query_id.empty()) || (query_context_ptr && query_id == query_context_ptr->getCurrentQueryId()));
 #endif
 
     if (deleter)

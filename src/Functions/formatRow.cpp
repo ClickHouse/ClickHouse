@@ -35,7 +35,7 @@ class FunctionFormatRow : public IFunction
 public:
     static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
 
-    FunctionFormatRow(const String & format_name_, const Context & context_) : format_name(format_name_), context(context_)
+    FunctionFormatRow(const String & format_name_, ContextPtr context_) : format_name(format_name_), context(context_)
     {
         if (!FormatFactory::instance().getAllFormats().count(format_name))
             throw Exception("Unknown format " + format_name, ErrorCodes::UNKNOWN_FORMAT);
@@ -76,7 +76,7 @@ public:
 
 private:
     String format_name;
-    const Context & context;
+    ContextPtr context;
 };
 
 template <bool no_newline>
@@ -84,8 +84,8 @@ class FormatRowOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<FormatRowOverloadResolver>(context); }
-    explicit FormatRowOverloadResolver(const Context & context_) : context(context_) { }
+    static FunctionOverloadResolverImplPtr create(ContextPtr context) { return std::make_unique<FormatRowOverloadResolver>(context); }
+    explicit FormatRowOverloadResolver(ContextPtr context_) : context(context_) { }
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -111,7 +111,7 @@ public:
     DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 
 }
