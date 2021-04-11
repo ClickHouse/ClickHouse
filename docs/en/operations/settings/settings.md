@@ -2689,4 +2689,14 @@ Possible values:
 
 Default value: `0`.
 
+## prefer_column_name_to_alias {#prefer-column-name-to-alias}
+
+Enables or disables using of the original column names instead of [aliases](../../sql-reference/syntax.md#syntax-expression_aliases). Enable this setting to make aliases syntax rules of the ClickHouse more compatible with most other database engines.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `0`.
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
