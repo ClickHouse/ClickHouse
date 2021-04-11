@@ -4,7 +4,9 @@
 set -eux
 set -o pipefail
 trap "exit" INT TERM
-trap 'kill $(jobs -pr) ||:' EXIT
+# The watchdog is in the separate process group, so we have to kill it separately
+# if the script terminates earlier.
+trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -14,35 +16,28 @@ BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-11_debug_none_bundled_unsplitted
 
 function clone
 {
-(
+    # The download() function is dependent on CI binaries anyway, so we can take
+    # the repo from the CI as well. For local runs, start directly from the "fuzz"
+    # stage.
     rm -rf ch ||:
-    mkdir ch
-    cd ch
-
-    git init
-    git remote add origin https://github.com/ClickHouse/ClickHouse
-
-    # Network is unreliable. GitHub neither.
-    for _ in {1..100}; do git fetch --depth=100 origin "$SHA_TO_TEST" && break; sleep 1; done
-    # Used to obtain the list of modified or added tests
-    for _ in {1..100}; do git fetch --depth=100 origin master && break; sleep 1; done
-
-    # If not master, try to fetch pull/.../{head,merge}
-    if [ "$PR_TO_TEST" != "0" ]
-    then
-        for _ in {1..100}; do git fetch --depth=100 origin "refs/pull/$PR_TO_TEST/*:refs/heads/pull/$PR_TO_TEST/*" && break; sleep 1; done
-    fi
-
-    git checkout "$SHA_TO_TEST"
-)
+    mkdir ch ||:
+    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
+    tar -C ch --strip-components=1 -xf clickhouse_no_subs.tar.gz
+    ls -lath ||:
 }
 
 function download
 {
-    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"
+    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse" &
+    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/ci-changed-files.txt" &
+    wait
+
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server
     ln -s ./clickhouse ./clickhouse-client
+
+    # clickhouse-server is in the current dir
+    export PATH="$PWD:$PATH"
 }
 
 function configure
@@ -74,25 +69,38 @@ function watchdog
     killall -9 clickhouse-client ||:
 }
 
+function filter_exists
+{
+    local path
+    for path in "$@"; do
+        if [ -e "$path" ]; then
+            echo "$path"
+        else
+            echo "'$path' does not exists" >&2
+        fi
+    done
+}
+
 function fuzz
 {
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
-    cd ch
-    NEW_TESTS=$(git diff --name-only "$(git merge-base origin/master "$SHA_TO_TEST"~)" "$SHA_TO_TEST" | grep -P 'tests/queries/0_stateless/.*\.sql' | sed -r -e 's!^!ch/!' | sort -R)
-    cd ..
+    # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
+    NEW_TESTS="$(grep -P 'tests/queries/0_stateless/.*\.sql' ci-changed-files.txt | sed -r -e 's!^!ch/!' | sort -R)"
+    # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
+    NEW_TESTS="$(filter_exists $NEW_TESTS)"
     if [[ -n "$NEW_TESTS" ]]
     then
-        NEW_TESTS_OPT="--interleave-queries-file ${NEW_TESTS}"
+        NEW_TESTS_OPT="${NEW_TESTS_OPT:---interleave-queries-file ${NEW_TESTS}}"
     else
-        NEW_TESTS_OPT=""
+        NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
     fi
 
-    ./clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
+    clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
 
     server_pid=$!
     kill -0 $server_pid
-    while ! ./clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
-    ./clickhouse-client --query "select 1"
+    while ! clickhouse-client --query "select 1" && kill -0 $server_pid ; do echo . ; sleep 1 ; done
+    clickhouse-client --query "select 1"
     kill -0 $server_pid
     echo Server started
 
@@ -111,14 +119,14 @@ continue
     # SC2012: Use find instead of ls to better handle non-alphanumeric filenames. They are all alphanumeric.
     # SC2046: Quote this to prevent word splitting. Actually I need word splitting.
     # shellcheck disable=SC2012,SC2046
-    ./clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) $NEW_TESTS_OPT \
+    clickhouse-client --query-fuzzer-runs=1000 --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
         2>&1 \
         || fuzzer_exit_code=$?
 
     echo "Fuzzer exit code is $fuzzer_exit_code"
 
-    ./clickhouse-client --query "select elapsed, query from system.processes" ||:
+    clickhouse-client --query "select elapsed, query from system.processes" ||:
     killall clickhouse-server ||:
     for _ in {1..10}
     do
@@ -190,7 +198,7 @@ case "$stage" in
         # Lost connection to the server. This probably means that the server died
         # with abort.
         echo "failure" > status.txt
-        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
+        if ! grep -ao "Received signal.*\|Logical error.*\|Assertion.*failed\|Failed assertion.*\|.*runtime error: .*\|.*is located.*\|SUMMARY: AddressSanitizer:.*\|SUMMARY: MemorySanitizer:.*\|SUMMARY: ThreadSanitizer:.*\|.*_LIBCPP_ASSERT.*" server.log > description.txt
         then
             echo "Lost connection to server. See the logs." > description.txt
         fi

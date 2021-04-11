@@ -42,4 +42,3 @@ GROUP BY timeslot
 └─────────────────────┴──────────────────────────────────────────────┴────────────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/summap/) <!--hide-->

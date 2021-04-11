@@ -1,6 +1,6 @@
 ---
 toc_priority: 39
-toc_title: "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c"
+toc_title: "Пользователь"
 ---
 
 # CREATE USER {#create-user-statement}
@@ -9,14 +9,16 @@ toc_title: "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u
 
 Синтаксис:
 
-```sql
+``` sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1] 
         [, name2 [ON CLUSTER cluster_name2] ...]
-    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']}]
     [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
+
+`ON CLUSTER` позволяет создавать пользователей в кластере, см. [Распределенные DDL](../../../sql-reference/distributed-ddl.md).
 
 ## Идентификация
 
@@ -28,6 +30,8 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
 - `IDENTIFIED WITH sha256_hash BY 'hash'`
 - `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 - `IDENTIFIED WITH double_sha1_hash BY 'hash'`
+- `IDENTIFIED WITH ldap SERVER 'server_name'`
+- `IDENTIFIED WITH kerberos` or `IDENTIFIED WITH kerberos REALM 'realm'`
 
 ## Пользовательский хост
 
@@ -81,5 +85,4 @@ CREATE USER user DEFAULT ROLE ALL
 CREATE USER john DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/user) 
 <!--hide-->

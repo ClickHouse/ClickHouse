@@ -14,10 +14,18 @@ namespace DB
 struct ITokenExtractor
 {
     virtual ~ITokenExtractor() = default;
+
     /// Fast inplace implementation for regular use.
     /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
     /// Returns false if parsing is finished, otherwise returns true.
-    virtual bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const = 0;
+    virtual bool nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const = 0;
+
+    /// Optimized version that can assume at least 15 padding bytes after data + len (as our Columns provide).
+    virtual bool nextInColumn(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const
+    {
+        return nextInField(data, len, pos, token_start, token_len);
+    }
+
     /// Special implementation for creating bloom filter for LIKE function.
     /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
     virtual bool nextLike(const String & str, size_t * pos, String & out) const = 0;
@@ -27,7 +35,7 @@ struct ITokenExtractor
 
 using TokenExtractorPtr = const ITokenExtractor *;
 
-struct MergeTreeIndexGranuleFullText : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
 {
     explicit MergeTreeIndexGranuleFullText(
         const String & index_name_,
@@ -50,7 +58,7 @@ struct MergeTreeIndexGranuleFullText : public IMergeTreeIndexGranule
 
 using MergeTreeIndexGranuleFullTextPtr = std::shared_ptr<MergeTreeIndexGranuleFullText>;
 
-struct MergeTreeIndexAggregatorFullText : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorFullText final : IMergeTreeIndexAggregator
 {
     explicit MergeTreeIndexAggregatorFullText(
         const Names & index_columns_,
@@ -74,12 +82,12 @@ struct MergeTreeIndexAggregatorFullText : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeConditionFullText : public IMergeTreeIndexCondition
+class MergeTreeConditionFullText final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeConditionFullText(
             const SelectQueryInfo & query_info,
-            const Context & context,
+            ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
             TokenExtractorPtr token_extactor_);
@@ -156,13 +164,13 @@ private:
 
 
 /// Parser extracting all ngrams from string.
-struct NgramTokenExtractor : public ITokenExtractor
+struct NgramTokenExtractor final : public ITokenExtractor
 {
     NgramTokenExtractor(size_t n_) : n(n_) {}
 
     static String getName() { return "ngrambf_v1"; }
 
-    bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
+    bool nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
     bool nextLike(const String & str, size_t * pos, String & token) const override;
 
     bool supportLike() const override { return true; }
@@ -171,18 +179,19 @@ struct NgramTokenExtractor : public ITokenExtractor
 };
 
 /// Parser extracting tokens (sequences of numbers and ascii letters).
-struct SplitTokenExtractor : public ITokenExtractor
+struct SplitTokenExtractor final : public ITokenExtractor
 {
     static String getName() { return "tokenbf_v1"; }
 
-    bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
+    bool nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
+    bool nextInColumn(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
     bool nextLike(const String & str, size_t * pos, String & token) const override;
 
     bool supportLike() const override { return true; }
 };
 
 
-class MergeTreeIndexFullText : public IMergeTreeIndex
+class MergeTreeIndexFullText final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexFullText(
@@ -199,7 +208,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query, const Context & context) const override;
+            const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 

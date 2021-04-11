@@ -2,7 +2,6 @@
 #include <ctime>
 #include <random>
 #include <thread>
-
 #include <mysqlxx/PoolWithFailover.h>
 
 
@@ -15,9 +14,12 @@ static bool startsWith(const std::string & s, const char * prefix)
 
 using namespace mysqlxx;
 
-PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & config_,
-                                   const std::string & config_name_, const unsigned default_connections_,
-                                   const unsigned max_connections_, const size_t max_tries_)
+PoolWithFailover::PoolWithFailover(
+        const Poco::Util::AbstractConfiguration & config_,
+        const std::string & config_name_,
+        const unsigned default_connections_,
+        const unsigned max_connections_,
+        const size_t max_tries_)
     : max_tries(max_tries_)
 {
     shareable = config_.getBool(config_name_ + ".share_connection", false);
@@ -59,16 +61,38 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & con
     }
 }
 
-PoolWithFailover::PoolWithFailover(const std::string & config_name_, const unsigned default_connections_,
-    const unsigned max_connections_, const size_t max_tries_)
-    : PoolWithFailover{
-        Poco::Util::Application::instance().config(), config_name_,
-        default_connections_, max_connections_, max_tries_}
+
+PoolWithFailover::PoolWithFailover(
+        const std::string & config_name_,
+        const unsigned default_connections_,
+        const unsigned max_connections_,
+        const size_t max_tries_)
+    : PoolWithFailover{Poco::Util::Application::instance().config(),
+            config_name_, default_connections_, max_connections_, max_tries_}
 {
 }
 
+
+PoolWithFailover::PoolWithFailover(
+        const std::string & database,
+        const RemoteDescription & addresses,
+        const std::string & user,
+        const std::string & password,
+        size_t max_tries_)
+    : max_tries(max_tries_)
+    , shareable(false)
+{
+    /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
+    for (const auto & [host, port] : addresses)
+    {
+        replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database, host, user, password, port));
+    }
+}
+
+
 PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
-    : max_tries{other.max_tries}, shareable{other.shareable}
+    : max_tries{other.max_tries}
+    , shareable{other.shareable}
 {
     if (shareable)
     {

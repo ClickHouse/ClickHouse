@@ -24,6 +24,8 @@ namespace DB
 class Exception : public Poco::Exception
 {
 public:
+    using FramePointers = std::vector<void *>;
+
     Exception() = default;
     Exception(const std::string & msg, int code, bool remote_ = false);
     Exception(const std::string & msg, const Exception & nested, int code);
@@ -66,6 +68,8 @@ public:
     bool isRemoteException() const { return remote; }
 
     std::string getStackTraceString() const;
+    /// Used for system.errors
+    FramePointers getStackFramePointers() const;
 
 private:
 #ifndef STD_EXCEPTION_HAS_STACK_TRACE
