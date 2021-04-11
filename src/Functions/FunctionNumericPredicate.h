@@ -1,8 +1,10 @@
 #pragma once
+
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <Interpreters/Context_fwd.h>
 #include <ext/range.h>
 
 
@@ -21,7 +23,7 @@ class FunctionNumericPredicate : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionNumericPredicate>();
     }

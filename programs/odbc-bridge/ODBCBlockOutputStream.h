@@ -4,6 +4,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/ExternalResultDescription.h>
 #include <Parsers/IdentifierQuotingStyle.h>
+#include <Interpreters/Context_fwd.h>
 #include <nanodbc/nanodbc.h>
 
 
@@ -19,7 +20,7 @@ public:
             const std::string & remote_database_name_,
             const std::string & remote_table_name_,
             const Block & sample_block_,
-            const Context & context_,
+            ContextPtr local_context_,
             IdentifierQuotingStyle quoting);
 
     Block getHeader() const override;
@@ -32,7 +33,7 @@ private:
     std::string db_name;
     std::string table_name;
     Block sample_block;
-    const Context & context;
+    ContextPtr local_context;
     IdentifierQuotingStyle quoting;
 
     ExternalResultDescription description;

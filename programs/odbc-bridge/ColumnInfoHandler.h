@@ -2,6 +2,7 @@
 
 #if USE_ODBC
 
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/Context.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Common/config.h>
@@ -11,13 +12,13 @@
 namespace DB
 {
 
-class ODBCColumnsInfoHandler : public HTTPRequestHandler
+class ODBCColumnsInfoHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    ODBCColumnsInfoHandler(size_t keep_alive_timeout_, const Context & context_)
-        : log(&Poco::Logger::get("ODBCColumnsInfoHandler"))
+    ODBCColumnsInfoHandler(size_t keep_alive_timeout_, ContextPtr context_)
+        : WithContext(context_)
+        , log(&Poco::Logger::get("ODBCColumnsInfoHandler"))
         , keep_alive_timeout(keep_alive_timeout_)
-        , context(context_)
     {
     }
 
@@ -26,7 +27,6 @@ public:
 private:
     Poco::Logger * log;
     size_t keep_alive_timeout;
-    const Context & context;
 };
 
 }

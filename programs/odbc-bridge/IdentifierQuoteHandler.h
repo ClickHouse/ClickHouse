@@ -11,11 +11,13 @@
 namespace DB
 {
 
-class IdentifierQuoteHandler : public HTTPRequestHandler
+class IdentifierQuoteHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    IdentifierQuoteHandler(size_t keep_alive_timeout_, const Context & context_)
-        : log(&Poco::Logger::get("IdentifierQuoteHandler")), keep_alive_timeout(keep_alive_timeout_), context(context_)
+    IdentifierQuoteHandler(size_t keep_alive_timeout_, ContextPtr context_)
+        : WithContext(context_)
+        , log(&Poco::Logger::get("IdentifierQuoteHandler"))
+        , keep_alive_timeout(keep_alive_timeout_)
     {
     }
 
@@ -24,7 +26,6 @@ public:
 private:
     Poco::Logger * log;
     size_t keep_alive_timeout;
-    const Context & context;
 };
 
 }

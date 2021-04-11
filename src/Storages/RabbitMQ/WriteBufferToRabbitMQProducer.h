@@ -20,7 +20,7 @@ class WriteBufferToRabbitMQProducer : public WriteBuffer
 public:
     WriteBufferToRabbitMQProducer(
             std::pair<String, UInt16> & parsed_address_,
-            const Context & global_context,
+            ContextPtr global_context,
             const std::pair<String, String> & login_password_,
             const String & vhost_,
             const Names & routing_keys_,
