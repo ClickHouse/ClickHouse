@@ -641,7 +641,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 " This is optional. Taskstats accounting will be disabled."
                 " To enable taskstats accounting you may add the required capability later manually.\"",
             "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
-        fmt::print(" {}\n", command);
         executeScript(command);
 #endif
 
