@@ -125,9 +125,8 @@ Block BlockInputStreamWithAdditionalColumns::readImpl()
         auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, block_rows);
 
         if (cut_block.rows() != block_rows)
-            throw Exception(
-                "Number of rows in block to add after cut must equal to number of rows in block from inner stream",
-                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+                "Number of rows in block to add after cut must equal to number of rows in block from inner stream");
 
         for (Int64 i = static_cast<Int64>(cut_block.columns() - 1); i >= 0; --i)
             block.insert(0, cut_block.getByPosition(i));
