@@ -20,7 +20,6 @@
 namespace DB
 {
 
-class Context;
 class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
@@ -30,7 +29,7 @@ class DatabaseMaterializePostgreSQL : public DatabaseAtomic
 
 public:
     DatabaseMaterializePostgreSQL(
-        const Context & context_,
+        ContextPtr context_,
         const String & metadata_path_,
         UUID uuid_,
         const ASTStorage * database_engine_define_,
@@ -43,16 +42,16 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
-    void loadStoredObjects(Context &, bool, bool force_attach) override;
+    void loadStoredObjects(ContextPtr, bool, bool force_attach) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(
-            const Context & context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) override;
+            ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) override;
 
-    StoragePtr tryGetTable(const String & name, const Context & context) const override;
+    StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    void createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query) override;
+    void createTable(ContextPtr context, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
-    void drop(const Context & context) override;
+    void drop(ContextPtr local_context) override;
 
     void shutdown() override;
 

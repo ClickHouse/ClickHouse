@@ -23,7 +23,7 @@ namespace ErrorCodes
 }
 
 MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
-    const Context & context_,
+    ContextPtr context_,
     postgres::ConnectionPtr connection_,
     const std::string & replication_slot_name_,
     const std::string & publication_name_,
@@ -491,9 +491,9 @@ void MaterializePostgreSQLConsumer::syncTables(std::shared_ptr<pqxx::nontransact
                     insert->table_id = storage->getStorageID();
                     insert->columns = buffer.columnsAST;
 
-                    auto insert_context(context);
-                    insert_context.makeQueryContext();
-                    insert_context.addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
+                    auto insert_context = Context::createCopy(context);
+                    insert_context->makeQueryContext();
+                    insert_context->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 
                     InterpreterInsertQuery interpreter(insert, insert_context, true);
                     auto block_io = interpreter.execute();
