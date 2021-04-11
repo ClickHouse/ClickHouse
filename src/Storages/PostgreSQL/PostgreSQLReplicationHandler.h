@@ -30,7 +30,7 @@ public:
             const std::string & database_name_,
             const postgres::ConnectionInfo & connection_info_,
             const std::string & metadata_path_,
-            const Context & context_,
+            ContextPtr context_,
             const size_t max_block_size_,
             bool allow_minimal_ddl_,
             bool is_postgresql_replica_database_engine_,
@@ -79,7 +79,7 @@ private:
     PostgreSQLTableStructurePtr fetchTableStructure(std::shared_ptr<pqxx::ReplicationTransaction> tx, const std::string & table_name);
 
     Poco::Logger * log;
-    const Context & context;
+    ContextPtr context;
 
     /// Remote database name.
     const String database_name;

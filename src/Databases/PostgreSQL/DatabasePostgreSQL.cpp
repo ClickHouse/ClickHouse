@@ -149,7 +149,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
         if (!table_checked && !checkPostgresTable(table_name))
             return StoragePtr{};
 
-        auto use_nulls = context.getSettingsRef().external_databases_use_nulls;
+        auto use_nulls = local_context->getSettingsRef().external_databases_use_nulls;
         auto connection = pool->get();
         auto columns = fetchPostgreSQLTableStructure(connection->conn(), doubleQuoteString(table_name), use_nulls).columns;
 

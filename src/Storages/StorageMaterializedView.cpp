@@ -208,10 +208,10 @@ void StorageMaterializedView::drop()
     dropInnerTableIfAny(true, getContext());
 }
 
-void StorageMaterializedView::dropInnerTableIfAny(bool no_delay, const Context & context)
+void StorageMaterializedView::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
 {
     if (has_inner_table && tryGetTargetTable())
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), context, target_table_id, no_delay);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, target_table_id, no_delay);
 }
 
 void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)

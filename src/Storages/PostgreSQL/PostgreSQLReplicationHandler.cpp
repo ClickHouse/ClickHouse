@@ -17,13 +17,11 @@ namespace DB
 static const auto reschedule_ms = 500;
 
 
-/// TODO: fetch replica identity index
-
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & database_name_,
     const postgres::ConnectionInfo & connection_info_,
     const std::string & metadata_path_,
-    const Context & context_,
+    ContextPtr context_,
     const size_t max_block_size_,
     bool allow_minimal_ddl_,
     bool is_postgresql_replica_database_engine_,
@@ -42,8 +40,8 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     replication_slot = fmt::format("{}_ch_replication_slot", database_name);
     publication_name = fmt::format("{}_ch_publication", database_name);
 
-    startup_task = context.getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ waitConnectionAndStart(); });
-    consumer_task = context.getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
+    startup_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ waitConnectionAndStart(); });
+    consumer_task = context->getSchedulePool().createTask("PostgreSQLReplicaStartup", [this]{ consumerFunc(); });
 }
 
 
@@ -169,7 +167,7 @@ NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_na
             query_str = fmt::format("SELECT * FROM {}", storage_data.first);
 
             const StorageInMemoryMetadata & storage_metadata = nested_storage->getInMemoryMetadata();
-            auto insert_context = storage_data.second->makeNestedTableContext();
+            auto insert_context = storage_data.second->getNestedTableContext();
 
             auto insert = std::make_shared<ASTInsertQuery>();
             insert->table_id = nested_storage->getStorageID();
@@ -384,7 +382,7 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     if (!is_postgresql_replica_database_engine)
         return nullptr;
 
-    auto use_nulls = context.getSettingsRef().external_databases_use_nulls;
+    auto use_nulls = context->getSettingsRef().external_databases_use_nulls;
     return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, use_nulls, true, true));
 }
 

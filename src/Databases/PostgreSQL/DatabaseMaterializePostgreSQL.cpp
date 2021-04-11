@@ -35,7 +35,7 @@ namespace ErrorCodes
 static const auto METADATA_SUFFIX = ".postgresql_replica_metadata";
 
 DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
-        const Context & context_,
+        ContextPtr context_,
         const String & metadata_path_,
         UUID uuid_,
         const ASTStorage * database_engine_define_,
@@ -58,7 +58,7 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
             remote_database_name,
             connection->getConnectionInfo(),
             metadata_path + METADATA_SUFFIX,
-            global_context,
+            getContext(),
             settings->postgresql_replica_max_block_size.value,
             settings->postgresql_replica_allow_minimal_ddl, true,
             settings->postgresql_replica_tables_list.value);
@@ -67,12 +67,12 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
 
     for (const auto & table_name : tables_to_replicate)
     {
-        auto storage = tryGetTable(table_name, global_context);
+        auto storage = tryGetTable(table_name, getContext());
 
         if (!storage)
-            storage = StorageMaterializePostgreSQL::create(StorageID(database_name, table_name), global_context);
+            storage = StorageMaterializePostgreSQL::create(StorageID(database_name, table_name), getContext());
 
-        replication_handler->addStorage(table_name, storage->template as<StorageMaterializePostgreSQL>());
+        replication_handler->addStorage(table_name, storage->as<StorageMaterializePostgreSQL>());
         materialized_tables[table_name] = storage;
     }
 
@@ -88,9 +88,9 @@ void DatabaseMaterializePostgreSQL::shutdown()
 }
 
 
-void DatabaseMaterializePostgreSQL::loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach)
+void DatabaseMaterializePostgreSQL::loadStoredObjects(ContextPtr local_context, bool has_force_restore_data_flag, bool force_attach)
 {
-    DatabaseAtomic::loadStoredObjects(context, has_force_restore_data_flag, force_attach);
+    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
 
     try
     {
@@ -107,16 +107,16 @@ void DatabaseMaterializePostgreSQL::loadStoredObjects(Context & context, bool ha
 }
 
 
-StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, const Context & context) const
+StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, ContextPtr local_context) const
 {
     /// When a nested ReplacingMergeTree table is managed from PostgreSQLReplicationHandler, its context is modified
     /// to show the type of managed table.
-    if (context.hasQueryContext())
+    if (local_context->hasQueryContext())
     {
-        auto storage_set = context.getQueryContext().getQueryFactoriesInfo().storages;
+        auto storage_set = local_context->getQueryContext()->getQueryFactoriesInfo().storages;
         if (storage_set.find("ReplacingMergeTree") != storage_set.end())
         {
-            return DatabaseAtomic::tryGetTable(name, context);
+            return DatabaseAtomic::tryGetTable(name, local_context);
         }
     }
 
@@ -132,14 +132,14 @@ StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, const
 }
 
 
-void DatabaseMaterializePostgreSQL::createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query)
+void DatabaseMaterializePostgreSQL::createTable(ContextPtr local_context, const String & name, const StoragePtr & table, const ASTPtr & query)
 {
-    if (context.hasQueryContext())
+    if (local_context->hasQueryContext())
     {
-        auto storage_set = context.getQueryContext().getQueryFactoriesInfo().storages;
+        auto storage_set = local_context->getQueryContext()->getQueryFactoriesInfo().storages;
         if (storage_set.find("ReplacingMergeTree") != storage_set.end())
         {
-            DatabaseAtomic::createTable(context, name, table, query);
+            DatabaseAtomic::createTable(local_context, name, table, query);
             return;
         }
     }
@@ -156,7 +156,7 @@ void DatabaseMaterializePostgreSQL::stopReplication()
 }
 
 
-void DatabaseMaterializePostgreSQL::drop(const Context & context)
+void DatabaseMaterializePostgreSQL::drop(ContextPtr local_context)
 {
     if (replication_handler)
         replication_handler->shutdownFinal();
@@ -167,12 +167,12 @@ void DatabaseMaterializePostgreSQL::drop(const Context & context)
     if (metadata.exists())
         metadata.remove(false);
 
-    DatabaseAtomic::drop(context);
+    DatabaseAtomic::drop(local_context);
 }
 
 
 DatabaseTablesIteratorPtr DatabaseMaterializePostgreSQL::getTablesIterator(
-        const Context & /* context */, const DatabaseOnDisk::FilterByNameFunction & /* filter_by_table_name */)
+        ContextPtr /* context */, const DatabaseOnDisk::FilterByNameFunction & /* filter_by_table_name */)
 {
     Tables nested_tables;
     for (const auto & [table_name, storage] : materialized_tables)

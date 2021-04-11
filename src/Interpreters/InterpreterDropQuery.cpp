@@ -436,7 +436,7 @@ void InterpreterDropQuery::extendQueryLogElemImpl(QueryLogElement & elem, const 
     elem.query_kind = "Drop";
 }
 
-void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, const Context & global_context, const Context & current_context, const StorageID & target_table_id, bool no_delay)
+void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context, ContextPtr current_context, const StorageID & target_table_id, bool no_delay)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
@@ -452,13 +452,13 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, const Conte
         /// to avoid "Not enough privileges" error if current user has only DROP VIEW ON mat_view_name privilege
         /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
         /// looks like expected behaviour and we have tests for it.
-        auto drop_context = Context(global_context);
-        drop_context.getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
-        if (auto txn = current_context.getZooKeeperMetadataTransaction())
+        auto drop_context = Context::createCopy(global_context);
+        drop_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database
-            drop_context.setQueryContext(const_cast<Context &>(current_context));
-            drop_context.initZooKeeperMetadataTransaction(txn, true);
+            drop_context->setQueryContext(current_context);
+            drop_context->initZooKeeperMetadataTransaction(txn, true);
         }
         InterpreterDropQuery drop_interpreter(ast_drop_query, drop_context);
         drop_interpreter.execute();

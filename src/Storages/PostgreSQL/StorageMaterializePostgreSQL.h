@@ -15,7 +15,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <ext/shared_ptr_helper.h>
@@ -24,14 +23,14 @@
 namespace DB
 {
 
-class StorageMaterializePostgreSQL final : public ext::shared_ptr_helper<StorageMaterializePostgreSQL>, public IStorage
+class StorageMaterializePostgreSQL final : public ext::shared_ptr_helper<StorageMaterializePostgreSQL>, public IStorage, WithContext
 {
     friend struct ext::shared_ptr_helper<StorageMaterializePostgreSQL>;
 
 public:
     StorageMaterializePostgreSQL(
         const StorageID & table_id_,
-        const Context & context_);
+        ContextPtr context_);
 
     String getName() const override { return "MaterializePostgreSQL"; }
 
@@ -39,7 +38,7 @@ public:
 
     void shutdown() override;
 
-    void dropInnerTableIfAny(bool no_delay, const Context & context) override;
+    void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
 
     NamesAndTypesList getVirtuals() const override;
 
@@ -47,7 +46,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context_,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -58,7 +57,9 @@ public:
 
     StoragePtr tryGetNested() const;
 
-    Context makeNestedTableContext() const;
+    ContextPtr getNestedTableContext() const { return nested_context; }
+
+    std::shared_ptr<Context> makeNestedTableContext() const;
 
     void setNestedStatus(bool loaded) { nested_loaded.store(loaded); }
 
@@ -73,7 +74,7 @@ protected:
         const String & remote_table_name,
         const postgres::ConnectionInfo & connection_info,
         const StorageInMemoryMetadata & storage_metadata,
-        const Context & context_,
+        ContextPtr context_,
         std::unique_ptr<MaterializePostgreSQLSettings> replication_settings_);
 
 private:
@@ -87,7 +88,6 @@ private:
     std::string getNestedTableName() const;
 
     std::string remote_table_name;
-    const Context global_context;
 
     std::unique_ptr<MaterializePostgreSQLSettings> replication_settings;
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
@@ -95,7 +95,7 @@ private:
     std::atomic<bool> nested_loaded = false;
     bool is_postgresql_replica_database = false;
     StorageID nested_table_id;
-    const Context nested_context;
+    ContextPtr nested_context;
 };
 
 }
