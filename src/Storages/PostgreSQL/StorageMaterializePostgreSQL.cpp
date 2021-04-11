@@ -23,7 +23,6 @@
 #include <common/logger_useful.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Core/PostgreSQL/PostgreSQLConnectionPool.h>
-#include <Interpreters/InterpreterDropQuery.h>
 
 
 namespace DB
@@ -51,10 +50,10 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
     , replication_settings(std::move(replication_settings_))
-    , is_postgresql_replica_database(
+    , is_materialize_postgresql_database(
             DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "MaterializePostgreSQL")
     , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
-    , nested_context(makeNestedTableContext())
+    , nested_context(makeNestedTableContext(context_->getGlobalContext()))
 {
     setInMemoryMetadata(storage_metadata);
 
@@ -76,9 +75,9 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , is_postgresql_replica_database(true)
+    , is_materialize_postgresql_database(true)
     , nested_table_id(table_id_)
-    , nested_context(makeNestedTableContext())
+    , nested_context(makeNestedTableContext(context_->getGlobalContext()))
 {
 }
 
@@ -99,7 +98,7 @@ std::string StorageMaterializePostgreSQL::getNestedTableName() const
 {
     auto table_name = getStorageID().table_name;
 
-    if (!is_postgresql_replica_database)
+    if (!is_materialize_postgresql_database)
         table_name += NESTED_STORAGE_SUFFIX;
 
     return table_name;
@@ -195,7 +194,7 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
     const auto & columns = metadata_snapshot->getColumns();
     NamesAndTypesList ordinary_columns_and_types;
 
-    if (!is_postgresql_replica_database)
+    if (!is_materialize_postgresql_database)
     {
         ordinary_columns_and_types = columns.getOrdinary();
     }
@@ -288,19 +287,19 @@ void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructure
 }
 
 
-std::shared_ptr<Context> StorageMaterializePostgreSQL::makeNestedTableContext() const
+std::shared_ptr<Context> StorageMaterializePostgreSQL::makeNestedTableContext(ContextPtr from_context) const
 {
-    auto context = Context::createCopy(getContext());
-    context->makeQueryContext();
-    context->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
+    auto new_context = Context::createCopy(from_context);
+    new_context->makeQueryContext();
+    new_context->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 
-    return context;
+    return new_context;
 }
 
 
 void StorageMaterializePostgreSQL::startup()
 {
-    if (!is_postgresql_replica_database)
+    if (!is_materialize_postgresql_database)
     {
         replication_handler->addStorage(remote_table_name, this);
         replication_handler->startup();
@@ -321,7 +320,7 @@ void StorageMaterializePostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPtr
         replication_handler->shutdownFinal();
 
     auto nested_table = getNested();
-    if (nested_table && !is_postgresql_replica_database)
+    if (nested_table && !is_materialize_postgresql_database)
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, nested_table_id, no_delay);
 }
 
@@ -365,31 +364,32 @@ Pipe StorageMaterializePostgreSQL::read(
 //{
 //    auto old_table_id = getStorageID();
 //    auto metadata_snapshot = getInMemoryMetadataPtr();
-//    bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
 //
-//    if (has_inner_table && tryGetTargetTable() && !from_atomic_to_atomic_database)
+//    IStorage::renameInMemory(new_table_id);
+//    auto nested_table = tryGetNested();
+//
+//    if (nested_table)
 //    {
-//        auto new_target_table_name = generateInnerTableName(new_table_id);
+//        auto new_nested_table_name = getNestedTableName();
 //        auto rename = std::make_shared<ASTRenameQuery>();
 //
 //        ASTRenameQuery::Table from;
-//        from.database = target_table_id.database_name;
-//        from.table = target_table_id.table_name;
+//        from.database = nested_table_id.database_name;
+//        from.table = nested_table_id.table_name;
 //
 //        ASTRenameQuery::Table to;
-//        to.database = target_table_id.database_name;
-//        to.table = new_target_table_name;
+//        to.database = nested_table_id.database_name;
+//        to.table = new_nested_table_name;
 //
 //        ASTRenameQuery::Element elem;
 //        elem.from = from;
 //        elem.to = to;
 //        rename->elements.emplace_back(elem);
 //
-//        InterpreterRenameQuery(rename, global_context).execute();
+//        InterpreterRenameQuery(rename, getContext()).execute();
 //        target_table_id.table_name = new_target_table_name;
 //    }
 //
-//    IStorage::renameInMemory(new_table_id);
 //    const auto & select_query = metadata_snapshot->getSelectQuery();
 //    // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
 //    DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
