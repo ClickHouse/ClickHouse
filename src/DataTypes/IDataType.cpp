@@ -168,7 +168,6 @@ SerializationPtr IDataType::getSubcolumnSerialization(const String & subcolumn_n
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
 }
 
-
 SerializationPtr IDataType::getSerialization(const String & column_name, const SerializationInfo & info) const
 {
     ISerialization::Settings settings =
@@ -183,7 +182,7 @@ SerializationPtr IDataType::getSerialization(const String & column_name, const S
 
 SerializationPtr IDataType::getSerialization(const IColumn & column) const
 {
-    if (typeid_cast<const ColumnSparse *>(&column))
+    if (column.isSparse())
         return getSparseSerialization();
 
     ISerialization::Settings settings =
@@ -198,9 +197,12 @@ SerializationPtr IDataType::getSerialization(const IColumn & column) const
 
 SerializationPtr IDataType::getSerialization(const ISerialization::Settings & settings) const
 {
-    double ratio = settings.num_rows ? std::min(static_cast<double>(settings.num_default_rows) / settings.num_rows, 1.0) : 0.0;
-    if (ratio >= settings.ratio_for_sparse_serialization)
-        return getSparseSerialization();
+    if (supportsSparseSerialization())
+    {
+        double ratio = settings.num_rows ? std::min(static_cast<double>(settings.num_default_rows) / settings.num_rows, 1.0) : 0.0;
+        if (ratio >= settings.ratio_for_sparse_serialization)
+            return getSparseSerialization();
+    }
 
     return getDefaultSerialization();
 }
@@ -224,9 +226,12 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
 
 SerializationPtr IDataType::getSerialization(const String & column_name, const StreamExistenceCallback & callback) const
 {
-    auto sparse_idx_name = escapeForFileName(column_name) + ".sparse.idx";
-    if (callback(sparse_idx_name))
-        return getSparseSerialization();
+    if (supportsSparseSerialization())
+    {
+        auto sparse_idx_name = escapeForFileName(column_name) + ".sparse.idx";
+        if (callback(sparse_idx_name))
+            return getSparseSerialization();
+    }
 
     return getDefaultSerialization();
 }

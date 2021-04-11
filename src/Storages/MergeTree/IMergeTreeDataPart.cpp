@@ -829,7 +829,9 @@ void IMergeTreeDataPart::loadRowsCount()
         for (const auto & column : getColumns())
         {
             /// Most trivial types
-            if (column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
+            if (column.type->isValueRepresentedByNumber()
+                && !column.type->haveSubtypes()
+                && getSerializationForColumn(column)->getKind() == ISerialization::Kind::DEFAULT)
             {
                 auto size = getColumnSize(column.name, *column.type);
 
@@ -875,7 +877,7 @@ void IMergeTreeDataPart::loadRowsCount()
     {
         for (const NameAndTypePair & column : columns)
         {
-            ColumnPtr column_col = column.type->createColumn();
+            ColumnPtr column_col = column.type->createColumn(*getSerializationForColumn(column));
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
