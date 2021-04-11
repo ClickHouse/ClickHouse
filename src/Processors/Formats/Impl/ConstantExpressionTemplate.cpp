@@ -144,9 +144,9 @@ class ReplaceLiteralsVisitor
 {
 public:
     LiteralsInfo replaced_literals;
-    const Context & context;
+    ContextPtr context;
 
-    explicit ReplaceLiteralsVisitor(const Context & context_) : context(context_) { }
+    explicit ReplaceLiteralsVisitor(ContextPtr context_) : context(context_) { }
 
     void visit(ASTPtr & ast, bool force_nullable)
     {
@@ -293,7 +293,7 @@ private:
 /// E.g. template of "position('some string', 'other string') != 0" is
 /// ["position", "(", DataTypeString, ",", DataTypeString, ")", "!=", DataTypeUInt64]
 ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
-                                                                 ASTPtr & expression, const IDataType & result_type, bool null_as_default_, const Context & context)
+                                                                 ASTPtr & expression, const IDataType & result_type, bool null_as_default_, ContextPtr context)
 {
     null_as_default = null_as_default_;
 
@@ -377,7 +377,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
                                                            TokenIterator expression_begin,
                                                            TokenIterator expression_end,
                                                            const ASTPtr & expression_,
-                                                           const Context & context,
+                                                           ContextPtr context,
                                                            bool * found_in_cache,
                                                            const String & salt)
 {
@@ -385,7 +385,7 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     ASTPtr expression = expression_->clone();
     ReplaceLiteralsVisitor visitor(context);
     visitor.visit(expression, result_column_type->isNullable() || null_as_default);
-    ReplaceQueryParameterVisitor param_visitor(context.getQueryParameters());
+    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(expression);
 
     size_t template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);

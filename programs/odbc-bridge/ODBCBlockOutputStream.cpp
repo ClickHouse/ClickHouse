@@ -44,14 +44,14 @@ ODBCBlockOutputStream::ODBCBlockOutputStream(nanodbc::connection & connection_,
                                              const std::string & remote_database_name_,
                                              const std::string & remote_table_name_,
                                              const Block & sample_block_,
-                                             const Context & context_,
+                                             ContextPtr local_context_,
                                              IdentifierQuotingStyle quoting_)
     : log(&Poco::Logger::get("ODBCBlockOutputStream"))
     , connection(connection_)
     , db_name(remote_database_name_)
     , table_name(remote_table_name_)
     , sample_block(sample_block_)
-    , context(context_)
+    , local_context(local_context_)
     , quoting(quoting_)
 {
     description.init(sample_block);
@@ -65,7 +65,7 @@ Block ODBCBlockOutputStream::getHeader() const
 void ODBCBlockOutputStream::write(const Block & block)
 {
     WriteBufferFromOwnString values_buf;
-    auto writer = FormatFactory::instance().getOutputStream("Values", values_buf, sample_block, context);
+    auto writer = FormatFactory::instance().getOutputStream("Values", values_buf, sample_block, local_context);
     writer->write(block);
 
     std::string query = getInsertQuery(db_name, table_name, block.getColumnsWithTypeAndName(), quoting) + values_buf.str();

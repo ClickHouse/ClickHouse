@@ -67,12 +67,12 @@ Block blockForKeys(
     return block;
 }
 
-Context copyContextAndApplySettings(
+ContextPtr copyContextAndApplySettings(
     const std::string & config_prefix,
-    const Context & context,
+    ContextPtr context,
     const Poco::Util::AbstractConfiguration & config)
 {
-    Context local_context(context);
+    auto local_context = Context::createCopy(context);
     if (config.has(config_prefix + ".settings"))
     {
         const auto prefix = config_prefix + ".settings";
@@ -88,7 +88,7 @@ Context copyContextAndApplySettings(
             changes.emplace_back(key, value);
         }
 
-        local_context.applySettingsChanges(changes);
+        local_context->applySettingsChanges(changes);
     }
     return local_context;
 }

@@ -112,7 +112,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     {
         auto connection = ODBCConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
-                context.getSettingsRef().odbc_bridge_connection_pool_size);
+                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
         if (mode == "write")
         {
@@ -135,9 +135,9 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             quoting_style = getQuotingStyle(*connection);
 #endif
             auto & read_buf = request.getStream();
-            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, context, max_block_size);
+            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, getContext(), max_block_size);
             auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
-            ODBCBlockOutputStream output_stream(*connection, db_name, table_name, *sample_block, context, quoting_style);
+            ODBCBlockOutputStream output_stream(*connection, db_name, table_name, *sample_block, getContext(), quoting_style);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
         }
@@ -146,7 +146,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             std::string query = params.get("query");
             LOG_TRACE(log, "Query: {}", query);
 
-            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, context);
+            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, getContext());
             ODBCBlockInputStream inp(*connection, query, *sample_block, max_block_size);
             copyData(inp, *writer);
         }

@@ -51,7 +51,7 @@ void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServer
 
         auto connection = ODBCConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
-                context.getSettingsRef().odbc_bridge_connection_pool_size);
+                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
         bool result = isSchemaAllowed(*connection);
 

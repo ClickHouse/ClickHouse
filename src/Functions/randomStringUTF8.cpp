@@ -30,7 +30,7 @@ class FunctionRandomStringUTF8 : public IFunction
 public:
     static constexpr auto name = "randomStringUTF8";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomStringUTF8>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomStringUTF8>(); }
 
     String getName() const override { return name; }
 

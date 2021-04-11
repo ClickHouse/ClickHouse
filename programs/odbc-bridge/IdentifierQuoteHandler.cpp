@@ -44,7 +44,7 @@ void IdentifierQuoteHandler::handleRequest(HTTPServerRequest & request, HTTPServ
 
         auto connection = ODBCConnectionFactory::instance().get(
                 validateODBCConnectionString(connection_string),
-                context.getSettingsRef().odbc_bridge_connection_pool_size);
+                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
         auto identifier = getIdentifierQuote(*connection);
 

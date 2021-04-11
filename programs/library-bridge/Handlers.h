@@ -17,16 +17,16 @@ namespace DB
 /// names of dictionary attributes, sample block to parse block of null values, block of null values. Everything is
 /// passed in binary format and is urlencoded. When dictionary is cloned, a new handler is created.
 /// Each handler is unique to dictionary.
-class LibraryRequestHandler : public HTTPRequestHandler
+class LibraryRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
 
     LibraryRequestHandler(
         size_t keep_alive_timeout_,
-        Context & context_)
-        : log(&Poco::Logger::get("LibraryRequestHandler"))
+        ContextPtr context_)
+        : WithContext(context_)
+        , log(&Poco::Logger::get("LibraryRequestHandler"))
         , keep_alive_timeout(keep_alive_timeout_)
-        , context(context_)
     {
     }
 
@@ -39,7 +39,6 @@ private:
 
     Poco::Logger * log;
     size_t keep_alive_timeout;
-    Context & context;
 };
 
 
