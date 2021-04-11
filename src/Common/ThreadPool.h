@@ -54,6 +54,15 @@ public:
     /// Similar to scheduleOrThrowOnError(...). Wait for specified amount of time and schedule a job or throw an exception.
     void scheduleOrThrow(Job job, int priority = 0, uint64_t wait_microseconds = 0);
 
+    /// Same as scheduleOrThrowOnError, and additionally attach jobs thread to caller thread group.
+    void scheduleOrThrowOnErrorAndAttachToThreadGroup(Job job, int priority = 0);
+
+    /// Same as tryScheduleAndAttachToThreadGroup, and additionally attach jobs thread to caller thread group.
+    bool tryScheduleAndAttachToThreadGroup(Job job, int priority = 0, uint64_t wait_microseconds = 0) noexcept;
+
+    /// Same as scheduleOrThrowAddAttachToThreadGroup, and additionally attach jobs thread to caller thread group.
+    void scheduleOrThrowAndAttachToThreadGroup(Job job, int priority = 0, uint64_t wait_microseconds = 0);
+
     /// Wait for all currently active jobs to be done.
     /// You may call schedule and wait many times in arbitrary order.
     /// If any thread was throw an exception, first exception will be rethrown from this method,
@@ -112,6 +121,15 @@ private:
     void finalize();
 };
 
+using PoolJob = std::function<void ()>;
+using AttachToThreadGroupDecorator = std::function<PoolJob (PoolJob)>;
+
+namespace ThreadPoolInitializer
+{
+
+void initializeAttachToThreadGroupDecorator(AttachToThreadGroupDecorator decorator);
+
+}
 
 /// ThreadPool with std::thread for threads.
 using FreeThreadPool = ThreadPoolImpl<std::thread>;
@@ -146,20 +164,27 @@ public:
 };
 
 
+enum class ThreadFromGlobalPoolStartStrategy
+{
+    defaultStrategy,
+    attachToThreadGroupStrategy
+};
 /** Looks like std::thread but allocates threads in GlobalThreadPool.
   * Also holds ThreadStatus for ClickHouse.
   */
-class ThreadFromGlobalPool
+template <ThreadFromGlobalPoolStartStrategy strategy>
+class ThreadFromGlobalPoolImpl
 {
 public:
-    ThreadFromGlobalPool() {}
+    ThreadFromGlobalPoolImpl() {}
 
     template <typename Function, typename... Args>
-    explicit ThreadFromGlobalPool(Function && func, Args &&... args)
+    explicit ThreadFromGlobalPoolImpl(Function && func, Args &&... args)
         : state(std::make_shared<Poco::Event>())
     {
         /// NOTE: If this will throw an exception, the destructor won't be called.
-        GlobalThreadPool::instance().scheduleOrThrow([
+        auto job =
+        ([
             state = state,
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
@@ -177,14 +202,20 @@ public:
             DB::ThreadStatus thread_status;
             std::apply(function, arguments);
         });
+
+        if constexpr (strategy == ThreadFromGlobalPoolStartStrategy::defaultStrategy)
+            GlobalThreadPool::instance().scheduleOrThrow(std::move(job));
+        else
+            GlobalThreadPool::instance().scheduleOrThrowAndAttachToThreadGroup(std::move(job));
+
     }
 
-    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs)
+    ThreadFromGlobalPoolImpl(ThreadFromGlobalPoolImpl && rhs)
     {
         *this = std::move(rhs);
     }
 
-    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
+    ThreadFromGlobalPoolImpl & operator=(ThreadFromGlobalPoolImpl && rhs)
     {
         if (joinable())
             abort();
@@ -192,7 +223,7 @@ public:
         return *this;
     }
 
-    ~ThreadFromGlobalPool()
+    ~ThreadFromGlobalPoolImpl()
     {
         if (joinable())
             abort();
@@ -224,6 +255,12 @@ private:
     std::shared_ptr<Poco::Event> state;
 };
 
+/// Prevent implicit template instantiation of ThreadFromGlobalPoolImpl
+extern template class ThreadFromGlobalPoolImpl<ThreadFromGlobalPoolStartStrategy::defaultStrategy>;
+extern template class ThreadFromGlobalPoolImpl<ThreadFromGlobalPoolStartStrategy::attachToThreadGroupStrategy>;
+
+using ThreadFromGlobalPool = ThreadFromGlobalPoolImpl<ThreadFromGlobalPoolStartStrategy::defaultStrategy>;
+using ThreadFromGlobalPoolAttachedToThreadGroup = ThreadFromGlobalPoolImpl<ThreadFromGlobalPoolStartStrategy::attachToThreadGroupStrategy>;
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;

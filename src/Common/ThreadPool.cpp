@@ -1,6 +1,9 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+
+#include <ext/scope_guard.h>
 
 #include <cassert>
 #include <type_traits>
@@ -154,10 +157,44 @@ bool ThreadPoolImpl<Thread>::trySchedule(Job job, int priority, uint64_t wait_mi
     return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
 }
 
+AttachToThreadGroupDecorator attach_to_thread_group_decorator;
+
 template <typename Thread>
 void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, int priority, uint64_t wait_microseconds)
 {
+    if (!attach_to_thread_group_decorator)
+        throw DB::Exception(DB::ErrorCodes::CANNOT_SCHEDULE_TASK, "Attach to thread group decorator was not initialized");
+
     scheduleImpl<void>(std::move(job), priority, wait_microseconds);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleOrThrowOnErrorAndAttachToThreadGroup(Job job, int priority)
+{
+    if (!attach_to_thread_group_decorator)
+        throw DB::Exception(DB::ErrorCodes::CANNOT_SCHEDULE_TASK, "Attach to thread group decorator was not initialized");
+
+    scheduleOrThrowOnError(attach_to_thread_group_decorator(job), priority);
+}
+
+template <typename Thread>
+bool ThreadPoolImpl<Thread>::tryScheduleAndAttachToThreadGroup(Job job, int priority, uint64_t wait_microseconds) noexcept
+{
+    if (!attach_to_thread_group_decorator)
+        return false;
+
+    return trySchedule(attach_to_thread_group_decorator(job), priority, wait_microseconds);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleOrThrowAndAttachToThreadGroup(Job job, int priority, uint64_t wait_microseconds)
+{
+    scheduleOrThrow(attach_to_thread_group_decorator(job), priority, wait_microseconds);
+}
+
+void ThreadPoolInitializer::initializeAttachToThreadGroupDecorator(AttachToThreadGroupDecorator decorator)
+{
+    attach_to_thread_group_decorator = std::move(decorator);
 }
 
 template <typename Thread>
@@ -287,9 +324,12 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
     }
 }
 
-
 template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPool>;
+template class ThreadPoolImpl<ThreadFromGlobalPoolAttachedToThreadGroup>;
+
+template class ThreadFromGlobalPoolImpl<ThreadFromGlobalPoolStartStrategy::defaultStrategy>;
+template class ThreadFromGlobalPoolImpl<ThreadFromGlobalPoolStartStrategy::attachToThreadGroupStrategy>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 

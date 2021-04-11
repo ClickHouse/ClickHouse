@@ -399,6 +399,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
     UseSSL use_ssl;
 
     MainThreadStatus::getInstance();
+    ThreadPoolInitializer::initializeAttachToThreadGroupDecorator([](PoolJob job)
+    {
+        return [job_to_execute = std::move(job), thread_group = CurrentThread::getGroup()]()
+        {
+            SCOPE_EXIT({
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            });
+
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            job_to_execute();
+        };
+    });
 
     registerFunctions();
     registerAggregateFunctions();
