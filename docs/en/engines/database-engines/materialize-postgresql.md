@@ -7,9 +7,9 @@ toc_title: MaterializePostgreSQL
 
 ## Creating a Database {#creating-a-database}
 
-## Requirements
+## Requirements {#requirements}
 
-Each replicated table must have one of the following **replica identity**:
+- Each replicated table must have one of the following **replica identity**:
 
 1. **default** (primary key)
 
@@ -38,3 +38,4 @@ WHERE oid = 'postgres_table'::regclass;
 
 ```
 
+- Setting `wal_level`to `logical` and `max_replication_slots` to at least `2` in the postgresql config file.

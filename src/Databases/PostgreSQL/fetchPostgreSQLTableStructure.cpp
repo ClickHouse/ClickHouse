@@ -26,14 +26,14 @@ namespace ErrorCodes
 }
 
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection)
+template<typename T>
+std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx)
 {
     std::unordered_set<std::string> tables;
     std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
         "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
-    pqxx::read_transaction tx(connection);
 
-    for (auto table_name : tx.stream<std::string>(query))
+    for (auto table_name : tx.template stream<std::string>(query))
         tables.insert(std::get<0>(table_name));
 
     return tables;
@@ -112,13 +112,13 @@ static DataTypePtr convertPostgreSQLDataType(std::string & type, bool is_nullabl
 
 template<typename T>
 std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
-        std::shared_ptr<T> tx, const String & postgres_table_name, const String & query, bool use_nulls, bool only_names_and_types)
+        T & tx, const String & postgres_table_name, const String & query, bool use_nulls, bool only_names_and_types)
 {
     auto columns = NamesAndTypesList();
 
     try
     {
-        pqxx::stream_from stream(*tx, pqxx::from_query, std::string_view(query));
+        pqxx::stream_from stream(tx, pqxx::from_query, std::string_view(query));
 
         if (only_names_and_types)
         {
@@ -158,7 +158,7 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
 
 template<typename T>
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        std::shared_ptr<T> tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key, bool with_replica_identity_index)
+        T & tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key, bool with_replica_identity_index)
 {
     PostgreSQLTableStructure table;
 
@@ -213,28 +213,36 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 }
 
 
-template
-PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        std::shared_ptr<pqxx::ReadTransaction> tx, const String & postgres_table_name, bool use_nulls,
-        bool with_primary_key, bool with_replica_identity_index);
-
-
-template
-PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        std::shared_ptr<pqxx::ReplicationTransaction> tx, const String & postgres_table_name, bool use_nulls,
-        bool with_primary_key, bool with_replica_identity_index);
-
-
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         pqxx::connection & connection, const String & postgres_table_name, bool use_nulls)
 {
-    auto tx = std::make_shared<pqxx::ReadTransaction>(connection);
-    auto table = fetchPostgreSQLTableStructure(tx, postgres_table_name, use_nulls, false, false);
-    tx->commit();
-
-    return table;
+    postgres::Transaction<pqxx::ReadTransaction> tx(connection);
+    return fetchPostgreSQLTableStructure(tx.getRef(), postgres_table_name, use_nulls, false, false);
 }
 
+
+std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection)
+{
+    postgres::Transaction<pqxx::ReadTransaction> tx(connection);
+    return fetchPostgreSQLTablesList(tx.getRef());
+}
+
+
+template
+PostgreSQLTableStructure fetchPostgreSQLTableStructure(
+        pqxx::ReadTransaction & tx, const String & postgres_table_name, bool use_nulls,
+        bool with_primary_key, bool with_replica_identity_index);
+
+template
+PostgreSQLTableStructure fetchPostgreSQLTableStructure(
+        pqxx::ReplicationTransaction & tx, const String & postgres_table_name, bool use_nulls,
+        bool with_primary_key, bool with_replica_identity_index);
+
+template
+std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx);
+
+template
+std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx);
 
 }
 

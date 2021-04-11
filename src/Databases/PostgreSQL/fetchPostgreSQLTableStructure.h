@@ -12,8 +12,6 @@
 namespace DB
 {
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection);
-
 struct PostgreSQLTableStructure
 {
     std::shared_ptr<NamesAndTypesList> columns;
@@ -23,13 +21,18 @@ struct PostgreSQLTableStructure
 
 using PostgreSQLTableStructurePtr = std::unique_ptr<PostgreSQLTableStructure>;
 
+std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection);
+
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     pqxx::connection & connection, const String & postgres_table_name, bool use_nulls);
 
 template<typename T>
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-    std::shared_ptr<T> tx, const String & postgres_table_name, bool use_nulls,
+    T & tx, const String & postgres_table_name, bool use_nulls,
     bool with_primary_key = false, bool with_replica_identity_index = false);
+
+template<typename T>
+std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx);
 
 }
 

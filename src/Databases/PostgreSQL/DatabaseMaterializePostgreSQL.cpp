@@ -60,7 +60,8 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
             metadata_path + METADATA_SUFFIX,
             getContext(),
             settings->postgresql_replica_max_block_size.value,
-            settings->postgresql_replica_allow_minimal_ddl, true,
+            settings->postgresql_replica_allow_minimal_ddl,
+            /* is_materialize_postgresql_database = */ true,
             settings->postgresql_replica_tables_list.value);
 
     std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection->getRef());
@@ -123,9 +124,9 @@ StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, Conte
     /// Note: In select query we call MaterializePostgreSQL table and it calls tryGetTable from its nested.
     std::lock_guard lock(tables_mutex);
     auto table = materialized_tables.find(name);
-    /// Here it is possible that nested table is temporarily out of reach, but return storage anyway,
-    /// it will not allow to read if nested is unavailable at the moment
-    if (table != materialized_tables.end())
+
+    /// Nested table is not created immediately. Consider that table exists only if nested table exists.
+    if (table != materialized_tables.end() && table->second->as<StorageMaterializePostgreSQL>()->isNestedLoaded())
         return table->second;
 
     return StoragePtr{};
@@ -177,13 +178,19 @@ DatabaseTablesIteratorPtr DatabaseMaterializePostgreSQL::getTablesIterator(
     Tables nested_tables;
     for (const auto & [table_name, storage] : materialized_tables)
     {
-        auto nested_storage = storage->template as<StorageMaterializePostgreSQL>()->tryGetNested();
+        auto nested_storage = storage->as<StorageMaterializePostgreSQL>()->tryGetNested();
 
         if (nested_storage)
             nested_tables[table_name] = nested_storage;
     }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(nested_tables, database_name);
+}
+
+
+void DatabaseMaterializePostgreSQL::renameTable(ContextPtr /* context_ */, const String & /* name */, IDatabase & /* to_database */, const String & /* to_name */, bool /* exchange */, bool /* dictionary */)
+{
+    throw Exception("MaterializePostgreSQL database does not support rename table.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

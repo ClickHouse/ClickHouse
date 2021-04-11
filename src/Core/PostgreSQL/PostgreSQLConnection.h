@@ -25,7 +25,7 @@ class Connection;
 using ConnectionPtr = std::shared_ptr<Connection>;
 
 
-/// Connection string and address without login/password (for error logs)
+/// Connection string and address without credentials (for logs)
 using ConnectionInfo = std::pair<std::string, std::string>;
 
 ConnectionInfo formatConnectionString(
