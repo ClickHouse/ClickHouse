@@ -430,6 +430,38 @@ def test_clickhouse_restart(started_cluster):
     assert(int(result) == 100050)
 
 
+def test_rename_table(started_cluster):
+    conn = get_postgres_conn(True)
+    cursor = conn.cursor()
+    create_postgres_table(cursor, 'postgresql_replica');
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
+
+    instance.query('''
+        CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
+            ENGINE = MaterializePostgreSQL(
+            'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
+            PRIMARY KEY key; ''')
+
+    result = instance.query('SELECT count() FROM test.postgresql_replica;')
+    while int(result) != 50:
+        time.sleep(0.5)
+        result = instance.query('SELECT count() FROM test.postgresql_replica;')
+
+    instance.query('RENAME TABLE test.postgresql_replica TO test.postgresql_replica_renamed')
+
+    result = instance.query('SELECT count() FROM test.postgresql_replica_renamed;')
+    while int(result) != 50:
+        time.sleep(0.5)
+        result = instance.query('SELECT count() FROM test.postgresql_replica_renamed;')
+
+    instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50, 50)")
+
+    result = instance.query('SELECT count() FROM test.postgresql_replica_renamed;')
+    while int(result) != 100:
+        time.sleep(0.5)
+        result = instance.query('SELECT count() FROM test.postgresql_replica_renamed;')
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

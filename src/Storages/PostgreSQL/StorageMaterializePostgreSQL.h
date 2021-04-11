@@ -65,6 +65,8 @@ public:
 
     void setStorageMetadata();
 
+    void renameNested();
+
 protected:
     StorageMaterializePostgreSQL(
         const StorageID & table_id_,
@@ -85,7 +87,7 @@ private:
 
     std::string getNestedTableName() const;
 
-    std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context) const;
+    static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
     std::string remote_table_name;
     std::unique_ptr<MaterializePostgreSQLSettings> replication_settings;
