@@ -5714,8 +5714,15 @@ void StorageReplicatedMergeTree::removePartsFromFilesystem(const DataPartsVector
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         for (const DataPartPtr & part : parts)
         {
-            pool.scheduleOrThrowOnError([&]
+            pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
             {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+                );
+                if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
                 LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
                 try
                 {
