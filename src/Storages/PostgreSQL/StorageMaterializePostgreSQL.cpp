@@ -362,6 +362,41 @@ Pipe StorageMaterializePostgreSQL::read(
 }
 
 
+void StorageMaterializePostgreSQL::renameInMemory(const StorageID & new_table_id)
+{
+    auto old_table_id = getStorageID();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
+
+    if (has_inner_table && tryGetTargetTable() && !from_atomic_to_atomic_database)
+    {
+        auto new_target_table_name = generateInnerTableName(new_table_id);
+        auto rename = std::make_shared<ASTRenameQuery>();
+
+        ASTRenameQuery::Table from;
+        from.database = target_table_id.database_name;
+        from.table = target_table_id.table_name;
+
+        ASTRenameQuery::Table to;
+        to.database = target_table_id.database_name;
+        to.table = new_target_table_name;
+
+        ASTRenameQuery::Element elem;
+        elem.from = from;
+        elem.to = to;
+        rename->elements.emplace_back(elem);
+
+        InterpreterRenameQuery(rename, global_context).execute();
+        target_table_id.table_name = new_target_table_name;
+    }
+
+    IStorage::renameInMemory(new_table_id);
+    const auto & select_query = metadata_snapshot->getSelectQuery();
+    // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
+    DatabaseCatalog::instance().updateDependency(select_query.select_table_id, old_table_id, select_query.select_table_id, getStorageID());
+}
+
+
 void registerStorageMaterializePostgreSQL(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
