@@ -35,7 +35,7 @@ postgres# SELECT CASE relreplident
        END AS replica_identity
 FROM pg_class
 WHERE oid = 'postgres_table'::regclass;
-
 ```
 
 - Setting `wal_level`to `logical` and `max_replication_slots` to at least `2` in the postgresql config file.
+
