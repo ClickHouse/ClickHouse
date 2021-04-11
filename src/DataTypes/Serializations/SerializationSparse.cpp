@@ -193,7 +193,6 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    settings.path.push_back(Substream::SparseOffsets);
     auto * state_sparse = checkAndGetDeserializeState<DeserializeStateSparse>(state, *this);
 
     auto mutable_column = column->assumeMutable();
@@ -203,6 +202,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     size_t old_size = offsets_data.size();
 
     size_t read_rows = 0;
+    settings.path.push_back(Substream::SparseOffsets);
     if (auto * stream = settings.getter(settings.path))
         read_rows = deserializeOffsets(offsets_data, *stream, limit, *state_sparse);
 

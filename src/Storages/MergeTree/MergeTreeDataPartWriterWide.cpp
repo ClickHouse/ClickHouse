@@ -399,7 +399,9 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
 void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name, const IDataType & type)
 {
-    if (!type.isValueRepresentedByNumber() || type.haveSubtypes())
+    const auto & serialization = serializations[name];
+
+    if (!type.isValueRepresentedByNumber() || type.haveSubtypes() || serialization->getKind() != ISerialization::Kind::SPARSE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type.getName());
 
     auto disk = data_part->volume->getDisk();
@@ -413,8 +415,6 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const String & name,
     UInt64 index_granularity_rows = data_part->index_granularity_info.fixed_index_granularity;
 
     size_t mark_num;
-
-    const auto & serialization = serializations[name];
 
     for (mark_num = 0; !mrk_in.eof(); ++mark_num)
     {
@@ -559,8 +559,12 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     /// data according to marks. Otherwise throws LOGICAL_ERROR (equal to abort in debug mode)
     for (const auto & column : columns_list)
     {
-        if (column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
+        if (column.type->isValueRepresentedByNumber()
+            && !column.type->haveSubtypes()
+            && serializations[column.name]->getKind() == ISerialization::Kind::DEFAULT)
+        {
             validateColumnOfFixedSize(column.name, *column.type);
+        }
     }
 #endif
 

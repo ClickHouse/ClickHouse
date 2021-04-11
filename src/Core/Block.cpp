@@ -9,6 +9,7 @@
 #include <Common/assert_cast.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 
 #include <iterator>
 
@@ -482,6 +483,13 @@ DataTypes Block::getDataTypes() const
     return res;
 }
 
+static String getNameOfBaseColumn(const IColumn & column)
+{
+    if (const auto * column_sparse = checkAndGetColumn<ColumnSparse>(&column))
+        return column_sparse->getValuesColumn().getName();
+
+    return column.getName();
+}
 
 template <typename ReturnType>
 static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description)
@@ -515,7 +523,7 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
         if (!actual.column || !expected.column)
             continue;
 
-        if (actual.column->getName() != expected.column->getName())
+        if (getNameOfBaseColumn(*actual.column) != getNameOfBaseColumn(*expected.column))
             return on_error("Block structure mismatch in " + context_description + " stream: different columns:\n"
                 + lhs.dumpStructure() + "\n" + rhs.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
 

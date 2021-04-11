@@ -87,7 +87,6 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
             continue;
         }
 
-        convertToFullIfSparse(chunk);
         state.init_chunks[i].set(std::move(chunk));
         input_states[i].is_initialized = true;
     }
