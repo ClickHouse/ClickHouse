@@ -59,8 +59,6 @@ public:
 
     ContextPtr getNestedTableContext() const { return nested_context; }
 
-    std::shared_ptr<Context> makeNestedTableContext() const;
-
     void setNestedStatus(bool loaded) { nested_loaded.store(loaded); }
 
     bool isNestedLoaded() { return nested_loaded.load(); }
@@ -87,13 +85,13 @@ private:
 
     std::string getNestedTableName() const;
 
-    std::string remote_table_name;
+    std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context) const;
 
+    std::string remote_table_name;
     std::unique_ptr<MaterializePostgreSQLSettings> replication_settings;
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
-
     std::atomic<bool> nested_loaded = false;
-    bool is_postgresql_replica_database = false;
+    bool is_materialize_postgresql_database = false;
     StorageID nested_table_id;
     ContextPtr nested_context;
 };
