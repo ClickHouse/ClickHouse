@@ -1213,7 +1213,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
     {
         /// Parallel parts removal.
 
-        size_t num_threads = std::min(size_t(settings->max_part_removal_threads), parts_to_remove.size());
+        size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
         ThreadPool pool(num_threads);
 
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
