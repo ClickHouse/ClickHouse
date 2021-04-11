@@ -333,13 +333,28 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
             /// If it exists on our replica, ignore it.
             if (storage.getActiveContainingPart(existing_part_name))
             {
-                LOG_INFO(log, "Block with ID {} already exists locally as part {}; ignoring it.", block_id, existing_part_name);
                 part->is_duplicate = true;
                 last_block_is_duplicate = true;
                 ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
+                if (quorum)
+                {
+                    LOG_INFO(log, "Block with ID {} already exists locally as part {}; ignoring it, but checking quorum.", block_id, existing_part_name);
+
+                    std::string quorum_path;
+                    if (quorum_parallel)
+                        quorum_path = storage.zookeeper_path + "/quorum/parallel/" + existing_part_name;
+                    else
+                        quorum_path = storage.zookeeper_path + "/quorum/status";
+
+                    waitForQuorum(zookeeper, existing_part_name, quorum_path, quorum_info.is_active_node_value);
+                }
+                else
+                {
+                    LOG_INFO(log, "Block with ID {} already exists locally as part {}; ignoring it.", block_id, existing_part_name);
+                }
+
                 return;
             }
-
             LOG_INFO(log, "Block with ID {} already exists on other replicas as part {}; will write it locally with that name.",
                 block_id, existing_part_name);
 
@@ -478,50 +493,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(
                 storage.updateQuorum(part->name, false);
         }
 
-        /// We are waiting for quorum to be satisfied.
-        LOG_TRACE(log, "Waiting for quorum");
-
-        try
-        {
-            while (true)
-            {
-                zkutil::EventPtr event = std::make_shared<Poco::Event>();
-
-                std::string value;
-                /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.
-                if (!zookeeper->tryGet(quorum_info.status_path, value, nullptr, event))
-                    break;
-
-                LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_info.status_path);
-
-                ReplicatedMergeTreeQuorumEntry quorum_entry(value);
-
-                /// If the node has time to disappear, and then appear again for the next insert.
-                if (quorum_entry.part_name != part->name)
-                    break;
-
-                if (!event->tryWait(quorum_timeout_ms))
-                    throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
-
-                LOG_TRACE(log, "Quorum {} updated, will check quorum node still exists", quorum_info.status_path);
-            }
-
-            /// And what if it is possible that the current replica at this time has ceased to be active
-            /// and the quorum is marked as failed and deleted?
-            String value;
-            if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, nullptr)
-                || value != quorum_info.is_active_node_value)
-                throw Exception("Replica become inactive while waiting for quorum", ErrorCodes::NO_ACTIVE_REPLICAS);
-        }
-        catch (...)
-        {
-            /// We do not know whether or not data has been inserted
-            /// - whether other replicas have time to download the part and mark the quorum as done.
-            throw Exception("Unknown status, client must retry. Reason: " + getCurrentExceptionMessage(false),
-                ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
-        }
-
-        LOG_TRACE(log, "Quorum satisfied");
+        waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value);
     }
 }
 
@@ -530,6 +502,59 @@ void ReplicatedMergeTreeBlockOutputStream::writePrefix()
     /// Only check "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
     storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
+}
+
+
+void ReplicatedMergeTreeBlockOutputStream::waitForQuorum(
+    zkutil::ZooKeeperPtr & zookeeper,
+    const std::string & part_name,
+    const std::string & quorum_path,
+    const std::string & is_active_node_value) const
+{
+    /// We are waiting for quorum to be satisfied.
+    LOG_TRACE(log, "Waiting for quorum");
+
+    try
+    {
+        while (true)
+        {
+            zkutil::EventPtr event = std::make_shared<Poco::Event>();
+
+            std::string value;
+            /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.
+            if (!zookeeper->tryGet(quorum_path, value, nullptr, event))
+                break;
+
+            LOG_TRACE(log, "Quorum node {} still exists, will wait for updates", quorum_path);
+
+            ReplicatedMergeTreeQuorumEntry quorum_entry(value);
+
+            /// If the node has time to disappear, and then appear again for the next insert.
+            if (quorum_entry.part_name != part_name)
+                break;
+
+            if (!event->tryWait(quorum_timeout_ms))
+                throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
+
+            LOG_TRACE(log, "Quorum {} updated, will check quorum node still exists", quorum_path);
+        }
+
+        /// And what if it is possible that the current replica at this time has ceased to be active
+        /// and the quorum is marked as failed and deleted?
+        String value;
+        if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, nullptr)
+            || value != is_active_node_value)
+            throw Exception("Replica become inactive while waiting for quorum", ErrorCodes::NO_ACTIVE_REPLICAS);
+    }
+    catch (...)
+    {
+        /// We do not know whether or not data has been inserted
+        /// - whether other replicas have time to download the part and mark the quorum as done.
+        throw Exception("Unknown status, client must retry. Reason: " + getCurrentExceptionMessage(false),
+            ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
+    }
+
+    LOG_TRACE(log, "Quorum satisfied");
 }
 
 

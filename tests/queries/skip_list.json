@@ -759,6 +759,8 @@
         "01715_background_checker_blather_zookeeper",
         "01747_alter_partition_key_enum_zookeeper",
         "01761_alter_decimal_zookeeper",
+        "01360_materialized_view_with_join_on_query_log", // creates and drops MVs on query_log, which may interrupt flushes.
+        "01509_parallel_quorum_insert_no_replicas", // It's ok to execute in parallel with oter tests but not several instances of the same test.
         "attach",
         "ddl_dictionaries",
         "dictionary",
