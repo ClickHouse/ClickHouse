@@ -40,7 +40,7 @@ function update_hash() {
 
 
 function generate_selectors(elem) {
-    var html = '<div id="systems_selector"><h3>Compare</h3>';
+    var html = '<div id="systems_selector">';
 
     var available_results = results;
 
