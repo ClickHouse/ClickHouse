@@ -27,7 +27,7 @@ private:
             sk_update = std::make_unique<datasketches::update_theta_sketch>(datasketches::update_theta_sketch::builder().build());
         return sk_update.get();
     }
-    
+
     inline datasketches::theta_union * getSkUnion()
     {
         if (!sk_union)
@@ -66,7 +66,7 @@ public:
     void merge(const ThetaSketchData & rhs)
     {
         datasketches::theta_union * u = getSkUnion();
-        
+
         if (sk_update)
         {
             u->update(*sk_update);
