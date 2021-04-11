@@ -31,6 +31,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
     , column_names(columns)
+    , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(columns))
     , log(log_)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
@@ -278,11 +279,19 @@ Block KafkaBlockInputStream::readImpl()
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
         result_block.insert(column);
 
-    return ConvertingBlockInputStream(
-               std::make_shared<OneBlockInputStream>(result_block),
-               getHeader(),
-               ConvertingBlockInputStream::MatchColumnsMode::Name)
-        .read();
+    Columns columns;
+    for (const auto & elem : column_names_and_types)
+    {
+        auto current_column = result_block.getByName(elem.getNameInStorage()).column;
+        current_column = current_column->decompress();
+
+        if (elem.isSubcolumn())
+            columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+        else
+            columns.emplace_back(std::move(current_column));
+    }
+
+    return getHeader().cloneWithColumns(std::move(columns));
 }
 
 void KafkaBlockInputStream::readSuffixImpl()

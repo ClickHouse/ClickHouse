@@ -922,6 +922,36 @@ def test_kafka_consumer_hang2(kafka_cluster):
 
 
 @pytest.mark.timeout(120)
+def test_kafka_subcolumns(kafka_cluster):
+    messages = ''
+    for i in range(25):
+        messages += json.dumps({'key': i, 'value': {'a': i, 'b': -i}}) + '\n'
+    kafka_produce('json', [messages])
+
+    messages = ''
+    for i in range(25, 50):
+        messages += json.dumps({'key': i, 'value': {'a': i, 'b': -i}}) + '\n'
+    kafka_produce('json', [messages])
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value Tuple(a Int64, b Int64))
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'json',
+                     kafka_group_name = 'json',
+                     kafka_format = 'JSONEachRow';
+        ''')
+
+    result = ''
+    while True:
+        result += instance.query('SELECT key, value.a, value.b FROM test.kafka', ignore_error=True)
+        if kafka_check_result(result, False, ref_file='test_kafka_subcolumns.reference'):
+            break
+
+    kafka_check_result(result, True, ref_file='test_kafka_subcolumns.reference')
+
+
+@pytest.mark.timeout(120)
 def test_kafka_csv_with_delimiter(kafka_cluster):
     messages = []
     for i in range(50):

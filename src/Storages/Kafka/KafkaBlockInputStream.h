@@ -41,6 +41,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
     Names column_names;
+    NamesAndTypesList column_names_and_types;
     Poco::Logger * log;
     UInt64 max_block_size;
 
