@@ -5708,7 +5708,7 @@ void StorageReplicatedMergeTree::removePartsFromFilesystem(const DataPartsVector
     {
         /// Parallel parts removal.
 
-        size_t num_threads = std::min(size_t(settings->max_part_removal_threads), parts.size());
+        size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts.size());
         ThreadPool pool(num_threads);
 
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
