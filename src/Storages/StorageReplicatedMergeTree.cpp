@@ -5703,6 +5703,20 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
 
 void StorageReplicatedMergeTree::removePartsFromFilesystem(const DataPartsVector & parts)
 {
+    auto remove_part = [&](const auto & part)
+    {
+        LOG_DEBUG(log, "Removing part from filesystem {}", part.name);
+        try
+        {
+            bool keep_s3 = !this->unlockSharedData(part);
+            part.remove(keep_s3);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "There is a problem with deleting part " + part.name + " from filesystem");
+        }
+    };
+
     const auto settings = getSettings();
     if (settings->max_part_removal_threads > 1 && parts.size() > settings->concurrent_part_removal_threshold)
     {
@@ -5723,16 +5737,7 @@ void StorageReplicatedMergeTree::removePartsFromFilesystem(const DataPartsVector
                 if (thread_group)
                     CurrentThread::attachTo(thread_group);
 
-                LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
-                try
-                {
-                    bool keep_s3 = !this->unlockSharedData(*part);
-                    part->remove(keep_s3);
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, "There is a problem with deleting part " + part->name + " from filesystem");
-                }
+                remove_part(*part);
             });
         }
 
@@ -5742,16 +5747,7 @@ void StorageReplicatedMergeTree::removePartsFromFilesystem(const DataPartsVector
     {
         for (const DataPartPtr & part : parts)
         {
-            LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
-            try
-            {
-                bool keep_s3 = !this->unlockSharedData(*part);
-                part->remove(keep_s3);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "There is a problem with deleting part " + part->name + " from filesystem");
-            }
+            remove_part(*part);
         }
     }
 }
