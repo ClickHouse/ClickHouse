@@ -1,8 +1,9 @@
 #include <Storages/LiveView/TemporaryLiveViewCleaner.h>
-#include <Storages/LiveView/StorageLiveView.h>
+
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Storages/LiveView/StorageLiveView.h>
 
 
 namespace DB
@@ -15,7 +16,7 @@ namespace ErrorCodes
 
 namespace
 {
-    void executeDropQuery(const StorageID & storage_id, Context & context)
+    void executeDropQuery(const StorageID & storage_id, ContextPtr context)
     {
         if (!DatabaseCatalog::instance().isTableExist(storage_id, context))
             return;
@@ -41,7 +42,7 @@ namespace
 std::unique_ptr<TemporaryLiveViewCleaner> TemporaryLiveViewCleaner::the_instance;
 
 
-void TemporaryLiveViewCleaner::init(Context & global_context_)
+void TemporaryLiveViewCleaner::init(ContextPtr global_context_)
 {
     if (the_instance)
         throw Exception("TemporaryLiveViewCleaner already initialized", ErrorCodes::LOGICAL_ERROR);
@@ -62,8 +63,7 @@ void TemporaryLiveViewCleaner::shutdown()
     the_instance.reset();
 }
 
-TemporaryLiveViewCleaner::TemporaryLiveViewCleaner(Context & global_context_)
-    : global_context(global_context_)
+TemporaryLiveViewCleaner::TemporaryLiveViewCleaner(ContextPtr global_context_) : WithContext(global_context_)
 {
 }
 
@@ -142,7 +142,7 @@ void TemporaryLiveViewCleaner::backgroundThreadFunc()
 
         lock.unlock();
         for (const auto & storage_id : storages_to_drop)
-            executeDropQuery(storage_id, global_context);
+            executeDropQuery(storage_id, getContext());
         lock.lock();
     }
 }

@@ -93,7 +93,7 @@ public:
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 struct SystemLogs
 {
-    SystemLogs(Context & global_context, const Poco::Util::AbstractConfiguration & config);
+    SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
     ~SystemLogs();
 
     void shutdown();
@@ -115,7 +115,7 @@ struct SystemLogs
 
 
 template <typename LogElement>
-class SystemLog : public ISystemLog, private boost::noncopyable
+class SystemLog : public ISystemLog, private boost::noncopyable, WithContext
 {
 public:
     using Self = SystemLog;
@@ -129,7 +129,7 @@ public:
       *   and new table get created - as if previous table was not exist.
       */
     SystemLog(
-        Context & context_,
+        ContextPtr context_,
         const String & database_name_,
         const String & table_name_,
         const String & storage_def_,
@@ -166,7 +166,6 @@ protected:
 
 private:
     /* Saving thread data */
-    Context & context;
     const StorageID table_id;
     const String storage_def;
     StoragePtr table;
@@ -208,12 +207,13 @@ private:
 
 
 template <typename LogElement>
-SystemLog<LogElement>::SystemLog(Context & context_,
+SystemLog<LogElement>::SystemLog(
+    ContextPtr context_,
     const String & database_name_,
     const String & table_name_,
     const String & storage_def_,
     size_t flush_interval_milliseconds_)
-    : context(context_)
+    : WithContext(context_)
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
     , flush_interval_milliseconds(flush_interval_milliseconds_)
@@ -463,8 +463,8 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         ASTPtr query_ptr(insert.release());
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
-        Context insert_context(context);
-        insert_context.makeQueryContext();
+        auto insert_context = Context::createCopy(context);
+        insert_context->makeQueryContext();
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
@@ -494,7 +494,7 @@ void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
 
     if (table)
     {
@@ -506,7 +506,8 @@ void SystemLog<LogElement>::prepareTable()
         {
             /// Rename the existing table.
             int suffix = 0;
-            while (DatabaseCatalog::instance().isTableExist({table_id.database_name, table_id.table_name + "_" + toString(suffix)}, context))
+            while (DatabaseCatalog::instance().isTableExist(
+                {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
@@ -525,10 +526,14 @@ void SystemLog<LogElement>::prepareTable()
 
             rename->elements.emplace_back(elem);
 
-            LOG_DEBUG(log, "Existing table {} for system log has obsolete or different structure. Renaming it to {}", description, backQuoteIfNeed(to.table));
+            LOG_DEBUG(
+                log,
+                "Existing table {} for system log has obsolete or different structure. Renaming it to {}",
+                description,
+                backQuoteIfNeed(to.table));
 
-            Context query_context = context;
-            query_context.makeQueryContext();
+            auto query_context = Context::createCopy(context);
+            query_context->makeQueryContext();
             InterpreterRenameQuery(rename, query_context).execute();
 
             /// The required table will be created.
@@ -546,13 +551,14 @@ void SystemLog<LogElement>::prepareTable()
         auto create = getCreateTableQuery();
 
 
-        Context query_context = context;
-        query_context.makeQueryContext();
+        auto query_context = Context::createCopy(context);
+        query_context->makeQueryContext();
+
         InterpreterCreateQuery interpreter(create, query_context);
         interpreter.setInternal(true);
         interpreter.execute();
 
-        table = DatabaseCatalog::instance().getTable(table_id, context);
+        table = DatabaseCatalog::instance().getTable(table_id, getContext());
     }
 
     is_prepared = true;

@@ -25,11 +25,11 @@ CreatingSetsTransform::CreatingSetsTransform(
     Block out_header_,
     SubqueryForSet subquery_for_set_,
     SizeLimits network_transfer_limits_,
-    const Context & context_)
+    ContextPtr context_)
     : IAccumulatingTransform(std::move(in_header_), std::move(out_header_))
+    , WithContext(context_)
     , subquery(std::move(subquery_for_set_))
     , network_transfer_limits(std::move(network_transfer_limits_))
-    , context(context_)
 {
 }
 
@@ -51,7 +51,7 @@ void CreatingSetsTransform::startSubquery()
         LOG_TRACE(log, "Filling temporary table.");
 
     if (subquery.table)
-        table_out = subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), context);
+        table_out = subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext());
 
     done_with_set = !subquery.set;
     done_with_join = !subquery.join;

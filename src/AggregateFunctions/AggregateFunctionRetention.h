@@ -94,6 +94,8 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
         for (const auto i : ext::range(0, events_size))

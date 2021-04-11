@@ -27,7 +27,7 @@ class FunctionRandomPrintableASCII : public IFunction
 {
 public:
     static constexpr auto name = "randomPrintableASCII";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomPrintableASCII>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomPrintableASCII>(); }
 
     String getName() const override
     {

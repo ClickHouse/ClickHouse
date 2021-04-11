@@ -30,9 +30,9 @@ private:
 
 public:
     static constexpr auto name = "getMacro";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionGetMacro>(context.getMacros());
+        return std::make_shared<FunctionGetMacro>(context->getMacros());
     }
 
     explicit FunctionGetMacro(MultiVersion<Macros>::Version macros_) : macros(std::move(macros_)) {}

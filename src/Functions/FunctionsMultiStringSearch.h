@@ -47,9 +47,9 @@ class FunctionsMultiStringSearch : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
-        if (Impl::is_using_hyperscan && !context.getSettingsRef().allow_hyperscan)
+        if (Impl::is_using_hyperscan && !context->getSettingsRef().allow_hyperscan)
             throw Exception(
                 "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
 

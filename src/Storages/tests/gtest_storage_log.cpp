@@ -70,7 +70,7 @@ using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
-std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & context)
+std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -108,7 +108,7 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::Context & cont
 }
 
 // Returns all table data in Values format.
-std::string readData(DB::StoragePtr & table, const DB::Context & context)
+std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
