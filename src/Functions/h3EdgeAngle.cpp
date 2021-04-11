@@ -32,7 +32,7 @@ class FunctionH3EdgeAngle : public IFunction
 public:
     static constexpr auto name = "h3EdgeAngle";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3EdgeAngle>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3EdgeAngle>(); }
 
     std::string getName() const override { return name; }
 

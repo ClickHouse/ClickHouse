@@ -4,7 +4,7 @@
 
 namespace DB
 {
-InterpreterShowPrivilegesQuery::InterpreterShowPrivilegesQuery(const ASTPtr & query_ptr_, Context & context_)
+InterpreterShowPrivilegesQuery::InterpreterShowPrivilegesQuery(const ASTPtr & query_ptr_, ContextPtr context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }

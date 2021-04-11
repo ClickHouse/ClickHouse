@@ -168,6 +168,8 @@ public:
         );
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void insertResultInto(
         AggregateDataPtr place,
         IColumn & to,

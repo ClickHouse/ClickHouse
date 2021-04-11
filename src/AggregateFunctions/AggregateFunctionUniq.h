@@ -210,6 +210,8 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -264,6 +266,8 @@ public:
     {
         return std::make_shared<DataTypeUInt64>();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

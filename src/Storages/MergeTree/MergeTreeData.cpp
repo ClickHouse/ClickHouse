@@ -133,7 +133,7 @@ MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     const String & relative_data_path_,
     const StorageInMemoryMetadata & metadata_,
-    Context & context_,
+    ContextPtr context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
@@ -141,7 +141,7 @@ MergeTreeData::MergeTreeData(
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : IStorage(table_id_)
-    , global_context(context_.getGlobalContext())
+    , WithContext(context_->getGlobalContext())
     , merging_params(merging_params_)
     , require_part_metadata(require_part_metadata_)
     , relative_data_path(relative_data_path_)
@@ -161,7 +161,7 @@ MergeTreeData::MergeTreeData(
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (!attach)
-        settings->sanityCheck(global_context.getSettingsRef());
+        settings->sanityCheck(getContext()->getSettingsRef());
 
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
@@ -231,7 +231,7 @@ MergeTreeData::MergeTreeData(
         format_version = min_format_version;
         auto buf = version_file.second->writeFile(version_file.first);
         writeIntText(format_version.toUnderType(), *buf);
-        if (global_context.getSettingsRef().fsync_metadata)
+        if (getContext()->getSettingsRef().fsync_metadata)
             buf->sync();
     }
     else
@@ -260,7 +260,7 @@ MergeTreeData::MergeTreeData(
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
-    return global_context.getStoragePolicy(getSettings()->storage_policy);
+    return getContext()->getStoragePolicy(getSettings()->storage_policy);
 }
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
@@ -355,7 +355,7 @@ void MergeTreeData::checkProperties(
 
         if (!added_key_column_expr_list->children.empty())
         {
-            auto syntax = TreeRewriter(global_context).analyze(added_key_column_expr_list, all_columns);
+            auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, all_columns);
             Names used_columns = syntax->requiredSourceColumns();
 
             NamesAndTypesList deleted_columns;
@@ -412,7 +412,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     const KeyDescription & key,
     const IndicesDescription & indices,
     const ColumnsDescription & columns,
-    const Context & context)
+    ContextPtr context)
 {
     ASTPtr combined_expr_list = key.expression_list_ast->clone();
 
@@ -451,12 +451,12 @@ DataTypes MergeTreeData::getMinMaxColumnsTypes(const KeyDescription & partition_
 
 ExpressionActionsPtr MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), global_context);
+    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), getContext());
 }
 
 ExpressionActionsPtr MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), global_context);
+    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), metadata_snapshot->getSecondaryIndices(), metadata_snapshot->getColumns(), getContext());
 }
 
 
@@ -684,16 +684,16 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 
 
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
-    const SelectQueryInfo & query_info, const Context & context, const DataPartsVector & parts) const
+    const SelectQueryInfo & query_info, ContextPtr local_context, const DataPartsVector & parts) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     ASTPtr expression_ast;
     Block virtual_columns_block = MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns();
 
     // Generate valid expressions for filtering
-    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, context, virtual_columns_block, expression_ast);
+    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
 
-    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, context, true /* strict */);
+    PartitionPruner partition_pruner(metadata_snapshot->getPartitionKey(), query_info, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
         return {};
 
@@ -701,7 +701,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (valid && expression_ast)
     {
         MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context, expression_ast);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, local_context, expression_ast);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
             return 0;
@@ -766,7 +766,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         for (const auto & disk_ptr : disks)
             defined_disk_names.insert(disk_ptr->getName());
 
-        for (const auto & [disk_name, disk] : global_context.getDisksMap())
+        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
             if (defined_disk_names.count(disk_name) == 0 && disk->exists(relative_data_path))
             {
@@ -1169,7 +1169,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
     /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
 
     auto table_id = getStorageID();
-    if (auto part_log = global_context.getPartLog(table_id.database_name))
+    if (auto part_log = getContext()->getPartLog(table_id.database_name))
     {
         PartLogElement part_log_elem;
 
@@ -1201,7 +1201,7 @@ void MergeTreeData::clearOldPartsFromFilesystem(bool force)
     /// This is needed to close files to avoid they reside on disk after being deleted.
     /// NOTE: we can drop files from cache more selectively but this is good enough.
     if (!parts_to_remove.empty())
-        global_context.dropMMappedFileCache();
+        getContext()->dropMMappedFileCache();
 }
 
 void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_remove)
@@ -1303,7 +1303,7 @@ void MergeTreeData::clearEmptyParts()
         {
             ASTPtr literal = std::make_shared<ASTLiteral>(part->name);
             /// If another replica has already started drop, it's ok, no need to throw.
-            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, global_context, /* throw_if_noop = */ false);
+            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, getContext(), /* throw_if_noop = */ false);
         }
     }
 }
@@ -1326,7 +1326,7 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
     }
 
     if (!getStorageID().hasUUID())
-        global_context.dropCaches();
+        getContext()->dropCaches();
 
     relative_data_path = new_table_path;
     renameInMemory(new_table_id);
@@ -1348,7 +1348,7 @@ void MergeTreeData::dropAllData()
     /// Tables in atomic databases have UUID and stored in persistent locations.
     /// No need to drop caches (that are keyed by filesystem path) because collision is not possible.
     if (!getStorageID().hasUUID())
-        global_context.dropCaches();
+        getContext()->dropCaches();
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
@@ -1473,23 +1473,23 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
 
 }
 
-void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
+void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
 
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = local_context->getSettingsRef();
 
     if (!settings.allow_non_metadata_alters)
     {
 
-        auto mutation_commands = commands.getMutationCommands(new_metadata, settings.materialize_ttl_after_modify, global_context);
+        auto mutation_commands = commands.getMutationCommands(new_metadata, settings.materialize_ttl_after_modify, getContext());
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "The following alter commands: '{}' will modify data on disk, but setting `allow_non_metadata_alters` is disabled", queryToString(mutation_commands.ast()));
     }
-    commands.apply(new_metadata, global_context);
+    commands.apply(new_metadata, getContext());
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_type_forbidden;
@@ -1552,13 +1552,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const C
         old_types.emplace(column.name, column.type.get());
 
     NamesAndTypesList columns_to_check_conversion;
-    auto name_deps = getDependentViewsByColumn(context);
+    auto name_deps = getDependentViewsByColumn(local_context);
     for (const AlterCommand & command : commands)
     {
         /// Just validate partition expression
         if (command.partition)
         {
-            getPartitionIDFromQuery(command.partition, global_context);
+            getPartitionIDFromQuery(command.partition, getContext());
         }
 
         if (command.column_name == merging_params.version_column)
@@ -1692,7 +1692,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const C
     if (!columns_to_check_conversion.empty())
     {
         auto old_header = old_metadata.getSampleBlock();
-        performRequiredConversions(old_header, columns_to_check_conversion, global_context);
+        performRequiredConversions(old_header, columns_to_check_conversion, getContext());
     }
 
     if (old_metadata.hasSettingsChanges())
@@ -1723,7 +1723,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const C
             }
 
             if (setting_name == "storage_policy")
-                checkStoragePolicy(global_context.getStoragePolicy(new_value.safeGet<String>()));
+                checkStoragePolicy(getContext()->getStoragePolicy(new_value.safeGet<String>()));
         }
     }
 
@@ -1848,7 +1848,7 @@ void MergeTreeData::changeSettings(
         {
             if (change.name == "storage_policy")
             {
-                StoragePolicyPtr new_storage_policy = global_context.getStoragePolicy(change.value.safeGet<String>());
+                StoragePolicyPtr new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
                 StoragePolicyPtr old_storage_policy = getStoragePolicy();
 
                 /// StoragePolicy of different version or name is guaranteed to have different pointer
@@ -1885,7 +1885,7 @@ void MergeTreeData::changeSettings(
         MergeTreeSettings copy = *getSettings();
         copy.applyChanges(new_changes);
 
-        copy.sanityCheck(global_context.getSettingsRef());
+        copy.sanityCheck(getContext()->getSettingsRef());
 
         storage_settings.set(std::make_unique<const MergeTreeSettings>(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -2538,7 +2538,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
     if (settings->inactive_parts_to_throw_insert > 0 || settings->inactive_parts_to_delay_insert > 0)
     {
         size_t inactive_parts_count_in_partition = getMaxInactivePartsCountForPartition();
-        if (inactive_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
+        if (settings->inactive_parts_to_throw_insert > 0 && inactive_parts_count_in_partition >= settings->inactive_parts_to_throw_insert)
         {
             ProfileEvents::increment(ProfileEvents::RejectedInserts);
             throw Exception(
@@ -2749,7 +2749,8 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
     }
 }
 
-void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings) const
+void MergeTreeData::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings) const
 {
     for (const auto & command : commands)
     {
@@ -2769,7 +2770,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & comm
             else
             {
                 /// We are able to parse it
-                getPartitionIDFromQuery(command.partition, global_context);
+                getPartitionIDFromQuery(command.partition, getContext());
             }
         }
     }
@@ -2777,7 +2778,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(const PartitionCommands & comm
 
 void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
-    const String partition_id = getPartitionIDFromQuery(partition, global_context);
+    const String partition_id = getPartitionIDFromQuery(partition, getContext());
     auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     UInt64 partition_size = 0;
@@ -2786,7 +2787,7 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
         partition_size += part->getBytesOnDisk();
 
     auto table_id = getStorageID();
-    global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
+    getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
 
 void MergeTreeData::checkPartCanBeDropped(const ASTPtr & part_ast)
@@ -2797,17 +2798,17 @@ void MergeTreeData::checkPartCanBeDropped(const ASTPtr & part_ast)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in committed state", part_name);
 
     auto table_id = getStorageID();
-    global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk());
+    getContext()->checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, part->getBytesOnDisk());
 }
 
-void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, const Context & context)
+void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr local_context)
 {
     String partition_id;
 
     if (moving_part)
         partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
     else
-        partition_id = getPartitionIDFromQuery(partition, context);
+        partition_id = getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector parts;
     if (moving_part)
@@ -2845,14 +2846,14 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
 }
 
 
-void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, const Context & context)
+void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr local_context)
 {
     String partition_id;
 
     if (moving_part)
         partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
     else
-        partition_id = getPartitionIDFromQuery(partition, context);
+        partition_id = getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector parts;
     if (moving_part)
@@ -2899,7 +2900,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
-void MergeTreeData::fetchPartition(const ASTPtr & /*partition*/, const StorageMetadataPtr & /*metadata_snapshot*/, const String & /*from*/, const Context & /*query_context*/)
+void MergeTreeData::fetchPartition(const ASTPtr & /*partition*/, const StorageMetadataPtr & /*metadata_snapshot*/, const String & /*from*/, ContextPtr /*query_context*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FETCH PARTITION is not supported by storage {}", getName());
 }
@@ -2907,7 +2908,7 @@ void MergeTreeData::fetchPartition(const ASTPtr & /*partition*/, const StorageMe
 Pipe MergeTreeData::alterPartition(
     const StorageMetadataPtr & metadata_snapshot,
     const PartitionCommands & commands,
-    const Context & query_context)
+    ContextPtr query_context)
 {
     PartitionCommandsResultInfo result;
     for (const PartitionCommand & command : commands)
@@ -2944,7 +2945,7 @@ Pipe MergeTreeData::alterPartition(
 
                     case PartitionCommand::MoveDestinationType::TABLE:
                         checkPartitionCanBeDropped(command.partition);
-                        String dest_database = query_context.resolveDatabase(command.to_database);
+                        String dest_database = query_context->resolveDatabase(command.to_database);
                         auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
                         movePartitionToTable(dest_storage, command.partition, query_context);
                         break;
@@ -2955,7 +2956,7 @@ Pipe MergeTreeData::alterPartition(
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
-                String from_database = query_context.resolveDatabase(command.from_database);
+                String from_database = query_context->resolveDatabase(command.from_database);
                 auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
@@ -2967,28 +2968,28 @@ Pipe MergeTreeData::alterPartition(
 
             case PartitionCommand::FREEZE_PARTITION:
             {
-                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
                 current_command_results = freezePartition(command.partition, metadata_snapshot, command.with_name, query_context, lock);
             }
             break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
                 current_command_results = freezeAll(command.with_name, metadata_snapshot, query_context, lock);
             }
             break;
 
             case PartitionCommand::UNFREEZE_PARTITION:
             {
-                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
                 current_command_results = unfreezePartition(command.partition, command.with_name, query_context, lock);
             }
             break;
 
             case PartitionCommand::UNFREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockForShare(query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
+                auto lock = lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef().lock_acquire_timeout);
                 current_command_results = unfreezeAll(command.with_name, query_context, lock);
             }
 
@@ -2999,13 +3000,13 @@ Pipe MergeTreeData::alterPartition(
         result.insert(result.end(), current_command_results.begin(), current_command_results.end());
     }
 
-    if (query_context.getSettingsRef().alter_partition_verbose_result)
+    if (query_context->getSettingsRef().alter_partition_verbose_result)
         return convertCommandsResultToSource(result);
 
     return {};
 }
 
-String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context & context) const
+String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
 
@@ -3047,7 +3048,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        auto input_format = FormatFactory::instance().getInput("Values", buf, metadata_snapshot->getPartitionKey().sample_block, context, context.getSettingsRef().max_block_size);
+        auto input_format = FormatFactory::instance().getInput(
+            "Values",
+            buf,
+            metadata_snapshot->getPartitionKey().sample_block,
+            local_context,
+            local_context->getSettingsRef().max_block_size);
         auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
         auto block = input_stream->read();
@@ -3160,7 +3166,7 @@ void MergeTreeData::validateDetachedPartName(const String & name) const
                             ErrorCodes::BAD_DATA_PART_NAME);
 }
 
-void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Context & context)
+void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context)
 {
     PartsTemporaryRename renamed_parts(*this, "detached/");
 
@@ -3172,7 +3178,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Cont
     }
     else
     {
-        String partition_id = getPartitionIDFromQuery(partition, context);
+        String partition_id = getPartitionIDFromQuery(partition, local_context);
         DetachedPartsInfo detached_parts = getDetachedParts();
         for (const auto & part_info : detached_parts)
             if (part_info.valid_name && part_info.partition_id == partition_id
@@ -3194,7 +3200,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, const Cont
 }
 
 MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
-        const Context & context, PartsTemporaryRename & renamed_parts)
+        ContextPtr local_context, PartsTemporaryRename & renamed_parts)
 {
     const String source_dir = "detached/";
 
@@ -3213,7 +3219,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     }
     else
     {
-        String partition_id = getPartitionIDFromQuery(partition, context);
+        String partition_id = getPartitionIDFromQuery(partition, local_context);
         LOG_DEBUG(log, "Looking for parts for partition {} in {}", partition_id, source_dir);
         ActiveDataPartSet active_parts(format_version);
 
@@ -3439,7 +3445,7 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
     if (best_ttl_entry)
         return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {});
 
-    return global_context.chooseCompressionCodec(
+    return getContext()->chooseCompressionCodec(
         part_size_compressed,
         static_cast<double>(part_size_compressed) / getTotalActiveSizeInBytes());
 }
@@ -3600,7 +3606,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
 }
 
 bool MergeTreeData::mayBenefitFromIndexForIn(
-    const ASTPtr & left_in_operand, const Context &, const StorageMetadataPtr & metadata_snapshot) const
+    const ASTPtr & left_in_operand, ContextPtr, const StorageMetadataPtr & metadata_snapshot) const
 {
     /// Make sure that the left side of the IN operator contain part of the key.
     /// If there is a tuple on the left side of the IN operator, at least one item of the tuple
@@ -3764,7 +3770,7 @@ MergeTreeData::PathsWithDisks MergeTreeData::getRelativeDataPathsWithDisks() con
     return res;
 }
 
-MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, const Context & context) const
+MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
 {
     bool prefixed = false;
     String id;
@@ -3780,10 +3786,10 @@ MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & parti
             prefixed = true;
         }
         else
-            id = getPartitionIDFromQuery(partition_ast, context);
+            id = getPartitionIDFromQuery(partition_ast, local_context);
     }
     else
-        id = getPartitionIDFromQuery(partition_ast, context);
+        id = getPartitionIDFromQuery(partition_ast, local_context);
 
     return [prefixed, id](const String & partition_id)
     {
@@ -3798,28 +3804,28 @@ PartitionCommandsResultInfo MergeTreeData::freezePartition(
     const ASTPtr & partition_ast,
     const StorageMetadataPtr & metadata_snapshot,
     const String & with_name,
-    const Context & context,
+    ContextPtr local_context,
     TableLockHolder &)
 {
-    return freezePartitionsByMatcher(getPartitionMatcher(partition_ast, context), metadata_snapshot, with_name, context);
+    return freezePartitionsByMatcher(getPartitionMatcher(partition_ast, local_context), metadata_snapshot, with_name, local_context);
 }
 
 PartitionCommandsResultInfo MergeTreeData::freezeAll(
     const String & with_name,
     const StorageMetadataPtr & metadata_snapshot,
-    const Context & context,
+    ContextPtr local_context,
     TableLockHolder &)
 {
-    return freezePartitionsByMatcher([] (const String &) { return true; }, metadata_snapshot, with_name, context);
+    return freezePartitionsByMatcher([] (const String &) { return true; }, metadata_snapshot, with_name, local_context);
 }
 
 PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     MatcherFn matcher,
     const StorageMetadataPtr & metadata_snapshot,
     const String & with_name,
-    const Context & context)
+    ContextPtr local_context)
 {
-    String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
+    String clickhouse_path = Poco::Path(local_context->getPath()).makeAbsolute().toString();
     String default_shadow_path = clickhouse_path + "shadow/";
     Poco::File(default_shadow_path).createDirectories();
     auto increment = Increment(default_shadow_path + "increment.txt").get(true);
@@ -3873,21 +3879,21 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 PartitionCommandsResultInfo MergeTreeData::unfreezePartition(
     const ASTPtr & partition,
     const String & backup_name,
-    const Context & context,
+    ContextPtr local_context,
     TableLockHolder &)
 {
-    return unfreezePartitionsByMatcher(getPartitionMatcher(partition, context), backup_name, context);
+    return unfreezePartitionsByMatcher(getPartitionMatcher(partition, local_context), backup_name, local_context);
 }
 
 PartitionCommandsResultInfo MergeTreeData::unfreezeAll(
     const String & backup_name,
-    const Context & context,
+    ContextPtr local_context,
     TableLockHolder &)
 {
-    return unfreezePartitionsByMatcher([] (const String &) { return true; }, backup_name, context);
+    return unfreezePartitionsByMatcher([] (const String &) { return true; }, backup_name, local_context);
 }
 
-PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, const Context &)
+PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr)
 {
     auto backup_path = std::filesystem::path("shadow") / escapeForFileName(backup_name) / relative_data_path;
 
@@ -3970,7 +3976,7 @@ void MergeTreeData::writePartLog(
 try
 {
     auto table_id = getStorageID();
-    auto part_log = global_context.getPartLog(table_id.database_name);
+    auto part_log = getContext()->getPartLog(table_id.database_name);
     if (!part_log)
         return;
 
@@ -4237,7 +4243,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
 
 size_t MergeTreeData::getTotalMergesWithTTLInMergeList() const
 {
-    return global_context.getMergeList().getMergesWithTTLCount();
+    return getContext()->getMergeList().getMergesWithTTLCount();
 }
 
 void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)

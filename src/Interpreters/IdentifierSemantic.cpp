@@ -301,7 +301,7 @@ void IdentifiersCollector::visit(const ASTPtr & node, IdentifiersCollector::Data
 }
 
 
-IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuery & select, const Context & context)
+IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuery & select, ContextPtr context)
 {
     if (ASTPtr with = select.with())
         QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
