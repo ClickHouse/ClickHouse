@@ -661,14 +661,16 @@ class ClickHouseCluster:
                 print(('Setup directory for instance: {} destroy_dirs: {}'.format(instance.name, destroy_dirs)))
                 instance.create_dir(destroy_dir=destroy_dirs)
 
-            # Just in case kill unstopped containers from previous launch
-            try:
-                print("Trying to kill unstopped containers...")
-                subprocess_call(['docker-compose', 'kill'])
-                subprocess_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
-                print("Unstopped containers killed")
-            except:
-                pass
+            # In case of multiple cluster we should not stop compose services.
+            if destroy_dirs:
+                # Just in case kill unstopped containers from previous launch
+                try:
+                    print("Trying to kill unstopped containers...")
+                    subprocess_call(['docker-compose', 'kill'])
+                    subprocess_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+                    print("Unstopped containers killed")
+                except:
+                    pass
 
             clickhouse_pull_cmd = self.base_cmd + ['pull']
             print(f"Pulling images for {self.base_cmd}")
