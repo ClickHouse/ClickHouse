@@ -9,7 +9,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
-#include <pqxx/pqxx>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
 #include <Core/PostgreSQL/PostgreSQLConnection.h>
 
@@ -28,6 +27,12 @@ public:
         const Block & sample_block,
         const UInt64 max_block_size_);
 
+    String getName() const override { return "PostgreSQL"; }
+    Block getHeader() const override { return description.sample_block.cloneEmpty(); }
+
+    void readPrefix() override;
+
+protected:
     PostgreSQLBlockInputStream(
         std::shared_ptr<T> tx_,
         const std::string & query_str_,
@@ -35,12 +40,6 @@ public:
         const UInt64 max_block_size_,
         bool auto_commit_);
 
-    String getName() const override { return "PostgreSQL"; }
-    Block getHeader() const override { return description.sample_block.cloneEmpty(); }
-
-    void readPrefix() override;
-
-protected:
     String query_str;
     std::shared_ptr<T> tx;
     std::unique_ptr<pqxx::stream_from> stream;

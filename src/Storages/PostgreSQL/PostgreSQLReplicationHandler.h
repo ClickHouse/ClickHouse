@@ -52,17 +52,19 @@ public:
 private:
     using Storages = std::unordered_map<String, StorageMaterializePostgreSQL *>;
 
-    void createPublicationIfNeeded(pqxx::connection & connection_);
-
     bool isPublicationExist(pqxx::work & tx);
+
+    void createPublicationIfNeeded(pqxx::work & tx, bool create_without_check = false);
+
+    NameSet fetchTablesFromPublication(pqxx::work & tx);
+
+    void dropPublication(pqxx::nontransaction & ntx);
 
     bool isReplicationSlotExist(pqxx::nontransaction & tx, std::string & slot_name);
 
     void createReplicationSlot(pqxx::nontransaction & tx, std::string & start_lsn, std::string & snapshot_name, bool temporary = false);
 
     void dropReplicationSlot(pqxx::nontransaction & tx, bool temporary = false);
-
-    void dropPublication(pqxx::nontransaction & ntx);
 
     void waitConnectionAndStart();
 
@@ -72,11 +74,9 @@ private:
 
     NameSet loadFromSnapshot(std::string & snapshot_name, Storages & sync_storages);
 
-    NameSet fetchTablesFromPublication(pqxx::connection & connection_);
-
     std::unordered_map<Int32, String> reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
-    PostgreSQLTableStructurePtr fetchTableStructure(std::shared_ptr<pqxx::ReplicationTransaction> tx, const std::string & table_name);
+    PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const std::string & table_name);
 
     Poco::Logger * log;
     ContextPtr context;

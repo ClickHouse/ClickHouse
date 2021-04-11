@@ -87,7 +87,10 @@ void PostgreSQLReplicationHandler::shutdown()
 
 void PostgreSQLReplicationHandler::startSynchronization()
 {
-    createPublicationIfNeeded(connection->getRef());
+    {
+        postgres::Transaction<pqxx::work> tx(connection->getRef());
+        createPublicationIfNeeded(tx.getRef());
+    }
 
     auto replication_connection = postgres::createReplicationConnection(connection_info);
     postgres::Transaction<pqxx::nontransaction> tx(replication_connection->getRef());
@@ -159,7 +162,7 @@ NameSet PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_na
             std::string query_str = fmt::format("SET TRANSACTION SNAPSHOT '{}'", snapshot_name);
             tx->exec(query_str);
 
-            storage_data.second->createNestedIfNeeded(fetchTableStructure(tx, table_name));
+            storage_data.second->createNestedIfNeeded(fetchTableStructure(*tx, table_name));
             auto nested_storage = storage_data.second->getNested();
 
             /// Load from snapshot, which will show table state before creation of replication slot.
@@ -233,14 +236,12 @@ bool PostgreSQLReplicationHandler::isPublicationExist(pqxx::work & tx)
 }
 
 
-void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::connection & connection_)
+void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx, bool create_without_check)
 {
     if (new_publication_created)
         return;
 
-    postgres::Transaction<pqxx::work> tx(connection_);
-
-    if (!isPublicationExist(tx.getRef()))
+    if (create_without_check || !isPublicationExist(tx))
     {
         if (tables_list.empty())
         {
@@ -349,27 +350,33 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 }
 
 
+/// Used by MaterializePostgreSQL database engine.
 NameSet PostgreSQLReplicationHandler::fetchRequiredTables(pqxx::connection & connection_)
 {
-    if (tables_list.empty())
+    postgres::Transaction<pqxx::work> tx(connection_);
+    bool publication_exists = isPublicationExist(tx.getRef());
+
+    if (tables_list.empty() && !publication_exists)
     {
-        return fetchPostgreSQLTablesList(connection_);
+        /// Fetch all tables list from database. Publication does not exist yet, which means
+        /// that no replication took place. Publication will be created in
+        /// startSynchronization method.
+        return fetchPostgreSQLTablesList(tx.getRef());
     }
-    else
-    {
-        createPublicationIfNeeded(connection_);
-        return fetchTablesFromPublication(connection_);
-    }
+
+    if (!publication_exists)
+        createPublicationIfNeeded(tx.getRef(), /* create_without_check = */ true);
+
+    return fetchTablesFromPublication(tx.getRef());
 }
 
 
-NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::connection & connection_)
+NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
 {
     std::string query = fmt::format("SELECT tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
     std::unordered_set<std::string> tables;
-    postgres::Transaction<pqxx::read_transaction> tx(connection_);
 
-    for (auto table_name : tx.getRef().stream<std::string>(query))
+    for (auto table_name : tx.stream<std::string>(query))
         tables.insert(std::get<0>(table_name));
 
     return tables;
@@ -377,7 +384,7 @@ NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::connectio
 
 
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
-        std::shared_ptr<pqxx::ReplicationTransaction> tx, const std::string & table_name)
+        pqxx::ReplicationTransaction & tx, const std::string & table_name)
 {
     if (!is_postgresql_replica_database_engine)
         return nullptr;
