@@ -438,15 +438,8 @@ if (USE_BROTLI)
 endif()
 
 if (USE_AMQPCPP)
-    if (MAKE_STATIC_LIBRARIES)
-        set (LIBUV_LIBRARY uv_a)
-    else()
-        set (LIBUV_LIBRARY uv)
-    endif()
-
-    set (LIBUV_INCLUDE_DIR "${LIBUV_ROOT_DIR}/include")
-    dbms_target_link_libraries(PUBLIC amqp-cpp ${LIBUV_LIBRARY})
-    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LIBUV_INCLUDE_DIR})
+    dbms_target_link_libraries(PUBLIC ${AMQPCPP_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${AMQPCPP_INCLUDE_DIR})
 endif()
 
 if (USE_CASSANDRA)
