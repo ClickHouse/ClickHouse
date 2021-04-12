@@ -11,7 +11,7 @@ class FunctionArrayFold : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayFold>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayFold>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
