@@ -9,9 +9,14 @@ namespace DB
 
 /**
  * Reads from multiple ReadBuffers in parallel.
+ * Preserves order of readers obtained from ReadBufferFactory.
  *
  * It consumes multiple readers and yields data from them in order as it passed.
- * Each working reader can read up to max_segments_per_worker chunks into temporary buffers.
+ * Each working reader save segments of data to internal queue.
+ *
+ * ParallelReadBuffer in nextImpl method take first available segment from first reader in deque and fed it to user.
+ * When first reader finish reading, they will be removed from worker deque and data from next reader consumed.
+ *
  * Number of working readers limited by max_working_readers.
  */
 class ParallelReadBuffer : public ReadBuffer
@@ -31,20 +36,7 @@ public:
         virtual ~ReadBufferFactory() = default;
     };
 
-    explicit ParallelReadBuffer(
-        std::unique_ptr<ReadBufferFactory> reader_factory_, size_t max_working_readers, size_t max_segments_per_worker_ = 0)
-        : ReadBuffer(nullptr, 0)
-        , max_segments_per_worker(max_segments_per_worker_)
-        , pool(max_working_readers)
-        , reader_factory(std::move(reader_factory_))
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        for (size_t i = 0; i < max_working_readers; ++i)
-            pool.scheduleOrThrow([this] {
-                while (auto reader = chooseNextReader())
-                    readerThreadFunction(reader);
-            });
-    }
+    explicit ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, size_t max_working_readers);
 
     ~ParallelReadBuffer() override
     {
@@ -53,53 +45,63 @@ public:
 
 private:
 
-    struct ProcessingUnit
+    /// Reader in progress with a list of read segments
+    struct ReadWorker
     {
-        explicit ProcessingUnit(ReadBufferPtr reader_, size_t number_)
+        explicit ReadWorker(ReadBufferPtr reader_)
             : reader(reader_)
-            , number(number_)
         {}
 
         ReadBufferPtr reader;
         std::deque<Memory<>> segments;
         bool finished{false};
-
-        const size_t number;
     };
-    using ProcessingUnitPtr = std::shared_ptr<ProcessingUnit>;
 
-    /// Read data from unit->reader and put in into unit->segments
-    void readerThreadFunction(ProcessingUnitPtr unit);
+    using ReadWorkerPtr = std::shared_ptr<ReadWorker>;
 
-    /// Choose first pending unit form queue
-    ProcessingUnitPtr chooseNextReader();
+    /// First worker in deque have new data or processed all available amount
+    inline bool currentWorkerReady() const
+    {
+        return !read_workers.empty() && (read_workers.front()->finished || !read_workers.front()->segments.empty());
+    }
+
+    /// First worker in deque processed and flushed all data
+    inline bool currentWorkerCompleted() const
+    {
+        return !read_workers.empty() && read_workers.front()->finished && read_workers.front()->segments.empty();
+    }
+
+    /// Create new readers in a loop and process it with readerThreadFunction.
+    void processor();
+
+    /// Process read_worker, read data and save into internal segments queue
+    void readerThreadFunction(ReadWorkerPtr read_worker);
 
     void onBackgroundException();
     void finishAndWait();
 
     Memory<> segment;
 
-    const size_t max_segments_per_worker;
     ThreadPool pool;
 
     std::unique_ptr<ReadBufferFactory> reader_factory;
-    /// FIFO queue of readers
-    /// Each unit contains reader itself and up to max_segments_per_worker read segments
-    std::deque<ProcessingUnitPtr> readers;
+
+    /**
+     * FIFO queue of readers.
+     * Each worker contains reader itself and downloaded segments.
+     * When reader read all available data it will be removed from
+     * deque and data from next reader will be consumed to user.
+     */
+    std::deque<ReadWorkerPtr> read_workers;
 
     std::mutex mutex;
-    /// triggered when new data available
+    /// Triggered when new data available
     std::condition_variable next_condvar;
-
-    /// triggered when some data consumed and reader can continue reading
-    std::condition_variable reader_condvar;
 
     std::exception_ptr background_exception = nullptr;
     std::atomic_bool emergency_stop{false};
 
-    bool all_done{false};
-
-    std::atomic_size_t last_num{0};
+    bool all_completed{false};
 };
 
 

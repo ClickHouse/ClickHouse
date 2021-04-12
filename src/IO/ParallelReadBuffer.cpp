@@ -1,25 +1,39 @@
-#include "ParallelReadBuffer.h"
+#include <IO/ParallelReadBuffer.h>
 
 
 namespace DB
 {
 
-
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
+}
+
+ParallelReadBuffer::ParallelReadBuffer(std::unique_ptr<ReadBufferFactory> reader_factory_, size_t max_working_readers)
+    : ReadBuffer(nullptr, 0)
+    , pool(max_working_readers)
+    , reader_factory(std::move(reader_factory_))
+{
+    /// Create required number of processors.
+    /// Processor start working after constructor exits.
+    std::lock_guard<std::mutex> lock(mutex);
+    for (size_t i = 0; i < max_working_readers; ++i)
+        pool.scheduleOrThrow([this] { processor(); });
 }
 
 bool ParallelReadBuffer::nextImpl()
 {
-    if (all_done)
+    if (all_completed)
         return false;
 
     while (true)
     {
         std::unique_lock<std::mutex> lock(mutex);
-        next_condvar.wait(
-            lock, [this] { return emergency_stop || readers.empty() || readers.front()->finished || !readers.front()->segments.empty(); });
+        next_condvar.wait(lock, [this]()
+        {
+            /// Check if no more readers left or current reader can be processed
+            return emergency_stop || read_workers.empty() || currentWorkerReady();
+        });
 
         if (emergency_stop)
         {
@@ -30,73 +44,75 @@ bool ParallelReadBuffer::nextImpl()
         }
 
         /// Remove completed units
-        while (!readers.empty() && readers.front()->finished && readers.front()->segments.empty())
-            readers.pop_front();
+        while (!read_workers.empty() && currentWorkerCompleted())
+            read_workers.pop_front();
 
-        if (readers.empty())
+        /// All readers processed, stop
+        if (read_workers.empty())
         {
-            all_done = true;
+            all_completed = true;
             return false;
         }
 
         /// Read data from first segment of the first reader
-        if (!readers.front()->segments.empty())
+        if (!read_workers.front()->segments.empty())
         {
-            segment = std::move(readers.front()->segments.front());
-            readers.front()->segments.pop_front();
-            reader_condvar.notify_all();
+            segment = std::move(read_workers.front()->segments.front());
+            read_workers.front()->segments.pop_front();
             break;
         }
-        reader_condvar.notify_all();
     }
     working_buffer = internal_buffer = Buffer(segment.data(), segment.data() + segment.size());
     return true;
 }
 
-ParallelReadBuffer::ProcessingUnitPtr ParallelReadBuffer::chooseNextReader()
+
+
+void ParallelReadBuffer::processor()
 {
-    std::lock_guard<std::mutex> lock(mutex);
-    auto reader = reader_factory->getReader();
-    if (reader == nullptr)
-        return nullptr;
-    auto unit = std::make_shared<ProcessingUnit>(reader, last_num++);
-    readers.emplace_back(unit);
-    return unit;
+    while (true)
+    {
+        ReadWorkerPtr worker;
+        {
+            /// Create new read worker and put in into end of queue
+            /// reader_factory is not thread safe, so we call getReader under lock
+            std::lock_guard<std::mutex> lock(mutex);
+            auto reader = reader_factory->getReader();
+            if (reader == nullptr)
+                break;
+
+            worker = read_workers.emplace_back(std::make_shared<ReadWorker>(reader));
+        }
+
+        /// Start processing
+        readerThreadFunction(worker);
+    }
 }
 
-void ParallelReadBuffer::readerThreadFunction(ProcessingUnitPtr unit)
+void ParallelReadBuffer::readerThreadFunction(ReadWorkerPtr read_worker)
 {
     try
     {
         while (!emergency_stop)
         {
-            if (!unit->reader->next())
+            if (!read_worker->reader->next())
             {
                 std::lock_guard<std::mutex> lock(mutex);
-                unit->finished = true;
+                read_worker->finished = true;
                 next_condvar.notify_all();
                 break;
-            }
-
-            {
-                std::unique_lock<std::mutex> lock(mutex);
-                reader_condvar.wait(lock, [this, unit]
-                {
-                    return emergency_stop || max_segments_per_worker == 0 || unit->segments.size() < max_segments_per_worker;
-                });
             }
 
             if (emergency_stop)
                 break;
 
-            Buffer buffer = unit->reader->buffer();
+            Buffer buffer = read_worker->reader->buffer();
             Memory<> new_segment(buffer.size());
             memcpy(new_segment.data(), buffer.begin(), buffer.size());
             {
-
                 /// New data ready to be read
                 std::lock_guard<std::mutex> lock(mutex);
-                unit->segments.emplace_back(std::move(new_segment));
+                read_worker->segments.emplace_back(std::move(new_segment));
                 next_condvar.notify_all();
             }
         }
