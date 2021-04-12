@@ -19,7 +19,9 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/AggregatingTransform.cpp>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Pipe.h>
 
 
@@ -133,8 +135,7 @@ public:
     {
         Block block_clone(block);
 
-        auto many_data = std::make_unique<ManyAggregatedData>(1);
-        AggregatedDataVariants & variants(*many_data->variants[0]);
+        AggregatedDataVariants & variants(*(storage.many_data)->variants[0]);
         ColumnRawPtrs key_columns(storage.aggregator_transform->params.keys_size);
         Aggregator::AggregateColumns aggregate_columns(storage.aggregator_transform->params.aggregates_size);
         bool no_more_keys = false;
@@ -324,6 +325,8 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
                               settings.min_free_disk_space_for_temporary_data);
 
     aggregator_transform = std::make_shared<AggregatingTransformParams>(params, true);
+
+    many_data = std::make_shared<ManyAggregatedData>(1);
 }
 
 
@@ -338,22 +341,38 @@ Pipe StorageAggregatingMemory::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    auto current_data = data.get();
-    size_t size = current_data->size();
-
-    if (num_streams > size)
-        num_streams = size;
-
     Pipes pipes;
 
-    auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
+    auto prepared_data = aggregator_transform->aggregator.prepareVariantsToMerge(many_data->variants);
+    auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
+    
+    auto processor = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
 
-    for (size_t stream = 0; stream < num_streams; ++stream)
+    pipes.emplace_back(processor);
+
+    auto final_projection = analysis_result.final_projection;
+    auto expression_actions = std::make_shared<ExpressionActions>(final_projection);
+
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    pipe.addSimpleTransform([expression_actions](const Block & header)
     {
-        pipes.emplace_back(std::make_shared<MemorySource>(column_names, *this, metadata_snapshot, current_data, parallel_execution_index));
-    }
+        return std::make_shared<ExpressionTransform>(header, expression_actions);
+    });
 
-    return Pipe::unitePipes(std::move(pipes));
+    return pipe;
+
+    // auto current_data = data.get();
+    // size_t size = current_data->size();
+
+    // if (num_streams > size)
+    //     num_streams = size;
+
+    // auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
+
+    // for (size_t stream = 0; stream < num_streams; ++stream)
+    // {
+    //     pipes.emplace_back(std::make_shared<MemorySource>(column_names, *this, metadata_snapshot, current_data, parallel_execution_index));
+    // }
 }
 
 

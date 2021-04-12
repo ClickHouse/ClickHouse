@@ -9,6 +9,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPipeline.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 
@@ -72,6 +73,8 @@ private:
     AggregatingTransformParamsPtr aggregator_transform;
 
     ExpressionAnalysisResult analysis_result;
+
+    std::shared_ptr<ManyAggregatedData> many_data;
 
 protected:
     StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query, const Context & context_);
