@@ -57,7 +57,7 @@ ClickHouse искусственно выполняет `INSERT` дольше (д
 
 ## inactive_parts_to_throw_insert {#inactive-parts-to-throw-insert}
 
-Если число неактивных кусков в партиции превышает значение `inactive_parts_to_throw_insert`, `INSERT` прерывается с исключением "Too many inactive parts (N). Parts cleaning are processing significantly slower than inserts".
+Если число неактивных кусков в партиции превышает значение `inactive_parts_to_throw_insert`, `INSERT` прерывается с исключением «Too many inactive parts (N). Parts cleaning are processing significantly slower than inserts».
 
 Возможные значения:
 
