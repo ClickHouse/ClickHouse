@@ -11,12 +11,15 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageAggregatingMemory.h>
 #include <Storages/StorageValues.h>
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Pipe.h>
 
 
@@ -128,6 +131,14 @@ public:
 
     void write(const Block & block) override
     {
+        Block block_clone(block);
+
+        auto many_data = std::make_unique<ManyAggregatedData>(1);
+        AggregatedDataVariants & variants(*many_data->variants[0]);
+        ColumnRawPtrs key_columns(storage.aggregator_transform->params.keys_size);
+        Aggregator::AggregateColumns aggregate_columns(storage.aggregator_transform->params.aggregates_size);
+        bool no_more_keys = false;
+
         BlockInputStreamPtr in;
 
         /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
@@ -187,6 +198,12 @@ public:
 
         // metadata_snapshot->check(block, true);
         // new_blocks.emplace_back(block);
+
+        auto expression = storage.analysis_result.before_aggregation;
+        auto expression_actions = std::make_shared<ExpressionActions>(expression);
+        expression_actions->execute(block_clone);
+
+        storage.aggregator_transform->aggregator.executeOnBlock(block_clone, variants, key_columns, aggregate_columns, no_more_keys);
     }
 
     void writeSuffix() override
@@ -257,6 +274,8 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
     src_metadata.setColumns(std::move(columns_description_));
     src_sample_block = src_metadata.getSampleBlock();
 
+    auto src_metadata_snapshot = std::make_shared<StorageInMemoryMetadata>(src_metadata);
+
     Names required_result_column_names; // TODO:
 
     auto syntax_analyzer_result = TreeRewriter(*select_context).analyzeSelect(
@@ -265,9 +284,46 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
             {}, {}, required_result_column_names, {});
 
     auto query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
-                select_ptr, syntax_analyzer_result, select_context, src_metadata,
-                NameSet(required_result_column_names.begin(), required_result_column_names.end()),
-                !options.only_analyze, options, std::move(subquery_for_sets));
+                select_ptr, syntax_analyzer_result, *select_context, src_metadata_snapshot,
+                NameSet(required_result_column_names.begin(), required_result_column_names.end()));
+
+    const Settings & settings = select_context->getSettingsRef();
+
+    analysis_result = ExpressionAnalysisResult(
+            *query_analyzer,
+            src_metadata_snapshot,
+            false,
+            false,
+            false,
+            nullptr,
+            src_sample_block);
+
+    Block header_before_aggregation = src_sample_block;
+    auto expression = analysis_result.before_aggregation;
+    auto expression_actions = std::make_shared<ExpressionActions>(expression);
+    expression_actions->execute(header_before_aggregation);
+
+    ColumnNumbers keys;
+    for (const auto & key : query_analyzer->aggregationKeys())
+        keys.push_back(header_before_aggregation.getPositionByName(key.name));
+
+    AggregateDescriptions aggregates = query_analyzer->aggregates();
+    for (auto & descr : aggregates)
+        if (descr.arguments.empty())
+            for (const auto & name : descr.argument_names)
+                descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
+
+    Aggregator::Params params(header_before_aggregation, keys, aggregates,
+                              false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
+                              settings.group_by_two_level_threshold,
+                              settings.group_by_two_level_threshold_bytes,
+                              settings.max_bytes_before_external_group_by,
+                              settings.empty_result_for_aggregation_by_empty_set,
+                              select_context->getTemporaryVolume(),
+                              settings.max_threads,
+                              settings.min_free_disk_space_for_temporary_data);
+
+    aggregator_transform = std::make_shared<AggregatingTransformParams>(params, true);
 }
 
 

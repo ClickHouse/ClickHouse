@@ -7,6 +7,8 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/Aggregator.h>
+#include <Processors/QueryPipeline.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 
@@ -66,6 +68,10 @@ private:
     std::atomic<size_t> total_size_rows = 0;
 
     Block src_sample_block;
+
+    AggregatingTransformParamsPtr aggregator_transform;
+
+    ExpressionAnalysisResult analysis_result;
 
 protected:
     StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query, const Context & context_);
