@@ -149,9 +149,15 @@ std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
 }
 
 
-DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
-                     const String & logger_name, const CurrentMetrics::Metric * max_entry_metric_)
-    : context(context_)
+DDLWorker::DDLWorker(
+    int pool_size_,
+    const std::string & zk_root_dir,
+    ContextPtr context_,
+    const Poco::Util::AbstractConfiguration * config,
+    const String & prefix,
+    const String & logger_name,
+    const CurrentMetrics::Metric * max_entry_metric_)
+    : context(Context::createCopy(context_))
     , log(&Poco::Logger::get(logger_name))
     , pool_size(pool_size_)
     , max_entry_metric(max_entry_metric_)
@@ -177,16 +183,16 @@ DDLWorker::DDLWorker(int pool_size_, const std::string & zk_root_dir, const Cont
         max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
 
         if (config->has(prefix + ".profile"))
-            context.setSetting("profile", config->getString(prefix + ".profile"));
+            context->setSetting("profile", config->getString(prefix + ".profile"));
     }
 
-    if (context.getSettingsRef().readonly)
+    if (context->getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
 
     host_fqdn = getFQDNOrHostName();
-    host_fqdn_id = Cluster::Address::toString(host_fqdn, context.getTCPPort());
+    host_fqdn_id = Cluster::Address::toString(host_fqdn, context->getTCPPort());
 }
 
 void DDLWorker::startup()
@@ -225,7 +231,7 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
     std::lock_guard lock(zookeeper_mutex);
 
     if (!current_zookeeper || current_zookeeper->expired())
-        current_zookeeper = context.getZooKeeper();
+        current_zookeeper = context->getZooKeeper();
 
     return current_zookeeper;
 }
@@ -492,8 +498,8 @@ bool DDLWorker::tryExecuteQuery(const String & query, DDLTaskBase & task, const 
     {
         auto query_context = task.makeQueryContext(context, zookeeper);
         if (!task.is_initial_query)
-            query_scope.emplace(*query_context);
-        executeQuery(istr, ostr, !task.is_initial_query, *query_context, {});
+            query_scope.emplace(query_context);
+        executeQuery(istr, ostr, !task.is_initial_query, query_context, {});
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -639,7 +645,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
                 if (!query_with_table->table.empty())
                 {
                     /// It's not CREATE DATABASE
-                    auto table_id = context.tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
+                    auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
                     storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
                 }
 

@@ -139,13 +139,13 @@ public:
     /// Find existing session or create a new.
     std::shared_ptr<NamedSession> acquireSession(
         const String & session_id,
-        Context & context,
+        ContextPtr context,
         std::chrono::steady_clock::duration timeout,
         bool throw_if_not_found)
     {
         std::unique_lock lock(mutex);
 
-        auto & user_name = context.client_info.current_user;
+        auto & user_name = context->client_info.current_user;
 
         if (user_name.empty())
             throw Exception("Empty user name.", ErrorCodes::LOGICAL_ERROR);
@@ -161,7 +161,7 @@ public:
             /// Create a new session from current context.
             it = sessions.insert(std::make_pair(key, std::make_shared<NamedSession>(key, context, timeout, *this))).first;
         }
-        else if (it->second->key.first != context.client_info.current_user)
+        else if (it->second->key.first != context->client_info.current_user)
         {
             throw Exception("Session belongs to a different user", ErrorCodes::SESSION_IS_LOCKED);
         }
@@ -172,7 +172,7 @@ public:
         if (!session.unique())
             throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
 
-        session->context.client_info = context.client_info;
+        session->context->client_info = context->client_info;
 
         return session;
     }
@@ -293,7 +293,7 @@ void NamedSession::release()
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
   */
-struct ContextShared
+struct ContextSharedPart
 {
     Poco::Logger * log = &Poco::Logger::get("Context");
 
@@ -395,7 +395,7 @@ struct ContextShared
 
     Context::ConfigReloadCallback config_reload_callback;
 
-    ContextShared()
+    ContextSharedPart()
         : macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
@@ -409,7 +409,7 @@ struct ContextShared
     }
 
 
-    ~ContextShared()
+    ~ContextSharedPart()
     {
         try
         {
@@ -484,27 +484,48 @@ SharedContextHolder::SharedContextHolder(SharedContextHolder &&) noexcept = defa
 SharedContextHolder & SharedContextHolder::operator=(SharedContextHolder &&) = default;
 SharedContextHolder::SharedContextHolder() = default;
 SharedContextHolder::~SharedContextHolder() = default;
-SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextShared> shared_context)
+SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextSharedPart> shared_context)
     : shared(std::move(shared_context)) {}
 
 void SharedContextHolder::reset() { shared.reset(); }
 
-
-Context Context::createGlobal(ContextShared * shared)
+ContextPtr Context::createGlobal(ContextSharedPart * shared)
 {
-    Context res;
-    res.shared = shared;
+    auto res = std::shared_ptr<Context>(new Context);
+    res->shared = shared;
     return res;
 }
 
 void Context::initGlobal()
 {
-    DatabaseCatalog::init(*this);
+    DatabaseCatalog::init(shared_from_this());
 }
 
 SharedContextHolder Context::createShared()
 {
-    return SharedContextHolder(std::make_unique<ContextShared>());
+    return SharedContextHolder(std::make_unique<ContextSharedPart>());
+}
+
+ContextPtr Context::createCopy(const ContextConstPtr & other)
+{
+    return std::shared_ptr<Context>(new Context(*other));
+}
+
+ContextPtr Context::createCopy(const ContextWeakConstPtr & other)
+{
+    auto ptr = other.lock();
+    if (!ptr) throw Exception("Can't copy an expired context", ErrorCodes::LOGICAL_ERROR);
+    return createCopy(ptr);
+}
+
+ContextPtr Context::createCopy(const ContextPtr & other)
+{
+    return createCopy(std::const_pointer_cast<const Context>(other));
+}
+
+void Context::copyFrom(const ContextPtr & other)
+{
+    *this = *other;
 }
 
 Context::~Context() = default;
@@ -532,12 +553,13 @@ void Context::enableNamedSessions()
     shared->named_sessions.emplace();
 }
 
-std::shared_ptr<NamedSession> Context::acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
+std::shared_ptr<NamedSession>
+Context::acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
 {
     if (!shared->named_sessions)
         throw Exception("Support for named sessions is not enabled", ErrorCodes::NOT_IMPLEMENTED);
 
-    return shared->named_sessions->acquireSession(session_id, *this, timeout, session_check);
+    return shared->named_sessions->acquireSession(session_id, shared_from_this(), timeout, session_check);
 }
 
 String Context::resolveDatabase(const String & database_name) const
@@ -890,21 +912,23 @@ const Block & Context::getScalar(const String & name) const
 
 Tables Context::getExternalTables() const
 {
-    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     auto lock = getLock();
 
     Tables res;
     for (const auto & table : external_tables_mapping)
         res[table.first] = table.second->getTable();
 
-    if (query_context && query_context != this)
+    auto query_context_ptr = query_context.lock();
+    auto session_context_ptr = session_context.lock();
+    if (query_context_ptr && query_context_ptr.get() != this)
     {
-        Tables buf = query_context->getExternalTables();
+        Tables buf = query_context_ptr->getExternalTables();
         res.insert(buf.begin(), buf.end());
     }
-    else if (session_context && session_context != this)
+    else if (session_context_ptr && session_context_ptr.get() != this)
     {
-        Tables buf = session_context->getExternalTables();
+        Tables buf = session_context_ptr->getExternalTables();
         res.insert(buf.begin(), buf.end());
     }
     return res;
@@ -913,7 +937,7 @@ Tables Context::getExternalTables() const
 
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
-    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     auto lock = getLock();
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
@@ -923,7 +947,7 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
 
 std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
 {
-    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     std::shared_ptr<TemporaryTableHolder> holder;
     {
         auto lock = getLock();
@@ -939,21 +963,21 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
 
 void Context::addScalar(const String & name, const Block & block)
 {
-    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     scalars[name] = block;
 }
 
 
 bool Context::hasScalar(const String & name) const
 {
-    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     return scalars.count(name);
 }
 
 
 void Context::addQueryAccessInfo(const String & quoted_database_name, const String & full_quoted_table_name, const Names & column_names)
 {
-    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
@@ -964,7 +988,7 @@ void Context::addQueryAccessInfo(const String & quoted_database_name, const Stri
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
-    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
     auto lock = getLock();
 
     switch (factory_type)
@@ -1009,10 +1033,10 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 
     if (!res)
     {
-        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, *this);
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
 
         /// Run it and remember the result
-        res = table_function_ptr->execute(table_expression, *this, table_function_ptr->getName());
+        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
     }
 
     return res;
@@ -1153,7 +1177,7 @@ String Context::getInitialQueryId() const
 
 void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
 {
-    if (global_context != this)
+    if (!isGlobalContext())
         throw Exception("Cannot set current database for non global context, this method should be used during server initialization",
                         ErrorCodes::LOGICAL_ERROR);
     auto lock = getLock();
@@ -1262,53 +1286,37 @@ void Context::setMacros(std::unique_ptr<Macros> && macros)
     shared->macros.set(std::move(macros));
 }
 
-const Context & Context::getQueryContext() const
+ContextPtr Context::getQueryContext() const
 {
-    if (!query_context)
-        throw Exception("There is no query", ErrorCodes::THERE_IS_NO_QUERY);
-    return *query_context;
+    auto ptr = query_context.lock();
+    if (!ptr) throw Exception("There is no query or query context has expired", ErrorCodes::THERE_IS_NO_QUERY);
+    return ptr;
 }
 
-Context & Context::getQueryContext()
+bool Context::isInternalSubquery() const
 {
-    if (!query_context)
-        throw Exception("There is no query", ErrorCodes::THERE_IS_NO_QUERY);
-    return *query_context;
+    auto ptr = query_context.lock();
+    return ptr && ptr.get() != this;
 }
 
-const Context & Context::getSessionContext() const
+ContextPtr Context::getSessionContext() const
 {
-    if (!session_context)
-        throw Exception("There is no session", ErrorCodes::THERE_IS_NO_SESSION);
-    return *session_context;
+    auto ptr = session_context.lock();
+    if (!ptr) throw Exception("There is no session or session context has expired", ErrorCodes::THERE_IS_NO_SESSION);
+    return ptr;
 }
 
-Context & Context::getSessionContext()
+ContextPtr Context::getGlobalContext() const
 {
-    if (!session_context)
-        throw Exception("There is no session", ErrorCodes::THERE_IS_NO_SESSION);
-    return *session_context;
+    auto ptr = global_context.lock();
+    if (!ptr) throw Exception("There is no global context or global context has expired", ErrorCodes::LOGICAL_ERROR);
+    return ptr;
 }
 
-const Context & Context::getGlobalContext() const
+ContextPtr Context::getBufferContext() const
 {
-    if (!global_context)
-        throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
-    return *global_context;
-}
-
-Context & Context::getGlobalContext()
-{
-    if (!global_context)
-        throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
-    return *global_context;
-}
-
-const Context & Context::getBufferContext() const
-{
-    if (!buffer_context)
-        throw Exception("Logical error: there is no buffer context", ErrorCodes::LOGICAL_ERROR);
-    return *buffer_context;
+    if (!buffer_context) throw Exception("There is no buffer context", ErrorCodes::LOGICAL_ERROR);
+    return buffer_context;
 }
 
 
@@ -1325,39 +1333,29 @@ EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 
 const ExternalDictionariesLoader & Context::getExternalDictionariesLoader() const
 {
-    std::lock_guard lock(shared->external_dictionaries_mutex);
-    if (!shared->external_dictionaries_loader)
-    {
-        if (!this->global_context)
-            throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
-
-        shared->external_dictionaries_loader.emplace(*this->global_context);
-    }
-    return *shared->external_dictionaries_loader;
+    return const_cast<Context *>(this)->getExternalDictionariesLoader();
 }
 
 ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
 {
-    return const_cast<ExternalDictionariesLoader &>(const_cast<const Context *>(this)->getExternalDictionariesLoader());
+    std::lock_guard lock(shared->external_dictionaries_mutex);
+    if (!shared->external_dictionaries_loader)
+        shared->external_dictionaries_loader.emplace(getGlobalContext());
+    return *shared->external_dictionaries_loader;
 }
 
 
 const ExternalModelsLoader & Context::getExternalModelsLoader() const
 {
-    std::lock_guard lock(shared->external_models_mutex);
-    if (!shared->external_models_loader)
-    {
-        if (!this->global_context)
-            throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
-
-        shared->external_models_loader.emplace(*this->global_context);
-    }
-    return *shared->external_models_loader;
+    return const_cast<Context *>(this)->getExternalModelsLoader();
 }
 
 ExternalModelsLoader & Context::getExternalModelsLoader()
 {
-    return const_cast<ExternalModelsLoader &>(const_cast<const Context *>(this)->getExternalModelsLoader());
+    std::lock_guard lock(shared->external_models_mutex);
+    if (!shared->external_models_loader)
+        shared->external_models_loader.emplace(getGlobalContext());
+    return *shared->external_models_loader;
 }
 
 
@@ -1371,7 +1369,7 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 
         shared->embedded_dictionaries.emplace(
             std::move(geo_dictionaries_loader),
-            *this->global_context,
+            getGlobalContext(),
             throw_on_error);
     }
 
@@ -1891,7 +1889,7 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
-    shared->system_logs.emplace(*global_context, getConfigRef());
+    shared->system_logs.emplace(getGlobalContext(), getConfigRef());
 }
 
 void Context::initializeTraceCollector()
@@ -1978,7 +1976,7 @@ std::shared_ptr<MetricLog> Context::getMetricLog()
 }
 
 
-std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog()
+std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const
 {
     auto lock = getLock();
 
@@ -2057,7 +2055,7 @@ DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock *
         constexpr auto config_name = "storage_configuration.disks";
         const auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, *this);
+        shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, shared_from_this());
     }
     return shared->merge_tree_disk_selector;
 }
@@ -2080,17 +2078,20 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
     std::lock_guard lock(shared->storage_policies_mutex);
 
     if (shared->merge_tree_disk_selector)
-        shared->merge_tree_disk_selector = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", *this);
+        shared->merge_tree_disk_selector
+            = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
 
     if (shared->merge_tree_storage_policy_selector)
     {
         try
         {
-            shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(config, "storage_configuration.policies", shared->merge_tree_disk_selector);
+            shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
+                config, "storage_configuration.policies", shared->merge_tree_disk_selector);
         }
         catch (Exception & e)
         {
-            LOG_ERROR(shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
+            LOG_ERROR(
+                shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
         }
     }
 
@@ -2223,27 +2224,28 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 
 BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
 {
-    return std::make_shared<InputStreamFromInputFormat>(FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size));
+    return std::make_shared<InputStreamFromInputFormat>(
+        FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size));
 }
 
 BlockOutputStreamPtr Context::getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return FormatFactory::instance().getOutputStreamParallelIfPossible(name, buf, sample, *this);
+    return FormatFactory::instance().getOutputStreamParallelIfPossible(name, buf, sample, shared_from_this());
 }
 
 BlockOutputStreamPtr Context::getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return FormatFactory::instance().getOutputStream(name, buf, sample, *this);
+    return FormatFactory::instance().getOutputStream(name, buf, sample, shared_from_this());
 }
 
 OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, *this);
+    return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, shared_from_this());
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return FormatFactory::instance().getOutputFormat(name, buf, sample, *this);
+    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this());
 }
 
 
@@ -2309,7 +2311,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     applySettingsQuirks(settings, &Poco::Logger::get("SettingsQuirks"));
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
-    buffer_context = std::make_shared<Context>(*this);
+    buffer_context = Context::createCopy(shared_from_this());
     buffer_context->setProfile(shared->buffer_profile_name);
 }
 
@@ -2335,7 +2337,7 @@ void Context::setFormatSchemaPath(const String & path)
 
 Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
-    return getQueryContext().sample_block_cache;
+    return getQueryContext()->sample_block_cache;
 }
 
 
@@ -2382,7 +2384,7 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
     auto lock = getLock();
 
     if (!shared->action_locks_manager)
-        shared->action_locks_manager = std::make_shared<ActionLocksManager>(*this);
+        shared->action_locks_manager = std::make_shared<ActionLocksManager>(shared_from_this());
 
     return shared->action_locks_manager;
 }
@@ -2400,7 +2402,7 @@ void Context::initializeExternalTablesIfSet()
 {
     if (external_tables_initializer_callback)
     {
-        external_tables_initializer_callback(*this);
+        external_tables_initializer_callback(shared_from_this());
         /// Reset callback
         external_tables_initializer_callback = {};
     }
@@ -2421,7 +2423,7 @@ void Context::initializeInput(const StoragePtr & input_storage)
     if (!input_initializer_callback)
         throw Exception("Input initializer is not set", ErrorCodes::LOGICAL_ERROR);
 
-    input_initializer_callback(*this, input_storage);
+    input_initializer_callback(shared_from_this(), input_storage);
     /// Reset callback
     input_initializer_callback = {};
 }
@@ -2520,12 +2522,12 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     if (look_for_external_table)
     {
         /// Global context should not contain temporary tables
-        assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+        assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
 
         auto resolved_id = StorageID::createEmpty();
-        auto try_resolve = [&](const Context & context) -> bool
+        auto try_resolve = [&](ContextConstPtr context) -> bool
         {
-            const auto & tables = context.external_tables_mapping;
+            const auto & tables = context->external_tables_mapping;
             auto it = tables.find(storage_id.getTableName());
             if (it == tables.end())
                 return false;
@@ -2534,17 +2536,19 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         };
 
         /// Firstly look for temporary table in current context
-        if (try_resolve(*this))
+        if (try_resolve(shared_from_this()))
             return resolved_id;
 
         /// If not found and current context was created from some query context, look for temporary table in query context
-        bool is_local_context = query_context && query_context != this;
-        if (is_local_context && try_resolve(*query_context))
+        auto query_context_ptr = query_context.lock();
+        bool is_local_context = query_context_ptr && query_context_ptr.get() != this;
+        if (is_local_context && try_resolve(query_context_ptr))
             return resolved_id;
 
         /// If not found and current context was created from some session context, look for temporary table in session context
-        bool is_local_or_query_context = session_context && session_context != this;
-        if (is_local_or_query_context && try_resolve(*session_context))
+        auto session_context_ptr = session_context.lock();
+        bool is_local_or_query_context = session_context_ptr && session_context_ptr.get() != this;
+        if (is_local_or_query_context && try_resolve(session_context_ptr))
             return resolved_id;
     }
 
@@ -2571,7 +2575,7 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
 void Context::initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, [[maybe_unused]] bool attach_existing)
 {
     assert(!metadata_transaction);
-    assert(attach_existing || query_context == this);
+    assert(attach_existing || query_context.lock().get() == this);
     metadata_transaction = std::move(txn);
 }
 
