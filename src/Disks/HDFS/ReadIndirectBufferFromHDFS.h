@@ -18,12 +18,12 @@ class ReadIndirectBufferFromHDFS final : public ReadBufferFromFileBase
 {
 public:
     ReadIndirectBufferFromHDFS(
-            const Context & context,
+            ContextPtr context,
             const String & hdfs_name_,
             const String & /* bucket */,
             Metadata metadata_,
             size_t buf_size_)
-        : config(context.getGlobalContext().getConfigRef())
+        : config(context->getGlobalContext()->getConfigRef())
         , hdfs_name(hdfs_name_)
         , metadata(std::move(metadata_))
         , buf_size(buf_size_)

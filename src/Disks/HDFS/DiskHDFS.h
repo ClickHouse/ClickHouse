@@ -16,7 +16,7 @@ namespace DB
  * Files are represented by file in local filesystem (clickhouse_root/disks/disk_name/path/to/file)
  * that contains HDFS object key with actual data.
  */
-class DiskHDFS : public IDisk
+class DiskHDFS : public IDisk, WithContext
 {
 
 friend class DiskHDFSReservation;
@@ -27,7 +27,7 @@ public:
         const String & name_,
         const String & hdfs_name_,
         const String & metadata_path_,
-        const Context & context_);
+        ContextPtr context_);
 
     DiskType::Type getType() const override { return DiskType::Type::HDFS; }
 
@@ -67,15 +67,13 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void copy(const String & /* from_path */, const std::shared_ptr<IDisk> & /* to_disk */, const String & /* to_path */) override {}
-
     void listFiles(const String & path, std::vector<String> & file_names) override;
 
-    void removeFile(const String & /* path */) override {}
+    void removeFile(const String & path) override;
 
-    void removeFileIfExists(const String & /* path */) override {}
+    void removeFileIfExists(const String & path) override;
 
-    void removeDirectory(const String & /* path */) override {}
+    void removeDirectory(const String & path) override;
 
     void removeRecursive(const String & path) override;
 
@@ -113,7 +111,6 @@ private:
     const String name;
     const String hdfs_name;
     String metadata_path;
-    Context context;
     const Poco::Util::AbstractConfiguration & config;
 
     HDFSBuilderWrapper builder;
