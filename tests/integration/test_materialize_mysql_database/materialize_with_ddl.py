@@ -138,7 +138,7 @@ def materialize_mysql_database_with_views(clickhouse_node, mysql_node, service_n
                      "/* Need ClickHouse support Enum('a', 'b', 'v') _enum ENUM('a', 'b', 'c'), */"
                      "_date Date, _datetime DateTime, _timestamp TIMESTAMP, _bool BOOLEAN) ENGINE = InnoDB;")
 
-    mysql_node.query("CREATE VIEW test_table_1_view AS SELECT SUM(tiny_int) FROM test_table_1 GROUP BY _date;")
+    mysql_node.query("CREATE VIEW test_database.test_table_1_view AS SELECT SUM(tiny_int) FROM test_database.test_table_1 GROUP BY _date;")
 
     # it already has some data
     mysql_node.query("""
