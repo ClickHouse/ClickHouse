@@ -121,11 +121,6 @@ void registerTableFunctionS3Cluster(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionS3Cluster>();
 }
 
-void registerTableFunctionCOSDistributed(TableFunctionFactory & factory)
-{
-    factory.registerFunction<TableFunctionCOSDistributed>();
-}
-
 
 }
 
