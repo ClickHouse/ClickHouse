@@ -92,7 +92,7 @@ ActionsDAGPtr createExpressions(
     ASTPtr expr_list,
     bool save_unneeded_columns,
     const NamesAndTypesList & required_columns,
-    const Context & context)
+    ContextPtr context)
 {
     if (!expr_list)
         return nullptr;
@@ -114,7 +114,7 @@ ActionsDAGPtr createExpressions(
 
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, const Context & context)
+void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns);
     if (conversion_expr_list->children.empty())
@@ -131,7 +131,7 @@ ActionsDAGPtr evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
-    const Context & context, bool save_unneeded_columns)
+    ContextPtr context, bool save_unneeded_columns)
 {
     if (!columns.hasDefaults())
         return nullptr;

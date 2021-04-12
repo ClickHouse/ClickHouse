@@ -29,7 +29,7 @@ class FunctionBar : public IFunction
 {
 public:
     static constexpr auto name = "bar";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionBar>();
     }

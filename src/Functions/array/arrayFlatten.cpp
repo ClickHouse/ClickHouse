@@ -20,7 +20,7 @@ class ArrayFlatten : public IFunction
 public:
     static constexpr auto name = "arrayFlatten";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<ArrayFlatten>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<ArrayFlatten>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }

@@ -29,7 +29,7 @@ class FunctionH3IndexesAreNeighbors : public IFunction
 public:
     static constexpr auto name = "h3IndexesAreNeighbors";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3IndexesAreNeighbors>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3IndexesAreNeighbors>(); }
 
     std::string getName() const override { return name; }
 

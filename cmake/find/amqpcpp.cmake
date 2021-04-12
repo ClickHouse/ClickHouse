@@ -1,3 +1,8 @@
+if (OS_DARWIN AND COMPILER_GCC)
+    # AMQP-CPP requires libuv which cannot be built with GCC in macOS due to a bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=93082
+    set (ENABLE_AMQPCPP OFF CACHE INTERNAL "")
+endif()
+
 option(ENABLE_AMQPCPP "Enalbe AMQP-CPP" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_AMQPCPP)
