@@ -16,6 +16,7 @@ namespace ProfileEvents
 {
     extern const Event S3ReadMicroseconds;
     extern const Event S3ReadBytes;
+    extern const Event S3ReadRequestsErrors;
 }
 
 namespace DB
@@ -29,26 +30,50 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, size_t buffer_size_)
-    : SeekableReadBuffer(nullptr, 0), client_ptr(std::move(client_ptr_)), bucket(bucket_), key(key_), buffer_size(buffer_size_)
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, Int64 s3_max_single_read_retries_, size_t buffer_size_)
+    : SeekableReadBuffer(nullptr, 0)
+    , client_ptr(std::move(client_ptr_))
+    , bucket(bucket_)
+    , key(key_)
+    , s3_max_single_read_retries(s3_max_single_read_retries_)
+    , buffer_size(buffer_size_)
 {
 }
 
 
 bool ReadBufferFromS3::nextImpl()
 {
-    if (!initialized)
-    {
+    if (!impl)
         impl = initialize();
-        initialized = true;
-    }
 
     Stopwatch watch;
-    auto res = impl->next();
+    bool next_result = false;
+
+    for (Int64 attempt = s3_max_single_read_retries; s3_max_single_read_retries < 0 || attempt >= 0; --attempt)
+    {
+        if (!impl)
+            impl = initialize();
+
+        try
+        {
+            next_result = impl->next();
+            break;
+        }
+        catch (const Exception & e)
+        {
+            ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
+
+            impl.reset();
+            offset = getPosition();
+
+            if (!attempt)
+                throw;
+        }
+    }
+
     watch.stop();
     ProfileEvents::increment(ProfileEvents::S3ReadMicroseconds, watch.elapsedMicroseconds());
-
-    if (!res)
+    if (!next_result)
         return false;
     internal_buffer = impl->buffer();
 
@@ -60,7 +85,7 @@ bool ReadBufferFromS3::nextImpl()
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    if (initialized)
+    if (impl)
         throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     if (whence != SEEK_SET)
