@@ -21,6 +21,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 
 #include <Interpreters/TablesStatus.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <Compression/ICompressionCodec.h>
 
@@ -51,8 +52,6 @@ class Connection;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
-
-using Scalars = std::map<String, Block>;
 
 
 /// Packet that could be received from server.
@@ -88,9 +87,9 @@ public:
         const String & user_, const String & password_,
         const String & cluster_,
         const String & cluster_secret_,
-        const String & client_name_ = "client",
-        Protocol::Compression compression_ = Protocol::Compression::Enable,
-        Protocol::Secure secure_ = Protocol::Secure::Disable,
+        const String & client_name_,
+        Protocol::Compression compression_,
+        Protocol::Secure secure_,
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
         host(host_), port(port_), default_database(default_database_),
@@ -111,7 +110,7 @@ public:
         setDescription();
     }
 
-    virtual ~Connection() {}
+    virtual ~Connection() = default;
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_)

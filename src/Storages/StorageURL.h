@@ -26,17 +26,17 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 protected:
     IStorageURLBase(
         const Poco::URI & uri_,
-        const Context & context_,
+        ContextPtr context_,
         const StorageID & id_,
         const String & format_name_,
         const std::optional<FormatSettings> & format_settings_,
@@ -60,7 +60,7 @@ private:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
@@ -68,7 +68,7 @@ private:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const;
 
@@ -83,9 +83,9 @@ public:
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         const Block & sample_block_,
-        const Context & context,
+        ContextPtr context,
         const ConnectionTimeouts & timeouts,
-        const CompressionMethod compression_method);
+        CompressionMethod compression_method);
 
     Block getHeader() const override
     {
@@ -112,7 +112,7 @@ public:
             const std::optional<FormatSettings> & format_settings_,
             const ColumnsDescription & columns_,
             const ConstraintsDescription & constraints_,
-            Context & context_,
+            ContextPtr context_,
             const String & compression_method_);
 
     String getName() const override

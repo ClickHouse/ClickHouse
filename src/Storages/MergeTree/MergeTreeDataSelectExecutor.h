@@ -30,7 +30,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         UInt64 max_block_size,
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
@@ -40,10 +40,16 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         UInt64 max_block_size,
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
+
+    /// Construct a sample block consisting only of possible virtual columns for part pruning.
+    static Block getSampleBlockWithVirtualPartColumns();
+
+    /// Fill in values of possible virtual columns for part pruning.
+    static void fillBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, Block & block);
 
 private:
     const MergeTreeData & data;
@@ -150,7 +156,7 @@ private:
         const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        const Context & query_context,
+        ContextPtr query_context,
         PartFilterCounters & counters) const;
 };
 
