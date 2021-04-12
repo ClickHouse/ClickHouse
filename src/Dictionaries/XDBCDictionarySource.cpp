@@ -88,9 +88,9 @@ namespace
         else
         {
             if (!schema.empty())
-                throw Exception{"Dictionary source of type " + bridge_.getName() + " specifies a schema but schema is not supported by "
-                                    + bridge_.getName() + "-driver",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Dictionary source of type {0} specifies a schema but schema is not supported by {0}-driver",
+                    bridge_.getName());
         }
 
         return {dict_struct_, db_, schema, table, where_, bridge_.getIdentifierQuotingStyle()};
@@ -287,8 +287,8 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
         (void)config_prefix;
         (void)sample_block;
         (void)context;
-        throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.");
 #endif
     };
     factory.registerSource("odbc", create_table_source);
@@ -303,8 +303,8 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
                                  ContextPtr /* context */,
                                  const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr {
-        throw Exception{"Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.");
         //        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".connection_string"));
         //        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".jdbc", sample_block, context, bridge);
     };
