@@ -70,7 +70,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception{full_name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", full_name);
 }
 
 template <DictionaryKeyType dictionary_key_type>

@@ -13,7 +13,7 @@ NamesAndTypesList StorageSystemCollations::getNamesAndTypes()
     };
 }
 
-void StorageSystemCollations::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemCollations::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     for (const auto & [locale, lang]: AvailableCollationLocales::instance().getAvailableCollations())
     {
