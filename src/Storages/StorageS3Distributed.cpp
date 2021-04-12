@@ -53,12 +53,6 @@ namespace DB
 {
 
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 StorageS3Distributed::StorageS3Distributed(
     const String & filename_,
     const String & access_key_id_,
@@ -72,7 +66,7 @@ StorageS3Distributed::StorageS3Distributed(
     const Context & context_,
     const String & compression_method_)
     : IStorage(table_id_)
-    , client_auth{S3::URI{Poco::URI{filename_}}, access_key_id_, secret_access_key_, max_connections_, {}, {}} /// Client and settings will be updated later
+    , client_auth{S3::URI{Poco::URI{filename_}}, access_key_id_, secret_access_key_, max_connections_, {}, {}}
     , filename(filename_)
     , cluster_name(cluster_name_)
     , cluster(context_.getCluster(cluster_name)->getClusterWithReplicasAsShards(context_.getSettings()))
@@ -110,7 +104,7 @@ Pipe StorageS3Distributed::read(
             if (column == "_file")
                 need_file_column = true;
         }
-        
+
         /// Save callback not to capture context by reference of copy it.
         auto file_iterator = std::make_shared<StorageS3Source::IteratorWrapper>(
             [callback = context.getReadTaskCallback()]() -> std::optional<String> {
@@ -147,7 +141,8 @@ Pipe StorageS3Distributed::read(
     Pipes pipes;
     connections.reserve(cluster->getShardCount());
 
-    for (const auto & replicas : cluster->getShardsAddresses()) {
+    for (const auto & replicas : cluster->getShardsAddresses())
+    {
         /// There will be only one replica, because we consider each replica as a shard
         for (const auto & node : replicas)
         {
@@ -165,7 +160,7 @@ Pipe StorageS3Distributed::read(
                     *connections.back(), queryToString(query_info.query), header, context, 
                     /*throttler=*/nullptr, scalars, Tables(), processed_stage, callback);
 
-            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, false, false)); 
+            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, false, false));
         }
     }
 
@@ -177,9 +172,9 @@ QueryProcessingStage::Enum StorageS3Distributed::getQueryProcessingStage(
     const Context & context, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
-    if (context.getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY) {
+    if (context.getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         return QueryProcessingStage::Enum::WithMergeableState;
-    }
+
     /// Follower just reads the data.
     return QueryProcessingStage::Enum::FetchColumns;
 }
