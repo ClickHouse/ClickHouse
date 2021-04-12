@@ -1,41 +1,32 @@
 #include "Stats.h"
 #include <iostream>
 
-void report(MultiStats & infos, size_t concurrency, bool cumulative)
+void report(std::shared_ptr<Stats> & info, size_t concurrency)
 {
     std::cerr << "\n";
-    for (size_t i = 0; i < infos.size(); ++i)
+
+    /// Avoid zeros, nans or exceptions
+    if (0 == info->requests)
+        return;
+
+    double seconds = info->work_time / concurrency;
+
+    std::cerr << "requests " << info->requests << ", ";
+    if (info->errors)
     {
-        const auto & info = infos[i];
-
-        /// Avoid zeros, nans or exceptions
-        if (0 == info->queries)
-            return;
-
-        double seconds = info->work_time / concurrency;
-
-        std::cerr
-                << "connection " << i << ", "
-                << "queries " << info->queries << ", ";
-        if (info->errors)
-        {
-            std::cerr << "errors " << info->errors << ", ";
-        }
-        std::cerr
-                << "RPS: " << (info->requests / seconds) << ", "
-                << "Read MiB/s: " << (info->requests_read_bytes / seconds / 1048576) << ", "
-                << "Write MiB/s: " << (info->requests_write_bytes / seconds / 1048576) << ". "
-                << "\n";
+        std::cerr << "errors " << info->errors << ", ";
     }
+    std::cerr
+            << "RPS: " << (info->requests / seconds) << ", "
+            << "Read MiB/s: " << (info->requests_read_bytes / seconds / 1048576) << ", "
+            << "Write MiB/s: " << (info->requests_write_bytes / seconds / 1048576) << ". "
+            << "\n";
     std::cerr << "\n";
 
     auto print_percentile = [&](double percent)
     {
         std::cerr << percent << "%\t\t";
-        for (const auto & info : infos)
-        {
-            std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec.\t";
-        }
+        std::cerr << info->sampler.quantileNearest(percent / 100.0) << " sec.\t";
         std::cerr << "\n";
     };
 
@@ -46,10 +37,4 @@ void report(MultiStats & infos, size_t concurrency, bool cumulative)
     print_percentile(99);
     print_percentile(99.9);
     print_percentile(99.99);
-
-    if (!cumulative)
-    {
-        for (auto & info : infos)
-            info->clear();
-    }
 }

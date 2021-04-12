@@ -2,6 +2,8 @@
 #include <random>
 #include <filesystem>
 
+using namespace Coordination;
+using namespace zkutil;
 
 namespace
 {
