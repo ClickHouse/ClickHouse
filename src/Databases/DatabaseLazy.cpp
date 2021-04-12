@@ -27,7 +27,7 @@ namespace ErrorCodes
 }
 
 
-DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, const Context & context_)
+DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, ContextPtr context_)
     : DatabaseOnDisk(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
@@ -35,11 +35,11 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 
 void DatabaseLazy::loadStoredObjects(
-    Context & context,
+    ContextPtr local_context,
     bool /* has_force_restore_data_flag */,
     bool /*force_attach*/)
 {
-    iterateMetadataFiles(context, [this](const String & file_name)
+    iterateMetadataFiles(local_context, [this](const String & file_name)
     {
         const std::string table_name = file_name.substr(0, file_name.size() - 4);
 
@@ -56,7 +56,7 @@ void DatabaseLazy::loadStoredObjects(
 
 
 void DatabaseLazy::createTable(
-    const Context & context,
+    ContextPtr local_context,
     const String & table_name,
     const StoragePtr & table,
     const ASTPtr & query)
@@ -64,7 +64,7 @@ void DatabaseLazy::createTable(
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     if (!endsWith(table->getName(), "Log"))
         throw Exception("Lazy engine can be used only with *Log tables.", ErrorCodes::UNSUPPORTED_METHOD);
-    DatabaseOnDisk::createTable(context, table_name, table, query);
+    DatabaseOnDisk::createTable(local_context, table_name, table, query);
 
     /// DatabaseOnDisk::createTable renames file, so we need to get new metadata_modification_time.
     std::lock_guard lock(mutex);
@@ -74,16 +74,16 @@ void DatabaseLazy::createTable(
 }
 
 void DatabaseLazy::dropTable(
-    const Context & context,
+    ContextPtr local_context,
     const String & table_name,
     bool no_delay)
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
-    DatabaseOnDisk::dropTable(context, table_name, no_delay);
+    DatabaseOnDisk::dropTable(local_context, table_name, no_delay);
 }
 
 void DatabaseLazy::renameTable(
-    const Context & context,
+    ContextPtr local_context,
     const String & table_name,
     IDatabase & to_database,
     const String & to_table_name,
@@ -91,7 +91,7 @@ void DatabaseLazy::renameTable(
     bool dictionary)
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
-    DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, exchange, dictionary);
+    DatabaseOnDisk::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
 }
 
 
@@ -105,7 +105,7 @@ time_t DatabaseLazy::getObjectMetadataModificationTime(const String & table_name
 }
 
 void DatabaseLazy::alterTable(
-    const Context & /* context */,
+    ContextPtr /* context */,
     const StorageID & /*table_id*/,
     const StorageInMemoryMetadata & /* metadata */)
 {
@@ -142,7 +142,7 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
     return loadTable(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     Strings filtered_tables;
@@ -233,9 +233,9 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
     try
     {
         StoragePtr table;
-        Context context_copy(global_context); /// some tables can change context, but not LogTables
+        auto context_copy = Context::createCopy(context); /// some tables can change context, but not LogTables
 
-        auto ast = parseQueryFromMetadata(log, global_context, table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
+        auto ast = parseQueryFromMetadata(log, getContext(), table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
         if (ast)
         {
             const auto & ast_create = ast->as<const ASTCreateQuery &>();

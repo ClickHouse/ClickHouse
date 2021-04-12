@@ -700,6 +700,7 @@
         "01760_polygon_dictionaries",
         "01778_hierarchical_dictionaries",
         "01780_clickhouse_dictionary_source_loop",
-        "01785_dictionary_element_count"
+        "01785_dictionary_element_count",
+        "01804_dictionary_decimal256_type"
     ]
 }

@@ -25,7 +25,7 @@ class FunctionArrayResize : public IFunction
 {
 public:
     static constexpr auto name = "arrayResize";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayResize>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayResize>(); }
 
     String getName() const override { return name; }
 

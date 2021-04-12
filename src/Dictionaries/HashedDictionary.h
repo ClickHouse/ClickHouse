@@ -152,6 +152,7 @@ private:
             Decimal32,
             Decimal64,
             Decimal128,
+            Decimal256,
             Float32,
             Float64,
             StringRef>
@@ -170,13 +171,13 @@ private:
             CollectionType<Decimal32>,
             CollectionType<Decimal64>,
             CollectionType<Decimal128>,
+            CollectionType<Decimal256>,
             CollectionType<Float32>,
             CollectionType<Float64>,
             CollectionType<StringRef>>
             container;
 
         std::unique_ptr<Arena> string_arena;
-
     };
 
     void createAttributes();

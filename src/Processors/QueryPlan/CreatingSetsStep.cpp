@@ -33,18 +33,18 @@ CreatingSetStep::CreatingSetStep(
     String description_,
     SubqueryForSet subquery_for_set_,
     SizeLimits network_transfer_limits_,
-    const Context & context_)
+    ContextPtr context_)
     : ITransformingStep(input_stream_, Block{}, getTraits())
+    , WithContext(context_)
     , description(std::move(description_))
     , subquery_for_set(std::move(subquery_for_set_))
     , network_transfer_limits(std::move(network_transfer_limits_))
-    , context(context_)
 {
 }
 
 void CreatingSetStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, context);
+    pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
 }
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const
@@ -109,7 +109,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
 }
 
 void addCreatingSetsStep(
-    QueryPlan & query_plan, SubqueriesForSets subqueries_for_sets, const SizeLimits & limits, const Context & context)
+    QueryPlan & query_plan, SubqueriesForSets subqueries_for_sets, const SizeLimits & limits, ContextPtr context)
 {
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());

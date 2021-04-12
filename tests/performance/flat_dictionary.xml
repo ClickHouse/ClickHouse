@@ -1,4 +1,8 @@
 <test max_ignored_relative_change="0.3">
+    <preconditions>
+        <table_exists>please_fix_me</table_exists>
+    </preconditions>
+
     <create_query>
         CREATE TABLE simple_key_flat_dictionary_source_table
         (

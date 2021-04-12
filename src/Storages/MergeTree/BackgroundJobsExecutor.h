@@ -50,11 +50,9 @@ struct JobAndPool
 /// Consists of two important parts:
 /// 1) Task in background scheduling pool which receives new jobs from storages and put them into required pool.
 /// 2) One or more ThreadPool objects, which execute background jobs.
-class IBackgroundJobExecutor
+class IBackgroundJobExecutor : protected WithContext
 {
 protected:
-    Context & global_context;
-
     /// Configuration for single background ThreadPool
     struct PoolConfig
     {
@@ -106,7 +104,7 @@ public:
 
 protected:
     IBackgroundJobExecutor(
-        Context & global_context_,
+        ContextPtr global_context_,
         const BackgroundTaskSchedulingSettings & sleep_settings_,
         const std::vector<PoolConfig> & pools_configs_);
 
@@ -134,7 +132,7 @@ private:
 public:
     BackgroundJobsExecutor(
         MergeTreeData & data_,
-        Context & global_context_);
+        ContextPtr global_context_);
 
 protected:
     String getBackgroundTaskName() const override;
@@ -150,7 +148,7 @@ private:
 public:
     BackgroundMovesExecutor(
         MergeTreeData & data_,
-        Context & global_context_);
+        ContextPtr global_context_);
 
 protected:
     String getBackgroundTaskName() const override;

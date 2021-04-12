@@ -17,7 +17,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
-                                                    const Context & /* context */,
+                                                    ContextPtr /* context */,
                                                     const std::string & /* default_database */,
                                                     bool /*check_config*/) -> DictionarySourcePtr
     {
@@ -25,8 +25,8 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
     setupCassandraDriverLibraryLogging(CASS_LOG_INFO);
     return std::make_unique<CassandraDictionarySource>(dict_struct, config, config_prefix + ".cassandra", sample_block);
 #else
-    throw Exception{"Dictionary source of type `cassandra` is disabled because ClickHouse was built without cassandra support.",
-                    ErrorCodes::SUPPORT_IS_DISABLED};
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "Dictionary source of type `cassandra` is disabled because ClickHouse was built without cassandra support.");
 #endif
     };
     factory.registerSource("cassandra", create_table_source);
@@ -90,7 +90,7 @@ void CassandraSettings::setConsistency(const String & config_str)
     else if (config_str == "LocalSerial")
         consistency = CASS_CONSISTENCY_LOCAL_SERIAL;
     else    /// CASS_CONSISTENCY_ANY is only valid for writes
-        throw Exception("Unsupported consistency level: " + config_str, ErrorCodes::INVALID_CONFIG_PARAMETER);
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unsupported consistency level: {}", config_str);
 }
 
 static const size_t max_block_size = 8192;
@@ -156,7 +156,7 @@ BlockInputStreamPtr CassandraDictionarySource::loadIds(const std::vector<UInt64>
 BlockInputStreamPtr CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (requested_rows.empty())
-        throw Exception("No rows requested", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No rows requested");
 
     /// TODO is there a better way to load data by complex keys?
     std::unordered_map<UInt64, std::vector<size_t>> partitions;
@@ -185,7 +185,7 @@ BlockInputStreamPtr CassandraDictionarySource::loadKeys(const Columns & key_colu
 
 BlockInputStreamPtr CassandraDictionarySource::loadUpdatedAll()
 {
-    throw Exception("Method loadUpdatedAll is unsupported for CassandraDictionarySource", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for CassandraDictionarySource");
 }
 
 CassSessionShared CassandraDictionarySource::getSession()
