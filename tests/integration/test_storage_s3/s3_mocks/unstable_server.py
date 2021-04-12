@@ -6,15 +6,47 @@ import struct
 import sys
 
 
+def gen_n_digit_number(n):
+    assert 0 < n < 19
+    return random.randint(10**(n-1), 10**n-1)
+
+def gen_line():
+    # Create fixed length CSV line.
+    columns = 4
+    total_digits = digits_to_go = (columns-1)*19//2
+    columns_to_go = columns-1
+
+    row = []
+    def add_number():
+        nonlocal digits_to_go
+        nonlocal columns_to_go
+        min_digits = max(1, digits_to_go - (columns_to_go-1) * 18)
+        max_digits = min(18, digits_to_go - (columns_to_go-1))
+        digits = random.randint(min_digits, max_digits)
+        row.append(gen_n_digit_number(digits))
+        columns_to_go -= 1
+        digits_to_go -= digits
+
+    for i in range(columns // 2):
+        add_number()
+    row.append(1)
+    for i in range(columns - 1 - columns // 2):
+        add_number()
+
+    line = ",".join(map(str, row)) + "\n"
+    assert total_digits + 1 == len(line) - columns
+    return line.encode()
+
+
+line = gen_line()
+
 class RequestHandler(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
         if self.path == "/root/test.csv":
-            self.line = f"{random.randint(10000, 99999)},{random.randint(10000, 99999)},{random.randint(10000, 99999)}\n".encode()
             self.from_bytes = 0
-            self.end_bytes = len(self.line)*500000
+            self.end_bytes = len(line)*500000
             self.size = self.end_bytes
-            self.stop_at = 1000000
-            self.new_at = len(self.line)*10
+            self.stop_at = random.randint(900000, 1100000)
 
             if "Range" in self.headers:
                 cr = self.headers["Range"]
@@ -45,12 +77,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
 
     def do_GET(self):
+        global line
+
         self.do_HEAD()
         if self.path == "/root/test.csv":
+            lines = 0
             for c, i in enumerate(range(self.from_bytes, self.end_bytes)):
-                self.wfile.write(self.line[i % len(self.line):i % len(self.line) + 1])
-                if (c + 1) % self.new_at == 0:
-                    self.line = f"{random.randint(10000, 99999)},{random.randint(10000, 99999)},{random.randint(10000, 99999)}\n".encode()
+                j = i % len(line)
+                self.wfile.write(line[j:j+1])
+                if line[j:j+1] == b'\n':
+                    line = gen_line()
                 if (c + 1) % self.stop_at == 0:
                     #self.wfile._sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 0, 0))
                     #self.wfile._sock.shutdown(socket.SHUT_RDWR)
