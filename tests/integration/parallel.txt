@@ -181,7 +181,9 @@ test_storage_mysql/test.py::test_where
 test_storage_mysql/test.py::test_table_function
 test_storage_mysql/test.py::test_binary_type
 test_storage_mysql/test.py::test_enum_type
+test_storage_mysql/test.py::test_mysql_distributed
 test_storage_postgresql/test.py::test_postgres_select_insert
 test_storage_postgresql/test.py::test_postgres_conversions
 test_storage_postgresql/test.py::test_non_default_scema
 test_storage_postgresql/test.py::test_concurrent_queries
+test_storage_postgresql/test.py::test_postgres_distributed

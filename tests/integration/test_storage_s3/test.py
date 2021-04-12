@@ -114,14 +114,14 @@ def run_query(instance, query, stdin=None, settings=None):
 
 # Test simple put. Also checks that wrong credentials produce an error with every compression method.
 @pytest.mark.parametrize("maybe_auth,positive,compression", [
-    ("", True, 'auto'),
-    ("'minio','minio123',", True, 'auto'),
-    ("'wrongid','wrongkey',", False, 'auto'),
-    ("'wrongid','wrongkey',", False, 'gzip'),
-    ("'wrongid','wrongkey',", False, 'deflate'),
-    ("'wrongid','wrongkey',", False, 'brotli'),
-    ("'wrongid','wrongkey',", False, 'xz'),
-    ("'wrongid','wrongkey',", False, 'zstd')
+    pytest.param("", True, 'auto', id="positive"),
+    pytest.param("'minio','minio123',", True, 'auto', id="auth_positive"),
+    pytest.param("'wrongid','wrongkey',", False, 'auto', id="auto-"),
+    pytest.param("'wrongid','wrongkey',", False, 'gzip', id=""),
+    pytest.param("'wrongid','wrongkey',", False, 'deflate', id=""),
+    pytest.param("'wrongid','wrongkey',", False, 'brotli', id=""),
+    pytest.param("'wrongid','wrongkey',", False, 'xz', id=""),
+    pytest.param("'wrongid','wrongkey',", False, 'zstd, id=""')
 ])
 def test_put(started_cluster, maybe_auth, positive, compression):
     # type: (ClickHouseCluster) -> None
@@ -147,7 +147,7 @@ def test_put(started_cluster, maybe_auth, positive, compression):
 
 # Test put no data to S3.
 @pytest.mark.parametrize("auth", [
-    "'minio','minio123',"
+    pytest.param("'minio','minio123'", id="minio")
 ])
 def test_empty_put(started_cluster, auth):
     # type: (ClickHouseCluster) -> None
@@ -181,9 +181,9 @@ def test_empty_put(started_cluster, auth):
 
 # Test put values in CSV format.
 @pytest.mark.parametrize("maybe_auth,positive", [
-    ("", True),
-    ("'minio','minio123',", True),
-    ("'wrongid','wrongkey',", False)
+    pytest.param("", True, id="positive"),
+    pytest.param("'minio','minio123',", True, id="auth_positive"),
+    pytest.param("'wrongid','wrongkey',", False, id="negative"),
 ])
 def test_put_csv(started_cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
@@ -285,9 +285,9 @@ def test_put_get_with_globs(started_cluster):
 
 # Test multipart put.
 @pytest.mark.parametrize("maybe_auth,positive", [
-    ("", True),
+    pytest.param("", True, id="positive"),
+    pytest.param("'wrongid','wrongkey'", False, id="negative"),
     # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
-    ("'wrongid','wrongkey',", False),
 ])
 def test_multipart_put(started_cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
@@ -344,8 +344,8 @@ def test_remote_host_filter(started_cluster):
 
 
 @pytest.mark.parametrize("s3_storage_args", [
-    "''",  # 1 arguments
-    "'','','','','',''"  # 6 arguments
+    pytest.param("''", id="1_argument"),
+    pytest.param("'','','','','',''", id="6_arguments"),
 ])
 def test_wrong_s3_syntax(started_cluster, s3_storage_args):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
@@ -458,8 +458,8 @@ def test_custom_auth_headers_exclusion(started_cluster):
     assert '403 Forbidden' in ei.value.stderr
 
 @pytest.mark.parametrize("extension,method", [
-    ("bin", "gzip"),
-    ("gz", "auto")
+    pytest.param("bin", "gzip", id="bin"),
+    pytest.param("gz", "auto", id="gz"),
 ])
 def test_storage_s3_get_gzip(started_cluster, extension, method):
     bucket = started_cluster.minio_bucket
@@ -532,8 +532,8 @@ def test_storage_s3_put_uncompressed(started_cluster):
 
 
 @pytest.mark.parametrize("extension,method", [
-    ("bin", "gzip"),
-    ("gz", "auto")
+    pytest.param("bin", "gzip", id="bin"),
+    pytest.param("gz", "auto", id="gz")
 ])
 def test_storage_s3_put_gzip(started_cluster, extension, method):
     bucket = started_cluster.minio_bucket

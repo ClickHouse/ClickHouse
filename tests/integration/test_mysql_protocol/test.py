@@ -46,7 +46,7 @@ def mysql_server(mysql_client):
     :type mysql_client: Container
     :rtype: Container
     """
-    retries = 30
+    retries = 60
     for i in range(retries):
         info = mysql_client.client.api.inspect_container(mysql_client.name)
         if info['State']['Health']['Status'] == 'healthy':

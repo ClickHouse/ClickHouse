@@ -36,7 +36,7 @@ def started_cluster():
     try:
         cluster.start()
 
-        conn = get_mysql_conn(cluster, cluster.mysql57_ip)
+        conn = get_mysql_conn(cluster, cluster.mysql_ip)
         create_mysql_db(conn, 'clickhouse')
 
         ## create mysql db and table
@@ -50,7 +50,7 @@ def started_cluster():
 
 def test_many_connections(started_cluster):
     table_name = 'test_many_connections'
-    conn = get_mysql_conn(started_cluster, cluster.mysql57_ip)
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     create_mysql_table(conn, table_name)
 
     node1.query('''
@@ -70,7 +70,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
 def test_insert_select(started_cluster):
     table_name = 'test_insert_select'
-    conn = get_mysql_conn(started_cluster, cluster.mysql57_ip)
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     create_mysql_table(conn, table_name)
 
     node1.query('''
@@ -86,7 +86,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
 def test_replace_select(started_cluster):
     table_name = 'test_replace_select'
-    conn = get_mysql_conn(started_cluster, cluster.mysql57_ip)
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     create_mysql_table(conn, table_name)
 
     node1.query('''
@@ -105,7 +105,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
 def test_insert_on_duplicate_select(started_cluster):
     table_name = 'test_insert_on_duplicate_select'
-    conn = get_mysql_conn(started_cluster, cluster.mysql57_ip)
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     create_mysql_table(conn, table_name)
 
     node1.query('''
@@ -124,7 +124,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
 def test_where(started_cluster):
     table_name = 'test_where'
-    conn = get_mysql_conn(started_cluster, cluster.mysql57_ip)
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     create_mysql_table(conn, table_name)
     node1.query('''
 CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse');
@@ -144,7 +144,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
 
 def test_table_function(started_cluster):
-    conn = get_mysql_conn(started_cluster, cluster.mysql57_ip)
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     create_mysql_table(conn, 'table_function')
     table_function = "mysql('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format('table_function')
     assert node1.query("SELECT count() FROM {}".format(table_function)).rstrip() == '0'
@@ -166,7 +166,7 @@ def test_table_function(started_cluster):
 
 
 def test_binary_type(started_cluster):
-    conn = get_mysql_conn(started_cluster, cluster.mysql57_ip)
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     with conn.cursor() as cursor:
         cursor.execute("CREATE TABLE clickhouse.binary_type (id INT PRIMARY KEY, data BINARY(16) NOT NULL)")
     table_function = "mysql('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format('binary_type')
@@ -176,7 +176,7 @@ def test_binary_type(started_cluster):
 
 def test_enum_type(started_cluster):
     table_name = 'test_enum_type'
-    conn = get_mysql_conn(started_cluster, cluster.mysql57_ip)
+    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
     create_mysql_table(conn, table_name)
     node1.query('''
 CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('IP' = 1, 'URL' = 2)) ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse', 1);
@@ -202,7 +202,7 @@ def create_mysql_table(conn, tableName):
 def test_mysql_distributed(started_cluster):
     table_name = 'test_replicas'
 
-    conn1 = get_mysql_conn(started_cluster, started_cluster.mysql57_ip)
+    conn1 = get_mysql_conn(started_cluster, started_cluster.mysql_ip)
     conn2 = get_mysql_conn(started_cluster, started_cluster.mysql2_ip)
     conn3 = get_mysql_conn(started_cluster, started_cluster.mysql3_ip)
     conn4 = get_mysql_conn(started_cluster, started_cluster.mysql4_ip)
@@ -210,6 +210,7 @@ def test_mysql_distributed(started_cluster):
     create_mysql_db(conn1, 'clickhouse')
     create_mysql_db(conn2, 'clickhouse')
     create_mysql_db(conn3, 'clickhouse')
+    create_mysql_db(conn4, 'clickhouse')
 
     create_mysql_table(conn1, table_name)
     create_mysql_table(conn2, table_name)
@@ -228,13 +229,13 @@ def test_mysql_distributed(started_cluster):
         nodes[i-1].query('''
             CREATE TABLE test_replica{}
             (id UInt32, name String, age UInt32, money UInt32)
-            ENGINE = MySQL(`mysql{}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');'''.format(i, i))
+            ENGINE = MySQL(`mysql{}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');'''.format(i, 57 if i==1 else i))
         nodes[i-1].query("INSERT INTO test_replica{} (id, name) SELECT number, 'host{}' from numbers(10) ".format(i, i))
 
     # test multiple ports parsing
-    result = node2.query('''SELECT DISTINCT(name) FROM mysql(`mysql{1|2|3}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+    result = node2.query('''SELECT DISTINCT(name) FROM mysql(`mysql{57|2|3}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
     assert(result == 'host1\n' or result == 'host2\n' or result == 'host3\n')
-    result = node2.query('''SELECT DISTINCT(name) FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+    result = node2.query('''SELECT DISTINCT(name) FROM mysql(`mysql57:3306|mysql2:3306|mysql3:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
     assert(result == 'host1\n' or result == 'host2\n' or result == 'host3\n')
 
     # check all replicas are traversed
@@ -250,7 +251,7 @@ def test_mysql_distributed(started_cluster):
     node2.query('''
         CREATE TABLE test_shards
         (id UInt32, name String, age UInt32, money UInt32)
-        ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
+        ENGINE = ExternalDistributed('MySQL', `mysql{57|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse'); ''')
 
     # Check only one replica in each shard is used
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
@@ -264,10 +265,10 @@ def test_mysql_distributed(started_cluster):
     result = node2.query(query)
     assert(result == 'host1\nhost2\nhost3\nhost4\n')
 
-    # disconnect mysql1
-    started_cluster.pause_container('mysql1')
+    # disconnect mysql57
+    started_cluster.pause_container('mysql57')
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
-    started_cluster.unpause_container('mysql1')
+    started_cluster.unpause_container('mysql57')
     assert(result == 'host2\nhost4\n' or result == 'host3\nhost4\n')
 
 if __name__ == '__main__':
