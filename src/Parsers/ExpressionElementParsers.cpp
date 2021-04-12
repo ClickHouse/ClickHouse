@@ -246,7 +246,8 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     if (table_name_with_optional_uuid)
     {
-        assert(parts.size() <= 2);
+        if (parts.size() > 2)
+            return false;
 
         if (s_uuid.ignore(pos, expected))
         {
