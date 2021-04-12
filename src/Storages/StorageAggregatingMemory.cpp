@@ -34,87 +34,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-
-class MemorySource : public SourceWithProgress
-{
-    using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
-public:
-    /// Blocks are stored in std::list which may be appended in another thread.
-    /// We use pointer to the beginning of the list and its current size.
-    /// We don't need synchronisation in this reader, because while we hold SharedLock on storage,
-    /// only new elements can be added to the back of the list, so our iterators remain valid
-
-    MemorySource(
-        Names column_names_,
-        const StorageAggregatingMemory & storage,
-        const StorageMetadataPtr & metadata_snapshot,
-        std::shared_ptr<const Blocks> data_,
-        std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
-        InitializerFunc initializer_func_ = {})
-        : SourceWithProgress(metadata_snapshot->getSampleBlockForColumns(column_names_, storage.getVirtuals(), storage.getStorageID()))
-        , column_names_and_types(metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(std::move(column_names_)))
-        , data(data_)
-        , parallel_execution_index(parallel_execution_index_)
-        , initializer_func(std::move(initializer_func_))
-    {
-    }
-
-    String getName() const override { return "AggregatingMemory"; }
-
-protected:
-    Chunk generate() override
-    {
-        if (initializer_func)
-        {
-            initializer_func(data);
-            initializer_func = {};
-        }
-
-        size_t current_index = getAndIncrementExecutionIndex();
-
-        if (current_index >= data->size())
-        {
-            return {};
-        }
-
-        const Block & src = (*data)[current_index];
-        Columns columns;
-        columns.reserve(columns.size());
-
-        /// Add only required columns to `res`.
-        for (const auto & elem : column_names_and_types)
-        {
-            auto current_column = src.getByName(elem.getNameInStorage()).column;
-            if (elem.isSubcolumn())
-                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
-            else
-                columns.emplace_back(std::move(current_column));
-        }
-
-        return Chunk(std::move(columns), src.rows());
-    }
-
-private:
-    size_t getAndIncrementExecutionIndex()
-    {
-        if (parallel_execution_index)
-        {
-            return (*parallel_execution_index)++;
-        }
-        else
-        {
-            return execution_index++;
-        }
-    }
-
-    const NamesAndTypesList column_names_and_types;
-    size_t execution_index = 0;
-    std::shared_ptr<const Blocks> data;
-    std::shared_ptr<std::atomic<size_t>> parallel_execution_index;
-    InitializerFunc initializer_func;
-};
-
-
+/// AggregatingOutputStream is used to feed data into Aggregator.
 class AggregatingOutputStream : public IBlockOutputStream
 {
 public:
@@ -133,13 +53,30 @@ public:
 
     void write(const Block & block) override
     {
-        Block block_clone(block);
+        writeForDebug(block);
+
+        // TODO: metadata_snapshot->check
+        // TODO: update storage.total_size_bytes
+
+        Block block_for_aggregation(block);
 
         AggregatedDataVariants & variants(*(storage.many_data)->variants[0]);
         ColumnRawPtrs key_columns(storage.aggregator_transform->params.keys_size);
         Aggregator::AggregateColumns aggregate_columns(storage.aggregator_transform->params.aggregates_size);
         bool no_more_keys = false;
 
+        auto expression = storage.analysis_result.before_aggregation;
+        auto expression_actions = std::make_shared<ExpressionActions>(expression);
+        expression_actions->execute(block_for_aggregation);
+
+        storage.aggregator_transform->aggregator.executeOnBlock(block_for_aggregation, variants, key_columns, aggregate_columns, no_more_keys);
+    }
+
+    // Used to run aggregation the usual way (via InterpreterSelectQuery),
+    // and only purpose is to aid development.
+    // TODO: remove this.
+    void writeForDebug(const Block & block)
+    {
         BlockInputStreamPtr in;
 
         /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
@@ -196,15 +133,6 @@ public:
         }
 
         in->readSuffix();
-
-        // metadata_snapshot->check(block, true);
-        // new_blocks.emplace_back(block);
-
-        auto expression = storage.analysis_result.before_aggregation;
-        auto expression_actions = std::make_shared<ExpressionActions>(expression);
-        expression_actions->execute(block_clone);
-
-        storage.aggregator_transform->aggregator.executeOnBlock(block_clone, variants, key_columns, aggregate_columns, no_more_keys);
     }
 
     void writeSuffix() override
@@ -341,13 +269,16 @@ Pipe StorageAggregatingMemory::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    Pipes pipes;
+    // TODO: allow parallel read? (num_streams)
+    // TODO: check if read by aggregation key is O(1)
+
 
     auto prepared_data = aggregator_transform->aggregator.prepareVariantsToMerge(many_data->variants);
     auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
     
     auto processor = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
 
+    Pipes pipes;
     pipes.emplace_back(processor);
 
     auto final_projection = analysis_result.final_projection;
@@ -360,19 +291,6 @@ Pipe StorageAggregatingMemory::read(
     });
 
     return pipe;
-
-    // auto current_data = data.get();
-    // size_t size = current_data->size();
-
-    // if (num_streams > size)
-    //     num_streams = size;
-
-    // auto parallel_execution_index = std::make_shared<std::atomic<size_t>>(0);
-
-    // for (size_t stream = 0; stream < num_streams; ++stream)
-    // {
-    //     pipes.emplace_back(std::make_shared<MemorySource>(column_names, *this, metadata_snapshot, current_data, parallel_execution_index));
-    // }
 }
 
 
@@ -388,6 +306,8 @@ void StorageAggregatingMemory::drop()
     data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
+
+    // TODO: drop aggregator state?
 }
 
 static inline void updateBlockData(Block & old_block, const Block & new_block)
@@ -402,6 +322,8 @@ static inline void updateBlockData(Block & old_block, const Block & new_block)
 
 void StorageAggregatingMemory::mutate(const MutationCommands & commands, const Context & context)
 {
+    // TODO: mutate is not supported?
+
     std::lock_guard lock(mutex);
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
@@ -464,6 +386,8 @@ void StorageAggregatingMemory::truncate(
     data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
+
+    // TODO: clear aggregator state?
 }
 
 std::optional<UInt64> StorageAggregatingMemory::totalRows(const Settings &) const
@@ -471,11 +395,15 @@ std::optional<UInt64> StorageAggregatingMemory::totalRows(const Settings &) cons
     /// All modifications of these counters are done under mutex which automatically guarantees synchronization/consistency
     /// When run concurrently we are fine with any value: "before" or "after"
     return total_size_rows.load(std::memory_order_relaxed);
+
+    // TODO: get info from aggregator?
 }
 
 std::optional<UInt64> StorageAggregatingMemory::totalBytes(const Settings &) const
 {
     return total_size_bytes.load(std::memory_order_relaxed);
+
+    // TODO: get info from aggregator?
 }
 
 void registerStorageAggregatingMemory(StorageFactory & factory)
@@ -490,7 +418,7 @@ void registerStorageAggregatingMemory(StorageFactory & factory)
         return StorageAggregatingMemory::create(args.table_id, args.columns, args.constraints, args.query, args.context);
     },
     {
-        .supports_parallel_insert = true,
+        .supports_parallel_insert = true, // TODO: not sure
     });
 }
 
