@@ -15,7 +15,7 @@
   (dorun (map (fn [v] (zk/delete conn v)) (take 10 (zk-range)))))
 
 (deftest a-test
-  (testing "nukeeper connection"
+  (testing "keeper connection"
     (.setLevel
      (LoggerFactory/getLogger "org.apache.zookeeper") Level/OFF)
     (let [conn (zk/connect "localhost:9181" :timeout-msec 5000)]

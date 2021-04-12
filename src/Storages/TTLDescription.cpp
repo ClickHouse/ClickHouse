@@ -162,7 +162,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    const Context & context,
+    ContextPtr context,
     const KeyDescription & primary_key)
 {
     TTLDescription result;
@@ -289,7 +289,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context.getSettingsRef().allow_suspicious_codecs);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs);
         }
     }
 
@@ -330,7 +330,7 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
 TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    const Context & context,
+    ContextPtr context,
     const KeyDescription & primary_key)
 {
     TTLTableDescription result;

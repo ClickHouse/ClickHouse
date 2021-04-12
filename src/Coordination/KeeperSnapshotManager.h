@@ -18,7 +18,7 @@ enum SnapshotVersion : uint8_t
 struct KeeperStorageSnapshot
 {
 public:
-    KeeperStorageSnapshot(KeeperStorage * storage_, size_t up_to_log_idx_);
+    KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_);
 
     KeeperStorageSnapshot(KeeperStorage * storage_, const SnapshotMetadataPtr & snapshot_meta_);
     ~KeeperStorageSnapshot();
@@ -51,14 +51,14 @@ public:
     SnapshotMetaAndStorage restoreFromLatestSnapshot();
 
     static nuraft::ptr<nuraft::buffer> serializeSnapshotToBuffer(const KeeperStorageSnapshot & snapshot);
-    std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, size_t up_to_log_idx);
+    std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
 
     SnapshotMetaAndStorage deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 
-    nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(size_t up_to_log_idx) const;
+    nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const;
     nuraft::ptr<nuraft::buffer> deserializeLatestSnapshotBufferFromDisk();
 
-    void removeSnapshot(size_t log_idx);
+    void removeSnapshot(uint64_t log_idx);
 
     size_t totalSnapshots() const
     {
@@ -76,7 +76,7 @@ private:
     void removeOutdatedSnapshotsIfNeeded();
     const std::string snapshots_path;
     const size_t snapshots_to_keep;
-    std::map<size_t, std::string> existing_snapshots;
+    std::map<uint64_t, std::string> existing_snapshots;
     size_t storage_tick_time;
 };
 

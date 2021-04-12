@@ -21,6 +21,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 
 #include <Interpreters/TablesStatus.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <Compression/ICompressionCodec.h>
 
@@ -51,8 +52,6 @@ class Connection;
 
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
-
-using Scalars = std::map<String, Block>;
 
 
 /// Packet that could be received from server.
@@ -111,7 +110,7 @@ public:
         setDescription();
     }
 
-    virtual ~Connection() {}
+    virtual ~Connection() = default;
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_)
