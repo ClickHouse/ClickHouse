@@ -750,6 +750,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
+            global_context->setExternalModelsConfig(config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -1302,7 +1303,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
         /// try to load dictionaries immediately, throw on error and die
-        ext::scope_guard dictionaries_xmls, models_xmls;
+        ext::scope_guard dictionaries_xmls;
         try
         {
             if (!config().getBool("dictionaries_lazy_load", true))
@@ -1312,8 +1313,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
                 std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
-            models_xmls = global_context->getExternalModelsLoader().addConfigRepository(
-                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config"));
         }
         catch (...)
         {
