@@ -14,7 +14,7 @@ namespace DB
 class IdentifierQuoteHandler : public HTTPRequestHandler
 {
 public:
-    IdentifierQuoteHandler(size_t keep_alive_timeout_, Context &)
+    IdentifierQuoteHandler(size_t keep_alive_timeout_, ContextPtr)
         : log(&Poco::Logger::get("IdentifierQuoteHandler")), keep_alive_timeout(keep_alive_timeout_)
     {
     }

@@ -16,8 +16,6 @@ namespace DB
 class ASTSelectQuery;
 class ASTIdentifier;
 struct ASTTableExpression;
-class Context;
-
 
 /// Extracts database name (and/or alias) from table expression or identifier
 struct DatabaseAndTableWithAlias
@@ -75,7 +73,7 @@ struct TableWithColumnNamesAndTypes
 
     void addMaterializedColumns(const NamesAndTypesList & addition)
     {
-        addAdditionalColumns(alias_columns, addition);
+        addAdditionalColumns(materialized_columns, addition);
     }
 
 private:

@@ -522,6 +522,10 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
 
     for (const auto & column : columns)
     {
+        /// Skip .sizeX and similar meta information
+        if (!column.getSubcolumnName().empty())
+            continue;
+
         /// @todo resolve evil constant
         size_t size = column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100;
 

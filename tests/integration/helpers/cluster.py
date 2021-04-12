@@ -75,6 +75,15 @@ def get_odbc_bridge_path():
             return '/usr/bin/clickhouse-odbc-bridge'
     return path
 
+def get_library_bridge_path():
+    path = os.environ.get('CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH')
+    if path is None:
+        server_path = os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH')
+        if server_path is not None:
+            return os.path.join(os.path.dirname(server_path), 'clickhouse-library-bridge')
+        else:
+            return '/usr/bin/clickhouse-library-bridge'
+    return path
 
 def get_docker_compose_path():
     compose_path = os.environ.get('DOCKER_COMPOSE_DIR')
@@ -98,7 +107,7 @@ class ClickHouseCluster:
     """
 
     def __init__(self, base_path, name=None, base_config_dir=None, server_bin_path=None, client_bin_path=None,
-                 odbc_bridge_bin_path=None, zookeeper_config_path=None, custom_dockerd_host=None):
+                 odbc_bridge_bin_path=None, library_bridge_bin_path=None, zookeeper_config_path=None, custom_dockerd_host=None):
         for param in list(os.environ.keys()):
             print("ENV %40s %s" % (param, os.environ[param]))
         self.base_dir = p.dirname(base_path)
@@ -109,6 +118,7 @@ class ClickHouseCluster:
         self.server_bin_path = p.realpath(
             server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse'))
         self.odbc_bridge_bin_path = p.realpath(odbc_bridge_bin_path or get_odbc_bridge_path())
+        self.library_bridge_bin_path = p.realpath(library_bridge_bin_path or get_library_bridge_path())
         self.client_bin_path = p.realpath(
             client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client'))
         self.zookeeper_config_path = p.join(self.base_dir, zookeeper_config_path) if zookeeper_config_path else p.join(
@@ -139,7 +149,9 @@ class ClickHouseCluster:
         self.instances = {}
         self.with_zookeeper = False
         self.with_mysql = False
+        self.with_mysql_cluster = False
         self.with_postgres = False
+        self.with_postgres_cluster = False
         self.with_kafka = False
         self.with_kerberized_kafka = False
         self.with_rabbitmq = False
@@ -180,9 +192,9 @@ class ClickHouseCluster:
 
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None,
-                     with_zookeeper=False, with_mysql=False, with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False,
+                     with_zookeeper=False, with_mysql=False, with_mysql_cluster=False, with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False,
                      clickhouse_path_dir=None,
-                     with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_kerberized_hdfs=False, with_mongo=False,
+                     with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False, with_kerberized_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
@@ -223,6 +235,7 @@ class ClickHouseCluster:
             with_zookeeper=with_zookeeper,
             zookeeper_config_path=self.zookeeper_config_path,
             with_mysql=with_mysql,
+            with_mysql_cluster=with_mysql_cluster,
             with_kafka=with_kafka,
             with_kerberized_kafka=with_kerberized_kafka,
             with_rabbitmq=with_rabbitmq,
@@ -233,6 +246,7 @@ class ClickHouseCluster:
             with_cassandra=with_cassandra,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
+            library_bridge_bin_path=self.library_bridge_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
             hostname=hostname,
@@ -274,12 +288,27 @@ class ClickHouseCluster:
 
             cmds.append(self.base_mysql_cmd)
 
+        if with_mysql_cluster and not self.with_mysql_cluster:
+            self.with_mysql_cluster = True
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_cluster.yml')])
+            self.base_mysql_cluster_cmd = ['docker-compose', '--project-name', self.project_name,
+                                   '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_cluster.yml')]
+
+            cmds.append(self.base_mysql_cluster_cmd)
+
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
             self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
             self.base_postgres_cmd = ['docker-compose', '--project-name', self.project_name,
                                       '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')]
             cmds.append(self.base_postgres_cmd)
+
+        if with_postgres_cluster and not self.with_postgres_cluster:
+            self.with_postgres_cluster = True
+            self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
+            self.base_postgres_cluster_cmd = ['docker-compose', '--project-name', self.project_name,
+                                      '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres_cluster.yml')]
+            cmds.append(self.base_postgres_cluster_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
@@ -449,11 +478,11 @@ class ClickHouseCluster:
                                    ["bash", "-c", "echo {} | base64 --decode > {}".format(encodedStr, dest_path)],
                                    user='root')
 
-    def wait_mysql_to_start(self, timeout=60):
+    def wait_mysql_to_start(self, timeout=60, port=3308):
         start = time.time()
         while time.time() - start < timeout:
             try:
-                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
+                conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=port)
                 conn.close()
                 print("Mysql Started")
                 return
@@ -464,11 +493,11 @@ class ClickHouseCluster:
         subprocess_call(['docker-compose', 'ps', '--services', '--all'])
         raise Exception("Cannot wait MySQL container")
 
-    def wait_postgres_to_start(self, timeout=60):
+    def wait_postgres_to_start(self, timeout=60, port=5432):
         start = time.time()
         while time.time() - start < timeout:
             try:
-                conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
+                conn_string = "host='localhost' port={} user='postgres' password='mysecretpassword'".format(port)
                 conn = psycopg2.connect(conn_string)
                 conn.close()
                 print("Postgres Started")
@@ -650,10 +679,24 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
                 self.wait_mysql_to_start(120)
 
+            if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
+                print('Setup MySQL')
+                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
+                self.wait_mysql_to_start(120, port=3348)
+                self.wait_mysql_to_start(120, port=3368)
+                self.wait_mysql_to_start(120, port=3388)
+
             if self.with_postgres and self.base_postgres_cmd:
                 print('Setup Postgres')
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
                 self.wait_postgres_to_start(120)
+
+            if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
+                print('Setup Postgres')
+                subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
+                self.wait_postgres_to_start(120, port=5421)
+                self.wait_postgres_to_start(120, port=5441)
+                self.wait_postgres_to_start(120, port=5461)
 
             if self.with_kafka and self.base_kafka_cmd:
                 print('Setup Kafka')
@@ -861,6 +904,7 @@ services:
             - /etc/passwd:/etc/passwd:ro
             {binary_volume}
             {odbc_bridge_volume}
+            {library_bridge_volume}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
@@ -896,9 +940,9 @@ class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
-            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_kerberized_kafka, with_rabbitmq, with_kerberized_hdfs,
+            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_mysql_cluster, with_kafka, with_kerberized_kafka, with_rabbitmq, with_kerberized_hdfs,
             with_mongo, with_redis, with_minio,
-            with_cassandra, server_bin_path, odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers,
+            with_cassandra, server_bin_path, odbc_bridge_bin_path, library_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers,
             hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test", tag="latest",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
@@ -922,8 +966,10 @@ class ClickHouseInstance:
 
         self.server_bin_path = server_bin_path
         self.odbc_bridge_bin_path = odbc_bridge_bin_path
+        self.library_bridge_bin_path = library_bridge_bin_path
 
         self.with_mysql = with_mysql
+        self.with_mysql_cluster = with_mysql_cluster
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_rabbitmq = with_rabbitmq
@@ -1389,9 +1435,11 @@ class ClickHouseInstance:
         if not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/bin/clickhouse-odbc-bridge"
+            library_bridge_volume = "- " + self.library_bridge_bin_path + ":/usr/bin/clickhouse-library-bridge"
         else:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
+            library_bridge_volume = "- " + self.library_bridge_bin_path + ":/usr/share/clickhouse-library-bridge_fresh"
 
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
@@ -1401,6 +1449,7 @@ class ClickHouseInstance:
                 hostname=self.hostname,
                 binary_volume=binary_volume,
                 odbc_bridge_volume=odbc_bridge_volume,
+                library_bridge_volume=library_bridge_volume,
                 instance_config_dir=instance_config_dir,
                 config_d_dir=self.config_d_dir,
                 db_dir=db_dir,
