@@ -37,7 +37,7 @@ namespace ErrorCodes
 class AggregatingOutputStream : public IBlockOutputStream
 {
 public:
-    AggregatingOutputStream(StorageAggregatingMemory & storage_, const StorageMetadataPtr & metadata_snapshot_, const Context & context_)
+    AggregatingOutputStream(StorageAggregatingMemory & storage_, const StorageMetadataPtr & metadata_snapshot_, ContextPtr context_)
         : storage(storage_), metadata_snapshot(metadata_snapshot_), context(context_)
     {
     }
@@ -99,8 +99,8 @@ public:
             auto block_storage
                 = StorageValues::create(storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals());
 
-            Context local_context = context;
-            local_context.addViewSource(block_storage);
+            ContextPtr local_context = context;
+            local_context->addViewSource(block_storage);
 
             auto select_query = query.inner_query->as<ASTSelectQuery &>();
 
@@ -113,7 +113,7 @@ public:
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
             /// and two-level aggregation is triggered).
             in = std::make_shared<SquashingBlockInputStream>(
-                in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+                in, context->getSettingsRef().min_insert_block_size_rows, context->getSettingsRef().min_insert_block_size_bytes);
             in = std::make_shared<ConvertingBlockInputStream>(
                 in, metadata_snapshot->getSampleBlock(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
@@ -157,7 +157,7 @@ private:
 
     StorageAggregatingMemory & storage;
     StorageMetadataPtr metadata_snapshot;
-    Context context;
+    ContextPtr context;
 };
 
 
@@ -166,7 +166,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     ColumnsDescription columns_description_,
     ConstraintsDescription constraints_,
     const ASTCreateQuery & query,
-    const Context & context_)
+    ContextPtr context_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>())
 {
     if (!query.select)
@@ -179,7 +179,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     auto select = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
     ASTPtr select_ptr = select.inner_query;
 
-    auto select_context = std::make_unique<Context>(context_);
+    auto select_context = std::make_unique<ContextPtr>(context_);
 
     /// Get list of columns we get from select query.
     auto header = InterpreterSelectQuery(select_ptr, *select_context, SelectQueryOptions().analyze()).getSampleBlock();
@@ -219,7 +219,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
         src_metadata_snapshot,
         NameSet(required_result_column_names.begin(), required_result_column_names.end()));
 
-    const Settings & settings = select_context->getSettingsRef();
+    const Settings & settings = (*select_context)->getSettingsRef();
 
     analysis_result = ExpressionAnalysisResult(*query_analyzer, src_metadata_snapshot, false, false, false, nullptr, src_sample_block);
 
@@ -244,7 +244,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
                               settings.group_by_two_level_threshold_bytes,
                               settings.max_bytes_before_external_group_by,
                               settings.empty_result_for_aggregation_by_empty_set,
-                              select_context->getTemporaryVolume(),
+                              (*select_context)->getTemporaryVolume(),
                               settings.max_threads,
                               settings.min_free_disk_space_for_temporary_data);
 
@@ -258,7 +258,7 @@ Pipe StorageAggregatingMemory::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    const Context & /*context*/,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     unsigned num_streams)
@@ -291,7 +291,7 @@ Pipe StorageAggregatingMemory::read(
 }
 
 
-BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
+BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     auto out = std::make_shared<AggregatingOutputStream>(*this, metadata_snapshot, context);
     return out;
@@ -317,7 +317,7 @@ static inline void updateBlockData(Block & old_block, const Block & new_block)
     }
 }
 
-void StorageAggregatingMemory::mutate(const MutationCommands & commands, const Context & context)
+void StorageAggregatingMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     // TODO: mutate is not supported?
 
@@ -377,7 +377,7 @@ void StorageAggregatingMemory::mutate(const MutationCommands & commands, const C
 }
 
 
-void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
@@ -411,7 +411,7 @@ void registerStorageAggregatingMemory(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageAggregatingMemory::create(args.table_id, args.columns, args.constraints, args.query, args.context);
+        return StorageAggregatingMemory::create(args.table_id, args.columns, args.constraints, args.query, args.getContext());
     },
     {
         .supports_parallel_insert = true, // TODO: not sure

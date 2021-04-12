@@ -35,7 +35,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -45,13 +45,13 @@ public:
 
     bool noPushingToViews() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void drop() override;
 
-    void mutate(const MutationCommands & commands, const Context & context) override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
@@ -78,7 +78,7 @@ private:
     std::shared_ptr<ManyAggregatedData> many_data;
 
 protected:
-    StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query, const Context & context_);
+    StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query, ContextPtr context_);
 };
 
 }
