@@ -322,6 +322,7 @@ void MergeTreeData::checkProperties(
                 throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
                     + toString(i) + " is " + sorting_key_column +", not " + pk_column,
                     ErrorCodes::BAD_ARGUMENTS);
+
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
