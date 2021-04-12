@@ -52,18 +52,6 @@ protected:
     String compression_method = "auto";
 };
 
-class TableFunctionCOSDistributed : public TableFunctionS3Cluster
-{
-public:
-    static constexpr auto name = "cosnDistributed";
-    std::string getName() const override
-    {
-        return name;
-    }
-private:
-    const char * getStorageTypeName() const override { return "COSNDistributed"; }
-};
-
 }
 
 #endif
