@@ -131,7 +131,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             ReadBufferFromString read_block_buf(params.get("null_values"));
-            auto format = FormatFactory::instance().getInput(FORMAT, read_block_buf, *sample_block, context, DEFAULT_BLOCK_SIZE);
+            auto format = FormatFactory::instance().getInput(FORMAT, read_block_buf, *sample_block, getContext(), DEFAULT_BLOCK_SIZE);
             auto reader = std::make_shared<InputStreamFromInputFormat>(format);
             auto sample_block_with_nulls = reader->read();
 
@@ -176,7 +176,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             const auto & sample_block = library_handler->getSampleBlock();
             auto input = library_handler->loadAll();
 
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, context);
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, getContext());
             copyData(*input, *output);
         }
         else if (method == "loadIds")
@@ -193,7 +193,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             const auto & sample_block = library_handler->getSampleBlock();
             auto input = library_handler->loadIds(ids);
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, context);
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, getContext());
             copyData(*input, *output);
         }
         else if (method == "loadKeys")
@@ -219,14 +219,14 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
 
             auto & read_buf = request.getStream();
-            auto format = FormatFactory::instance().getInput(FORMAT, read_buf, *requested_sample_block, context, DEFAULT_BLOCK_SIZE);
+            auto format = FormatFactory::instance().getInput(FORMAT, read_buf, *requested_sample_block, getContext(), DEFAULT_BLOCK_SIZE);
             auto reader = std::make_shared<InputStreamFromInputFormat>(format);
             auto block = reader->read();
 
             auto library_handler = SharedLibraryHandlerFactory::instance().get(dictionary_id);
             const auto & sample_block = library_handler->getSampleBlock();
             auto input = library_handler->loadKeys(block.getColumns());
-            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, context);
+            BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream(FORMAT, out, sample_block, getContext());
             copyData(*input, *output);
         }
     }

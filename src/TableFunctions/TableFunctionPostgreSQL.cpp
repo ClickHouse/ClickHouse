@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
-        const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+        ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
     auto result = std::make_shared<StoragePostgreSQL>(
@@ -38,9 +38,9 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 }
 
 
-ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(const Context & context) const
+ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context) const
 {
-    const bool use_nulls = context.getSettingsRef().external_table_functions_use_nulls;
+    const bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
     auto columns = fetchPostgreSQLTableStructure(
             connection_pool->get(),
             remote_table_schema.empty() ? doubleQuoteString(remote_table_name)
@@ -51,7 +51,7 @@ ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(const Contex
 }
 
 
-void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const Context & context)
+void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
 
@@ -70,7 +70,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, const 
 
     /// Split into replicas if needed. 5432 is a default postgresql port.
     const auto & host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    size_t max_addresses = context.getSettingsRef().glob_expansion_max_elements;
+    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
     auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
 
     remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
