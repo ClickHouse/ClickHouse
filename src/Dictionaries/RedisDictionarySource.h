@@ -63,7 +63,7 @@ namespace ErrorCodes
 
         BlockInputStreamPtr loadUpdatedAll() override
         {
-            throw Exception{"Method loadUpdatedAll is unsupported for RedisDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for RedisDictionarySource");
         }
 
         bool supportsSelectiveLoad() const override { return true; }

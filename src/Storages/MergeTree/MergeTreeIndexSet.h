@@ -87,7 +87,7 @@ public:
         const Block & index_sample_block_,
         size_t max_rows_,
         const SelectQueryInfo & query,
-        const Context & context);
+        ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -129,7 +129,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query, const Context & context) const override;
+            const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
