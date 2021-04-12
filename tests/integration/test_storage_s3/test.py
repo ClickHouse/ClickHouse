@@ -348,7 +348,7 @@ def test_multipart(cluster, maybe_auth, positive):
             raise
     else:
         assert positive
-        select_result == ",".join(map(str, [total_rows, total_rows * 2, total_rows * 3])) + "\n"
+        assert select_result == "\t".join(map(str, [total_rows, total_rows * 2, total_rows * 3])) + "\n"
 
 def test_remote_host_filter(cluster):
     instance = cluster.instances["restricted_dummy"]
