@@ -40,7 +40,7 @@ Read about setting the partition expression in a section [How to specify the par
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
-This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
+This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
 
 ## DROP PARTITION\|PART {#alter_drop-partition}
 
@@ -85,9 +85,15 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table. All other replicas download the data from the replica-initiator.
+This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. 
+If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
 
-So you can put data to the `detached` directory on one replica, and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
+If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own 
+`detached` folder, it attaches the data without fetching it from other replicas.
+If there is no part with the correct checksums, the data is downloaded from any replica having the part.
+
+You can put data to the `detached` directory on one replica and use the `ALTER ... ATTACH` query to add it to the 
+table on all replicas.
 
 ## ATTACH PARTITION FROM {#alter_attach-partition-from}
 
@@ -95,7 +101,8 @@ So you can put data to the `detached` directory on one replica, and use the `ALT
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2` adds data to exsisting in the `table2`. Note that data won’t be deleted from `table1`.
+This query copies the data partition from the `table1` to `table2`.
+Note that data won't be deleted neither from `table1` nor from `table2`.
 
 For the query to run successfully, the following conditions must be met:
 

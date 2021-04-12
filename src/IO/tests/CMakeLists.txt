@@ -25,9 +25,6 @@ target_link_libraries (var_uint PRIVATE clickhouse_common_io)
 add_executable (read_escaped_string read_escaped_string.cpp)
 target_link_libraries (read_escaped_string PRIVATE clickhouse_common_io)
 
-add_executable (async_write async_write.cpp)
-target_link_libraries (async_write PRIVATE dbms)
-
 add_executable (parse_int_perf parse_int_perf.cpp)
 target_link_libraries (parse_int_perf PRIVATE clickhouse_common_io)
 
@@ -42,11 +39,9 @@ target_link_libraries (o_direct_and_dirty_pages PRIVATE clickhouse_common_io)
 
 add_executable (hashing_write_buffer hashing_write_buffer.cpp)
 target_link_libraries (hashing_write_buffer PRIVATE clickhouse_common_io)
-add_check(hashing_write_buffer)
 
 add_executable (hashing_read_buffer hashing_read_buffer.cpp)
 target_link_libraries (hashing_read_buffer PRIVATE clickhouse_common_io)
-add_check (hashing_read_buffer)
 
 add_executable (io_operators io_operators.cpp)
 target_link_libraries (io_operators PRIVATE clickhouse_common_io)

@@ -11,7 +11,9 @@
 
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
-#   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   ifdef __clang__
+#       pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   endif
 #   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
@@ -37,8 +39,12 @@ public:
 
     static constexpr size_t capacity =
 #ifndef NDEBUG
-        /* The stacks are normally larger in debug version due to less inlining. */
-        64
+        /* The stacks are normally larger in debug version due to less inlining.
+         *
+         * NOTE: it cannot be larger then 56 right now, since otherwise it will
+         * not fit into minimal PIPE_BUF (512) in TraceCollector.
+         */
+        56
 #else
         32
 #endif

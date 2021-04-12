@@ -5,43 +5,77 @@ toc_title: Build on Mac OS X
 
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-Build should work on Mac OS X 10.15 (Catalina).
+Build should work on x86_64 (Intel) based macOS 10.15 (Catalina) and higher with recent Xcode's native AppleClang, or Homebrew's vanilla Clang or GCC compilers.
 
 ## Install Homebrew {#install-homebrew}
 
 ``` bash
-$ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+$ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
+
+## Install Xcode and Command Line Tools {#install-xcode-and-command-line-tools}
+
+Install the latest [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12) from App Store.
+
+Open it at least once to accept the end-user license agreement and automatically install the required components.
+
+Then, make sure that the latest Comman Line Tools are installed and selected in the system:
+
+``` bash
+$ sudo rm -rf /Library/Developer/CommandLineTools
+$ sudo xcode-select --install
+```
+
+Reboot.
 
 ## Install Required Compilers, Tools, and Libraries {#install-required-compilers-tools-and-libraries}
 
 ``` bash
-$ brew install cmake ninja libtool gettext llvm
+$ brew update
+$ brew install cmake ninja libtool gettext llvm gcc
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
 ``` bash
-$ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
-```
-
-or
-
-``` bash
-$ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
-
-$ cd ClickHouse
+$ git clone --recursive git@github.com:ClickHouse/ClickHouse.git # or https://github.com/ClickHouse/ClickHouse.git
 ```
 
 ## Build ClickHouse {#build-clickhouse}
 
-> Please note: ClickHouse doesn't support build with native Apple Clang compiler, we need use clang from LLVM.
+To build using Xcode's native AppleClang compiler:
 
 ``` bash
+$ cd ClickHouse
+$ rm -rf build
 $ mkdir build
 $ cd build
-$ cmake .. -DCMAKE_C_COMPILER=`brew --prefix llvm`/bin/clang -DCMAKE_CXX_COMPILER=`brew --prefix llvm`/bin/clang++ -DCMAKE_PREFIX_PATH=`brew --prefix llvm`
-$ ninja
+$ cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
+$ cmake --build . --config RelWithDebInfo
+$ cd ..
+```
+
+To build using Homebrew's vanilla Clang compiler:
+
+``` bash
+$ cd ClickHouse
+$ rm -rf build
+$ mkdir build
+$ cd build
+$ cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER==$(brew --prefix llvm)/bin/clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
+$ cmake --build . --config RelWithDebInfo
+$ cd ..
+```
+
+To build using Homebrew's vanilla GCC compiler:
+
+``` bash
+$ cd ClickHouse
+$ rm -rf build
+$ mkdir build
+$ cd build
+$ cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-10 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-10 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
+$ cmake --build . --config RelWithDebInfo
 $ cd ..
 ```
 

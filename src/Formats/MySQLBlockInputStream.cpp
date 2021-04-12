@@ -1,25 +1,29 @@
 #if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
+#include "config_core.h"
 #endif
 
 #if USE_MYSQL
-#    include <vector>
-#    include <Columns/ColumnNullable.h>
-#    include <Columns/ColumnString.h>
-#    include <Columns/ColumnsNumber.h>
-#    include <Columns/ColumnDecimal.h>
-#    include <Columns/ColumnFixedString.h>
-#    include <DataTypes/IDataType.h>
-#    include <DataTypes/DataTypeNullable.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/WriteHelpers.h>
-#    include <IO/Operators.h>
-#    include <Common/assert_cast.h>
-#    include <ext/range.h>
-#    include "MySQLBlockInputStream.h"
+#include <vector>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+#include <Common/assert_cast.h>
+#include <ext/range.h>
+#include <common/logger_useful.h>
+#include "MySQLBlockInputStream.h"
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
@@ -35,6 +39,7 @@ MySQLBlockInputStream::Connection::Connection(
 {
 }
 
+/// Used in MaterializeMySQL and in doInvalidateQuery for dictionary source.
 MySQLBlockInputStream::MySQLBlockInputStream(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
@@ -42,7 +47,8 @@ MySQLBlockInputStream::MySQLBlockInputStream(
     const UInt64 max_block_size_,
     const bool auto_close_,
     const bool fetch_by_name_)
-    : connection{std::make_unique<Connection>(entry, query_str)}
+    : log(&Poco::Logger::get("MySQLBlockInputStream"))
+    , connection{std::make_unique<Connection>(entry, query_str)}
     , max_block_size{max_block_size_}
     , auto_close{auto_close_}
     , fetch_by_name(fetch_by_name_)
@@ -51,6 +57,62 @@ MySQLBlockInputStream::MySQLBlockInputStream(
     initPositionMappingFromQueryResultStructure();
 }
 
+/// For descendant MySQLWithFailoverBlockInputStream
+MySQLBlockInputStream::MySQLBlockInputStream(
+    const Block & sample_block_,
+    UInt64 max_block_size_,
+    bool auto_close_,
+    bool fetch_by_name_)
+    : log(&Poco::Logger::get("MySQLBlockInputStream"))
+    , max_block_size(max_block_size_)
+    , auto_close(auto_close_)
+    , fetch_by_name(fetch_by_name_)
+{
+    description.init(sample_block_);
+}
+
+/// Used by MySQL storage / table function and dictionary source.
+MySQLWithFailoverBlockInputStream::MySQLWithFailoverBlockInputStream(
+    mysqlxx::PoolWithFailoverPtr pool_,
+    const std::string & query_str_,
+    const Block & sample_block_,
+    const UInt64 max_block_size_,
+    const bool auto_close_,
+    const bool fetch_by_name_,
+    const size_t max_tries_)
+    : MySQLBlockInputStream(sample_block_, max_block_size_, auto_close_, fetch_by_name_)
+    , pool(pool_)
+    , query_str(query_str_)
+    , max_tries(max_tries_)
+{
+}
+
+void MySQLWithFailoverBlockInputStream::readPrefix()
+{
+    size_t count_connect_attempts = 0;
+
+    /// For recovering from "Lost connection to MySQL server during query" errors
+    while (true)
+    {
+        try
+        {
+            connection = std::make_unique<Connection>(pool->get(), query_str);
+            break;
+        }
+        catch (const mysqlxx::ConnectionLost & ecl)  /// There are two retriable failures: CR_SERVER_GONE_ERROR, CR_SERVER_LOST
+        {
+            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, max_tries, ecl.displayText());
+        }
+
+        if (++count_connect_attempts > max_tries)
+        {
+            LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, max_tries);
+            throw;
+        }
+    }
+
+    initPositionMappingFromQueryResultStructure();
+}
 
 namespace
 {
@@ -97,8 +159,15 @@ namespace
                 assert_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
                 break;
             case ValueType::vtDateTime:
-                assert_cast<ColumnUInt32 &>(column).insertValue(UInt32(value.getDateTime()));
+            {
+                ReadBufferFromString in(value);
+                time_t time = 0;
+                readDateTimeText(time, in);
+                if (time < 0)
+                    time = 0;
+                assert_cast<ColumnUInt32 &>(column).insertValue(time);
                 break;
+            }
             case ValueType::vtUUID:
                 assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
                 break;
@@ -109,7 +178,7 @@ namespace
             case ValueType::vtDecimal256:
             {
                 ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
-                data_type.deserializeAsWholeText(column, buffer, FormatSettings{});
+                data_type.getDefaultSerialization()->deserializeWholeText(column, buffer, FormatSettings{});
                 break;
             }
             case ValueType::vtFixedString:
@@ -131,6 +200,7 @@ Block MySQLBlockInputStream::readImpl()
     {
         if (auto_close)
            connection->entry.disconnect();
+
         return {};
     }
 
@@ -183,18 +253,6 @@ Block MySQLBlockInputStream::readImpl()
     return description.sample_block.cloneWithColumns(std::move(columns));
 }
 
-MySQLBlockInputStream::MySQLBlockInputStream(
-    const Block & sample_block_,
-    UInt64 max_block_size_,
-    bool auto_close_,
-    bool fetch_by_name_)
-    : max_block_size(max_block_size_)
-    , auto_close(auto_close_)
-    , fetch_by_name(fetch_by_name_)
-{
-    description.init(sample_block_);
-}
-
 void MySQLBlockInputStream::initPositionMappingFromQueryResultStructure()
 {
     position_mapping.resize(description.sample_block.columns());
@@ -240,25 +298,6 @@ void MySQLBlockInputStream::initPositionMappingFromQueryResultStructure()
                 ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
         }
     }
-}
-
-MySQLLazyBlockInputStream::MySQLLazyBlockInputStream(
-    mysqlxx::Pool & pool_,
-    const std::string & query_str_,
-    const Block & sample_block_,
-    const UInt64 max_block_size_,
-    const bool auto_close_,
-    const bool fetch_by_name_)
-    : MySQLBlockInputStream(sample_block_, max_block_size_, auto_close_, fetch_by_name_)
-    , pool(pool_)
-    , query_str(query_str_)
-{
-}
-
-void MySQLLazyBlockInputStream::readPrefix()
-{
-    connection = std::make_unique<Connection>(pool.get(), query_str);
-    initPositionMappingFromQueryResultStructure();
 }
 
 }

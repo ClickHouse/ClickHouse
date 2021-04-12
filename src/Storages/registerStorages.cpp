@@ -63,6 +63,10 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 void registerStoragePostgreSQL(StorageFactory & factory);
 #endif
 
+#if USE_MYSQL || USE_LIBPQXX
+void registerStorageExternalDistributed(StorageFactory & factory);
+#endif
+
 void registerStorages()
 {
     auto & factory = StorageFactory::instance();
@@ -119,6 +123,10 @@ void registerStorages()
 
     #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
+    #endif
+
+    #if USE_MYSQL || USE_LIBPQXX
+    registerStorageExternalDistributed(factory);
     #endif
 }
 

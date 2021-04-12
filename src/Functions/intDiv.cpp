@@ -24,8 +24,24 @@ template <typename A, typename B>
 struct DivideIntegralByConstantImpl
     : BinaryOperation<A, B, DivideIntegralImpl<A, B>>
 {
-    using ResultType = typename DivideIntegralImpl<A, B>::ResultType;
+    using Op = DivideIntegralImpl<A, B>;
+    using ResultType = typename Op::ResultType;
     static const constexpr bool allow_fixed_string = false;
+
+    template <OpCase op_case>
+    static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
+    {
+        if constexpr (op_case == OpCase::Vector)
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(a[i], b[i]);
+        else if constexpr (op_case == OpCase::LeftConstant)
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(*a, b[i]);
+        else
+            vectorConstant(a, *b, c, size);
+    }
+
+    static ResultType process(A a, B b) { return Op::template apply<ResultType>(a, b); }
 
     static NO_INLINE void vectorConstant(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
     {
@@ -33,11 +49,10 @@ struct DivideIntegralByConstantImpl
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
         /// Division by -1. By the way, we avoid FPE by division of the largest negative number by -1.
-        /// And signed integer overflow is well defined in C++20.
         if (unlikely(is_signed_v<B> && b == -1))
         {
             for (size_t i = 0; i < size; ++i)
-                c_pos[i] = -a_pos[i];
+                c_pos[i] = -make_unsigned_t<A>(a_pos[i]);   /// Avoid UBSan report in signed integer overflow.
             return;
         }
 

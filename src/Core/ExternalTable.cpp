@@ -31,11 +31,11 @@ namespace ErrorCodes
 }
 
 
-ExternalTableDataPtr BaseExternalTable::getData(const Context & context)
+ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();
     initSampleBlock();
-    auto input = context.getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
+    auto input = context->getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
     auto stream = std::make_shared<AsynchronousBlockInputStream>(input);
 
     auto data = std::make_unique<ExternalTableData>();
@@ -125,19 +125,16 @@ ExternalTable::ExternalTable(const boost::program_options::variables_map & exter
 }
 
 
-void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, std::istream & stream)
+void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, ReadBuffer & stream)
 {
-    const Settings & settings = context.getSettingsRef();
-
-    /// The buffer is initialized here, not in the virtual function initReadBuffer
-    read_buffer_impl = std::make_unique<ReadBufferFromIStream>(stream);
+    const Settings & settings = getContext()->getSettingsRef();
 
     if (settings.http_max_multipart_form_data_size)
         read_buffer = std::make_unique<LimitReadBuffer>(
-            *read_buffer_impl, settings.http_max_multipart_form_data_size,
+            stream, settings.http_max_multipart_form_data_size,
             true, "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting");
     else
-        read_buffer = std::move(read_buffer_impl);
+        read_buffer = wrapReadBufferReference(stream);
 
     /// Retrieve a collection of parameters from MessageHeader
     Poco::Net::NameValueCollection content;
@@ -155,14 +152,14 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     else
         throw Exception("Neither structure nor types have not been provided for external table " + name + ". Use fields " + name + "_structure or " + name + "_types to do so.", ErrorCodes::BAD_ARGUMENTS);
 
-    ExternalTableDataPtr data = getData(context);
+    ExternalTableDataPtr data = getData(getContext());
 
     /// Create table
     NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    auto temporary_table = TemporaryTableHolder(context, ColumnsDescription{columns}, {});
+    auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
     auto storage = temporary_table.getTable();
-    context.addExternalTable(data->table_name, std::move(temporary_table));
-    BlockOutputStreamPtr output = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), context);
+    getContext()->addExternalTable(data->table_name, std::move(temporary_table));
+    BlockOutputStreamPtr output = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
 
     /// Write data
     data->pipe->resize(1);

@@ -68,6 +68,7 @@ void MySQLClient::disconnect()
         socket->close();
     socket = nullptr;
     connected = false;
+    seq = 0;
 }
 
 /// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html

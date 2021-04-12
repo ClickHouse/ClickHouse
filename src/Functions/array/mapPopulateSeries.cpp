@@ -23,7 +23,7 @@ class FunctionMapPopulateSeries : public IFunction
 {
 public:
     static constexpr auto name = "mapPopulateSeries";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapPopulateSeries>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapPopulateSeries>(); }
 
 private:
     String getName() const override { return name; }
@@ -190,7 +190,7 @@ private:
             }
 
             static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
-            if (static_cast<size_t>(max_key - min_key) > MAX_ARRAY_SIZE)
+            if (static_cast<size_t>(max_key) - static_cast<size_t>(min_key) > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in the result of function {}", getName());
 
             /* fill the result arrays */

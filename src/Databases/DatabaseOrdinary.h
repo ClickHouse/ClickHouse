@@ -14,23 +14,26 @@ namespace DB
 class DatabaseOrdinary : public DatabaseWithDictionaries
 {
 public:
-    DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context);
-    DatabaseOrdinary(const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context_);
+    DatabaseOrdinary(const String & name_, const String & metadata_path_, ContextPtr context);
+    DatabaseOrdinary(
+        const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, ContextPtr context_);
 
     String getEngineName() const override { return "Ordinary"; }
 
-    void loadStoredObjects(
-        Context & context,
-        bool has_force_restore_data_flag,
-        bool force_attach) override;
+    void loadStoredObjects(ContextPtr context, bool has_force_restore_data_flag, bool force_attach) override;
 
     void alterTable(
-        const Context & context,
+        ContextPtr context,
         const StorageID & table_id,
         const StorageInMemoryMetadata & metadata) override;
 
 protected:
-    virtual void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path);
+    virtual void commitAlterTable(
+        const StorageID & table_id,
+        const String & table_metadata_tmp_path,
+        const String & table_metadata_path,
+        const String & statement,
+        ContextPtr query_context);
 
     void startupTables(ThreadPool & thread_pool);
 };

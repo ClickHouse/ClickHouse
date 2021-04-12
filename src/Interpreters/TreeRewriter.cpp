@@ -8,6 +8,7 @@
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
@@ -306,10 +307,10 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
 }
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
+void executeScalarSubqueries(ASTPtr & query, ContextPtr context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars, only_analyze};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{WithContext{context}, subquery_depth, scalars, only_analyze};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -404,32 +405,56 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & select_query,
-                          const TablesWithColumns & tables, const Aliases & aliases)
+                          const TablesWithColumns & tables, const Aliases & aliases, ASTPtr & new_where_conditions)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
-    if (!node)
+    if (!node || tables.size() < 2)
         return;
 
-    const auto & table_join = node->table_join->as<ASTTableJoin &>();
+    auto & table_join = node->table_join->as<ASTTableJoin &>();
 
     if (table_join.using_expression_list)
     {
         const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
         for (const auto & key : keys.children)
             analyzed_join.addUsingKey(key);
+
+        /// `USING` semantic allows to have columns with changed types in result table.
+        /// `JOIN ON` should preserve types from original table
+        /// We can infer common type on syntax stage for `USING` because join is performed only by columns (not expressions)
+        /// We need to know  changed types in result tables because some analysis (e.g. analyzeAggregation) performed before join
+        /// For `JOIN ON expr1 == expr2` we will infer common type later in ExpressionAnalyzer, when types of expression will be known
+        analyzed_join.inferJoinKeyCommonType(tables[0].columns, tables[1].columns);
     }
     else if (table_join.on_expression)
     {
         bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
 
-        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
+        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof, table_join.kind};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
         if (!data.has_some)
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
         if (is_asof)
+        {
             data.asofToJoinKeys();
+        }
+        else if (data.new_on_expression)
+        {
+            table_join.on_expression = data.new_on_expression;
+            new_where_conditions = data.new_where_conditions;
+        }
     }
+}
+
+/// Move joined key related to only one table to WHERE clause
+void moveJoinedKeyToWhere(ASTSelectQuery * select_query, ASTPtr & new_where_conditions)
+{
+    if (select_query->where())
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE,
+            makeASTFunction("and", new_where_conditions, select_query->where()));
+    else
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, new_where_conditions->clone());
 }
 
 
@@ -553,7 +578,6 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         source_column_names.insert(column.name);
 
     NameSet required = columns_context.requiredColumns();
-
     if (columns_context.has_table_join)
     {
         NameSet available_columns;
@@ -638,7 +662,10 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         const auto & partition_desc = metadata_snapshot->getPartitionKey();
         if (partition_desc.expression)
         {
-            const auto & partition_source_columns = partition_desc.expression->getRequiredColumns();
+            auto partition_source_columns = partition_desc.expression->getRequiredColumns();
+            partition_source_columns.push_back("_part");
+            partition_source_columns.push_back("_partition_id");
+            partition_source_columns.push_back("_part_uuid");
             optimize_trivial_count = true;
             for (const auto & required_column : required)
             {
@@ -697,18 +724,17 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (storage)
         {
-            String hint_name{};
+            std::vector<String> hint_name{};
             for (const auto & name : columns_context.requiredColumns())
             {
                 auto hints = storage->getHints(name);
-                if (!hints.empty())
-                    hint_name = hint_name + " '" + toString(hints) + "'";
+                hint_name.insert(hint_name.end(), hints.begin(), hints.end());
             }
 
             if (!hint_name.empty())
             {
                 ss << ", maybe you meant: ";
-                ss << hint_name;
+                ss << toString(hint_name);
             }
         }
         else
@@ -763,7 +789,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
 
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = getContext()->getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
 
@@ -790,7 +816,14 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
 
-    normalize(query, result.aliases, settings);
+    NameSet all_source_columns_set = source_columns_set;
+    if (table_join)
+    {
+        for (const auto & [name, _] : table_join->columns_from_joined_table)
+            all_source_columns_set.insert(name);
+    }
+
+    normalize(query, result.aliases, all_source_columns_set, settings);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -799,21 +832,26 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, context, subquery_depth, result.scalars, select_options.only_analyze);
+    executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, select_options.only_analyze);
 
-    TreeOptimizer::apply(query, result.aliases, source_columns_set, tables_with_columns, context, result.metadata_snapshot, result.rewrite_subqueries);
+    TreeOptimizer::apply(
+        query, result.aliases, source_columns_set, tables_with_columns, getContext(), result.metadata_snapshot, result.rewrite_subqueries);
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
     setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                         result.analyzed_join->table_join);
-    collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
+
+    ASTPtr new_where_condition = nullptr;
+    collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases, new_where_condition);
+    if (new_where_condition)
+        moveJoinedKeyToWhere(select_query, new_where_condition);
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
     if (settings.optimize_respect_aliases && result.metadata_snapshot)
     {
-        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), context);
+        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), getContext());
     }
 
     result.aggregates = getAggregates(query, *select_query);
@@ -840,14 +878,14 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = getContext()->getSettingsRef();
 
     TreeRewriterResult result(source_columns, storage, metadata_snapshot, false);
 
-    normalize(query, result.aliases, settings);
+    normalize(query, result.aliases, result.source_columns_set, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, context, 0, result.scalars, false);
+    executeScalarSubqueries(query, getContext(), 0, result.scalars, false);
 
     TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 
@@ -869,7 +907,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     return std::make_shared<const TreeRewriterResult>(result);
 }
 
-void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings)
+void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, const Settings & settings)
 {
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
@@ -913,8 +951,12 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const Settings &
     MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
     MarkTableIdentifiersVisitor(identifiers_data).visit(query);
 
+    /// Rewrite function names to their canonical ones.
+    if (settings.normalize_function_names)
+        FunctionNameNormalizer().visit(query.get());
+
     /// Common subexpression elimination. Rewrite rules.
-    QueryNormalizer::Data normalizer_data(aliases, settings);
+    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, settings);
     QueryNormalizer(normalizer_data).visit(query);
 }
 

@@ -69,4 +69,3 @@ ALTER TABLE [db.]table MATERIALIZE INDEX name IN PARTITION partition_name
 
 Для запросов `ALTER TABLE ... UPDATE|DELETE` синхронность выполнения определяется настройкой [mutations_sync](../../../operations/settings/settings.md#mutations_sync). 
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/index/) <!--hide-->

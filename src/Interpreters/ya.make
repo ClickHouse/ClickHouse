@@ -41,6 +41,7 @@ SRCS(
     Context.cpp
     CrashLog.cpp
     CrossToInnerJoinVisitor.cpp
+    DDLTask.cpp
     DDLWorker.cpp
     DNSCacheUpdater.cpp
     DatabaseAndTableWithAlias.cpp
@@ -49,6 +50,7 @@ SRCS(
     EmbeddedDictionaries.cpp
     ExecuteScalarSubqueriesVisitor.cpp
     ExpressionActions.cpp
+    ExpressionActionsSettings.cpp
     ExpressionAnalyzer.cpp
     ExternalDictionariesLoader.cpp
     ExternalLoader.cpp
@@ -58,6 +60,7 @@ SRCS(
     ExternalModelsLoader.cpp
     ExtractExpressionInfoVisitor.cpp
     FillingRow.cpp
+    FunctionNameNormalizer.cpp
     HashJoin.cpp
     IExternalLoadable.cpp
     IInterpreter.cpp
@@ -100,6 +103,7 @@ SRCS(
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
     InterpreterWatchQuery.cpp
+    InterserverCredentials.cpp
     JoinSwitcher.cpp
     JoinToSubqueryTransformVisitor.cpp
     JoinedTables.cpp
@@ -109,6 +113,7 @@ SRCS(
     MetricLog.cpp
     MutationsInterpreter.cpp
     MySQL/InterpretersMySQLDDLQuery.cpp
+    NormalizeSelectWithUnionQueryVisitor.cpp
     NullableUtils.cpp
     OpenTelemetrySpanLog.cpp
     OptimizeIfChains.cpp
@@ -153,6 +158,7 @@ SRCS(
     convertFieldToType.cpp
     createBlockSelector.cpp
     evaluateConstantExpression.cpp
+    executeDDLQueryOnCluster.cpp
     executeQuery.cpp
     getClusterName.cpp
     getHeaderForProcessingStage.cpp

@@ -30,6 +30,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
+{
+    return AggregateFunctionFactory::instance().getCanonicalNameIfAny(name);
+}
 
 void AggregateFunctionFactory::registerFunction(const String & name, Value creator_with_properties, CaseSensitiveness case_sensitiveness)
 {
@@ -41,10 +45,14 @@ void AggregateFunctionFactory::registerFunction(const String & name, Value creat
         throw Exception("AggregateFunctionFactory: the aggregate function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 
-    if (case_sensitiveness == CaseInsensitive
-        && !case_insensitive_aggregate_functions.emplace(Poco::toLower(name), creator_with_properties).second)
-        throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
-            ErrorCodes::LOGICAL_ERROR);
+    if (case_sensitiveness == CaseInsensitive)
+    {
+        auto key = Poco::toLower(name);
+        if (!case_insensitive_aggregate_functions.emplace(key, creator_with_properties).second)
+            throw Exception("AggregateFunctionFactory: the case insensitive aggregate function name '" + name + "' is not unique",
+                ErrorCodes::LOGICAL_ERROR);
+        case_insensitive_name_mapping[key] = name;
+    }
 }
 
 static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
@@ -98,6 +106,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     bool has_null_arguments) const
 {
     String name = getAliasToOrName(name_param);
+    bool is_case_insensitive = false;
     Value found;
 
     /// Find by exact match.
@@ -107,9 +116,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     }
 
     if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
+    {
         found = jt->second;
+        is_case_insensitive = true;
+    }
 
-    const Context * query_context = nullptr;
+    ContextPtr query_context;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 
@@ -118,7 +130,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         out_properties = found.properties;
 
         if (query_context && query_context->getSettingsRef().log_queries)
-            query_context->addQueryFactoriesInfo(Context::QueryLogFactories::AggregateFunction, name);
+            query_context->addQueryFactoriesInfo(
+                    Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? Poco::toLower(name) : name);
 
         /// The case when aggregate function should return NULL on NULL arguments. This case is handled in "get" method.
         if (!out_properties.returns_default_when_only_null && has_null_arguments)

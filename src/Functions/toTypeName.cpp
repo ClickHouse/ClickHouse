@@ -65,7 +65,7 @@ class FunctionToTypeNameBuilder : public IFunctionOverloadResolverImpl
 public:
     static constexpr auto name = "toTypeName";
     String getName() const override { return name; }
-    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<FunctionToTypeNameBuilder>(); }
+    static FunctionOverloadResolverImplPtr create(ContextPtr) { return std::make_unique<FunctionToTypeNameBuilder>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
 

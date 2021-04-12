@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
 {
-    auto func = makeASTFunction("cast", ast, std::make_shared<ASTLiteral>(type_name));
+    auto func = makeASTFunction("CAST", ast, std::make_shared<ASTLiteral>(type_name));
 
     if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
@@ -32,7 +32,7 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
     return func;
 }
 
-ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, const Context & context)
+ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, ContextPtr context)
 {
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, all_columns);
     const auto actions = ExpressionAnalyzer(ast, syntax_analyzer_result, context).getActions(true);

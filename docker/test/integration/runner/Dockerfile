@@ -31,6 +31,7 @@ RUN apt-get update \
     software-properties-common \
     libkrb5-dev \
     krb5-user \
+    g++ \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
@@ -58,7 +59,7 @@ RUN dockerd --version; docker --version
 
 RUN python3 -m pip install \
     PyMySQL \
-    aerospike \
+    aerospike==4.0.0 \
     avro \
     cassandra-driver \
     confluent-kafka==1.5.0 \
