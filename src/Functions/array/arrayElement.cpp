@@ -953,7 +953,7 @@ bool FunctionArrayElement::matchKeyToIndex(
         || matchKeyToIndexNumber<UInt128>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<Int256>(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexNumber<UInt256>(data, offsets, arguments, matched_idxs)
-        || matchKeyToIndexString(data, offsets, arguments, matched_idxs);
+        || matchKeyToIndexString(data, offsets, arguments, matched_idxs)
         || matchKeyToIndexFixedString(data, offsets, arguments, matched_idxs);
 }
 
