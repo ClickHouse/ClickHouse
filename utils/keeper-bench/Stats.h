@@ -35,6 +35,5 @@ struct Stats
     }
 };
 
-using MultiStats = std::vector<std::shared_ptr<Stats>>;
 
-void report(MultiStats & infos, size_t concurrency, bool cumulative);
+void report(std::shared_ptr<Stats> & info, size_t concurrency);
