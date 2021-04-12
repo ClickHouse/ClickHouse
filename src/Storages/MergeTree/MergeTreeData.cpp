@@ -319,10 +319,9 @@ void MergeTreeData::checkProperties(
         {
             const String & pk_column = new_primary_key.column_names[i];
             if (pk_column != sorting_key_column)
-                throw Exception("Primary key must be a prefix of the sorting key, but in position "
-                    + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
+                throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
+                    + toString(i) + " is " + sorting_key_column +", not " + pk_column,
                     ErrorCodes::BAD_ARGUMENTS);
-
             if (!primary_key_columns_set.emplace(pk_column).second)
                 throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
