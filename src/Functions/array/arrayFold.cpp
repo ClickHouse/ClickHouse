@@ -65,9 +65,7 @@ public:
             throw Exception("First argument for function " + getName() + " must be a function.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
-        DataTypePtr return_type = removeLowCardinality(data_type_function->getReturnType());
-        const auto accum_type = arguments.back().type;
-        return accum_type;
+        return DataTypePtr(arguments.back().type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
