@@ -16,7 +16,7 @@
 
 namespace DB
 {
-class RangeHashedDictionary final : public IDictionaryBase
+class RangeHashedDictionary final : public IDictionary
 {
 public:
     RangeHashedDictionary(
@@ -112,6 +112,7 @@ private:
             Decimal32,
             Decimal64,
             Decimal128,
+            Decimal256,
             Float32,
             Float64,
             StringRef>
@@ -129,6 +130,7 @@ private:
             Ptr<Decimal32>,
             Ptr<Decimal64>,
             Ptr<Decimal128>,
+            Ptr<Decimal256>,
             Ptr<Float32>,
             Ptr<Float64>,
             Ptr<StringRef>>
@@ -160,25 +162,25 @@ private:
     template <typename AttributeType>
     ColumnUInt8::Ptr hasKeysImpl(
         const Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
+        const PaddedPODArray<UInt64> & ids,
         const PaddedPODArray<RangeStorageType> & dates) const;
 
     template <typename T>
-    static void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const Field & value);
+    static void setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
 
-    static void setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value);
+    static void setAttributeValue(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
     template <typename RangeType>
-    void getIdsAndDates(PaddedPODArray<Key> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
+    void getIdsAndDates(PaddedPODArray<UInt64> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename T, typename RangeType>
     void getIdsAndDates(
         const Attribute & attribute,
-        PaddedPODArray<Key> & ids,
+        PaddedPODArray<UInt64> & ids,
         PaddedPODArray<RangeType> & start_dates,
         PaddedPODArray<RangeType> & end_dates) const;
 

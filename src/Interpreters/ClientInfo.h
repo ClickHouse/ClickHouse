@@ -96,6 +96,8 @@ public:
     /// Common
     String quota_key;
 
+    UInt64 distributed_depth = 0;
+
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
     /** Serialization and deserialization.
