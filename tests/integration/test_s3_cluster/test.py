@@ -48,7 +48,7 @@ def test_select_all(started_cluster):
     ORDER BY (name, value, polygon)""")
     # print(pure_s3)
     s3_distibuted = node.query("""
-    SELECT * from s3Distributed(
+    SELECT * from s3Cluster(
         'cluster_simple', 
         'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)""")
@@ -66,7 +66,7 @@ def test_count(started_cluster):
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')""")
     # print(pure_s3)
     s3_distibuted = node.query("""
-    SELECT count(*) from s3Distributed(
+    SELECT count(*) from s3Cluster(
         'cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*', 
         'minio', 'minio123', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')""")
@@ -96,12 +96,12 @@ def test_union_all(started_cluster):
     s3_distibuted = node.query("""
     SELECT * FROM
     (
-        SELECT * from s3Distributed(
+        SELECT * from s3Cluster(
             'cluster_simple', 
             'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
         UNION ALL
-        SELECT * from s3Distributed(
+        SELECT * from s3Cluster(
             'cluster_simple', 
             'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV', 
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
@@ -116,12 +116,12 @@ def test_union_all(started_cluster):
 def test_wrong_cluster(started_cluster):
     node = started_cluster.instances['s0_0_0']
     error = node.query_and_get_error("""
-    SELECT count(*) from s3Distributed(
+    SELECT count(*) from s3Cluster(
         'non_existent_cluster',
         'http://minio1:9001/root/data/{clickhouse,database}/*', 
         'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     UNION ALL
-    SELECT count(*) from s3Distributed(
+    SELECT count(*) from s3Cluster(
         'non_existent_cluster',
         'http://minio1:9001/root/data/{clickhouse,database}/*', 
         'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')""")
