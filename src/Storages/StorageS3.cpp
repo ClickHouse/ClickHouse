@@ -92,7 +92,7 @@ private:
         }
 
         if (is_finished)
-            return std::nullopt; // Or throw?
+            return std::nullopt;
 
         fillInternalBufferAssumeLocked();
 
