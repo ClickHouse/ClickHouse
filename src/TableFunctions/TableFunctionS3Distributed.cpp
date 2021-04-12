@@ -33,12 +33,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
-void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, const Context & context)
+void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
     ASTs & args_func = ast_function->children;
@@ -69,7 +68,7 @@ void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, con
     {
         format = args[2]->as<ASTLiteral &>().value.safeGet<String>();
         structure = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-    } 
+    }
     else if (args.size() == 5)
     {
         format = args[2]->as<ASTLiteral &>().value.safeGet<String>();
@@ -96,18 +95,18 @@ void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, con
 }
 
 
-ColumnsDescription TableFunctionS3Distributed::getActualTableStructure(const Context & context) const
+ColumnsDescription TableFunctionS3Distributed::getActualTableStructure(ContextPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }
 
 StoragePtr TableFunctionS3Distributed::executeImpl(
-    const ASTPtr & /*function*/, const Context & context,
+    const ASTPtr & /*function*/, ContextPtr context,
     const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     StoragePtr storage = StorageS3Distributed::create(
         filename, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name),
-        cluster_name, format, context.getSettingsRef().s3_max_connections,
+        cluster_name, format, context->getSettingsRef().s3_max_connections,
         getActualTableStructure(context), ConstraintsDescription{},
         context, compression_method);
 

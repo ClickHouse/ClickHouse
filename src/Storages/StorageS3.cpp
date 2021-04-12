@@ -163,7 +163,7 @@ StorageS3Source::StorageS3Source(
     const String & format_,
     String name_,
     const Block & sample_block_,
-    const Context & context_,
+    ContextPtr context_,
     const ColumnsDescription & columns_,
     UInt64 max_block_size_,
     const String compression_hint_,
@@ -171,10 +171,10 @@ StorageS3Source::StorageS3Source(
     const String & bucket_,
     std::shared_ptr<IteratorWrapper> file_iterator_)
     : SourceWithProgress(getHeader(sample_block_, need_path, need_file))
+    , WithContext(context_)
     , name(std::move(name_))
     , bucket(bucket_)
     , format(format_)
-    , context(context_)
     , columns_desc(columns_)
     , max_block_size(max_block_size_)
     , compression_hint(compression_hint_)
@@ -204,11 +204,11 @@ bool StorageS3Source::initialize()
 
     read_buf = wrapReadBufferWithCompressionMethod(
         std::make_unique<ReadBufferFromS3>(client, bucket, current_key), chooseCompressionMethod(current_key, compression_hint));
-    auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+    auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
     reader = std::make_shared<InputStreamFromInputFormat>(input_format);
 
     if (columns_desc.hasDefaults())
-        reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_desc, context);
+        reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_desc, getContext());
 
     initialized = false;
     return true;
@@ -257,8 +257,7 @@ Chunk StorageS3Source::generate()
     return generate();
 }
 
-namespace
-{
+
 class StorageS3BlockOutputStream : public IBlockOutputStream
 {
 public:
@@ -311,7 +310,6 @@ private:
     std::unique_ptr<WriteBuffer> write_buf;
     BlockOutputStreamPtr writer;
 };
-}
 
 
 StorageS3::StorageS3(
@@ -401,7 +399,7 @@ BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMet
     return std::make_shared<StorageS3BlockOutputStream>(
         format_name,
         metadata_snapshot->getSampleBlock(),
-        context,
+        local_context,
         chooseCompressionMethod(client_auth.uri.key, compression_method),
         client_auth.client,
         client_auth.uri.bucket,

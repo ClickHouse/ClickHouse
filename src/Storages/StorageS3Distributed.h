@@ -33,32 +33,18 @@ class StorageS3Distributed : public ext::shared_ptr_helper<StorageS3Distributed>
 public:
     std::string getName() const override { return "S3Distributed"; }
 
-    Pipe read(
-        const Names & /*column_names*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        SelectQueryInfo & /*query_info*/,
-        const Context & /*context*/,
-        QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
-        unsigned /*num_streams*/) override;
+    Pipe read(const Names &, const StorageMetadataPtr &, SelectQueryInfo &,
+        ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, SelectQueryInfo &) const override;
 
     NamesAndTypesList getVirtuals() const override;
 
 protected:
     StorageS3Distributed(
-        const String & filename_,
-        const String & access_key_id_,
-        const String & secret_access_key_,
-        const StorageID & table_id_,
-        String cluster_name_,
-        const String & format_name_,
-        UInt64 max_connections_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        const Context & context_,
-        const String & compression_method_);
+        const String & filename_, const String & access_key_id_, const String & secret_access_key_, const StorageID & table_id_,
+        String cluster_name_, const String & format_name_, UInt64 max_connections_, const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_, ContextPtr context_, const String & compression_method_);
 
 private:
     /// Connections from initiator to other nodes
@@ -66,7 +52,7 @@ private:
     StorageS3::ClientAuthentificaiton client_auth;
 
     String filename;
-    std::string cluster_name;
+    String cluster_name;
     ClusterPtr cluster;
 
     String format_name;

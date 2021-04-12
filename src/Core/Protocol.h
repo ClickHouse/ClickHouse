@@ -77,7 +77,7 @@ namespace Protocol
             TableColumns = 11,        /// Columns' description for default values calculation
             PartUUIDs = 12,           /// List of unique parts ids.
             ReadTaskRequest = 13,     /// String (UUID) describes a request for which next task is needed
-                                      /// This is such an inverted logic, where server sends requests 
+                                      /// This is such an inverted logic, where server sends requests
                                       /// And client returns back response
             MAX = ReadTaskRequest,
         };
