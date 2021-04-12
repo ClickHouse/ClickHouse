@@ -1,9 +1,5 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#endif
-
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateManager.h>
@@ -12,12 +8,6 @@
 #include <Coordination/CoordinationSettings.h>
 #include <unordered_map>
 #include <common/logger_useful.h>
-
-#if USE_SSL
-#   define MAYBE_NORETURN
-#else
-#   define MAYBE_NORETURN [[noreturn]]
-#endif
 
 namespace DB
 {
@@ -59,7 +49,6 @@ private:
 
     void shutdownRaftServer();
 
-    static MAYBE_NORETURN void setSSLParams(nuraft::asio_service::options & asio_opts);
 
 public:
     KeeperServer(
