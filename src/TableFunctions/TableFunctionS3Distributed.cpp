@@ -1,5 +1,6 @@
-
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_AWS_S3
 
@@ -21,7 +22,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <registerTableFunctions.h>
+
+#include "registerTableFunctions.h"
 
 #include <memory>
 #include <thread>
@@ -42,7 +44,7 @@ void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, con
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTs & args = args_func.at(0)->children;
 
@@ -125,14 +127,6 @@ void registerTableFunctionCOSDistributed(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionCOSDistributed>();
 }
 
-
-NamesAndTypesList StorageS3Distributed::getVirtuals() const
-{
-    return NamesAndTypesList{
-        {"_path", std::make_shared<DataTypeString>()},
-        {"_file", std::make_shared<DataTypeString>()}
-    };
-}
 
 }
 
