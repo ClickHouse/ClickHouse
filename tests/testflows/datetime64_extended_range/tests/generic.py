@@ -55,7 +55,7 @@ def extended_range_end(self, precision=3):
         walk_datetime_in_decrementing_steps(date="2238-12-31", precision=5, hrs_range=(23, 0))
 
 
-@TestOutline(Scenario)
+@TestScenario
 @Requirements(
     RQ_SRS_010_DateTime64_ExtendedRange_NormalRange_Start_BeforeEpochForTimeZone("1.0")
 )
@@ -68,7 +68,7 @@ def timezone_local_below_normal_range(self):
         walk_datetime_in_incrementing_steps(date="1969-12-31", hrs_range=(17, 24), timezone='America/Phoenix')
 
 
-@TestOutline(Scenario)
+@TestScenario
 @Requirements(
     RQ_SRS_010_DateTime64_ExtendedRange_NormalRange_End_AfterEpochForTimeZone("1.0")
 )
@@ -79,32 +79,6 @@ def timezone_local_above_normal_range(self):
     with When("I do decrementing time sweep",
               description="check different time points when UTC datetime fits normal range but above it for local datetime"):
         walk_datetime_in_decrementing_steps(date="2106-01-01", hrs_range=(6, 0), timezone='Asia/Novosibirsk')
-
-
-@TestOutline(Scenario)
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_Start_BeforeEpochForTimeZone("1.0")
-)
-def timezone_local_below_extended_range(self):
-    """Check how UTC normal range time value treated
-    when current timezone time value is out of extended range.
-    """
-    with When("I do incrementing time sweep",
-            description="check different time points when UTC datetime fits normal range but below it for local datetime"):
-        walk_datetime_in_incrementing_steps(date="1924-12-31", hrs_range=(17, 24), timezone='America/Phoenix')
-
-
-@TestOutline(Scenario)
-@Requirements(
-    RQ_SRS_010_DateTime64_ExtendedRange_End_AfterEpochForTimeZone("1.0")
-)
-def timezone_local_above_extended_range(self):
-    """Check how UTC normal range time value treated
-    when current timezone time value is out of normal range.
-    """
-    with When("I do decrementing time sweep",
-              description="check different time points when UTC datetime fits normal range but above it for local datetime"):
-        walk_datetime_in_decrementing_steps(date="2239-01-01", hrs_range=(6, 0), timezone='Asia/Novosibirsk')
 
 
 @TestScenario

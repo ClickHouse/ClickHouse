@@ -16,7 +16,7 @@ def in_normal_range(dt: datetime.datetime):
 def years_range(stress=False, padding=(0, 0)):
     """Returns a set of year values used for testing.
     """
-    return range(1925+padding[0], 2238-padding[1]) if stress else (1927, 2000, 2236)
+    return range(1925+padding[0], 2283-padding[1]) if stress else (1927, 2000, 2281)
 
 
 def timezones_range(stress=False):
@@ -115,7 +115,7 @@ def exec_query(self, request, expected=None, exitcode=None):
             assert r.exitcode == exitcode, error()
 
 
-@TestOutline
+@TestStep
 def walk_datetime_in_incrementing_steps(self, date, hrs_range=(0, 24), step=1, timezone="UTC", precision=0):
     """Sweep time starting from some start date. The time is incremented
     in steps specified by the `step` parameter
@@ -146,7 +146,7 @@ def walk_datetime_in_incrementing_steps(self, date, hrs_range=(0, 24), step=1, t
         join(tasks)
 
 
-@TestOutline
+@TestStep
 def walk_datetime_in_decrementing_steps(self, date, hrs_range=(23, 0), step=1, timezone="UTC", precision=0):
     """Sweep time starting from some start date. The time is decremented
     in steps specified by the `step` parameter
