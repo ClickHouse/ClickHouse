@@ -570,7 +570,16 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
     /// Send block to the client - table structure.
     sendData(state.io.out->getHeader());
 
-    readData(connection_settings);
+    try
+    {
+        readData(connection_settings);
+    }
+    catch (...)
+    {
+        /// To avoid flushing from the destructor, that may lead to uncaught exception.
+        state.io.out->writeSuffix();
+        throw;
+    }
     state.io.out->writeSuffix();
 }
 
