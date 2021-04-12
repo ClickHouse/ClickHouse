@@ -411,7 +411,7 @@ def test_non_partitioned_table(started_cluster):
 
 
 def test_self_copy(started_cluster):
-    execute_task(Task_self_copy(started_cluster), [])
+    execute_task(started_cluster, Task_self_copy(started_cluster), [])
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
