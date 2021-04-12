@@ -1350,30 +1350,21 @@ ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
 
 const ExternalModelsLoader & Context::getExternalModelsLoader() const
 {
-    std::lock_guard lock(shared->external_models_mutex);
-    return getExternalModelsLoaderUnlocked();
-}
-
-const ExternalModelsLoader & Context::getExternalModelsLoaderUnlocked() const
-{
-    if (!shared->external_models_loader)
-    {
-        if (!this->global_context)
-            throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
-
-        shared->external_models_loader.emplace(*this->global_context);
-    }
     return const_cast<Context *>(this)->getExternalModelsLoader();
 }
 
 ExternalModelsLoader & Context::getExternalModelsLoader()
 {
     std::lock_guard lock(shared->external_models_mutex);
-    if (!shared->external_models_loader)
-        shared->external_models_loader.emplace(getGlobalContext());
-    return const_cast<Context *>(this)->getExternalModelsLoader();
+    return getExternalModelsLoaderUnlocked();
 }
 
+ExternalModelsLoader & Context::getExternalModelsLoaderUnlocked()
+{
+    if (!shared->external_models_loader)
+        shared->external_models_loader.emplace(getGlobalContext());
+    return *shared->external_models_loader;
+}
 
 void Context::setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name)
 {
