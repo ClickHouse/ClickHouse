@@ -34,13 +34,13 @@ DiskHDFS::DiskHDFS(
     const String & name_,
     const String & hdfs_name_,
     const String & metadata_path_,
-    const Context & context_)
-    : log(&Poco::Logger::get("DiskHDFS"))
+    ContextPtr context_)
+    : WithContext(context_)
+    , log(&Poco::Logger::get("DiskHDFS"))
     , name(name_)
     , hdfs_name(hdfs_name_)
     , metadata_path(std::move(metadata_path_))
-    , context(context_)
-    , config(context.getGlobalContext().getConfigRef())
+    , config(context_->getGlobalContext()->getConfigRef())
     , builder(createHDFSBuilder(hdfs_name, config))
     , fs(createHDFSFS(builder.get()))
 {
@@ -131,7 +131,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_path + path), metadata.hdfs_objects.size());
 
-    return std::make_unique<ReadIndirectBufferFromHDFS>(context, hdfs_name, "", metadata, buf_size);
+    return std::make_unique<ReadIndirectBufferFromHDFS>(getContext(), hdfs_name, "", metadata, buf_size);
 }
 
 
@@ -153,7 +153,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
         LOG_DEBUG(log,
             "Write to file by path: {}. New hdfs path: {}", backQuote(metadata_path + path), hdfs_path);
 
-        return std::make_unique<WriteIndirectBufferFromHDFS>(context, hdfs_path, file_name, metadata, buf_size);
+        return std::make_unique<WriteIndirectBufferFromHDFS>(getContext(), hdfs_path, file_name, metadata, buf_size);
     }
     else
     {
@@ -163,12 +163,12 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
             "Append to file by path: {}. New hdfs path: {}. Existing HDFS objects: {}",
             backQuote(metadata_path + path), hdfs_path, metadata.hdfs_objects.size());
 
-        return std::make_unique<WriteIndirectBufferFromHDFS>(context, hdfs_path, file_name, metadata, buf_size);
+        return std::make_unique<WriteIndirectBufferFromHDFS>(getContext(), hdfs_path, file_name, metadata, buf_size);
     }
 }
 
 
-void DiskHDFS::remove(const String & path)
+void DiskHDFS::removeFile(const String & path)
 {
     LOG_DEBUG(&Poco::Logger::get("DiskHDFS"), "Remove file by path: {}", backQuote(metadata_path + path));
 
@@ -202,6 +202,14 @@ void DiskHDFS::remove(const String & path)
 }
 
 
+void DiskHDFS::removeFileIfExists(const String & path)
+{
+    int exists_status = hdfsExists(fs.get(), path.data());
+    if (exists_status == 0)
+        removeFile(path);
+}
+
+
 void DiskHDFS::removeRecursive(const String & path)
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
@@ -209,7 +217,7 @@ void DiskHDFS::removeRecursive(const String & path)
     Poco::File file(metadata_path + path);
     if (file.isFile())
     {
-        remove(path);
+        removeFile(path);
     }
     else
     {
@@ -217,6 +225,12 @@ void DiskHDFS::removeRecursive(const String & path)
             removeRecursive(it->path());
         file.remove();
     }
+}
+
+
+void DiskHDFS::removeDirectory(const String & path)
+{
+    Poco::File(metadata_path + path).remove();
 }
 
 
@@ -305,9 +319,9 @@ void registerDiskHDFS(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      const Context & context) -> DiskPtr
+                      ContextConstPtr context) -> DiskPtr
     {
-        Poco::File disk{context.getPath() + "disks/" + name};
+        Poco::File disk{context->getPath() + "disks/" + name};
         disk.createDirectories();
 
         DB::String uri{config.getString(config_prefix + ".endpoint")};
@@ -315,12 +329,14 @@ void registerDiskHDFS(DiskFactory & factory)
         if (uri.back() != '/')
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
-        String metadata_path = context.getPath() + "disks/" + name + "/";
-        return std::make_shared<DiskHDFS>(name, uri, metadata_path, context);
+        String metadata_path = context->getPath() + "disks/" + name + "/";
+        auto copy_context = Context::createCopy(context);
+        return std::make_shared<DiskHDFS>(name, uri, metadata_path, copy_context);
     };
 
     factory.registerDiskType("hdfs", creator);
 }
+
 
 //void DiskHDFS::copyFile(const String & from_path, const String & to_path)
 //{
