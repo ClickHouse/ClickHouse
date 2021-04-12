@@ -109,7 +109,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
 
         SCOPE_EXIT(SQLFreeStmt(hstmt, SQL_DROP));
 
-        const auto & context_settings = context.getSettingsRef();
+        const auto & context_settings = getContext()->getSettingsRef();
 
         /// TODO Why not do SQLColumns instead?
         std::string name = schema_name.empty() ? backQuoteIfNeed(table_name) : backQuoteIfNeed(schema_name) + "." + backQuoteIfNeed(table_name);

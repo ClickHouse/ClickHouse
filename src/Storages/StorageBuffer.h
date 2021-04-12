@@ -1,14 +1,16 @@
 #pragma once
 
-#include <mutex>
-#include <atomic>
-#include <thread>
-#include <ext/shared_ptr_helper.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Storages/IStorage.h>
+#include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <Storages/IStorage.h>
+#include <ext/shared_ptr_helper.h>
+
 #include <Poco/Event.h>
+
+#include <atomic>
+#include <mutex>
+#include <thread>
 
 
 namespace Poco { class Logger; }
@@ -36,7 +38,7 @@ namespace DB
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer final : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
+class StorageBuffer final : public ext::shared_ptr_helper<StorageBuffer>, public IStorage, WithContext
 {
 friend struct ext::shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
@@ -53,13 +55,13 @@ public:
 
     std::string getName() const override { return "Buffer"; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -69,7 +71,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -78,7 +80,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
@@ -90,19 +92,19 @@ public:
         bool final,
         bool deduplicate,
         const Names & deduplicate_by_columns,
-        const Context & context) override;
+        ContextPtr context) override;
 
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override;
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & metadata_snapshot) const override;
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
-    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -112,8 +114,6 @@ public:
 
 
 private:
-    const Context & buffer_context;
-
     struct Buffer
     {
         time_t first_write_time = 0;
@@ -173,7 +173,7 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_,
+        ContextPtr context_,
         size_t num_shards_,
         const Thresholds & min_thresholds_,
         const Thresholds & max_thresholds_,

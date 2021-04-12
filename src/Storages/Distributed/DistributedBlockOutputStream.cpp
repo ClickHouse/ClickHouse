@@ -87,14 +87,14 @@ static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & bl
 
 
 DistributedBlockOutputStream::DistributedBlockOutputStream(
-    const Context & context_,
+    ContextPtr context_,
     StorageDistributed & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const ASTPtr & query_ast_,
     const ClusterPtr & cluster_,
     bool insert_sync_,
     UInt64 insert_timeout_)
-    : context(std::make_unique<Context>(context_))
+    : context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , query_ast(query_ast_)
@@ -363,7 +363,7 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
             if (!job.stream)
             {
                 /// Forward user settings
-                job.local_context = std::make_unique<Context>(*context);
+                job.local_context = Context::createCopy(context);
 
                 /// Copying of the query AST is required to avoid race,
                 /// in case of INSERT into multiple local shards.
@@ -373,7 +373,7 @@ DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobRep
                 /// to resolve tables (in InterpreterInsertQuery::getTable())
                 auto copy_query_ast = query_ast->clone();
 
-                InterpreterInsertQuery interp(copy_query_ast, *job.local_context);
+                InterpreterInsertQuery interp(copy_query_ast, job.local_context);
                 auto block_io = interp.execute();
 
                 job.stream = block_io.out;
@@ -604,7 +604,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t sh
 void DistributedBlockOutputStream::writeToLocal(const Block & block, size_t repeats)
 {
     /// Async insert does not support settings forwarding yet whereas sync one supports
-    InterpreterInsertQuery interp(query_ast, *context);
+    InterpreterInsertQuery interp(query_ast, context);
 
     auto block_io = interp.execute();
 

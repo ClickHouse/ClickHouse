@@ -11,6 +11,7 @@
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -43,7 +44,7 @@ class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayMapped>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayMapped>(); }
 
     String getName() const override
     {

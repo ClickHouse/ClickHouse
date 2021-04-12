@@ -10,7 +10,7 @@ class StorageSystemCollations final : public ext::shared_ptr_helper<StorageSyste
 {
     friend struct ext::shared_ptr_helper<StorageSystemCollations>;
 protected:
-    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 public:
