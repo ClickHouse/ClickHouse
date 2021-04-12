@@ -34,7 +34,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         /// Even if lag is small, output detailed information about the lag.
         bool verbose = params.get("verbose", "") == "1";
 
-        const MergeTreeSettings & settings = context.getReplicatedMergeTreeSettings();
+        const MergeTreeSettings & settings = context->getReplicatedMergeTreeSettings();
 
         bool ok = true;
         WriteBufferFromOwnString message;
@@ -73,7 +73,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
         }
 
-        const auto & config = context.getConfigRef();
+        const auto & config = context->getConfigRef();
         setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
 
         if (!ok)

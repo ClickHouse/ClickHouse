@@ -63,6 +63,12 @@ private:
     /// Rename temporary part and commit to ZooKeeper.
     void commitPart(zkutil::ZooKeeperPtr & zookeeper, MergeTreeData::MutableDataPartPtr & part, const String & block_id);
 
+    /// Wait for quorum to be satisfied on path (quorum_path) form part (part_name)
+    /// Also checks that replica still alive.
+    void waitForQuorum(
+        zkutil::ZooKeeperPtr & zookeeper, const std::string & part_name,
+        const std::string & quorum_path, const std::string & is_active_node_value) const;
+
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
     size_t quorum;

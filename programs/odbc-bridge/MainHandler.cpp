@@ -165,7 +165,7 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
             auto pool = getPool(connection_string);
             auto & read_buf = request.getStream();
-            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, context, max_block_size);
+            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, getContext(), max_block_size);
             auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
             ODBCBlockOutputStream output_stream(pool->get(), db_name, table_name, *sample_block, quoting_style);
             copyData(*input_stream, output_stream);
@@ -176,7 +176,8 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             std::string query = params.get("query");
             LOG_TRACE(log, "Query: {}", query);
 
-            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, context);
+            BlockOutputStreamPtr writer
+                = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, getContext());
             auto pool = getPool(connection_string);
             ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
             copyData(inp, *writer);

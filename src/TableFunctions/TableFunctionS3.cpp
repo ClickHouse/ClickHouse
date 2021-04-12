@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void TableFunctionS3::parseArguments(const ASTPtr & ast_function, const Context & context)
+void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
     ASTs & args_func = ast_function->children;
@@ -57,18 +57,18 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, const Context 
         compression_method = args.back()->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionS3::getActualTableStructure(const Context & context) const
+ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     Poco::URI uri (filename);
     S3::URI s3_uri (uri);
-    UInt64 min_upload_part_size = context.getSettingsRef().s3_min_upload_part_size;
-    UInt64 max_single_part_upload_size = context.getSettingsRef().s3_max_single_part_upload_size;
-    UInt64 max_connections = context.getSettingsRef().s3_max_connections;
+    UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
+    UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
+    UInt64 max_connections = context->getSettingsRef().s3_max_connections;
 
     StoragePtr storage = StorageS3::create(
             s3_uri,
@@ -81,7 +81,7 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, const C
             max_connections,
             getActualTableStructure(context),
             ConstraintsDescription{},
-            const_cast<Context &>(context),
+            context,
             compression_method);
 
     storage->startup();

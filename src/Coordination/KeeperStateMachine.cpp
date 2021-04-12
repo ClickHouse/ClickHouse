@@ -54,7 +54,7 @@ void KeeperStateMachine::init()
     bool has_snapshots = snapshot_manager.totalSnapshots() != 0;
     while (snapshot_manager.totalSnapshots() != 0)
     {
-        size_t latest_log_index = snapshot_manager.getLatestSnapshotIndex();
+        uint64_t latest_log_index = snapshot_manager.getLatestSnapshotIndex();
         LOG_DEBUG(log, "Trying to load state machine from snapshot up to log index {}", latest_log_index);
 
         try
@@ -88,7 +88,7 @@ void KeeperStateMachine::init()
         storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds());
 }
 
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const size_t log_idx, nuraft::buffer & data)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     if (data.size() == sizeof(int64_t))
     {
@@ -205,7 +205,7 @@ void KeeperStateMachine::create_snapshot(
 
 void KeeperStateMachine::save_logical_snp_obj(
     nuraft::snapshot & s,
-    size_t & obj_id,
+    uint64_t & obj_id,
     nuraft::buffer & data,
     bool /*is_first_obj*/,
     bool /*is_last_obj*/)
@@ -246,7 +246,7 @@ void KeeperStateMachine::save_logical_snp_obj(
 int KeeperStateMachine::read_logical_snp_obj(
     nuraft::snapshot & s,
     void* & /*user_snp_ctx*/,
-    ulong obj_id,
+    uint64_t obj_id,
     nuraft::ptr<nuraft::buffer> & data_out,
     bool & is_last_obj)
 {
