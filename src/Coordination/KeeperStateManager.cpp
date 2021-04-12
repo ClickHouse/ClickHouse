@@ -26,6 +26,7 @@ KeeperStateManager::KeeperStateManager(
     const Poco::Util::AbstractConfiguration & config,
     const CoordinationSettingsPtr & coordination_settings)
     : my_server_id(my_server_id_)
+    , secure(config.getBool(config_prefix + ".raft_configuration.secure", false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
                     config.getString(config_prefix + ".log_storage_path", config.getString("path", DBMS_DEFAULT_PATH) + "coordination/logs"),
                     coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync))
@@ -35,11 +36,12 @@ KeeperStateManager::KeeperStateManager(
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix + ".raft_configuration", keys);
     total_servers = keys.size();
-    bool has_secure = false;
-    bool has_unsecure = false;
 
     for (const auto & server_key : keys)
     {
+        if (!startsWith(server_key, "server"))
+            continue;
+
         std::string full_prefix = config_prefix + ".raft_configuration." + server_key;
         int server_id = config.getInt(full_prefix + ".id");
         std::string hostname = config.getString(full_prefix + ".hostname");
@@ -47,10 +49,6 @@ KeeperStateManager::KeeperStateManager(
         bool can_become_leader = config.getBool(full_prefix + ".can_become_leader", true);
         int32_t priority = config.getInt(full_prefix + ".priority", 1);
         bool start_as_follower = config.getBool(full_prefix + ".start_as_follower", false);
-        bool is_secure = config.getBool(full_prefix + ".secure", false);
-
-        has_secure |= is_secure;
-        has_unsecure |= !is_secure;
 
         if (start_as_follower)
             start_as_follower_servers.insert(server_id);
@@ -61,14 +59,10 @@ KeeperStateManager::KeeperStateManager(
         {
             my_server_config = peer_config;
             my_port = port;
-            secure = is_secure;
         }
 
         cluster_config->get_servers().push_back(peer_config);
     }
-
-    if (has_secure && has_unsecure)
-        throw Exception(ErrorCodes::RAFT_ERROR, "Cluster must have all secure or all non-secure nodes. Mixing secure and unsecure nodes is not allowed");
 
     if (!my_server_config)
         throw Exception(ErrorCodes::RAFT_ERROR, "Our server id {} not found in raft_configuration section", my_server_id);

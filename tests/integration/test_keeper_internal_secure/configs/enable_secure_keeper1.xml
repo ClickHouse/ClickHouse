@@ -13,13 +13,13 @@
         </coordination_settings>
 
         <raft_configuration>
+            <secure>true</secure>
             <server>
                 <id>1</id>
                 <hostname>node1</hostname>
                 <port>44444</port>
                 <can_become_leader>true</can_become_leader>
                 <priority>3</priority>
-                <secure>true</secure>
             </server>
             <server>
                 <id>2</id>
@@ -28,7 +28,6 @@
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
                 <priority>2</priority>
-                <secure>true</secure>
             </server>
             <server>
                 <id>3</id>
@@ -37,7 +36,6 @@
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
                 <priority>1</priority>
-                <secure>true</secure>
             </server>
         </raft_configuration>
     </keeper_server>
