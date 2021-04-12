@@ -122,7 +122,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
-                LOG_TRACE(log, "Will fetch info for table '{}'", catalog_name + "." + table_name);
+                LOG_TRACE(log, "Will fetch info for table '{}.{}'", catalog_name, table_name);
                 return catalog.find_columns(/* column = */ "", table_name, /* schema = */ "", catalog_name);
             }
 
@@ -130,7 +130,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
-                LOG_TRACE(log, "Will fetch info for table '{}'", catalog_name + "." + schema_name + "." + table_name);
+                LOG_TRACE(log, "Will fetch info for table '{}.{}.{}'", catalog_name, schema_name, table_name);
                 return catalog.find_columns(/* column = */ "", table_name, schema_name, catalog_name);
             }
 
