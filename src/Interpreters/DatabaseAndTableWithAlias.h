@@ -16,8 +16,6 @@ namespace DB
 class ASTSelectQuery;
 class ASTTableIdentifier;
 struct ASTTableExpression;
-class Context;
-
 
 /// Extracts database name (and/or alias) from table expression or identifier
 struct DatabaseAndTableWithAlias

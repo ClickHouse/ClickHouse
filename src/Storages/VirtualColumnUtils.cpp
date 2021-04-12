@@ -122,7 +122,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
     }
 }
 
-bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, Block block, ASTPtr & expression_ast)
+bool prepareFilterBlockWithQuery(const ASTPtr & query, ContextPtr context, Block block, ASTPtr & expression_ast)
 {
     bool unmodified = true;
     const auto & select = query->as<ASTSelectQuery &>();
@@ -167,7 +167,7 @@ bool prepareFilterBlockWithQuery(const ASTPtr & query, const Context & context, 
     return unmodified;
 }
 
-void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context, ASTPtr expression_ast)
+void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr context, ASTPtr expression_ast)
 {
     if (!expression_ast)
         prepareFilterBlockWithQuery(query, context, block, expression_ast);

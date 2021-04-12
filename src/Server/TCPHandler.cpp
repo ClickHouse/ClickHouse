@@ -62,8 +62,8 @@ TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket
     , server(server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
-    , connection_context(server.context())
-    , query_context(server.context())
+    , connection_context(Context::createCopy(server.context()))
+    , query_context(Context::createCopy(server.context()))
     , server_display_name(std::move(server_display_name_))
 {
 }
@@ -86,13 +86,13 @@ void TCPHandler::runImpl()
     setThreadName("TCPHandler");
     ThreadStatus thread_status;
 
-    connection_context = server.context();
-    connection_context.makeSessionContext();
+    connection_context = Context::createCopy(server.context());
+    connection_context->makeSessionContext();
 
     /// These timeouts can be changed after receiving query.
 
-    auto global_receive_timeout = connection_context.getSettingsRef().receive_timeout;
-    auto global_send_timeout = connection_context.getSettingsRef().send_timeout;
+    auto global_receive_timeout = connection_context->getSettingsRef().receive_timeout;
+    auto global_send_timeout = connection_context->getSettingsRef().send_timeout;
 
     socket().setReceiveTimeout(global_receive_timeout);
     socket().setSendTimeout(global_send_timeout);
@@ -133,7 +133,7 @@ void TCPHandler::runImpl()
         try
         {
             /// We try to send error information to the client.
-            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
+            sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
         }
         catch (...) {}
 
@@ -147,18 +147,18 @@ void TCPHandler::runImpl()
         {
             Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
-            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
+            sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
             return;
         }
 
-        connection_context.setCurrentDatabase(default_database);
+        connection_context->setCurrentDatabase(default_database);
     }
 
-    Settings connection_settings = connection_context.getSettings();
+    Settings connection_settings = connection_context->getSettings();
 
     sendHello();
 
-    connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    connection_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
     while (true)
     {
@@ -181,7 +181,7 @@ void TCPHandler::runImpl()
             break;
 
         /// Set context of request.
-        query_context = connection_context;
+        query_context = Context::createCopy(connection_context);
 
         Stopwatch watch;
         state.reset();
@@ -214,7 +214,7 @@ void TCPHandler::runImpl()
             if (state.empty() && state.part_uuids && !receivePacket())
                 continue;
 
-            query_scope.emplace(*query_context);
+            query_scope.emplace(query_context);
 
             send_exception_with_stack_trace = query_context->getSettingsRef().calculate_text_stack_trace;
 
@@ -229,9 +229,9 @@ void TCPHandler::runImpl()
                 CurrentThread::setFatalErrorCallback([this]{ sendLogs(); });
             }
 
-            query_context->setExternalTablesInitializer([&connection_settings, this] (Context & context)
+            query_context->setExternalTablesInitializer([&connection_settings, this] (ContextPtr context)
             {
-                if (&context != &*query_context)
+                if (context != query_context)
                     throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
 
                 /// Get blocks of temporary tables
@@ -246,9 +246,9 @@ void TCPHandler::runImpl()
             });
 
             /// Send structure of columns to client for function input()
-            query_context->setInputInitializer([this] (Context & context, const StoragePtr & input_storage)
+            query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
             {
-                if (&context != &query_context.value())
+                if (context != query_context)
                     throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
 
                 auto metadata_snapshot = input_storage->getInMemoryMetadataPtr();
@@ -266,9 +266,9 @@ void TCPHandler::runImpl()
                 sendData(state.input_header);
             });
 
-            query_context->setInputBlocksReaderCallback([&connection_settings, this] (Context & context) -> Block
+            query_context->setInputBlocksReaderCallback([&connection_settings, this] (ContextPtr context) -> Block
             {
-                if (&context != &query_context.value())
+                if (context != query_context)
                     throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
 
                 size_t poll_interval;
@@ -283,11 +283,11 @@ void TCPHandler::runImpl()
                 return state.block_for_input;
             });
 
-            customizeContext(*query_context);
+            customizeContext(query_context);
 
             bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
-            state.io = executeQuery(state.query, *query_context, false, state.stage, may_have_embedded_data);
+            state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
@@ -537,7 +537,7 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
         {
             if (!table_id.empty())
             {
-                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, *query_context);
+                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
                 sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
             }
         }
@@ -701,7 +701,7 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
-        auto resolved_id = connection_context.tryResolveStorageID({table_name.database, table_name.table});
+        auto resolved_id = connection_context->tryResolveStorageID({table_name.database, table_name.table});
         StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, connection_context);
         if (!table)
             continue;
@@ -862,7 +862,7 @@ bool TCPHandler::receiveProxyHeader()
     }
 
     LOG_TRACE(log, "Forwarded client address from PROXY header: {}", forwarded_address);
-    connection_context.getClientInfo().forwarded_for = forwarded_address;
+    connection_context->getClientInfo().forwarded_for = forwarded_address;
     return true;
 }
 
@@ -915,7 +915,7 @@ void TCPHandler::receiveHello()
 
     if (user != USER_INTERSERVER_MARKER)
     {
-        connection_context.setUser(user, password, socket().peerAddress());
+        connection_context->setUser(user, password, socket().peerAddress());
     }
     else
     {
@@ -1033,7 +1033,7 @@ void TCPHandler::receiveClusterNameAndSalt()
         try
         {
             /// We try to send error information to the client.
-            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
+            sendException(e, connection_context->getSettingsRef().calculate_text_stack_trace);
         }
         catch (...) {}
 
@@ -1236,18 +1236,18 @@ bool TCPHandler::receiveData(bool scalar)
             /// If such a table does not exist, create it.
             if (resolved)
             {
-                storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
+                storage = DatabaseCatalog::instance().getTable(resolved, query_context);
             }
             else
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
+                auto temporary_table = TemporaryTableHolder(query_context, ColumnsDescription{columns}, {});
                 storage = temporary_table.getTable();
                 query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
             }
             auto metadata_snapshot = storage->getInMemoryMetadataPtr();
             /// The data will be written directly to the table.
-            auto temporary_table_out = storage->write(ASTPtr(), metadata_snapshot, *query_context);
+            auto temporary_table_out = storage->write(ASTPtr(), metadata_snapshot, query_context);
             temporary_table_out->write(block);
             temporary_table_out->writeSuffix();
 
@@ -1346,7 +1346,7 @@ void TCPHandler::initBlockOutput(const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
+            !connection_context->getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -1359,7 +1359,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
+            !connection_context->getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 

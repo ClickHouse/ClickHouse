@@ -259,7 +259,11 @@ void PocoHTTPClient::makeRequestInternal(
                 String error_message;
                 Poco::StreamCopier::copyToString(response_body_stream, error_message);
 
-                response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
+                if (Aws::Http::IsRetryableHttpResponseCode(response->GetResponseCode()))
+                    response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
+                else
+                    response->SetClientErrorType(Aws::Client::CoreErrors::USER_CANCELLED);
+
                 response->SetClientErrorMessage(error_message);
 
                 if (status_code == 429 || status_code == 503)

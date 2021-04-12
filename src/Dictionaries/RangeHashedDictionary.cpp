@@ -260,8 +260,8 @@ void RangeHashedDictionary::createAttributes()
         attributes.push_back(createAttribute(attribute, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
-                            getDictionaryID().getNameForLogs()};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
+                            getDictionaryID().getNameForLogs());
     }
 }
 
@@ -311,8 +311,8 @@ void RangeHashedDictionary::loadData()
     stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.",
-                        ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
+            "{}: dictionary source is empty and 'require_nonempty' property is set.");
 }
 
 template <typename T>
@@ -497,7 +497,7 @@ const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttribute(con
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: no such attribute '{}'", full_name, attribute_name);
 
     return attributes[it->second];
 }
@@ -507,8 +507,9 @@ RangeHashedDictionary::getAttributeWithType(const std::string & attribute_name, 
 {
     const auto & attribute = getAttribute(attribute_name);
     if (attribute.type != type)
-        throw Exception{attribute_name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "attribute {} has type {}",
+            attribute_name,
+            toString(attribute.type));
 
     return attribute;
 }
@@ -613,8 +614,9 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
     ListType::forEach(callable);
 
     if (!callable.stream)
-        throw Exception(
-            "Unexpected range type for RangeHashed dictionary: " + dict_struct.range_min->type->getName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unexpected range type for RangeHashed dictionary: {}",
+            dict_struct.range_min->type->getName());
 
     return callable.stream;
 }
@@ -629,11 +631,12 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
         if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'range_hashed'", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'range_hashed'");
 
         if (!dict_struct.range_min || !dict_struct.range_max)
-            throw Exception{full_name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
-                            ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{}: dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
+                full_name);
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
