@@ -59,8 +59,14 @@ public:
 
         const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
 
+        /// We don't have to list bucket, because there is no asterics.
         if (key_prefix.size() == globbed_uri.key.size())
+        {
             buffer.emplace_back(globbed_uri.key);
+            buffer_iter = buffer.begin();
+            is_finished = true;
+            return;
+        }
 
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
