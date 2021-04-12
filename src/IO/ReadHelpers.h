@@ -773,7 +773,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
     }
-    //9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
+    /// 9908870400 is time_t value for 2184-01-01 UTC (a bit over the last year supported by DateTime64)
     else if (whole >= 9908870400LL)
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
