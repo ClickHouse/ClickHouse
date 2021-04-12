@@ -118,7 +118,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
         /// it is not guaranteed. For nanodbc database_name must be either in odbc.ini or passed as catalog_name.
         auto get_columns = [&]()
         {
-            nanodbc::catalog::tables tables = catalog.find_tables(table_name, /* type =  */ "", /* schema =  */ "", /* catalog = */ schema_name);
+            nanodbc::catalog::tables tables = catalog.find_tables(table_name, /* type = */ "", /* schema = */ "", /* catalog = */ schema_name);
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
@@ -126,7 +126,7 @@ void ODBCColumnsInfoHandler::handleRequest(HTTPServerRequest & request, HTTPServ
                 return catalog.find_columns(/* column = */ "", table_name, /* schema = */ "", catalog_name);
             }
 
-            tables = catalog.find_tables(table_name, /* type =  */ "", /* schema = */ schema_name);
+            tables = catalog.find_tables(table_name, /* type = */ "", /* schema = */ schema_name);
             if (tables.next())
             {
                 catalog_name = tables.table_catalog();
