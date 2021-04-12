@@ -30,13 +30,8 @@ public:
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception("Function " + getName() + " needs at least one argument; passed "
-                            + toString(arguments.size()) + ".",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (arguments.size() == 1)
-            throw Exception("Function " + getName() + " needs at least one array argument.",
+        if (arguments.size() < 3)
+            throw Exception("Function " + getName() + " needs lambda function, at least one array argument and one accumulator argument.",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         DataTypes nested_types(arguments.size() - 1);
