@@ -63,13 +63,13 @@ StorageS3Distributed::StorageS3Distributed(
     UInt64 max_connections_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context_,
+    ContextPtr context_,
     const String & compression_method_)
     : IStorage(table_id_)
     , client_auth{S3::URI{Poco::URI{filename_}}, access_key_id_, secret_access_key_, max_connections_, {}, {}}
     , filename(filename_)
     , cluster_name(cluster_name_)
-    , cluster(context_.getCluster(cluster_name)->getClusterWithReplicasAsShards(context_.getSettings()))
+    , cluster(context_->getCluster(cluster_name)->getClusterWithReplicasAsShards(context_->getSettings()))
     , format_name(format_name_)
     , compression_method(compression_method_)
 {
@@ -85,7 +85,7 @@ Pipe StorageS3Distributed::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned /*num_streams*/)
@@ -93,7 +93,7 @@ Pipe StorageS3Distributed::read(
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     /// Secondary query, need to read from S3
-    if (context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
         bool need_path_column = false;
         bool need_file_column = false;
@@ -107,7 +107,7 @@ Pipe StorageS3Distributed::read(
 
         /// Save callback not to capture context by reference of copy it.
         auto file_iterator = std::make_shared<StorageS3Source::IteratorWrapper>(
-            [callback = context.getReadTaskCallback()]() -> std::optional<String> {
+            [callback = context->getReadTaskCallback()]() -> std::optional<String> {
                 return callback();
         });
 
@@ -136,7 +136,7 @@ Pipe StorageS3Distributed::read(
     Block header =
         InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
-    const Scalars & scalars = context.hasQueryContext() ? context.getQueryContext().getScalars() : Scalars{};
+    const Scalars & scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
 
     Pipes pipes;
     connections.reserve(cluster->getShardCount());
@@ -147,7 +147,7 @@ Pipe StorageS3Distributed::read(
         for (const auto & node : replicas)
         {
             connections.emplace_back(std::make_shared<Connection>(
-                node.host_name, node.port, context.getGlobalContext().getCurrentDatabase(),
+                node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
                 node.user, node.password, node.cluster, node.cluster_secret,
                 "S3DistributedInititiator",
                 node.compression,
@@ -157,7 +157,7 @@ Pipe StorageS3Distributed::read(
             /// For unknown reason global context is passed to IStorage::read() method
             /// So, task_identifier is passed as constructor argument. It is more obvious.
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    *connections.back(), queryToString(query_info.query), header, context, 
+                    *connections.back(), queryToString(query_info.query), header, context,
                     /*throttler=*/nullptr, scalars, Tables(), processed_stage, callback);
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, false, false));
@@ -169,10 +169,10 @@ Pipe StorageS3Distributed::read(
 }
 
 QueryProcessingStage::Enum StorageS3Distributed::getQueryProcessingStage(
-    const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo &) const
+    ContextPtr context, QueryProcessingStage::Enum to_stage, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
-    if (context.getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
             return QueryProcessingStage::Enum::WithMergeableState;
 

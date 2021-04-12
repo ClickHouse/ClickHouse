@@ -28,7 +28,7 @@ namespace DB
 {
 
 class StorageS3SequentialSource;
-class StorageS3Source : public SourceWithProgress
+class StorageS3Source : public SourceWithProgress, WithContext
 {
 public:
     class DisclosedGlobIterator
@@ -52,7 +52,7 @@ public:
         const String & format,
         String name_,
         const Block & sample_block,
-        const Context & context_,
+        ContextPtr context_,
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
         const String compression_hint_,
@@ -69,7 +69,6 @@ private:
     String bucket;
     String file_path;
     String format;
-    Context context;
     ColumnsDescription columns_desc;
     UInt64 max_block_size;
     String compression_hint;
@@ -139,7 +138,6 @@ private:
         const String access_key_id;
         const String secret_access_key;
         const UInt64 max_connections;
-        
         std::shared_ptr<Aws::S3::S3Client> client;
         S3AuthSettings auth_settings;
     };
