@@ -76,7 +76,6 @@ static Block createBlockWithNestedColumnsImpl(const Block & block, const std::un
             else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
             {
                 const auto * nullable_column = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn());
-
                 ColumnPtr nullable_res;
                 if (nullable_column)
                 {
