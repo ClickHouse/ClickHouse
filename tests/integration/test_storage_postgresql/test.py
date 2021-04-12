@@ -243,10 +243,10 @@ def test_concurrent_queries(started_cluster):
 
 
 def test_postgres_distributed(started_cluster):
-    conn0 = get_postgres_conn(started_cluster.postgres_ip, database=True)
-    conn1 = get_postgres_conn(started_cluster.postgres2_ip, database=True)
-    conn2 = get_postgres_conn(started_cluster.postgres3_ip, database=True)
-    conn3 = get_postgres_conn(started_cluster.postgres4_ip, database=True)
+    conn0 = get_postgres_conn(started_cluster, started_cluster.postgres_ip, database=True)
+    conn1 = get_postgres_conn(started_cluster, started_cluster.postgres2_ip, database=True)
+    conn2 = get_postgres_conn(started_cluster, started_cluster.postgres3_ip, database=True)
+    conn3 = get_postgres_conn(started_cluster, started_cluster.postgres4_ip, database=True)
 
     cursor0 = conn0.cursor()
     cursor1 = conn1.cursor()
