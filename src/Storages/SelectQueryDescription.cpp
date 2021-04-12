@@ -143,7 +143,6 @@ SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForAggr(cons
     checkAllowedQueries(select_query);
 
     SelectQueryDescription result;
-    // result.select_table_id = extractDependentTableFromSelectQuery(select_query, context);
     result.select_query = select->as<ASTSelectWithUnionQuery &>().clone();
     result.inner_query = new_inner_query->clone();
 

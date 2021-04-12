@@ -8,6 +8,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/IStorage.h>

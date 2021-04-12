@@ -27,6 +27,7 @@
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Storages/StorageAggregatingMemory.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -341,9 +342,16 @@ BlockIO InterpreterInsertQuery::execute()
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
 
-            // TODO: enable it again
-            // out = std::make_shared<AddingDefaultBlockOutputStream>(
-            //     out, query_sample_block, metadata_snapshot->getColumns(), context);
+            bool allow_cast_to_metadata = true;
+
+            /// StorageAggregatingMemory has special structure, in which read and writes have different structure.
+            /// In this case metadata_snapshot contains read structure, and should not be used for INSERT.
+            if (dynamic_cast<StorageAggregatingMemory *>(table.get()))
+                allow_cast_to_metadata = false;
+
+            if (allow_cast_to_metadata)
+                out = std::make_shared<AddingDefaultBlockOutputStream>(
+                    out, query_sample_block, metadata_snapshot->getColumns(), context);
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.

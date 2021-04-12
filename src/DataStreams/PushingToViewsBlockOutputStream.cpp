@@ -17,7 +17,6 @@
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageAggregatingMemory.h>
 #include <common/logger_useful.h>
 
 
@@ -112,7 +111,6 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
             ASTPtr insert_query_ptr(insert.release());
             InterpreterInsertQuery interpreter(insert_query_ptr, *insert_context);
-
             BlockIO io = interpreter.execute();
             out = io.out;
         }
