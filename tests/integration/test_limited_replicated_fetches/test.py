@@ -10,10 +10,10 @@ import os
 
 cluster = ClickHouseCluster(__file__)
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-node1 = cluster.add_instance('node1', with_zookeeper=True)
-node2 = cluster.add_instance('node2', with_zookeeper=True)
+node1 = cluster.add_instance('node1', user_configs=['configs/custom_settings.xml'], with_zookeeper=True)
+node2 = cluster.add_instance('node2', user_configs=['configs/custom_settings.xml'], with_zookeeper=True)
 
-DEFAULT_MAX_THREADS_FOR_FETCH = 3
+MAX_THREADS_FOR_FETCH = 3
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -31,12 +31,6 @@ def get_random_string(length):
 
 
 def test_limited_fetches(started_cluster):
-    """
-        Test checks that that we utilize all available threads for fetches
-    """
-    node1.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/custom_settings.xml"), '/etc/clickhouse-server/users.d/fetches.xml')
-    node2.copy_file_to_container(os.path.join(SCRIPT_DIR, "configs/custom_settings.xml"), '/etc/clickhouse-server/users.d/fetches.xml')
-
     node1.query("CREATE TABLE t (key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/test/t', '1') ORDER BY tuple() PARTITION BY key")
     node2.query("CREATE TABLE t (key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/test/t', '2') ORDER BY tuple() PARTITION BY key")
 
@@ -69,8 +63,8 @@ def test_limited_fetches(started_cluster):
                 time.sleep(0.1)
 
     for concurrently_fetching_parts in fetches_result:
-        if len(concurrently_fetching_parts) > DEFAULT_MAX_THREADS_FOR_FETCH:
-            assert False, "Found more than {} concurrently fetching parts: {}".format(DEFAULT_MAX_THREADS_FOR_FETCH, ', '.join(concurrently_fetching_parts))
+        if len(concurrently_fetching_parts) > MAX_THREADS_FOR_FETCH:
+            assert False, "Found more than {} concurrently fetching parts: {}".format(MAX_THREADS_FOR_FETCH, ', '.join(concurrently_fetching_parts))
 
     assert max([len(parts) for parts in fetches_result]) == 3, "Strange, but we don't utilize max concurrent threads for fetches"
     assert(max(background_fetches_metric)) == 3, "Just checking metric consistent with table"
