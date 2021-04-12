@@ -50,8 +50,8 @@ class StorageS3Source::DisclosedGlobIterator::Impl
 
 public:
     Impl(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
-        : client(client_), globbed_uri(globbed_uri_) {
-
+        : client(client_), globbed_uri(globbed_uri_)
+    {
         std::lock_guard lock(mutex);
 
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
@@ -70,9 +70,7 @@ public:
 
         request.SetBucket(globbed_uri.bucket);
         request.SetPrefix(key_prefix);
-
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_uri.key));
-
         fillInternalBufferAssumeLocked();
     }
 
@@ -124,7 +122,7 @@ private:
         buffer_iter = buffer.begin();
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-        
+
         /// It returns false when all objects were returned
         is_finished = !outcome.GetResult().GetIsTruncated();
     }
@@ -259,60 +257,60 @@ Chunk StorageS3Source::generate()
     return generate();
 }
 
-namespace 
+namespace
 {
-   class StorageS3BlockOutputStream : public IBlockOutputStream
+class StorageS3BlockOutputStream : public IBlockOutputStream
+{
+public:
+    StorageS3BlockOutputStream(
+        const String & format,
+        const Block & sample_block_,
+        ContextPtr context,
+        const CompressionMethod compression_method,
+        const std::shared_ptr<Aws::S3::S3Client> & client,
+        const String & bucket,
+        const String & key,
+        size_t min_upload_part_size,
+        size_t max_single_part_upload_size)
+        : sample_block(sample_block_)
     {
-    public:
-        StorageS3BlockOutputStream(
-            const String & format,
-            const Block & sample_block_,
-            ContextPtr context,
-            const CompressionMethod compression_method,
-            const std::shared_ptr<Aws::S3::S3Client> & client,
-            const String & bucket,
-            const String & key,
-            size_t min_upload_part_size,
-            size_t max_single_part_upload_size)
-            : sample_block(sample_block_)
-        {
-            write_buf = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
-            writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
-        }
+        write_buf = wrapWriteBufferWithCompressionMethod(
+            std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
+        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
+    }
 
-        Block getHeader() const override
-        {
-            return sample_block;
-        }
+    Block getHeader() const override
+    {
+        return sample_block;
+    }
 
-        void write(const Block & block) override
-        {
-            writer->write(block);
-        }
+    void write(const Block & block) override
+    {
+        writer->write(block);
+    }
 
-        void writePrefix() override
-        {
-            writer->writePrefix();
-        }
+    void writePrefix() override
+    {
+        writer->writePrefix();
+    }
 
-        void flush() override
-        {
-            writer->flush();
-        }
+    void flush() override
+    {
+        writer->flush();
+    }
 
-        void writeSuffix() override
-        {
-            writer->writeSuffix();
-            writer->flush();
-            write_buf->finalize();
-        }
+    void writeSuffix() override
+    {
+        writer->writeSuffix();
+        writer->flush();
+        write_buf->finalize();
+    }
 
-    private:
-        Block sample_block;
-        std::unique_ptr<WriteBuffer> write_buf;
-        BlockOutputStreamPtr writer;
-    };
+private:
+    Block sample_block;
+    std::unique_ptr<WriteBuffer> write_buf;
+    BlockOutputStreamPtr writer;
+};
 }
 
 

@@ -14,6 +14,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 /** To receive data from multiple replicas (connections) from one shard asynchronously.
   * The principe of Hedged Connections is used to reduce tail latency:
   * if we don't receive data from replica and there is no progress in query execution

@@ -287,7 +287,7 @@ void TCPHandler::runImpl()
 
             customizeContext(query_context);
 
-            /// This callback is needed for requsting read tasks inside pipeline for distributed processing
+            /// This callback is needed for requesting read tasks inside pipeline for distributed processing
             query_context->setReadTaskCallback([this]() -> std::optional<String>
             {
                 std::lock_guard lock(task_callback_mutex);

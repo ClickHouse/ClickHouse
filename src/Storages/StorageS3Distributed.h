@@ -18,12 +18,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 class Context;
 
 struct ClientAuthentificationBuilder
@@ -33,7 +27,7 @@ struct ClientAuthentificationBuilder
     UInt64 max_connections;
 };
 
-class StorageS3Distributed : public ext::shared_ptr_helper<StorageS3Distributed>, public IStorage 
+class StorageS3Distributed : public ext::shared_ptr_helper<StorageS3Distributed>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageS3Distributed>;
 public:
