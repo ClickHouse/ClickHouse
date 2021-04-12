@@ -91,7 +91,7 @@ def timezone_local_below_extended_range(self):
     """
     with When("I do incrementing time sweep",
             description="check different time points when UTC datetime fits normal range but below it for local datetime"):
-        walk_datetime_in_incrementing_steps(date="1924-12-12", hrs_range=(17, 24), timezone='America/Phoenix')
+        walk_datetime_in_incrementing_steps(date="1924-12-31", hrs_range=(17, 24), timezone='America/Phoenix')
 
 
 @TestOutline(Scenario)
