@@ -169,11 +169,12 @@ Pipe StorageS3Distributed::read(
 }
 
 QueryProcessingStage::Enum StorageS3Distributed::getQueryProcessingStage(
-    const Context & context, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const
+    const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
     if (context.getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-        return QueryProcessingStage::Enum::WithMergeableState;
+        if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
+            return QueryProcessingStage::Enum::WithMergeableState;
 
     /// Follower just reads the data.
     return QueryProcessingStage::Enum::FetchColumns;

@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_PROTOCOL;
 }
 
 TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
@@ -1056,7 +1057,7 @@ std::optional<String> TCPHandler::receiveReadTaskResponseAssumeLocked()
     UInt64 version;
     readVarUInt(version, *in);
     if (version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
-        throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::UNKNOWN_PROTOCOL);
     String response;
     readStringBinary(response, *in);
     if (response.empty())
