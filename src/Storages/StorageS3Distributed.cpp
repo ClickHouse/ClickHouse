@@ -1,4 +1,4 @@
-#include "Storages/StorageS3Distributed.h"
+#include "Storages/StorageS3Cluster.h"
 
 #if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
@@ -53,7 +53,7 @@ namespace DB
 {
 
 
-StorageS3Distributed::StorageS3Distributed(
+StorageS3Cluster::StorageS3Cluster(
     const String & filename_,
     const String & access_key_id_,
     const String & secret_access_key_,
@@ -81,7 +81,7 @@ StorageS3Distributed::StorageS3Distributed(
 }
 
 
-Pipe StorageS3Distributed::read(
+Pipe StorageS3Cluster::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
@@ -149,7 +149,7 @@ Pipe StorageS3Distributed::read(
             connections.emplace_back(std::make_shared<Connection>(
                 node.host_name, node.port, context->getGlobalContext()->getCurrentDatabase(),
                 node.user, node.password, node.cluster, node.cluster_secret,
-                "S3DistributedInititiator",
+                "S3ClusterInititiator",
                 node.compression,
                 node.secure
             ));
@@ -168,7 +168,7 @@ Pipe StorageS3Distributed::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-QueryProcessingStage::Enum StorageS3Distributed::getQueryProcessingStage(
+QueryProcessingStage::Enum StorageS3Cluster::getQueryProcessingStage(
     ContextPtr context, QueryProcessingStage::Enum to_stage, SelectQueryInfo &) const
 {
     /// Initiator executes query on remote node.
@@ -181,7 +181,7 @@ QueryProcessingStage::Enum StorageS3Distributed::getQueryProcessingStage(
 }
 
 
-NamesAndTypesList StorageS3Distributed::getVirtuals() const
+NamesAndTypesList StorageS3Cluster::getVirtuals() const
 {
     return NamesAndTypesList{
         {"_path", std::make_shared<DataTypeString>()},

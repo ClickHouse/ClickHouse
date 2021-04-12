@@ -27,11 +27,11 @@ struct ClientAuthentificationBuilder
     UInt64 max_connections;
 };
 
-class StorageS3Distributed : public ext::shared_ptr_helper<StorageS3Distributed>, public IStorage
+class StorageS3Cluster : public ext::shared_ptr_helper<StorageS3Cluster>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageS3Distributed>;
+    friend struct ext::shared_ptr_helper<StorageS3Cluster>;
 public:
-    std::string getName() const override { return "S3Distributed"; }
+    std::string getName() const override { return "S3Cluster"; }
 
     Pipe read(const Names &, const StorageMetadataPtr &, SelectQueryInfo &,
         ContextPtr, QueryProcessingStage::Enum, size_t /*max_block_size*/, unsigned /*num_streams*/) override;
@@ -41,7 +41,7 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
 protected:
-    StorageS3Distributed(
+    StorageS3Cluster(
         const String & filename_, const String & access_key_id_, const String & secret_access_key_, const StorageID & table_id_,
         String cluster_name_, const String & format_name_, UInt64 max_connections_, const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_, ContextPtr context_, const String & compression_method_);

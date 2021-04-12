@@ -4,7 +4,7 @@
 
 #if USE_AWS_S3
 
-#include <Storages/StorageS3Distributed.h>
+#include <Storages/StorageS3Cluster.h>
 
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/RemoteBlockInputStream.h>
@@ -15,7 +15,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionS3.h>
-#include <TableFunctions/TableFunctionS3Distributed.h>
+#include <TableFunctions/TableFunctionS3Cluster.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
@@ -37,7 +37,7 @@ namespace ErrorCodes
 }
 
 
-void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     /// Parse args
     ASTs & args_func = ast_function->children;
@@ -95,16 +95,16 @@ void TableFunctionS3Distributed::parseArguments(const ASTPtr & ast_function, Con
 }
 
 
-ColumnsDescription TableFunctionS3Distributed::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionS3Cluster::getActualTableStructure(ContextPtr context) const
 {
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionS3Distributed::executeImpl(
+StoragePtr TableFunctionS3Cluster::executeImpl(
     const ASTPtr & /*function*/, ContextPtr context,
     const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    StoragePtr storage = StorageS3Distributed::create(
+    StoragePtr storage = StorageS3Cluster::create(
         filename, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name),
         cluster_name, format, context->getSettingsRef().s3_max_connections,
         getActualTableStructure(context), ConstraintsDescription{},
@@ -116,9 +116,9 @@ StoragePtr TableFunctionS3Distributed::executeImpl(
 }
 
 
-void registerTableFunctionS3Distributed(TableFunctionFactory & factory)
+void registerTableFunctionS3Cluster(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionS3Distributed>();
+    factory.registerFunction<TableFunctionS3Cluster>();
 }
 
 void registerTableFunctionCOSDistributed(TableFunctionFactory & factory)
