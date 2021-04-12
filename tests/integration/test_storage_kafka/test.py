@@ -2702,7 +2702,7 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster):
             # Unexpected json content for table test.kafka.
             messages.append(json.dumps({'i': 'n_' + random_string(4), 's': random_string(8)}))
 
-    kafka_produce('json', messages)
+    kafka_produce(kafka_cluster, 'json', messages)
 
     while True:
       total_rows = instance.query('SELECT count() FROM test.kafka_data', ignore_error=True)
@@ -2774,7 +2774,7 @@ def test_kafka_engine_put_errors_to_stream_with_random_malformed_json(kafka_clus
         else:
             messages.append(gen_message_with_jsons(10, 0))
 
-    kafka_produce('json', messages)
+    kafka_produce(kafka_cluster, 'json', messages)
 
     while True:
       total_rows = instance.query('SELECT count() FROM test.kafka_data', ignore_error=True)
