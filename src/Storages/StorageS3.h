@@ -128,8 +128,8 @@ public:
 
 private:
 
-    friend class StorageS3Distributed;
-    friend class TableFunctionS3Distributed;
+    friend class StorageS3Cluster;
+    friend class TableFunctionS3Cluster;
     friend class StorageS3SequentialSource;
 
     struct ClientAuthentificaiton
