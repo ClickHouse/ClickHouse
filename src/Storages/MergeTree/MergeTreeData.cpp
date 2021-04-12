@@ -56,6 +56,8 @@
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
 
+#include <ext/scope_guard_safe.h>
+
 #include <algorithm>
 #include <iomanip>
 #include <optional>
@@ -1211,14 +1213,21 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
     {
         /// Parallel parts removal.
 
-        size_t num_threads = std::min(size_t(settings->max_part_removal_threads), parts_to_remove.size());
+        size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
         ThreadPool pool(num_threads);
 
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         for (const DataPartPtr & part : parts_to_remove)
         {
-            pool.scheduleOrThrowOnError([&]
+            pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
             {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+                );
+                if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
                 LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
                 part->remove();
             });
