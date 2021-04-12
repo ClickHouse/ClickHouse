@@ -16,7 +16,6 @@ namespace DB
 {
 
 class Block;
-class Context;
 struct Settings;
 
 struct ExpressionActionsChain;
@@ -78,7 +77,7 @@ struct ExpressionAnalyzerData
   *
   * NOTE: if `ast` is a SELECT query from a table, the structure of this table should not change during the lifetime of ExpressionAnalyzer.
   */
-class ExpressionAnalyzer : protected ExpressionAnalyzerData, private boost::noncopyable
+class ExpressionAnalyzer : protected ExpressionAnalyzerData, private boost::noncopyable, protected WithContext
 {
 private:
     /// Extracts settings to enlight which are used (and avoid copy of others).
@@ -96,7 +95,7 @@ public:
     ExpressionAnalyzer(
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
-        const Context & context_)
+        ContextPtr context_)
     :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
     {}
 
@@ -111,7 +110,7 @@ public:
 
     /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
     /// Does not execute subqueries.
-    ExpressionActionsPtr getConstActions();
+    ExpressionActionsPtr getConstActions(const ColumnsWithTypeAndName & constant_inputs = {});
 
     /** Sets that require a subquery to be create.
       * Only the sets needed to perform actions returned from already executed `append*` or `getActions`.
@@ -128,17 +127,29 @@ public:
 
     void makeWindowDescriptions(ActionsDAGPtr actions);
 
+    /**
+      * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
+      * The set will not be created if its size hits the limit.
+      */
+    void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name, const SelectQueryOptions & query_options = {});
+
+    /**
+      * Checks if subquery is not a plain StorageSet.
+      * Because while making set we will read data from StorageSet which is not allowed.
+      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
+      */
+    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
+
 protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
-        const Context & context_,
+        ContextPtr context_,
         size_t subquery_depth_,
         bool do_global_,
         SubqueriesForSets subqueries_for_sets_);
 
     ASTPtr query;
-    const Context & context;
     const ExtractedSettings settings;
     size_t subquery_depth;
 
@@ -259,7 +270,7 @@ public:
     SelectQueryExpressionAnalyzer(
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
-        const Context & context_,
+        ContextPtr context_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,
@@ -298,19 +309,6 @@ private:
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
     SelectQueryOptions query_options;
-
-    /**
-      * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
-      * The set will not be created if its size hits the limit.
-      */
-    void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
-
-    /**
-      * Checks if subquery is not a plain StorageSet.
-      * Because while making set we will read data from StorageSet which is not allowed.
-      * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
-      */
-    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
 
     /// Create Set-s that we make from IN section to use index on them.
     void makeSetsForIndex(const ASTPtr & node);

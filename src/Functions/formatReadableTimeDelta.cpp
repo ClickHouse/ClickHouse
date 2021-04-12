@@ -38,7 +38,7 @@ class FunctionFormatReadableTimeDelta : public IFunction
 {
 public:
     static constexpr auto name = "formatReadableTimeDelta";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadableTimeDelta>(); }
 
     String getName() const override { return name; }
 
