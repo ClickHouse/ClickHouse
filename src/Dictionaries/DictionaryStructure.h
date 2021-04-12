@@ -32,13 +32,14 @@ enum class AttributeUnderlyingType
     utDecimal32,
     utDecimal64,
     utDecimal128,
+    utDecimal256,
     utString
 };
 
 
 AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type);
 
-std::string toString(const AttributeUnderlyingType type);
+std::string toString(AttributeUnderlyingType type);
 
 /// Min and max lifetimes for a dictionary or it's entry
 using DictionaryLifetime = ExternalLoadableLifetime;
@@ -125,6 +126,9 @@ void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
         case AttributeUnderlyingType::utDecimal128:
             func(DictionaryAttributeType<Decimal128>());
             break;
+        case AttributeUnderlyingType::utDecimal256:
+            func(DictionaryAttributeType<Decimal256>());
+            break;
     }
 };
 
@@ -153,6 +157,8 @@ struct DictionaryStructure final
     std::unordered_map<std::string, size_t> attribute_name_to_index;
     std::optional<DictionaryTypedSpecialAttribute> range_min;
     std::optional<DictionaryTypedSpecialAttribute> range_max;
+    std::optional<size_t> hierarchical_attribute_index;
+
     bool has_expressions = false;
     bool access_to_key_from_attributes = false;
 

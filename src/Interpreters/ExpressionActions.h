@@ -133,9 +133,9 @@ private:
   *     2) calculate the expression in the SELECT section,
   * and between the two steps do the filtering by value in the WHERE clause.
   */
-struct ExpressionActionsChain
+struct ExpressionActionsChain : WithContext
 {
-    explicit ExpressionActionsChain(const Context & context_) : context(context_) {}
+    explicit ExpressionActionsChain(ContextPtr context_) : WithContext(context_) {}
 
 
     struct Step
@@ -241,7 +241,6 @@ struct ExpressionActionsChain
     using StepPtr = std::unique_ptr<Step>;
     using Steps = std::vector<StepPtr>;
 
-    const Context & context;
     Steps steps;
 
     void addStep(NameSet non_constant_inputs = {});
