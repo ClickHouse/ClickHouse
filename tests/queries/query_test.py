@@ -1,11 +1,11 @@
-import pytest
-
 import difflib
 import os
 import random
 import string
 import subprocess
 import sys
+
+import pytest
 
 
 SKIP_LIST = [
@@ -33,7 +33,7 @@ SKIP_LIST = [
     "01057_http_compression_prefer_brotli",
     "01080_check_for_error_incorrect_size_of_nested_column",
     "01083_expressions_in_engine_arguments",
-    # "01086_odbc_roundtrip",
+    "01086_odbc_roundtrip",
     "01088_benchmark_query_id",
     "01098_temporary_and_external_tables",
     "01099_parallel_distributed_insert_select",
@@ -76,8 +76,13 @@ SKIP_LIST = [
     "01599_multiline_input_and_singleline_comments",  # expect-test
     "01601_custom_tld",
     "01610_client_spawn_editor",  # expect-test
+    "01674_unicode_asan",
     "01676_clickhouse_client_autocomplete",  # expect-test (partially)
     "01683_text_log_deadlock",  # secure tcp
+    "01684_ssd_cache_dictionary_simple_key",
+    "01747_executable_pool_dictionary_implicit_key.sql",
+    "01747_join_view_filter_dictionary",
+    "01748_dictionary_table_dot",
 ]
 
 
@@ -121,7 +126,8 @@ def run_shell(bin_prefix, server, database, path, reference, replace_map=None):
         'CLICKHOUSE_PORT_HTTP': str(server.http_port),
         'CLICKHOUSE_PORT_INTERSERVER': str(server.inter_port),
         'CLICKHOUSE_TMP': server.tmp_dir,
-        'CLICKHOUSE_CONFIG_CLIENT': server.client_config
+        'CLICKHOUSE_CONFIG_CLIENT': server.client_config,
+        'PROTOC_BINARY': os.path.abspath(os.path.join(os.path.dirname(bin_prefix), '..', 'contrib', 'protobuf', 'protoc')),  # FIXME: adhoc solution
     }
     shell = subprocess.Popen([path], env=env, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     result, error = shell.communicate()
