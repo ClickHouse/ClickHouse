@@ -180,6 +180,15 @@ QueryProcessingStage::Enum StorageS3Distributed::getQueryProcessingStage(
 }
 
 
+NamesAndTypesList StorageS3Distributed::getVirtuals() const
+{
+    return NamesAndTypesList{
+        {"_path", std::make_shared<DataTypeString>()},
+        {"_file", std::make_shared<DataTypeString>()}
+    };
+}
+
+
 }
 
 #endif
