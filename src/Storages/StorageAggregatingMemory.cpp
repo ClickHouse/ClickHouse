@@ -1,33 +1,32 @@
 #include <cassert>
 #include <Common/Exception.h>
 
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
 
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Storages/StorageFactory.h>
 #include <Storages/StorageAggregatingMemory.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
 
 #include <IO/WriteHelpers.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/AggregatingTransform.cpp>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Pipe.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Transforms/AggregatingTransform.cpp>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -38,13 +37,8 @@ namespace ErrorCodes
 class AggregatingOutputStream : public IBlockOutputStream
 {
 public:
-    AggregatingOutputStream(
-        StorageAggregatingMemory & storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
-        const Context & context_)
-        : storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
-        , context(context_)
+    AggregatingOutputStream(StorageAggregatingMemory & storage_, const StorageMetadataPtr & metadata_snapshot_, const Context & context_)
+        : storage(storage_), metadata_snapshot(metadata_snapshot_), context(context_)
     {
     }
 
@@ -69,7 +63,8 @@ public:
         auto expression_actions = std::make_shared<ExpressionActions>(expression);
         expression_actions->execute(block_for_aggregation);
 
-        storage.aggregator_transform->aggregator.executeOnBlock(block_for_aggregation, variants, key_columns, aggregate_columns, no_more_keys);
+        storage.aggregator_transform->aggregator.executeOnBlock(
+            block_for_aggregation, variants, key_columns, aggregate_columns, no_more_keys);
     }
 
     // Used to run aggregation the usual way (via InterpreterSelectQuery),
@@ -95,14 +90,14 @@ public:
         if (metadata_snapshot->hasSelectQuery())
         {
             auto query = metadata_snapshot->getSelectQuery();
-            
+
             /// We create a table with the same name as original table and the same alias columns,
             ///  but it will contain single block (that is INSERT-ed into main table).
             /// InterpreterSelectQuery will do processing of alias columns.
 
             // TODO: seems like storage -> src_storage (block source)
-            auto block_storage = StorageValues::create(
-                    storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals());
+            auto block_storage
+                = StorageValues::create(storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals());
 
             Context local_context = context;
             local_context.addViewSource(block_storage);
@@ -118,8 +113,9 @@ public:
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
             /// and two-level aggregation is triggered).
             in = std::make_shared<SquashingBlockInputStream>(
-                    in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-            in = std::make_shared<ConvertingBlockInputStream>(in, metadata_snapshot->getSampleBlock(), ConvertingBlockInputStream::MatchColumnsMode::Name);
+                in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            in = std::make_shared<ConvertingBlockInputStream>(
+                in, metadata_snapshot->getSampleBlock(), ConvertingBlockInputStream::MatchColumnsMode::Name);
         }
         else
             in = std::make_shared<OneBlockInputStream>(block);
@@ -165,7 +161,12 @@ private:
 };
 
 
-StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query, const Context & context_)
+StorageAggregatingMemory::StorageAggregatingMemory(
+    const StorageID & table_id_,
+    ColumnsDescription columns_description_,
+    ConstraintsDescription constraints_,
+    const ASTCreateQuery & query,
+    const Context & context_)
     : IStorage(table_id_), data(std::make_unique<const Blocks>())
 {
     if (!query.select)
@@ -181,8 +182,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
     auto select_context = std::make_unique<Context>(context_);
 
     /// Get list of columns we get from select query.
-    auto header = InterpreterSelectQuery(select_ptr, *select_context, SelectQueryOptions().analyze())
-        .getSampleBlock();
+    auto header = InterpreterSelectQuery(select_ptr, *select_context, SelectQueryOptions().analyze()).getSampleBlock();
 
     ColumnsDescription columns_after_aggr;
 
@@ -207,25 +207,21 @@ StorageAggregatingMemory::StorageAggregatingMemory(const StorageID & table_id_, 
 
     Names required_result_column_names; // TODO:
 
-    auto syntax_analyzer_result = TreeRewriter(*select_context).analyzeSelect(
-            select_ptr,
-            TreeRewriterResult(src_sample_block.getNamesAndTypesList()),
-            {}, {}, required_result_column_names, {});
+    auto syntax_analyzer_result
+        = TreeRewriter(*select_context)
+              .analyzeSelect(
+                  select_ptr, TreeRewriterResult(src_sample_block.getNamesAndTypesList()), {}, {}, required_result_column_names, {});
 
     auto query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
-                select_ptr, syntax_analyzer_result, *select_context, src_metadata_snapshot,
-                NameSet(required_result_column_names.begin(), required_result_column_names.end()));
+        select_ptr,
+        syntax_analyzer_result,
+        *select_context,
+        src_metadata_snapshot,
+        NameSet(required_result_column_names.begin(), required_result_column_names.end()));
 
     const Settings & settings = select_context->getSettingsRef();
 
-    analysis_result = ExpressionAnalysisResult(
-            *query_analyzer,
-            src_metadata_snapshot,
-            false,
-            false,
-            false,
-            nullptr,
-            src_sample_block);
+    analysis_result = ExpressionAnalysisResult(*query_analyzer, src_metadata_snapshot, false, false, false, nullptr, src_sample_block);
 
     Block header_before_aggregation = src_sample_block;
     auto expression = analysis_result.before_aggregation;
@@ -275,8 +271,9 @@ Pipe StorageAggregatingMemory::read(
 
     auto prepared_data = aggregator_transform->aggregator.prepareVariantsToMerge(many_data->variants);
     auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
-    
-    auto processor = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
+
+    auto processor
+        = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
 
     Pipes pipes;
     pipes.emplace_back(processor);
@@ -380,8 +377,7 @@ void StorageAggregatingMemory::mutate(const MutationCommands & commands, const C
 }
 
 
-void StorageAggregatingMemory::truncate(
-    const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
+void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &)
 {
     data.set(std::make_unique<Blocks>());
     total_size_bytes.store(0, std::memory_order_relaxed);
