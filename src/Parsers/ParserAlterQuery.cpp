@@ -61,6 +61,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_detached_partition("DROP DETACHED PARTITION");
     ParserKeyword s_drop_detached_part("DROP DETACHED PART");
     ParserKeyword s_fetch_partition("FETCH PARTITION");
+    ParserKeyword s_fetch_part("FETCH PART");
     ParserKeyword s_replace_partition("REPLACE PARTITION");
     ParserKeyword s_freeze("FREEZE");
     ParserKeyword s_unfreeze("UNFREEZE");
@@ -426,6 +427,21 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
 
             command->from = ast_from->as<ASTLiteral &>().value.get<const String &>();
+            command->type = ASTAlterCommand::FETCH_PARTITION;
+        }
+        else if (s_fetch_part.ignore(pos, expected))
+        {
+            if (!parser_string_literal.parse(pos, command->partition, expected))
+                return false;
+
+            if (!s_from.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast_from;
+            if (!parser_string_literal.parse(pos, ast_from, expected))
+                return false;
+            command->from = ast_from->as<ASTLiteral &>().value.get<const String &>();
+            command->part = true;
             command->type = ASTAlterCommand::FETCH_PARTITION;
         }
         else if (s_freeze.ignore(pos, expected))
