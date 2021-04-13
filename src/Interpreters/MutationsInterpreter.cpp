@@ -352,29 +352,29 @@ static void validateUpdateColumns(
 
 std::pair<bool, std::vector<ASTPtr>> getFullNestedSubColumnUpdatedExpr(
     const String & column,
-    NamesAndTypesList all_columns,
-    std::unordered_map<String, ASTPtr> column_to_update_expression)
+    NamesAndTypesList & all_columns,
+    std::unordered_map<String, ASTPtr> & column_to_update_expression)
 {
     std::vector<ASTPtr> res;
     auto source_name = Nested::splitName(column).first;
 
-        /// Check this nested subcolumn
-        for (const auto & it : all_columns)
+    /// Check this nested subcolumn
+    for (const auto & it : all_columns)
+    {
+        auto split = Nested::splitName(it.name);
+        if (split.first == source_name && !split.second.empty())
         {
-            auto split = Nested::splitName(it.name);
-            if (split.first == source_name && !split.second.empty())
+            if (column_to_update_expression.find(it.name) == column_to_update_expression.end())
             {
-                if (column_to_update_expression.find(it.name) == column_to_update_expression.end())
-                {
-                    /// Update partial nested subcolumns
-                    return std::make_pair(false, res);
-                }
-                else
-                {
-                    res.push_back(column_to_update_expression[it.name]);
-                }
+                /// Update partial nested subcolumns
+                return std::make_pair(false, res);
+            }
+            else
+            {
+                res.push_back(column_to_update_expression[it.name]);
             }
         }
+    }
 
     return std::make_pair(true, res);
 }
@@ -427,7 +427,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     auto dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
     /// First, break a sequence of commands into stages.
-    for (const auto & command : commands)
+    for (auto & command : commands)
     {
         if (command.type == MutationCommand::DELETE)
         {
@@ -479,7 +479,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     std::shared_ptr<ASTFunction> function = nullptr;
 
                     auto nested_update_exprs = getFullNestedSubColumnUpdatedExpr(column, all_columns, command.column_to_update_expression);
-                    if (nested_update_exprs.first == false)
+                    if (!nested_update_exprs.first)
                     {
                         function = makeASTFunction("validateNestedArraySizes",
                             condition,

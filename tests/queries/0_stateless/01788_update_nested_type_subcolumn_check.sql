@@ -1,3 +1,4 @@
+USE default;
 DROP TABLE IF EXISTS test_wide_nested;
 
 CREATE TABLE test_wide_nested
@@ -18,9 +19,9 @@ select * from test_wide_nested where id = 1;
 alter table test_wide_nested update `info.id` =[100,200,300], `info.age`=[10,20,30], `info.name`=['a','b','c']  where id = 2 settings mutations_sync=1;
 select * from test_wide_nested;
 alter table test_wide_nested update `info.id` =[100,200], `info.age`=[10,20,30], `info.name`=['a','b','c']  where id = 0 settings mutations_sync=1; -- { serverError 341 }
-kill mutation where table = 'test_wide_nested' and database = currentDatabase();
+kill mutation where table = 'test_wide_nested';
 alter table test_wide_nested update `info.id` =[100,200,300], `info.age`=[10,20,30]  where id = 1 settings mutations_sync=1; -- { serverError 341 }
-kill mutation where table = 'test_wide_nested' and database = currentDatabase();
+kill mutation where table = 'test_wide_nested';
 alter table test_wide_nested update `info.id` =[100,200,300], `info.age`=`info.id`, `info.name`=['a','b','c']  where id = 2 settings mutations_sync=1;
 select * from test_wide_nested;
 alter table test_wide_nested update `info.id` =[100,200], `info.age`=[68,72]  where id = 3 settings mutations_sync=1;

@@ -4,6 +4,10 @@
 2	[100,200,300]	['a','b','c']	[10,20,30]
 3	[3,4]	['aa','bb']	[3,6]
 4	[4,5]	['aa','bb']	[4,8]
+waiting	default	test_wide_nested	mutation_2.txt	UPDATE `info.id` = [100, 200] WHERE id = 1
+waiting	default	test_wide_nested	mutation_3.txt	UPDATE `info.id` = [100, 200, 300], `info.age` = [10, 20, 30], `info.name` = [\'a\', \'b\', \'c\'] WHERE id = 2
+waiting	default	test_wide_nested	mutation_4.txt	UPDATE `info.id` = [100, 200], `info.age` = [10, 20, 30], `info.name` = [\'a\', \'b\', \'c\'] WHERE id = 0
+waiting	default	test_wide_nested	mutation_5.txt	UPDATE `info.id` = [100, 200, 300], `info.age` = [10, 20, 30] WHERE id = 1
 0	[0,1]	['aa','bb']	[0,0]
 1	[100,200]	['aa','bb']	[1,2]
 2	[100,200,300]	['a','b','c']	[100,200,300]

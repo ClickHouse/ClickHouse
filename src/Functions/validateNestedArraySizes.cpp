@@ -15,11 +15,16 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
+/** Function validateNestedArraySizes is used to check the consistency of Nested DataType subcolumns's offsets when Update
+ *  Arguments: num > 2
+ *     The first argument is the condition of WHERE in UPDATE operation, only when this is true, we need to check
+ *     The rest arguments are the subcolumns of Nested DataType.
+ */
 class FunctionValidateNestedArraySizes : public IFunction
 {
 public:
     static constexpr auto name = "validateNestedArraySizes";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionValidateNestedArraySizes>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionValidateNestedArraySizes>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -35,7 +40,7 @@ DataTypePtr FunctionValidateNestedArraySizes::getReturnTypeImpl(const DataTypes 
 
     if (num_args < 3)
         throw Exception(
-            "Function " + getName() + " needs one argument; passed " + toString(arguments.size()) + ".",
+            "Function " + getName() + " needs more than two arguments; passed " + toString(arguments.size()) + ".",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (!WhichDataType(arguments[0]).isUInt8())
@@ -78,7 +83,7 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
             else
             {
                 current_column = typeid_cast<const ColumnArray *>(current_arg.column.get());
-                auto & offsets = current_column->getOffsets();
+                const auto & offsets = current_column->getOffsets();
                 length = offsets[i] - offsets[i - 1];
             }
 
@@ -89,9 +94,10 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
             else if (first_length != length)
             {
                 throw Exception(
-                    "Elements '" + arguments[1].column->getName() + "' and '" + arguments[i].column->getName()
-                        + +"' of Nested data structure (Array columns) have different array sizes.",
-                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH,
+                    "Elements '{}' and '{}' of Nested data structure (Array columns) "
+                    "have different array sizes ({} and {} respectively) on row {}",
+                    arguments[1].name, arguments[args_idx].name, first_length, length, i);
             }
         }
     }
