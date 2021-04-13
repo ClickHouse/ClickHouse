@@ -177,6 +177,7 @@ class ClickHouseCluster:
         self.pre_zookeeper_commands = []
         self.instances = {}
         self.with_zookeeper = False
+        self.with_mysql_client = False
         self.with_mysql = False
         self.with_mysql8 = False
         self.with_mysql_cluster = False
@@ -266,6 +267,10 @@ class ClickHouseCluster:
         self.postgres3_logs_dir = os.path.join(self.postgres_dir, "postgres3")
         self.postgres4_logs_dir = os.path.join(self.postgres_dir, "postgres4")
 
+        # available when with_mysql_client == True
+        self.mysql_client_host = "mysql_client"
+        self.mysql_client_container = None
+ 
         # available when with_mysql == True
         self.mysql_host = "mysql57"
         self.mysql_port = 3306
@@ -297,11 +302,23 @@ class ClickHouseCluster:
         self.is_up = False
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
 
+    def get_docker_handle(self, docker_id):
+        return self.docker_client.containers.get(docker_id)
+
     def get_client_cmd(self):
         cmd = self.client_bin_path
         if p.basename(cmd) == 'clickhouse':
             cmd += " client"
         return cmd
+
+    def setup_mysql_client_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mysql_client = True
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_client.yml')])
+        self.base_mysql_client_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                '--file', p.join(docker_compose_yml_dir, 'docker_compose_mysql_client.yml')]
+
+        return self.base_mysql_client_cmd
+
 
     def setup_mysql_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mysql = True
@@ -464,7 +481,7 @@ class ClickHouseCluster:
 
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None,
-                     with_zookeeper=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False, 
+                     with_zookeeper=False, with_mysql_client=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False, 
                      with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False, with_kerberized_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False, with_cassandra=False,
@@ -506,6 +523,7 @@ class ClickHouseCluster:
             macros=macros or {},
             with_zookeeper=with_zookeeper,
             zookeeper_config_path=self.zookeeper_config_path,
+            with_mysql_client=with_mysql_client,
             with_mysql=with_mysql,
             with_mysql8=with_mysql8,
             with_mysql_cluster=with_mysql_cluster,
@@ -522,6 +540,8 @@ class ClickHouseCluster:
             library_bridge_bin_path=self.library_bridge_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
+            with_postgres=with_postgres,
+            with_postgres_cluster=with_postgres_cluster,
             hostname=hostname,
             env_variables=env_variables,
             image=image,
@@ -552,6 +572,9 @@ class ClickHouseCluster:
             self.base_zookeeper_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                        '--file', zookeeper_docker_compose_path]
             cmds.append(self.base_zookeeper_cmd)
+
+        if with_mysql_client and not self.with_mysql_client:
+            cmds.append(self.setup_mysql_client_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if with_mysql and not self.with_mysql:
             cmds.append(self.setup_mysql_cmd(instance, env_variables, docker_compose_yml_dir))
@@ -705,6 +728,28 @@ class ClickHouseCluster:
             self.exec_in_container(container_id,
                                    ["bash", "-c", "echo {} | base64 --decode > {}".format(encodedStr, dest_path)],
                                    user='root')
+
+    def wait_mysql_client_to_start(self, timeout=180):
+        start = time.time()
+        errors = []
+        self.mysql_client_container = self.get_docker_handle(self.get_instance_docker_id(self.mysql_client_host))
+
+        while time.time() - start < timeout:
+            try:
+                info = self.mysql_client_container.client.api.inspect_container(self.mysql_client_container.name)
+                if info['State']['Health']['Status'] == 'healthy':
+                    logging.debug("Mysql Client Container Started")
+                    break
+                time.sleep(1)
+
+                return
+            except Exception as ex:
+                errors += [str(ex)]
+                time.sleep(1)
+
+        subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+        logging.error("Can't connect to MySQL Client:{}".format(errors))
+        raise Exception("Cannot wait MySQL Client container")
 
     def wait_mysql_to_start(self, timeout=180):
         self.mysql_ip = self.get_instance_ip('mysql57')
@@ -995,6 +1040,11 @@ class ClickHouseCluster:
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
                 self.wait_zookeeper_to_start()
+
+            if self.with_mysql_client and self.base_mysql_client_cmd:
+                logging.debug('Setup MySQL Client')
+                subprocess_check_call(self.base_mysql_client_cmd + common_opts)
+                self.wait_mysql_client_to_start()
 
             if self.with_mysql and self.base_mysql_cmd:
                 logging.debug('Setup MySQL')
@@ -1295,9 +1345,9 @@ class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
-            macros, with_zookeeper, zookeeper_config_path, with_mysql, with_mysql8, with_mysql_cluster, with_kafka, with_kerberized_kafka, with_rabbitmq, with_kerberized_hdfs,
-            with_mongo, with_redis, with_minio,
-            with_cassandra, server_bin_path, odbc_bridge_bin_path, library_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers,
+            macros, with_zookeeper, zookeeper_config_path, with_mysql_client,  with_mysql, with_mysql8, with_mysql_cluster, with_kafka, with_kerberized_kafka,
+            with_rabbitmq, with_kerberized_hdfs, with_mongo, with_redis, with_minio,
+            with_cassandra, server_bin_path, odbc_bridge_bin_path, library_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, with_postgres, with_postgres_cluster,
             hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test", tag="latest",
             stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
@@ -1323,9 +1373,12 @@ class ClickHouseInstance:
         self.odbc_bridge_bin_path = odbc_bridge_bin_path
         self.library_bridge_bin_path = library_bridge_bin_path
 
+        self.with_mysql_client = with_mysql_client
         self.with_mysql = with_mysql
         self.with_mysql8 = with_mysql8
         self.with_mysql_cluster = with_mysql_cluster
+        self.with_postgres = with_postgres
+        self.with_postgres_cluster = with_postgres_cluster
         self.with_kafka = with_kafka
         self.with_kerberized_kafka = with_kerberized_kafka
         self.with_rabbitmq = with_rabbitmq
@@ -1581,7 +1634,7 @@ class ClickHouseInstance:
         assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
 
     def get_docker_handle(self):
-        return self.docker_client.containers.get(self.docker_id)
+        return self.cluster.get_docker_handle(self.docker_id)
 
     def stop(self):
         self.get_docker_handle().stop()
@@ -1760,12 +1813,26 @@ class ClickHouseInstance:
 
         depends_on = []
 
+        if self.with_mysql_client:
+            depends_on.append(self.cluster.mysql_client_host)
+
         if self.with_mysql:
             depends_on.append("mysql57")
 
         if self.with_mysql8:
             depends_on.append("mysql80")
 
+        if self.with_mysql_cluster:
+            depends_on.append("mysql57")
+            depends_on.append("mysql2")
+            depends_on.append("mysql3")
+            depends_on.append("mysql4")
+
+        if self.with_postgres_cluster:
+            depends_on.append("postgres2")
+            depends_on.append("postgres3")
+            depends_on.append("postgres4")
+            
         if self.with_kafka:
             depends_on.append("kafka1")
             depends_on.append("schema-registry")
