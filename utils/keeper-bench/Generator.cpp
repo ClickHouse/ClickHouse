@@ -20,21 +20,19 @@ std::string generateRandomString(size_t length)
     if (length == 0)
         return "";
 
-    static const auto & chrs = "0123456789"
+    static const auto & chars = "0123456789"
         "abcdefghijklmnopqrstuvwxyz"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    thread_local static std::mt19937 rg{std::random_device{}()};
-    thread_local static std::uniform_int_distribution<std::string::size_type> pick(0, sizeof(chrs) - 2);
+    thread_local static pcg64 rng(randomSeed());
+    thread_local static std::uniform_int_distribution<size_t> pick(0, sizeof(chars) - 2);
 
     std::string s;
 
     s.reserve(length);
 
-    while(length--)
-    {
-        s += chrs[pick(rg)];
-    }
+    while (length--)
+        s += chars[pick(rng)];
 
     return s;
 }
@@ -205,19 +203,19 @@ std::unique_ptr<IGenerator> getGenerator(const std::string & name)
     }
     else if (name == "get_no_data")
     {
-        return std::make_unique<GetRequestGenerator>("/create_generator", 10, 0);
+        return std::make_unique<GetRequestGenerator>("/get_generator", 10, 0);
     }
     else if (name == "get_small_data")
     {
-        return std::make_unique<GetRequestGenerator>("/create_generator", 10, 32);
+        return std::make_unique<GetRequestGenerator>("/get_generator", 10, 32);
     }
     else if (name == "get_medium_data")
     {
-        return std::make_unique<GetRequestGenerator>("/create_generator", 10, 1024);
+        return std::make_unique<GetRequestGenerator>("/get_generator", 10, 1024);
     }
     else if (name == "get_big_data")
     {
-        return std::make_unique<GetRequestGenerator>("/create_generator", 10, 512 * 1024);
+        return std::make_unique<GetRequestGenerator>("/get_generator", 10, 512 * 1024);
     }
     else if (name == "list_no_nodes")
     {
