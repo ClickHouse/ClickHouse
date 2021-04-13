@@ -3,7 +3,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
-#include <Common/XDBCBridgeHelper.h>
+#include <Bridge/XDBCBridgeHelper.h>
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "IDictionarySource.h"
@@ -23,7 +23,7 @@ class Logger;
 namespace DB
 {
 /// Allows loading dictionaries from a XDBC source via bridges
-class XDBCDictionarySource final : public IDictionarySource
+class XDBCDictionarySource final : public IDictionarySource, WithContext
 {
 public:
     XDBCDictionarySource(
@@ -31,7 +31,7 @@ public:
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix_,
         const Block & sample_block_,
-        const Context & context_,
+        ContextPtr context_,
         BridgeHelperPtr bridge);
 
     /// copy-constructor is provided in order to support cloneability
@@ -82,7 +82,6 @@ private:
     BridgeHelperPtr bridge_helper;
     Poco::URI bridge_url;
     ConnectionTimeouts timeouts;
-    const Context & global_context;
 };
 
 }
