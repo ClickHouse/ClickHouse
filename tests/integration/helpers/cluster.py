@@ -377,7 +377,7 @@ class ClickHouseCluster:
         env_variables['POSTGRES3_DIR'] = self.postgres3_logs_dir
         env_variables['POSTGRES4_DIR'] = self.postgres4_logs_dir
         env_variables['POSTGRES_LOGS_FS'] = "bind"
-        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres.yml')])
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres_cluster.yml')])
         self.base_postgres_cluster_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                     '--file', p.join(docker_compose_yml_dir, 'docker_compose_postgres_cluster.yml')]
 
