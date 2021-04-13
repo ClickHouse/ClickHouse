@@ -7,6 +7,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/FieldVisitors.h>
+
 namespace DB
 {
 
@@ -38,7 +40,7 @@ void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size
 }
 
 size_t deserializeOffsets(IColumn::Offsets & offsets,
-    ReadBuffer & istr, size_t limit, DeserializeStateSparse & state)
+    ReadBuffer & istr, size_t start, size_t limit, DeserializeStateSparse & state)
 {
     if (limit && state.num_trailing_defaults >= limit)
     {
@@ -52,7 +54,7 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
     size_t total_rows = state.num_trailing_defaults;
     if (state.has_value_after_defaults)
     {
-        size_t start_of_group = offsets.empty() ? 0 : offsets.back() + 1;
+        size_t start_of_group = offsets.empty() ? start : offsets.back() + 1;
         offsets.push_back(start_of_group + state.num_trailing_defaults);
 
         state.has_value_after_defaults = false;
@@ -85,7 +87,7 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
         }
         else
         {
-            size_t start_of_group = offsets.empty() ? 0 : offsets.back() + 1;
+            size_t start_of_group = offsets.empty() ? start : offsets.back() + 1;
             offsets.push_back(start_of_group + group_size);
 
             state.num_trailing_defaults = 0;
@@ -204,7 +206,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     size_t read_rows = 0;
     settings.path.push_back(Substream::SparseOffsets);
     if (auto * stream = settings.getter(settings.path))
-        read_rows = deserializeOffsets(offsets_data, *stream, limit, *state_sparse);
+        read_rows = deserializeOffsets(offsets_data, *stream, column_sparse.size(), limit, *state_sparse);
 
     auto & values_column = column_sparse.getValuesPtr();
     size_t values_limit = offsets_data.size() - old_size;

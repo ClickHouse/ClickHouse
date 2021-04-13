@@ -35,7 +35,8 @@ public:
         return Base::create(values_->assumeMutable(), offsets_->assumeMutable(), size_);
     }
 
-    static MutablePtr create(MutableColumnPtr && values_, MutableColumnPtr && offsets_, size_t size_)
+    template <typename TColumnPtr, typename = typename std::enable_if<IsMutableColumns<TColumnPtr>::value>::type>
+    static MutablePtr create(TColumnPtr && values_, TColumnPtr && offsets_, size_t size_)
     {
         return Base::create(std::move(values_), std::move(offsets_), size_);
     }
@@ -45,10 +46,10 @@ public:
         return Base::create(values_->assumeMutable());
     }
 
-    template <typename Arg, typename = typename std::enable_if_t<std::is_rvalue_reference_v<Arg &&>>>
-    static MutablePtr create(Arg && arg)
+    template <typename TColumnPtr, typename = typename std::enable_if<IsMutableColumns<TColumnPtr>::value>::type>
+    static MutablePtr create(TColumnPtr && values_)
     {
-        return Base::create(std::forward<Arg>(arg));
+        return Base::create(std::forward<TColumnPtr>(values_));
     }
 
     bool isSparse() const override { return true; }
