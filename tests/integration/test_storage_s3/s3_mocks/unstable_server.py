@@ -39,6 +39,7 @@ def gen_line():
 
 
 line = gen_line()
+random.seed('Unstable server/1.0')
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
@@ -46,7 +47,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.from_bytes = 0
             self.end_bytes = len(line)*500000
             self.size = self.end_bytes
-            self.stop_at = random.randint(900000, 1100000)
+            self.stop_at = random.randint(900000, 1200000) # Block size is 1024**2.
 
             if "Range" in self.headers:
                 cr = self.headers["Range"]
