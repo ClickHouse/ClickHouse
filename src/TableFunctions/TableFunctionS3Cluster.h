@@ -16,8 +16,7 @@ class Context;
  * s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
  * A table function, which allows to process many files from S3 on a specific cluster
  * On initiator it creates a connection to _all_ nodes in cluster, discloses asterics
- * in S3 file path and register all tasks (paths in S3)  in NextTaskResolver to dispatch
- * them dynamically.
+ * in S3 file path and dispatch each file dynamically.
  * On worker node it asks initiator about next task to process, processes it.
  * This is repeated until the tasks are finished.
  */

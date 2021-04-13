@@ -170,7 +170,7 @@ private:
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
-    std::optional<String> receiveReadTaskResponseAssumeLocked();
+    String receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & connection_settings);

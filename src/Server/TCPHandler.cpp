@@ -289,7 +289,7 @@ void TCPHandler::runImpl()
             customizeContext(query_context);
 
             /// This callback is needed for requesting read tasks inside pipeline for distributed processing
-            query_context->setReadTaskCallback([this]() -> std::optional<String>
+            query_context->setReadTaskCallback([this]() -> String
             {
                 std::lock_guard lock(task_callback_mutex);
                 sendReadTaskRequestAssumeLocked();
@@ -1037,7 +1037,7 @@ void TCPHandler::receiveIgnoredPartUUIDs()
 }
 
 
-std::optional<String> TCPHandler::receiveReadTaskResponseAssumeLocked()
+String TCPHandler::receiveReadTaskResponseAssumeLocked()
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1060,8 +1060,6 @@ std::optional<String> TCPHandler::receiveReadTaskResponseAssumeLocked()
         throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::UNKNOWN_PROTOCOL);
     String response;
     readStringBinary(response, *in);
-    if (response.empty())
-        return std::nullopt;
     return response;
 }
 

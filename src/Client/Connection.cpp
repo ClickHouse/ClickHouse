@@ -552,11 +552,11 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 }
 
 
-void Connection::sendReadTaskResponse(const std::optional<String> & response)
+void Connection::sendReadTaskResponse(const String & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
     writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
-    writeStringBinary(response.has_value() ? String(*response) : "", *out);
+    writeStringBinary(response, *out);
     out->next();
 }
 

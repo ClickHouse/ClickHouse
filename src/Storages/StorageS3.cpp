@@ -74,7 +74,7 @@ public:
         fillInternalBufferAssumeLocked();
     }
 
-    std::optional<String> next()
+    String next()
     {
         std::lock_guard lock(mutex);
         return nextAssumeLocked();
@@ -82,7 +82,7 @@ public:
 
 private:
 
-    std::optional<String> nextAssumeLocked()
+    String nextAssumeLocked()
     {
         if (buffer_iter != buffer.end())
         {
@@ -92,7 +92,7 @@ private:
         }
 
         if (is_finished)
-            return std::nullopt;
+            return {};
 
         fillInternalBufferAssumeLocked();
 
@@ -141,7 +141,7 @@ private:
 StorageS3Source::DisclosedGlobIterator::DisclosedGlobIterator(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
     : pimpl(std::make_shared<StorageS3Source::DisclosedGlobIterator::Impl>(client_, globbed_uri_)) {}
 
-std::optional<String> StorageS3Source::DisclosedGlobIterator::next()
+String StorageS3Source::DisclosedGlobIterator::next()
 {
     return pimpl->next();
 }
@@ -190,17 +190,11 @@ StorageS3Source::StorageS3Source(
 
 bool StorageS3Source::initialize()
 {
-    String current_key;
-    if (auto result = (*file_iterator)())
-    {
-        current_key = result.value();
-        file_path = bucket + "/" + current_key;
-    }
-    else
-    {
-        /// Do not initialize read_buffer and stream.
+    String current_key = (*file_iterator)();
+    if (current_key.empty())
         return false;
-    }
+
+    file_path = bucket + "/" + current_key;
 
     read_buf = wrapReadBufferWithCompressionMethod(
         std::make_unique<ReadBufferFromS3>(client, bucket, current_key), chooseCompressionMethod(current_key, compression_hint));
