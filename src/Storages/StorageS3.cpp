@@ -318,7 +318,8 @@ StorageS3::StorageS3(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_,
-    const String & compression_method_)
+    const String & compression_method_,
+    bool distributed_processing_)
     : IStorage(table_id_)
     , client_auth{uri_, access_key_id_, secret_access_key_, max_connections_, {}, {}} /// Client and settings will be updated later
     , format_name(format_name_)
@@ -326,6 +327,7 @@ StorageS3::StorageS3(
     , max_single_part_upload_size(max_single_part_upload_size_)
     , compression_method(compression_method_)
     , name(uri_.storage_name)
+    , distributed_processing(distributed_processing_)
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
@@ -358,13 +360,24 @@ Pipe StorageS3::read(
             need_file_column = true;
     }
 
-    /// Iterate through disclosed globs and make a source for each file
-    auto glob_iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
-    auto iterator_wrapper = std::make_shared<StorageS3Source::IteratorWrapper>([glob_iterator]()
+    std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper{nullptr};
+    if (distributed_processing)
     {
-        return glob_iterator->next();
-    });
-
+        iterator_wrapper = std::make_shared<StorageS3Source::IteratorWrapper>(
+            [callback = local_context->getReadTaskCallback()]() -> String {
+                return callback();
+        });
+    }
+    else
+    {
+        /// Iterate through disclosed globs and make a source for each file
+        auto glob_iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
+        iterator_wrapper = std::make_shared<StorageS3Source::IteratorWrapper>([glob_iterator]()
+        {
+            return glob_iterator->next();
+        });
+    }
+    
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
