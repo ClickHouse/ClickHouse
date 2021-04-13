@@ -18,7 +18,7 @@ class FunctionIsNull : public IFunction
 public:
     static constexpr auto name = "isNull";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIsNull>();
     }
@@ -59,7 +59,7 @@ public:
 
 void registerFunctionIsNull(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIsNull>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionIsNull>();
 }
 
 }

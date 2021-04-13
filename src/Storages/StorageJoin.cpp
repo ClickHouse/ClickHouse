@@ -68,7 +68,7 @@ StorageJoin::StorageJoin(
 
 
 void StorageJoin::truncate(
-    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder&)
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder&)
 {
     disk->removeRecursive(path);
     disk->createDirectories(path);
@@ -146,7 +146,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         ASTs & engine_args = args.engine_args;
 
-        const auto & settings = args.getContext()->getSettingsRef();
+        const auto & settings = args.context.getSettingsRef();
 
         auto join_use_nulls = settings.join_use_nulls;
         auto max_rows_in_join = settings.max_rows_in_join;
@@ -186,7 +186,7 @@ void registerStorageJoin(StorageFactory & factory)
             }
         }
 
-        DiskPtr disk = args.getContext()->getDisk(disk_name);
+        DiskPtr disk = args.context.getDisk(disk_name);
 
         if (engine_args.size() < 3)
             throw Exception(
@@ -492,7 +492,7 @@ Pipe StorageJoin::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned /*num_streams*/)

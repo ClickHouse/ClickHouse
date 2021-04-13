@@ -15,7 +15,7 @@ class FunctionIsConstant : public IFunction
 {
 public:
     static constexpr auto name = "isConstant";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIsConstant>();
     }

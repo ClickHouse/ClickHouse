@@ -12,7 +12,7 @@
 namespace DB
 {
 StoragePtr TableFunctionURL::getStorage(
-    const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
+    const String & source, const String & format_, const ColumnsDescription & columns, Context & global_context,
     const std::string & table_name, const String & compression_method_) const
 {
     Poco::URI uri(source);

@@ -2,8 +2,9 @@
 
 #include <Core/Block.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
-#include <DataStreams/ExecutionSpeedLimits.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/SizeLimits.h>
+#include <DataStreams/ExecutionSpeedLimits.h>
 #include <DataStreams/StreamLocalLimits.h>
 #include <IO/Progress.h>
 #include <Storages/TableLockHolder.h>

@@ -6,9 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <common/arithmeticOverflow.h>
-#include <Core/ColumnWithTypeAndName.h>
-
+#include "Core/ColumnWithTypeAndName.h"
 
 namespace DB
 {
@@ -43,7 +41,7 @@ class FunctionMapOp : public IFunction
 {
 public:
     static constexpr auto name = (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapOp>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMapOp>(); }
 
 private:
     String getName() const override { return name; }
@@ -161,27 +159,27 @@ private:
                     if constexpr (is_str_key)
                     {
                         // have to use Field structs to get strings
-                        key = arg.key_column[offset + j].get<KeyType>();
+                        key = arg.key_column.operator[](offset + j).get<KeyType>();
                     }
                     else
                     {
                         key = assert_cast<const ColumnVector<KeyType> &>(arg.key_column).getData()[offset + j];
                     }
 
-                    ValType value = arg.val_column[offset + j].get<ValType>();
+                    auto value = arg.val_column.operator[](offset + j).get<ValType>();
 
                     if constexpr (op_type == OpTypes::ADD)
                     {
                         const auto [it, inserted] = summing_map.insert({key, value});
                         if (!inserted)
-                            it->second = common::addIgnoreOverflow(it->second, value);
+                            it->second += value;
                     }
                     else
                     {
                         static_assert(op_type == OpTypes::SUBTRACT);
-                        const auto [it, inserted] = summing_map.insert({key, first ? value : common::negateIgnoreOverflow(value)});
+                        const auto [it, inserted] = summing_map.insert({key, first ? value : -value});
                         if (!inserted)
-                            it->second = common::subIgnoreOverflow(it->second, value);
+                            it->second -= value;
                     }
                 }
 

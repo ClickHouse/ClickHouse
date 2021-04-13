@@ -39,14 +39,14 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionarySimple::clone() const
             this->point_type);
 }
 
-bool PolygonDictionarySimple::find(const Point & point, size_t & polygon_index) const
+bool PolygonDictionarySimple::find(const Point & point, size_t & id) const
 {
     bool found = false;
     for (size_t i = 0; i < polygons.size(); ++i)
     {
         if (bg::covered_by(point, polygons[i]))
         {
-            polygon_index = i;
+            id = i;
             found = true;
             break;
         }
@@ -90,7 +90,7 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexEach::clone() con
             this->max_depth);
 }
 
-bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_index) const
+bool PolygonDictionaryIndexEach::find(const Point & point, size_t & id) const
 {
     const auto * cell = grid.find(point.x(), point.y());
     if (cell)
@@ -100,13 +100,13 @@ bool PolygonDictionaryIndexEach::find(const Point & point, size_t & polygon_inde
             size_t unused;
             if (buckets[candidate].find(point, unused))
             {
-                polygon_index = candidate;
+                id = candidate;
                 return true;
             }
         }
         if (cell->first_covered != FinalCell::kNone)
         {
-            polygon_index = cell->first_covered;
+            id = cell->first_covered;
             return true;
         }
     }
@@ -142,19 +142,19 @@ std::shared_ptr<const IExternalLoadable> PolygonDictionaryIndexCell::clone() con
             this->max_depth);
 }
 
-bool PolygonDictionaryIndexCell::find(const Point & point, size_t & polygon_index) const
+bool PolygonDictionaryIndexCell::find(const Point & point, size_t & id) const
 {
     const auto * cell = index.find(point.x(), point.y());
     if (cell)
     {
-        if (!(cell->corresponding_ids).empty() && cell->index.find(point, polygon_index))
+        if (!(cell->corresponding_ids).empty() && cell->index.find(point, id))
         {
-            polygon_index = cell->corresponding_ids[polygon_index];
+            id = cell->corresponding_ids[id];
             return true;
         }
         if (cell->first_covered != FinalCellWithSlabs::kNone)
         {
-            polygon_index = cell->first_covered;
+            id = cell->first_covered;
             return true;
         }
     }
@@ -172,10 +172,10 @@ DictionaryPtr createLayout(const std::string & ,
     const String name = config.getString(config_prefix + ".name");
 
     if (!dict_struct.key)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'key' is required for a polygon dictionary");
+        throw Exception{"'key' is required for a polygon dictionary", ErrorCodes::BAD_ARGUMENTS};
     if (dict_struct.key->size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The 'key' should consist of a single attribute for a polygon dictionary");
+        throw Exception{"The 'key' should consist of a single attribute for a polygon dictionary",
+                        ErrorCodes::BAD_ARGUMENTS};
 
     IPolygonDictionary::InputType input_type;
     IPolygonDictionary::PointType point_type;
@@ -206,19 +206,19 @@ DictionaryPtr createLayout(const std::string & ,
         point_type = IPolygonDictionary::PointType::Tuple;
     }
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The key type {} is not one of the following allowed types for a polygon dictionary: {} {} {} {} ",
-            key_type->getName(),
-            multi_polygon_array.getName(),
-            multi_polygon_tuple.getName(),
-            simple_polygon_array.getName(),
-            simple_polygon_tuple.getName());
+        throw Exception{"The key type " + key_type->getName() +
+                        " is not one of the following allowed types for a polygon dictionary: " +
+                        multi_polygon_array.getName() + " " +
+                        multi_polygon_tuple.getName() + " " +
+                        simple_polygon_array.getName() + " " +
+                        simple_polygon_tuple.getName() + " ",
+                        ErrorCodes::BAD_ARGUMENTS};
 
     if (dict_struct.range_min || dict_struct.range_max)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "{}: elements range_min and range_max should be defined only "
-            "for a dictionary of layout 'range_hashed'",
-            name);
+        throw Exception{name
+                        + ": elements range_min and range_max should be defined only "
+                          "for a dictionary of layout 'range_hashed'",
+                        ErrorCodes::BAD_ARGUMENTS};
 
     const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 

@@ -370,7 +370,7 @@ inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisi
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block KeyCondition::getBlockWithConstants(
-    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, ContextPtr context)
+    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context)
 {
     Block result
     {
@@ -387,7 +387,7 @@ Block KeyCondition::getBlockWithConstants(
 
 KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
@@ -444,7 +444,6 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
   */
 bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
-    // Constant expr should use alias names if any
     String column_name = expr->getColumnName();
 
     if (const auto * lit = expr->as<ASTLiteral>())
@@ -556,7 +555,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
-void KeyCondition::traverseAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants)
+void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
 {
     RPNElement element;
 
@@ -608,7 +607,6 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (strict)
         return false;
 
-    // Constant expr should use alias names if any
     String expr_name = node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
@@ -677,7 +675,6 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
     if (strict)
         return false;
 
-    // Constant expr should use alias names if any
     String expr_name = ast->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
     if (!sample_block.has(expr_name))
@@ -786,7 +783,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 
 bool KeyCondition::tryPrepareSetIndex(
     const ASTs & args,
-    ContextPtr context,
+    const Context & context,
     RPNElement & out,
     size_t & out_key_column_num)
 {
@@ -947,7 +944,7 @@ private:
 
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     const ASTPtr & node,
-    ContextPtr context,
+    const Context & context,
     size_t & out_key_column_num,
     DataTypePtr & out_key_res_column_type,
     MonotonicFunctionsChain & out_functions_chain)
@@ -1014,9 +1011,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
       * Therefore, use the full name of the expression for search.
       */
     const auto & sample_block = key_expr->getSampleBlock();
-
-    // Key columns should use canonical names for index analysis
-    String name = node->getColumnNameWithoutAlias();
+    String name = node->getColumnName();
 
     auto it = key_columns.find(name);
     if (key_columns.end() != it)
@@ -1075,7 +1070,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 }
 
 
-bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants, RPNElement & out)
+bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
     /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of key,
       *  or itself, wrapped in a chain of possibly-monotonic functions,

@@ -16,15 +16,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
-}
-
 namespace ClusterProxy
 {
 
-ContextPtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log)
+std::shared_ptr<Context> updateSettingsForCluster(const Cluster & cluster, const Context & context, const Settings & settings, Poco::Logger * log)
 {
     Settings new_settings = settings;
     new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
@@ -83,7 +78,7 @@ ContextPtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context,
         }
     }
 
-    auto new_context = Context::createCopy(context);
+    auto new_context = std::make_shared<Context>(context);
     new_context->setSettings(new_settings);
     return new_context;
 }
@@ -91,14 +86,11 @@ ContextPtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context,
 void executeQuery(
     QueryPlan & query_plan,
     IStreamFactory & stream_factory, Poco::Logger * log,
-    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info)
+    const ASTPtr & query_ast, const Context & context, const SelectQueryInfo & query_info)
 {
     assert(log);
 
-    const Settings & settings = context->getSettingsRef();
-
-    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth > settings.max_distributed_depth)
-        throw Exception("Maximum distributed depth exceeded", ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH);
+    const Settings & settings = context.getSettingsRef();
 
     std::vector<QueryPlanPtr> plans;
     Pipes remote_pipes;
@@ -108,10 +100,8 @@ void executeQuery(
 
     auto new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
 
-    new_context->getClientInfo().distributed_depth += 1;
-
     ThrottlerPtr user_level_throttler;
-    if (auto * process_list_element = context->getProcessListElement())
+    if (auto * process_list_element = context.getProcessListElement())
         user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.
@@ -166,7 +156,8 @@ void executeQuery(
     for (auto & plan : plans)
         input_streams.emplace_back(plan->getCurrentDataStream());
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
+    auto header = input_streams.front().header;
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), header);
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 

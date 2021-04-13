@@ -8,9 +8,6 @@
 namespace DB
 {
 
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
 class Context;
 
 /** This stream adds three types of columns into block
@@ -25,8 +22,13 @@ public:
     AddingDefaultBlockOutputStream(
         const BlockOutputStreamPtr & output_,
         const Block & header_,
+        const Block & output_block_,
         const ColumnsDescription & columns_,
-        ContextPtr context_);
+        const Context & context_)
+        : output(output_), header(header_), output_block(output_block_),
+          columns(columns_), context(context_)
+    {
+    }
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
@@ -39,7 +41,10 @@ public:
 private:
     BlockOutputStreamPtr output;
     const Block header;
-    ExpressionActionsPtr adding_defaults_actions;
+    /// Blocks after this stream should have this structure
+    const Block output_block;
+    const ColumnsDescription columns;
+    const Context & context;
 };
 
 

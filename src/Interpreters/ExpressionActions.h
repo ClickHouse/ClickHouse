@@ -3,7 +3,6 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionActionsSettings.h>
 
 #include <variant>
 
@@ -39,6 +38,7 @@ class ExpressionActions
 {
 public:
     using Node = ActionsDAG::Node;
+    using Index = ActionsDAG::Index;
 
     struct Argument
     {
@@ -62,7 +62,7 @@ public:
 
     using Actions = std::vector<Action>;
 
-    /// This map helps to find input position by it's name.
+    /// This map helps to find input position bu it's name.
     /// Key is a view to input::result_name.
     /// Result is a list because it is allowed for inputs to have same names.
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
@@ -78,12 +78,9 @@ private:
     ColumnNumbers result_positions;
     Block sample_block;
 
-    ExpressionActionsSettings settings;
-
 public:
-    ExpressionActions() = delete;
     ~ExpressionActions();
-    explicit ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_ = {});
+    explicit ExpressionActions(ActionsDAGPtr actions_dag_);
     ExpressionActions(const ExpressionActions &) = default;
     ExpressionActions & operator=(const ExpressionActions &) = default;
 
@@ -91,7 +88,6 @@ public:
     const std::list<Node> & getNodes() const { return actions_dag->getNodes(); }
     const ActionsDAG & getActionsDAG() const { return *actions_dag; }
     const ColumnNumbers & getResultPositions() const { return result_positions; }
-    const ExpressionActionsSettings & getSettings() const { return settings; }
 
     /// Get a list of input columns.
     Names getRequiredColumns() const;
@@ -118,6 +114,8 @@ public:
     ExpressionActionsPtr clone() const;
 
 private:
+    ExpressionActions() = default;
+
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions();
@@ -133,34 +131,29 @@ private:
   *     2) calculate the expression in the SELECT section,
   * and between the two steps do the filtering by value in the WHERE clause.
   */
-struct ExpressionActionsChain : WithContext
+struct ExpressionActionsChain
 {
-    explicit ExpressionActionsChain(ContextPtr context_) : WithContext(context_) {}
+    explicit ExpressionActionsChain(const Context & context_) : context(context_) {}
 
 
     struct Step
     {
         virtual ~Step() = default;
-        explicit Step(Names required_output_)
-        {
-            for (const auto & name : required_output_)
-                required_output[name] = true;
-        }
+        explicit Step(Names required_output_) : required_output(std::move(required_output_)) {}
 
         /// Columns were added to the block before current step in addition to prev step output.
         NameSet additional_input;
         /// Columns which are required in the result of current step.
-        /// Flag is true if column from required_output is needed only for current step and not used in next actions
+        Names required_output;
+        /// True if column from required_output is needed only for current step and not used in next actions
         /// (and can be removed from block). Example: filter column for where actions.
         /// If not empty, has the same size with required_output; is filled in finalize().
-        std::unordered_map<std::string, bool> required_output;
-
-        void addRequiredOutput(const std::string & name) { required_output[name] = true; }
+        std::vector<bool> can_remove_required_output;
 
         virtual NamesAndTypesList getRequiredColumns() const = 0;
         virtual ColumnsWithTypeAndName getResultColumns() const = 0;
         /// Remove unused result and update required columns
-        virtual void finalize(const NameSet & required_output_) = 0;
+        virtual void finalize(const Names & required_output_) = 0;
         /// Add projections to expression
         virtual void prependProjectInput() const = 0;
         virtual std::string dump() const = 0;
@@ -190,9 +183,9 @@ struct ExpressionActionsChain : WithContext
             return actions_dag->getResultColumns();
         }
 
-        void finalize(const NameSet & required_output_) override
+        void finalize(const Names & required_output_) override
         {
-            if (!actions_dag->isOutputProjected())
+            if (!actions_dag->getSettings().projected_output)
                 actions_dag->removeUnusedActions(required_output_);
         }
 
@@ -217,7 +210,7 @@ struct ExpressionActionsChain : WithContext
 
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
-        void finalize(const NameSet & required_output_) override;
+        void finalize(const Names & required_output_) override;
         void prependProjectInput() const override {} /// TODO: remove unused columns before ARRAY JOIN ?
         std::string dump() const override { return "ARRAY JOIN"; }
     };
@@ -233,7 +226,7 @@ struct ExpressionActionsChain : WithContext
         JoinStep(std::shared_ptr<TableJoin> analyzed_join_, JoinPtr join_, ColumnsWithTypeAndName required_columns_);
         NamesAndTypesList getRequiredColumns() const override { return required_columns; }
         ColumnsWithTypeAndName getResultColumns() const override { return result_columns; }
-        void finalize(const NameSet & required_output_) override;
+        void finalize(const Names & required_output_) override;
         void prependProjectInput() const override {} /// TODO: remove unused columns before JOIN ?
         std::string dump() const override { return "JOIN"; }
     };
@@ -241,6 +234,7 @@ struct ExpressionActionsChain : WithContext
     using StepPtr = std::unique_ptr<Step>;
     using Steps = std::vector<StepPtr>;
 
+    const Context & context;
     Steps steps;
 
     void addStep(NameSet non_constant_inputs = {});

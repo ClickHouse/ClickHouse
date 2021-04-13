@@ -100,16 +100,16 @@ class IModel
 {
 public:
     /// Call train iteratively for each block to train a model.
-    virtual void train(const IColumn & column) = 0;
+    virtual void train(const IColumn & column);
 
     /// Call finalize one time after training before generating.
-    virtual void finalize() = 0;
+    virtual void finalize();
 
     /// Call generate: pass source data column to obtain a column with anonymized data as a result.
-    virtual ColumnPtr generate(const IColumn & column) = 0;
+    virtual ColumnPtr generate(const IColumn & column);
 
     /// Deterministically change seed to some other value. This can be used to generate more values than were in source.
-    virtual void updateSeed() = 0;
+    virtual void updateSeed();
 
     virtual ~IModel() = default;
 };
@@ -1129,8 +1129,8 @@ try
     }
 
     SharedContextHolder shared_context = Context::createShared();
-    ContextPtr context = Context::createGlobal(shared_context.get());
-    context->makeGlobalContext();
+    Context context = Context::createGlobal(shared_context.get());
+    context.makeGlobalContext();
 
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
@@ -1152,7 +1152,7 @@ try
         if (!silent)
             std::cerr << "Training models\n";
 
-        BlockInputStreamPtr input = context->getInputFormat(input_format, file_in, header, max_block_size);
+        BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
 
         input->readPrefix();
         while (Block block = input->read())
@@ -1179,8 +1179,8 @@ try
 
         file_in.seek(0, SEEK_SET);
 
-        BlockInputStreamPtr input = context->getInputFormat(input_format, file_in, header, max_block_size);
-        BlockOutputStreamPtr output = context->getOutputStreamParallelIfPossible(output_format, file_out, header);
+        BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
+        BlockOutputStreamPtr output = context.getOutputStream(output_format, file_out, header);
 
         if (processed_rows + source_rows > limit)
             input = std::make_shared<LimitBlockInputStream>(input, limit - processed_rows, 0);

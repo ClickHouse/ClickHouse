@@ -14,7 +14,7 @@ class FunctionIgnore : public IFunction
 {
 public:
     static constexpr auto name = "ignore";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIgnore>();
     }
@@ -29,7 +29,6 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool isSuitableForConstantFolding() const override { return false; }
 
     /// We should never return LowCardinality result, cause we declare that result is always constant zero.
     /// (in getResultIfAlwaysReturnsConstantAndHasArguments)

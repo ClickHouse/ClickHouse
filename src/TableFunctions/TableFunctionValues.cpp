@@ -30,7 +30,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, ContextPtr context)
+static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, const Context & context)
 {
     if (res_columns.size() == 1) /// Parsing arguments as Fields
     {
@@ -47,18 +47,12 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
         for (size_t i = 1; i < args.size(); ++i)
         {
             const auto & [value_field, value_type_ptr] = evaluateConstantExpression(args[i], context);
-
-            const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get());
-            if (!type_tuple)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function VALUES requires all but first argument (rows specification) to be either tuples or single values");
-
+            const DataTypes & value_types_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get())->getElements();
             const Tuple & value_tuple = value_field.safeGet<Tuple>();
 
             if (value_tuple.size() != sample_block.columns())
                 throw Exception("Values size should match with number of columns", ErrorCodes::BAD_ARGUMENTS);
 
-            const DataTypes & value_types_tuple = type_tuple->getElements();
             for (size_t j = 0; j < value_tuple.size(); ++j)
             {
                 Field value = convertFieldToTypeOrThrow(value_tuple[j], *sample_block.getByPosition(j).type, value_types_tuple[j].get());
@@ -68,8 +62,10 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
 }
 
-void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr /*context*/)
+void TableFunctionValues::parseArguments(const ASTPtr & ast_function, const Context & /*context*/)
 {
+
+
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
@@ -93,12 +89,12 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
-ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionValues::getActualTableStructure(const Context & context) const
 {
     return parseColumnsListFromString(structure, context);
 }
 
-StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
 

@@ -13,7 +13,6 @@ limitations under the License. */
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
-#include <Core/BackgroundSchedulePool.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -22,16 +21,10 @@ limitations under the License. */
 namespace DB
 {
 
-using Time = std::chrono::time_point<std::chrono::system_clock>;
-using Seconds = std::chrono::seconds;
-using MilliSeconds = std::chrono::milliseconds;
-
-
 struct BlocksMetadata
 {
     String hash;
     UInt64 version;
-    Time time;
 };
 
 struct MergeableBlocks
@@ -49,7 +42,7 @@ class Pipe;
 using Pipes = std::vector<Pipe>;
 
 
-class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
+class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageLiveView>;
 friend class LiveViewBlockInputStream;
@@ -82,10 +75,8 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
     bool isTemporary() const { return is_temporary; }
-    bool isPeriodicallyRefreshed() const { return is_periodically_refreshed; }
+    std::chrono::seconds getTimeout() const { return temporary_live_view_timeout; }
 
-    Seconds getTimeout() const { return temporary_live_view_timeout; }
-    Seconds getPeriodicRefresh() const { return periodic_live_view_refresh; }
 
     /// Check if we have any readers
     /// must be called with mutex locked
@@ -118,15 +109,6 @@ public:
         return 0;
     }
 
-    /// Get blocks time
-    /// must be called with mutex locked
-    Time getBlocksTime()
-    {
-        if (*blocks_metadata_ptr)
-            return (*blocks_metadata_ptr)->time;
-        return {};
-    }
-
     /// Reset blocks
     /// must be called with mutex locked
     void reset()
@@ -142,13 +124,13 @@ public:
     void startup() override;
     void shutdown() override;
 
-    void refresh(bool grab_lock = true);
+    void refresh();
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -156,7 +138,7 @@ public:
     BlockInputStreams watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -165,7 +147,7 @@ public:
     MergeableBlocksPtr getMergeableBlocks() { return mergeable_blocks; }
 
     /// Collect mergeable blocks and their sample. Must be called holding mutex
-    MergeableBlocksPtr collectMergeableBlocks(ContextPtr context);
+    MergeableBlocksPtr collectMergeableBlocks(const Context & context);
     /// Complete query using input streams from mergeable blocks
     BlockInputStreamPtr completeQuery(Pipes pipes);
 
@@ -183,7 +165,7 @@ public:
     static void writeIntoLiveView(
         StorageLiveView & live_view,
         const Block & block,
-        ContextPtr context);
+        const Context & context);
 
 private:
     /// TODO move to common struct SelectQueryDescription
@@ -191,15 +173,11 @@ private:
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
-    ContextPtr live_view_context;
-
-    Poco::Logger * log;
+    Context & global_context;
+    std::unique_ptr<Context> live_view_context;
 
     bool is_temporary = false;
-    bool is_periodically_refreshed = false;
-
-    Seconds temporary_live_view_timeout;
-    Seconds periodic_live_view_refresh;
+    std::chrono::seconds temporary_live_view_timeout;
 
     /// Mutex to protect access to sample block and inner_blocks_query
     mutable std::mutex sample_block_lock;
@@ -221,16 +199,9 @@ private:
 
     std::atomic<bool> shutdown_called = false;
 
-    /// Periodic refresh task used when [PERIODIC] REFRESH is specified in create statement
-    BackgroundSchedulePool::TaskHolder periodic_refresh_task;
-    void periodicRefreshTaskFunc();
-
-    /// Must be called with mutex locked
-    void scheduleNextPeriodicRefresh();
-
     StorageLiveView(
         const StorageID & table_id_,
-        ContextPtr context_,
+        Context & local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns
     );

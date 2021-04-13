@@ -30,8 +30,9 @@ namespace DB
 StorageMaterializeMySQL::StorageMaterializeMySQL(const StoragePtr & nested_storage_, const IDatabase * database_)
     : StorageProxy(nested_storage_->getStorageID()), nested_storage(nested_storage_), database(database_)
 {
+    auto nested_memory_metadata = nested_storage->getInMemoryMetadata();
     StorageInMemoryMetadata in_memory_metadata;
-    in_memory_metadata = nested_storage->getInMemoryMetadata();
+    in_memory_metadata.setColumns(nested_memory_metadata.getColumns());
     setInMemoryMetadata(in_memory_metadata);
 }
 
@@ -39,7 +40,7 @@ Pipe StorageMaterializeMySQL::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned int num_streams)
@@ -48,7 +49,7 @@ Pipe StorageMaterializeMySQL::read(
     rethrowSyncExceptionIfNeed(database);
 
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
-    auto lock = nested_storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef().lock_acquire_timeout);
+    auto lock = nested_storage->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     const StorageMetadataPtr & nested_metadata = nested_storage->getInMemoryMetadataPtr();
 
     Block nested_header = nested_metadata->getSampleBlock();

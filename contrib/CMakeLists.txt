@@ -32,12 +32,12 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-add_subdirectory (abseil-cpp-cmake)
 add_subdirectory (antlr4-runtime-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing)
 add_subdirectory (dragonbox-cmake)
+add_subdirectory (FastMemcpy)
 add_subdirectory (hyperscan-cmake)
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
@@ -47,10 +47,7 @@ add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
-
-if (USE_INTERNAL_XZ_LIBRARY)
-    add_subdirectory (xz)
-endif()
+add_subdirectory (xz)
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
@@ -122,6 +119,12 @@ if (USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
 
+# Should go before:
+# - mariadb-connector-c
+# - aws-s3-cmake
+# - sentry-native
+add_subdirectory (curl-cmake)
+
 function(mysql_support)
     set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
     set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
@@ -139,7 +142,6 @@ function(mysql_support)
         set(ZLIB_LIBRARY ${ZLIB_LIBRARIES})
         set(WITH_EXTERNAL_ZLIB ON)
     endif()
-    set(WITH_CURL OFF)
     add_subdirectory (mariadb-connector-c)
 endfunction()
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
@@ -218,17 +220,15 @@ if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
     set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
-
-    # Need to use C++17 since the compilation is not possible with C++20 currently, due to ambiguous operator != etc.
-    # LLVM project will set its default value for the -std=... but our global setting from CMake will override it.
-    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
-    set (CMAKE_CXX_STANDARD 17)
-
+    # Yes it is set globally, but this is not enough, since llvm will add -std=c++11 after default
+    # And c++2a cannot be used, due to ambiguous operator !=
+    if (COMPILER_GCC OR COMPILER_CLANG)
+        set (_CXX_STANDARD "gnu++17")
+    else()
+        set (_CXX_STANDARD "c++17")
+    endif()
+    set (LLVM_CXX_STD ${_CXX_STANDARD} CACHE STRING "" FORCE)
     add_subdirectory (llvm/llvm)
-
-    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
-    unset (CMAKE_CXX_STANDARD_bak)
-
     target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
@@ -285,19 +285,8 @@ if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
 endif()
 if (USE_CASSANDRA)
-    # Need to use C++17 since the compilation is not possible with C++20 currently.
-    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
-    set (CMAKE_CXX_STANDARD 17)
-
     add_subdirectory (cassandra)
-
-    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
-    unset (CMAKE_CXX_STANDARD_bak)
 endif()
-
-# Should go before:
-# - sentry-native
-add_subdirectory (curl-cmake)
 
 if (USE_SENTRY)
     add_subdirectory (sentry-native)
@@ -319,11 +308,6 @@ endif()
 
 if (USE_INTERNAL_ROCKSDB_LIBRARY)
     add_subdirectory(rocksdb-cmake)
-endif()
-
-if (USE_LIBPQXX)
-    add_subdirectory (libpq-cmake)
-    add_subdirectory (libpqxx-cmake)
 endif()
 
 if (USE_NURAFT)

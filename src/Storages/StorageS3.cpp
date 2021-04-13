@@ -69,7 +69,7 @@ namespace
             const String & format,
             String name_,
             const Block & sample_block,
-            ContextPtr context,
+            const Context & context,
             const ColumnsDescription & columns,
             UInt64 max_block_size,
             const CompressionMethod compression_method,
@@ -144,7 +144,7 @@ namespace
         StorageS3BlockOutputStream(
             const String & format,
             const Block & sample_block_,
-            ContextPtr context,
+            const Context & context,
             const CompressionMethod compression_method,
             const std::shared_ptr<Aws::S3::S3Client> & client,
             const String & bucket,
@@ -155,7 +155,7 @@ namespace
         {
             write_buf = wrapWriteBufferWithCompressionMethod(
                 std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
-            writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
+            writer = FormatFactory::instance().getOutputStream(format, *write_buf, sample_block, context);
         }
 
         Block getHeader() const override
@@ -171,11 +171,6 @@ namespace
         void writePrefix() override
         {
             writer->writePrefix();
-        }
-
-        void flush() override
-        {
-            writer->flush();
         }
 
         void writeSuffix() override
@@ -201,29 +196,39 @@ StorageS3::StorageS3(
     const String & format_name_,
     UInt64 min_upload_part_size_,
     UInt64 max_single_part_upload_size_,
-    UInt64 max_connections_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_,
+    const Context & context_,
     const String & compression_method_)
     : IStorage(table_id_)
-    , WithContext(context_->getGlobalContext())
     , uri(uri_)
-    , access_key_id(access_key_id_)
-    , secret_access_key(secret_access_key_)
-    , max_connections(max_connections_)
+    , global_context(context_.getGlobalContext())
     , format_name(format_name_)
     , min_upload_part_size(min_upload_part_size_)
     , max_single_part_upload_size(max_single_part_upload_size_)
     , compression_method(compression_method_)
     , name(uri_.storage_name)
 {
-    getContext()->getRemoteHostFilter().checkURL(uri_.uri);
+    global_context.getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
-    updateAuthSettings(context_);
+
+    auto settings = context_.getStorageS3Settings().getSettings(uri.endpoint);
+    Aws::Auth::AWSCredentials credentials(access_key_id_, secret_access_key_);
+    if (access_key_id_.empty())
+        credentials = Aws::Auth::AWSCredentials(std::move(settings.access_key_id), std::move(settings.secret_access_key));
+
+    client = S3::ClientFactory::instance().create(
+        uri_.endpoint,
+        uri_.is_virtual_hosted_style,
+        credentials.GetAWSAccessKeyId(),
+        credentials.GetAWSSecretKey(),
+        std::move(settings.headers),
+        settings.use_environment_credentials.value_or(global_context.getConfigRef().getBool("s3.use_environment_credentials", false)),
+        context_.getRemoteHostFilter(),
+        context_.getGlobalContext().getSettingsRef().s3_max_redirects);
 }
 
 
@@ -290,13 +295,11 @@ Pipe StorageS3::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr local_context,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    updateAuthSettings(local_context);
-
     Pipes pipes;
     bool need_path_column = false;
     bool need_file_column = false;
@@ -315,10 +318,10 @@ Pipe StorageS3::read(
             format_name,
             getName(),
             metadata_snapshot->getSampleBlock(),
-            local_context,
+            context,
             metadata_snapshot->getColumns(),
             max_block_size,
-            chooseCompressionMethod(uri.key, compression_method),
+            chooseCompressionMethod(uri.endpoint, compression_method),
             client,
             uri.bucket,
             key));
@@ -330,51 +333,18 @@ Pipe StorageS3::read(
     return pipe;
 }
 
-BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    updateAuthSettings(local_context);
     return std::make_shared<StorageS3BlockOutputStream>(
         format_name,
         metadata_snapshot->getSampleBlock(),
-        getContext(),
-        chooseCompressionMethod(uri.key, compression_method),
+        global_context,
+        chooseCompressionMethod(uri.endpoint, compression_method),
         client,
         uri.bucket,
         uri.key,
         min_upload_part_size,
         max_single_part_upload_size);
-}
-
-void StorageS3::updateAuthSettings(ContextPtr local_context)
-{
-    auto settings = local_context->getStorageS3Settings().getSettings(uri.uri.toString());
-    if (client && (!access_key_id.empty() || settings == auth_settings))
-        return;
-
-    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-    HeaderCollection headers;
-    if (access_key_id.empty())
-    {
-        credentials = Aws::Auth::AWSCredentials(settings.access_key_id, settings.secret_access_key);
-        headers = settings.headers;
-    }
-
-    S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        local_context->getRemoteHostFilter(), local_context->getGlobalContext()->getSettingsRef().s3_max_redirects);
-
-    client_configuration.endpointOverride = uri.endpoint;
-    client_configuration.maxConnections = max_connections;
-
-    client = S3::ClientFactory::instance().create(
-        client_configuration,
-        uri.is_virtual_hosted_style,
-        credentials.GetAWSAccessKeyId(),
-        credentials.GetAWSSecretKey(),
-        settings.server_side_encryption_customer_key_base64,
-        std::move(headers),
-        settings.use_environment_credentials.value_or(getContext()->getConfigRef().getBool("s3.use_environment_credentials", false)));
-
-    auth_settings = std::move(settings);
 }
 
 void registerStorageS3Impl(const String & name, StorageFactory & factory)
@@ -388,7 +358,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
                 "Storage S3 requires 2 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
 
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         Poco::URI uri (url);
@@ -402,9 +372,8 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             secret_access_key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         }
 
-        UInt64 min_upload_part_size = args.getLocalContext()->getSettingsRef().s3_min_upload_part_size;
-        UInt64 max_single_part_upload_size = args.getLocalContext()->getSettingsRef().s3_max_single_part_upload_size;
-        UInt64 max_connections = args.getLocalContext()->getSettingsRef().s3_max_connections;
+        UInt64 min_upload_part_size = args.local_context.getSettingsRef().s3_min_upload_part_size;
+        UInt64 max_single_part_upload_size = args.local_context.getSettingsRef().s3_max_single_part_upload_size;
 
         String compression_method;
         String format_name;
@@ -427,10 +396,9 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             format_name,
             min_upload_part_size,
             max_single_part_upload_size,
-            max_connections,
             args.columns,
             args.constraints,
-            args.getContext(),
+            args.context,
             compression_method
         );
     },

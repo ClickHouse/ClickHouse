@@ -142,7 +142,7 @@ void CassandraBlockInputStream::insertValue(IColumn & column, ValueType type, co
             break;
         }
         default:
-            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type : {}", std::to_string(static_cast<int>(type)));
+            throw Exception("Unknown type : " + std::to_string(static_cast<int>(type)), ErrorCodes::UNKNOWN_TYPE);
     }
 }
 
@@ -256,7 +256,7 @@ void CassandraBlockInputStream::assertTypes(const CassResultPtr & result)
                 expected_text = "uuid";
                 break;
             default:
-                throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown type : {}", std::to_string(static_cast<int>(description.types[i].first)));
+                throw Exception("Unknown type : " + std::to_string(static_cast<int>(description.types[i].first)), ErrorCodes::UNKNOWN_TYPE);
         }
 
         CassValueType got = cass_result_column_type(result, i);
@@ -267,10 +267,8 @@ void CassandraBlockInputStream::assertTypes(const CassResultPtr & result)
                 continue;
 
             const auto & column_name = description.sample_block.getColumnsWithTypeAndName()[i].name;
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Type mismatch for column {} : expected Cassandra type {}",
-                column_name,
-                expected_text);
+            throw Exception("Type mismatch for column " + column_name + ": expected Cassandra type " + expected_text,
+                            ErrorCodes::TYPE_MISMATCH);
         }
     }
 

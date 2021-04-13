@@ -18,16 +18,16 @@ namespace
 class FunctionNullIf : public IFunction
 {
 private:
-    ContextPtr context;
+    const Context & context;
 public:
     static constexpr auto name = "nullIf";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionNullIf>(context);
     }
 
-    explicit FunctionNullIf(ContextPtr context_) : context(context_) {}
+    explicit FunctionNullIf(const Context & context_) : context(context_) {}
 
     std::string getName() const override
     {

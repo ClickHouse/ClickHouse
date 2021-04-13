@@ -138,7 +138,7 @@ class FunctionAnyArityLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionAnyArityLogical>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyArityLogical>(); }
 
 public:
     String getName() const override
@@ -203,7 +203,7 @@ class FunctionUnaryLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryLogical>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryLogical>(); }
 
 public:
     String getName() const override

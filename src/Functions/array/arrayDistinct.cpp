@@ -26,7 +26,7 @@ class FunctionArrayDistinct : public IFunction
 public:
     static constexpr auto name = "arrayDistinct";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionArrayDistinct>();
     }

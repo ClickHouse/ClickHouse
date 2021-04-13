@@ -63,7 +63,7 @@ public:
                 const IColumn & inner_column = assert_cast<const ColumnConst &>(*result.column).getDataColumn();
 
                 WriteBufferFromOwnString out;
-                result.type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
+                result.type->serializeAsText(inner_column, 0, out, FormatSettings());
                 node = std::make_shared<ASTLiteral>(out.str());
             }
         }
@@ -88,7 +88,7 @@ public:
     }
 };
 
-void replaceConstantExpressions(ASTPtr & node, ContextPtr context, const NamesAndTypesList & all_columns)
+void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & all_columns)
 {
     auto syntax_result = TreeRewriter(context).analyze(node, all_columns);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
@@ -239,7 +239,7 @@ String transformQueryForExternalDatabase(
     IdentifierQuotingStyle identifier_quoting_style,
     const String & database,
     const String & table,
-    ContextPtr context)
+    const Context & context)
 {
     auto clone_query = query_info.query->clone();
     const Names used_columns = query_info.syntax_analyzer_result->requiredSourceColumns();

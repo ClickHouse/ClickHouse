@@ -166,7 +166,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 
 MergeTreeConditionFullText::MergeTreeConditionFullText(
     const SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
     TokenExtractorPtr token_extactor_)
@@ -179,7 +179,7 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
     rpn = std::move(
             RPNBuilder<RPNElement>(
                     query_info, context,
-                    [this] (const ASTPtr & node, ContextPtr /* context */, Block & block_with_constants, RPNElement & out) -> bool
+                    [this] (const ASTPtr & node, const Context & /* context */, Block & block_with_constants, RPNElement & out) -> bool
                     {
                         return this->atomFromAST(node, block_with_constants, out);
                     }).extractRPN());
@@ -370,7 +370,7 @@ bool MergeTreeConditionFullText::atomFromAST(
             return false;
         }
 
-        if (key_arg_pos == 1 && (func_name != "equals" && func_name != "notEquals"))
+        if (key_arg_pos == 1 && (func_name != "equals" || func_name != "notEquals"))
             return false;
         else if (!token_extractor->supportLike() && (func_name == "like" || func_name == "notLike"))
             return false;
@@ -566,7 +566,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator() cons
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
-        const SelectQueryInfo & query, ContextPtr context) const
+        const SelectQueryInfo & query, const Context & context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(query, context, index.sample_block, params, token_extractor.get());
 };
@@ -691,7 +691,7 @@ bool SplitTokenExtractor::nextInColumn(const char * data, size_t len, size_t * p
         const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
         const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
         const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
-        const auto zero =              _mm_set1_epi8(0);
+        const auto zero  =             _mm_set1_epi8(0);
 
         // every bit represents if `haystack` character `c` satisfies condition:
         // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
@@ -747,7 +747,7 @@ bool SplitTokenExtractor::nextInColumn(const char * data, size_t len, size_t * p
     }
 
 #if defined(__SSE2__) && !defined(MEMORY_SANITIZER)
-    // Could happen only if string is not padded with zeros, and we accidentally hopped over the end of data.
+    // Could happen only if string is not padded with zeroes, and we accidentally hopped over end of data.
     if (*token_start > len)
         return false;
     *token_len = std::min(len - *token_start, *token_len);

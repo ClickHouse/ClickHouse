@@ -40,7 +40,13 @@ class IRowInputFormat : public IInputFormat
 public:
     using Params = RowInputFormatParams;
 
-    IRowInputFormat(Block header, ReadBuffer & in_, Params params_);
+    IRowInputFormat(
+        Block header,
+        ReadBuffer & in_,
+        Params params_)
+        : IInputFormat(std::move(header), in_), params(params_)
+    {
+    }
 
     Chunk generate() override;
 
@@ -69,8 +75,6 @@ protected:
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
     size_t getTotalRows() const { return total_rows; }
-
-    Serializations serializations;
 
 private:
     Params params;

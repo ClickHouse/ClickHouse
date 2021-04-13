@@ -20,7 +20,7 @@ NamesAndTypesList StorageSystemTableEngines::getNamesAndTypes()
     };
 }
 
-void StorageSystemTableEngines::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemTableEngines::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     for (const auto & pair : StorageFactory::instance().getAllStorages())
     {

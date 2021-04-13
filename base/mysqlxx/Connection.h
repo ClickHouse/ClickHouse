@@ -14,8 +14,6 @@
 
 /// Disable LOAD DATA LOCAL INFILE because it is insecure
 #define MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE false
-/// See https://dev.mysql.com/doc/c-api/5.7/en/c-api-auto-reconnect.html
-#define MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT true
 
 
 namespace mysqlxx
@@ -41,6 +39,7 @@ private:
 /** MySQL connection.
   * Usage:
   *        mysqlxx::Connection connection("Test", "127.0.0.1", "root", "qwerty", 3306);
+  *        std::cout << connection.query("SELECT 'Hello, World!'").store().at(0).at(0).getString() << std::endl;
   *
   * Or with Poco library configuration:
   *        mysqlxx::Connection connection("mysql_params");
@@ -78,8 +77,7 @@ public:
         const char * ssl_key = "",
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
-        bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
-        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
 
     /// Creates connection. Can be used if Poco::Util::Application is using.
     /// All settings will be got from config_name section of configuration.
@@ -99,8 +97,7 @@ public:
         const char* ssl_key,
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
-        bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE,
-        bool opt_reconnect = MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
+        bool enable_local_infile = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
 
     void connect(const std::string & config_name)
     {
@@ -116,7 +113,6 @@ public:
         std::string ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
         std::string ssl_key = cfg.getString(config_name + ".ssl_key", "");
         bool enable_local_infile = cfg.getBool(config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
-        bool opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
 
         unsigned timeout =
             cfg.getInt(config_name + ".connect_timeout",
@@ -140,8 +136,7 @@ public:
                 ssl_key.c_str(),
                 timeout,
                 rw_timeout,
-                enable_local_infile,
-                opt_reconnect);
+                enable_local_infile);
     }
 
     /// If MySQL connection was established.
