@@ -51,7 +51,7 @@ class FunctionsMultiStringPosition : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsMultiStringPosition>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsMultiStringPosition>(); }
 
     String getName() const override { return name; }
 

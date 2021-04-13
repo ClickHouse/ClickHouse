@@ -51,7 +51,7 @@ class FirstNonDeterministicFunctionMatcher
 public:
     struct Data
     {
-        const Context & context;
+        ContextPtr context;
         std::optional<String> nondeterministic_function_name;
     };
 
@@ -81,7 +81,7 @@ public:
 
 using FirstNonDeterministicFunctionFinder = InDepthNodeVisitor<FirstNonDeterministicFunctionMatcher, true>;
 
-std::optional<String> findFirstNonDeterministicFunctionName(const MutationCommand & command, const Context & context)
+std::optional<String> findFirstNonDeterministicFunctionName(const MutationCommand & command, ContextPtr context)
 {
     FirstNonDeterministicFunctionMatcher::Data finder_data{context, std::nullopt};
 
@@ -114,7 +114,7 @@ std::optional<String> findFirstNonDeterministicFunctionName(const MutationComman
     return {};
 }
 
-ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, const Context & context)
+ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
     /// The result can differ from the number of affected rows (e.g. if there is an UPDATE command that
@@ -179,7 +179,7 @@ bool isStorageTouchedByMutations(
     const StoragePtr & storage,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    Context context_copy)
+    ContextPtr context_copy)
 {
     if (commands.empty())
         return false;
@@ -207,8 +207,8 @@ bool isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return false;
 
-    context_copy.setSetting("max_streams_to_max_threads_ratio", 1);
-    context_copy.setSetting("max_threads", 1);
+    context_copy->setSetting("max_streams_to_max_threads_ratio", 1);
+    context_copy->setSetting("max_threads", 1);
 
     ASTPtr select_query = prepareQueryAffectedAST(commands, storage, context_copy);
 
@@ -233,7 +233,7 @@ bool isStorageTouchedByMutations(
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     const MutationCommand & command,
     const StoragePtr & storage,
-    const Context & context
+    ContextPtr context
 )
 {
     ASTPtr partition_predicate_as_ast_func;
@@ -267,7 +267,7 @@ MutationsInterpreter::MutationsInterpreter(
     StoragePtr storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     MutationCommands commands_,
-    const Context & context_,
+    ContextPtr context_,
     bool can_execute_)
     : storage(std::move(storage_))
     , metadata_snapshot(metadata_snapshot_)
@@ -708,9 +708,9 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
         auto syntax_result = TreeRewriter(context).analyze(all_asts, all_columns, storage, metadata_snapshot);
-        if (context.hasQueryContext())
+        if (context->hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
-                context.getQueryContext().addScalar(it.first, it.second);
+                context->getQueryContext()->addScalar(it.first, it.second);
 
         stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context);
 
@@ -815,7 +815,7 @@ QueryPipelinePtr MutationsInterpreter::addStreamsForLaterStages(const std::vecto
         SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
         if (!subqueries_for_sets.empty())
         {
-            const Settings & settings = context.getSettingsRef();
+            const Settings & settings = context->getSettingsRef();
             SizeLimits network_transfer_limits(
                     settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
             addCreatingSetsStep(plan, std::move(subqueries_for_sets), network_transfer_limits, context);
@@ -839,7 +839,7 @@ void MutationsInterpreter::validate()
     if (!select_interpreter)
         select_interpreter = std::make_unique<InterpreterSelectQuery>(mutation_ast, context, storage, metadata_snapshot, select_limits);
 
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
 
     /// For Replicated* storages mutations cannot employ non-deterministic functions
     /// because that produces inconsistencies between replicas
