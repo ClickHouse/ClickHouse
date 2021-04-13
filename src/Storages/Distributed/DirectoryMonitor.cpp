@@ -231,7 +231,12 @@ namespace
         block_in.readSuffix();
     }
 
-    void writeRemoteConvert(const DistributedHeader & distributed_header, RemoteBlockOutputStream & remote, ReadBufferFromFile & in, Poco::Logger * log)
+    void writeRemoteConvert(
+        const DistributedHeader & distributed_header,
+        RemoteBlockOutputStream & remote,
+        bool compression_expected,
+        ReadBufferFromFile & in,
+        Poco::Logger * log)
     {
         if (!remote.getHeader())
         {
@@ -262,6 +267,14 @@ namespace
             return;
         }
 
+        /// If connection does not use compression, we have to uncompress the data.
+        if (!compression_expected)
+        {
+            writeAndConvert(remote, in);
+            return;
+        }
+
+        /// Otherwise write data as it was already prepared (more efficient path).
         CheckingCompressedReadBuffer checking_in(in);
         remote.writePrepared(checking_in);
     }
@@ -545,7 +558,8 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
             distributed_header.insert_settings,
             distributed_header.client_info};
         remote.writePrefix();
-        writeRemoteConvert(distributed_header, remote, in, log);
+        bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
+        writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
         remote.writeSuffix();
     }
     catch (const Exception & e)
@@ -690,7 +704,8 @@ struct StorageDistributedDirectoryMonitor::Batch
                         distributed_header.client_info);
                     remote->writePrefix();
                 }
-                writeRemoteConvert(distributed_header, *remote, in, parent.log);
+                bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
+                writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
             }
 
             if (remote)

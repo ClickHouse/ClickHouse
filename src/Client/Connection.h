@@ -139,6 +139,8 @@ public:
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
 
+    Protocol::Compression getCompression() const { return compression; }
+
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
         const ConnectionTimeouts & timeouts,
