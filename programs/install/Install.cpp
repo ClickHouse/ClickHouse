@@ -560,9 +560,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// Set up password for default user.
 
-        bool stdin_is_a_tty = isatty(STDIN_FILENO);
         bool stdout_is_a_tty = isatty(STDOUT_FILENO);
-        bool is_interactive = stdin_is_a_tty && stdout_is_a_tty;
+        bool is_interactive = stdout_is_a_tty;
 
         if (has_password_for_default_user)
         {
