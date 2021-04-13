@@ -1657,7 +1657,7 @@ class ClickHouseInstance:
                     "UserName": "postgres",
                     "Password": "mysecretpassword",
                     "Port": str(self.cluster.postgres_port),
-                    "Servername": self.cluster.postgres_ip,
+                    "Servername": self.cluster.postgres_host,
                     "Protocol": "9.3",
                     "ReadOnly": "No",
                     "RowVersioning": "No",
