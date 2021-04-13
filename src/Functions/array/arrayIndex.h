@@ -373,11 +373,10 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!arguments[1]->onlyNull() && !allowArguments(array_type->getNestedType(), arguments[1]))
-            throw Exception("Types of array and 2nd argument of function \""
-                + getName() + "\" must be identical up to nullability, cardinality, "
-                "numeric types, or Enum and numeric type. Passed: "
-                + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Types of array and 2nd argument of function `{}` must be identical up to nullability, cardinality, "
+                "numeric types, or Enum and numeric type. Passed: {} and {}.",
+                getName(), arguments[0]->getName(), arguments[1]->getName());
 
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
