@@ -262,7 +262,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         if (settings.json)
         {
-            auto tree = plan.explainPlan();
+            auto tree = plan.explainPlan(settings.query_plan_options);
             std::stringstream out;
             boost::property_tree::json_parser::write_json(out, tree);
             buf.str() = out.str();
