@@ -62,26 +62,6 @@ template void divideImpl<uint32_t, uint32_t, uint32_t>(const uint32_t * __restri
 template void divideImpl<uint32_t, uint16_t, uint32_t>(const uint32_t * __restrict, uint16_t, uint32_t * __restrict, size_t);
 template void divideImpl<uint32_t, char8_t, uint32_t>(const uint32_t * __restrict, char8_t, uint32_t * __restrict, size_t);
 
-template void divideImpl<int64_t, uint64_t, int64_t>(const int64_t * __restrict, uint64_t, int64_t * __restrict, size_t);
-template void divideImpl<int64_t, uint32_t, int64_t>(const int64_t * __restrict, uint32_t, int64_t * __restrict, size_t);
-template void divideImpl<int64_t, uint16_t, int64_t>(const int64_t * __restrict, uint16_t, int64_t * __restrict, size_t);
-template void divideImpl<int64_t, char8_t, int64_t>(const int64_t * __restrict, char8_t, int64_t * __restrict, size_t);
-
-template void divideImpl<int32_t, uint64_t, int32_t>(const int32_t * __restrict, uint64_t, int32_t * __restrict, size_t);
-template void divideImpl<int32_t, uint32_t, int32_t>(const int32_t * __restrict, uint32_t, int32_t * __restrict, size_t);
-template void divideImpl<int32_t, uint16_t, int32_t>(const int32_t * __restrict, uint16_t, int32_t * __restrict, size_t);
-template void divideImpl<int32_t, char8_t, int32_t>(const int32_t * __restrict, char8_t, int32_t * __restrict, size_t);
-
-template void divideImpl<uint64_t, int64_t, uint64_t>(const uint64_t * __restrict, int64_t, uint64_t * __restrict, size_t);
-template void divideImpl<uint64_t, int32_t, uint64_t>(const uint64_t * __restrict, int32_t, uint64_t * __restrict, size_t);
-template void divideImpl<uint64_t, int16_t, uint64_t>(const uint64_t * __restrict, int16_t, uint64_t * __restrict, size_t);
-template void divideImpl<uint64_t, int8_t, uint64_t>(const uint64_t * __restrict, int8_t, uint64_t * __restrict, size_t);
-
-template void divideImpl<uint32_t, int64_t, uint32_t>(const uint32_t * __restrict, int64_t, uint32_t * __restrict, size_t);
-template void divideImpl<uint32_t, int32_t, uint32_t>(const uint32_t * __restrict, int32_t, uint32_t * __restrict, size_t);
-template void divideImpl<uint32_t, int16_t, uint32_t>(const uint32_t * __restrict, int16_t, uint32_t * __restrict, size_t);
-template void divideImpl<uint32_t, int8_t, uint32_t>(const uint32_t * __restrict, int8_t, uint32_t * __restrict, size_t);
-
 template void divideImpl<int64_t, int64_t, int64_t>(const int64_t * __restrict, int64_t, int64_t * __restrict, size_t);
 template void divideImpl<int64_t, int32_t, int64_t>(const int64_t * __restrict, int32_t, int64_t * __restrict, size_t);
 template void divideImpl<int64_t, int16_t, int64_t>(const int64_t * __restrict, int16_t, int64_t * __restrict, size_t);
