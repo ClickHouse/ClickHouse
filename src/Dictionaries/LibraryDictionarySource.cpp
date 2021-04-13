@@ -10,7 +10,6 @@
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
-#include "LibraryDictionarySourceExternal.h"
 #include "registerDictionaries.h"
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
