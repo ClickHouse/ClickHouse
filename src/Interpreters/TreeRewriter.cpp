@@ -293,13 +293,11 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
         else
         {
             ASTFunction * func = elem->as<ASTFunction>();
+
+            /// Never remove untuple. It's result column may be in required columns.
+            /// It is not easy to analyze untuple here, because types were not calculated yes.
             if (func && func->name == "untuple")
-                for (const auto & col : required_result_columns)
-                    if (col.rfind("_ut_", 0) == 0)
-                    {
-                        new_elements.push_back(elem);
-                        break;
-                    }
+                new_elements.push_back(elem);
         }
     }
 
