@@ -755,7 +755,7 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
 
 void StorageDistributed::startup()
 {
-    if (remote_database.empty() && !remote_table_function_ptr)
+    if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
         LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
 
     if (!storage_policy)
