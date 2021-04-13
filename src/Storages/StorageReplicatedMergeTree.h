@@ -522,7 +522,7 @@ private:
     /** Returns an empty string if no one has a part.
       */
     String findReplicaHavingPart(const String & part_name, bool active);
-    String findReplicaHavingPart(const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_);
+    static String findReplicaHavingPart(const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_);
 
     bool checkReplicaHavePart(const String & replica, const String & part_name);
     bool checkDetachPartIfExists(const String & part_name);
