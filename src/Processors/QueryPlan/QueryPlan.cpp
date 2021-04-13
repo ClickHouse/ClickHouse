@@ -201,21 +201,42 @@ void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 }
 
 
-static boost::property_tree::ptree explainStep(const IQueryPlanStep & step)
+static boost::property_tree::ptree explainStep(const IQueryPlanStep & step, const QueryPlan::ExplainPlanOptions & options)
 {
     boost::property_tree::ptree tree;
     tree.put("Node Type", step.getName());
 
-    const auto & description = step.getStepDescription();
-    if (!description.empty())
-        tree.put("Description", description);
+    if (options.description)
+    {
+        const auto & description = step.getStepDescription();
+        if (!description.empty())
+            tree.put("Description", description);
+    }
 
-    step.describeActions(tree);
+    if (options.header && step.hasOutputStream())
+    {
+        boost::property_tree::ptree header_tree;
+
+        for (const auto & output_column : step.getOutputStream().header)
+        {
+            boost::property_tree::ptree column_tree;
+            column_tree.add("Name", output_column.name);
+            if (output_column.type)
+                column_tree.add("Type", output_column.type->getName());
+
+            header_tree.add_child("", column_tree);
+        }
+
+        tree.add_child("Header", header_tree);
+    }
+
+    if (options.actions)
+        step.describeActions(tree);
 
     return tree;
 }
 
-boost::property_tree::ptree QueryPlan::explainPlan()
+boost::property_tree::ptree QueryPlan::explainPlan(const ExplainPlanOptions & options)
 {
     checkInitialized();
 
@@ -237,7 +258,7 @@ boost::property_tree::ptree QueryPlan::explainPlan()
         auto & frame = stack.top();
 
         if (frame.next_child == 0)
-            frame.node_tree = explainStep(*frame.node->step);
+            frame.node_tree = explainStep(*frame.node->step, options);
 
         if (frame.next_child < frame.node->children.size())
         {

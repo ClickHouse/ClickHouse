@@ -74,7 +74,7 @@ public:
         bool header = false;
     };
 
-    boost::property_tree::ptree explainPlan();
+    boost::property_tree::ptree explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
 
