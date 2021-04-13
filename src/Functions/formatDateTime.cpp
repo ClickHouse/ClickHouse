@@ -480,7 +480,7 @@ public:
                     // since right now LUT does not support Int64-values and not format instructions for subsecond parts,
                     // treat DatTime64 values just as DateTime values by ignoring fractional and casting to UInt32.
                     const auto c = DecimalUtils::split(vec[i], scale);
-                    instruction.perform(pos, static_cast<UInt32>(c.whole), time_zone);
+                    instruction.perform(pos, static_cast<Int64>(c.whole), time_zone);
                 }
             }
             else
