@@ -204,17 +204,17 @@ public:
 
 private:
 
-    size_t concurrency;
+    size_t concurrency = 1;
 
     ThreadPool pool;
     Strings hosts_strings;
     std::unique_ptr<IGenerator> generator;
-    double max_time;
-    double delay;
-    bool continue_on_error;
-    std::atomic<size_t> max_iterations;
-    std::atomic<size_t> requests_executed;
-    std::atomic<bool> shutdown;
+    double max_time = 0;
+    double delay = 1;
+    bool continue_on_error = false;
+    std::atomic<size_t> max_iterations = 0;
+    std::atomic<size_t> requests_executed = 0;
+    std::atomic<bool> shutdown = false;
 
     std::shared_ptr<Stats> info;
 
