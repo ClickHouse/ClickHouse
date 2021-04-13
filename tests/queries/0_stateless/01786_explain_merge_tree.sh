@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT -q "insert into test_index select number, number > 3 ? 3 : nu
 
 $CLICKHOUSE_CLIENT -q "
     explain actions = 1 select *, _part from test_index where t % 19 = 16 and y > 0 and bitAnd(z, 3) != 1 and x > 10 and t % 20 > 14;
-    " | grep -A 100 "ReadFromMergeTree"
+    " | grep -A 100 "ReadFromMergeTree" | grep -v "Description"
 
 echo "-----------------"
 
