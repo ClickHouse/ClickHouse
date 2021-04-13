@@ -173,18 +173,24 @@ int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t
     const int sleep_one_ms = 100;
     int sleep_current_ms = 0;
     int current_connections = 0;
-    while (sleep_current_ms < sleep_max_ms)
+    for (;;)
     {
         current_connections = 0;
+
         for (auto & server : servers)
         {
             server.stop();
             current_connections += server.currentConnections();
         }
+
         if (!current_connections)
             break;
+
         sleep_current_ms += sleep_one_ms;
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+        if (sleep_current_ms < sleep_max_ms)
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+        else
+            break;
     }
     return current_connections;
 }
