@@ -110,7 +110,7 @@ Pipe StorageS3Cluster::read(
             [callback = context->getReadTaskCallback()]() -> String {
                 return callback();
         });
-        
+
         Pipes pipes;
         for (size_t i = 0; i < num_streams; ++i)
         {
