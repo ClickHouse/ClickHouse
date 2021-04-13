@@ -147,7 +147,7 @@ def test_put(started_cluster, maybe_auth, positive, compression):
 
 # Test put no data to S3.
 @pytest.mark.parametrize("auth", [
-    pytest.param("'minio','minio123'", id="minio")
+    pytest.param("'minio','minio123',", id="minio")
 ])
 def test_empty_put(started_cluster, auth):
     # type: (ClickHouseCluster) -> None

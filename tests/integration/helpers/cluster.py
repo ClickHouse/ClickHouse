@@ -706,7 +706,7 @@ class ClickHouseCluster:
                                    ["bash", "-c", "echo {} | base64 --decode > {}".format(encodedStr, dest_path)],
                                    user='root')
 
-    def wait_mysql_to_start(self, timeout=60):
+    def wait_mysql_to_start(self, timeout=180):
         self.mysql_ip = self.get_instance_ip('mysql57')
         start = time.time()
         errors = []
@@ -740,7 +740,7 @@ class ClickHouseCluster:
         subprocess_call(['docker-compose', 'ps', '--services', '--all'])
         raise Exception("Cannot wait MySQL 8 container")
 
-    def wait_mysql_cluster_to_start(self, timeout=60):
+    def wait_mysql_cluster_to_start(self, timeout=180):
         self.mysql2_ip = self.get_instance_ip(self.mysql2_host)
         self.mysql3_ip = self.get_instance_ip(self.mysql3_host)
         self.mysql4_ip = self.get_instance_ip(self.mysql4_host)
@@ -761,7 +761,7 @@ class ClickHouseCluster:
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
-    def wait_postgres_to_start(self, timeout=60):
+    def wait_postgres_to_start(self, timeout=180):
         self.postgres_ip = self.get_instance_ip(self.postgres_host)
         start = time.time()
         while time.time() - start < timeout:
@@ -776,7 +776,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
-    def wait_postgres_cluster_to_start(self, timeout=60):
+    def wait_postgres_cluster_to_start(self, timeout=180):
         self.postgres2_ip = self.get_instance_ip(self.postgres2_host)
         self.postgres3_ip = self.get_instance_ip(self.postgres3_host)
         self.postgres4_ip = self.get_instance_ip(self.postgres4_host)
@@ -794,7 +794,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
-    def wait_zookeeper_to_start(self, timeout=60):
+    def wait_zookeeper_to_start(self, timeout=180):
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -848,7 +848,7 @@ class ClickHouseCluster:
                 time.sleep(1)
 
 
-    def wait_hdfs_to_start(self, hdfs_api, timeout=60):
+    def wait_hdfs_to_start(self, hdfs_api, timeout=300):
         start = time.time()
         while time.time() - start < timeout:
             try:
@@ -861,7 +861,7 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait HDFS to start")
 
-    def wait_mongo_to_start(self, timeout=30):
+    def wait_mongo_to_start(self, timeout=180):
         connection_str = 'mongodb://{user}:{password}@{host}:{port}'.format(
             host='localhost', port=self.mongo_port, user='root', password='clickhouse')
         connection = pymongo.MongoClient(connection_str)
@@ -875,7 +875,7 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
 
-    def wait_minio_to_start(self, timeout=120, secure=False):
+    def wait_minio_to_start(self, timeout=180, secure=False):
         os.environ['SSL_CERT_FILE'] = p.join(self.base_dir, self.minio_dir, 'certs', 'public.crt')
         minio_client = Minio('localhost:{}'.format(self.minio_port),
                              access_key='minio',
@@ -904,7 +904,7 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
-    def wait_schema_registry_to_start(self, timeout=10):
+    def wait_schema_registry_to_start(self, timeout=180):
         sr_client = CachedSchemaRegistryClient({"url":'http://localhost:{}'.format(self.schema_registry_port)})
         start = time.time()
         while time.time() - start < timeout:
@@ -919,7 +919,7 @@ class ClickHouseCluster:
         raise Exception("Can't wait Schema Registry to start")
 
         
-    def wait_cassandra_to_start(self, timeout=120):
+    def wait_cassandra_to_start(self, timeout=180):
         self.cassandra_ip = self.get_instance_ip(self.cassandra_host)
         cass_client = cassandra.cluster.Cluster([self.cassandra_ip], port=self.cassandra_port, load_balancing_policy=RoundRobinPolicy())
         start = time.time()
@@ -994,7 +994,7 @@ class ClickHouseCluster:
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=env)
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
-                self.wait_zookeeper_to_start(120)
+                self.wait_zookeeper_to_start()
 
             if self.with_mysql and self.base_mysql_cmd:
                 logging.debug('Setup MySQL')
@@ -1003,7 +1003,7 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql_logs_dir)
                 os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
-                self.wait_mysql_to_start(180)
+                self.wait_mysql_to_start()
 
             if self.with_mysql8 and self.base_mysql8_cmd:
                 logging.debug('Setup MySQL 8')
@@ -1012,7 +1012,7 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql8_logs_dir)
                 os.chmod(self.mysql8_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql8_cmd + common_opts)
-                self.wait_mysql8_to_start(180)
+                self.wait_mysql8_to_start()
 
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
                 print('Setup MySQL')
@@ -1022,7 +1022,7 @@ class ClickHouseCluster:
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXO)
 
                 subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
-                self.wait_mysql_cluster_to_start(120)
+                self.wait_mysql_cluster_to_start()
 
             if self.with_postgres and self.base_postgres_cmd:
                 logging.debug('Setup Postgres')
@@ -1032,7 +1032,7 @@ class ClickHouseCluster:
                 os.chmod(self.postgres_logs_dir, stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
-                self.wait_postgres_to_start(120)
+                self.wait_postgres_to_start()
 
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
                 print('Setup Postgres')
@@ -1043,13 +1043,13 @@ class ClickHouseCluster:
                 os.makedirs(self.postgres4_logs_dir)
                 os.chmod(self.postgres4_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
-                self.wait_postgres_cluster_to_start(120)
+                self.wait_postgres_cluster_to_start()
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug('Setup Kafka')
                 subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
                 self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
-                self.wait_schema_registry_to_start(30)
+                self.wait_schema_registry_to_start()
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug('Setup kerberized kafka')
@@ -1066,7 +1066,7 @@ class ClickHouseCluster:
                 os.chmod(self.hdfs_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
                 hdfs_api = self.make_hdfs_api()
-                self.wait_hdfs_to_start(hdfs_api, 300)
+                self.wait_hdfs_to_start(hdfs_api)
 
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 logging.debug('Setup kerberized HDFS')
@@ -1074,7 +1074,7 @@ class ClickHouseCluster:
                 os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 hdfs_api = self.make_hdfs_api(kerberized=True)
-                self.wait_hdfs_to_start(hdfs_api, timeout=300)
+                self.wait_hdfs_to_start(hdfs_api)
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
@@ -1656,8 +1656,8 @@ class ClickHouseInstance:
                     "Database": "postgres",
                     "UserName": "postgres",
                     "Password": "mysecretpassword",
-                    "Port": "5432",
-                    "Servername": self.cluster.postgres_host,
+                    "Port": str(self.cluster.postgres_port),
+                    "Servername": self.cluster.postgres_ip,
                     "Protocol": "9.3",
                     "ReadOnly": "No",
                     "RowVersioning": "No",
