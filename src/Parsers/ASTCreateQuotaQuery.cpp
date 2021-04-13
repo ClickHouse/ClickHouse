@@ -185,10 +185,10 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
 }
 
 
-void ASTCreateQuotaQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
+void ASTCreateQuotaQuery::replaceCurrentUserTag(const String & current_user_name) const
 {
     if (roles)
-        roles->replaceCurrentUserTagWithName(current_user_name);
+        roles->replaceCurrentUserTag(current_user_name);
 }
 
 }

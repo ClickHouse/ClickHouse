@@ -26,6 +26,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Common/parseRemoteDescription.h>
 #include <Processors/Pipe.h>
 #include <IO/WriteHelpers.h>
 
@@ -41,15 +42,17 @@ namespace ErrorCodes
 
 StoragePostgreSQL::StoragePostgreSQL(
     const StorageID & table_id_,
+    const postgres::PoolWithFailover & pool_,
     const String & remote_table_name_,
-    PostgreSQLConnectionPtr connection_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context_)
+    ContextPtr context_,
+    const String & remote_table_schema_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
+    , remote_table_schema(remote_table_schema_)
     , global_context(context_)
-    , connection(std::move(connection_))
+    , pool(std::make_shared<postgres::PoolWithFailover>(pool_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -62,16 +65,18 @@ Pipe StoragePostgreSQL::read(
     const Names & column_names_,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info_,
-    const Context & context_,
+    ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,
     unsigned)
 {
     metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
 
+    /// Connection is already made to the needed database, so it should not be present in the query;
+    /// remote_table_schema is empty if it is not specified, will access only table_name.
     String query = transformQueryForExternalDatabase(
         query_info_, metadata_snapshot->getColumns().getOrdinary(),
-        IdentifierQuotingStyle::DoubleQuotes, "", remote_table_name, context_);
+        IdentifierQuotingStyle::DoubleQuotes, remote_table_schema, remote_table_name, context_);
 
     Block sample_block;
     for (const String & column_name : column_names_)
@@ -84,7 +89,7 @@ Pipe StoragePostgreSQL::read(
     }
 
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<PostgreSQLBlockInputStream>(connection->conn(), query, sample_block, max_block_size_)));
+            std::make_shared<PostgreSQLBlockInputStream>(pool->get(), query, sample_block, max_block_size_)));
 }
 
 
@@ -93,10 +98,10 @@ class PostgreSQLBlockOutputStream : public IBlockOutputStream
 public:
     explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
-        ConnectionPtr connection_,
+        postgres::ConnectionHolderPtr connection_,
         const std::string & remote_table_name_)
         : metadata_snapshot(metadata_snapshot_)
-        , connection(connection_)
+        , connection(std::move(connection_))
         , remote_table_name(remote_table_name_)
     {
     }
@@ -106,7 +111,7 @@ public:
 
     void writePrefix() override
     {
-        work = std::make_unique<pqxx::work>(*connection);
+        work = std::make_unique<pqxx::work>(connection->conn());
     }
 
 
@@ -143,7 +148,7 @@ public:
                     }
                     else
                     {
-                        data_types[j]->serializeAsText(*columns[j], i, ostr, FormatSettings{});
+                        data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, FormatSettings{});
                     }
 
                     row[j] = ostr.str();
@@ -210,7 +215,7 @@ public:
         auto array_column = ColumnArray::create(createNested(nested));
         array_column->insert(array_field);
         WriteBufferFromOwnString ostr;
-        data_type->serializeAsText(*array_column, 0, ostr, FormatSettings{});
+        data_type->getDefaultSerialization()->serializeText(*array_column, 0, ostr, FormatSettings{});
 
         /// ostr is guaranteed to be at least '[]', i.e. size is at least 2 and 2 only if ostr.str() == '[]'
         assert(ostr.str().size() >= 2);
@@ -272,7 +277,7 @@ public:
 
 private:
     StorageMetadataPtr metadata_snapshot;
-    ConnectionPtr connection;
+    postgres::ConnectionHolderPtr connection;
     std::string remote_table_name;
 
     std::unique_ptr<pqxx::work> work;
@@ -281,9 +286,9 @@ private:
 
 
 BlockOutputStreamPtr StoragePostgreSQL::write(
-        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /* context */)
+        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
-    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, connection->conn(), remote_table_name);
+    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, pool->get(), remote_table_name);
 }
 
 
@@ -293,26 +298,39 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 5)
-            throw Exception("Storage PostgreSQL requires 5 parameters: "
-                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password'.",
+        if (engine_args.size() < 5 || engine_args.size() > 6)
+            throw Exception("Storage PostgreSQL requires from 5 to 6 parameters: "
+                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password' [, 'schema']",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
+        auto host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        /// Split into replicas if needed.
+        size_t max_addresses = args.getContext()->getSettingsRef().glob_expansion_max_elements;
+        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+
+        const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
-        auto connection = std::make_shared<PostgreSQLConnection>(
-            engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
-            parsed_host_port.first,
-            parsed_host_port.second,
-            engine_args[3]->as<ASTLiteral &>().value.safeGet<String>(),
-            engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
+        String remote_table_schema;
+        if (engine_args.size() == 6)
+            remote_table_schema = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
+
+        postgres::PoolWithFailover pool(
+            remote_database,
+            addresses,
+            username,
+            password,
+            args.getContext()->getSettingsRef().postgresql_connection_pool_size,
+            args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return StoragePostgreSQL::create(
-            args.table_id, remote_table, connection, args.columns, args.constraints, args.context);
+            args.table_id, pool, remote_table,
+            args.columns, args.constraints, args.getContext(), remote_table_schema);
     },
     {
         .source_access_type = AccessType::POSTGRES,

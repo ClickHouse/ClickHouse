@@ -189,6 +189,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         size_t string_size = sizeAt(n);
@@ -240,6 +242,8 @@ public:
                        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
                        int direction, int nan_direction_hint) const override;
 
+    bool hasEqualValues() const override;
+
     /// Variant of compareAt for string comparison with respect of collation.
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const override;
 
@@ -274,7 +278,6 @@ public:
     {
         return typeid(rhs) == typeid(ColumnString);
     }
-
 
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }

@@ -8,10 +8,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <IO/TimeoutSetter.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
-#include <Client/TimeoutSetter.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -109,6 +109,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        in->setAsyncCallback(std::move(async_callback));
+
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
@@ -753,15 +755,8 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
+Packet Connection::receivePacket()
 {
-    in->setAsyncCallback(std::move(async_callback));
-    SCOPE_EXIT({
-        /// disconnect() will reset "in".
-        if (in)
-            in->setAsyncCallback({});
-    });
-
     try
     {
         Packet res;

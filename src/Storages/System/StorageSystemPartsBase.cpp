@@ -62,8 +62,8 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
     return data->getDataPartsVector({State::Committed}, &state);
 }
 
-StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context)
-    : query_id(context.getCurrentQueryId()), settings(context.getSettings())
+StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)
+    : query_id(context->getCurrentQueryId()), settings(context->getSettings())
 {
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
@@ -74,7 +74,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
-    const auto access = context.getAccess();
+    const auto access = context->getAccess();
     const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
     {
@@ -84,7 +84,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            /// Checck if database can contain MergeTree tables,
+            /// Check if database can contain MergeTree tables,
             /// if not it's unnecessary to load all tables of database just to filter all of them.
             if (database.second->canContainMergeTreeTables())
                 database_column_mut->insert(database.first);
@@ -234,7 +234,7 @@ Pipe StorageSystemPartsBase::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
@@ -245,16 +245,29 @@ Pipe StorageSystemPartsBase::read(
 
     /// Create the result.
 
-    MutableColumns res_columns = metadata_snapshot->getSampleBlock().cloneEmptyColumns();
+    NameSet names_set(column_names.begin(), column_names.end());
+
+    Block sample = metadata_snapshot->getSampleBlock();
+    Block header;
+
+    std::vector<UInt8> columns_mask(sample.columns());
+    for (size_t i = 0; i < sample.columns(); ++i)
+    {
+        if (names_set.count(sample.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            header.insert(sample.getByPosition(i));
+        }
+    }
+    MutableColumns res_columns = header.cloneEmptyColumns();
     if (has_state_column)
         res_columns.push_back(ColumnString::create());
 
     while (StoragesInfo info = stream.next())
     {
-        processNextStorage(res_columns, info, has_state_column);
+        processNextStorage(res_columns, columns_mask, info, has_state_column);
     }
 
-    Block header = metadata_snapshot->getSampleBlock();
     if (has_state_column)
         header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 

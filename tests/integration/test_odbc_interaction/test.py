@@ -74,6 +74,9 @@ def started_cluster():
         node1.exec_in_container(
             ["bash", "-c", "echo 'CREATE TABLE t4(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)],
             privileged=True, user='root')
+        node1.exec_in_container(
+            ["bash", "-c", "echo 'CREATE TABLE tf1(x INTEGER PRIMARY KEY ASC, y, z);' | sqlite3 {}".format(sqlite_db)],
+            privileged=True, user='root')
         print("sqlite tables created")
         mysql_conn = get_mysql_conn()
         print("mysql connection received")
@@ -177,6 +180,21 @@ def test_sqlite_simple_select_function_works(started_cluster):
     assert node1.query(
         "select count(), sum(x) from odbc('DSN={}', '{}') group by x".format(sqlite_setup["DSN"], 't1')) == "1\t1\n"
 
+def test_sqlite_table_function(started_cluster):
+    sqlite_setup = node1.odbc_drivers["SQLite3"]
+    sqlite_db = sqlite_setup["Database"]
+
+    node1.exec_in_container(["bash", "-c", "echo 'INSERT INTO tf1 values(1, 2, 3);' | sqlite3 {}".format(sqlite_db)],
+                            privileged=True, user='root')
+    node1.query("create table odbc_tf as odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 'tf1'))
+    assert node1.query("select * from odbc_tf") == "1\t2\t3\n"
+
+    assert node1.query("select y from odbc_tf") == "2\n"
+    assert node1.query("select z from odbc_tf") == "3\n"
+    assert node1.query("select x from odbc_tf") == "1\n"
+    assert node1.query("select x, y from odbc_tf") == "1\t2\n"
+    assert node1.query("select z, x, y from odbc_tf") == "3\t1\t2\n"
+    assert node1.query("select count(), sum(x) from odbc_tf group by x") == "1\t1\n"
 
 def test_sqlite_simple_select_storage_works(started_cluster):
     sqlite_setup = node1.odbc_drivers["SQLite3"]
@@ -342,6 +360,7 @@ def test_bridge_dies_with_parent(started_cluster):
 
     assert clickhouse_pid is None
     assert bridge_pid is None
+    node1.start_clickhouse(20)
 
 
 def test_odbc_postgres_date_data_type(started_cluster):

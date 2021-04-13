@@ -1,5 +1,3 @@
-from multiprocessing.dummy import Pool
-
 from testflows.core import *
 from testflows.asserts import error
 
@@ -41,9 +39,16 @@ def privilege_check(grant_target_name, user_name, table_type, privilege, node=No
 
     with Scenario("user without privilege", setup=instrument_clickhouse_server_log):
         table_name = f"merge_tree_{getuid()}"
+
         with table(node, table_name, table_type):
 
-            with When("I attempt to fetch a partition without privilege"):
+            with When("I grant the user NONE privilege"):
+                node.query(f"GRANT NONE TO {grant_target_name}")
+
+            with And("I grant the user USAGE privilege"):
+                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
+
+            with Then("I attempt to fetch a partition without privilege"):
                 node.query(f"ALTER TABLE {table_name} FETCH PARTITION 1 FROM '/clickhouse/'", settings = [("user", user_name)],
                     exitcode=exitcode, message=message)
 
@@ -75,7 +80,8 @@ def privilege_check(grant_target_name, user_name, table_type, privilege, node=No
 @TestFeature
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterFetch("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0")
+    RQ_SRS_006_RBAC_Privileges_All("1.0"),
+    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Examples("table_type",[
     ("ReplicatedMergeTree-sharded_cluster",),

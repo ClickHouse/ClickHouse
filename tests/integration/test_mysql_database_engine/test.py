@@ -146,10 +146,14 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
             "CREATE TABLE default.t1_remote_mysql AS mysql('mysql1:3306','test','t1_mysql_local','root','clickhouse')")
         clickhouse_node.query(
             "CREATE TABLE default.t2_remote_mysql AS mysql('mysql1:3306','test','t2_mysql_local','root','clickhouse')")
+        clickhouse_node.query("INSERT INTO `default`.`t1_remote_mysql` VALUES ('EN','A',''),('RU','B','AAA')")
+        clickhouse_node.query("INSERT INTO `default`.`t2_remote_mysql` VALUES ('A','AAA'),('Z','')")
+        
         assert clickhouse_node.query("SELECT s.pays "
                                      "FROM default.t1_remote_mysql AS s "
                                      "LEFT JOIN default.t1_remote_mysql AS s_ref "
-                                     "ON (s_ref.opco = s.opco AND s_ref.service = s.service)") == ''
+                                     "ON (s_ref.opco = s.opco AND s_ref.service = s.service) "
+                                     "WHERE s_ref.opco != '' AND s.opco != '' ").rstrip() == 'RU'
         mysql_node.query("DROP DATABASE test")
 
 
