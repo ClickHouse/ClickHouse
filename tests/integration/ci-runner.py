@@ -269,14 +269,13 @@ class ClickhouseIntegrationTestsRunner:
         return list(sorted(all_tests))
 
     def _get_parallel_tests(self, repo_path):
-        parallel_tests_file_path = "{}/tests/integration/parallel.txt".format(repo_path)
+        parallel_tests_file_path = "{}/tests/integration/parallel.json".format(repo_path)
         if not os.path.isfile(parallel_tests_file_path) or os.path.getsize(parallel_tests_file_path) == 0:
             raise Exception("There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(parallel_tests_file_path))
 
         parallel_tests = []
         with open(parallel_tests_file_path, "r") as parallel_tests_file:
-            for line in parallel_tests_file:
-                parallel_tests.append(line.strip())
+            parallel_tests = json.load(parallel_tests_file)
         return list(sorted(parallel_tests))
 
     def group_test_by_file(self, tests):
