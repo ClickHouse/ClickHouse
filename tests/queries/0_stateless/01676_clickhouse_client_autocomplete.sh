@@ -69,8 +69,6 @@ compwords_positive=(
     max_concurrent_queries_for_all_users
     # system.clusters
     test_shard_localhost
-    # system.metrics
-    PartsPreCommitted
     # system.macros
     default_path_test
     # system.storage_policies, egh not uniq
