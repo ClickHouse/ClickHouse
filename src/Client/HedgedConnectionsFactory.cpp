@@ -55,7 +55,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
 {
     size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
 
-    size_t max_entries;
+    size_t max_entries = 1;
     switch (pool_mode)
     {
         case PoolMode::GET_ALL:

@@ -98,6 +98,8 @@ public:
 
     DataTypePtr getReturnType() const final { return std::make_shared<DataTypeNumber<Float64>>(); }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).numerator += this->data(rhs).numerator;

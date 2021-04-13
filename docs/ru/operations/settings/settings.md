@@ -2746,4 +2746,15 @@ SELECT * FROM test2;
 
 Значение по умолчанию: `60`.
 
+## check_query_single_value_result {#check_query_single_value_result}
+
+Определяет уровень детализации результата для запросов [CHECK TABLE](../../sql-reference/statements/check-table.md#checking-mergetree-tables) для таблиц семейства `MergeTree`.
+
+Возможные значения:
+
+-   0 — запрос возвращает статус каждого куска данных таблицы.
+-   1 — запрос возвращает статус таблицы в целом.
+
+Значение по умолчанию: `0`.
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

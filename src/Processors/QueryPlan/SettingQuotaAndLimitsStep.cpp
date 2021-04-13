@@ -28,7 +28,7 @@ SettingQuotaAndLimitsStep::SettingQuotaAndLimitsStep(
     StreamLocalLimits & limits_,
     SizeLimits & leaf_limits_,
     std::shared_ptr<const EnabledQuota> quota_,
-    std::shared_ptr<Context> context_)
+    ContextPtr context_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , context(std::move(context_))
     , storage(std::move(storage_))
