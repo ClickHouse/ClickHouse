@@ -560,21 +560,25 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// Set up password for default user.
 
+        bool stdin_is_a_tty = isatty(STDIN_FILENO);
         bool stdout_is_a_tty = isatty(STDOUT_FILENO);
-        bool is_interactive = stdout_is_a_tty;
+        bool is_interactive = stdin_is_a_tty && stdout_is_a_tty;
 
         if (has_password_for_default_user)
         {
             fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE,
                        users_config_file.string(), users_d.string());
         }
-        else if (!is_interactive)
+        else if (!stdout_is_a_tty)
         {
             fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE,
                        users_config_file.string(), users_d.string());
         }
         else
         {
+            /// NOTE: When installing debian package with dpkg -i, stdin is not a terminal but we are still being able to enter password.
+            /// More sophisticated method with /dev/tty is used inside the `readpassphrase` function.
+
             char buf[1000] = {};
             std::string password;
             if (auto * result = readpassphrase("Enter password for default user: ", buf, sizeof(buf), 0))
