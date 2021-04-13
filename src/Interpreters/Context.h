@@ -129,7 +129,7 @@ using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
 /// Used in distributed task processing
-using ReadTaskCallback = std::function<std::optional<String>()>;
+using ReadTaskCallback = std::function<String()>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.

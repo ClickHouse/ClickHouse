@@ -159,7 +159,7 @@ public:
     /// Send parts' uuids to excluded them from query processing
     void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
 
-    void sendReadTaskResponse(const std::optional<String> &);
+    void sendReadTaskResponse(const String &);
 
     /// Send prepared block of data (serialized and, if need, compressed), that will be read from 'input'.
     /// You could pass size of serialized/compressed block.

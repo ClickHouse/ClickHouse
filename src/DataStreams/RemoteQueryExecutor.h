@@ -27,7 +27,7 @@ using ProfileInfoCallback = std::function<void(const BlockStreamProfileInfo & in
 class RemoteQueryExecutorReadContext;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
-using TaskIterator = std::function<std::optional<String>()>;
+using TaskIterator = std::function<String()>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor

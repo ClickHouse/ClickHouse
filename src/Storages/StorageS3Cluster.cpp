@@ -107,7 +107,7 @@ Pipe StorageS3Cluster::read(
 
         /// Save callback not to capture context by reference of copy it.
         auto file_iterator = std::make_shared<StorageS3Source::IteratorWrapper>(
-            [callback = context->getReadTaskCallback()]() -> std::optional<String> {
+            [callback = context->getReadTaskCallback()]() -> String {
                 return callback();
         });
 
@@ -127,7 +127,7 @@ Pipe StorageS3Cluster::read(
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
-    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> std::optional<String>
+    auto callback = std::make_shared<StorageS3Source::IteratorWrapper>([iterator]() mutable -> String
     {
         return iterator->next();
     });
@@ -140,6 +140,8 @@ Pipe StorageS3Cluster::read(
 
     Pipes pipes;
     connections.reserve(cluster->getShardCount());
+
+    const bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
 
     for (const auto & replicas : cluster->getShardsAddresses())
     {
@@ -160,7 +162,7 @@ Pipe StorageS3Cluster::read(
                     *connections.back(), queryToString(query_info.query), header, context,
                     /*throttler=*/nullptr, scalars, Tables(), processed_stage, callback);
 
-            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, false, false));
+            pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }
     }
 

@@ -35,14 +35,14 @@ public:
     {
         public:
             DisclosedGlobIterator(Aws::S3::S3Client &, const S3::URI &);
-            std::optional<String> next();
+            String next();
         private:
             class Impl;
             /// shared_ptr to have copy constructor
             std::shared_ptr<Impl> pimpl;
     };
 
-    using IteratorWrapper = std::function<std::optional<String>()>;
+    using IteratorWrapper = std::function<String()>;
 
     static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column);
 

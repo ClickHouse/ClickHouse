@@ -156,7 +156,7 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
 }
 
 
-void MultiplexedConnections::sendReadTaskResponse(const std::optional<String> & response)
+void MultiplexedConnections::sendReadTaskResponse(const String & response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
