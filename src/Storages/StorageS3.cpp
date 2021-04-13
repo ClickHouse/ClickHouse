@@ -271,7 +271,8 @@ StorageS3::StorageS3(
 
 namespace
 {
-    /* "Recursive" directory listing with matched paths as a result.
+
+/* "Recursive" directory listing with matched paths as a result.
  * Have the same method in StorageFile.
  */
 Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
@@ -350,7 +351,9 @@ Pipe StorageS3::read(
             need_file_column = true;
     }
 
-    for (const String & key : listFilesWithRegexpMatching(*client, uri))
+    Strings keys = listFilesWithRegexpMatching(*client, uri);
+    size_t threads_per_file = max_download_threads / keys.size();
+    for (const String & key : keys)
         pipes.emplace_back(std::make_shared<StorageS3Source>(
             need_path_column,
             need_file_column,
@@ -364,7 +367,7 @@ Pipe StorageS3::read(
             client,
             uri.bucket,
             key,
-            max_download_threads,
+            threads_per_file,
             max_download_buffer_size));
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
