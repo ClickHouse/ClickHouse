@@ -34,7 +34,11 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
 
     if (offsets->size() + 1 != values->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Values size is inconsistent with offsets size. Expected: {}, got {}", offsets->size() + 1, values->size());
+            "Values size ({}) is inconsistent with offsets size ({})", values->size(), offsets->size());
+
+    if (_size < offsets->size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Size of sparse column ({}) cannot be lower than number of non-default values ({})", _size, offsets->size());
 }
 
 MutableColumnPtr ColumnSparse::cloneResized(size_t new_size) const
@@ -113,7 +117,7 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
     if (length == 0)
         return;
 
-    if (start + length >= src.size())
+    if (start + length > src.size())
         throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
             ErrorCodes::LOGICAL_ERROR);
 
@@ -125,13 +129,11 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
         const auto & src_offsets = src_sparse->getOffsetsData();
         const auto & src_values = src_sparse->getValuesColumn();
 
-        if (!src_offsets.empty())
-        {
-            size_t offset_start = std::lower_bound(src_offsets.begin(), src_offsets.end(), start) - src_offsets.begin();
-            size_t offset_end = std::upper_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
-            if (offset_end != 0)
-                --offset_end;
+        size_t offset_start = std::lower_bound(src_offsets.begin(), src_offsets.end(), start) - src_offsets.begin();
+        size_t offset_end = std::upper_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
 
+        if (offset_start != offset_end)
+        {
             insertManyDefaults(src_offsets[offset_start] - start);
             offsets_data.push_back(_size);
             ++_size;
@@ -144,8 +146,8 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
                 ++_size;
             }
 
-            insertManyDefaults(end - src_offsets[offset_end]);
-            values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start + 1);
+            insertManyDefaults(end - src_offsets[offset_end - 1] - 1);
+            values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start);
         }
         else
         {
@@ -354,7 +356,7 @@ void ColumnSparse::compareColumn(const IColumn & rhs, size_t rhs_row_num,
             nullptr, nested_result, direction, nan_direction_hint);
 
         const auto & offsets_data = getOffsetsData();
-        compare_results.resize(_size, nested_result[0]);
+        compare_results.resize_fill(_size, nested_result[0]);
         for (size_t i = 0; i < offsets_data.size(); ++i)
             compare_results[offsets_data[i]] = nested_result[i + 1];
     }
@@ -379,20 +381,22 @@ void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direc
         return;
 
     res.resize(_size);
-    for (size_t i = 0; i < _size; ++i)
-        res[i] = i;
-
     if (offsets->empty())
+    {
+        for (size_t i = 0; i < _size; ++i)
+            res[i] = i;
         return;
-
-    Permutation perm;
-    if (collator)
-        values->getPermutationWithCollation(*collator, reverse, limit, null_direction_hint, perm);
-    else
-        values->getPermutation(reverse, limit, null_direction_hint, perm);
+    }
 
     if (limit == 0 || limit > _size)
         limit = _size;
+
+    Permutation perm;
+    /// limit + 1 for case when there is 0 default values
+    if (collator)
+        values->getPermutationWithCollation(*collator, reverse, limit + 1, null_direction_hint, perm);
+    else
+        values->getPermutation(reverse, limit + 1, null_direction_hint, perm);
 
     size_t num_of_defaults = getNumberOfDefaults();
     size_t row = 0;
@@ -407,13 +411,16 @@ void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direc
             if (!num_of_defaults)
                 continue;
 
-            while (row < limit && current_default_row < _size)
+            while (row < limit)
             {
                 while (current_offset < offsets_data.size() && current_default_row == offsets_data[current_offset])
                 {
                     ++current_offset;
                     ++current_default_row;
                 }
+
+                if (current_default_row == _size)
+                    break;
 
                 res[row++] = current_default_row++;
             }
@@ -550,7 +557,7 @@ void ColumnSparse::getIndicesOfNonDefaultValues(IColumn::Offsets & indices, size
 
 size_t ColumnSparse::getNumberOfDefaultRows(size_t step) const
 {
-    return (_size - offsets->size()) / step;
+    return getNumberOfDefaults() / step;
 }
 
 MutableColumns ColumnSparse::scatter(ColumnIndex num_columns, const Selector & selector) const
