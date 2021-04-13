@@ -71,6 +71,9 @@ namespace ErrorCodes
 
 }
 
+/// ANSI escape sequence for intense color in terminal.
+#define HILITE "\033[1m"
+#define END_HILITE "\033[0m"
 
 using namespace DB;
 namespace po = boost::program_options;
@@ -563,12 +566,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (has_password_for_default_user)
         {
-            fmt::print("Password for default user is already specified. To remind or reset, see {} and {}.\n",
+            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE,
                        users_config_file.string(), users_d.string());
         }
         else if (!is_interactive)
         {
-            fmt::print("Password for default user is empty string. See {} and {} to change it.\n",
+            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE,
                        users_config_file.string(), users_d.string());
         }
         else
