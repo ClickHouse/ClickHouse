@@ -31,7 +31,7 @@ public:
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const final 
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const final
     {
         assert_cast<DecimalOrVectorCol<AvgFieldType<T>> &>((assert_cast<ColumnTuple &>(to)).getColumn(0)).getData().push_back(
             this->data(place).numerator);
