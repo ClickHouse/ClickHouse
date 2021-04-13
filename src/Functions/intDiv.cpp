@@ -1,28 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <Functions/TargetSpecific.h>
 
-#if defined(__x86_64__)
-    #define LIBDIVIDE_SSE2 1
-    #define LIBDIVIDE_AVX2 1
-
-    #if defined(__clang__)
-        #pragma clang attribute push(__attribute__((target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2"))), apply_to=function)
-    #else
-        #pragma GCC push_options
-        #pragma GCC target("sse,sse2,sse3,ssse3,sse4,popcnt,avx,avx2,tune=native")
-    #endif
-#endif
-
-#include <libdivide.h>
-
-#if defined(__x86_64__)
-    #if defined(__clang__)
-        #pragma clang attribute pop
-    #else
-        #pragma GCC pop_options
-    #endif
-#endif
+#include "divide/divide.h"
 
 
 namespace DB
@@ -36,83 +15,6 @@ namespace
 {
 
 /// Optimizations for integer division by a constant.
-
-#if defined(__x86_64__)
-
-DECLARE_DEFAULT_CODE (
-    template <typename A, typename B, typename ResultType>
-    void divideImpl(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
-    {
-        libdivide::divider<A> divider(b);
-        const A * a_end = a_pos + size;
-
-        static constexpr size_t values_per_simd_register = 16 / sizeof(A);
-        const A * a_end_simd = a_pos + size / values_per_simd_register * values_per_simd_register;
-
-        while (a_pos < a_end_simd)
-        {
-            _mm_storeu_si128(reinterpret_cast<__m128i *>(c_pos),
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(a_pos)) / divider);
-
-            a_pos += values_per_simd_register;
-            c_pos += values_per_simd_register;
-        }
-
-        while (a_pos < a_end)
-        {
-            *c_pos = *a_pos / divider;
-            ++a_pos;
-            ++c_pos;
-        }
-    }
-)
-
-DECLARE_AVX2_SPECIFIC_CODE (
-    template <typename A, typename B, typename ResultType>
-    void divideImpl(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
-    {
-        libdivide::divider<A> divider(b);
-        const A * a_end = a_pos + size;
-
-        static constexpr size_t values_per_simd_register = 32 / sizeof(A);
-        const A * a_end_simd = a_pos + size / values_per_simd_register * values_per_simd_register;
-
-        while (a_pos < a_end_simd)
-        {
-            _mm256_storeu_si256(reinterpret_cast<__m256i *>(c_pos),
-                _mm256_loadu_si256(reinterpret_cast<const __m256i *>(a_pos)) / divider);
-
-            a_pos += values_per_simd_register;
-            c_pos += values_per_simd_register;
-        }
-
-        while (a_pos < a_end)
-        {
-            *c_pos = *a_pos / divider;
-            ++a_pos;
-            ++c_pos;
-        }
-    }
-)
-
-#else
-
-template <typename A, typename B, typename ResultType>
-void divideImpl(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size)
-{
-    libdivide::divider<A> divider(b);
-    const A * a_end = a_pos + size;
-
-    while (a_pos < a_end)
-    {
-        *c_pos = *a_pos / divider;
-        ++a_pos;
-        ++c_pos;
-    }
-}
-
-#endif
-
 
 template <typename A, typename B>
 struct DivideIntegralByConstantImpl
@@ -164,20 +66,7 @@ struct DivideIntegralByConstantImpl
         if (unlikely(static_cast<A>(b) == 0))
             throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
 
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            TargetSpecific::AVX2::divideImpl(a_pos, b, c_pos, size);
-        }
-        else
-#endif
-        {
-#if __x86_64__
-            TargetSpecific::Default::divideImpl(a_pos, b, c_pos, size);
-#else
-            divideImpl(a_pos, b, c_pos, size);
-#endif
-        }
+        divideImpl(a_pos, b, c_pos, size);
     }
 };
 
