@@ -1327,7 +1327,7 @@ String KeyCondition::toString() const
   * A range of tuples specifies some subset of this space.
   *
   * Hyperrectangles will be the subrange of an n-dimensional space that is a direct product of one-dimensional ranges.
-  * In this case, the one-dimensional range can be: 
+  * In this case, the one-dimensional range can be:
   * a point, a segment, an open interval, a half-open interval;
   * unlimited on the left, unlimited on the right ...
   *
