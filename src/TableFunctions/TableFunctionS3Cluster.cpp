@@ -61,37 +61,35 @@ void TableFunctionS3Cluster::parseArguments(const ASTPtr & ast_function, Context
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
+    /// This arguments are always the first
     cluster_name = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     filename = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-    if (args.size() == 4)
+    /// Size -> argument indexes
+    static auto size_to_args = std::map<size_t, std::map<String, size_t>>
     {
-        format = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-    }
-    else if (args.size() == 5)
-    {
-        format = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        compression_method = args[4]->as<ASTLiteral &>().value.safeGet<String>();
-    }
-    else if (args.size() == 6)
-    {
-        access_key_id = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        secret_access_key = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        format = args[4]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[5]->as<ASTLiteral &>().value.safeGet<String>();
-    }
-    else if (args.size() == 7)
-    {
-        access_key_id = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        secret_access_key = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        format = args[4]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[5]->as<ASTLiteral &>().value.safeGet<String>();
-        compression_method = args[4]->as<ASTLiteral &>().value.safeGet<String>();
-    }
-    else
-        throw Exception(message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        {4, {{"format", 2}, {"structure", 3}}},
+        {5, {{"format", 2}, {"structure", 3}, {"compression_method", 4}}},
+        {6, {{"access_key_id", 2}, {"secret_access_key", 3}, {"format", 4}, {"structure", 5}}},
+        {7, {{"access_key_id", 2}, {"secret_access_key", 3}, {"format", 4}, {"structure", 5}, {"compression_method", 6}}}
+    };
+
+    auto & args_to_idx = size_to_args[args.size()];
+
+    if (args_to_idx.contains("format"))
+        format = args[args_to_idx["format"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("structure"))
+        structure = args[args_to_idx["structure"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("compression_method"))
+        compression_method = args[args_to_idx["compression_method"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("access_key_id"))
+        access_key_id = args[args_to_idx["access_key_id"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("secret_access_key"))
+        secret_access_key = args[args_to_idx["secret_access_key"]]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
 
