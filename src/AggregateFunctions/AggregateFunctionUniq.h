@@ -127,6 +127,7 @@ struct AggregateFunctionUniqExactData<String>
 
 /// uniqThetaSketch
 #if USE_DATASKETCHES
+
 struct AggregateFunctionUniqThetaSketchData
 {
     using Set = ThetaSketchData<UInt64>;
@@ -135,14 +136,6 @@ struct AggregateFunctionUniqThetaSketchData
     static String getName() { return "uniqThetaSketch"; }
 };
 
-/// For a function that takes multiple arguments. Such a function pre-hashes them in advance, so TrivialHash is used here.
-struct AggregateFunctionUniqThetaSketchDataForVariadic
-{
-    using Set = ThetaSketchData<UInt64>;
-    Set set;
-
-    static String getName() { return "uniqThetaSketch"; }
-};
 #endif
 
 namespace detail

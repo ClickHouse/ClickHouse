@@ -135,7 +135,7 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 
 #if USE_DATASKETCHES
     factory.registerFunction("uniqThetaSketch",
-        {createAggregateFunctionUniq<AggregateFunctionUniqThetaSketchData, AggregateFunctionUniqThetaSketchDataForVariadic>, properties});
+        {createAggregateFunctionUniq<AggregateFunctionUniqThetaSketchData, AggregateFunctionUniqThetaSketchData>, properties});
 #endif
 
 }
