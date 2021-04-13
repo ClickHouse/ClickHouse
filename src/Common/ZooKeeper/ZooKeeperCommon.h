@@ -32,8 +32,6 @@ struct ZooKeeperResponse : virtual Response
     virtual void writeImpl(WriteBuffer &) const = 0;
     virtual void write(WriteBuffer & out) const;
     virtual OpNum getOpNum() const = 0;
-
-    //size_t bytesSize() const override { return Response::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
 
 using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
