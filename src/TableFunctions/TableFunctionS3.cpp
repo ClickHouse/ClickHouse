@@ -44,38 +44,34 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
+    /// Size -> argument indexes
+    static auto size_to_args = std::map<size_t, std::map<String, size_t>>
+    {
+        {3, {{"format", 1}, {"structure", 2}}},
+        {4, {{"format", 1}, {"structure", 2}, {"compression_method", 3}}},
+        {5, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}}},
+        {6, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}, {"compression_method", 5}}}
+    };
+
+    /// This argument is always the first
     filename = args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-    if (args.size() == 3)
-    {
-        format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-    }
-    else if (args.size() == 4)
-    {
-        format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        compression_method = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-    }
-    else if (args.size() == 5)
-    {
-        access_key_id = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        secret_access_key = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        format = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[4]->as<ASTLiteral &>().value.safeGet<String>();
-    }
-    else if (args.size() == 6)
-    {
-        access_key_id = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        secret_access_key = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        format = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        structure = args[4]->as<ASTLiteral &>().value.safeGet<String>();
-        compression_method = args[5]->as<ASTLiteral &>().value.safeGet<String>();
-    }
-    else
-    {
-        throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-    }
+    auto & args_to_idx = size_to_args[args.size()];
+
+    if (args_to_idx.contains("format"))
+        format = args[args_to_idx["format"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("structure"))
+        structure = args[args_to_idx["structure"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("compression_method"))
+        compression_method = args[args_to_idx["compression_method"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("access_key_id"))
+        access_key_id = args[args_to_idx["access_key_id"]]->as<ASTLiteral &>().value.safeGet<String>();
+
+    if (args_to_idx.contains("secret_access_key"))
+        secret_access_key = args[args_to_idx["secret_access_key"]]->as<ASTLiteral &>().value.safeGet<String>();
 }
 
 ColumnsDescription TableFunctionS3::getActualTableStructure(ContextPtr context) const
