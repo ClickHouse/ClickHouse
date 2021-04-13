@@ -769,7 +769,7 @@ class ClickHouseCluster:
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
-    def wait_mysql8_to_start(self, timeout=60):
+    def wait_mysql8_to_start(self, timeout=180):
         self.mysql8_ip = self.get_instance_ip('mysql80')
         start = time.time()
         while time.time() - start < timeout:
@@ -854,7 +854,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait ZooKeeper container")
 
-    def make_hdfs_api(self, timeout=60, kerberized=False):
+    def make_hdfs_api(self, timeout=180, kerberized=False):
         hdfs_api = None
         if kerberized:
             keytab = p.abspath(p.join(self.instances['node1'].path, "secrets/clickhouse.keytab"))
