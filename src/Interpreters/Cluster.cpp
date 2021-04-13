@@ -111,7 +111,6 @@ Cluster::Address::Address(
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
     compression = config.getBool(config_prefix + ".compression", !is_local)
         ? Protocol::Compression::Enable : Protocol::Compression::Disable;
-
 }
 
 
