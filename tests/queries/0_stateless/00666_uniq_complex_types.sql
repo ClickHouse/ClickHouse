@@ -27,13 +27,3 @@ SELECT uniqUpTo(3)((x, x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) A
 SELECT uniqUpTo(3)((x, arrayMap(elem -> [elem, elem], x))) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
 SELECT uniqUpTo(3)((x, toString(x))) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
 SELECT uniqUpTo(3)(x) FROM (SELECT arrayJoin([[], ['a'], ['a', NULL, 'b'], []]) AS x);
-
-SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[[]], [['a', 'b']], [['a'], ['b']], [['a', 'b']]]) AS x);
-SELECT uniqThetaSketch(x, x) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch(x, arrayMap(elem -> [elem, elem], x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch(x, toString(x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch((x, x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch((x, arrayMap(elem -> [elem, elem], x))) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch((x, toString(x))) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
-SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[], ['a'], ['a', NULL, 'b'], []]) AS x);

@@ -3,8 +3,7 @@ SELECT
     uniqExact(x),
     uniqHLL12(x),
     uniqCombined(x),
-    uniqCombined64(x),
-    uniqThetaSketch(x)
+    uniqCombined64(x)
 FROM 
 (
     SELECT number % 2 AS x
@@ -15,8 +14,7 @@ SELECT
     uniqExact(x + y),
     uniqHLL12(x + y),
     uniqCombined(x + y),
-    uniqCombined64(x + y),
-    uniqThetaSketch(x + y)
+    uniqCombined64(x + y)
 FROM 
 (
     SELECT
@@ -29,8 +27,7 @@ SELECT
     uniqExact(x),
     uniqHLL12(x),
     uniqCombined(x),
-    uniqCombined64(x),
-    uniqThetaSketch(x)
+    uniqCombined64(x)
 FROM 
 (
     SELECT number % 2 AS x
@@ -41,8 +38,7 @@ SELECT
     uniqExact(x),
     uniqHLL12(x),
     uniqCombined(x),
-    uniqCombined64(x),
-    uniqThetaSketch(x)
+    uniqCombined64(x)
 FROM 
 (
     SELECT number % 2 AS x
@@ -53,8 +49,7 @@ SELECT
     uniqExact(x),
     uniqHLL12(x),
     uniqCombined(x),
-    uniqCombined64(x),
-    uniqThetaSketch(x)
+    uniqCombined64(x)
 FROM 
 (
     SELECT number % 2 AS x
@@ -65,8 +60,7 @@ SELECT
     uniqExact(x),
     uniqHLL12(x),
     uniqCombined(x),
-    uniqCombined64(x),
-    uniqThetaSketch(x)
+    uniqCombined64(x)
 FROM 
 (
     SELECT number % 2 AS x
@@ -85,8 +79,7 @@ SELECT
     uniqExact(x),
     uniqHLL12(x),
     uniqCombined(x),
-    uniqCombined64(x),
-    uniqThetaSketch(x)
+    uniqCombined64(x)
 FROM 
 (
     SELECT number % 2 AS x
@@ -97,8 +90,7 @@ SELECT
     uniqExact(x + y),
     uniqHLL12(x + y),
     uniqCombined(x + y),
-    uniqCombined64(x + y),
-    uniqThetaSketch(x + y)
+    uniqCombined64(x + y)
 FROM 
 (
     SELECT
@@ -111,8 +103,7 @@ SELECT
     uniqExact(-x),
     uniqHLL12(-x),
     uniqCombined(-x),
-    uniqCombined64(-x),
-    uniqThetaSketch(-x)
+    uniqCombined64(-x)
 FROM 
 (
     SELECT number % 2 AS x
@@ -123,8 +114,7 @@ SELECT
     uniqExact(bitNot(x)),
     uniqHLL12(bitNot(x)),
     uniqCombined(bitNot(x)),
-    uniqCombined64(bitNot(x)),
-    uniqThetaSketch(bitNot(x))
+    uniqCombined64(bitNot(x))
 FROM 
 (
     SELECT number % 2 AS x
@@ -135,8 +125,7 @@ SELECT
     uniqExact(bitNot(-x)),
     uniqHLL12(bitNot(-x)),
     uniqCombined(bitNot(-x)),
-    uniqCombined64(bitNot(-x)),
-    uniqThetaSketch(bitNot(-x))
+    uniqCombined64(bitNot(-x))
 FROM 
 (
     SELECT number % 2 AS x
@@ -147,8 +136,7 @@ SELECT
     uniqExact(-bitNot(-x)),
     uniqHLL12(-bitNot(-x)),
     uniqCombined(-bitNot(-x)),
-    uniqCombined64(-bitNot(-x)),
-    uniqThetaSketch(-bitNot(-x))
+    uniqCombined64(-bitNot(-x))
 FROM 
 (
     SELECT number % 2 AS x

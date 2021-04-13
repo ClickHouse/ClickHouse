@@ -1,5 +1,135 @@
 DROP TABLE IF EXISTS stored_aggregates;
 
+SELECT 'uniqThetaSketch';
+
+SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 15) GROUP BY Y;
+SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 3000) GROUP BY Y;
+SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 1000000) GROUP BY Y;
+
+SELECT 'uniqThetaSketch round(float)';
+
+SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(1/(1 + (3*X*X - 7*X + 11) % 37), 3) AS Y FROM system.numbers LIMIT 15) GROUP BY Y;
+SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(1/(1 + (3*X*X - 7*X + 11) % 37), 3) AS Y FROM system.numbers LIMIT 3000) GROUP BY Y;
+SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(1/(1 + (3*X*X - 7*X + 11) % 37), 3) AS Y FROM system.numbers LIMIT 1000000) GROUP BY Y;
+
+SELECT 'uniqThetaSketch round(toFloat32())';
+
+SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(toFloat32(1/(1 + (3*X*X - 7*X + 11) % 37)), 3) AS Y FROM system.numbers LIMIT 15) GROUP BY Y;
+SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(toFloat32(1/(1 + (3*X*X - 7*X + 11) % 37)), 3) AS Y FROM system.numbers LIMIT 3000) GROUP BY Y;
+SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(toFloat32(1/(1 + (3*X*X - 7*X + 11) % 37)), 3) AS Y FROM system.numbers LIMIT 1000000) GROUP BY Y;
+
+SELECT 'uniqThetaSketch IPv4NumToString';
+
+SELECT Y, uniqThetaSketch(Z) FROM (SELECT number AS X, IPv4NumToString(toUInt32(X)) AS Z, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 15) GROUP BY Y;
+SELECT Y, uniqThetaSketch(Z) FROM (SELECT number AS X, IPv4NumToString(toUInt32(X)) AS Z, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 3000) GROUP BY Y;
+SELECT Y, uniqThetaSketch(Z) FROM (SELECT number AS X, IPv4NumToString(toUInt32(X)) AS Z, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 1000000) GROUP BY Y;
+
+SELECT 'uniqThetaSketch remote()';
+
+SELECT uniqThetaSketch(dummy) FROM remote('127.0.0.{2,3}', system.one);
+
+SELECT 'uniqThetaSketch many agrs';
+
+SELECT
+    uniqThetaSketch(x), uniqThetaSketch((x)), uniqThetaSketch(x, y), uniqThetaSketch((x, y)), uniqThetaSketch(x, y, z), uniqThetaSketch((x, y, z))
+FROM
+(
+    SELECT
+        number % 10 AS x,
+        intDiv(number, 10) % 10 AS y,
+        toString(intDiv(number, 100) % 10) AS z
+    FROM system.numbers LIMIT 1000
+);
+
+
+SELECT k,
+    uniqThetaSketch(x), uniqThetaSketch((x)), uniqThetaSketch(x, y), uniqThetaSketch((x, y)), uniqThetaSketch(x, y, z), uniqThetaSketch((x, y, z)),
+    count() AS c
+FROM
+(
+    SELECT
+        (number + 0x8ffcbd8257219a26) * 0x66bb3430c06d2353 % 131 AS k,
+        number % 10 AS x,
+        intDiv(number, 10) % 10 AS y,
+        toString(intDiv(number, 100) % 10) AS z
+    FROM system.numbers LIMIT 100000
+)
+GROUP BY k
+ORDER BY c DESC, k ASC
+LIMIT 10;
+
+
+SELECT 'uniqThetaSketch distinct';
+
+SET count_distinct_implementation = 'uniqThetaSketch';
+SELECT count(DISTINCT x) FROM (SELECT number % 123 AS x FROM system.numbers LIMIT 1000);
+SELECT count(DISTINCT x, y) FROM (SELECT number % 11 AS x, number % 13 AS y FROM system.numbers LIMIT 1000);
+
+
+SELECT 'uniqThetaSketch arrays';
+
+SELECT uniqThetaSketchArray([0, 1, 1], [0, 1, 1], [0, 1, 1]);
+SELECT uniqThetaSketchArray([0, 1, 1], [0, 1, 1], [0, 1, 0]);
+SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[1, 2], [1, 2], [1, 2, 3], []]) AS x);
+
+
+SELECT 'uniqThetaSketch complex types';
+
+SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[[]], [['a', 'b']], [['a'], ['b']], [['a', 'b']]]) AS x);
+SELECT uniqThetaSketch(x, x) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqThetaSketch(x, arrayMap(elem -> [elem, elem], x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqThetaSketch(x, toString(x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqThetaSketch((x, x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqThetaSketch((x, arrayMap(elem -> [elem, elem], x))) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqThetaSketch((x, toString(x))) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x);
+SELECT uniqThetaSketch(x) FROM (SELECT arrayJoin([[], ['a'], ['a', NULL, 'b'], []]) AS x);
+
+
+SELECT 'uniqThetaSketch decimals';
+
+DROP TABLE IF EXISTS decimal;
+CREATE TABLE decimal
+(
+    a Decimal32(4),
+    b Decimal64(8),
+    c Decimal128(8)
+) ENGINE = Memory;
+
+SELECT (uniqThetaSketch(a), uniqThetaSketch(b), uniqThetaSketch(c))
+FROM (SELECT * FROM decimal ORDER BY a);
+
+INSERT INTO decimal (a, b, c)
+SELECT toDecimal32(number - 50, 4), toDecimal64(number - 50, 8) / 3, toDecimal128(number - 50, 8) / 5
+FROM system.numbers LIMIT 101;
+
+SELECT (uniqThetaSketch(a), uniqThetaSketch(b), uniqThetaSketch(c))
+FROM (SELECT * FROM decimal ORDER BY a);
+
+DROP TABLE decimal;
+
+
+SELECT 'uniqThetaSketch remove injective';
+
+set optimize_injective_functions_inside_uniq = 1;
+
+EXPLAIN SYNTAX select uniqThetaSketch(x) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqThetaSketch(x + y) from (select number % 2 as x, number % 3 y from numbers(10));
+EXPLAIN SYNTAX select uniqThetaSketch(-x) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqThetaSketch(bitNot(x)) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqThetaSketch(bitNot(-x)) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqThetaSketch(-bitNot(-x)) from (select number % 2 as x from numbers(10));
+
+set optimize_injective_functions_inside_uniq = 0;
+
+EXPLAIN SYNTAX select uniqThetaSketch(x) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqThetaSketch(x + y) from (select number % 2 as x, number % 3 y from numbers(10));
+EXPLAIN SYNTAX select uniqThetaSketch(-x) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqThetaSketch(bitNot(x)) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqThetaSketch(bitNot(-x)) from (select number % 2 as x from numbers(10));
+EXPLAIN SYNTAX select uniqThetaSketch(-bitNot(-x)) from (select number % 2 as x from numbers(10));
+
+
 -- simple
 CREATE TABLE stored_aggregates
 (
