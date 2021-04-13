@@ -26,24 +26,28 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
 }
 
-bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
+bool StorageSystemPartsBase::hasVirtualColumn(const std::string & column, const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
 {
-    bool has_state_column = false;
+    bool has_column = false;
     Names real_column_names;
+
+    Names virtuals_names;
+    for (const auto & [name, _] : getVirtuals())
+        virtuals_names.push_back(name);
 
     for (const String & column_name : column_names)
     {
-        if (column_name == "_state")
-            has_state_column = true;
-        else
+        if (column_name == column)
+            has_column = true;
+        else if (std::find(virtuals_names.begin(), virtuals_names.end(), column_name) == virtuals_names.end())
             real_column_names.emplace_back(column_name);
     }
 
-    /// Do not check if only _state column is requested
-    if (!(has_state_column && real_column_names.empty()))
+    /// Do not check if only virtual columns is requested
+    if (!real_column_names.empty())
         metadata_snapshot->check(real_column_names, {}, getStorageID());
 
-    return has_state_column;
+    return has_column;
 }
 
 MergeTreeData::DataPartsVector
@@ -239,7 +243,7 @@ Pipe StorageSystemPartsBase::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    bool has_state_column = hasStateColumn(column_names, metadata_snapshot);
+    bool has_state_column = hasVirtualColumn("_state", column_names, metadata_snapshot);
 
     StoragesInfoStream stream(query_info, context);
 
