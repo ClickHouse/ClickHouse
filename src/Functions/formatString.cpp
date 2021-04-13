@@ -31,7 +31,7 @@ class FormatFunction : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FormatFunction>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FormatFunction>(); }
 
     String getName() const override { return name; }
 

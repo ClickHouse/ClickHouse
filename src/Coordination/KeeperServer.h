@@ -7,6 +7,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
 #include <unordered_map>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -22,9 +23,9 @@ private:
 
     nuraft::ptr<KeeperStateManager> state_manager;
 
-    nuraft::raft_launcher launcher;
-
     nuraft::ptr<nuraft::raft_server> raft_instance;
+    nuraft::ptr<nuraft::asio_service> asio_service;
+    nuraft::ptr<nuraft::rpc_listener> asio_listener;
 
     std::mutex append_entries_mutex;
 
@@ -36,7 +37,18 @@ private:
     std::atomic<bool> initial_batch_committed = false;
     std::atomic<size_t> active_session_id_requests = 0;
 
+    Poco::Logger * log;
+
     nuraft::cb_func::ReturnCode callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param);
+
+    /// Almost copy-paste from nuraft::launcher, but with separated server init and start
+    /// Allows to avoid race conditions.
+    void launchRaftServer(
+        const nuraft::raft_params & params,
+        const nuraft::asio_service::options & asio_opts);
+
+    void shutdownRaftServer();
+
 
 public:
     KeeperServer(
