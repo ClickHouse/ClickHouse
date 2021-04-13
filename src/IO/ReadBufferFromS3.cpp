@@ -12,6 +12,7 @@
 
 #    include <utility>
 
+
 namespace ProfileEvents
 {
     extern const Event S3ReadMicroseconds;
@@ -40,9 +41,11 @@ ReadBufferFromS3::ReadBufferFromS3(
 {
 }
 
-
 bool ReadBufferFromS3::nextImpl()
 {
+    /// Restoring valid value of `count()` during `nextImpl()`. See `ReadBuffer::next()`.
+    pos = working_buffer.begin();
+
     if (!impl)
         impl = initialize();
 
@@ -57,6 +60,10 @@ bool ReadBufferFromS3::nextImpl()
         try
         {
             next_result = impl->next();
+            /// FIXME. 1. Poco `istream` cannot read less than buffer_size or this state is being discarded during
+            ///           istream <-> iostream conversion. `gcount` always contains 0,
+            ///           that's why we always have error "Cannot read from istream at offset 0".
+
             break;
         }
         catch (const Exception & e)
@@ -67,7 +74,6 @@ bool ReadBufferFromS3::nextImpl()
                     bucket, key, getPosition(), attempt, e.message());
 
             impl.reset();
-            offset = getPosition();
 
             if (!attempt)
                 throw;
@@ -102,7 +108,6 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     return offset;
 }
 
-
 off_t ReadBufferFromS3::getPosition()
 {
     return offset + count();
@@ -110,13 +115,13 @@ off_t ReadBufferFromS3::getPosition()
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, std::to_string(offset));
+    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, getPosition());
 
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    if (offset != 0)
-        req.SetRange("bytes=" + std::to_string(offset) + "-");
+    if (getPosition())
+        req.SetRange("bytes=" + std::to_string(getPosition()) + "-");
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
