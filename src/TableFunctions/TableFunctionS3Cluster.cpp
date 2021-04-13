@@ -118,7 +118,8 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             getActualTableStructure(context), ConstraintsDescription{},
             context, compression_method, /*distributed_processing=*/true);
     }
-    else {
+    else
+    {
         storage = StorageS3Cluster::create(
             filename, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name),
             cluster_name, format, context->getSettingsRef().s3_max_connections,
