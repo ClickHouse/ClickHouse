@@ -172,7 +172,7 @@ public:
                     for (size_t group = 1; group <= groups_count; ++group)
                         all_matches.push_back(matched_groups[group]);
 
-                    /// Additional limit to fail fast on supposedly incorrect usage, aribtrary value.
+                    /// Additional limit to fail fast on supposedly incorrect usage, arbitrary value.
                     static constexpr size_t MAX_MATCHES_PER_ROW = 1000;
                     if (matches_per_row > MAX_MATCHES_PER_ROW)
                         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
