@@ -15,13 +15,11 @@ struct StreamSettings
 {
     size_t max_read_mysql_rows;
     size_t max_read_bytes_size;
-    bool auto_close = false;
-    bool fetch_by_name = false;
-    size_t default_num_tries_on_connection_loss = 5;
+    bool auto_close;
+    bool fetch_by_name;
+    size_t default_num_tries_on_connection_loss;
 
-    StreamSettings(const Settings & settings);
-    StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_);
-    StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_);
+    StreamSettings(const Settings & settings, bool auto_close_ = false, bool fetch_by_name_ = false, size_t max_retry_ = 5);
 
 };
 

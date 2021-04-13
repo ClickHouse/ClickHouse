@@ -445,8 +445,8 @@ class IColumn;
     M(Bool, database_replicated_always_detach_permanently, false, "Execute DETACH TABLE as DETACH TABLE PERMANENTLY if database engine is Replicated", 0) \
     M(DistributedDDLOutputMode, distributed_ddl_output_mode, DistributedDDLOutputMode::THROW, "Format of distributed DDL query result", 0) \
     M(UInt64, distributed_ddl_entry_format_version, 1, "Version of DDL entry to write into ZooKeeper", 0) \
-    M(UInt64, max_read_mysql_rows, DEFAULT_BLOCK_SIZE, "Limit maximum rows when MaterializeMySQL flush history data. 0 -> Disable it.", 0) \
-    M(UInt64, max_read_mysql_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256), "Limit maximum bytes when MaterializeMySQL flush history data. 0 -> Disable it.", 0)  \
+    M(UInt64, max_read_mysql_rows, DEFAULT_BLOCK_SIZE, "Limit maximum number of rows when MaterializeMySQL should flush history data. If equal to 0, this setting is disabled", 0) \
+    M(UInt64, max_read_mysql_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256), "Limit maximum number of bytes when MaterializeMySQL should flush history data. If equal to 0, this setting is disabled", 0)  \
     \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
