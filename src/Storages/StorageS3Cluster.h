@@ -53,8 +53,6 @@ private:
 
     String filename;
     String cluster_name;
-    ClusterPtr cluster;
-
     String format_name;
     String compression_method;
 };

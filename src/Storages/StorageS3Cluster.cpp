@@ -69,7 +69,6 @@ StorageS3Cluster::StorageS3Cluster(
     , client_auth{S3::URI{Poco::URI{filename_}}, access_key_id_, secret_access_key_, max_connections_, {}, {}}
     , filename(filename_)
     , cluster_name(cluster_name_)
-    , cluster(context_->getCluster(cluster_name)->getClusterWithReplicasAsShards(context_->getSettings()))
     , format_name(format_name_)
     , compression_method(compression_method_)
 {
@@ -131,6 +130,8 @@ Pipe StorageS3Cluster::read(
     }
 
     /// The code from here and below executes on initiator
+
+    auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
     S3::URI s3_uri(Poco::URI{filename});
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
