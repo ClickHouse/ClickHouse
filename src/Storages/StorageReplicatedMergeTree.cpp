@@ -112,9 +112,11 @@ namespace ErrorCodes
     extern const int NOT_A_LEADER;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int PARTITION_ALREADY_EXISTS;
+    extern const int PART_ALREADY_EXISTS;
     extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int PARTITION_DOESNT_EXIST;
+    extern const int PART_DOESNT_EXIST;
     extern const int UNFINISHED;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int TOO_MANY_FETCHES;
@@ -5356,11 +5358,11 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
     }
 }
 
-
 void StorageReplicatedMergeTree::fetchPartition(
     const ASTPtr & partition,
     const StorageMetadataPtr & metadata_snapshot,
     const String & from_,
+    bool fetch_part,
     ContextPtr query_context)
 {
     Macros::MacroExpansionInfo info;
@@ -5373,40 +5375,54 @@ void StorageReplicatedMergeTree::fetchPartition(
     if (from.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    String partition_id = getPartitionIDFromQuery(partition, query_context);
     zkutil::ZooKeeperPtr zookeeper;
     if (auxiliary_zookeeper_name != default_zookeeper_name)
-    {
         zookeeper = getContext()->getAuxiliaryZooKeeper(auxiliary_zookeeper_name);
-
-        LOG_INFO(log, "Will fetch partition {} from shard {} (auxiliary zookeeper '{}')", partition_id, from_, auxiliary_zookeeper_name);
-    }
     else
-    {
         zookeeper = getZooKeeper();
-
-        LOG_INFO(log, "Will fetch partition {} from shard {}", partition_id, from_);
-    }
 
     if (from.back() == '/')
         from.resize(from.size() - 1);
 
+    if (fetch_part)
+    {
+        String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+        auto replica_path_ = findReplicaHavingPart(part_name, from, zookeeper);
+
+        if (replica_path_.empty())
+            throw Exception("fetch part " + part_name + " not exists !", ErrorCodes::PART_DOESNT_EXIST);
+        /** Let's check that there is no such part in the `detached` directory (where we will write the downloaded parts).
+          * Unreliable (there is a race condition) - such a part may appear a little later.
+          */
+        if (checkDetachPartIfExists(part_name))
+            throw Exception("Detached part " + part_name + " already exists.", ErrorCodes::PART_ALREADY_EXISTS);
+        LOG_INFO(log, "Will fetch part {} from shard {} (zookeeper '{}')", part_name, from_, auxiliary_zookeeper_name);
+
+        try
+        {
+            /// part name , metadata, replica path , true, 0, zookeeper
+            if (!fetchPart(part_name, metadata_snapshot, replica_path_, true, 0, zookeeper))
+                throw Exception("fetch  part " + part_name + " failed! ", ErrorCodes::UNFINISHED);
+        }
+        catch (const DB::Exception & e)
+        {
+            if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+                && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
+                throw;
+
+            LOG_INFO(log, e.displayText());
+        }
+        return;
+    }
+
+    String partition_id = getPartitionIDFromQuery(partition, query_context);
+    LOG_INFO(log, "Will fetch partition {} from shard {} (zookeeper '{}')", partition_id, from_, auxiliary_zookeeper_name);
 
     /** Let's check that there is no such partition in the `detached` directory (where we will write the downloaded parts).
       * Unreliable (there is a race condition) - such a partition may appear a little later.
       */
-    Poco::DirectoryIterator dir_end;
-    for (const std::string & path : getDataPaths())
-    {
-        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
-        {
-            MergeTreePartInfo part_info;
-            if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, format_version)
-                && part_info.partition_id == partition_id)
-                throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
-        }
-
-    }
+    if (checkDetachPartitionIfExists(partition_id))
+        throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
 
     zkutil::Strings replicas;
     zkutil::Strings active_replicas;
@@ -6913,4 +6929,46 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     return best_replica;
 }
 
+String StorageReplicatedMergeTree::findReplicaHavingPart(
+    const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_)
+{
+    Strings replicas = zookeeper_->getChildren(zookeeper_path_ + "/replicas");
+
+    /// Select replicas in uniformly random order.
+    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
+
+    for (const String & replica : replicas)
+    {
+        if (zookeeper_->exists(zookeeper_path_ + "/replicas/" + replica + "/parts/" + part_name)
+            && zookeeper_->exists(zookeeper_path_ + "/replicas/" + replica + "/is_active"))
+            return zookeeper_path_ + "/replicas/" + replica;
+    }
+
+    return {};
+}
+
+bool StorageReplicatedMergeTree::checkDetachPartIfExists(const String & part_name)
+{
+    Poco::DirectoryIterator dir_end;
+    for (const std::string & path : getDataPaths())
+        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
+            if (dir_it.name() == part_name)
+                return true;
+    return false;
+}
+
+bool StorageReplicatedMergeTree::checkDetachPartitionIfExists(const String & partition_name)
+{
+    Poco::DirectoryIterator dir_end;
+    for (const std::string & path : getDataPaths())
+    {
+        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
+        {
+            MergeTreePartInfo part_info;
+            if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, format_version) && part_info.partition_id == partition_name)
+                return true;
+        }
+    }
+    return false;
+}
 }
