@@ -102,11 +102,29 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
     const ASTPtr & /*function*/, ContextPtr context,
     const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
-    StoragePtr storage = StorageS3Cluster::create(
-        filename, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name),
-        cluster_name, format, context->getSettingsRef().s3_max_connections,
-        getActualTableStructure(context), ConstraintsDescription{},
-        context, compression_method);
+    StoragePtr storage;
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        /// On worker node this filename won't contains globs
+        Poco::URI uri (filename);
+        S3::URI s3_uri (uri);
+        /// Actually this parameters are not used
+        UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
+        UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
+        UInt64 max_connections = context->getSettingsRef().s3_max_connections;
+        storage = StorageS3::create(
+            s3_uri, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name),
+            format, min_upload_part_size, max_single_part_upload_size, max_connections,
+            getActualTableStructure(context), ConstraintsDescription{},
+            context, compression_method, /*distributed_processing=*/true);
+    }
+    else {
+        storage = StorageS3Cluster::create(
+            filename, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name),
+            cluster_name, format, context->getSettingsRef().s3_max_connections,
+            getActualTableStructure(context), ConstraintsDescription{},
+            context, compression_method);
+    }
 
     storage->startup();
 

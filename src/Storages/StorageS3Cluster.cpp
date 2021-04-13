@@ -79,57 +79,17 @@ StorageS3Cluster::StorageS3Cluster(
     StorageS3::updateClientAndAuthSettings(context_, client_auth);
 }
 
-
+/// The code executes on initiator
 Pipe StorageS3Cluster::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    unsigned num_streams)
+    size_t /*max_block_size*/,
+    unsigned /*num_streams*/)
 {
     StorageS3::updateClientAndAuthSettings(context, client_auth);
-
-    /// Secondary query, need to read from S3
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        bool need_path_column = false;
-        bool need_file_column = false;
-        for (const auto & column : column_names)
-        {
-            if (column == "_path")
-                need_path_column = true;
-            if (column == "_file")
-                need_file_column = true;
-        }
-
-        /// Save callback not to capture context by reference of copy it.
-        auto file_iterator = std::make_shared<StorageS3Source::IteratorWrapper>(
-            [callback = context->getReadTaskCallback()]() -> String {
-                return callback();
-        });
-
-        Pipes pipes;
-        for (size_t i = 0; i < num_streams; ++i)
-        {
-            pipes.emplace_back(std::make_shared<StorageS3Source>(
-                need_path_column, need_file_column, format_name, getName(),
-                metadata_snapshot->getSampleBlock(), context,
-                metadata_snapshot->getColumns(), max_block_size,
-                compression_method,
-                client_auth.client,
-                client_auth.uri.bucket,
-                file_iterator
-            ));
-        }
-        auto pipe = Pipe::unitePipes(std::move(pipes));
-
-        narrowPipe(pipe, num_streams);
-        return pipe;
-    }
-
-    /// The code from here and below executes on initiator
 
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
     S3::URI s3_uri(Poco::URI{filename});

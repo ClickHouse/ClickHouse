@@ -106,7 +106,8 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         ContextPtr context_,
-        const String & compression_method_ = "");
+        const String & compression_method_ = "",
+        bool distributed_processing_ = false);
 
     String getName() const override
     {
@@ -130,7 +131,6 @@ private:
 
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
-    friend class StorageS3SequentialSource;
 
     struct ClientAuthentificaiton
     {
@@ -149,6 +149,7 @@ private:
     size_t max_single_part_upload_size;
     String compression_method;
     String name;
+    const bool distributed_processing;
 
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentificaiton &);
 };
