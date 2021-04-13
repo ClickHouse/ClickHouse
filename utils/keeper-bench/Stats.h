@@ -7,31 +7,44 @@
 
 struct Stats
 {
-    std::atomic<size_t> requests{0};
+    std::atomic<size_t> read_requests{0};
+    std::atomic<size_t> write_requests{0};
     size_t errors = 0;
     size_t requests_write_bytes = 0;
     size_t requests_read_bytes = 0;
-    double work_time = 0;
+    double read_work_time = 0;
+    double write_work_time = 0;
 
     using Sampler = ReservoirSampler<double>;
-    Sampler sampler {1 << 16};
+    Sampler read_sampler {1 << 16};
+    Sampler write_sampler {1 << 16};
 
-    void add(double seconds, size_t request_read_bytes_inc, size_t request_write_bytes_inc)
+    void addRead(double seconds, size_t requests_inc, size_t bytes_inc)
     {
-        ++requests;
-        work_time += seconds;
-        requests_read_bytes += request_read_bytes_inc;
-        requests_write_bytes += request_write_bytes_inc;
-        sampler.insert(seconds);
+        read_work_time += seconds;
+        read_requests += requests_inc;
+        requests_read_bytes += bytes_inc;
+        read_sampler.insert(seconds);
+    }
+
+    void addWrite(double seconds, size_t requests_inc, size_t bytes_inc)
+    {
+        write_work_time += seconds;
+        write_requests += requests_inc;
+        requests_write_bytes += bytes_inc;
+        write_sampler.insert(seconds);
     }
 
     void clear()
     {
-        requests = 0;
-        work_time = 0;
+        read_requests = 0;
+        write_requests = 0;
+        read_work_time = 0;
+        write_work_time = 0;
         requests_read_bytes = 0;
         requests_write_bytes = 0;
-        sampler.clear();
+        read_sampler.clear();
+        write_sampler.clear();
     }
 };
 
