@@ -185,7 +185,6 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
-            contrib/datasketches-cpp
         )
 
         git submodule sync
@@ -206,7 +205,6 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
-        "-DENABLE_DATASKETCHES=1"
     )
 
     # TODO remove this? we don't use ccache anyway. An option would be to download it
@@ -313,6 +311,7 @@ function run_tests
         01533_collate_in_nullable
         01542_collate_in_array
         01543_collate_in_tuple
+        01798_uniq_theta_sketch
         _orc_
         arrow
         avro
