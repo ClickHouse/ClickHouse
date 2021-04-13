@@ -88,7 +88,7 @@ Pipe StorageS3Cluster::read(
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    unsigned num_streams)
 {
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
@@ -110,16 +110,24 @@ Pipe StorageS3Cluster::read(
             [callback = context->getReadTaskCallback()]() -> String {
                 return callback();
         });
+        
+        Pipes pipes;
+        for (size_t i = 0; i < num_streams; ++i)
+        {
+            pipes.emplace_back(std::make_shared<StorageS3Source>(
+                need_path_column, need_file_column, format_name, getName(),
+                metadata_snapshot->getSampleBlock(), context,
+                metadata_snapshot->getColumns(), max_block_size,
+                compression_method,
+                client_auth.client,
+                client_auth.uri.bucket,
+                file_iterator
+            ));
+        }
+        auto pipe = Pipe::unitePipes(std::move(pipes));
 
-        return Pipe(std::make_shared<StorageS3Source>(
-            need_path_column, need_file_column, format_name, getName(),
-            metadata_snapshot->getSampleBlock(), context,
-            metadata_snapshot->getColumns(), max_block_size,
-            compression_method,
-            client_auth.client,
-            client_auth.uri.bucket,
-            file_iterator
-        ));
+        narrowPipe(pipe, num_streams);
+        return pipe;
     }
 
     /// The code from here and below executes on initiator
