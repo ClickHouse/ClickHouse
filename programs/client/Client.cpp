@@ -2252,30 +2252,26 @@ private:
             return;
 
         processed_rows += block.rows();
-        initBlockOutputStream(block);
 
         /// The header block containing zero rows was used to initialize
         /// block_out_stream, do not output it.
         /// Also do not output too much data if we're fuzzing.
-        if (block.rows() != 0
-            && (query_fuzzer_runs == 0 || processed_rows < 100))
-        {
-            block_out_stream->write(block);
-            written_first_block = true;
-        }
+        if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
+            return;
 
-        bool clear_progress = false;
+        initBlockOutputStream(block);
+
         if (need_render_progress)
-            clear_progress = std_out.offset() > 0;
-
-        if (clear_progress)
             clearProgress();
+
+        block_out_stream->write(block);
+        written_first_block = true;
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (clear_progress)
+        if (need_render_progress)
             writeProgress();
     }
 
