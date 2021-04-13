@@ -1,9 +1,5 @@
 #include "HashedDictionary.h"
 
-#include <ext/size.h>
-
-#include <absl/container/flat_hash_map.h>
-
 #include <Core/Defines.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -46,13 +42,13 @@ HashedDictionary<dictionary_key_type, sparse>::HashedDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_,
-    BlockPtr saved_block_)
+    BlockPtr previously_loaded_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)
-    , saved_block(std::move(saved_block_))
+    , previously_loaded_block(std::move(previously_loaded_block_))
 {
     createAttributes();
     loadData();
@@ -127,7 +123,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 [&](const size_t row, const auto value) { return out[row] = value; },
                 [&](const size_t row)
                 {
-                    out[row] = 0;
+                    out[row] = ValueType();
                     (*vec_null_map_to)[row] = true;
                 },
                 default_value_extractor);
@@ -347,7 +343,7 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::updateData()
 {
-    if (!saved_block || saved_block->rows() == 0)
+    if (!previously_loaded_block || previously_loaded_block->rows() == 0)
     {
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
@@ -355,13 +351,13 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
         while (const auto block = stream->read())
         {
             /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!saved_block)
-                saved_block = std::make_shared<DB::Block>(block.cloneEmpty());
+            if (!previously_loaded_block)
+                previously_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
 
             for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
             {
                 const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
-                MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->assumeMutable();
+                MutableColumnPtr saved_column = previously_loaded_block->getByPosition(attribute_idx).column->assumeMutable();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
@@ -369,70 +365,17 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
     }
     else
     {
-        size_t skip_keys_size_offset = dict_struct.getKeysSize();
-
-        Columns saved_block_key_columns;
-        saved_block_key_columns.reserve(skip_keys_size_offset);
-
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < skip_keys_size_offset; ++i)
-            saved_block_key_columns.emplace_back(saved_block->safeGetByPosition(i).column);
-
-
-        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-        DictionaryKeysExtractor<dictionary_key_type> saved_keys_extractor(saved_block_key_columns, arena_holder.getComplexKeyArena());
-        auto saved_keys_extracted_from_block = saved_keys_extractor.extractAllKeys();
-
         auto stream = source_ptr->loadUpdatedAll();
-        stream->readPrefix();
-
-        while (Block block = stream->read())
-        {
-            /// TODO: Rewrite
-            Columns block_key_columns;
-            block_key_columns.reserve(skip_keys_size_offset);
-
-            /// Split into keys columns and attribute columns
-            for (size_t i = 0; i < skip_keys_size_offset; ++i)
-                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-            DictionaryKeysExtractor<dictionary_key_type> block_keys_extractor(saved_block_key_columns, arena_holder.getComplexKeyArena());
-            auto keys_extracted_from_block = block_keys_extractor.extractAllKeys();
-
-            absl::flat_hash_map<KeyType, std::vector<size_t>, DefaultHash<KeyType>> update_keys;
-            for (size_t row = 0; row < keys_extracted_from_block.size(); ++row)
-            {
-                auto key = keys_extracted_from_block[row];
-                update_keys[key].push_back(row);
-            }
-
-            IColumn::Filter filter(saved_keys_extracted_from_block.size());
-
-            for (size_t row = 0; row < saved_keys_extracted_from_block.size(); ++row)
-            {
-                auto key = saved_keys_extracted_from_block[row];
-                auto it = update_keys.find(key);
-                filter[row] = (it == update_keys.end());
-            }
-
-            auto block_columns = block.mutateColumns();
-            for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
-            {
-                auto & column = saved_block->safeGetByPosition(attribute_idx).column;
-                const auto & filtered_column = column->filter(filter, -1);
-                block_columns[attribute_idx]->insertRangeFrom(*filtered_column.get(), 0, filtered_column->size());
-            }
-
-            saved_block->setColumns(std::move(block_columns));
-        }
-
-        stream->readSuffix();
+        mergeBlockWithStream<dictionary_key_type>(
+            dict_struct.getKeysSize(),
+            *previously_loaded_block,
+            stream);
     }
 
-    if (saved_block)
+    if (previously_loaded_block)
     {
-        resize(saved_block->rows());
-        blockToAttributes(*saved_block.get());
+        resize(previously_loaded_block->rows());
+        blockToAttributes(*previously_loaded_block.get());
     }
 }
 
@@ -604,7 +547,7 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 
     if (require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
-            "({}): dictionary source is empty and 'require_nonempty' property is set.",
+            "{}: dictionary source is empty and 'require_nonempty' property is set.",
             full_name);
 }
 
@@ -624,7 +567,11 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 
             if constexpr (sparse || std::is_same_v<AttributeValueType, Field>)
             {
-                bytes_allocated += container.max_size() * (sizeof(KeyType) + sizeof(AttributeValueType));
+                /// bucket_count() - Returns table size, that includes empty and deleted
+                /// size()         - Returns table size, w/o empty and deleted
+                /// and since this is sparsehash, empty cells should not be significant,
+                /// and since items cannot be removed from the dictionary, deleted is also not important.
+                bytes_allocated += container.size() * (sizeof(KeyType) + sizeof(AttributeValueType));
                 bucket_count = container.bucket_count();
             }
             else
@@ -729,10 +676,10 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for complex key hashed dictionary");
 
         if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception{full_name
-                                + ": elements .structure.range_min and .structure.range_max should be defined only "
-                                  "for a dictionary of layout 'range_hashed'",
-                            ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{}: elements .structure.range_min and .structure.range_max should be defined only "
+                "for a dictionary of layout 'range_hashed'",
+                full_name);
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};

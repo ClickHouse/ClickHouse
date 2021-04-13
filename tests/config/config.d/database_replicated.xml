@@ -19,8 +19,8 @@
         <server_id>1</server_id>
 
         <coordination_settings>
-            <operation_timeout_ms>5000</operation_timeout_ms>
-            <session_timeout_ms>10000</session_timeout_ms>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
             <heart_beat_interval_ms>1000</heart_beat_interval_ms>
             <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>

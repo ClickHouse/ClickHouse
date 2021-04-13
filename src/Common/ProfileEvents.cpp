@@ -146,6 +146,8 @@
     M(StorageBufferPassedTimeMaxThreshold, "") \
     M(StorageBufferPassedRowsMaxThreshold, "") \
     M(StorageBufferPassedBytesMaxThreshold, "") \
+    M(StorageBufferLayerLockReadersWaitMilliseconds, "Time for waiting for Buffer layer during reading") \
+    M(StorageBufferLayerLockWritersWaitMilliseconds, "Time for waiting free Buffer layer to write to (can be used to tune Buffer layers)") \
     \
     M(DictCacheKeysRequested, "") \
     M(DictCacheKeysRequestedMiss, "") \
