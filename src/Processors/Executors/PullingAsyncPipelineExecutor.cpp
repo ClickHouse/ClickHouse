@@ -5,7 +5,7 @@
 #include <Processors/QueryPipeline.h>
 
 #include <Common/setThreadName.h>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 
 namespace DB
 {
@@ -72,7 +72,7 @@ static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGrou
         if (thread_group)
             CurrentThread::attachTo(thread_group);
 
-        SCOPE_EXIT(
+        SCOPE_EXIT_SAFE(
             if (thread_group)
                 CurrentThread::detachQueryIfNotDetached();
         );
@@ -110,8 +110,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
         data->thread = ThreadFromGlobalPool(std::move(func));
     }
 
-    if (data->has_exception)
-        std::rethrow_exception(std::move(data->exception));
+    data->rethrowExceptionIfHas();
 
     bool is_execution_finished = lazy_format ? lazy_format->isFinished()
                                              : data->is_finished.load();

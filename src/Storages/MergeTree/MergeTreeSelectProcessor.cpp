@@ -87,9 +87,9 @@ try
     if (!reader)
     {
         if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.global_context.getUncompressedCache();
+            owned_uncompressed_cache = storage.getContext()->getUncompressedCache();
 
-        owned_mark_cache = storage.global_context.getMarkCache();
+        owned_mark_cache = storage.getContext()->getMarkCache();
 
         reader = data_part->getReader(task_columns.columns, metadata_snapshot, all_mark_ranges,
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);

@@ -13,6 +13,9 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataStreams/NullBlockOutputStream.h>
+#include <DataStreams/copyData.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -45,17 +48,17 @@ bool isSupportedAlterType(int type)
 }
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context)
 {
     return executeDDLQueryOnCluster(query_ptr_, context, {});
 }
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access, bool query_requires_grant_option)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const AccessRightsElements & query_requires_access)
 {
-    return executeDDLQueryOnCluster(query_ptr, context, AccessRightsElements{query_requires_access}, query_requires_grant_option);
+    return executeDDLQueryOnCluster(query_ptr, context, AccessRightsElements{query_requires_access});
 }
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, AccessRightsElements && query_requires_access, bool query_requires_grant_option)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, AccessRightsElements && query_requires_access)
 {
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
@@ -68,7 +71,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         throw Exception("Distributed execution is not supported for such DDL queries", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    if (!context.getSettingsRef().allow_distributed_ddl)
+    if (!context->getSettingsRef().allow_distributed_ddl)
         throw Exception("Distributed DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 
     if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
@@ -80,9 +83,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         }
     }
 
-    query->cluster = context.getMacros()->expand(query->cluster);
-    ClusterPtr cluster = context.getCluster(query->cluster);
-    DDLWorker & ddl_worker = context.getDDLWorker();
+    query->cluster = context->getMacros()->expand(query->cluster);
+    ClusterPtr cluster = context->getCluster(query->cluster);
+    DDLWorker & ddl_worker = context->getDDLWorker();
 
     /// Enumerate hosts which will be used to send query.
     Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
@@ -106,7 +109,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
            != query_requires_access.end());
 
     bool use_local_default_database = false;
-    const String & current_database = context.getCurrentDatabase();
+    const String & current_database = context->getCurrentDatabase();
 
     if (need_replace_current_database)
     {
@@ -154,47 +157,75 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config
-    if (query_requires_grant_option)
-        context.getAccess()->checkGrantOption(query_requires_access);
-    else
-        context.checkAccess(query_requires_access);
+    context->checkAccess(query_requires_access);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
     entry.query = queryToString(query_ptr);
     entry.initiator = ddl_worker.getCommonHostID();
+    entry.setSettingsIfRequired(context);
     String node_path = ddl_worker.enqueueQuery(entry);
 
+    return getDistributedDDLStatus(node_path, entry, context);
+}
+
+BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait)
+{
     BlockIO io;
-    if (context.getSettingsRef().distributed_ddl_task_timeout == 0)
+    if (context->getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
-    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, context);
-    io.in = std::move(stream);
+    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, context, hosts_to_wait);
+    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
+    {
+        /// Wait for query to finish, but ignore output
+        NullBlockOutputStream output{Block{}};
+        copyData(*stream, output);
+    }
+    else
+    {
+        io.in = std::move(stream);
+    }
     return io;
 }
 
-
-DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_,
+DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_,
                                                      const std::optional<Strings> & hosts_to_wait)
     : node_path(zk_node_path)
     , context(context_)
     , watch(CLOCK_MONOTONIC_COARSE)
     , log(&Poco::Logger::get("DDLQueryStatusInputStream"))
 {
+    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::THROW ||
+        context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
+        throw_on_timeout = true;
+    else if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT ||
+             context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NEVER_THROW)
+        throw_on_timeout = false;
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown output mode");
+
+    auto maybe_make_nullable = [&](const DataTypePtr & type) -> DataTypePtr
+    {
+        if (throw_on_timeout)
+            return type;
+        return std::make_shared<DataTypeNullable>(type);
+    };
+
     sample = Block{
-        {std::make_shared<DataTypeString>(),    "host"},
-        {std::make_shared<DataTypeUInt16>(),    "port"},
-        {std::make_shared<DataTypeInt64>(),     "status"},
-        {std::make_shared<DataTypeString>(),    "error"},
-        {std::make_shared<DataTypeUInt64>(),    "num_hosts_remaining"},
-        {std::make_shared<DataTypeUInt64>(),    "num_hosts_active"},
+        {std::make_shared<DataTypeString>(),                         "host"},
+        {std::make_shared<DataTypeUInt16>(),                         "port"},
+        {maybe_make_nullable(std::make_shared<DataTypeInt64>()),     "status"},
+        {maybe_make_nullable(std::make_shared<DataTypeString>()),    "error"},
+        {std::make_shared<DataTypeUInt64>(),                         "num_hosts_remaining"},
+        {std::make_shared<DataTypeUInt64>(),                         "num_hosts_active"},
     };
 
     if (hosts_to_wait)
     {
         waiting_hosts = NameSet(hosts_to_wait->begin(), hosts_to_wait->end());
         by_hostname = false;
+        sample.erase("port");
     }
     else
     {
@@ -204,28 +235,46 @@ DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path
 
     addTotalRowsApprox(waiting_hosts.size());
 
-    timeout_seconds = context.getSettingsRef().distributed_ddl_task_timeout;
+    timeout_seconds = context->getSettingsRef().distributed_ddl_task_timeout;
+}
+
+std::pair<String, UInt16> DDLQueryStatusInputStream::parseHostAndPort(const String & host_id) const
+{
+    String host = host_id;
+    UInt16 port = 0;
+    if (by_hostname)
+    {
+        auto host_and_port = Cluster::Address::fromString(host_id);
+        host = host_and_port.first;
+        port = host_and_port.second;
+    }
+    return {host, port};
 }
 
 Block DDLQueryStatusInputStream::readImpl()
 {
     Block res;
-    if (num_hosts_finished >= waiting_hosts.size())
+    bool all_hosts_finished = num_hosts_finished >= waiting_hosts.size();
+    /// Seems like num_hosts_finished cannot be strictly greater than waiting_hosts.size()
+    assert(num_hosts_finished <= waiting_hosts.size());
+    if (all_hosts_finished || timeout_exceeded)
     {
-        if (first_exception)
+        bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
+        if (first_exception && throw_if_error_on_host)
             throw Exception(*first_exception);
 
         return res;
     }
 
-    auto zookeeper = context.getZooKeeper();
+    auto zookeeper = context->getZooKeeper();
     size_t try_number = 0;
 
     while (res.rows() == 0)
     {
         if (isCancelled())
         {
-            if (first_exception)
+            bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
+            if (first_exception && throw_if_error_on_host)
                 throw Exception(*first_exception);
 
             return res;
@@ -236,11 +285,36 @@ Block DDLQueryStatusInputStream::readImpl()
             size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
             size_t num_active_hosts = current_active_hosts.size();
 
+            constexpr const char * msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
+                                                "There are {} unfinished hosts ({} of them are currently active), "
+                                                "they are going to execute the query in background";
+            if (throw_on_timeout)
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, msg_format,
+                                node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
 
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                            "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
-                            "There are {} unfinished hosts ({} of them are currently active), they are going to execute the query in background",
-                            node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+            timeout_exceeded = true;
+            LOG_INFO(log, msg_format, node_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
+
+            NameSet unfinished_hosts = waiting_hosts;
+            for (const auto & host_id : finished_hosts)
+                unfinished_hosts.erase(host_id);
+
+            /// Query is not finished on the rest hosts, so fill the corresponding rows with NULLs.
+            MutableColumns columns = sample.cloneEmptyColumns();
+            for (const String & host_id : unfinished_hosts)
+            {
+                auto [host, port] = parseHostAndPort(host_id);
+                size_t num = 0;
+                columns[num++]->insert(host);
+                if (by_hostname)
+                    columns[num++]->insert(port);
+                columns[num++]->insert(Field{});
+                columns[num++]->insert(Field{});
+                columns[num++]->insert(num_unfinished_hosts);
+                columns[num++]->insert(num_active_hosts);
+            }
+            res = sample.cloneWithColumns(std::move(columns));
+            return res;
         }
 
         if (num_hosts_finished != 0 || try_number != 0)
@@ -272,26 +346,21 @@ Block DDLQueryStatusInputStream::readImpl()
                     status.tryDeserializeText(status_data);
             }
 
-            String host = host_id;
-            UInt16 port = 0;
-            if (by_hostname)
-            {
-                auto host_and_port = Cluster::Address::fromString(host_id);
-                host = host_and_port.first;
-                port = host_and_port.second;
-            }
+            auto [host, port] = parseHostAndPort(host_id);
 
             if (status.code != 0 && first_exception == nullptr)
                 first_exception = std::make_unique<Exception>(status.code, "There was an error on [{}:{}]: {}", host, port, status.message);
 
             ++num_hosts_finished;
 
-            columns[0]->insert(host);
-            columns[1]->insert(port);
-            columns[2]->insert(status.code);
-            columns[3]->insert(status.message);
-            columns[4]->insert(waiting_hosts.size() - num_hosts_finished);
-            columns[5]->insert(current_active_hosts.size());
+            size_t num = 0;
+            columns[num++]->insert(host);
+            if (by_hostname)
+                columns[num++]->insert(port);
+            columns[num++]->insert(status.code);
+            columns[num++]->insert(status.message);
+            columns[num++]->insert(waiting_hosts.size() - num_hosts_finished);
+            columns[num++]->insert(current_active_hosts.size());
         }
         res = sample.cloneWithColumns(std::move(columns));
     }

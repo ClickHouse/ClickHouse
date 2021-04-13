@@ -42,7 +42,7 @@ class AccessRightsElements;
 class DDLWorker
 {
 public:
-    DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
+    DDLWorker(int pool_size_, const std::string & zk_root_dir, ContextPtr context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
               const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr);
     virtual ~DDLWorker();
 
@@ -69,7 +69,7 @@ protected:
     ZooKeeperPtr getAndSetZooKeeper();
 
     /// Iterates through queue tasks in ZooKeeper, runs execution of new tasks
-    void scheduleTasks();
+    void scheduleTasks(bool reinitialized);
 
     DDLTaskBase & saveTask(DDLTaskPtr && task);
 
@@ -104,13 +104,13 @@ protected:
     /// Init task node
     void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
 
-    virtual void initializeMainThread();
+    /// Return false if the worker was stopped (stop_flag = true)
+    virtual bool initializeMainThread();
 
     void runMainThread();
     void runCleanupThread();
 
-protected:
-    Context context;
+    ContextPtr context;
     Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name
@@ -122,6 +122,7 @@ protected:
 
     /// Save state of executed task to avoid duplicate execution on ZK error
     std::optional<String> last_skipped_entry_name;
+    std::optional<String> first_failed_task_name;
     std::list<DDLTaskPtr> current_tasks;
 
     std::shared_ptr<Poco::Event> queue_updated_event = std::make_shared<Poco::Event>();

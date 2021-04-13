@@ -219,9 +219,10 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
-DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
+DiskLocal::readFile(
+    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
 {
-    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, buf_size);
+    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -362,7 +363,7 @@ void registerDiskLocal(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      const Context & context) -> DiskPtr {
+                      ContextConstPtr context) -> DiskPtr {
         String path = config.getString(config_prefix + ".path", "");
         if (name == "default")
         {
@@ -370,7 +371,7 @@ void registerDiskLocal(DiskFactory & factory)
                 throw Exception(
                     "\"default\" disk path should be provided in <path> not it <storage_configuration>",
                     ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-            path = context.getPath();
+            path = context->getPath();
         }
         else
         {
@@ -382,7 +383,7 @@ void registerDiskLocal(DiskFactory & factory)
 
         if (Poco::File disk{path}; !disk.canRead() || !disk.canWrite())
         {
-            throw Exception("There is no RW access to disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
+            throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
         }
 
         bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
@@ -401,7 +402,7 @@ void registerDiskLocal(DiskFactory & factory)
                 throw Exception("'keep_free_space_ratio' have to be between 0 and 1", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
             String tmp_path = path;
             if (tmp_path.empty())
-                tmp_path = context.getPath();
+                tmp_path = context->getPath();
 
             // Create tmp disk for getting total disk space.
             keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);

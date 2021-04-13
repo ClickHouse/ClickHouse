@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Parsers/ASTLiteral.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -40,6 +41,9 @@ ValuesBlockInputFormat::ValuesBlockInputFormat(ReadBuffer & in_, const Block & h
           attempts_to_deduce_template(num_columns), attempts_to_deduce_template_cached(num_columns),
           rows_parsed_using_template(num_columns), templates(num_columns), types(header_.getDataTypes())
 {
+    serializations.resize(types.size());
+    for (size_t i = 0; i < types.size(); ++i)
+        serializations[i] = types[i]->getDefaultSerialization();
 }
 
 Chunk ValuesBlockInputFormat::generate()
@@ -73,11 +77,13 @@ Chunk ValuesBlockInputFormat::generate()
     {
         if (!templates[i] || !templates[i]->rowsCount())
             continue;
+
+        const auto & expected_type = header.getByPosition(i).type;
         if (columns[i]->empty())
-            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i));
+            columns[i] = IColumn::mutate(templates[i]->evaluateAll(block_missing_values, i, expected_type));
         else
         {
-            ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, columns[i]->size());
+            ColumnPtr evaluated = templates[i]->evaluateAll(block_missing_values, i, expected_type, columns[i]->size());
             columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
         }
     }
@@ -135,13 +141,16 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
         return true;
     }
 
+    const auto & header = getPort().getHeader();
+    const auto & expected_type = header.getByPosition(column_idx).type;
+
     /// Expression in the current row is not match template deduced on the first row.
     /// Evaluate expressions, which were parsed using this template.
     if (column->empty())
-        column = IColumn::mutate(templates[column_idx]->evaluateAll(block_missing_values, column_idx));
+        column = IColumn::mutate(templates[column_idx]->evaluateAll(block_missing_values, column_idx, expected_type));
     else
     {
-        ColumnPtr evaluated = templates[column_idx]->evaluateAll(block_missing_values, column_idx, column->size());
+        ColumnPtr evaluated = templates[column_idx]->evaluateAll(block_missing_values, column_idx, expected_type, column->size());
         column->insertRangeFrom(*evaluated, 0, evaluated->size());
     }
     /// Do not use this template anymore
@@ -159,10 +168,12 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         bool read = true;
         const auto & type = types[column_idx];
+        const auto & serialization = serializations[column_idx];
         if (format_settings.null_as_default && !type->isNullable())
-            read = DataTypeNullable::deserializeTextQuoted(column, buf, format_settings, type);
+            read = SerializationNullable::deserializeTextQuotedImpl(column, buf, format_settings, serialization);
         else
-            type->deserializeAsTextQuoted(column, buf, format_settings);
+            serialization->deserializeTextQuoted(column, buf, format_settings);
+
         rollback_on_exception = true;
 
         skipWhitespaceIfAny(buf);
@@ -305,7 +316,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         bool ok = false;
         try
         {
-            header.getByPosition(column_idx).type->deserializeAsTextQuoted(column, buf, format_settings);
+            const auto & serialization = serializations[column_idx];
+            serialization->deserializeTextQuoted(column, buf, format_settings);
             rollback_on_exception = true;
             skipWhitespaceIfAny(buf);
             if (checkDelimiterAfterValue(column_idx))
@@ -346,7 +358,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 TokenIterator(tokens),
                 token_iterator,
                 ast,
-                *context,
+                context,
                 &found_in_cache,
                 delimiter);
             templates[column_idx].emplace(structure);
@@ -388,7 +400,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Try to evaluate single expression if other parsers don't work
     buf.position() = const_cast<char *>(token_iterator->begin);
 
-    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
+    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
 
     Field & expression_value = value_raw.first;
 

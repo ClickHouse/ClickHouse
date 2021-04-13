@@ -56,12 +56,12 @@ public:
         /// Do not analyze joined columns.
         /// They may have aliases and come to description as is.
         const NameSet & forbidden_columns;
-        const Context & context;
+        ContextPtr context;
 
         /// private_aliases are from lambda, so these are local names.
         NameSet private_aliases;
 
-        Data(const ColumnsDescription & columns_, const NameSet & forbidden_columns_, const Context & context_)
+        Data(const ColumnsDescription & columns_, const NameSet & forbidden_columns_, ContextPtr context_)
         : columns(columns_)
         , forbidden_columns(forbidden_columns_)
         , context(context_)
