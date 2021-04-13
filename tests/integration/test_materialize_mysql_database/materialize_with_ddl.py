@@ -150,8 +150,7 @@ def materialize_mysql_database_with_views(clickhouse_node, mysql_node, service_n
             service_name))
 
     assert "test_database" in clickhouse_node.query("SHOW DATABASES")
-    assert "test_table_1" in clickhouse_node.query("SHOW TABLES FROM test_database")
-    assert "test_table_1_view" not in clickhouse_node.query("SHOW TABLES FROM test_database")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
 
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
