@@ -57,21 +57,24 @@ namespace
         size_t max_download_threads,
         size_t download_buffer_size)
     {
+        size_t object_size = DB::S3::getObjectSize(client, bucket, key, false);
+
+        bool use_parallel_download = download_buffer_size > 0 && max_download_threads >= 1;
+        bool object_too_small = object_size < max_download_threads * download_buffer_size;
+        if (!use_parallel_download || object_too_small)
+        {
+            LOG_TRACE(&Poco::Logger::get("StorageS3Source"), "Downloading object of size {} from S3 in single thread", object_size);
+            download_buffer_size = std::max<size_t>(download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
+            return std::make_unique<ReadBufferFromS3>(client, bucket, key, download_buffer_size);
+        }
+
+        assert(object_size > 0);
 
         if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
         {
             LOG_WARNING(&Poco::Logger::get("StorageS3Source"), "Downloading buffer {} bytes too small, set at least {} bytes",
                         download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
             download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-        }
-
-        size_t object_size = DB::S3::getObjectSize(client, bucket, key);
-
-        size_t min_object_size_to_parallel = max_download_threads * download_buffer_size;
-        if (download_buffer_size == 0 || max_download_threads <= 1 || object_size < min_object_size_to_parallel)
-        {
-            LOG_TRACE(&Poco::Logger::get("StorageS3Source"), "Downloading object of size {} from S3 in single thread", object_size);
-            return std::make_unique<ReadBufferFromS3>(client, bucket, key, download_buffer_size);
         }
 
         auto factory = std::make_unique<ReadBufferS3Factory>(client, bucket, key, download_buffer_size, object_size);
@@ -254,8 +257,8 @@ StorageS3::StorageS3(
     , max_single_part_upload_size(max_single_part_upload_size_)
     , compression_method(compression_method_)
     , name(uri_.storage_name)
-    , max_download_threads(context_.getSettings().max_download_threads)
-    , max_download_buffer_size(context_.getSettings().max_download_buffer_size)
+    , max_download_threads(context_->getSettings().max_download_threads)
+    , max_download_buffer_size(context_->getSettings().max_download_buffer_size)
 {
     getContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;

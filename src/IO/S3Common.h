@@ -84,7 +84,7 @@ struct URI
     explicit URI(const Poco::URI & uri_);
 };
 
-size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key);
+size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, bool throw_on_error = true);
 
 }
 

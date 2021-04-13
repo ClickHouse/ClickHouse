@@ -406,7 +406,7 @@ namespace S3
             throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
     }
 
-    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key)
+    size_t getObjectSize(std::shared_ptr<Aws::S3::S3Client> client_ptr, const String & bucket, const String & key, bool throw_on_error)
     {
         Aws::S3::Model::HeadObjectRequest req;
         req.SetBucket(bucket);
@@ -419,8 +419,11 @@ namespace S3
             auto read_result = outcome.GetResultWithOwnership();
             return static_cast<size_t>(read_result.GetContentLength());
         }
-        else
+        else if (throw_on_error)
+        {
             throw DB::Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        }
+        return 0;
     }
 }
 
