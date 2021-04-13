@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2046
 
 # In very old (e.g. 1.1.54385) versions of ClickHouse there was a bug in Poco HTTP library:
 # Basic HTTP authentication headers was not parsed if the size of URL is exactly 4077 + something bytes.
