@@ -5387,9 +5387,9 @@ void StorageReplicatedMergeTree::fetchPartition(
     if (fetch_part)
     {
         String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
-        auto replica_path_ = findReplicaHavingPart(part_name, from, zookeeper);
+        auto part_path = findReplicaHavingPart(part_name, from, zookeeper);
 
-        if (replica_path_.empty())
+        if (part_path.empty())
             throw Exception("fetch part " + part_name + " not exists !", ErrorCodes::PART_DOESNT_EXIST);
         /** Let's check that there is no such part in the `detached` directory (where we will write the downloaded parts).
           * Unreliable (there is a race condition) - such a part may appear a little later.
@@ -5400,8 +5400,8 @@ void StorageReplicatedMergeTree::fetchPartition(
 
         try
         {
-            /// part name , metadata, replica path , true, 0, zookeeper
-            if (!fetchPart(part_name, metadata_snapshot, replica_path_, true, 0, zookeeper))
+            /// part name , metadata, part_path , true, 0, zookeeper
+            if (!fetchPart(part_name, metadata_snapshot, part_path, true, 0, zookeeper))
                 throw Exception("fetch  part " + part_name + " failed! ", ErrorCodes::UNFINISHED);
         }
         catch (const DB::Exception & e)
