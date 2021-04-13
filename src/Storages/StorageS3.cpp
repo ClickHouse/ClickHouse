@@ -377,7 +377,7 @@ Pipe StorageS3::read(
             return glob_iterator->next();
         });
     }
-    
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
