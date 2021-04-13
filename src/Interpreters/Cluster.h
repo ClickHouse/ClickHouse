@@ -55,6 +55,8 @@ public:
     static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
 
 public:
+    using SlotToShard = std::vector<UInt64>;
+
     struct Address
     {
         /** In configuration file,
@@ -232,7 +234,6 @@ public:
     bool maybeCrossReplication() const;
 
 private:
-    using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;
 
 public:
