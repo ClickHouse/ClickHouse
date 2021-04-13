@@ -1326,11 +1326,12 @@ String KeyCondition::toString() const
   * The set of all possible tuples can be considered as an n-dimensional space, where n is the size of the tuple.
   * A range of tuples specifies some subset of this space.
   *
-  * Hyperrectangles (you can also find the term "rail")
-  *  will be the subrange of an n-dimensional space that is a direct product of one-dimensional ranges.
-  * In this case, the one-dimensional range can be: a period, a segment, an interval, a half-interval, unlimited on the left, unlimited on the right ...
+  * Hyperrectangles will be the subrange of an n-dimensional space that is a direct product of one-dimensional ranges.
+  * In this case, the one-dimensional range can be: 
+  * a point, a segment, an open interval, a half-open interval;
+  * unlimited on the left, unlimited on the right ...
   *
-  * The range of tuples can always be represented as a combination of hyperrectangles.
+  * The range of tuples can always be represented as a combination (union) of hyperrectangles.
   * For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of the following three hyperrectangles:
   * [x1]       x [y1 .. +inf)
   * (x1 .. x2) x (-inf .. +inf)

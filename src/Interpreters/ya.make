@@ -118,6 +118,7 @@ SRCS(
     OpenTelemetrySpanLog.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
+    OptimizeShardingKeyRewriteInVisitor.cpp
     PartLog.cpp
     PredicateExpressionsOptimizer.cpp
     PredicateRewriteVisitor.cpp
