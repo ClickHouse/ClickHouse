@@ -496,8 +496,11 @@ private:
 
     static inline bool allowArguments(const DataTypePtr & array_inner_type, const DataTypePtr & arg)
     {
-        return ((isNativeNumber(array_inner_type) || isEnum(array_inner_type)) && isNativeNumber(arg))
-            || getLeastSupertype({array_inner_type, arg});
+        auto inner_type_decayed = removeNullable(removeLowCardinality(array_inner_type));
+        auto arg_decayed = removeNullable(removeLowCardinality(arg));
+
+        return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
+            || getLeastSupertype({inner_type_decayed, arg_decayed});
     }
 
 #define INTEGRAL_TPL_PACK UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64
