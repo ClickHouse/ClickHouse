@@ -651,7 +651,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergeList::Entry & merge_entry,
     TableLockHolder &,
     time_t time_of_merge,
-    const Context & context,
+    ContextPtr context,
     const ReservationPtr & space_reservation,
     bool deduplicate,
     const Names & deduplicate_by_columns)
@@ -751,7 +751,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// deadlock is impossible.
     auto compression_codec = data.getCompressionCodecForPart(merge_entry->total_size_bytes_compressed, new_data_part->ttl_infos, time_of_merge);
 
-    auto tmp_disk = context.getTemporaryVolume()->getDisk();
+    auto tmp_disk = context->getTemporaryVolume()->getDisk();
     String rows_sources_file_path;
     std::unique_ptr<WriteBufferFromFileBase> rows_sources_uncompressed_write_buf;
     std::unique_ptr<WriteBuffer> rows_sources_write_buf;
@@ -910,7 +910,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     {
         const auto & indices = metadata_snapshot->getSecondaryIndices();
         merged_stream = std::make_shared<ExpressionBlockInputStream>(
-            merged_stream, indices.getSingleExpressionForIndices(metadata_snapshot->getColumns(), data.global_context));
+            merged_stream, indices.getSingleExpressionForIndices(metadata_snapshot->getColumns(), data.getContext()));
         merged_stream = std::make_shared<MaterializingBlockInputStream>(merged_stream);
     }
 
@@ -1099,7 +1099,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const MutationCommands & commands,
     MergeListEntry & merge_entry,
     time_t time_of_mutation,
-    const Context & context,
+    ContextPtr context,
     const ReservationPtr & space_reservation,
     TableLockHolder &)
 {
@@ -1113,12 +1113,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const auto & source_part = future_part.parts[0];
     auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
 
-    auto context_for_reading = context;
-    context_for_reading.setSetting("max_streams_to_max_threads_ratio", 1);
-    context_for_reading.setSetting("max_threads", 1);
+    auto context_for_reading = Context::createCopy(context);
+    context_for_reading->setSetting("max_streams_to_max_threads_ratio", 1);
+    context_for_reading->setSetting("max_threads", 1);
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
-    context_for_reading.setSetting("force_index_by_date", Field(0));
-    context_for_reading.setSetting("force_primary_key", Field(0));
+    context_for_reading->setSetting("force_index_by_date", Field(0));
+    context_for_reading->setSetting("force_primary_key", Field(0));
 
     MutationCommands commands_for_part;
     for (const auto & command : commands)
@@ -1129,7 +1129,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     }
 
     if (source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        storage_from_source_part, metadata_snapshot, commands_for_part, context_for_reading))
+        storage_from_source_part, metadata_snapshot, commands_for_part, Context::createCopy(context_for_reading)))
     {
         LOG_TRACE(log, "Part {} doesn't change up to mutation version {}", source_part->name, future_part.part_info.mutation);
         return data.cloneAndLoadDataPartOnSameDisk(source_part, "tmp_clone_", future_part.part_info, metadata_snapshot);
@@ -1690,7 +1690,7 @@ std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     BlockInputStreamPtr & input_stream,
     const NamesAndTypesList & updated_columns,
     const StorageMetadataPtr & metadata_snapshot,
-    const Context & context)
+    ContextPtr context)
 {
     /// Checks if columns used in skipping indexes modified.
     const auto & index_factory = MergeTreeIndexFactory::instance();
