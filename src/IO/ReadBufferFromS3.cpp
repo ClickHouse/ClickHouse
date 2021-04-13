@@ -63,6 +63,9 @@ bool ReadBufferFromS3::nextImpl()
         {
             ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
 
+            LOG_INFO(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Remaining attempts: {}, Message: {}",
+                    bucket, key, getPosition(), attempt, e.message());
+
             impl.reset();
             offset = getPosition();
 
