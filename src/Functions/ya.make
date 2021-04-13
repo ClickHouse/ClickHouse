@@ -207,6 +207,7 @@ SRCS(
     buildId.cpp
     byteSize.cpp
     caseWithExpression.cpp
+    castOrDefault.cpp
     cbrt.cpp
     coalesce.cpp
     concat.cpp
