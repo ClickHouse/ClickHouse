@@ -28,13 +28,13 @@ def test_fetch_part_from_allowed_zookeeper(start_cluster):
         "CREATE TABLE simple2 (date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/1/simple', 'node') ORDER BY tuple() PARTITION BY date;"
     )
     node.query(
-        "ALTER TABLE simple2 FETCH PART '20200827_1_1_0' FROM 'zookeeper2:/clickhouse/tables/0/simple';"
+        "ALTER TABLE simple2 FETCH PART '20200827_0_0_0' FROM 'zookeeper2:/clickhouse/tables/0/simple';"
     )
-    node.query("ALTER TABLE simple2 ATTACH PART '20200827_1_1_0';")
+    node.query("ALTER TABLE simple2 ATTACH PART '20200827_0_0_0';")
 
     with pytest.raises(QueryRuntimeException):
         node.query(
-            "ALTER TABLE simple2 FETCH PART '20200827_1_1_0' FROM 'zookeeper:/clickhouse/tables/0/simple';"
+            "ALTER TABLE simple2 FETCH PART '20200827_0_0_0' FROM 'zookeeper:/clickhouse/tables/0/simple';"
         )
 
     assert node.query("SELECT id FROM simple2").strip() == "1"
