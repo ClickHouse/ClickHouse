@@ -63,7 +63,8 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
 }
 
 void StorageSystemPartsColumns::processNextStorage(
-    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info,
+    bool has_state_column, bool has_use_count_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo
@@ -212,8 +213,12 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
 
+            /// _state column should be at the end.
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());
+            /// _use_count column should be the latest.
+            if (has_use_count_column)
+                columns[res_index++]->insert(part.use_count());
         }
     }
 }

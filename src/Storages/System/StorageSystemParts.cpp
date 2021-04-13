@@ -82,7 +82,8 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
 }
 
 void StorageSystemParts::processNextStorage(
-    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info,
+    bool has_state_column, bool has_use_count_column)
 {
     using State = IMergeTreeDataPart::State;
     MergeTreeData::DataPartStateVector all_parts_state;
@@ -253,10 +254,14 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.group_by_ttl);
         add_ttl_info_map(part->ttl_infos.rows_where_ttl);
 
-        /// _state column should be the latest.
+        /// _state column should be at the end.
         /// Do not use part->getState*, it can be changed from different thread
         if (has_state_column)
             columns[res_index++]->insert(IMergeTreeDataPart::stateToString(part_state));
+
+        /// _use_count column should be the latest.
+        if (has_use_count_column)
+            columns[res_index++]->insert(part.use_count());
     }
 }
 

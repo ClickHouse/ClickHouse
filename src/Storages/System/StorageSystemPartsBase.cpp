@@ -244,6 +244,7 @@ Pipe StorageSystemPartsBase::read(
     const unsigned /*num_streams*/)
 {
     bool has_state_column = hasVirtualColumn("_state", column_names, metadata_snapshot);
+    bool has_use_count_column = hasVirtualColumn("_use_count", column_names, metadata_snapshot);
 
     StoragesInfoStream stream(query_info, context);
 
@@ -266,14 +267,18 @@ Pipe StorageSystemPartsBase::read(
     MutableColumns res_columns = header.cloneEmptyColumns();
     if (has_state_column)
         res_columns.push_back(ColumnString::create());
+    if (has_use_count_column)
+        res_columns.push_back(ColumnUInt64::create());
 
     while (StoragesInfo info = stream.next())
     {
-        processNextStorage(res_columns, columns_mask, info, has_state_column);
+        processNextStorage(res_columns, columns_mask, info, has_state_column, has_use_count_column);
     }
 
     if (has_state_column)
         header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
+    if (has_use_count_column)
+        header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "_use_count"));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);
@@ -307,7 +312,8 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Name
 NamesAndTypesList StorageSystemPartsBase::getVirtuals() const
 {
     return NamesAndTypesList{
-        NameAndTypePair("_state", std::make_shared<DataTypeString>())
+        NameAndTypePair("_state", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_use_count", std::make_shared<DataTypeUInt64>()),
     };
 }
 }
