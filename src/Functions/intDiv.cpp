@@ -70,7 +70,7 @@ struct DivideIntegralByConstantImpl
     }
 };
 
-/** Specializations are specified for dividing numbers of the type UInt64 and UInt32 by the numbers of the same sign.
+/** Specializations are specified for dividing numbers of the type UInt64, UInt32, Int64, Int32 by the numbers of the same sign.
   * Can be expanded to all possible combinations, but more code is needed.
   */
 
