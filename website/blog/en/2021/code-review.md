@@ -1,10 +1,13 @@
-# Code review in ClickHouse
-# Understanding Why Your Program Works
-# Effective Code Review
-# Explaining Why Your Program Works
-# The Tests Are Passing, Why Would I Read The Diff Again?
+---
+title: 'The Tests Are Passing, Why Would I Read The Diff Again?'
+image: 'https://blog-images.clickhouse.tech/en/2021/code-review/smaller-crazy-duck.jpg'
+date: '2021-04-14'
+author: '[Alexander Kuzmenkov](https://github.com/akuzm)'
+tags: ['code review', 'development']
+---
 
-Code review is one of the few software development techniques that is consistently found to reduce the incidence of defects. Why is it effective? This article offers some wild conjecture on this topic, complete with practical advice on getting the most out of your code review.
+
+Code review is one of the few software development techniques that are consistently found to reduce the incidence of defects. Why is it effective? This article offers some wild conjecture on this topic, complete with practical advice on getting the most out of your code review.
 
 
 ## Understanding Why Your Program Works
@@ -24,6 +27,8 @@ When working in a team, you even have a luxury of explaining your code to anothe
 ## Reviewing Others Code
 
 Code review is often framed as a gatekeeping process, where each contribution is vetted by maintainers to ensure that it is in line with project direction, has acceptable quality, meets the coding guidelines and so on. This perspective might seem natural when dealing with external contributions, but makes less sense if you apply it to internal ones. After all, our fellow maintainers have perfect understanding of project goals and guidelines, probably they are more talented and experienced than us, and can be trusted to produce the best solution possible. How can an additional review be helpful?
+
+<img src="https://blog-images.clickhouse.tech/en/2021/code-review/hidden-items.png" width="80%"/>
 
 A less-obvious, but very important, part of reviewing the code is just seeing whether it can be understood by another person. It is helpful regardless of the administrative roles and programming proficiency of the parties. What should you do as a reviewer if ease of understanding is your main priority?
 
