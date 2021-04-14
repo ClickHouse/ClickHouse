@@ -14,7 +14,7 @@
 #include <cstring>
 #include <limits>
 #include <unordered_map>
-
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -22,10 +22,10 @@ namespace DB
 
 class FrequencyHolder
 {
+
 public:
     using Map = std::unordered_map<UInt16, Float64>;
     using Container = std::unordered_map<String, Map>;
-
 
     static FrequencyHolder & getInstance()
     {
@@ -37,8 +37,8 @@ public:
     void parseDictionaries(const String & pt)
     {
         is_true = pt;
-        loadEmotionalDict("/home/sergey/ClickHouse/src/Functions/ClassificationDictionaries/emotional_dictionary_rus.txt");
-        loadEncodingsFrequency("/home/sergey/ClickHouse/src/Functions/ClassificationDictionaries/charset_freq.txt");
+        loadEmotionalDict("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/emotional_dictionary_rus.txt");
+        loadEncodingsFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/charset_freq.txt");
     }
 
 
@@ -47,6 +47,10 @@ public:
         UInt16 bigram;
         Float64 frequency;
         String charset_name;
+
+        Poco::Logger * log = &Poco::Logger::get("EncodingsFrequency");
+
+        LOG_TRACE(log, "Charset frequencies loading from {}", path_to_charset_freq);
 
         ReadBufferFromFile in(path_to_charset_freq);
         while (!in.eof())
@@ -75,6 +79,7 @@ public:
             }
             in.position() = newline + 1;
         }
+        LOG_TRACE(log, "Charset frequencies was added");
     }
 
 
@@ -83,6 +88,9 @@ public:
 
         String word;
         Float64 tonality;
+
+        Poco::Logger * log = &Poco::Logger::get("EmotionalDict");
+        LOG_TRACE(log, "Emotional dictionary loading from {}", path_to_emotional_dict);
 
         ReadBufferFromFile in(path_to_emotional_dict);
         while (!in.eof())
@@ -101,6 +109,7 @@ public:
             emotional_dict[word] = tonality;
 
         }
+        LOG_TRACE(log, "Emotional dictionary was added");
     }
 
 
@@ -110,13 +119,13 @@ public:
     }
 
 
-    const std::unordered_map<String, Float64> getEmotionalDict()
+    const std::unordered_map<String, Float64> & getEmotionalDict()
     {
         return emotional_dict;
     }
 
 
-    const Container getEncodingsFrequency()
+    const Container & getEncodingsFrequency()
     {
         return encodings_freq;
     }

@@ -56,6 +56,7 @@ SRCS(
     FunctionsStringHash.cpp
     FunctionsStringSimilarity.cpp
     FunctionsTextClassification.cpp
+    FunctionsTonalityClassification.cpp
     GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp

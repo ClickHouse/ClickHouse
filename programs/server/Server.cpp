@@ -634,7 +634,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// my test
     {
-        const std::string & encode_frequency_path = config().getString("encodings_frequency_path", path + "textclassification_frequency/");
+        const std::string & encode_frequency_path = config().getString("encodings_frequency_path", path + "encodings_frequency/");
         FrequencyHolder::getInstance().parseDictionaries(encode_frequency_path);
     }
 
