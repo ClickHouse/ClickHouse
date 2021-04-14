@@ -130,7 +130,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
     extern const int INTERSERVER_SCHEME_DOESNT_MATCH;
-    extern const int DUPLICATED_PART_UUIDS;
+    extern const int DUPLICATE_DATA_PART;
 }
 
 namespace ActionLocks
@@ -5394,7 +5394,7 @@ void StorageReplicatedMergeTree::fetchPartition(
           * Unreliable (there is a race condition) - such a part may appear a little later.
           */
         if (checkIfDetachedPartExists(part_name))
-            throw Exception("Detached part " + part_name + " already exists.", ErrorCodes::DUPLICATED_PART_UUIDS);
+            throw Exception("Detached part " + part_name + " already exists.", ErrorCodes::DUPLICATE_DATA_PART);
         LOG_INFO(log, "Will fetch part {} from shard {} (zookeeper '{}')", part_name, from_, auxiliary_zookeeper_name);
 
         try
