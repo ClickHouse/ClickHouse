@@ -2615,6 +2615,20 @@ PartUUIDsPtr Context::getPartUUIDs()
     return part_uuids;
 }
 
+
+ReadTaskCallback Context::getReadTaskCallback() const
+{
+    if (!next_task_callback.has_value())
+        throw Exception(fmt::format("Next task callback is not set for query {}", getInitialQueryId()), ErrorCodes::LOGICAL_ERROR);
+    return next_task_callback.value();
+}
+
+
+void Context::setReadTaskCallback(ReadTaskCallback && callback)
+{
+    next_task_callback = callback;
+}
+
 PartUUIDsPtr Context::getIgnoredPartUUIDs()
 {
     auto lock = getLock();
