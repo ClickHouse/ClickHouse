@@ -172,7 +172,7 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     assert(element_serializations.size() == size);
     MutableColumns tuple_columns(size);
     for (size_t i = 0; i < size; ++i)
-        tuple_columns[i] = elems[i]->createColumn(*element_serializations[i]);
+        tuple_columns[i] = elems[i]->createColumn(*element_serializations[i]->getNested());
 
     return ColumnTuple::create(std::move(tuple_columns));
 }
@@ -350,16 +350,24 @@ SerializationPtr DataTypeTuple::getSerialization(const String & column_name, con
     for (size_t i = 0; i < elems.size(); ++i)
     {
         auto subcolumn_name = Nested::concatenateName(column_name, names[i]);
-
-        ISerialization::Settings settings =
+        SerializationPtr serialization;
+        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(elems[i].get()))
         {
-            .num_rows = info.getNumberOfRows(),
-            .num_default_rows = info.getNumberOfDefaultRows(subcolumn_name),
-            .ratio_for_sparse_serialization = info.getRatioForSparseSerialization()
-        };
+            serialization = type_tuple->getSerialization(subcolumn_name, info);
+        }
+        else
+        {
+            ISerialization::Settings settings =
+            {
+                .num_rows = info.getNumberOfRows(),
+                .num_default_rows = info.getNumberOfDefaultRows(subcolumn_name),
+                .ratio_for_sparse_serialization = info.getRatioForSparseSerialization()
+            };
 
-        auto serializaion = elems[i]->getSerialization(settings);
-        serializations[i] = std::make_shared<SerializationTupleElement>(serializaion, names[i]);
+            serialization = elems[i]->getSerialization(settings);
+        }
+
+        serializations[i] = std::make_shared<SerializationTupleElement>(serialization, names[i]);
     }
 
     return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);

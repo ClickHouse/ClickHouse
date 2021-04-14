@@ -4,6 +4,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/WeakHash.h>
 #include <Common/SipHash.h>
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -66,7 +67,7 @@ Field ColumnSparse::operator[](size_t n) const
 
 void ColumnSparse::get(size_t n, Field & res) const
 {
-    values->get(n, res);
+    values->get(getValueIndex(n), res);
 }
 
 bool ColumnSparse::getBool(size_t n) const
@@ -130,7 +131,7 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
         const auto & src_values = src_sparse->getValuesColumn();
 
         size_t offset_start = std::lower_bound(src_offsets.begin(), src_offsets.end(), start) - src_offsets.begin();
-        size_t offset_end = std::upper_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
+        size_t offset_end = std::lower_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
 
         if (offset_start != offset_end)
         {
@@ -235,8 +236,6 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
         return res;
     }
 
-    const auto & offsets_data = getOffsetsData();
-
     auto res_offsets = offsets->cloneEmpty();
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
 
@@ -245,12 +244,11 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     values_filter.push_back(1);
     size_t values_result_size_hint = 1;
 
-    size_t offset_pos = 0;
     size_t res_offset = 0;
-
-    for (size_t i = 0; i < _size; ++i)
+    auto offset_it = begin();
+    for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
-        if (offset_pos < offsets_data.size() && i == offsets_data[offset_pos])
+        if (!offset_it.isDefault())
         {
             if (filt[i])
             {
@@ -263,8 +261,6 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
             {
                 values_filter.push_back(0);
             }
-
-            ++offset_pos;
         }
         else
         {
@@ -400,9 +396,9 @@ void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direc
 
     size_t num_of_defaults = getNumberOfDefaults();
     size_t row = 0;
-    size_t current_offset = 0;
-    size_t current_default_row = 0;
+
     const auto & offsets_data = getOffsetsData();
+    auto offset_it = begin();
 
     for (size_t i = 0; i < perm.size() && row < limit; ++i)
     {
@@ -413,22 +409,19 @@ void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direc
 
             while (row < limit)
             {
-                while (current_offset < offsets_data.size() && current_default_row == offsets_data[current_offset])
-                {
-                    ++current_offset;
-                    ++current_default_row;
-                }
+                while (offset_it != end() && !offset_it.isDefault())
+                    ++offset_it;
 
-                if (current_default_row == _size)
+                if (offset_it.getCurrentRow() == _size)
                     break;
 
-                res[row++] = current_default_row++;
+                res[row++] = offset_it.getCurrentRow();
+                ++offset_it;
             }
         }
         else
         {
-            res[row] = offsets_data[perm[i] - 1];
-            ++row;
+            res[row++] = offsets_data[perm[i] - 1];
         }
     }
 
@@ -497,26 +490,23 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     if (_size == 0)
         return ColumnSparse::create(values->cloneEmpty());
 
-    const auto & offsets_data = getOffsetsData();
     auto res_offsets = offsets->cloneEmpty();
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
     auto res_values = values->cloneEmpty();
     res_values->insertDefault();
 
-    size_t current_offset = 0;
-    for (size_t i = 0; i < _size; ++i)
+    auto offset_it = begin();
+    for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
-        if (current_offset < offsets_data.size() && i == offsets_data[current_offset])
+        if (!offset_it.isDefault())
         {
             size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
             res_offsets_data.reserve(res_offsets_data.size() + replicate_size);
             for (size_t row = replicate_offsets[i - 1]; row < replicate_offsets[i]; ++row)
             {
                 res_offsets_data.push_back(row);
-                res_values->insertFrom(*values, current_offset + 1);
+                res_values->insertFrom(*values, offset_it.getValueIndex());
             }
-
-            ++current_offset;
         }
     }
 
@@ -530,8 +520,21 @@ void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
 
 void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
 {
-    UNUSED(hash);
-    throwMustBeDense();
+    if (hash.getData().size() != _size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
+        "column size is {}, hash size is {}", _size, hash.getData().size());
+
+    auto offset_it = begin();
+    auto & hash_data = hash.getData();
+    for (size_t i = 0; i < _size; ++i, ++offset_it)
+    {
+        size_t value_index = 0;
+        if (!offset_it.isDefault())
+            value_index = offset_it.getValueIndex();
+
+        auto data_ref = values->getDataAt(value_index);
+        hash_data[i] = ::updateWeakHash32(reinterpret_cast<const UInt8 *>(data_ref.data), data_ref.size, hash_data[i]);
+    }
 }
 
 void ColumnSparse::updateHashFast(SipHash & hash) const
@@ -543,6 +546,31 @@ void ColumnSparse::updateHashFast(SipHash & hash) const
 
 void ColumnSparse::getExtremes(Field & min, Field & max) const
 {
+    if (_size == 0)
+    {
+        values->get(0, min);
+        values->get(0, max);
+        return;
+    }
+
+    if (getNumberOfDefaults() == 0)
+    {
+        size_t min_idx = 1;
+        size_t max_idx = 1;
+
+        for (size_t i = 2; i < values->size(); ++i)
+        {
+            if (values->compareAt(i, min_idx, *values, 1) < 0)
+                min_idx = i;
+            else if (values->compareAt(i, max_idx, *values, 1) > 0)
+                max_idx = i;
+        }
+
+        values->get(min_idx, min);
+        values->get(max_idx, max);
+        return;
+    }
+
     values->getExtremes(min, max);
 }
 
@@ -562,9 +590,7 @@ size_t ColumnSparse::getNumberOfDefaultRows(size_t step) const
 
 MutableColumns ColumnSparse::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
-    UNUSED(num_columns);
-    UNUSED(selector);
-    throwMustBeDense();
+    return scatterImpl<ColumnSparse>(num_columns, selector);
 }
 
 void ColumnSparse::gather(ColumnGathererStream & gatherer_stream)

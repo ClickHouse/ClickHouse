@@ -21,6 +21,8 @@
 #include <memory>
 #include <optional>
 
+#include <Common/FieldVisitors.h>
+
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
@@ -469,7 +471,10 @@ ColumnPtr ExecutableFunctionAdaptor::execute(const ColumnsWithTypeAndName & argu
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (typeid_cast<const ColumnSparse *>(arguments[i].column.get()))
+            const auto * column_sparse = checkAndGetColumn<ColumnSparse>(arguments[i].column.get());
+            /// In rare case, when sparse column doesn't have default values,
+            /// it's more convinient to convert it to full before execution of function.
+            if (column_sparse && column_sparse->getNumberOfDefaults())
             {
                 sparse_column_position = i;
                 ++num_sparse_columns;

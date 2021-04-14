@@ -162,6 +162,45 @@ private:
         throw Exception("Not implemented for ColumnSparse", ErrorCodes::LOGICAL_ERROR);
     }
 
+    class Iterator
+    {
+    public:
+        Iterator(const PaddedPODArray<UInt64> & offsets_, size_t size_, size_t current_offset_, size_t current_row_)
+            : offsets(offsets_), size(size_), current_offset(current_offset_), current_row(current_row_)
+        {
+        }
+
+        bool isDefault() const { return current_offset == offsets.size() || current_row != offsets[current_offset]; }
+        size_t getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
+        size_t getCurrentRow() const { return current_row; }
+
+        bool operator==(const Iterator & other) const
+        {
+            return size == other.size
+                && current_offset == other.current_offset
+                && current_row == other.current_row;
+        }
+
+        bool operator!=(const Iterator & other) const { return !(*this == other); }
+
+        Iterator operator++()
+        {
+            if (!isDefault())
+                ++current_offset;
+            ++current_row;
+            return *this;
+        }
+
+    private:
+        const PaddedPODArray<UInt64> & offsets;
+        const size_t size;
+        size_t current_offset;
+        size_t current_row;
+    };
+
+    Iterator begin() const { return Iterator(getOffsetsData(), _size, 0, 0); }
+    Iterator end() const { return Iterator(getOffsetsData(), _size, getOffsetsData().size(), _size); }
+
     WrappedPtr values;
     WrappedPtr offsets;
     size_t _size;

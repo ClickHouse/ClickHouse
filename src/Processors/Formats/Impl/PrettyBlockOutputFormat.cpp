@@ -291,8 +291,6 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
 
         writeCString(grid_symbols.bar, out);
 
-        std::cerr << "current row: " << toString((*columns[0])[i]) << "\n";
-
         for (size_t j = 0; j < num_columns; ++j)
         {
             if (j != 0)

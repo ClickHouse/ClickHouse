@@ -7,8 +7,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Common/FieldVisitors.h>
-
 namespace DB
 {
 
@@ -22,6 +20,12 @@ struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkStat
     size_t num_trailing_defaults = 0;
     bool has_value_after_defaults = false;
     ISerialization::DeserializeBinaryBulkStatePtr nested;
+
+    void reset()
+    {
+        num_trailing_defaults = 0;
+        has_value_after_defaults = false;
+    }
 };
 
 void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size_t start, size_t end)
@@ -54,8 +58,7 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
     size_t total_rows = state.num_trailing_defaults;
     if (state.has_value_after_defaults)
     {
-        size_t start_of_group = offsets.empty() ? start : offsets.back() + 1;
-        offsets.push_back(start_of_group + state.num_trailing_defaults);
+        offsets.push_back(start + state.num_trailing_defaults);
 
         state.has_value_after_defaults = false;
         state.num_trailing_defaults = 0;
@@ -63,6 +66,7 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
     }
 
     size_t group_size;
+    bool first = true;
     while (!istr.eof())
     {
         readIntBinary(group_size, istr);
@@ -87,7 +91,12 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
         }
         else
         {
-            size_t start_of_group = offsets.empty() ? start : offsets.back() + 1;
+            size_t start_of_group = start;
+            if (!first && !offsets.empty())
+                start_of_group = offsets.back() + 1;
+            if (first)
+                first = false;
+
             offsets.push_back(start_of_group + group_size);
 
             state.num_trailing_defaults = 0;
@@ -196,6 +205,9 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     auto * state_sparse = checkAndGetDeserializeState<DeserializeStateSparse>(state, *this);
+
+    if (!settings.continuous_reading)
+        state_sparse->reset();
 
     auto mutable_column = column->assumeMutable();
     auto & column_sparse = assert_cast<ColumnSparse &>(*mutable_column);
