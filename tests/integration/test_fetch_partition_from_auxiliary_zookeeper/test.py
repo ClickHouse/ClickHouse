@@ -18,7 +18,14 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_fetch_partition_from_allowed_zookeeper(start_cluster):
+@pytest.mark.parametrize(
+    ('part', 'part_name'),
+    [
+        ('PARTITION', '2020-08-27'),
+        ('PART', '20200827_0_0_0'),
+    ]
+)
+def test_fetch_part_from_allowed_zookeeper(start_cluster, part, part_name):
     node.query(
         "CREATE TABLE simple (date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', 'node') ORDER BY tuple() PARTITION BY date;"
     )
@@ -27,14 +34,17 @@ def test_fetch_partition_from_allowed_zookeeper(start_cluster):
     node.query(
         "CREATE TABLE simple2 (date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/1/simple', 'node') ORDER BY tuple() PARTITION BY date;"
     )
+
     node.query(
-        "ALTER TABLE simple2 FETCH PARTITION '2020-08-27' FROM 'zookeeper2:/clickhouse/tables/0/simple';"
-    )
-    node.query("ALTER TABLE simple2 ATTACH PARTITION '2020-08-27';")
+        """ALTER TABLE simple2 FETCH {part} '{part_name}' FROM 'zookeeper2:/clickhouse/tables/0/simple';""".format(
+            part=part, part_name=part_name))
+
+    node.query("""ALTER TABLE simple2 ATTACH {part} '{part_name}';""".format(
+        part=part, part_name=part_name))
 
     with pytest.raises(QueryRuntimeException):
         node.query(
-            "ALTER TABLE simple2 FETCH PARTITION '2020-08-27' FROM 'zookeeper:/clickhouse/tables/0/simple';"
-        )
+            """ALTER TABLE simple2 FETCH {part} '{part_name}' FROM 'zookeeper:/clickhouse/tables/0/simple';""".format(
+                part=part, part_name=part_name))
 
     assert node.query("SELECT id FROM simple2").strip() == "1"
