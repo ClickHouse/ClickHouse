@@ -34,6 +34,7 @@ void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsStringRegexp(FunctionFactory &);
 void registerFunctionsStringSimilarity(FunctionFactory &);
 void registerFunctionsTextClassification(FunctionFactory &);
+void registerFunctionsTonalityClassification(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
@@ -93,6 +94,7 @@ void registerFunctions()
     registerFunctionsStringRegexp(factory);
     registerFunctionsStringSimilarity(factory);
     registerFunctionsTextClassification(factory);
+    registerFunctionsTonalityClassification(factory);
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
