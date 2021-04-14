@@ -494,7 +494,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                         function->arguments = std::make_shared<ASTExpressionList>();
                         function->children.push_back(function->arguments);
                         function->arguments->children.push_back(condition);
-                        for (auto it : nested_update_exprs.second)
+                        for (const auto & it : nested_update_exprs.second)
                             function->arguments->children.push_back(it->clone());
                         condition = makeASTFunction("and", condition, function);
                     }
