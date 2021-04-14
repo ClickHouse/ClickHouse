@@ -1812,7 +1812,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
                               settings.empty_result_for_aggregation_by_empty_set,
                               context->getTemporaryVolume(),
                               settings.max_threads,
-                              settings.min_free_disk_space_for_temporary_data);
+                              settings.min_free_disk_space_for_temporary_data,
+                              false);
 
     SortDescription group_by_sort_description;
 
@@ -1921,7 +1922,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPlan & query_plan, Modific
     Aggregator::Params params(header_before_transform, keys, query_analyzer->aggregates(),
                               false, settings.max_rows_to_group_by, settings.group_by_overflow_mode, 0, 0,
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-                              context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
+                              context->getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data, false);
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 

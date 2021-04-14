@@ -908,6 +908,10 @@ public:
         size_t max_threads;
 
         const size_t min_free_disk_space;
+
+        /// Do not drop aggregator state after read, e.g. allowing more than one read of aggregation result.
+        const bool keep_state_after_read;
+
         Params(
             const Block & src_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_,
@@ -916,7 +920,8 @@ public:
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             VolumePtr tmp_volume_, size_t max_threads_,
-            size_t min_free_disk_space_)
+            size_t min_free_disk_space_,
+            bool keep_state_after_read_)
             : src_header(src_header_),
             keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
             overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
@@ -924,14 +929,15 @@ public:
             max_bytes_before_external_group_by(max_bytes_before_external_group_by_),
             empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_),
             tmp_volume(tmp_volume_), max_threads(max_threads_),
-            min_free_disk_space(min_free_disk_space_)
+            min_free_disk_space(min_free_disk_space_),
+            keep_state_after_read(keep_state_after_read_)
         {
         }
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
             const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_, bool overflow_row_, size_t max_threads_)
-            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0)
+            : Params(Block(), keys_, aggregates_, overflow_row_, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, max_threads_, 0, false)
         {
             intermediate_header = intermediate_header_;
         }

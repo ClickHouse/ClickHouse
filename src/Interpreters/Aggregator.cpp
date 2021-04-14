@@ -1000,8 +1000,10 @@ void Aggregator::convertToBlockImpl(
         convertToBlockImplFinal(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
     else
         convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
+    
     /// In order to release memory early.
-    data.clearAndShrink();
+    if (!params.keep_state_after_read)
+        data.clearAndShrink();
 }
 
 
@@ -1048,25 +1050,28 @@ inline void Aggregator::insertAggregatesIntoColumns(
         exception = std::current_exception();
     }
 
-    /** Destroy states that are no longer needed. This loop does not throw.
-        *
-        * Don't destroy states for "-State" aggregate functions,
-        *  because the ownership of this state is transferred to ColumnAggregateFunction
-        *  and ColumnAggregateFunction will take care.
-        *
-        * But it's only for states that has been transferred to ColumnAggregateFunction
-        *  before exception has been thrown;
-        */
-    for (size_t destroy_i = 0; destroy_i < params.aggregates_size; ++destroy_i)
+    if (!params.keep_state_after_read)
     {
-        /// If ownership was not transferred to ColumnAggregateFunction.
-        if (!(destroy_i < insert_i && aggregate_functions[destroy_i]->isState()))
-            aggregate_functions[destroy_i]->destroy(
-                mapped + offsets_of_aggregate_states[destroy_i]);
-    }
+        /** Destroy states that are no longer needed. This loop does not throw.
+            *
+            * Don't destroy states for "-State" aggregate functions,
+            *  because the ownership of this state is transferred to ColumnAggregateFunction
+            *  and ColumnAggregateFunction will take care.
+            *
+            * But it's only for states that has been transferred to ColumnAggregateFunction
+            *  before exception has been thrown;
+            */
+        for (size_t destroy_i = 0; destroy_i < params.aggregates_size; ++destroy_i)
+        {
+            /// If ownership was not transferred to ColumnAggregateFunction.
+            if (!(destroy_i < insert_i && aggregate_functions[destroy_i]->isState()))
+                aggregate_functions[destroy_i]->destroy(
+                    mapped + offsets_of_aggregate_states[destroy_i]);
+        }
 
-    /// Mark the cell as destroyed so it will not be destroyed in destructor.
-    mapped = nullptr;
+        /// Mark the cell as destroyed so it will not be destroyed in destructor.
+        mapped = nullptr;
+    }
 
     if (exception)
         std::rethrow_exception(exception);

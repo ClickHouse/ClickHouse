@@ -47,7 +47,7 @@ public:
 
     void write(const Block & block) override
     {
-        writeForDebug(block);
+        // writeForDebug(block);
 
         // TODO: metadata_snapshot->check
         // TODO: update storage.total_size_bytes
@@ -246,7 +246,8 @@ StorageAggregatingMemory::StorageAggregatingMemory(
                               settings.empty_result_for_aggregation_by_empty_set,
                               (*select_context)->getTemporaryVolume(),
                               settings.max_threads,
-                              settings.min_free_disk_space_for_temporary_data);
+                              settings.min_free_disk_space_for_temporary_data,
+                              true);
 
     aggregator_transform = std::make_shared<AggregatingTransformParams>(params, true);
 
@@ -267,7 +268,6 @@ Pipe StorageAggregatingMemory::read(
 
     // TODO: allow parallel read? (num_streams)
     // TODO: check if read by aggregation key is O(1)
-
 
     auto prepared_data = aggregator_transform->aggregator.prepareVariantsToMerge(many_data->variants);
     auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
