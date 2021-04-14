@@ -16,7 +16,7 @@ The following operations with [partitions](../../../engines/table-engines/merget
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — Resets the value of a specified column in a partition.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — Resets the specified secondary index in a partition.
 -   [FREEZE PARTITION](#alter_freeze-partition) — Creates a backup of a partition.
--   [FETCH PART\|PARTITION](#alter_fetch-partition) — Downloads a part or partition from another server.
+-   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
 -   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
 
 <!-- -->
@@ -198,10 +198,10 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 
 The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
 
-## FETCH PART|PARTITION {#alter_fetch-partition}
+## FETCH PARTITION|PART {#alter_fetch-partition}
 
 ``` sql
-ALTER TABLE table_name FETCH PART|PARTITION partition_expr FROM 'path-in-zookeeper'
+ALTER TABLE table_name FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
 ```
 
 Downloads a partition from another server. This query only works for the replicated tables.
@@ -226,7 +226,7 @@ ALTER TABLE users ATTACH PART 201901_2_2_0;
 
 Note that:
 
--   The `ALTER ... FETCH PART|PARTITION` query isn’t replicated. It places the part or partition to the `detached` directory only on the local server.
+-   The `ALTER ... FETCH PARTITION|PART` query isn’t replicated. It places the part or partition to the `detached` directory only on the local server.
 -   The `ALTER TABLE ... ATTACH` query is replicated. It adds the data to all replicas. The data is added to one of the replicas from the `detached` directory, and to the others - from neighboring replicas.
 
 Before downloading, the system checks if the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.

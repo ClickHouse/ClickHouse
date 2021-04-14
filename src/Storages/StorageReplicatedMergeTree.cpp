@@ -112,11 +112,9 @@ namespace ErrorCodes
     extern const int NOT_A_LEADER;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int PARTITION_ALREADY_EXISTS;
-    extern const int PART_ALREADY_EXISTS;
     extern const int TOO_MANY_RETRIES_TO_FETCH_PARTS;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int PARTITION_DOESNT_EXIST;
-    extern const int PART_DOESNT_EXIST;
     extern const int UNFINISHED;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int TOO_MANY_FETCHES;
@@ -132,6 +130,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
     extern const int INTERSERVER_SCHEME_DOESNT_MATCH;
+    extern const int DUPLICATED_PART_UUIDS;
 }
 
 namespace ActionLocks
@@ -5390,12 +5389,12 @@ void StorageReplicatedMergeTree::fetchPartition(
         auto part_path = findReplicaHavingPart(part_name, from, zookeeper);
 
         if (part_path.empty())
-            throw Exception("fetch part " + part_name + " not exists !", ErrorCodes::PART_DOESNT_EXIST);
+            throw Exception("fetch part " + part_name + " not exists !", ErrorCodes::NO_REPLICA_HAS_PART);
         /** Let's check that there is no such part in the `detached` directory (where we will write the downloaded parts).
           * Unreliable (there is a race condition) - such a part may appear a little later.
           */
-        if (checkDetachPartIfExists(part_name))
-            throw Exception("Detached part " + part_name + " already exists.", ErrorCodes::PART_ALREADY_EXISTS);
+        if (checkIfDetachedPartExists(part_name))
+            throw Exception("Detached part " + part_name + " already exists.", ErrorCodes::DUPLICATED_PART_UUIDS);
         LOG_INFO(log, "Will fetch part {} from shard {} (zookeeper '{}')", part_name, from_, auxiliary_zookeeper_name);
 
         try
@@ -5421,7 +5420,7 @@ void StorageReplicatedMergeTree::fetchPartition(
     /** Let's check that there is no such partition in the `detached` directory (where we will write the downloaded parts).
       * Unreliable (there is a race condition) - such a partition may appear a little later.
       */
-    if (checkDetachPartitionIfExists(partition_id))
+    if (checkIfDetachedPartitionExists(partition_id))
         throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
 
     zkutil::Strings replicas;
@@ -6947,7 +6946,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(
     return {};
 }
 
-bool StorageReplicatedMergeTree::checkDetachPartIfExists(const String & part_name)
+bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_name)
 {
     Poco::DirectoryIterator dir_end;
     for (const std::string & path : getDataPaths())
@@ -6957,7 +6956,7 @@ bool StorageReplicatedMergeTree::checkDetachPartIfExists(const String & part_nam
     return false;
 }
 
-bool StorageReplicatedMergeTree::checkDetachPartitionIfExists(const String & partition_name)
+bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & partition_name)
 {
     Poco::DirectoryIterator dir_end;
     for (const std::string & path : getDataPaths())
