@@ -525,8 +525,8 @@ private:
     static String findReplicaHavingPart(const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_);
 
     bool checkReplicaHavePart(const String & replica, const String & part_name);
-    bool checkDetachPartIfExists(const String & part_name);
-    bool checkDetachPartitionIfExists(const String & partition_name);
+    bool checkIfDetachedPartExists(const String & part_name);
+    bool checkIfDetachedPartitionExists(const String & partition_name);
 
     /** Find replica having specified part or any part that covers it.
       * If active = true, consider only active replicas.
