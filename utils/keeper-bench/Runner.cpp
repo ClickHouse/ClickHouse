@@ -125,7 +125,10 @@ bool Runner::tryPushRequestInteractively(const Coordination::ZooKeeperRequestPtr
 void Runner::runBenchmark()
 {
     auto aux_connections = getConnections();
+
+    std::cerr << "Preparing to run\n";
     generator->startup(*aux_connections[0]);
+    std::cerr << "Prepared\n";
     try
     {
         for (size_t i = 0; i < concurrency; ++i)
