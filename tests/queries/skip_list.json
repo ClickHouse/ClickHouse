@@ -559,6 +559,7 @@
         "01148_zookeeper_path_macros_unfolding",
         "01150_ddl_guard_rwr",
         "01153_attach_mv_uuid",
+        "01152_cross_replication",
         "01185_create_or_replace_table",
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
@@ -698,6 +699,7 @@
         "01682_cache_dictionary_complex_key",
         "01684_ssd_cache_dictionary_simple_key",
         "01685_ssd_cache_dictionary_complex_key",
+        "01737_clickhouse_server_wait_server_pool_long", // This test is fully compatible to run in parallel, however under ASAN processes are pretty heavy and may fail under flaky adress check.
         "01760_system_dictionaries",
         "01760_polygon_dictionaries",
         "01778_hierarchical_dictionaries",

@@ -25,6 +25,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/StorageS3Cluster.h>
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -33,6 +34,7 @@
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
+#include "Core/Protocol.h"
 #include "TCPHandler.h"
 
 #if !defined(ARCADIA_BUILD)
@@ -55,6 +57,7 @@ namespace ErrorCodes
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_PROTOCOL;
 }
 
 TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
@@ -284,6 +287,14 @@ void TCPHandler::runImpl()
             });
 
             customizeContext(query_context);
+
+            /// This callback is needed for requesting read tasks inside pipeline for distributed processing
+            query_context->setReadTaskCallback([this]() -> String
+            {
+                std::lock_guard lock(task_callback_mutex);
+                sendReadTaskRequestAssumeLocked();
+                return receiveReadTaskResponseAssumeLocked();
+            });
 
             bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
@@ -644,6 +655,8 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         Block block;
         while (executor.pull(block, query_context->getSettingsRef().interactive_delay / 1000))
         {
+            std::lock_guard lock(task_callback_mutex);
+
             if (isQueryCancelled())
             {
                 /// A packet was received requesting to stop execution of the request.
@@ -753,6 +766,13 @@ void TCPHandler::sendPartUUIDs()
         writeVectorBinary(uuids, *out);
         out->next();
     }
+}
+
+
+void TCPHandler::sendReadTaskRequestAssumeLocked()
+{
+    writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
+    out->next();
 }
 
 void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
@@ -963,10 +983,10 @@ bool TCPHandler::receivePacket()
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
 
-//    std::cerr << "Server got packet: " << Protocol::Client::toString(packet_type) << "\n";
-
     switch (packet_type)
     {
+        case Protocol::Client::ReadTaskResponse:
+            throw Exception("ReadTaskResponse must be received only after requesting in callback", ErrorCodes::LOGICAL_ERROR);
         case Protocol::Client::IgnoredPartUUIDs:
             /// Part uuids packet if any comes before query.
             receiveIgnoredPartUUIDs();
@@ -1015,6 +1035,34 @@ void TCPHandler::receiveIgnoredPartUUIDs()
     if (!uuids.empty())
         query_context->getIgnoredPartUUIDs()->add(uuids);
 }
+
+
+String TCPHandler::receiveReadTaskResponseAssumeLocked()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != Protocol::Client::ReadTaskResponse)
+    {
+        if (packet_type == Protocol::Client::Cancel)
+        {
+            state.is_cancelled = true;
+            return {};
+        }
+        else
+        {
+            throw Exception(fmt::format("Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        }
+    }
+    UInt64 version;
+    readVarUInt(version, *in);
+    if (version != DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION)
+        throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::UNKNOWN_PROTOCOL);
+    String response;
+    readStringBinary(response, *in);
+    return response;
+}
+
 
 void TCPHandler::receiveClusterNameAndSalt()
 {
