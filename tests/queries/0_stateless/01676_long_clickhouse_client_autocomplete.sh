@@ -69,18 +69,6 @@ compwords_positive=(
     max_concurrent_queries_for_all_users
     # system.clusters
     test_shard_localhost
-    # system.errors, also it is very rare to cover system_events_show_zero_values
-    CONDITIONAL_TREE_PARENT_NOT_FOUND
-    # system.events, also it is very rare to cover system_events_show_zero_values
-    WriteBufferFromFileDescriptorWriteFailed
-    # system.asynchronous_metrics, also this metric has zero value
-    #
-    # NOTE: that there is no ability to complete metrics like
-    # jemalloc.background_thread.num_runs, due to "." is used as a word breaker
-    # (and this cannot be changed -- db.table)
-    ReplicasMaxAbsoluteDelay
-    # system.metrics
-    PartsPreCommitted
     # system.macros
     default_path_test
     # system.storage_policies, egh not uniq
