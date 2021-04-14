@@ -486,13 +486,9 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 
     ConstantFilterDescription const_description(*new_filter);
     if (const_description.always_true)
-    {
         setFilterConstTrue();
-    }
     else if (const_description.always_false)
-    {
         clear();
-    }
     else
     {
         FilterDescription filter_description(*new_filter);

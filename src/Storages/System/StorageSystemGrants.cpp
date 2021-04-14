@@ -35,10 +35,10 @@ NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
 }
 
 
-void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
-    const auto & access_control = context->getAccessControlManager();
+    context.checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
+    const auto & access_control = context.getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
 

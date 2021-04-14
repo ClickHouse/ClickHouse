@@ -16,6 +16,7 @@ namespace DB
 {
 
 class Block;
+class Context;
 struct Settings;
 
 struct ExpressionActionsChain;
@@ -77,7 +78,7 @@ struct ExpressionAnalyzerData
   *
   * NOTE: if `ast` is a SELECT query from a table, the structure of this table should not change during the lifetime of ExpressionAnalyzer.
   */
-class ExpressionAnalyzer : protected ExpressionAnalyzerData, private boost::noncopyable, protected WithContext
+class ExpressionAnalyzer : protected ExpressionAnalyzerData, private boost::noncopyable
 {
 private:
     /// Extracts settings to enlight which are used (and avoid copy of others).
@@ -95,7 +96,7 @@ public:
     ExpressionAnalyzer(
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
-        ContextPtr context_)
+        const Context & context_)
     :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
     {}
 
@@ -144,12 +145,13 @@ protected:
     ExpressionAnalyzer(
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
-        ContextPtr context_,
+        const Context & context_,
         size_t subquery_depth_,
         bool do_global_,
         SubqueriesForSets subqueries_for_sets_);
 
     ASTPtr query;
+    const Context & context;
     const ExtractedSettings settings;
     size_t subquery_depth;
 
@@ -270,7 +272,7 @@ public:
     SelectQueryExpressionAnalyzer(
         const ASTPtr & query_,
         const TreeRewriterResultPtr & syntax_analyzer_result_,
-        ContextPtr context_,
+        const Context & context_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NameSet & required_result_columns_ = {},
         bool do_global_ = false,

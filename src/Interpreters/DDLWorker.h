@@ -42,7 +42,7 @@ class AccessRightsElements;
 class DDLWorker
 {
 public:
-    DDLWorker(int pool_size_, const std::string & zk_root_dir, ContextPtr context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
+    DDLWorker(int pool_size_, const std::string & zk_root_dir, const Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix,
               const String & logger_name = "DDLWorker", const CurrentMetrics::Metric * max_entry_metric_ = nullptr);
     virtual ~DDLWorker();
 
@@ -110,7 +110,8 @@ protected:
     void runMainThread();
     void runCleanupThread();
 
-    ContextPtr context;
+protected:
+    Context context;
     Poco::Logger * log;
 
     std::string host_fqdn;      /// current host domain name

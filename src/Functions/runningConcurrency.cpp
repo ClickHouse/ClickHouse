@@ -154,7 +154,7 @@ namespace DB
     public:
         static constexpr auto name = Name::name;
 
-        static FunctionOverloadResolverImplPtr create(ContextPtr)
+        static FunctionOverloadResolverImplPtr create(const Context &)
         {
             return std::make_unique<RunningConcurrencyOverloadResolver<Name, ConcurrencyDataType>>();
         }

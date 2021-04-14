@@ -155,15 +155,6 @@ void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuid
     }
 }
 
-
-void MultiplexedConnections::sendReadTaskResponse(const String & response)
-{
-    std::lock_guard lock(cancel_mutex);
-    if (cancelled)
-        return;
-    current_connection->sendReadTaskResponse(response);
-}
-
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
@@ -219,7 +210,6 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
-            case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
             case Protocol::Server::Progress:
@@ -283,7 +273,6 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
 
     switch (packet.type)
     {
-        case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:
         case Protocol::Server::Progress:

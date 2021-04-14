@@ -1,5 +1,5 @@
 ---
-toc_priority: 10
+toc_priority: 6
 toc_title: RabbitMQ
 ---
 

@@ -33,19 +33,6 @@ TEST(Common, PODArrayInsert)
     EXPECT_EQ(str, std::string(chars.data(), chars.size()));
 }
 
-TEST(Common, PODArrayInsertFromItself)
-{
-    {
-        PaddedPODArray<UInt64> array { 1 };
-
-        for (size_t i = 0; i < 3; ++i)
-            array.insertFromItself(array.begin(), array.end());
-
-        PaddedPODArray<UInt64> expected {1,1,1,1,1,1,1,1};
-        ASSERT_EQ(array,expected);
-    }
-}
-
 TEST(Common, PODPushBackRawMany)
 {
     PODArray<char> chars;

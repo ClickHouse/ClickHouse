@@ -57,7 +57,6 @@ SRCS(
     MergeTree/MergeTreeDataPartWriterWide.cpp
     MergeTree/MergeTreeDataSelectExecutor.cpp
     MergeTree/MergeTreeDataWriter.cpp
-    MergeTree/MergeTreeDeduplicationLog.cpp
     MergeTree/MergeTreeIndexAggregatorBloomFilter.cpp
     MergeTree/MergeTreeIndexBloomFilter.cpp
     MergeTree/MergeTreeIndexConditionBloomFilter.cpp
@@ -118,7 +117,6 @@ SRCS(
     StorageBuffer.cpp
     StorageDictionary.cpp
     StorageDistributed.cpp
-    StorageExternalDistributed.cpp
     StorageFactory.cpp
     StorageFile.cpp
     StorageGenerateRandom.cpp

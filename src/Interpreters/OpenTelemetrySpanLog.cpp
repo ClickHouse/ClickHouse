@@ -116,7 +116,7 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
             return;
         }
 
-        auto context = thread_group->query_context.lock();
+        auto * context = thread_group->query_context;
         if (!context)
         {
             // Both global and query contexts can be null when executing a

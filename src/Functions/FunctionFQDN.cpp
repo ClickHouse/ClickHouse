@@ -12,7 +12,7 @@ class FunctionFQDN : public IFunction
 {
 public:
     static constexpr auto name = "FQDN";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionFQDN>();
     }

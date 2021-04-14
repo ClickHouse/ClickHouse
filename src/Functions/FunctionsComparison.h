@@ -552,18 +552,22 @@ struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
 struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
 
-template <template <typename, typename> class Op, typename Name>
+template <
+    template <typename, typename> class Op,
+    typename Name>
 class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
 
-    explicit FunctionComparison(ContextPtr context_)
-        : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
+    explicit FunctionComparison(const Context & context_)
+    :   context(context_),
+        check_decimal_overflow(decimalCheckComparisonOverflow(context))
+    {}
 
 private:
-    ContextPtr context;
+    const Context & context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>

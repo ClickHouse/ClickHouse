@@ -2,7 +2,6 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/ExpressionActions.h>
@@ -49,10 +48,7 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
         _compared_column);
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
-    // Note that the storage type of offset returned by get<> is different, so
-    // we need to specify the type explicitly.
-    const typename ColumnType::ValueType offset
-            = _offset.get<typename ColumnType::ValueType>();
+    const auto offset = _offset.get<typename ColumnType::ValueType>();
     assert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
@@ -66,32 +62,32 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
         reference_value_data.data);
 
     bool is_overflow;
+    bool overflow_to_negative;
     if (offset_is_preceding)
     {
         is_overflow = __builtin_sub_overflow(reference_value, offset,
             &reference_value);
+        overflow_to_negative = offset > 0;
     }
     else
     {
         is_overflow = __builtin_add_overflow(reference_value, offset,
             &reference_value);
+        overflow_to_negative = offset < 0;
     }
 
 //    fmt::print(stderr,
-//        "compared [{}] = {}, old ref {}, shifted ref [{}] = {}, offset {} preceding {} overflow {} to negative {}\n",
+//        "compared [{}] = {}, ref [{}] = {}, offset {} preceding {} overflow {} to negative {}\n",
 //        compared_row, toString(compared_value),
-//        // fmt doesn't like char8_t.
-//        static_cast<Int64>(unalignedLoad<typename ColumnType::ValueType>(reference_value_data.data)),
 //        reference_row, toString(reference_value),
 //        toString(offset), offset_is_preceding,
-//        is_overflow, offset_is_preceding);
+//        is_overflow, overflow_to_negative);
 
     if (is_overflow)
     {
-        if (offset_is_preceding)
+        if (overflow_to_negative)
         {
             // Overflow to the negative, [compared] must be greater.
-            // We know that because offset is >= 0.
             return 1;
         }
         else
@@ -257,23 +253,16 @@ WindowTransform::WindowTransform(const Block & input_header_,
         const IColumn * column = entry.column.get();
         APPLY_FOR_TYPES(compareValuesWithOffset)
 
+        // Check that the offset type matches the window type.
         // Convert the offsets to the ORDER BY column type. We can't just check
-        // that the type matches, because e.g. the int literals are always
-        // (U)Int64, but the column might be Int8 and so on.
+        // that it matches, because e.g. the int literals are always (U)Int64,
+        // but the column might be Int8 and so on.
         if (window_description.frame.begin_type
             == WindowFrame::BoundaryType::Offset)
         {
             window_description.frame.begin_offset = convertFieldToTypeOrThrow(
                 window_description.frame.begin_offset,
                 *entry.type);
-
-            if (applyVisitor(FieldVisitorAccurateLess{},
-                window_description.frame.begin_offset, Field(0)))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
-                    window_description.frame.begin_offset);
-            }
         }
         if (window_description.frame.end_type
             == WindowFrame::BoundaryType::Offset)
@@ -281,14 +270,6 @@ WindowTransform::WindowTransform(const Block & input_header_,
             window_description.frame.end_offset = convertFieldToTypeOrThrow(
                 window_description.frame.end_offset,
                 *entry.type);
-
-            if (applyVisitor(FieldVisitorAccurateLess{},
-                window_description.frame.end_offset, Field(0)))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
-                    window_description.frame.end_offset);
-            }
         }
     }
 }
@@ -434,9 +415,6 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) con
             assertValid(x);
             assert(offset <= 0);
 
-            // abs(offset) is less than INT_MAX, as checked in the parser, so
-            // this negation should always work.
-            assert(offset >= -INT_MAX);
             if (x.row >= static_cast<uint64_t>(-offset))
             {
                 x.row -= -offset;
@@ -1377,8 +1355,6 @@ struct WindowFunctionRank final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1399,8 +1375,6 @@ struct WindowFunctionDenseRank final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1420,8 +1394,6 @@ struct WindowFunctionRowNumber final : public WindowFunction
 
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
@@ -1489,8 +1461,6 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return argument_types[0]; }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1509,12 +1479,6 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The offset for function {} must be nonnegative, {} given",
                     getName(), offset);
-            }
-            if (offset > INT_MAX)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The offset for function {} must be less than {}, {} given",
-                    getName(), INT_MAX, offset);
             }
         }
 

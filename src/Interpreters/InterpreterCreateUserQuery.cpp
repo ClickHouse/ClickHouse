@@ -75,8 +75,8 @@ namespace
 BlockIO InterpreterCreateUserQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
-    auto access = getContext()->getAccess();
+    auto & access_control = context.getAccessControlManager();
+    auto access = context.getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
 
     std::optional<RolesOrUsersSet> default_roles_from_query;
@@ -91,7 +91,7 @@ BlockIO InterpreterCreateUserQuery::execute()
     }
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(query_ptr, context);
 
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)

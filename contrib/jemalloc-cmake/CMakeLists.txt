@@ -121,14 +121,12 @@ target_include_directories(jemalloc SYSTEM PRIVATE
 target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_DEBUG=1)
-endif ()
+    target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_DEBUG=1 -DJEMALLOC_PROF=1)
 
-target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_PROF=1)
-
-if (USE_UNWIND)
-    target_compile_definitions (jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
-    target_link_libraries (jemalloc PRIVATE unwind)
+    if (USE_UNWIND)
+        target_compile_definitions (jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
+        target_link_libraries (jemalloc PRIVATE unwind)
+    endif ()
 endif ()
 
 target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)

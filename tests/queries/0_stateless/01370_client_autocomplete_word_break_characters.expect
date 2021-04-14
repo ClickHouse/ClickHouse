@@ -23,7 +23,7 @@ set is_done 0
 while {$is_done == 0} {
     send -- "\t"
     expect {
-        "_" {
+        "_connections" {
             set is_done 1
         }
         default {

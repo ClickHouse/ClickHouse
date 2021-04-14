@@ -22,49 +22,47 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
-    const String & query_, const Block & header_, ContextPtr context_,
-    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    const String & query_, const Block & header_, const Context & context_,
+    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     create_connections = [this, &connection, throttler]()
     {
-        return std::make_unique<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
+        return std::make_unique<MultiplexedConnections>(connection, context.getSettingsRef(), throttler);
     };
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
-    const String & query_, const Block & header_, ContextPtr context_,
-    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    const String & query_, const Block & header_, const Context & context_,
+    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
-    create_connections = [this, connections_, throttler]() mutable {
-        return std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
+    create_connections = [this, connections_, throttler]() mutable
+    {
+        return std::make_unique<MultiplexedConnections>(
+                std::move(connections_), context.getSettingsRef(), throttler);
     };
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
-    const String & query_, const Block & header_, ContextPtr context_,
-    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    const String & query_, const Block & header_, const Context & context_,
+    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
 {
     create_connections = [this, pool, throttler]()->std::unique_ptr<IConnections>
     {
-        const Settings & current_settings = context->getSettingsRef();
+        const Settings & current_settings = context.getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
 #if defined(OS_LINUX)
@@ -159,7 +157,7 @@ void RemoteQueryExecutor::sendQuery()
 
     connections = create_connections();
 
-    const auto & settings = context->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
     if (settings.skip_unavailable_shards && 0 == connections->size())
         return;
 
@@ -178,7 +176,7 @@ void RemoteQueryExecutor::sendQuery()
     was_cancelled = false;
 
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
-    ClientInfo modified_client_info = context->getClientInfo();
+    ClientInfo modified_client_info = context.getClientInfo();
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     if (CurrentThread::isInitialized())
     {
@@ -207,7 +205,7 @@ Block RemoteQueryExecutor::read()
     {
         sendQuery();
 
-        if (context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()))
+        if (context.getSettingsRef().skip_unavailable_shards && (0 == connections->size()))
             return {};
     }
 
@@ -233,7 +231,7 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
     {
         sendQuery();
 
-        if (context->getSettingsRef().skip_unavailable_shards && (0 == connections->size()))
+        if (context.getSettingsRef().skip_unavailable_shards && (0 == connections->size()))
             return Block();
     }
 
@@ -299,9 +297,6 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 {
     switch (packet.type)
     {
-        case Protocol::Server::ReadTaskRequest:
-            processReadTaskRequest();
-            break;
         case Protocol::Server::PartUUIDs:
             if (!setPartUUIDs(packet.part_uuids))
                 got_duplicated_part_uuids = true;
@@ -368,8 +363,8 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 
 bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
 {
-    auto query_context = context->getQueryContext();
-    auto duplicates = query_context->getPartUUIDs()->add(uuids);
+    Context & query_context = const_cast<Context &>(context).getQueryContext();
+    auto duplicates = query_context.getPartUUIDs()->add(uuids);
 
     if (!duplicates.empty())
     {
@@ -378,14 +373,6 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
         return false;
     }
     return true;
-}
-
-void RemoteQueryExecutor::processReadTaskRequest()
-{
-    if (!task_iterator)
-        throw Exception("Distributed task iterator is not initialized", ErrorCodes::LOGICAL_ERROR);
-    auto response = (*task_iterator)();
-    connections->sendReadTaskResponse(response);
 }
 
 void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)

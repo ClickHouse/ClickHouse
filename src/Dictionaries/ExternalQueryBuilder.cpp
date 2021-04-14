@@ -173,7 +173,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
 std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Simple key required for method");
+        throw Exception{"Simple key required for method", ErrorCodes::UNSUPPORTED_METHOD};
 
     WriteBufferFromOwnString out;
     writeString("SELECT ", out);
@@ -244,10 +244,10 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
     const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix)
 {
     if (!dict_struct.key)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Composite key required for method");
+        throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
 
     if (key_columns.size() != dict_struct.key->size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
+        throw Exception{"The size of key_columns does not equal to the size of dictionary key", ErrorCodes::LOGICAL_ERROR};
 
     WriteBufferFromOwnString out;
     writeString("SELECT ", out);
@@ -386,7 +386,7 @@ void ExternalQueryBuilder::composeInWithTuples(const Columns & key_columns, cons
 void ExternalQueryBuilder::composeKeyTupleDefinition(WriteBuffer & out, size_t beg, size_t end) const
 {
     if (!dict_struct.key)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Composite key required for method");
+        throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
 
     writeChar('(', out);
 

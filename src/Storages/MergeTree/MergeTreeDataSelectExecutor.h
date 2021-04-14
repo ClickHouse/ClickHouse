@@ -29,7 +29,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         UInt64 max_block_size,
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
@@ -39,7 +39,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         UInt64 max_block_size,
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
@@ -141,7 +141,7 @@ private:
         const DataTypes & minmax_columns_types,
         std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        ContextPtr query_context) const;
+        const Context & query_context) const;
 };
 
 }

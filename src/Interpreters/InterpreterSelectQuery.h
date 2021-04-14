@@ -46,28 +46,28 @@ public:
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const Context & context_,
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
     /// Read data not from the table specified in the query, but from the prepared source `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const Context & context_,
         const BlockInputStreamPtr & input_,
         const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
             const ASTPtr & query_ptr_,
-            ContextPtr context_,
+            const Context & context_,
             Pipe input_pipe_,
             const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const Context & context_,
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
@@ -94,7 +94,7 @@ public:
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        ContextPtr context_,
+        const Context & context_,
         const BlockInputStreamPtr & input_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,

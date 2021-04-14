@@ -20,11 +20,11 @@ public:
         return name;
     }
 
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+    void parseArguments(const ASTPtr & ast_function, const Context & context) override;
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(const Context & context) const override;
 
-    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription) const override;
+    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription) const override;
 
     const char * getStorageTypeName() const override { return "Dictionary"; }
 

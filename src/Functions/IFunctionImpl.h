@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Functions/IFunction.h>
 
 /// This file contains developer interface for functions.

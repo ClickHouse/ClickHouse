@@ -225,7 +225,7 @@ BlockIO InterpreterGrantQuery::execute()
 {
     auto & query = query_ptr->as<ASTGrantQuery &>();
 
-    query.replaceCurrentUserTag(getContext()->getUserName());
+    query.replaceCurrentUserTag(context.getUserName());
     query.access_rights_elements.eraseNonGrantable();
 
     if (!query.access_rights_elements.sameOptions())
@@ -233,32 +233,32 @@ BlockIO InterpreterGrantQuery::execute()
     if (!query.access_rights_elements.empty() && query.access_rights_elements[0].is_partial_revoke && !query.is_revoke)
         throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::LOGICAL_ERROR);
 
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = context.getAccessControlManager();
     std::optional<RolesOrUsersSet> roles_set;
     if (query.roles)
         roles_set = RolesOrUsersSet{*query.roles, access_control};
 
-    std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
+    std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, context.getUserID()}.getMatchingIDs(access_control);
 
     /// Check if the current user has corresponding roles granted with admin option.
     std::vector<UUID> roles;
     if (roles_set)
-        roles = getRoleIDsAndCheckAdminOption(access_control, *getContext()->getAccess(), query, *roles_set, grantees);
+        roles = getRoleIDsAndCheckAdminOption(access_control, *context.getAccess(), query, *roles_set, grantees);
 
     if (!query.cluster.empty())
     {
         /// To execute the command GRANT the current user needs to have the access granted with GRANT OPTION.
         auto required_access = query.access_rights_elements;
         std::for_each(required_access.begin(), required_access.end(), [&](AccessRightsElement & element) { element.grant_option = true; });
-        checkGranteesAreAllowed(access_control, *getContext()->getAccess(), grantees);
-        return executeDDLQueryOnCluster(query_ptr, getContext(), std::move(required_access));
+        checkGranteesAreAllowed(access_control, *context.getAccess(), grantees);
+        return executeDDLQueryOnCluster(query_ptr, context, std::move(required_access));
     }
 
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    query.replaceEmptyDatabase(context.getCurrentDatabase());
 
     /// Check if the current user has corresponding access rights with grant option.
     if (!query.access_rights_elements.empty())
-        checkGrantOption(access_control, *getContext()->getAccess(), query, grantees);
+        checkGrantOption(access_control, *context.getAccess(), query, grantees);
 
     /// Update roles and users listed in `grantees`.
     auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
@@ -291,7 +291,7 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
     updateFromQueryImpl(role, query, roles_to_grant_or_revoke);
 }
 
-void InterpreterGrantQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr) const
+void InterpreterGrantQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, const Context &) const
 {
     auto & query = query_ptr->as<ASTGrantQuery &>();
     if (query.is_revoke)

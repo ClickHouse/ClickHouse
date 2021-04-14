@@ -66,9 +66,8 @@ public:
 
     HashMap<KeyType, size_t> requested_keys_to_fetched_columns_during_update_index;
     MutableColumns fetched_columns_during_update;
-
     /// Complex keys are serialized in this arena
-    DictionaryKeysArenaHolder<dictionary_key_type> complex_keys_arena_holder;
+    Arena complex_key_arena;
 
 private:
     template <DictionaryKeyType>

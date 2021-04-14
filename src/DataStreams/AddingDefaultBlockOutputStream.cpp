@@ -10,7 +10,7 @@ AddingDefaultBlockOutputStream::AddingDefaultBlockOutputStream(
     const BlockOutputStreamPtr & output_,
     const Block & header_,
     const ColumnsDescription & columns_,
-    ContextPtr context_)
+    const Context & context_)
     : output(output_), header(header_)
 {
     auto dag = addMissingDefaults(header_, output->getHeader().getNamesAndTypesList(), columns_, context_);

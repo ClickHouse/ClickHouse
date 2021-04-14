@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <ext/scope_guard_safe.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -33,7 +33,7 @@ class FunctionRunningAccumulate : public IFunction
 {
 public:
     static constexpr auto name = "runningAccumulate";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionRunningAccumulate>();
     }
@@ -104,7 +104,7 @@ public:
         const auto & states = column_with_states->getData();
 
         bool state_created = false;
-        SCOPE_EXIT_MEMORY_SAFE({
+        SCOPE_EXIT({
             if (state_created)
                 agg_func.destroy(place.data());
         });

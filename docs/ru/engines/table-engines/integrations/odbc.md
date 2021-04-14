@@ -1,5 +1,5 @@
 ---
-toc_priority: 2
+toc_priority: 1
 toc_title: ODBC
 ---
 

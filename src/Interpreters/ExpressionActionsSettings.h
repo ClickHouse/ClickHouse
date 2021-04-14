@@ -1,13 +1,12 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-
 #include <cstddef>
 
 namespace DB
 {
 
 struct Settings;
+class Context;
 
 struct ExpressionActionsSettings
 {
@@ -18,7 +17,7 @@ struct ExpressionActionsSettings
     size_t max_temporary_non_const_columns = 0;
 
     static ExpressionActionsSettings fromSettings(const Settings & from);
-    static ExpressionActionsSettings fromContext(ContextPtr from);
+    static ExpressionActionsSettings fromContext(const Context & from);
 };
 
 }

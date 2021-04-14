@@ -33,7 +33,7 @@ class TextLog : public SystemLog<TextLogElement>
 {
 public:
     TextLog(
-        ContextPtr context_,
+        Context & context_,
         const String & database_name_,
         const String & table_name_,
         const String & storage_def_,

@@ -26,7 +26,7 @@ public:
     using Entry = PoolBase<Connection>::Entry;
 
 public:
-    virtual ~IConnectionPool() = default;
+    virtual ~IConnectionPool() {}
 
     /// Selects the connection to work.
     /// If force_connected is false, the client must manually ensure that returned connection is good.

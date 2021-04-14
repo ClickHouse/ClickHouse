@@ -47,10 +47,7 @@ add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
-
-if (USE_INTERNAL_XZ_LIBRARY)
-    add_subdirectory (xz)
-endif()
+add_subdirectory (xz)
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
@@ -324,10 +321,6 @@ endif()
 if (USE_LIBPQXX)
     add_subdirectory (libpq-cmake)
     add_subdirectory (libpqxx-cmake)
-endif()
-
-if (USE_NANODBC)
-    add_subdirectory (nanodbc-cmake)
 endif()
 
 if (USE_NURAFT)

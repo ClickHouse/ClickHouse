@@ -102,8 +102,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             }
 
             SharedContextHolder shared_context = Context::createShared();
-            auto context = Context::createGlobal(shared_context.get());
-            context->makeGlobalContext();
+            Context context = Context::createGlobal(shared_context.get());
+            context.makeGlobalContext();
 
             registerFunctions();
             registerAggregateFunctions();

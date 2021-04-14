@@ -512,7 +512,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr const bool is_multiply = IsOperation<Op>::multiply;
     static constexpr const bool is_division = IsOperation<Op>::division;
 
-    ContextPtr context;
+    const Context & context;
     bool check_decimal_overflow = true;
 
     template <typename F>
@@ -593,7 +593,7 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
+    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, const Context & context)
     {
         bool first_is_date_or_datetime = isDateOrDateTime(type0);
         bool second_is_date_or_datetime = isDateOrDateTime(type1);
@@ -939,9 +939,9 @@ class FunctionBinaryArithmetic : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
 
-    explicit FunctionBinaryArithmetic(ContextPtr context_)
+    explicit FunctionBinaryArithmetic(const Context & context_)
     :   context(context_),
         check_decimal_overflow(decimalCheckArithmeticOverflow(context))
     {}
@@ -955,7 +955,7 @@ public:
         return getReturnTypeImplStatic(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, const Context & context)
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
@@ -1367,7 +1367,7 @@ public:
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        ContextPtr context)
+        const Context & context)
     {
         return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context);
     }
@@ -1376,7 +1376,7 @@ public:
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        ContextPtr context_)
+        const Context & context_)
         : Base(context_), left(left_), right(right_), return_type(return_type_)
     {
     }
@@ -1530,12 +1530,12 @@ class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionOverloadResolverImplPtr create(ContextPtr context)
+    static FunctionOverloadResolverImplPtr create(const Context & context)
     {
         return std::make_unique<BinaryArithmeticOverloadResolver>(context);
     }
 
-    explicit BinaryArithmeticOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit BinaryArithmeticOverloadResolver(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -1571,6 +1571,6 @@ public:
     }
 
 private:
-    ContextPtr context;
+    const Context & context;
 };
 }

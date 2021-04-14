@@ -7,11 +7,15 @@
 namespace DB
 {
 
+class Context;
+
 /// Returns single row with explain results
-class InterpreterExplainQuery : public IInterpreter, WithContext
+class InterpreterExplainQuery : public IInterpreter
 {
 public:
-    InterpreterExplainQuery(const ASTPtr & query_, ContextPtr context_) : WithContext(context_), query(query_) { }
+    InterpreterExplainQuery(const ASTPtr & query_, const Context & context_)
+        : query(query_), context(context_)
+    {}
 
     BlockIO execute() override;
 
@@ -19,6 +23,7 @@ public:
 
 private:
     ASTPtr query;
+    const Context & context;
 
     BlockInputStreamPtr executeImpl();
 };

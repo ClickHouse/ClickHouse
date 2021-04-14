@@ -44,21 +44,21 @@ namespace
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
     auto & query = query_ptr->as<ASTCreateRowPolicyQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
-    getContext()->checkAccess(query.alter ? AccessType::ALTER_ROW_POLICY : AccessType::CREATE_ROW_POLICY);
+    auto & access_control = context.getAccessControlManager();
+    context.checkAccess(query.alter ? AccessType::ALTER_ROW_POLICY : AccessType::CREATE_ROW_POLICY);
 
     if (!query.cluster.empty())
     {
-        query.replaceCurrentUserTag(getContext()->getUserName());
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        query.replaceCurrentUserTag(context.getUserName());
+        return executeDDLQueryOnCluster(query_ptr, context);
     }
 
     assert(query.names->cluster.empty());
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
-        roles_from_query = RolesOrUsersSet{*query.roles, access_control, getContext()->getUserID()};
+        roles_from_query = RolesOrUsersSet{*query.roles, access_control, context.getUserID()};
 
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    query.replaceEmptyDatabase(context.getCurrentDatabase());
 
     if (query.alter)
     {

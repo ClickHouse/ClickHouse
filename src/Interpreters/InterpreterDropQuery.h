@@ -16,19 +16,20 @@ class AccessRightsElements;
   * or remove information about table (just forget) from server (DETACH),
   * or just clear all data in table (TRUNCATE).
   */
-class InterpreterDropQuery : public IInterpreter, WithContext
+class InterpreterDropQuery : public IInterpreter
 {
 public:
-    InterpreterDropQuery(const ASTPtr & query_ptr_, ContextPtr context_);
+    InterpreterDropQuery(const ASTPtr & query_ptr_, Context & context_);
 
     /// Drop table or database.
     BlockIO execute() override;
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, const Context &) const override;
 
 private:
     AccessRightsElements getRequiredAccessForDDLOnCluster() const;
     ASTPtr query_ptr;
+    Context & context;
 
     BlockIO executeToDatabase(const ASTDropQuery & query);
     BlockIO executeToDatabaseImpl(const ASTDropQuery & query, DatabasePtr & database, std::vector<UUID> & uuids_to_wait);

@@ -1,15 +1,18 @@
 #pragma once
+#include <Processors/IProcessor.h>
+#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Pipe.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/IProcessor.h>
-#include <Processors/Pipe.h>
+
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 
 namespace DB
 {
+
+class Context;
 
 class IOutputFormat;
 
@@ -87,15 +90,16 @@ public:
     /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static QueryPipeline unitePipelines(
             std::vector<std::unique_ptr<QueryPipeline>> pipelines,
+            const Block & common_header,
+            const ExpressionActionsSettings & settings,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
-    /// Pipeline must have empty header, it should not generate any chunk.
-    /// This is used for CreatingSets.
+    /// Pipeline must have same header.
     void addPipelineBefore(QueryPipeline pipeline);
 
-    void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context);
+    void addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context);
 
     PipelineExecutorPtr execute();
 
