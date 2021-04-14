@@ -5389,7 +5389,7 @@ void StorageReplicatedMergeTree::fetchPartition(
         auto part_path = findReplicaHavingPart(part_name, from, zookeeper);
 
         if (part_path.empty())
-            throw Exception(ErrorCodes::PART_DOESNT_EXIST, "Part {} does not exist on any replica", part_name);
+            throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Part {} does not exist on any replica", part_name);
         /** Let's check that there is no such part in the `detached` directory (where we will write the downloaded parts).
           * Unreliable (there is a race condition) - such a part may appear a little later.
           */
