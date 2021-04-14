@@ -26,9 +26,9 @@ struct DatabaseAndTableWithAlias
     UUID uuid = UUIDHelpers::Nil;
 
     DatabaseAndTableWithAlias() = default;
-    DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
-    DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
-    DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
 
     /// "alias." or "table." if alias is empty
     String getQualifiedNamePrefix(bool with_dot = true) const;
@@ -80,7 +80,7 @@ private:
     void addAdditionalColumns(NamesAndTypesList & target, const NamesAndTypesList & addition)
     {
         target.insert(target.end(), addition.begin(), addition.end());
-        for (auto & col : addition)
+        for (const auto & col : addition)
             names.insert(col.name);
     }
 
