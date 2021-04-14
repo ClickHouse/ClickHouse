@@ -557,6 +557,7 @@
         "01135_default_and_alter_zookeeper",
         "01148_zookeeper_path_macros_unfolding",
         "01150_ddl_guard_rwr",
+        "01152_cross_replication",
         "01185_create_or_replace_table",
         "01190_full_attach_syntax",
         "01191_rename_dictionary",
