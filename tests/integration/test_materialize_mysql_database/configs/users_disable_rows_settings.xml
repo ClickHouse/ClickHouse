@@ -4,8 +4,8 @@
         <default>
             <allow_experimental_database_materialize_mysql>1</allow_experimental_database_materialize_mysql>
             <default_database_engine>Atomic</default_database_engine>
-            <max_read_mysql_rows>0</max_read_mysql_rows>
-            <max_read_mysql_bytes>1</max_read_mysql_bytes>
+            <external_storage_max_read_rows>0</external_storage_max_read_rows>
+            <external_storage_max_read_bytes>1</external_storage_max_read_bytes>
         </default>
     </profiles>
 

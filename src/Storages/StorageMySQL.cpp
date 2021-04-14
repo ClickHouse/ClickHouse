@@ -71,7 +71,7 @@ Pipe StorageMySQL::read(
     SelectQueryInfo & query_info_,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t /*max_read_mysql_rows*/,
+    size_t max_block_size,
     unsigned)
 {
     metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
@@ -94,6 +94,9 @@ Pipe StorageMySQL::read(
             column_data.type = std::make_shared<DataTypeString>();
         sample_block.insert({ column_data.type, column_data.name });
     }
+
+    if (!context_->getSettingsRef().external_storage_max_read_rows)
+        context_->setSetting("external_storage_max_read_rows", max_block_size);
 
     StreamSettings mysql_input_stream_settings(context_->getSettingsRef(), true, false);
     return Pipe(std::make_shared<SourceFromInputStream>(

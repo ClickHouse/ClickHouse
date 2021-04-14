@@ -13,8 +13,8 @@ namespace DB
 
 struct StreamSettings
 {
-    size_t max_read_mysql_rows;
-    size_t max_read_bytes_size;
+    size_t max_read_mysql_row_nums;
+    size_t max_read_mysql_bytes_size;
     bool auto_close;
     bool fetch_by_name;
     size_t default_num_tries_on_connection_loss;

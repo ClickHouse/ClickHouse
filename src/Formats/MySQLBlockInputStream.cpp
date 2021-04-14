@@ -31,8 +31,8 @@ namespace ErrorCodes
 }
 
 StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
-    : max_read_mysql_rows(settings.max_read_mysql_rows)
-    , max_read_bytes_size(settings.max_read_mysql_bytes)
+    : max_read_mysql_row_nums(settings.external_storage_max_read_rows)
+    , max_read_mysql_bytes_size(settings.external_storage_max_read_bytes)
     , auto_close(auto_close_)
     , fetch_by_name(fetch_by_name_)
     , default_num_tries_on_connection_loss(max_retry_)
@@ -258,7 +258,7 @@ Block MySQLBlockInputStream::readImpl()
         }
 
         ++num_rows;
-        if (num_rows == settings->max_read_mysql_rows || (settings->max_read_bytes_size && read_bytes_size >= settings->max_read_bytes_size))
+        if (num_rows == settings->max_read_mysql_row_nums || (settings->max_read_mysql_bytes_size && read_bytes_size >= settings->max_read_mysql_bytes_size))
             break;
 
         row = connection->result.fetch();
