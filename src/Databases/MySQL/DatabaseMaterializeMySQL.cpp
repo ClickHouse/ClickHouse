@@ -33,7 +33,7 @@ DatabaseMaterializeMySQL<DatabaseOrdinary>::DatabaseMaterializeMySQL(
     const String & metadata_path_,
     UUID /*uuid*/,
     const String & mysql_database_name_,
-    mysqlxx::Pool && pool_,
+    mysqlxx::PoolPtr pool_,
     MySQLClient && client_,
     std::unique_ptr<MaterializeMySQLSettings> settings_)
     : DatabaseOrdinary(
@@ -54,7 +54,7 @@ DatabaseMaterializeMySQL<DatabaseAtomic>::DatabaseMaterializeMySQL(
     const String & metadata_path_,
     UUID uuid,
     const String & mysql_database_name_,
-    mysqlxx::Pool && pool_,
+    mysqlxx::PoolPtr pool_,
     MySQLClient && client_,
     std::unique_ptr<MaterializeMySQLSettings> settings_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid, "DatabaseMaterializeMySQL<Atomic> (" + database_name_ + ")", context_)

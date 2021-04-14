@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <mysqlxx/Transaction.h>
+#include <mysqlxx/PoolFactory.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>
@@ -42,7 +43,7 @@ static String backQuoteMySQL(const String & x)
 
 StorageMySQL::StorageMySQL(
     const StorageID & table_id_,
-    mysqlxx::PoolWithFailover && pool_,
+    mysqlxx::PoolPtr pool_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
     const bool replace_query_,
@@ -56,7 +57,7 @@ StorageMySQL::StorageMySQL(
     , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
-    , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
+    , pool(pool_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -95,8 +96,9 @@ Pipe StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MySQLWithFailoverBlockInputStream>(pool, query, sample_block, max_block_size_, /* auto_close = */ true)));
+    auto mysql_lazy_stream = std::make_shared<MySQLLazyBlockInputStream>(pool, query, sample_block, max_block_size_);
+
+    return Pipe(std::make_shared<SourceFromInputStream>(std::move(mysql_lazy_stream)));
 }
 
 
@@ -218,7 +220,7 @@ BlockOutputStreamPtr StorageMySQL::write(const ASTPtr & /*query*/, const Storage
         metadata_snapshot,
         remote_database_name,
         remote_table_name,
-        pool->get(),
+        pool->getEntry(),
         local_context->getSettingsRef().mysql_max_rows_to_insert);
 }
 
@@ -245,7 +247,7 @@ void registerStorageMySQL(StorageFactory & factory)
         size_t max_addresses = args.getContext()->getSettingsRef().glob_expansion_max_elements;
 
         auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-        mysqlxx::PoolWithFailover pool(remote_database, addresses, username, password);
+        auto pool = mysqlxx::PoolFactory::instance().getPoolWithFailover(remote_database, addresses, username, password);
 
         bool replace_query = false;
         std::string on_duplicate_clause;

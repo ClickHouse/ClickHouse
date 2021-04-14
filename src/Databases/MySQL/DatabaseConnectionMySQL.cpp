@@ -52,7 +52,7 @@ DatabaseConnectionMySQL::DatabaseConnectionMySQL(
     const ASTStorage * database_engine_define_,
     const String & database_name_in_mysql_,
     std::unique_ptr<ConnectionMySQLSettings> settings_,
-    mysqlxx::PoolWithFailover && pool)
+    mysqlxx::PoolPtr pool)
     : IDatabase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
@@ -247,7 +247,7 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
         }
 
         local_tables_cache[table_name] = std::make_pair(table_modification_time, StorageMySQL::create(
-            StorageID(database_name, table_name), std::move(mysql_pool), database_name_in_mysql, table_name,
+            StorageID(database_name, table_name), mysql_pool, database_name_in_mysql, table_name,
             false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, getContext()));
     }
 }
@@ -268,7 +268,7 @@ std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTim
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(mysql_pool->getEntry(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
 
     while (Block block = result.read())
     {

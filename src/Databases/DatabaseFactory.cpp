@@ -26,7 +26,7 @@
 #    include <Databases/MySQL/DatabaseConnectionMySQL.h>
 #    include <Databases/MySQL/MaterializeMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializeMySQL.h>
-#    include <mysqlxx/Pool.h>
+#    include <mysqlxx/PoolFactory.h>
 #endif
 
 #if USE_MYSQL || USE_LIBPQXX
@@ -147,7 +147,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 /// Split into replicas if needed.
                 size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
                 auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, addresses, mysql_user_name, mysql_user_password);
+                auto mysql_pool = mysqlxx::PoolFactory::getPoolWithFailover(mysql_database_name, addresses, mysql_user_name, mysql_user_password);
 
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
@@ -158,9 +158,16 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
             MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
-            auto mysql_pool = mysqlxx::Pool(mysql_database_name, remote_host_name, mysql_user_name, mysql_user_password);
+            mysqlxx::ConnectionConfiguration configuration
+            {
+                .db = mysql_database_name,
+                .server = remote_host_name,
+                .port = remote_port,
+                .user = mysql_user_name,
+                .password = mysql_user_password
+            };
 
-
+            auto pool = mysqlxx::PoolFactory::instance().getPool(configuration);
             auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();
 
             if (engine_define->settings)
@@ -168,11 +175,11 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             if (create.uuid == UUIDHelpers::Nil)
                 return std::make_shared<DatabaseMaterializeMySQL<DatabaseOrdinary>>(
-                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
+                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(pool), std::move(client)
                     , std::move(materialize_mode_settings));
             else
                 return std::make_shared<DatabaseMaterializeMySQL<DatabaseAtomic>>(
-                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(mysql_pool), std::move(client)
+                    context, database_name, metadata_path, uuid, mysql_database_name, std::move(pool), std::move(client)
                     , std::move(materialize_mode_settings));
         }
         catch (...)

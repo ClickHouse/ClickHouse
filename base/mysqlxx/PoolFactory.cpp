@@ -2,114 +2,127 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
+namespace
+{
+    /// Duplicate of code from StringUtils.h. Copied here for less dependencies.
+    bool startsWith(const std::string & s, const char * prefix)
+    {
+        return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
+    }
+
+    mysqlxx::ConnectionConfiguration parseConnectionConfiguration(const Poco::Util::AbstractConfiguration & cfg, const std::string & config_name, const char * parent_config_name_)
+    {
+        std::string db;
+        std::string server = cfg.getString(config_name + ".host");
+        std::string user;
+        std::string password;
+        unsigned port;
+        std::string socket;
+        std::string ssl_ca;
+        std::string ssl_cert;
+        std::string ssl_key;
+        bool enable_local_infile = mysqlxx::DEFAULT_ENABLE_LOCAL_INFILE;
+        bool opt_reconnect = mysqlxx::DEFAULT_MYSQL_OPT_RECONNECT;
+
+        if (parent_config_name_)
+        {
+            const std::string parent_config_name(parent_config_name_);
+            db = cfg.getString(config_name + ".db", cfg.getString(parent_config_name + ".db", ""));
+            user = cfg.has(config_name + ".user")
+                ? cfg.getString(config_name + ".user")
+                : cfg.getString(parent_config_name + ".user");
+            password = cfg.has(config_name + ".password")
+                ? cfg.getString(config_name + ".password")
+                : cfg.getString(parent_config_name + ".password");
+
+            if (!cfg.has(config_name + ".port") && !cfg.has(config_name + ".socket")
+                && !cfg.has(parent_config_name + ".port") && !cfg.has(parent_config_name + ".socket"))
+                throw Poco::Exception("mysqlxx::parse connectionConfiguration from abstract configuration: expected port or socket");
+
+            port = cfg.has(config_name + ".port")
+                ? cfg.getInt(config_name + ".port")
+                : cfg.getInt(parent_config_name + ".port", 0);
+            socket = cfg.has(config_name + ".socket")
+                ? cfg.getString(config_name + ".socket")
+                : cfg.getString(parent_config_name + ".socket", "");
+            ssl_ca = cfg.has(config_name + ".ssl_ca")
+                ? cfg.getString(config_name + ".ssl_ca")
+                : cfg.getString(parent_config_name + ".ssl_ca", "");
+            ssl_cert = cfg.has(config_name + ".ssl_cert")
+                ? cfg.getString(config_name + ".ssl_cert")
+                : cfg.getString(parent_config_name + ".ssl_cert", "");
+            ssl_key = cfg.has(config_name + ".ssl_key")
+                ? cfg.getString(config_name + ".ssl_key")
+                : cfg.getString(parent_config_name + ".ssl_key", "");
+
+            enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
+                cfg.getBool(parent_config_name + ".enable_local_infile", mysqlxx::DEFAULT_ENABLE_LOCAL_INFILE));
+
+            opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
+                cfg.getBool(parent_config_name + ".opt_reconnect", mysqlxx::DEFAULT_MYSQL_OPT_RECONNECT));
+
+        }
+        else
+        {
+            db = cfg.getString(config_name + ".db", "");
+            user = cfg.getString(config_name + ".user");
+            password = cfg.getString(config_name + ".password");
+
+            if (!cfg.has(config_name + ".port") && !cfg.has(config_name + ".socket"))
+                throw Poco::Exception("mysqlxx::Pool configuration: expected port or socket");
+
+            port = cfg.getInt(config_name + ".port", 0);
+            socket = cfg.getString(config_name + ".socket", "");
+            ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
+            ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
+            ssl_key = cfg.getString(config_name + ".ssl_key", "");
+
+            enable_local_infile = cfg.getBool(
+                config_name + ".enable_local_infile", mysqlxx::DEFAULT_ENABLE_LOCAL_INFILE);
+
+            opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", mysqlxx::DEFAULT_MYSQL_OPT_RECONNECT);
+        }
+
+        unsigned connect_timeout = cfg.getInt(config_name + ".connect_timeout",
+            cfg.getInt("mysql_connect_timeout",
+                mysqlxx::DEFAULT_TIMEOUT));
+
+        unsigned rw_timeout =
+            cfg.getInt(config_name + ".rw_timeout",
+                cfg.getInt("mysql_rw_timeout",
+                    mysqlxx::DEFAULT_RW_TIMEOUT));
+
+        mysqlxx::ConnectionConfiguration configuration
+        {
+            .db = std::move(db),
+            .server = std::move(server),
+            .port = port,
+            .socket = std::move(socket),
+
+            .user = std::move(user),
+            .password = std::move(password),
+
+            .enable_local_infile = enable_local_infile,
+            .opt_reconnect = opt_reconnect,
+
+            .ssl_ca = std::move(ssl_ca),
+            .ssl_cert = std::move(ssl_cert),
+            .ssl_key = std::move(ssl_key),
+
+            .timeout = connect_timeout,
+            .rw_timeout = rw_timeout
+        };
+
+        return configuration;
+    }
+}
+
 namespace mysqlxx
 {
 
 struct PoolFactory::Impl
 {
-    // Cache of already affected pools identified by their config name
-    std::map<std::string, std::shared_ptr<PoolWithFailover>> pools;
-
-    // Cache of Pool ID (host + port + user +...) cibling already established shareable pool
-    std::map<std::string, std::string> pools_by_ids;
-
-    /// Protect pools and pools_by_ids caches
-    std::mutex mutex;
 };
-
-PoolWithFailover PoolFactory::get(const std::string & config_name, unsigned default_connections,
-    unsigned max_connections, size_t max_tries)
-{
-    return get(Poco::Util::Application::instance().config(), config_name, default_connections, max_connections, max_tries);
-}
-
-/// Duplicate of code from StringUtils.h. Copied here for less dependencies.
-static bool startsWith(const std::string & s, const char * prefix)
-{
-    return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
-}
-
-static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_name)
-{
-    bool shared = config.getBool(config_name + ".share_connection", false);
-
-    // Not shared no need to generate a name the pool won't be stored
-    if (!shared)
-        return "";
-
-    std::string entry_name;
-    std::string host = config.getString(config_name + ".host", "");
-    std::string port = config.getString(config_name + ".port", "");
-    std::string user = config.getString(config_name + ".user", "");
-    std::string db = config.getString(config_name + ".db", "");
-    std::string table = config.getString(config_name + ".table", "");
-
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_name, keys);
-
-    if (config.has(config_name + ".replica"))
-    {
-        Poco::Util::AbstractConfiguration::Keys replica_keys;
-        config.keys(config_name, replica_keys);
-        for (const auto & replica_config_key : replica_keys)
-        {
-            /// There could be another elements in the same level in configuration file, like "user", "port"...
-            if (startsWith(replica_config_key, "replica"))
-            {
-                std::string replica_name = config_name + "." + replica_config_key;
-                std::string tmp_host = config.getString(replica_name + ".host", host);
-                std::string tmp_port = config.getString(replica_name + ".port", port);
-                std::string tmp_user = config.getString(replica_name + ".user", user);
-                entry_name += (entry_name.empty() ? "" : "|") + tmp_user + "@" + tmp_host + ":" + tmp_port + "/" + db;
-            }
-        }
-    }
-    else
-    {
-        entry_name = user + "@" + host + ":" + port + "/" + db;
-    }
-    return entry_name;
-}
-
-PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_name, unsigned default_connections, unsigned max_connections, size_t max_tries)
-{
-
-    std::lock_guard<std::mutex> lock(impl->mutex);
-    if (auto entry = impl->pools.find(config_name); entry != impl->pools.end())
-    {
-        return *(entry->second.get());
-    }
-    else
-    {
-        std::string entry_name = getPoolEntryName(config, config_name);
-        if (auto id = impl->pools_by_ids.find(entry_name); id != impl->pools_by_ids.end())
-        {
-            entry = impl->pools.find(id->second);
-            std::shared_ptr<PoolWithFailover> pool = entry->second;
-            impl->pools.insert_or_assign(config_name, pool);
-            return *pool;
-        }
-
-        auto pool = std::make_shared<PoolWithFailover>(config, config_name, default_connections, max_connections, max_tries);
-        // Check the pool will be shared
-        if (!entry_name.empty())
-        {
-            // Store shared pool
-            impl->pools.insert_or_assign(config_name, pool);
-            impl->pools_by_ids.insert_or_assign(entry_name, config_name);
-        }
-        return *(pool.get());
-    }
-}
-
-void PoolFactory::reset()
-{
-    std::lock_guard<std::mutex> lock(impl->mutex);
-    impl->pools.clear();
-    impl->pools_by_ids.clear();
-}
 
 PoolFactory::PoolFactory() : impl(std::make_unique<PoolFactory::Impl>()) {}
 
@@ -119,4 +132,221 @@ PoolFactory & PoolFactory::instance()
     return ret;
 }
 
+std::shared_ptr<IPool> PoolFactory::getPoolWithFailover(const Poco::Util::AbstractConfiguration & config, const std::string & config_name) /// NOLINT
+{
+    bool share_connection = config.getBool(config_name + ".share_connection", false);
+    bool close_connection = config.getBool(config_name + ".close_connection", false);
+
+    std::vector<ReplicaConfiguration> replicas_configurations;
+
+    if (config.has(config_name + ".replica"))
+    {
+        Poco::Util::AbstractConfiguration::Keys replica_keys;
+        config.keys(config_name, replica_keys);
+
+        for (const auto & replica_config_key : replica_keys)
+        {
+            /// There could be another elements in the same level in configuration file, like "password", "port"...
+            if (startsWith(replica_config_key, "replica"))
+            {
+                std::string replica_name = config_name + "." + replica_config_key;
+
+                size_t priority = config.getUInt(replica_name + ".priority", 0);
+                bool share_connection_replica = config.getBool(replica_name + ".share_connection", share_connection);
+                bool close_connection_replica = config.getBool(replica_name + ".close_connection", close_connection);
+
+                auto connection_configuration = parseConnectionConfiguration(config, replica_name, config_name.c_str());
+                PoolConfiguration pool_configuration
+                {
+                    .share_connection = share_connection_replica,
+                    .close_connection = close_connection_replica
+                };
+
+                ReplicaConfiguration replica_configuration
+                {
+                    .priority = priority,
+                    .connection_configuration = connection_configuration,
+                    .pool_configuration = pool_configuration
+                };
+
+                replicas_configurations.emplace_back(replica_configuration);
+            }
+        }
+    }
+    else
+    {
+        auto connection_configuration = parseConnectionConfiguration(config, config_name, nullptr);
+
+        PoolConfiguration pool_configuration
+        {
+            .share_connection = share_connection,
+            .close_connection = close_connection
+        };
+
+        ReplicaConfiguration replica_configuration
+        {
+            .priority = 0,
+            .connection_configuration = connection_configuration,
+            .pool_configuration = pool_configuration
+        };
+
+        replicas_configurations.emplace_back(replica_configuration);
+    }
+
+    return PoolWithFailover::create(replicas_configurations);
 }
+
+std::shared_ptr<IPool> PoolFactory::getPoolWithFailover(
+    const std::string & database,
+    const RemoteDescriptions & addresses,
+    const std::string & user,
+    const std::string & password)
+{
+    std::vector<ReplicaConfiguration> replicas_configurations;
+    replicas_configurations.reserve(addresses.size());
+
+    for (const auto & [host, port] : addresses)
+    {
+        ConnectionConfiguration connection_configuration
+        {
+            .db = database,
+            .port = port,
+            .user = user,
+            .password = password
+        };
+
+        ReplicaConfiguration replica_configuration
+        {
+            .priority = 0,
+            .connection_configuration = connection_configuration,
+            .pool_configuration = PoolConfiguration()
+        };
+
+        replicas_configurations.emplace_back(replica_configuration);
+    }
+
+    return mysqlxx::PoolWithFailover::create(replicas_configurations);
+}
+
+std::shared_ptr<IPool> PoolFactory::getPoolWithFailover(const ReplicasConfigurations & replicas_configurations)
+{
+    return mysqlxx::PoolWithFailover::create(replicas_configurations);
+}
+
+std::shared_ptr<IPool> PoolFactory::getPool(const Poco::Util::AbstractConfiguration & configuration, const std::string & config_name)
+{
+    ConnectionConfiguration connection_configuration = parseConnectionConfiguration(configuration, config_name, nullptr);
+    return mysqlxx::Pool::create(connection_configuration);
+}
+
+std::shared_ptr<IPool> PoolFactory::getPool(const ConnectionConfiguration & connection_configuration, const PoolConfiguration & pool_configuration)
+{
+    return Pool::create(connection_configuration, pool_configuration);
+}
+
+void PoolFactory::reset()
+{
+    Pool::resetShareConnectionPools();
+}
+
+}
+
+// /// Duplicate of code from StringUtils.h. Copied here for less dependencies.
+// static bool startsWith(const std::string & s, const char * prefix)
+// {
+//     return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
+// }
+
+// static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & config,
+//         const std::string & config_name)
+// {
+//     bool shared = config.getBool(config_name + ".share_connection", false);
+
+//     // Not shared no need to generate a name the pool won't be stored
+//     if (!shared)
+//         return "";
+
+//     std::string entry_name;
+//     std::string host = config.getString(config_name + ".host", "");
+//     std::string port = config.getString(config_name + ".port", "");
+//     std::string user = config.getString(config_name + ".user", "");
+//     std::string db = config.getString(config_name + ".db", "");
+//     std::string table = config.getString(config_name + ".table", "");
+
+//     Poco::Util::AbstractConfiguration::Keys keys;
+//     config.keys(config_name, keys);
+
+//     if (config.has(config_name + ".replica"))
+//     {
+//         Poco::Util::AbstractConfiguration::Keys replica_keys;
+//         config.keys(config_name, replica_keys);
+//         for (const auto & replica_config_key : replica_keys)
+//         {
+//             /// There could be another elements in the same level in configuration file, like "user", "port"...
+//             if (startsWith(replica_config_key, "replica"))
+//             {
+//                 std::string replica_name = config_name + "." + replica_config_key;
+//                 std::string tmp_host = config.getString(replica_name + ".host", host);
+//                 std::string tmp_port = config.getString(replica_name + ".port", port);
+//                 std::string tmp_user = config.getString(replica_name + ".user", user);
+//                 entry_name += (entry_name.empty() ? "" : "|") + tmp_user + "@" + tmp_host + ":" + tmp_port + "/" + db;
+//             }
+//         }
+//     }
+//     else
+//     {
+//         entry_name = user + "@" + host + ":" + port + "/" + db;
+//     }
+//     return entry_name;
+// }
+
+// PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & config,
+//         const std::string & config_name, unsigned, unsigned, size_t)
+// {
+
+//     std::lock_guard<std::mutex> lock(impl->mutex);
+//     if (auto entry = impl->pools.find(config_name); entry != impl->pools.end())
+//     {
+//         return *(entry->second.get());
+//     }
+//     else
+//     {
+//         std::string entry_name = getPoolEntryName(config, config_name);
+//         if (auto id = impl->pools_by_ids.find(entry_name); id != impl->pools_by_ids.end())
+//         {
+//             entry = impl->pools.find(id->second);
+//             std::shared_ptr<PoolWithFailover> pool = entry->second;
+//             impl->pools.insert_or_assign(config_name, pool);
+//             return *pool;
+//         }
+
+//         std::terminate();
+
+//         // auto pool = std::make_shared<PoolWithFailover>(config, config_name, default_connections, max_connections, max_tries);
+//         // Check the pool will be shared
+//         // if (!entry_name.empty())
+//         // {
+//         //     // Store shared pool
+//         //     impl->pools.insert_or_assign(config_name, pool);
+//         //     impl->pools_by_ids.insert_or_assign(entry_name, config_name);
+//         // }
+//         // return *(pool.get());
+//     }
+// }
+
+// void PoolFactory::reset()
+// {
+//     std::lock_guard<std::mutex> lock(impl->mutex);
+//     impl->pools.clear();
+//     impl->pools_by_ids.clear();
+// }
+
+// PoolFactory::PoolFactory() : impl(std::make_unique<PoolFactory::Impl>()) {}
+
+// PoolFactory & PoolFactory::instance()
+// {
+//     static PoolFactory ret;
+//     return ret;
+// }
+
+// }

@@ -24,26 +24,26 @@ class PoolFactory final : private boost::noncopyable
 public:
     static PoolFactory & instance();
 
-    PoolFactory(const PoolFactory &) = delete;
+    static std::shared_ptr<IPool> getPoolWithFailover(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
 
-    /** Allocates a PoolWithFailover to connect to MySQL. */
-    PoolWithFailover get(const std::string & config_name,
-        unsigned default_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-        unsigned max_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
-        size_t max_tries = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
+    using HostAndPort = std::pair<std::string, uint16_t>;
+    using RemoteDescriptions = std::vector<HostAndPort>;
 
-    /** Allocates a PoolWithFailover to connect to MySQL. */
-    PoolWithFailover get(const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_name,
-        unsigned default_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-        unsigned max_connections = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
-        size_t max_tries = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
+    static std::shared_ptr<IPool> getPoolWithFailover(
+        const std::string & database,
+        const RemoteDescriptions & addresses,
+        const std::string & user,
+        const std::string & password);
 
-    void reset();
+    static std::shared_ptr<IPool> getPoolWithFailover(const ReplicasConfigurations & configurations);
 
+    static std::shared_ptr<IPool> getPool(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
+
+    static std::shared_ptr<IPool> getPool(const ConnectionConfiguration & connection_configuration, const PoolConfiguration & pool_configuration = {});
+
+    static void reset();
 
     ~PoolFactory() = default;
-    PoolFactory& operator=(const PoolFactory &) = delete;
 
 private:
     PoolFactory();

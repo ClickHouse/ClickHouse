@@ -90,7 +90,7 @@ MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
     }
 }
 
-static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection)
+static void checkMySQLVariables(const mysqlxx::IPool::Entry & connection)
 {
     Block variables_header{
         {std::make_shared<DataTypeString>(), "Variable_name"},
@@ -104,7 +104,7 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection)
          "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD') "
          "OR (Variable_name = 'log_bin_use_v1_row_events' AND upper(Value) = 'OFF');";
 
-    MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE, false, true);
+    MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE, true);
 
     Block variables_block = variables_input.read();
     if (!variables_block || variables_block.rows() != 5)
@@ -146,7 +146,7 @@ MaterializeMySQLSyncThread::MaterializeMySQLSyncThread(
     ContextPtr context_,
     const String & database_name_,
     const String & mysql_database_name_,
-    mysqlxx::Pool && pool_,
+    mysqlxx::PoolPtr pool_,
     MySQLClient && client_,
     MaterializeMySQLSettings * settings_)
     : WithContext(context_->getGlobalContext())
@@ -240,7 +240,7 @@ void MaterializeMySQLSyncThread::assertMySQLAvailable()
 {
     try
     {
-        checkMySQLVariables(pool.get());
+        checkMySQLVariables(pool->getEntry());
     }
     catch (const mysqlxx::ConnectionFailed & e)
     {
@@ -311,7 +311,7 @@ getTableOutput(const String & database_name, const String & table_name, ContextP
 }
 
 static inline void dumpDataForTables(
-    mysqlxx::Pool::Entry & connection, const std::unordered_map<String, String> & need_dumping_tables,
+    mysqlxx::IPool::Entry & connection, const std::unordered_map<String, String> & need_dumping_tables,
     const String & query_prefix, const String & database_name, const String & mysql_database_name,
     ContextPtr context, const std::function<bool()> & is_cancelled)
 {
@@ -364,7 +364,7 @@ bool MaterializeMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metad
     {
         try
         {
-            connection = pool.tryGet();
+            connection = pool->tryGetEntry(0);
             if (connection.isNull())
             {
                 if (settings->max_wait_time_when_mysql_unavailable < 0)
@@ -711,7 +711,7 @@ void MaterializeMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPtr
         {
             /// Some behaviors(such as changing the value of "binlog_checksum") rotate the binlog file.
             /// To ensure that the synchronization continues, we need to handle these events
-            metadata.fetchMasterVariablesValue(pool.get());
+            metadata.fetchMasterVariablesValue(pool->getEntry());
             client.setBinlogChecksum(metadata.binlog_checksum);
         }
         else if (receive_event->header.type != HEARTBEAT_EVENT)

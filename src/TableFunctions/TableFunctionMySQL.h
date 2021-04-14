@@ -37,7 +37,7 @@ private:
     bool replace_query = false;
     String on_duplicate_clause;
 
-    mutable std::optional<mysqlxx::PoolWithFailover> pool;
+    mutable mysqlxx::PoolPtr pool;
 };
 
 }

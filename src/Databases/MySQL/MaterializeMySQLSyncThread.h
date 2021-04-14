@@ -45,7 +45,7 @@ public:
         ContextPtr context,
         const String & database_name_,
         const String & mysql_database_name_,
-        mysqlxx::Pool && pool_,
+        mysqlxx::PoolPtr pool_,
         MySQLClient && client_,
         MaterializeMySQLSettings * settings_);
 
@@ -63,7 +63,7 @@ private:
     String database_name;
     String mysql_database_name;
 
-    mutable mysqlxx::Pool pool;
+    mutable mysqlxx::PoolPtr pool;
     mutable MySQLClient client;
     MaterializeMySQLSettings * settings;
     String query_prefix;

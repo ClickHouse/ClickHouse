@@ -1,177 +1,125 @@
-#include <algorithm>
-#include <ctime>
+#include "PoolWithFailover.h"
+
 #include <random>
 #include <thread>
-#include <mysqlxx/PoolWithFailover.h>
 
-
-/// Duplicate of code from StringUtils.h. Copied here for less dependencies.
-static bool startsWith(const std::string & s, const char * prefix)
+namespace mysqlxx
 {
-    return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
+
+std::shared_ptr<PoolWithFailover> PoolWithFailover::create(const ReplicasConfigurations & pools_configuration)
+{
+    std::unique_ptr<PoolWithFailover> pool(new PoolWithFailover(pools_configuration));
+    std::shared_ptr<PoolWithFailover> pool_ptr(std::move(pool));
+
+    return pool_ptr;
 }
 
-
-using namespace mysqlxx;
-
-PoolWithFailover::PoolWithFailover(
-        const Poco::Util::AbstractConfiguration & config_,
-        const std::string & config_name_,
-        const unsigned default_connections_,
-        const unsigned max_connections_,
-        const size_t max_tries_)
-    : max_tries(max_tries_)
+PoolWithFailover::PoolWithFailover(const ReplicasConfigurations & pools_configuration)
+    : logger(Poco::Logger::get("mysqlxx::PoolWithFailover"))
 {
-    shareable = config_.getBool(config_name_ + ".share_connection", false);
-    if (config_.has(config_name_ + ".replica"))
+    for (const auto & replica_configuration : pools_configuration)
     {
-        Poco::Util::AbstractConfiguration::Keys replica_keys;
-        config_.keys(config_name_, replica_keys);
-        for (const auto & replica_config_key : replica_keys)
+        size_t priority = replica_configuration.priority;
+        auto pool = Pool::create(replica_configuration.connection_configuration, replica_configuration.pool_configuration);
+        priority_to_replicas[priority].emplace_back(std::move(pool));
+    }
+
+    static thread_local std::mt19937 rnd_generator(std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock());
+    for (auto & [_, replicas] : priority_to_replicas)
+    {
+        if (replicas.size() > 1)
+            std::shuffle(replicas.begin(), replicas.end(), rnd_generator);
+    }
+}
+
+IPool::Entry PoolWithFailover::getEntry()
+{
+    /// TODO: Max try size
+    for (auto & [_, replicas] : priority_to_replicas)
+    {
+        for (size_t i = 0, size = replicas.size(); i < size; ++i)
         {
-            /// There could be another elements in the same level in configuration file, like "password", "port"...
-            if (startsWith(replica_config_key, "replica"))
+            PoolPtr & pool = replicas[i];
+
+            try
             {
-                std::string replica_name = config_name_ + "." + replica_config_key;
+                Entry entry = pool->getEntry();
 
-                int priority = config_.getInt(replica_name + ".priority", 0);
-
-                replicas_by_priority[priority].emplace_back(
-                    std::make_shared<Pool>(config_, replica_name, default_connections_, max_connections_, config_name_.c_str()));
-            }
-        }
-
-        /// PoolWithFailover objects are stored in a cache inside PoolFactory.
-        /// This cache is reset by ExternalDictionariesLoader after every SYSTEM RELOAD DICTIONAR{Y|IES}
-        /// which triggers massive re-constructing of connection pools.
-        /// The state of PRNGs like std::mt19937 is considered to be quite heavy
-        /// thus here we attempt to optimize its construction.
-        static thread_local std::mt19937 rnd_generator(
-                std::hash<std::thread::id>{}(std::this_thread::get_id()) + std::clock());
-        for (auto & [_, replicas] : replicas_by_priority)
-        {
-            if (replicas.size() > 1)
-                std::shuffle(replicas.begin(), replicas.end(), rnd_generator);
-        }
-    }
-    else
-    {
-        replicas_by_priority[0].emplace_back(
-            std::make_shared<Pool>(config_, config_name_, default_connections_, max_connections_));
-    }
-}
-
-
-PoolWithFailover::PoolWithFailover(
-        const std::string & config_name_,
-        const unsigned default_connections_,
-        const unsigned max_connections_,
-        const size_t max_tries_)
-    : PoolWithFailover{Poco::Util::Application::instance().config(),
-            config_name_, default_connections_, max_connections_, max_tries_}
-{
-}
-
-
-PoolWithFailover::PoolWithFailover(
-        const std::string & database,
-        const RemoteDescription & addresses,
-        const std::string & user,
-        const std::string & password,
-        size_t max_tries_)
-    : max_tries(max_tries_)
-    , shareable(false)
-{
-    /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
-    for (const auto & [host, port] : addresses)
-    {
-        replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database, host, user, password, port));
-    }
-}
-
-
-PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
-    : max_tries{other.max_tries}
-    , shareable{other.shareable}
-{
-    if (shareable)
-    {
-        replicas_by_priority = other.replicas_by_priority;
-    }
-    else
-    {
-        for (const auto & priority_replicas : other.replicas_by_priority)
-        {
-            Replicas replicas;
-            replicas.reserve(priority_replicas.second.size());
-            for (const auto & pool : priority_replicas.second)
-                replicas.emplace_back(std::make_shared<Pool>(*pool));
-            replicas_by_priority.emplace(priority_replicas.first, std::move(replicas));
-        }
-    }
-}
-
-PoolWithFailover::Entry PoolWithFailover::get()
-{
-    Poco::Util::Application & app = Poco::Util::Application::instance();
-    std::lock_guard<std::mutex> locker(mutex);
-
-    /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
-    PoolPtr * full_pool = nullptr;
-
-    for (size_t try_no = 0; try_no < max_tries; ++try_no)
-    {
-        full_pool = nullptr;
-
-        for (auto & priority_replicas : replicas_by_priority)
-        {
-            Replicas & replicas = priority_replicas.second;
-            for (size_t i = 0, size = replicas.size(); i < size; ++i)
-            {
-                PoolPtr & pool = replicas[i];
-
-                try
                 {
-                    Entry entry = shareable ? pool->get() : pool->tryGet();
-
-                    if (!entry.isNull())
-                    {
-                        /// Move all traversed replicas to the end of queue.
-                        /// (No need to move replicas with another priority)
-                        std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
-
-                        return entry;
-                    }
-                }
-                catch (const Poco::Exception & e)
-                {
-                    if (e.displayText().find("mysqlxx::Pool is full") != std::string::npos) /// NOTE: String comparison is trashy code.
-                    {
-                        full_pool = &pool;
-                    }
-
-                    app.logger().warning("Connection to " + pool->getDescription() + " failed: " + e.displayText());
-                    continue;
+                    std::lock_guard<std::mutex> lock(mutex);
+                    /// Move all traversed replicas to the end of queue.
+                    /// (No need to move replicas with another priority)
+                    std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
                 }
 
-                app.logger().warning("Connection to " + pool->getDescription() + " failed.");
+                return entry;
+            }
+            catch (const Poco::Exception & e)
+            {
+                logger.warning("Connection to " + pool->getConnectionConfiguration().getDescription() + " failed: " + e.displayText());
+                continue;
             }
         }
-
-        app.logger().error("Connection to all replicas failed " + std::to_string(try_no + 1) + " times");
-    }
-
-    if (full_pool)
-    {
-        app.logger().error("All connections failed, trying to wait on a full pool " + (*full_pool)->getDescription());
-        return (*full_pool)->get();
     }
 
     std::stringstream message;
     message << "Connections to all replicas failed: ";
-    for (auto it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
+    for (auto it = priority_to_replicas.begin(); it != priority_to_replicas.end(); ++it)
         for (auto jt = it->second.begin(); jt != it->second.end(); ++jt)
-            message << (it == replicas_by_priority.begin() && jt == it->second.begin() ? "" : ", ") << (*jt)->getDescription();
+            message << (it == priority_to_replicas.begin() && jt == it->second.begin() ? "" : ", ") << (*jt)->getConnectionConfiguration().getDescription();
 
     throw Poco::Exception(message.str());
+}
+
+IPool::Entry PoolWithFailover::tryGetEntry(size_t timeout_in_milliseconds)
+{
+    /// TODO: Max try size
+    auto try_get_entry_start = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
+
+    for (auto & [_, replicas] : priority_to_replicas)
+    {
+        for (size_t i = 0, size = replicas.size(); i < size; ++i)
+        {
+            PoolPtr & pool = replicas[i];
+
+            Entry entry = pool->tryGetEntry(timeout_in_milliseconds);
+
+            if (entry.isNull())
+            {
+                auto time_after_replica_get = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
+                auto time_spend = time_after_replica_get - try_get_entry_start;
+                try_get_entry_start = time_after_replica_get;
+
+                size_t time_spend_milliseconds = time_spend.count();
+                if (time_spend_milliseconds >= timeout_in_milliseconds)
+                    return IPool::Entry();
+                else
+                    timeout_in_milliseconds -= time_spend_milliseconds;
+
+                logger.warning("Connection to " + pool->getConnectionConfiguration().getDescription() + " failed");
+                continue;
+            }
+            else
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                /// Move all traversed replicas to the end of queue.
+                /// (No need to move replicas with another priority)
+                std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
+            }
+        }
+    }
+
+    std::stringstream message;
+    message << "Connections to all replicas failed: ";
+    for (auto it = priority_to_replicas.begin(); it != priority_to_replicas.end(); ++it)
+        for (auto jt = it->second.begin(); jt != it->second.end(); ++jt)
+            message << (it == priority_to_replicas.begin() && jt == it->second.begin() ? "" : ", ") << (*jt)->getConnectionConfiguration().getDescription();
+
+    return IPool::Entry();
+}
+
+void PoolWithFailover::returnConnectionToPool(mysqlxx::Connection &&)
+{
+}
+
 }

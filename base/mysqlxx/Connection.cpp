@@ -39,89 +39,99 @@ Connection::Connection()
     LibrarySingleton::instance();
 }
 
-Connection::Connection(
-    const char* db,
-    const char* server,
-    const char* user,
-    const char* password,
-    unsigned port,
-    const char * socket,
-    const char* ssl_ca,
-    const char* ssl_cert,
-    const char* ssl_key,
-    unsigned timeout,
-    unsigned rw_timeout,
-    bool enable_local_infile,
-    bool opt_reconnect)
+Connection::Connection(ConnectionConfiguration & configuration)
     : Connection()
 {
-    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile, opt_reconnect);
+    connect(configuration);
 }
 
-Connection::Connection(const std::string & config_name)
-    : Connection()
+Connection::Connection(Connection && rhs) noexcept
+    : driver(std::move(rhs.driver))
+    , is_initialized(rhs.is_initialized)
+    , is_connected(rhs.is_connected)
 {
-    connect(config_name);
+    rhs.driver = nullptr;
+    rhs.is_connected = false;
+    rhs.is_initialized = false;
+}
+
+Connection & Connection::operator=(Connection && rhs) noexcept
+{
+    disconnect();
+
+    driver = std::move(rhs.driver);
+    is_connected = rhs.is_connected;
+    is_initialized = rhs.is_initialized;
+
+    rhs.is_connected = false;
+    rhs.is_initialized = false;
+    rhs.driver = nullptr;
+
+    return *this;
 }
 
 Connection::~Connection()
 {
     disconnect();
-    mysql_thread_end();
 }
 
-void Connection::connect(const char* db,
-    const char * server,
-    const char * user,
-    const char * password,
-    unsigned port,
-    const char * socket,
-    const char * ssl_ca,
-    const char * ssl_cert,
-    const char * ssl_key,
-    unsigned timeout,
-    unsigned rw_timeout,
-    bool enable_local_infile,
-    bool opt_reconnect)
+bool Connection::tryConnect(ConnectionConfiguration & configuration)
 {
     if (is_connected)
         disconnect();
 
     if (!mysql_init(driver.get()))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+        return false;
+
     is_initialized = true;
 
     /// Set timeouts.
-    if (mysql_options(driver.get(), MYSQL_OPT_CONNECT_TIMEOUT, &timeout))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    if (mysql_options(driver.get(), MYSQL_OPT_CONNECT_TIMEOUT, &configuration.timeout))
+        return false;
 
-    if (mysql_options(driver.get(), MYSQL_OPT_READ_TIMEOUT, &rw_timeout))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    if (mysql_options(driver.get(), MYSQL_OPT_READ_TIMEOUT, &configuration.rw_timeout))
+        return false;
 
-    if (mysql_options(driver.get(), MYSQL_OPT_WRITE_TIMEOUT, &rw_timeout))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    if (mysql_options(driver.get(), MYSQL_OPT_WRITE_TIMEOUT, &configuration.rw_timeout))
+        return false;
 
     /// Disable LOAD DATA LOCAL INFILE because it is insecure if necessary.
-    unsigned enable_local_infile_arg = static_cast<unsigned>(enable_local_infile);
+    unsigned enable_local_infile_arg = static_cast<unsigned>(configuration.enable_local_infile);
     if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, &enable_local_infile_arg))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+        return false;
 
     /// See C API Developer Guide: Automatic Reconnection Control
-    if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&opt_reconnect)))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&configuration.opt_reconnect)))
+        return false;
 
     /// Specifies particular ssl key and certificate if it needs
-    if (mysql_ssl_set(driver.get(), ifNotEmpty(ssl_key), ifNotEmpty(ssl_cert), ifNotEmpty(ssl_ca), nullptr, nullptr))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    if (mysql_ssl_set(driver.get(), ifNotEmpty(configuration.ssl_key.c_str()), ifNotEmpty(configuration.ssl_cert.c_str()), ifNotEmpty(configuration.ssl_ca.c_str()), nullptr, nullptr))
+        return false;
 
-    if (!mysql_real_connect(driver.get(), server, user, password, db, port, ifNotEmpty(socket), driver->client_flag))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    const char * server = configuration.server.c_str();
+    const char * user = ifNotEmpty(configuration.user.c_str());
+    const char * password = ifNotEmpty(configuration.password.c_str());
+    const char * db = configuration.db.c_str();
+    const char * socket = ifNotEmpty(configuration.socket.c_str());
+
+    if (!mysql_real_connect(driver.get(), server, user, password, db, configuration.port, socket, driver->client_flag))
+        return false;
 
     /// Sets UTF-8 as default encoding. See https://mariadb.com/kb/en/mysql_set_character_set/
     if (mysql_set_character_set(driver.get(), "utf8mb4"))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+        return false;
 
     is_connected = true;
+
+    return true;
+}
+
+void Connection::connect(ConnectionConfiguration & configuration)
+{
+    bool result = tryConnect(configuration);
+
+    if (!result)
+        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 }
 
 bool Connection::connected() const

@@ -36,7 +36,7 @@ static std::unordered_map<String, String> fetchTablesCreateQuery(
 
         MySQLBlockInputStream show_create_table(
             connection, "SHOW CREATE TABLE " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(fetch_table_name),
-            show_create_table_header, DEFAULT_BLOCK_SIZE, false, true);
+            show_create_table_header, DEFAULT_BLOCK_SIZE, true);
 
         Block create_query_block = show_create_table.read();
         if (!create_query_block || create_query_block.rows() != 1)
@@ -77,7 +77,7 @@ void MaterializeMetadata::fetchMasterStatus(mysqlxx::PoolWithFailover::Entry & c
         {std::make_shared<DataTypeString>(), "Executed_Gtid_Set"},
     };
 
-    MySQLBlockInputStream input(connection, "SHOW MASTER STATUS;", header, DEFAULT_BLOCK_SIZE, false, true);
+    MySQLBlockInputStream input(connection, "SHOW MASTER STATUS;", header, DEFAULT_BLOCK_SIZE, true);
     Block master_status = input.read();
 
     if (!master_status || master_status.rows() != 1)
@@ -99,7 +99,7 @@ void MaterializeMetadata::fetchMasterVariablesValue(const mysqlxx::PoolWithFailo
     };
 
     const String & fetch_query = "SHOW VARIABLES WHERE Variable_name = 'binlog_checksum'";
-    MySQLBlockInputStream variables_input(connection, fetch_query, variables_header, DEFAULT_BLOCK_SIZE, false, true);
+    MySQLBlockInputStream variables_input(connection, fetch_query, variables_header, DEFAULT_BLOCK_SIZE, true);
 
     while (Block variables_block = variables_input.read())
     {
@@ -167,7 +167,7 @@ bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover:
         {std::make_shared<DataTypeUInt64>(), "File_size"}
     };
 
-    MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", logs_header, DEFAULT_BLOCK_SIZE, false, true);
+    MySQLBlockInputStream input(connection, "SHOW MASTER LOGS", logs_header, DEFAULT_BLOCK_SIZE, true);
 
     while (Block block = input.read())
     {

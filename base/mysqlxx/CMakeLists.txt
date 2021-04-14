@@ -6,6 +6,7 @@ add_library (mysqlxx
     UseQueryResult.cpp
     Row.cpp
     Value.cpp
+    IPool.cpp
     Pool.cpp
     PoolFactory.cpp
     PoolWithFailover.cpp

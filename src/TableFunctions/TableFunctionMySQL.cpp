@@ -22,6 +22,7 @@
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include "registerTableFunctions.h"
+#include <mysqlxx/PoolFactory.h>
 
 #include <Databases/MySQL/DatabaseConnectionMySQL.h> // for fetchTablesColumnsList
 #include <Common/parseRemoteDescription.h>
@@ -63,7 +64,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     /// Split into replicas if needed. 3306 is the default MySQL port number
     size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
     auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-    pool.emplace(remote_database_name, addresses, user_name, password);
+    pool = mysqlxx::PoolFactory::instance().getPoolWithFailover(remote_database_name, addresses, user_name, password);
 
     if (args.size() >= 6)
         replace_query = args[5]->as<ASTLiteral &>().value.safeGet<UInt64>() > 0;
@@ -79,7 +80,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context) const
 {
     const auto & settings = context->getSettingsRef();
-    const auto tables_and_columns = fetchTablesColumnsList(*pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
+    const auto tables_and_columns = fetchTablesColumnsList(pool, remote_database_name, {remote_table_name}, settings.external_table_functions_use_nulls, settings.mysql_datatypes_support_level);
 
     const auto columns = tables_and_columns.find(remote_table_name);
     if (columns == tables_and_columns.end())
@@ -94,7 +95,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, Cont
 
     auto res = StorageMySQL::create(
         StorageID(getDatabaseName(), table_name),
-        std::move(*pool),
+        pool,
         remote_database_name,
         remote_table_name,
         replace_query,

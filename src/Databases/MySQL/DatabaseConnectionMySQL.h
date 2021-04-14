@@ -43,7 +43,7 @@ public:
         const ASTStorage * database_engine_define,
         const String & database_name_in_mysql,
         std::unique_ptr<ConnectionMySQLSettings> settings_,
-        mysqlxx::PoolWithFailover && pool);
+        mysqlxx::PoolPtr pool);
 
     String getEngineName() const override { return "MySQL"; }
 
@@ -95,10 +95,9 @@ private:
     std::atomic<bool> quit{false};
     std::condition_variable cond;
 
-    using MySQLPool = mysqlxx::PoolWithFailover;
     using ModifyTimeAndStorage = std::pair<UInt64, StoragePtr>;
 
-    mutable MySQLPool mysql_pool;
+    mutable mysqlxx::PoolPtr mysql_pool;
     mutable std::vector<StoragePtr> outdated_tables;
     mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
 

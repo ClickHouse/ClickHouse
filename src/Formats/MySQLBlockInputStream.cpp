@@ -31,9 +31,9 @@ namespace ErrorCodes
 }
 
 MySQLBlockInputStream::Connection::Connection(
-    const mysqlxx::PoolWithFailover::Entry & entry_,
+    mysqlxx::PoolWithFailover::Entry entry_,
     const std::string & query_str)
-    : entry(entry_)
+    : entry(std::move(entry_))
     , query{entry->query(query_str)}
     , result{query.use()}
 {
@@ -41,16 +41,14 @@ MySQLBlockInputStream::Connection::Connection(
 
 /// Used in MaterializeMySQL and in doInvalidateQuery for dictionary source.
 MySQLBlockInputStream::MySQLBlockInputStream(
-    const mysqlxx::PoolWithFailover::Entry & entry,
+    mysqlxx::PoolWithFailover::Entry entry,
     const std::string & query_str,
     const Block & sample_block,
     const UInt64 max_block_size_,
-    const bool auto_close_,
     const bool fetch_by_name_)
     : log(&Poco::Logger::get("MySQLBlockInputStream"))
-    , connection{std::make_unique<Connection>(entry, query_str)}
+    , connection{std::make_unique<Connection>(std::move(entry), query_str)}
     , max_block_size{max_block_size_}
-    , auto_close{auto_close_}
     , fetch_by_name(fetch_by_name_)
 {
     description.init(sample_block);
@@ -61,56 +59,30 @@ MySQLBlockInputStream::MySQLBlockInputStream(
 MySQLBlockInputStream::MySQLBlockInputStream(
     const Block & sample_block_,
     UInt64 max_block_size_,
-    bool auto_close_,
     bool fetch_by_name_)
     : log(&Poco::Logger::get("MySQLBlockInputStream"))
     , max_block_size(max_block_size_)
-    , auto_close(auto_close_)
     , fetch_by_name(fetch_by_name_)
 {
     description.init(sample_block_);
 }
 
 /// Used by MySQL storage / table function and dictionary source.
-MySQLWithFailoverBlockInputStream::MySQLWithFailoverBlockInputStream(
-    mysqlxx::PoolWithFailoverPtr pool_,
+MySQLLazyBlockInputStream::MySQLLazyBlockInputStream(
+    mysqlxx::PoolPtr pool_,
     const std::string & query_str_,
     const Block & sample_block_,
     const UInt64 max_block_size_,
-    const bool auto_close_,
-    const bool fetch_by_name_,
-    const size_t max_tries_)
-    : MySQLBlockInputStream(sample_block_, max_block_size_, auto_close_, fetch_by_name_)
-    , pool(pool_)
+    const bool fetch_by_name_)
+    : MySQLBlockInputStream(sample_block_, max_block_size_, fetch_by_name_)
+    , pool(std::move(pool_))
     , query_str(query_str_)
-    , max_tries(max_tries_)
 {
 }
 
-void MySQLWithFailoverBlockInputStream::readPrefix()
+void MySQLLazyBlockInputStream::readPrefix()
 {
-    size_t count_connect_attempts = 0;
-
-    /// For recovering from "Lost connection to MySQL server during query" errors
-    while (true)
-    {
-        try
-        {
-            connection = std::make_unique<Connection>(pool->get(), query_str);
-            break;
-        }
-        catch (const mysqlxx::ConnectionLost & ecl)  /// There are two retriable failures: CR_SERVER_GONE_ERROR, CR_SERVER_LOST
-        {
-            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, max_tries, ecl.displayText());
-        }
-
-        if (++count_connect_attempts > max_tries)
-        {
-            LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, max_tries);
-            throw;
-        }
-    }
-
+    connection = std::make_unique<Connection>(pool->getEntry(), query_str);
     initPositionMappingFromQueryResultStructure();
 }
 
@@ -197,12 +169,7 @@ Block MySQLBlockInputStream::readImpl()
 {
     auto row = connection->result.fetch();
     if (!row)
-    {
-        if (auto_close)
-           connection->entry.disconnect();
-
         return {};
-    }
 
     MutableColumns columns(description.sample_block.columns());
     for (const auto i : ext::range(0, columns.size()))

@@ -9,7 +9,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
-#include <mysqlxx/PoolWithFailover.h>
+#include <mysqlxx/IPool.h>
 
 
 namespace DB
@@ -25,7 +25,7 @@ class StorageMySQL final : public ext::shared_ptr_helper<StorageMySQL>, public I
 public:
     StorageMySQL(
         const StorageID & table_id_,
-        mysqlxx::PoolWithFailover && pool_,
+        mysqlxx::PoolPtr pool_,
         const std::string & remote_database_name_,
         const std::string & remote_table_name_,
         bool replace_query_,
@@ -55,7 +55,7 @@ private:
     bool replace_query;
     std::string on_duplicate_clause;
 
-    mysqlxx::PoolWithFailoverPtr pool;
+    mysqlxx::PoolPtr pool;
 };
 
 }

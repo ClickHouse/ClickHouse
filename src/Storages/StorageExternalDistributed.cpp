@@ -15,6 +15,7 @@
 #include <Storages/StorageMySQL.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <common/logger_useful.h>
+#include <mysqlxx/PoolFactory.h>
 
 
 namespace DB
@@ -60,14 +61,14 @@ StorageExternalDistributed::StorageExternalDistributed(
             {
                 addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 3306);
 
-                mysqlxx::PoolWithFailover pool(
+                auto pool = mysqlxx::PoolFactory::instance().getPoolWithFailover(
                     remote_database,
                     addresses,
                     username, password);
 
                 shard = StorageMySQL::create(
                     table_id_,
-                    std::move(pool),
+                    pool,
                     remote_database,
                     remote_table,
                     /* replace_query = */ false,
