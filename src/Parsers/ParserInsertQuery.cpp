@@ -35,6 +35,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_select("SELECT");
     ParserKeyword s_watch("WATCH");
+    ParserKeyword s_partition_by("PARTITION BY");
     ParserKeyword s_with("WITH");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
@@ -42,6 +43,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
     ParserStringLiteral infile_name_p;
+    ParserExpressionWithOptionalAlias exp_elem_p(false);
 
     ASTPtr database;
     ASTPtr table;
@@ -52,6 +54,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr watch;
     ASTPtr table_function;
     ASTPtr settings_ast;
+    ASTPtr partition_by_expr;
+
     /// Insertion data
     const char * data = nullptr;
 
@@ -64,6 +68,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!table_function_p.parse(pos, table_function, expected))
             return false;
+
+        if (s_partition_by.ignore(pos, expected))
+        {
+            if (!exp_elem_p.parse(pos, partition_by_expr, expected))
+                return false;
+        }
     }
     else
     {
