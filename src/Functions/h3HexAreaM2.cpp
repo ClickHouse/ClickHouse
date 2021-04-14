@@ -32,7 +32,7 @@ class FunctionH3HexAreaM2 : public IFunction
 public:
     static constexpr auto name = "h3HexAreaM2";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionH3HexAreaM2>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3HexAreaM2>(); }
 
     std::string getName() const override { return name; }
 

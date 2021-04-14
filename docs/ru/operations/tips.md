@@ -246,4 +246,3 @@ script
 end script
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/tips/) <!--hide-->

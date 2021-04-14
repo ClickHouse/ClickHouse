@@ -1,5 +1,5 @@
 ---
-toc_priority: 6
+toc_priority: 9
 toc_title: EmbeddedRocksDB
 ---
 
@@ -39,4 +39,4 @@ ENGINE = EmbeddedRocksDB
 PRIMARY KEY key
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/embedded-rocksdb/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->

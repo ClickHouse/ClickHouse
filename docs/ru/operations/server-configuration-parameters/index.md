@@ -14,4 +14,3 @@ toc_title: "Введение"
 
 Перед изучением настроек ознакомьтесь с разделом [Конфигурационные файлы](../configuration-files.md#configuration_files), обратите внимание на использование подстановок (атрибуты `incl` и `optional`).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/) <!--hide-->

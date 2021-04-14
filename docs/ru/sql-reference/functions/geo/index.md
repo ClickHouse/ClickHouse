@@ -5,4 +5,3 @@ toc_title: hidden
 ---
 
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/functions/geo/) <!--hide-->

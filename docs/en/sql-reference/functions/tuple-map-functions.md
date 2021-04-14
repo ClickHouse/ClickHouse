@@ -66,7 +66,6 @@ Result:
 
 -   [Map(key, value)](../../sql-reference/data-types/map.md) data type
 
-
 ## mapAdd {#function-mapadd}
 
 Collect all the keys and sum corresponding values.
