@@ -566,12 +566,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (has_password_for_default_user)
         {
-            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE,
+            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
                        users_config_file.string(), users_d.string());
         }
         else if (!stdout_is_a_tty)
         {
-            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE,
+            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
                        users_config_file.string(), users_d.string());
         }
         else
@@ -606,7 +606,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</yandex>\n";
                 out.sync();
                 out.finalize();
-                fmt::print("Password for default user is saved in file {}.\n", password_file);
+                fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
 #else
                 out << "<yandex>\n"
                     "    <users>\n"
@@ -617,12 +617,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</yandex>\n";
                 out.sync();
                 out.finalize();
-                fmt::print("Password for default user is saved in plaintext in file {}.\n", password_file);
+                fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
 #endif
                 has_password_for_default_user = true;
             }
             else
-                fmt::print("Password for default user is empty string. See {} and {} to change it.\n",
+                fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
                            users_config_file.string(), users_d.string());
         }
 
