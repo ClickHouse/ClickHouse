@@ -94,10 +94,10 @@ postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
 postgresql> SELECT * FROM test;
- int_id | int_nullable | float | str  | float_nullable
---------+--------------+-------+------+----------------
-      1 |              |     2 | test |
-(1 row)
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+ (1 row)
 ```
 
 Table in ClickHouse, retrieving data from the PostgreSQL table created above:
