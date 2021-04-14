@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_SETTING;
+    extern const int UNKNOWN_FORMAT;
     extern const int LOGICAL_ERROR;
 }
 
@@ -124,7 +125,6 @@ struct QueryPlanSettings
 
     /// Apply query plan optimizations.
     bool optimize = true;
-    bool json = false;
 
     constexpr static char name[] = "PLAN";
 
@@ -133,8 +133,7 @@ struct QueryPlanSettings
             {"header", query_plan_options.header},
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
-            {"optimize", optimize},
-            {"json", json}
+            {"optimize", optimize}
     };
 };
 
@@ -224,6 +223,10 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<ASTExplainQuery &>();
 
+    std::string format;
+    if (ast.format)
+        format = getIdentifierName(ast.format);
+
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
@@ -231,6 +234,9 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
     if (ast.getKind() == ASTExplainQuery::ParsedAST)
     {
+        if (!format.empty())
+            throw Exception("FORMAT for EXPLAIN AST is not supported", ErrorCodes::UNKNOWN_FORMAT);
+
         if (ast.getSettings())
             throw Exception("Settings are not supported for EXPLAIN AST query.", ErrorCodes::UNKNOWN_SETTING);
 
@@ -238,6 +244,9 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     }
     else if (ast.getKind() == ASTExplainQuery::AnalyzedSyntax)
     {
+        if (!format.empty())
+            throw Exception("FORMAT for EXPLAIN SYNTAX is not supported", ErrorCodes::UNKNOWN_FORMAT);
+
         if (ast.getSettings())
             throw Exception("Settings are not supported for EXPLAIN SYNTAX query.", ErrorCodes::UNKNOWN_SETTING);
 
@@ -260,7 +269,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         if (settings.optimize)
             plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
-        if (settings.json)
+        if (format == "JSON")
         {
             /// Add extra layers to make plan look more like from postgres.
             auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
@@ -276,8 +285,12 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
             plan_array->format(json_format_settings, format_context);
         }
-        else
+        else if (format.empty())
             plan.explainPlan(buf, settings.query_plan_options);
+        else
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT,
+                            "Format {} is not supported for EXPLAIN PLAN query. "
+                            "Supported formats: JSON. Omit FORMAT to get human-readable output", format);
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
     {
