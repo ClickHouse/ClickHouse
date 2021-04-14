@@ -7,7 +7,7 @@ services:
       - data1-1:/data1
       - ${MINIO_CERTS_DIR:-}:/certs
     ports:
-      - ${MINIO_EXTERNAL_PORT}:${MINIO_INTERNAL_PORT}
+      - ${MINIO_PORT}
     environment:
       MINIO_ACCESS_KEY: minio
       MINIO_SECRET_KEY: minio123
