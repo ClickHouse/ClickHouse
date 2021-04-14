@@ -2,7 +2,6 @@ import time
 import pytz
 import itertools
 from testflows.core import *
-from dateutil.tz import tzlocal
 import dateutil.relativedelta as rd
 from datetime import datetime, timedelta
 
@@ -1115,7 +1114,7 @@ def now(self):
 
     for tz in timezones:
         with Given("I record current time and localize it"):
-            dt = datetime.datetime.now(tzlocal())
+            dt = datetime.datetime.now()
             dt = dt.astimezone(pytz.timezone(tz))
 
         with Step(f"{dt} {tz}"):
@@ -1147,7 +1146,7 @@ def today(self):
 
     for tz in timezones:
         with Given("I record current time and localize it"):
-            dt = datetime.datetime.now(tzlocal())
+            dt = datetime.datetime.now()
             dt = dt.astimezone(pytz.timezone(tz))
 
         with Step(f"{dt} {tz}"):
@@ -1180,7 +1179,7 @@ def yesterday(self):
 
     for tz in timezones:
         with Given("I record current time and localize it"):
-            dt = datetime.datetime.now(tzlocal())
+            dt = datetime.datetime.now()
             dt = dt.astimezone(pytz.timezone(tz))
 
         with Step(f"{dt} {tz}"):
