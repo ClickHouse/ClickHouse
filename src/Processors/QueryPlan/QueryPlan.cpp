@@ -9,7 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <boost/property_tree/ptree.hpp>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -201,42 +201,39 @@ void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 }
 
 
-static boost::property_tree::ptree explainStep(const IQueryPlanStep & step, const QueryPlan::ExplainPlanOptions & options)
+static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const QueryPlan::ExplainPlanOptions & options)
 {
-    boost::property_tree::ptree tree;
-    tree.put("Node Type", step.getName());
+    map.add("Node Type", step.getName());
 
     if (options.description)
     {
         const auto & description = step.getStepDescription();
         if (!description.empty())
-            tree.put("Description", description);
+            map.add("Description", description);
     }
 
     if (options.header && step.hasOutputStream())
     {
-        boost::property_tree::ptree header_tree;
+        auto header_array = std::make_unique<JSONBuilder::JSONArray>();
 
         for (const auto & output_column : step.getOutputStream().header)
         {
-            boost::property_tree::ptree column_tree;
-            column_tree.add("Name", output_column.name);
+            auto column_map = std::make_unique<JSONBuilder::JSONMap>();
+            column_map->add("Name", output_column.name);
             if (output_column.type)
-                column_tree.add("Type", output_column.type->getName());
+                column_map->add("Type", output_column.type->getName());
 
-            header_tree.add_child("", column_tree);
+            header_array->add(std::move(column_map));
         }
 
-        tree.add_child("Header", header_tree);
+        map.add("Header", std::move(header_array));
     }
 
     if (options.actions)
-        step.describeActions(tree);
-
-    return tree;
+        step.describeActions(map);
 }
 
-boost::property_tree::ptree QueryPlan::explainPlan(const ExplainPlanOptions & options)
+JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options)
 {
     checkInitialized();
 
@@ -244,21 +241,27 @@ boost::property_tree::ptree QueryPlan::explainPlan(const ExplainPlanOptions & op
     {
         Node * node;
         size_t next_child = 0;
-        boost::property_tree::ptree node_tree = {};
-        boost::property_tree::ptree children_trees = {};
+        std::unique_ptr<JSONBuilder::JSONMap> node_map = {};
+        std::unique_ptr<JSONBuilder::JSONArray> children_array = {};
     };
 
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
 
-    boost::property_tree::ptree tree;
+    std::unique_ptr<JSONBuilder::JSONMap> tree;
 
     while (!stack.empty())
     {
         auto & frame = stack.top();
 
         if (frame.next_child == 0)
-            frame.node_tree = explainStep(*frame.node->step, options);
+        {
+            if (!frame.node->children.empty())
+                frame.children_array = std::make_unique<JSONBuilder::JSONArray>();
+
+            frame.node_map = std::make_unique<JSONBuilder::JSONMap>();
+            explainStep(*frame.node->step, *frame.node_map, options);
+        }
 
         if (frame.next_child < frame.node->children.size())
         {
@@ -267,14 +270,14 @@ boost::property_tree::ptree QueryPlan::explainPlan(const ExplainPlanOptions & op
         }
         else
         {
-            if (!frame.children_trees.empty())
-                frame.node_tree.add_child("Plans", frame.children_trees);
+            if (frame.children_array)
+                frame.node_map->add("Plans", std::move(frame.children_array));
 
-            tree.swap(frame.node_tree);
+            tree.swap(frame.node_map);
             stack.pop();
 
             if (!stack.empty())
-                stack.top().children_trees.add_child("", tree);
+                stack.top().children_array->add(std::move(tree));
         }
     }
 

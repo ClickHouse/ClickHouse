@@ -15,7 +15,7 @@
 #include <Columns/ColumnSet.h>
 #include <queue>
 #include <stack>
-#include <boost/property_tree/ptree.hpp>
+#include <Common/JSONBuilder.h>
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
@@ -259,29 +259,27 @@ std::string ExpressionActions::Action::toString() const
     return out.str();
 }
 
-boost::property_tree::ptree ExpressionActions::Action::toTree() const
+JSONBuilder::ItemPtr ExpressionActions::Action::toTree() const
 {
-    boost::property_tree::ptree tree;
+    auto map = std::make_unique<JSONBuilder::JSONMap>();
 
     if (node)
-        tree = node->toTree();
+        node->toTree(*map);
 
-    boost::property_tree::ptree args;
-    boost::property_tree::ptree dropped_args;
+    auto args = std::make_unique<JSONBuilder::JSONArray>();
+    auto dropped_args = std::make_unique<JSONBuilder::JSONArray>();
     for (auto arg : arguments)
     {
-        boost::property_tree::ptree arg_tree;
-        arg_tree.put("", arg.pos);
-        args.add_child("", arg_tree);
+        args->add(arg.pos);
         if (!arg.needed_later)
-            dropped_args.add_child("", arg_tree);
+            dropped_args->add(arg.pos);
     }
 
-    tree.add_child("Arguments", args);
-    tree.add_child("RemovedArguments", dropped_args);
-    tree.put("Result", result_position);
+    map->add("Arguments", std::move(args));
+    map->add("Removed Arguments", std::move(dropped_args));
+    map->add("Result", result_position);
 
-    return tree;
+    return map;
 }
 
 void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) const
@@ -593,52 +591,48 @@ std::string ExpressionActions::dumpActions() const
     return ss.str();
 }
 
-boost::property_tree::ptree ExpressionActions::toTree() const
+JSONBuilder::ItemPtr ExpressionActions::toTree() const
 {
-    boost::property_tree::ptree inputs_tree;
+    auto inputs_array = std::make_unique<JSONBuilder::JSONArray>();
 
     for (const auto & input_column : required_columns)
     {
-        boost::property_tree::ptree tree;
-        tree.add("Name", input_column.name);
+        auto map = std::make_unique<JSONBuilder::JSONMap>();
+        map->add("Name", input_column.name);
         if (input_column.type)
-            tree.add("Type", input_column.type->getName());
+            map->add("Type", input_column.type->getName());
 
-        inputs_tree.add_child("", tree);
+        inputs_array->add(std::move(map));
     }
 
-    boost::property_tree::ptree outputs_tree;
+    auto outputs_array = std::make_unique<JSONBuilder::JSONArray>();
 
     for (const auto & output_column : sample_block)
     {
-        boost::property_tree::ptree tree;
-        tree.add("Name", output_column.name);
+        auto map = std::make_unique<JSONBuilder::JSONMap>();
+        map->add("Name", output_column.name);
         if (output_column.type)
-            tree.add("Type", output_column.type->getName());
+            map->add("Type", output_column.type->getName());
 
-        outputs_tree.add_child("", tree);
+        outputs_array->add(std::move(map));
     }
 
-    boost::property_tree::ptree actions_tree;
+    auto actions_array = std::make_unique<JSONBuilder::JSONArray>();
     for (const auto & action : actions)
-        actions_tree.add_child("", action.toTree());
+        actions_array->add(action.toTree());
 
-    boost::property_tree::ptree positions_tree;
+    auto positions_array = std::make_unique<JSONBuilder::JSONArray>();
     for (auto pos : result_positions)
-    {
-        boost::property_tree::ptree pos_tree;
-        pos_tree.put("", pos);
-        positions_tree.add_child("", pos_tree);
-    }
+        positions_array->add(pos);
 
-    boost::property_tree::ptree tree;
-    tree.add_child("Inputs", inputs_tree);
-    tree.add_child("Actions", actions_tree);
-    tree.add_child("Outputs", outputs_tree);
-    tree.add_child("Positions", positions_tree);
-    tree.put("ProjectInput", actions_dag->isInputProjected());
+    auto map = std::make_unique<JSONBuilder::JSONMap>();
+    map->add("Inputs", std::move(inputs_array));
+    map->add("Actions", std::move(actions_array));
+    map->add("Outputs", std::move(outputs_array));
+    map->add("Positions", std::move(positions_array));
+    map->add("Project Input", actions_dag->isInputProjected());
 
-    return tree;
+    return map;
 }
 
 bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) const

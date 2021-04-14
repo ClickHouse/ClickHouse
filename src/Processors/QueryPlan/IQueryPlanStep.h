@@ -3,7 +3,7 @@
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
-#include <boost/property_tree/ptree_fwd.hpp>
+namespace JSONBuilder { class JSONMap; }
 
 namespace DB
 {
@@ -15,6 +15,8 @@ using QueryPipelines = std::vector<QueryPipelinePtr>;
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
+
+namespace JSONBuilder { class JSONMap; }
 
 /// Description of data stream.
 /// Single logical data stream may relate to many ports of pipeline.
@@ -98,7 +100,7 @@ public:
         const bool write_header = false;
     };
 
-    virtual void describeActions(boost::property_tree::ptree & /*tree*/) const {}
+    virtual void describeActions(JSONBuilder::JSONMap & /*map*/) const {}
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
     virtual void describeActions(FormatSettings & /*settings*/) const {}

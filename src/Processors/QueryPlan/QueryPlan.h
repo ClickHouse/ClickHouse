@@ -3,7 +3,6 @@
 #include <list>
 #include <vector>
 #include <set>
-#include <boost/property_tree/ptree_fwd.hpp>
 
 #include <Core/Names.h>
 
@@ -28,6 +27,12 @@ class Pipe;
 
 struct QueryPlanOptimizationSettings;
 struct BuildQueryPipelineSettings;
+
+namespace JSONBuilder
+{
+    class IItem;
+    using ItemPtr = std::unique_ptr<IItem>;
+}
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -74,7 +79,7 @@ public:
         bool header = false;
     };
 
-    boost::property_tree::ptree explainPlan(const ExplainPlanOptions & options);
+    JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
 
