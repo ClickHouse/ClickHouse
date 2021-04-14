@@ -106,8 +106,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
         settings.ostr << (settings.hilite ? hilite_none : "");
     };
 
-    /// It could be compound but short
-    if (!isShort())
+    if (compound())
     {
         for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
         {

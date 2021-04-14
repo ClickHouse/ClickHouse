@@ -1,11 +1,12 @@
-#include <Poco/String.h>
-#include <IO/WriteBufferFromOStream.h>
-#include <Interpreters/misc.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
+
+#include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+
 
 namespace DB
 {

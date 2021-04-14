@@ -52,6 +52,7 @@ SKIP_LIST = [
     "01304_direct_io",
     "01306_benchmark_json",
     "01035_lc_empty_part_bug",  # FLAKY
+    "01175_distributed_ddl_output_mode_long",  # tcp port in reference
     "01320_create_sync_race_condition_zookeeper",
     "01355_CSV_input_format_allow_errors",
     "01370_client_autocomplete_word_break_characters",  # expect-test
@@ -76,13 +77,16 @@ SKIP_LIST = [
     "01599_multiline_input_and_singleline_comments",  # expect-test
     "01601_custom_tld",
     "01610_client_spawn_editor",  # expect-test
+    "01658_read_file_to_stringcolumn",
     "01674_unicode_asan",
     "01676_clickhouse_client_autocomplete",  # expect-test (partially)
     "01683_text_log_deadlock",  # secure tcp
     "01684_ssd_cache_dictionary_simple_key",
+    "01746_executable_pool_dictionary",
     "01747_executable_pool_dictionary_implicit_key.sql",
     "01747_join_view_filter_dictionary",
     "01748_dictionary_table_dot",
+    "01780_clickhouse_dictionary_source_loop",
 ]
 
 
