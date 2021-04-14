@@ -87,6 +87,7 @@ SKIP_LIST = [
     "01747_join_view_filter_dictionary",
     "01748_dictionary_table_dot",
     "01780_clickhouse_dictionary_source_loop",
+    "01804_dictionary_decimal256_type.sql",
 ]
 
 
