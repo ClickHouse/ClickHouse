@@ -5389,19 +5389,19 @@ void StorageReplicatedMergeTree::fetchPartition(
         auto part_path = findReplicaHavingPart(part_name, from, zookeeper);
 
         if (part_path.empty())
-            throw Exception("fetch part " + part_name + " not exists !", ErrorCodes::NO_REPLICA_HAS_PART);
+            throw Exception(ErrorCodes::PART_DOESNT_EXIST, "Part {} does not exist on any replica", part_name);
         /** Let's check that there is no such part in the `detached` directory (where we will write the downloaded parts).
           * Unreliable (there is a race condition) - such a part may appear a little later.
           */
         if (checkIfDetachedPartExists(part_name))
-            throw Exception("Detached part " + part_name + " already exists.", ErrorCodes::DUPLICATE_DATA_PART);
+            throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Detached part " + part_name + " already exists.");
         LOG_INFO(log, "Will fetch part {} from shard {} (zookeeper '{}')", part_name, from_, auxiliary_zookeeper_name);
 
         try
         {
             /// part name , metadata, part_path , true, 0, zookeeper
             if (!fetchPart(part_name, metadata_snapshot, part_path, true, 0, zookeeper))
-                throw Exception("fetch  part " + part_name + " failed! ", ErrorCodes::UNFINISHED);
+                throw Exception(ErrorCodes::UNFINISHED, "Failed to fetch part {} from {}", part_name, from_);
         }
         catch (const DB::Exception & e)
         {
