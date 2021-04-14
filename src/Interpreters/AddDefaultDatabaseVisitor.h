@@ -102,7 +102,6 @@ private:
             tryVisit<ASTSubquery>(table_expression.subquery);
     }
 
-    /// @note It expects that only table (not column) identifiers are visited.
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
     {
         if (!identifier.compound())
@@ -134,6 +133,11 @@ private:
                 {
                     if (is_operator_in && i == 1)
                     {
+                        /// XXX: for some unknown reason this place assumes that argument can't be an alias,
+                        ///      like in the similar code in `MarkTableIdentifierVisitor`.
+                        if (auto * identifier = child->children[i]->as<ASTIdentifier>())
+                            child->children[i] = identifier->createTable();
+
                         /// Second argument of the "in" function (or similar) may be a table name or a subselect.
                         /// Rewrite the table name or descend into subselect.
                         if (!tryVisit<ASTTableIdentifier>(child->children[i]))
