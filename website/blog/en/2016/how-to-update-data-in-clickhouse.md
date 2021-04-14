@@ -67,7 +67,7 @@ There is a nice set of operations to work with partitions:
 -   `DROP PARTITION` - Delete a partition.
 -   `ATTACH PART|PARTITION` -- Add a new part or partition from the 'detached' directory to the table.
 -   `FREEZE PARTITION` - Create a backup of a partition.
--   `FETCH PART|PARTITION` - Download a part or partition from another server.
+-   `FETCH PARTITION|PART` - Download a part or partition from another server.
 
 We can do any data management operations on partitions level: move, copy and delete. Also, special DETACH and ATTACH operations are created to simplify data manipulation. DETACH detaches partition from table, moving all data to detached directory. Data is still there and you can copy it anywhere but detached data is not visible on request level. ATTACH is the opposite: attaches data from detached directory so it become visible.
 
