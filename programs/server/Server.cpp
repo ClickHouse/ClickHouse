@@ -173,18 +173,24 @@ int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t
     const int sleep_one_ms = 100;
     int sleep_current_ms = 0;
     int current_connections = 0;
-    while (sleep_current_ms < sleep_max_ms)
+    for (;;)
     {
         current_connections = 0;
+
         for (auto & server : servers)
         {
             server.stop();
             current_connections += server.currentConnections();
         }
+
         if (!current_connections)
             break;
+
         sleep_current_ms += sleep_one_ms;
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+        if (sleep_current_ms < sleep_max_ms)
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_one_ms));
+        else
+            break;
     }
     return current_connections;
 }
@@ -750,6 +756,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
+            global_context->setExternalModelsConfig(config);
 
             /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
             if (config->has("max_table_size_to_drop"))
@@ -878,9 +885,29 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 servers_to_start_before_tables->emplace_back(
                     port_name,
                     std::make_unique<Poco::Net::TCPServer>(
-                        new KeeperTCPHandlerFactory(*this), server_pool, socket, new Poco::Net::TCPServerParams));
+                        new KeeperTCPHandlerFactory(*this, false), server_pool, socket, new Poco::Net::TCPServerParams));
 
                 LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
+            });
+
+            const char * secure_port_name = "keeper_server.tcp_port_secure";
+            createServer(listen_host, secure_port_name, listen_try, [&](UInt16 port)
+            {
+#if USE_SSL
+                Poco::Net::SecureServerSocket socket;
+                auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(settings.receive_timeout);
+                socket.setSendTimeout(settings.send_timeout);
+                servers_to_start_before_tables->emplace_back(
+                    secure_port_name,
+                    std::make_unique<Poco::Net::TCPServer>(
+                        new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
+                LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
+#else
+                UNUSED(port);
+                throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                    ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
             });
         }
 #else
@@ -929,6 +956,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             global_context->shutdownKeeperStorageDispatcher();
         }
+
+        /// Wait server pool to avoid use-after-free of destroyed context in the handlers
+        server_pool.joinAll();
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -1302,7 +1332,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         }
 
         /// try to load dictionaries immediately, throw on error and die
-        ext::scope_guard dictionaries_xmls, models_xmls;
+        ext::scope_guard dictionaries_xmls;
         try
         {
             if (!config().getBool("dictionaries_lazy_load", true))
@@ -1312,8 +1342,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             dictionaries_xmls = global_context->getExternalDictionariesLoader().addConfigRepository(
                 std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "dictionaries_config"));
-            models_xmls = global_context->getExternalModelsLoader().addConfigRepository(
-                std::make_unique<ExternalLoaderXMLConfigRepository>(config(), "models_config"));
         }
         catch (...)
         {
