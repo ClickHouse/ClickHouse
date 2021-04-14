@@ -1087,7 +1087,7 @@ void DiskS3::migrateToRestorableSchema()
     }
     catch (const Exception & e)
     {
-        LOG_ERROR(&Poco::Logger::get("DiskS3"), "Failed to migrate to restorable schema. Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
+        tryLogCurrentException(&Poco::Logger::get("DiskS3"), fmt::format("Failed to migrate to restorable schema for disk {}", name));
 
         throw;
     }
@@ -1205,7 +1205,7 @@ void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_informa
         if (!buffer.hasPendingData())
             return;
 
-        readBoolText(restore_information.detached, buffer);
+        readBoolTextWord(restore_information.detached, buffer);
         assertChar('\n', buffer);
 
         if (buffer.hasPendingData())
@@ -1269,9 +1269,9 @@ void DiskS3::restore()
 
         LOG_INFO(&Poco::Logger::get("DiskS3"), "Restore disk {} finished", name);
     }
-    catch (const Exception & e)
+    catch (const Exception &)
     {
-        LOG_ERROR(&Poco::Logger::get("DiskS3"), "Failed to restore disk. Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
+        tryLogCurrentException(&Poco::Logger::get("DiskS3"), fmt::format("Failed to restore disk {}", name));
 
         throw;
     }
@@ -1399,9 +1399,15 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
                     moveFile(from_path, to_path);
                     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
 
-                    if (detached)
+                    if (detached && isDirectory(to_path))
                     {
-                        /// We don't need path, which is already renamed.
+                        /// Sometimes directory paths are passed without trailing '/'. We should keep them in one consistent way.
+                        if (!from_path.ends_with('/'))
+                            from_path += '/';
+                        if (!to_path.ends_with('/'))
+                            to_path += '/';
+
+                        /// Always keep latest actual directory path to avoid detaching not existing paths.
                         auto it = renames.find(from_path);
                         if (it != renames.end())
                             renames.erase(it);
@@ -1419,9 +1425,6 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
                     createDirectories(directoryPath(dst_path));
                     createHardLink(src_path, dst_path);
                     LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Revision {}. Restored hardlink {} -> {}", revision, src_path, dst_path);
-
-                    if (detached)
-                        renames.insert(directoryPath(dst_path));
                 }
             }
         }
@@ -1431,13 +1434,26 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
 
     if (detached)
     {
-        send_metadata = false;
+        Strings invalid_prefixes{"tmp_", "delete_tmp_", "attaching_", "deleting_"};
 
         for (const auto & path : renames)
         {
+            /// Skip already detached parts.
+            if (path.find("/detached/") != std::string::npos)
+                continue;
+
+            /// Skip not finished parts.
+            Poco::Path directory_path (path);
+            auto directory_name = directory_path.directory(directory_path.depth() - 1);
+            auto predicate = [&directory_name](String & prefix) { return directory_name.starts_with(prefix); };
+            if (std::any_of(invalid_prefixes.begin(), invalid_prefixes.end(), predicate))
+                continue;
+
             auto detached_path = pathToDetached(path);
-            moveFile(path, detached_path);
+
             LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Move directory to detached {} -> {}", path, detached_path);
+
+            Poco::File(metadata_path + path).moveTo(metadata_path + detached_path);
         }
     }
 
@@ -1487,8 +1503,7 @@ void DiskS3::onFreeze(const String & path)
 
 String DiskS3::pathToDetached(const String & source_path)
 {
-    Poco::Path path (source_path);
-    return Poco::Path(path).parent().append(Poco::Path("detached")).append(path.directory(path.depth() - 1)).toString();
+    return Poco::Path(source_path).parent().append(Poco::Path("detached")).toString() + '/';
 }
 
 }

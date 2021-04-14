@@ -107,13 +107,15 @@ def drop_shadow_information(node):
     node.exec_in_container(['bash', '-c', 'rm -rf /var/lib/clickhouse/shadow/*'], user='root')
 
 
-def create_restore_file(node, revision=0, bucket=None, path=None):
+def create_restore_file(node, revision=0, bucket=None, path=None, detached=None):
     add_restore_option = 'echo -en "{}\n" >> /var/lib/clickhouse/disks/s3/restore'
     node.exec_in_container(['bash', '-c', add_restore_option.format(revision)], user='root')
     if bucket:
         node.exec_in_container(['bash', '-c', add_restore_option.format(bucket)], user='root')
     if path:
         node.exec_in_container(['bash', '-c', add_restore_option.format(path)], user='root')
+    if detached:
+        node.exec_in_container(['bash', '-c', add_restore_option.format('true')], user='root')
 
 
 def get_revision_counter(node, backup_number):
@@ -369,3 +371,43 @@ def test_migrate_to_restorable_schema(cluster):
 
     assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 6)
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
+
+
+def test_restore_to_detached(cluster):
+    node = cluster.instances["node"]
+
+    create_table(node, "test")
+
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-03', 4096)))
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-04', 4096, -1)))
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-05', 4096)))
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-06', 4096, -1)))
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-07', 4096)))
+
+    # Add some mutation.
+    node.query("ALTER TABLE s3.test UPDATE counter = 1 WHERE 1", settings={"mutations_sync": 2})
+
+    # Detach some partition.
+    node.query("ALTER TABLE s3.test DETACH PARTITION '2020-01-07'")
+
+    node.query("ALTER TABLE s3.test FREEZE")
+    revision = get_revision_counter(node, 1)
+
+    node_another_bucket = cluster.instances["node_another_bucket"]
+
+    create_table(node_another_bucket, "test")
+
+    node_another_bucket.stop_clickhouse()
+    create_restore_file(node_another_bucket, revision=revision, bucket="root", path="data", detached=True)
+    node_another_bucket.start_clickhouse(10)
+
+    assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(0)
+
+    node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-03'")
+    node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-04'")
+    node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-05'")
+    node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-06'")
+
+    assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 4)
+    assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
+    assert node_another_bucket.query("SELECT sum(counter) FROM s3.test FORMAT Values") == "({})".format(4096 * 4)
