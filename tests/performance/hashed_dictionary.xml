@@ -95,7 +95,8 @@
         FORMAT Null;
     </query>
     <query>
-        SELECT * FROM default.simple_key_hashed_dictionary;
+        SELECT * FROM default.simple_key_hashed_dictionary
+        FORMAT Null;
     </query>
     <query>
         WITH rand64() % toUInt64({elements_count}) as key
