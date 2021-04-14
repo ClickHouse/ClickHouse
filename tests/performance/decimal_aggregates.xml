@@ -18,7 +18,7 @@
 
     <query>SELECT uniq(d32), uniqCombined(d32), uniqExact(d32), uniqHLL12(d32) FROM     (SELECT * FROM t LIMIT 10000000)</query>
     <query>SELECT uniq(d64), uniqCombined(d64), uniqExact(d64), uniqHLL12(d64) FROM     (SELECT * FROM t LIMIT 10000000)</query>
-    <query>SELECT uniq(d128), uniqCombined(d128), uniqExact(d128), uniqHLL12(d128) FROM (SELECT * FROM t LIMIT 1000000)</query>
+    <query>SELECT uniq(d128), uniqCombined(d128), uniqExact(d128), uniqHLL12(d128) FROM (SELECT * FROM t LIMIT 10000000)</query>
 
     <query>SELECT median(d32), medianExact(d32), medianExactWeighted(d32, 2) FROM    (SELECT * FROM t LIMIT 10000000)</query>
     <query>SELECT median(d64), medianExact(d64), medianExactWeighted(d64, 2) FROM    (SELECT * FROM t LIMIT 1000000)</query>

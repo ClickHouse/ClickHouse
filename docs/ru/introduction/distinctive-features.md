@@ -73,4 +73,3 @@ ClickHouse предоставляет различные способы разм
 3.  Разреженный индекс делает ClickHouse плохо пригодным для точечных чтений одиночных строк по своим
     ключам.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/distinctive_features/) <!--hide-->

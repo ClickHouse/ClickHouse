@@ -2,7 +2,9 @@
 set -exu
 set -o pipefail
 trap "exit" INT TERM
-trap 'kill $(jobs -pr) ||:' EXIT
+# The watchdog is in the separate process group, so we have to kill it separately
+# if the script terminates earlier.
+trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -758,7 +760,7 @@ create view test_times_view as
         total_client_time,
         queries,
         query_max,
-        real / queries avg_real_per_query,
+        real / if(queries > 0, queries, 1) avg_real_per_query,
         query_min,
         runs
     from test_time
@@ -779,7 +781,7 @@ create view test_times_view_total as
         sum(total_client_time),
         sum(queries),
         max(query_max),
-        sum(real) / sum(queries) avg_real_per_query,
+        sum(real) / if(sum(queries) > 0, sum(queries), 1) avg_real_per_query,
         min(query_min),
         -- Totaling the number of runs doesn't make sense, but use the max so
         -- that the reporting script doesn't complain about queries being too

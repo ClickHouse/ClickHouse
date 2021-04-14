@@ -46,7 +46,7 @@ AggregatingStep::AggregatingStep(
 {
 }
 
-void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
+void AggregatingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     QueryPipelineProcessorsCollector collector(pipeline, this);
 
@@ -100,7 +100,8 @@ void AggregatingStep::transformPipeline(QueryPipeline & pipeline)
                     pipeline.getHeader(),
                     pipeline.getNumStreams(),
                     transform_params,
-                    group_by_sort_description);
+                    group_by_sort_description,
+                    max_block_size);
 
                 pipeline.addTransform(std::move(transform));
                 aggregating_sorted = collector.detachProcessors(1);

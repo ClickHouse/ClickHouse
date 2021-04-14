@@ -59,4 +59,3 @@ toc_title: "Разрешения для запросов"
 
 1
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/permissions_for_queries/) <!--hide-->

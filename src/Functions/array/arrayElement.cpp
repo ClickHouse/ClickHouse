@@ -41,7 +41,7 @@ class FunctionArrayElement : public IFunction
 {
 public:
     static constexpr auto name = "arrayElement";
-    static FunctionPtr create(const Context & context);
+    static FunctionPtr create(ContextPtr context);
 
     String getName() const override;
 
@@ -449,7 +449,7 @@ struct ArrayElementGenericImpl
 }
 
 
-FunctionPtr FunctionArrayElement::create(const Context &)
+FunctionPtr FunctionArrayElement::create(ContextPtr)
 {
     return std::make_shared<FunctionArrayElement>();
 }
@@ -872,15 +872,18 @@ bool FunctionArrayElement::matchKeyToIndexNumberConst(
     if (!data_numeric)
         return false;
 
-    bool is_integer_field = Field::dispatch([](const auto & value)
+    std::optional<DataType> index_as_integer;
+    Field::dispatch([&](const auto & value)
     {
-        return is_integer_v<std::decay_t<decltype(value)>>;
+        using FieldType = std::decay_t<decltype(value)>;
+        if constexpr (is_integer_v<FieldType> && std::is_convertible_v<FieldType, DataType>)
+            index_as_integer = static_cast<DataType>(value);
     }, index);
 
-    if (!is_integer_field)
+    if (!index_as_integer)
         return false;
 
-    MatcherNumberConst<DataType> matcher{data_numeric->getData(), get<DataType>(index)};
+    MatcherNumberConst<DataType> matcher{data_numeric->getData(), *index_as_integer};
     executeMatchKeyToIndex(offsets, matched_idxs, matcher);
     return true;
 }
