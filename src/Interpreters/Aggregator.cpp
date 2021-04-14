@@ -1000,7 +1000,7 @@ void Aggregator::convertToBlockImpl(
         convertToBlockImplFinal(method, data, std::move(raw_key_columns), final_aggregate_columns, arena);
     else
         convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
-    
+
     /// In order to release memory early.
     if (!params.keep_state_after_read)
         data.clearAndShrink();
