@@ -562,14 +562,23 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         bool stdin_is_a_tty = isatty(STDIN_FILENO);
         bool stdout_is_a_tty = isatty(STDOUT_FILENO);
-        bool is_interactive = stdin_is_a_tty && stdout_is_a_tty;
+
+        /// dpkg or apt installers can ask for non-interactive work explicitly.
+
+        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
+        bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
+
+        bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
+
+        /// We can ask password even if stdin is closed/redirected but /dev/tty is available.
+        bool can_ask_password = !noninteractive && stdout_is_a_tty;
 
         if (has_password_for_default_user)
         {
             fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
                        users_config_file.string(), users_d.string());
         }
-        else if (!stdout_is_a_tty)
+        else if (!can_ask_password)
         {
             fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
                        users_config_file.string(), users_d.string());
