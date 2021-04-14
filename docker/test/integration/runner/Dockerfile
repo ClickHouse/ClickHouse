@@ -92,7 +92,6 @@ RUN set -x \
   && echo 'dockremap:165536:65536' >> /etc/subuid \
     && echo 'dockremap:165536:65536' >> /etc/subgid
 
-VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
 CMD ["sh", "-c", "pytest $PYTEST_OPTS"]

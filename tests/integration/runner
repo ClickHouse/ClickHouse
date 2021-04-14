@@ -167,6 +167,13 @@ if __name__ == "__main__":
         dest="tests_list",
         help="List of tests to run")
 
+    parser.add_argument(
+        "--tmpfs",
+        action='store_true',
+        default=False,
+        dest="tmpfs",
+        help="Use tmpfs for dockerd files")
+
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
     args = parser.parse_args()
@@ -208,19 +215,25 @@ if __name__ == "__main__":
     # to avoid redownloading it every time
     #
     # should be removed manually when not needed
-    subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
+    dockerd_internal_volume = ""
+    if args.tmpfs:
+        dockerd_internal_volume = "--tmpfs /var/lib/docker -e DOCKER_RAMDISK=true"
+    else:
+        subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
+        dockerd_internal_volume = "--volume /var/lib/docker--volume={}_volume:/var/lib/docker".format(CONTAINER_NAME)
 
     # enable tty mode & interactive for docker if we have real tty
     tty = ""
     if sys.stdout.isatty() and sys.stdin.isatty():
         tty = "-it"
 
+
     cmd = "docker run {net} {tty} --rm --name {name} --privileged \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={library_bridge_bin}:/clickhouse-library-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
-        --volume={name}_volume:/var/lib/docker -e DOCKER_CLIENT_TIMEOUT=120 -e COMPOSE_HTTP_TIMEOUT=300 \
+        {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=120 -e COMPOSE_HTTP_TIMEOUT=300 \
         {env_tags} -e PYTEST_OPTS='{parallel} {opts} {tests_list}' {img} {command}".format(
         net=net,
         tty=tty,
@@ -234,6 +247,7 @@ if __name__ == "__main__":
         parallel=parallel_args,
         opts=' '.join(args.pytest_args),
         tests_list=' '.join(args.tests_list),
+        dockerd_internal_volume=dockerd_internal_volume,
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,
         command=args.command

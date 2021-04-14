@@ -2975,7 +2975,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
             data_prefix = data_prefix + ['']
         if format_opts.get('printable', False) == False:
             raw_message = 'hex(_raw_message)'
-        kafka_produce(topic_name, data_prefix + data_sample)
+        kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
         instance.query('''
             DROP TABLE IF EXISTS test.kafka_{format_name};
 
