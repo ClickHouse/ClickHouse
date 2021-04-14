@@ -7,6 +7,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
+#include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -18,8 +19,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/printPipeline.h>
 
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/json_parser.hpp>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -262,10 +262,19 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 
         if (settings.json)
         {
-            auto tree = plan.explainPlan(settings.query_plan_options);
-            std::stringstream out;
-            boost::property_tree::json_parser::write_json(out, tree);
-            buf.str() = out.str();
+            /// Add extra layers to make plan look more like from postgres.
+            auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
+            plan_map->add("Plan", plan.explainPlan(settings.query_plan_options));
+            auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
+            plan_array->add(std::move(plan_map));
+
+            auto format_settings = getFormatSettings(context);
+            format_settings.json.quote_64bit_integers = false;
+
+            JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
+            JSONBuilder::FormatContext format_context{.out = buf};
+
+            plan_array->format(json_format_settings, format_context);
         }
         else
             plan.explainPlan(buf, settings.query_plan_options);

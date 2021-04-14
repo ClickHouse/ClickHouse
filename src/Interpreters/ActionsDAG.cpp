@@ -13,7 +13,7 @@
 #include <IO/Operators.h>
 
 #include <stack>
-#include <boost/property_tree/ptree.hpp>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -47,29 +47,26 @@ const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
     __builtin_unreachable();
 }
 
-boost::property_tree::ptree ActionsDAG::Node::toTree() const
+void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 {
-    boost::property_tree::ptree tree;
-    tree.add("NodeType", ActionsDAG::typeToString(type));
+    map.add("Node Type", ActionsDAG::typeToString(type));
 
     if (result_type)
-        tree.add("ResultType", result_type->getName());
+        map.add("Result Type", result_type->getName());
 
     if (!result_name.empty())
-        tree.add("ResultType", ActionsDAG::typeToString(type));
+        map.add("Result Type", ActionsDAG::typeToString(type));
 
     if (column)
-        tree.add("Column", column->getName());
+        map.add("Column", column->getName());
 
     if (function_base)
-        tree.add("Function", function_base->getName());
+        map.add("Function", function_base->getName());
     else if (function_builder)
-        tree.add("Function", function_base->getName());
+        map.add("Function", function_base->getName());
 
     if (type == ActionType::FUNCTION)
-        tree.add("Compiled", is_function_compiled);
-
-    return tree;
+        map.add("Compiled", is_function_compiled);
 }
 
 

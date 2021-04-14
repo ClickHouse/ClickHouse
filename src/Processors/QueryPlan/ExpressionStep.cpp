@@ -7,7 +7,7 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Interpreters/JoinSwitcher.h>
 
-#include <boost/property_tree/ptree.hpp>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -112,10 +112,10 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     settings.out << '\n';
 }
 
-void ExpressionStep::describeActions(boost::property_tree::ptree & tree) const
+void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
-    tree.add_child("Expression", expression->toTree());
+    map.add("Expression", expression->toTree());
 }
 
 JoinStep::JoinStep(const DataStream & input_stream_, JoinPtr join_, bool has_non_joined_rows_, size_t max_block_size_)

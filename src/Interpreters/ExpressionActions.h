@@ -58,7 +58,7 @@ public:
         size_t result_position;
 
         std::string toString() const;
-        boost::property_tree::ptree toTree() const;
+        JSONBuilder::ItemPtr toTree() const;
     };
 
     using Actions = std::vector<Action>;
@@ -109,7 +109,7 @@ public:
     const Block & getSampleBlock() const { return sample_block; }
 
     std::string dumpActions() const;
-    boost::property_tree::ptree toTree() const;
+    JSONBuilder::ItemPtr toTree() const;
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 

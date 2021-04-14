@@ -12,12 +12,13 @@ struct FormatSettings
 {
     const DB::FormatSettings & settings;
     size_t indent = 2;
+    bool print_simple_arrays_in_single_row = true;
 };
 
 struct FormatContext
 {
     WriteBuffer & out;
-    size_t offset;
+    size_t offset = 0;
 };
 
 class IItem
@@ -50,33 +51,34 @@ public:
 
     void format(const FormatSettings & settings, FormatContext & context) override
     {
-        bool is_finite = isFinite(value);
-
-        const bool need_quote = (std::is_integral_v<T> && (sizeof(T) >= 8) && settings.settings.json.quote_64bit_integers)
-            || (settings.settings.json.quote_denormals && !is_finite);
-
-        if (need_quote)
-            writeChar('"', context.out);
-
-        if (is_finite)
-            writeText(value, context.out);
-        else if (!settings.settings.json.quote_denormals)
-            writeCString("null", context.out);
-        else
-            writeDenormalNumber(value, context.out);
-
-        if (need_quote)
-            writeChar('"', context.out);
+        writeJSONNumber(value, context.out, settings.settings);
     }
 
 private:
     T value;
 };
 
+class JSONBool : public IItem
+{
+public:
+    explicit JSONBool(bool value_) : value(std::move(value_)) {}
+    void format(const FormatSettings & settings, FormatContext & context) override;
+
+private:
+    bool value;
+};
+
 class JSONArray : public IItem
 {
 public:
     void add(ItemPtr value) { values.push_back(std::move(value)); }
+    void add(std::string value) { add(std::make_unique<JSONString>(std::move(value))); }
+    void add(const char * value) { add(std::make_unique<JSONString>(value)); }
+    void add(bool value) { add(std::make_unique<JSONBool>(std::move(value))); }
+
+    template <typename T, std::enable_if_t<std::is_arithmetic<T>::value, bool> = true>
+    void add(T value) { add(std::make_unique<JSONNumber<T>>(value)); }
+
     void format(const FormatSettings & settings, FormatContext & context) override;
 
 private:
@@ -93,6 +95,13 @@ class JSONMap : public IItem
 
 public:
     void add(std::string key, ItemPtr value) { values.emplace_back(Pair{.key = std::move(key), .value = std::move(value)}); }
+    void add(std::string key, std::string value) { add(std::move(key), std::make_unique<JSONString>(std::move(value))); }
+    void add(std::string key, const char * value) { add(std::move(key), std::make_unique<JSONString>(value)); }
+    void add(std::string key, bool value) { add(std::move(key), std::make_unique<JSONBool>(std::move(value))); }
+
+    template <typename T, std::enable_if_t<std::is_arithmetic<T>::value, bool> = true>
+    void add(std::string key, T value) { add(std::move(key), std::make_unique<JSONNumber<T>>(value)); }
+
     void format(const FormatSettings & settings, FormatContext & context) override;
 
 private:

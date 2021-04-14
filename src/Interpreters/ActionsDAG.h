@@ -8,8 +8,6 @@
 #    include "config_core.h"
 #endif
 
-#include <boost/property_tree/ptree_fwd.hpp>
-
 namespace DB
 {
 
@@ -29,6 +27,14 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class CompiledExpressionCache;
+
+namespace JSONBuilder
+{
+    class JSONMap;
+
+    class IItem;
+    using ItemPtr = std::unique_ptr<IItem>;
+}
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
@@ -85,7 +91,7 @@ public:
         /// We calculate such constants in order to avoid unnecessary materialization, but prohibit it's folding.
         bool allow_constant_folding = true;
 
-        boost::property_tree::ptree toTree() const;
+        void toTree(JSONBuilder::JSONMap & map) const;
     };
 
     /// NOTE: std::list is an implementation detail.
