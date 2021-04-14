@@ -20,7 +20,7 @@ def start_cluster():
     ('part', 'date', 'part_name'),
     [
         ('PARTITION', '2020-08-27', '2020-08-27'),
-        ('PART', '2020-08-28' '20200828_0_0_0'),
+        ('PART', '2020-08-28', '20200828_0_0_0'),
     ]
 )
 def test_fetch_part_from_allowed_zookeeper(start_cluster, part, date, part_name):
