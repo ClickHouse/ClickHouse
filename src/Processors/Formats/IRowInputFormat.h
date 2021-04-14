@@ -14,7 +14,7 @@ namespace DB
 /// Contains extra information about read data.
 struct RowReadExtension
 {
-    /// IRowInputStream.read() output. It contains non zero for columns that actually read from the source and zero otherwise.
+    /// IRowInputFormat::read output. It contains non zero for columns that actually read from the source and zero otherwise.
     /// It's used to attach defaults for partially filled rows.
     std::vector<UInt8> read_columns;
 };
