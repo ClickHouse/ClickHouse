@@ -303,17 +303,6 @@ TEST(ColumnSparse, GetPermutation)
             DUMP_COLUMN(sparse_sorted);
             DUMP_COLUMN(full_sorted);
             DUMP_NON_DEFAULTS(full_sorted);
-
-            std::cerr << "sparse: ";
-            for (size_t i = 0; i < sparse_sorted->size(); ++i)
-                std::cerr << applyVisitor(FieldVisitorToString(), (*sparse_sorted)[i]) << " ";
-            std::cerr << "\n";
-
-            std::cerr << "full: ";
-            for (size_t i = 0; i < full_sorted->size(); ++i)
-                std::cerr << applyVisitor(FieldVisitorToString(), (*full_sorted)[i]) << " ";
-            std::cerr << "\n";
-
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorted columns are unequal");
         }
     };

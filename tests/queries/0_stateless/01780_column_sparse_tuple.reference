@@ -1,3 +1,5 @@
+id	[]	[]	[]
+t	['s','a']	['String','UInt64']	['Default','Sparse']
 (0,'a')
 (0,'aa')
 (0,'aaa')
@@ -38,3 +40,20 @@ a
 a
 a
 a
+id	[]	[]	[]
+t	['b.u','b.s','b','a']	['UInt32','String','Tuple(u UInt32, s String)','UInt64']	['Sparse','Default','Default','Sparse']
+0
+0
+0
+60
+0
+a
+aa
+aaa
+aaaa
+aaaaa
+aaaaaa
+a
+aaaaaa
+a
+aaaaaa

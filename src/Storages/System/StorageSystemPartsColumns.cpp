@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/NestedUtils.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -57,7 +59,10 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_data_compressed_bytes",               std::make_shared<DataTypeUInt64>()},
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>()},
         {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>()},
-        {"serialization_kind",                         std::make_shared<DataTypeString>()}
+        {"serialization_kind",                         std::make_shared<DataTypeString>()},
+        {"subcolumns.names",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"subcolumns.types",                           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"subcolumns.serializations",                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
     }
     )
 {
@@ -217,6 +222,38 @@ void StorageSystemPartsColumns::processNextStorage(
             {
                 auto kind = part->getSerializationForColumn(column)->getKind();
                 columns[res_index++]->insert(ISerialization::kindToString(kind));
+            }
+
+            auto subcolumns = column.type->getSubcolumnNames();
+            if (columns_mask[src_index++])
+            {
+                Array array(subcolumns.begin(), subcolumns.end());
+                columns[res_index++]->insert(array);
+            }
+
+            if (columns_mask[src_index++])
+            {
+                Array array;
+                array.reserve(subcolumns.size());
+                for (const auto & name : subcolumns)
+                    array.push_back(column.type->getSubcolumnType(name)->getName());
+
+                columns[res_index++]->insert(array);
+            }
+
+            if (columns_mask[src_index++])
+            {
+                Array array;
+                array.reserve(subcolumns.size());
+                for (const auto & name : subcolumns)
+                {
+                    auto subtype = column.type->getSubcolumnType(name);
+                    auto subcolumn = NameAndTypePair(column.name, name, column.type, subtype);
+                    auto kind = part->getSerializationForColumn(subcolumn)->getKind();
+                    array.push_back(ISerialization::kindToString(kind));
+                }
+
+                columns[res_index++]->insert(array);
             }
 
             if (has_state_column)
