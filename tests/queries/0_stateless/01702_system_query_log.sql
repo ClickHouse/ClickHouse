@@ -64,23 +64,17 @@ ALTER TABLE sqllt.table DELETE WHERE i > 65535;
 -- SETTINGS PROFILE
 
 SELECT 'SYSTEM queries';
-SYSTEM RELOAD EMBEDDED DICTIONARIES;
-SYSTEM RELOAD DICTIONARIES;
-SYSTEM DROP DNS CACHE;
-SYSTEM DROP MARK CACHE;
-SYSTEM DROP UNCOMPRESSED CACHE;
 SYSTEM FLUSH LOGS;
-SYSTEM RELOAD CONFIG;
-SYSTEM STOP MERGES;
-SYSTEM START MERGES;
-SYSTEM STOP TTL MERGES;
-SYSTEM START TTL MERGES;
-SYSTEM STOP MOVES;
-SYSTEM START MOVES;
-SYSTEM STOP FETCHES;
-SYSTEM START FETCHES;
-SYSTEM STOP REPLICATED SENDS;
-SYSTEM START REPLICATED SENDS;
+SYSTEM STOP MERGES sqllt.table;
+SYSTEM START MERGES sqllt.table;
+SYSTEM STOP TTL MERGES sqllt.table;
+SYSTEM START TTL MERGES sqllt.table;
+SYSTEM STOP MOVES sqllt.table;
+SYSTEM START MOVES sqllt.table;
+SYSTEM STOP FETCHES sqllt.table;
+SYSTEM START FETCHES sqllt.table;
+SYSTEM STOP REPLICATED SENDS sqllt.table;
+SYSTEM START REPLICATED SENDS sqllt.table;
 
 -- SYSTEM RELOAD DICTIONARY sqllt.dictionary; -- temporary out of order: Code: 210, Connection refused (localhost:9001) (version 21.3.1.1)
 -- DROP REPLICA
@@ -136,7 +130,7 @@ SELECT 'ACTUAL LOG CONTENT:';
 -- Try to filter out all possible previous junk events by excluding old log entries,
 SELECT query_kind, query FROM system.query_log
 WHERE
-    log_comment LIKE '%system.query_log%' AND type == 'QueryStart' AND event_time >= now() - 10
+    log_comment LIKE '%system.query_log%' AND type == 'QueryStart' AND event_date >= yesterday()
     AND current_database == currentDatabase()
 ORDER BY event_time_microseconds;
 

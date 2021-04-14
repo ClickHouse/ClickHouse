@@ -251,6 +251,31 @@ class Task_non_partitioned_table:
         instance = cluster.instances['s1_1_0']
         instance.query("DROP TABLE copier_test1_1")
 
+class Task_self_copy:
+
+    def __init__(self, cluster):
+        self.cluster = cluster
+        self.zk_task_path = "/clickhouse-copier/task_self_copy"
+        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_self_copy.xml'), 'r').read()
+
+    def start(self):
+        instance = cluster.instances['s0_0_0']
+        instance.query("CREATE DATABASE db1;")
+        instance.query(
+            "CREATE TABLE db1.source_table (`a` Int8, `b` String, `c` Int8) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity = 8192")
+        instance.query("CREATE DATABASE db2;")
+        instance.query(
+            "CREATE TABLE db2.destination_table (`a` Int8, `b` String, `c` Int8) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity = 8192")
+        instance.query("INSERT INTO db1.source_table VALUES (1, 'ClickHouse', 1);")
+        instance.query("INSERT INTO db1.source_table VALUES (2, 'Copier', 2);")
+
+    def check(self):
+        instance = cluster.instances['s0_0_0']
+        assert TSV(instance.query("SELECT * FROM db2.destination_table ORDER BY a")) == TSV(instance.query("SELECT * FROM db1.source_table ORDER BY a"))
+        instance = cluster.instances['s0_0_0']
+        instance.query("DROP DATABASE db1 SYNC")
+        instance.query("DROP DATABASE db2 SYNC")
+
 
 def execute_task(task, cmd_options):
     task.start()
@@ -380,8 +405,13 @@ def test_no_index(started_cluster):
 def test_no_arg(started_cluster):
     execute_task(Task_no_arg(started_cluster), [])
 
+
 def test_non_partitioned_table(started_cluster):
     execute_task(Task_non_partitioned_table(started_cluster), [])
+
+
+def test_self_copy(started_cluster):
+    execute_task(Task_self_copy(started_cluster), [])
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:

@@ -27,6 +27,11 @@ configure_file (Common/config.h.in ${CONFIG_COMMON})
 configure_file (Common/config_version.h.in ${CONFIG_VERSION})
 configure_file (Core/config_core.h.in ${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h)
 
+if (USE_DEBUG_HELPERS)
+    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/base -include ${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
+endif ()
+
 if (COMPILER_GCC)
     # If we leave this optimization enabled, gcc-7 replaces a pair of SSE intrinsics (16 byte load, store) with a call to memcpy.
     # It leads to slow code. This is compiler bug. It looks like this:
@@ -185,6 +190,7 @@ add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_client Client)
+add_object_library(clickhouse_bridge Bridge)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
 add_object_library(clickhouse_formats Formats)
@@ -370,11 +376,9 @@ if (ZSTD_LIBRARY)
     endif ()
 endif()
 
-set (LZMA_LIBRARY liblzma)
-set (LZMA_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/xz/src/liblzma/api)
-if (LZMA_LIBRARY)
-    target_link_libraries (clickhouse_common_io PUBLIC ${LZMA_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LZMA_INCLUDE_DIR})
+if (XZ_LIBRARY)
+    target_link_libraries (clickhouse_common_io PUBLIC ${XZ_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${XZ_INCLUDE_DIR})
 endif()
 
 if (USE_ICU)
@@ -466,6 +470,10 @@ if (USE_LIBPQXX)
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${LIBPQXX_INCLUDE_DIR})
 endif()
 
+if (USE_DATASKETCHES)
+    target_include_directories (clickhouse_aggregate_functions SYSTEM BEFORE PRIVATE ${DATASKETCHES_INCLUDE_DIR})
+endif ()
+
 dbms_target_link_libraries(PRIVATE _boost_context)
 
 include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
@@ -499,6 +507,11 @@ if (ENABLE_TESTS AND USE_GTEST)
         dbms
         clickhouse_common_zookeeper
         string_utils)
+
+    # For __udivmodti4 referenced in Core/tests/gtest_DecimalFunctions.cpp
+    if (OS_DARWIN AND COMPILER_GCC)
+        target_link_libraries(unit_tests_dbms PRIVATE gcc)
+    endif ()
 
     add_check(unit_tests_dbms)
 endif ()

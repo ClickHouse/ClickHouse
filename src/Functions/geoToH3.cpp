@@ -33,7 +33,7 @@ class FunctionGeoToH3 : public IFunction
 public:
     static constexpr auto name = "geoToH3";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGeoToH3>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeoToH3>(); }
 
     std::string getName() const override { return name; }
 

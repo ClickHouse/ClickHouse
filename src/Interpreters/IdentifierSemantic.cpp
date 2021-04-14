@@ -3,6 +3,8 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 
+#include <Parsers/ASTFunction.h>
+
 namespace DB
 {
 
@@ -209,7 +211,7 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
     return canReferColumnToTable(identifier, table_with_columns.table);
 }
 
-/// Strip qualificators from left side of column name.
+/// Strip qualifications from left side of column name.
 /// Example: 'database.table.name' -> 'name'.
 void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
 {
@@ -247,6 +249,88 @@ void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const Dat
         identifier.semantic->table = prefix;
         identifier.semantic->legacy_compound = true;
     }
+}
+
+std::optional<size_t> IdentifierSemantic::getIdentMembership(const ASTIdentifier & ident, const std::vector<TableWithColumnNamesAndTypes> & tables)
+{
+    std::optional<size_t> table_pos = IdentifierSemantic::getMembership(ident);
+    if (table_pos)
+        return table_pos;
+    return IdentifierSemantic::chooseTableColumnMatch(ident, tables, true);
+}
+
+std::optional<size_t>
+IdentifierSemantic::getIdentsMembership(ASTPtr ast, const std::vector<TableWithColumnNamesAndTypes> & tables, const Aliases & aliases)
+{
+    auto idents = IdentifiersCollector::collect(ast);
+
+    std::optional<size_t> result;
+    for (const auto * ident : idents)
+    {
+        /// short name clashes with alias, ambiguous
+        if (ident->isShort() && aliases.count(ident->shortName()))
+            return {};
+        const auto pos = getIdentMembership(*ident, tables);
+        if (!pos)
+            return {};
+        /// identifiers from different tables
+        if (result && *pos != *result)
+            return {};
+        result = pos;
+    }
+    return result;
+}
+
+IdentifiersCollector::ASTIdentifiers IdentifiersCollector::collect(const ASTPtr & node)
+{
+    IdentifiersCollector::Data ident_data;
+    ConstInDepthNodeVisitor<IdentifiersCollector, true> ident_visitor(ident_data);
+    ident_visitor.visit(node);
+    return ident_data.idents;
+}
+
+bool IdentifiersCollector::needChildVisit(const ASTPtr &, const ASTPtr &)
+{
+    return true;
+}
+
+void IdentifiersCollector::visit(const ASTPtr & node, IdentifiersCollector::Data & data)
+{
+    if (const auto * ident = node->as<ASTIdentifier>())
+        data.idents.push_back(ident);
+}
+
+
+IdentifierMembershipCollector::IdentifierMembershipCollector(const ASTSelectQuery & select, ContextPtr context)
+{
+    if (ASTPtr with = select.with())
+        QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
+    QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
+
+    tables = getDatabaseAndTablesWithColumns(getTableExpressions(select), context);
+}
+
+std::optional<size_t> IdentifierMembershipCollector::getIdentsMembership(ASTPtr ast) const
+{
+    return IdentifierSemantic::getIdentsMembership(ast, tables, aliases);
+}
+
+static void collectConjunctions(const ASTPtr & node, std::vector<ASTPtr> & members)
+{
+    if (const auto * func = node->as<ASTFunction>(); func && func->name == "and")
+    {
+        for (const auto & child : func->arguments->children)
+            collectConjunctions(child, members);
+        return;
+    }
+    members.push_back(node);
+}
+
+std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
+{
+    std::vector<ASTPtr> members;
+    collectConjunctions(node, members);
+    return members;
 }
 
 }

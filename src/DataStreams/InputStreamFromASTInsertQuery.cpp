@@ -24,7 +24,7 @@ namespace ErrorCodes
 InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     const ASTPtr & ast,
     const Block & header,
-    const Context & context,
+    ContextPtr context,
     const ASTPtr & input_function)
 {
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
@@ -40,9 +40,9 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
         format = "Values";
     }
 
-    res_stream = context.getInputFormat(format, input_buffer, header, context.getSettings().max_insert_block_size);
+    res_stream = context->getInputFormat(format, input_buffer, header, context->getSettings().max_insert_block_size);
 
-    if (context.getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
+    if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
@@ -56,7 +56,7 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     const ASTPtr & ast,
     ReadBuffer & tail,
     const Block & header,
-    const Context & context,
+    ContextPtr context,
     const ASTPtr & input_function) : InputStreamFromASTInsertQuery(ast, header, context, input_function)
 {
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
