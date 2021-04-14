@@ -148,6 +148,7 @@ private:
     Metadata createMeta(const String & path) const;
 
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
+    /// Converts revision to binary string with leading zeroes (64 bit).
     static String revisionToString(UInt64 revision);
 
     bool checkObjectExists(const String & source_bucket, const String & prefix);
@@ -202,7 +203,7 @@ private:
     int list_object_keys_size;
 
     /// Key has format: ../../r{revision}-{operation}
-    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
+    const re2::RE2 key_regexp {".*/r(\\w+)-(\\w+).*"};
 
     /// Object contains information about schema version.
     inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";
