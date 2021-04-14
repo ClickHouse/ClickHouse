@@ -7,6 +7,24 @@ import time
 
 @TestScenario
 @Requirements(
+    RQ_SRS_016_Kerberos_Ping("1.0")
+)
+def ping(self):
+    """Containers should be reachable
+    """
+    ch_nodes = self.context.ch_nodes
+
+    for i in range(3):
+        with When(f"curl ch_{i} kerberos"):
+            r = ch_nodes[i].command(f"curl docker-compose_kerberos_1 -c 1")
+        with Then(f"return code should be 0"):
+            assert r.exitcode == 7, error()
+
+
+
+
+@TestScenario
+@Requirements(
     RQ_SRS_016_Kerberos_ValidUser_XMLConfiguredUser("1.0")
 )
 def xml_configured_user(self):
@@ -81,6 +99,7 @@ def invalid_server_ticket(self):
         self.context.krb_server.start()
         ch_nodes[2].cmd("kdestroy")
         while True:
+            time.sleep(1)
             kinit_no_keytab(node=ch_nodes[2])
             if ch_nodes[2].cmd(test_select_query(node=ch_nodes[0])).output == "kerberos_user":
                 break
@@ -122,6 +141,7 @@ def invalid_client_ticket(self):
         self.context.krb_server.start()
         ch_nodes[2].cmd("kdestroy")
         while True:
+            time.sleep(1)
             kinit_no_keytab(node=ch_nodes[2])
             if ch_nodes[2].cmd(test_select_query(node=ch_nodes[0])).output == "kerberos_user":
                 break
