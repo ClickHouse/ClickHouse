@@ -52,6 +52,9 @@ template <typename Value, bool float_return> using FuncQuantilesTDigest = Aggreg
 template <typename Value, bool float_return> using FuncQuantileTDigestWeighted = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantileTDigestWeighted, true, std::conditional_t<float_return, Float32, void>, false>;
 template <typename Value, bool float_return> using FuncQuantilesTDigestWeighted = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantilesTDigestWeighted, true, std::conditional_t<float_return, Float32, void>, true>;
 
+template <typename Value, bool float_return> using FuncQuantileBfloat16 = AggregateFunctionQuantile<Value, QuantileBfloat16Histogram<Value>, NameQuantileBfloat16, false, std::conditional_t<float_return, Float64, void>, false>;
+template <typename Value, bool float_return> using FuncQuantilesBfloat16 = AggregateFunctionQuantile<Value, QuantileBfloat16Histogram<Value>, NameQuantilesBfloat16, false, std::conditional_t<float_return, Float64, void>, true>;
+
 
 template <template <typename, bool> class Function>
 static constexpr bool supportDecimal()
@@ -155,6 +158,9 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     factory.registerFunction(NameQuantileTDigestWeighted::name, createAggregateFunctionQuantile<FuncQuantileTDigestWeighted>);
     factory.registerFunction(NameQuantilesTDigestWeighted::name, createAggregateFunctionQuantile<FuncQuantilesTDigestWeighted>);
 
+    factory.registerFunction(NameQuantileBfloat16::name, createAggregateFunctionQuantile<FuncQuantileBfloat16>);
+    factory.registerFunction(NameQuantilesBfloat16::name, createAggregateFunctionQuantile<FuncQuantilesBfloat16>);
+
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("median", NameQuantile::name);
     factory.registerAlias("medianDeterministic", NameQuantileDeterministic::name);
@@ -166,6 +172,7 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
     factory.registerAlias("medianTimingWeighted", NameQuantileTimingWeighted::name);
     factory.registerAlias("medianTDigest", NameQuantileTDigest::name);
     factory.registerAlias("medianTDigestWeighted", NameQuantileTDigestWeighted::name);
+    factory.registerAlias("medianBfloat16", NameQuantileBfloat16::name);
 }
 
 }
