@@ -24,8 +24,8 @@ std::string generateRandomString(size_t length)
         "abcdefghijklmnopqrstuvwxyz"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-    thread_local static pcg64 rng(randomSeed());
-    thread_local static std::uniform_int_distribution<size_t> pick(0, sizeof(chars) - 2);
+    static pcg64 rng(randomSeed());
+    static std::uniform_int_distribution<size_t> pick(0, sizeof(chars) - 2);
 
     std::string s;
 
