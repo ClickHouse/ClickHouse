@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstddef>
 
 template <typename A, typename B, typename ResultType>
