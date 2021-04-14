@@ -452,7 +452,8 @@ StorageDistributed::StorageDistributed(
     const DistributedSettings & distributed_settings_,
     bool attach,
     ClusterPtr owned_cluster_)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, distributed_settings_, attach, std::move(owned_cluster_))
+    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_,
+    storage_policy_name_, relative_data_path_, distributed_settings_, attach, std::move(owned_cluster_))
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
@@ -473,20 +474,15 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         ClusterPtr optimized_cluster = getOptimizedCluster(local_context, metadata_snapshot, query_info.query);
         if (optimized_cluster)
         {
-            LOG_DEBUG(
-                log,
-                "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
-                makeFormattedListOfShards(optimized_cluster));
+            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
+                    makeFormattedListOfShards(optimized_cluster));
             cluster = optimized_cluster;
             query_info.optimized_cluster = cluster;
         }
         else
         {
-            LOG_DEBUG(
-                log,
-                "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the "
-                "cluster{}",
-                has_sharding_key ? "" : " (no sharding key)");
+            LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
+                    has_sharding_key ? "" : " (no sharding key)");
         }
     }
 
