@@ -229,3 +229,4 @@
 01791_dist_INSERT_block_structure_mismatch
 01801_distinct_group_by_shard
 01804_dictionary_decimal256_type
+01801_s3_distributed
