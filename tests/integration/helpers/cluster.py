@@ -67,6 +67,26 @@ def get_open_port():
     s.close()
     return port
 
+def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
+    """
+    Retry if `func()` throws, `num` times.
+
+    :param func: func to run
+    :param num: number of retries
+
+    :throws StopIteration
+    """
+    i = 0
+    while i <= num:
+        try:
+            func(*args, **kwargs)
+            time.sleep(delay)
+        except exception: # pylint: disable=broad-except
+            i += 1
+            continue
+        return
+    raise StopIteration('Function did not finished successfully')
+
 def subprocess_check_call(args):
     # Uncomment for debugging
     logging.info('run:' + ' '.join(args))
@@ -198,9 +218,10 @@ class ClickHouseCluster:
         self.minio_dir = os.path.join(self.instances_dir, "minio")
         self.minio_certs_dir = None # source for certificates 
         self.minio_host = "minio1"
+        self.minio_ip = None
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
-        self.minio_port = get_open_port()
+        self.minio_port = 9001
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
         self.minio_redirect_port = 8080
@@ -470,8 +491,7 @@ class ClickHouseCluster:
         self.with_minio = True        
         cert_d = p.join(self.minio_dir, "certs")
         env_variables['MINIO_CERTS_DIR'] = cert_d
-        env_variables['MINIO_EXTERNAL_PORT'] = str(self.minio_port)
-        env_variables['MINIO_INTERNAL_PORT'] = "9001"
+        env_variables['MINIO_PORT'] = str(self.minio_port)
         env_variables['SSL_CERT_FILE'] = p.join(self.base_dir, cert_d, 'public.crt')
 
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')])
@@ -921,8 +941,10 @@ class ClickHouseCluster:
                 time.sleep(1)
 
     def wait_minio_to_start(self, timeout=180, secure=False):
+        self.minio_ip = self.get_instance_ip(self.minio_host)
+
         os.environ['SSL_CERT_FILE'] = p.join(self.base_dir, self.minio_dir, 'certs', 'public.crt')
-        minio_client = Minio('localhost:{}'.format(self.minio_port),
+        minio_client = Minio(f'{self.minio_ip}:{self.minio_port}',
                              access_key='minio',
                              secret_key='minio123',
                              secure=secure)
@@ -987,7 +1009,6 @@ class ClickHouseCluster:
         if self.is_up:
             return
 
-
         # Just in case kill unstopped containers from previous launch
         try:
             logging.debug("Trying to kill unstopped containers...")
@@ -1010,6 +1031,10 @@ class ClickHouseCluster:
         #     pass
 
         try:
+            # clickhouse_pull_cmd = self.base_cmd + ['pull']
+            # print(f"Pulling images for {self.base_cmd}")
+            # retry_exception(10, 5, subprocess_check_call, Exception, clickhouse_pull_cmd)
+
             if destroy_dirs and p.exists(self.instances_dir):
                 logging.debug(("Removing instances dir %s", self.instances_dir))
                 shutil.rmtree(self.instances_dir)
@@ -1020,7 +1045,7 @@ class ClickHouseCluster:
 
             self.docker_client = docker.DockerClient(base_url='unix:///var/run/docker.sock', version=self.docker_api_version, timeout=180)
 
-            common_opts = ['up', '-d', '--force-recreate']
+            common_opts = ['up', '-d']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper')
@@ -1152,7 +1177,7 @@ class ClickHouseCluster:
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
             if self.with_cassandra and self.base_cassandra_cmd:
-                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
+                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'])
                 self.wait_cassandra_to_start()
 
             _create_env_file(os.path.join(self.env_file), self.env_variables)

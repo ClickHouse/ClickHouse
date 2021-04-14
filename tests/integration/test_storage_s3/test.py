@@ -132,7 +132,7 @@ def test_put(started_cluster, maybe_auth, positive, compression):
     values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test.csv"
-    put_query = f"""insert into table function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}',
+    put_query = f"""insert into table function s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{filename}',
                     {maybe_auth}'CSV', '{table_format}', {compression}) values {values}"""
 
     try:
@@ -166,13 +166,13 @@ def test_empty_put(started_cluster, auth):
 
     filename = "empty_put_test.csv"
     put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') select * from empty_table".format(
-        started_cluster.minio_host, MINIO_INTERNAL_PORT, bucket, filename, auth, table_format)
+        started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename, auth, table_format)
 
     run_query(instance, put_query)
 
     try:
         run_query(instance, "select count(*) from s3('http://{}:{}/{}/{}', {}'CSV', '{}')".format(
-            started_cluster.minio_host, MINIO_INTERNAL_PORT, bucket, filename, auth, table_format))
+            started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename, auth, table_format))
 
         assert False, "Query should be failed."
     except helpers.client.QueryRuntimeException as e:
@@ -193,7 +193,7 @@ def test_put_csv(started_cluster, maybe_auth, positive):
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
     put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') format CSV".format(
-        started_cluster.minio_host, MINIO_INTERNAL_PORT, bucket, filename, maybe_auth, table_format)
+        started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename, maybe_auth, table_format)
     csv_data = "8,9,16\n11,18,13\n22,14,2\n"
 
     try:
@@ -245,7 +245,7 @@ def test_put_with_zero_redirect(started_cluster):
 
     # Should work without redirect
     query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
-        started_cluster.minio_host, MINIO_INTERNAL_PORT, bucket, filename, table_format, values)
+        started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename, table_format, values)
     run_query(instance, query)
 
     # Should not work with redirect
@@ -274,7 +274,7 @@ def test_put_get_with_globs(started_cluster):
             max_path = max(path, max_path)
             values = "({},{},{})".format(i, j, i + j)
             query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
-                started_cluster.minio_host, MINIO_INTERNAL_PORT, bucket, path, table_format, values)
+                started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, path, table_format, values)
             run_query(instance, query)
 
     query = "select sum(column1), sum(column2), sum(column3), min(_file), max(_path) from s3('http://{}:{}/{}/*_{{a,b,c,d}}/%3f.csv', 'CSV', '{}')".format(
@@ -369,7 +369,7 @@ def test_s3_glob_scheherazade(started_cluster):
             for i in range(start, end):
                 path = "night_{}/tale.csv".format(i)
                 query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
-                    started_cluster.minio_host, MINIO_INTERNAL_PORT, bucket, path, table_format, values)
+                    started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, path, table_format, values)
                 run_query(instance, query)
 
         jobs.append(threading.Thread(target=add_tales, args=(night, min(night + nights_per_job, 1001))))
@@ -491,7 +491,7 @@ def test_storage_s3_get_gzip(started_cluster, extension, method):
     put_s3_file_content(started_cluster, bucket, filename, buf.getvalue())
 
     run_query(instance, f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = S3(
-                                'http://{started_cluster.minio_host}:{MINIO_INTERNAL_PORT}/{bucket}/{filename}',
+                                'http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{filename}',
                                 'CSV',
                                 '{method}')""")
 
@@ -521,7 +521,7 @@ def test_storage_s3_put_uncompressed(started_cluster):
         "'Gregg Mcquistion',11",
     ]
     run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV')".format(
-        name, started_cluster.minio_host, MINIO_INTERNAL_PORT, bucket, filename))
+        name, started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename))
 
     run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
 
@@ -558,7 +558,7 @@ def test_storage_s3_put_gzip(started_cluster, extension, method):
         "'Yolanda Joseph',89"
     ]
     run_query(instance, f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = S3(
-                                'http://{started_cluster.minio_host}:{MINIO_INTERNAL_PORT}/{bucket}/{filename}',
+                                'http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{filename}',
                                 'CSV',
                                 '{method}')""")
 
