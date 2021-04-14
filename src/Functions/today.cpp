@@ -71,7 +71,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<TodayOverloadResolver>(); }
+    static FunctionOverloadResolverImplPtr create(ContextPtr) { return std::make_unique<TodayOverloadResolver>(); }
 
     DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
 

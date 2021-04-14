@@ -31,7 +31,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     const Block & sample_block_)
     : dict_struct{dict_struct_}
     , sample_block(sample_block_)
-    , connection(std::make_shared<PostgreSQLReplicaConnection>(config_, config_prefix))
+    , connection(std::make_shared<postgres::PoolWithFailover>(config_, config_prefix))
     , log(&Poco::Logger::get("PostgreSQLDictionarySource"))
     , db(config_.getString(fmt::format("{}.db", config_prefix), ""))
     , table(config_.getString(fmt::format("{}.table", config_prefix), ""))
@@ -167,7 +167,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & root_config_prefix,
                                  Block & sample_block,
-                                 const Context & /* context */,
+                                 ContextPtr /* context */,
                                  const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr
     {
@@ -180,8 +180,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
         (void)config;
         (void)root_config_prefix;
         (void)sample_block;
-        throw Exception{"Dictionary source of type `postgresql` is disabled because ClickHouse was built without postgresql support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Dictionary source of type `postgresql` is disabled because ClickHouse was built without postgresql support.");
 #endif
     };
     factory.registerSource("postgresql", create_table_source);
