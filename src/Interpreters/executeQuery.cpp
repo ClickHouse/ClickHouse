@@ -383,6 +383,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         ast = parseQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth);
 #endif
 
+        if (auto * ast_explain = typeid_cast<ASTExplainQuery *>(ast.get()))
+        {
+            const auto & client_info = context.getClientInfo();
+            /// Ignore format for old clients to ignore exception. Always return human-readable output.
+            if (client_info.interface == ClientInfo::Interface::TCP &&
+                (client_info.client_version_major < 21 || client_info.client_version_minor < 5))
+                ast_explain->format = nullptr;
+        }
+
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
         if (const auto * select_query = ast->as<ASTSelectQuery>())
