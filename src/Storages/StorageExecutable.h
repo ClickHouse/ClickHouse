@@ -26,10 +26,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
-
-    NamesAndTypesList getVirtuals() const override;
-
 protected:
     StorageExecutable(
         const StorageID & table_id,
