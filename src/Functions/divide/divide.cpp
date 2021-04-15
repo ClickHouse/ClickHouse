@@ -1,7 +1,7 @@
 #include "divide.h"
 #include <Common/CpuId.h>
 
-
+#if defined(__x86_64__) && !defined(ARCADIA_BUILD)
 namespace SSE2
 {
     template <typename A, typename B, typename ResultType>
@@ -13,6 +13,13 @@ namespace AVX2
     template <typename A, typename B, typename ResultType>
     void divideImpl(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size);
 }
+#else
+namespace Generic
+{
+    template <typename A, typename B, typename ResultType>
+    void divideImpl(const A * __restrict a_pos, B b, ResultType * __restrict c_pos, size_t size);
+}
+#endif
 
 
 template <typename A, typename B, typename ResultType>
