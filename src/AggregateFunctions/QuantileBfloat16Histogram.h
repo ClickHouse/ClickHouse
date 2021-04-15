@@ -44,7 +44,7 @@ struct QuantileBfloat16Histogram
 
     Value get(Float64 level)
     {
-        return data.template quantile<Value>(level);
+        return data.quantile(level);
     }
 
     void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
@@ -53,7 +53,7 @@ struct QuantileBfloat16Histogram
     }
 
     Float64 getFloat(Float64 level) {
-        return data.template quantile<Float64>(level);
+        return data.quantile(level);
     }
 
     void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result)
