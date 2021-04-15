@@ -2,6 +2,7 @@
 
 #include "Disks/DiskFactory.h"
 
+#include <bitset>
 #include <random>
 #include <optional>
 #include <utility>
