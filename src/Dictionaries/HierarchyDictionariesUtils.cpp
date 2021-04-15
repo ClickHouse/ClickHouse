@@ -52,7 +52,7 @@ namespace
             const auto * parent_key_column_typed = checkAndGetColumn<ColumnVector<UInt64>>(*parent_key_column);
             if (!parent_key_column_typed)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "Parent key column should be UInt64. Actual ({})",
+                    "Parent key column should be UInt64. Actual {}",
                     hierarchical_attribute.type->getName());
 
             const auto & parent_keys = parent_key_column_typed->getData();

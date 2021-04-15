@@ -10,7 +10,6 @@
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
-#include "LibraryDictionarySourceExternal.h"
 #include "registerDictionaries.h"
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -32,7 +31,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix_,
     Block & sample_block_,
-    const Context & context_,
+    ContextPtr context_,
     bool check_config)
     : log(&Poco::Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
@@ -40,12 +39,12 @@ LibraryDictionarySource::LibraryDictionarySource(
     , path{config.getString(config_prefix + ".path", "")}
     , dictionary_id(getDictID())
     , sample_block{sample_block_}
-    , context(context_)
+    , context(Context::createCopy(context_))
 {
 
     if (check_config)
     {
-        const String dictionaries_lib_path = context.getDictionariesLibPath();
+        const String dictionaries_lib_path = context->getDictionariesLibPath();
         if (!startsWith(path, dictionaries_lib_path))
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "LibraryDictionarySource: Library path {} is not inside {}", path, dictionaries_lib_path);
     }
@@ -178,7 +177,7 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool check_config) -> DictionarySourcePtr
     {

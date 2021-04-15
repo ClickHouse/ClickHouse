@@ -36,7 +36,7 @@ class FunctionSubstring : public IFunction
 {
 public:
     static constexpr auto name = is_utf8 ? "substringUTF8" : "substring";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionSubstring>();
     }

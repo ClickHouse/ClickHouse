@@ -173,7 +173,7 @@ class FunctionRepeat : public IFunction
 
 public:
     static constexpr auto name = "repeat";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRepeat>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRepeat>(); }
 
     String getName() const override { return name; }
 
