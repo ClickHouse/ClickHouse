@@ -6,6 +6,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True,
@@ -269,7 +270,7 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
     node1.exec_in_container(["bash", "-c", "chmod a+rw /tmp"], privileged=True, user='root')
     node1.exec_in_container(["bash", "-c", "chmod a+rw {}".format(sqlite_db)], privileged=True, user='root')
 
-    node1.query("insert into table function odbc('DSN={};', '', 't3') values (200, 2, 7)".format(
+    node1.query("insert into table function odbc('DSN={};ReadOnly=0', '', 't3') values (200, 2, 7)".format(
         node1.odbc_drivers["SQLite3"]["DSN"]))
 
     assert node1.query("select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(200))") == "7\n"  # new value
@@ -381,5 +382,126 @@ def test_odbc_postgres_date_data_type(started_cluster):
     expected = '1\t2020-12-01\n2\t2020-12-02\n3\t2020-12-03\n'
     result = node1.query('SELECT * FROM test_date');
     assert(result == expected)
+    cursor.execute("DROP TABLE IF EXISTS clickhouse.test_date")
+    node1.query("DROP TABLE IF EXISTS test_date")
 
 
+def test_odbc_postgres_conversions(started_cluster):
+    conn = get_postgres_conn()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        '''CREATE TABLE IF NOT EXISTS clickhouse.test_types (
+        a smallint, b integer, c bigint, d real, e double precision, f serial, g bigserial,
+        h timestamp)''')
+
+    node1.query('''
+        INSERT INTO TABLE FUNCTION
+        odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_types')
+        VALUES (-32768, -2147483648, -9223372036854775808, 1.12345, 1.1234567890, 2147483647, 9223372036854775807, '2000-05-12 12:12:12')''')
+
+    result = node1.query('''
+        SELECT a, b, c, d, e, f, g, h
+        FROM odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_types')
+        ''')
+
+    assert(result == '-32768\t-2147483648\t-9223372036854775808\t1.12345\t1.123456789\t2147483647\t9223372036854775807\t2000-05-12 12:12:12\n')
+    cursor.execute("DROP TABLE IF EXISTS clickhouse.test_types")
+
+    cursor.execute("""CREATE TABLE IF NOT EXISTS clickhouse.test_types (column1 Timestamp, column2 Numeric)""")
+
+    node1.query(
+        '''
+        CREATE TABLE test_types (column1 DateTime64, column2 Decimal(5, 1))
+        ENGINE=ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_types')''')
+
+    node1.query(
+        """INSERT INTO test_types
+        SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow'), toDecimal32(1.1, 1)""")
+
+    expected = node1.query("SELECT toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow'), toDecimal32(1.1, 1)")
+    result = node1.query("SELECT * FROM test_types")
+    print(result)
+    cursor.execute("DROP TABLE IF EXISTS clickhouse.test_types")
+    assert(result == expected)
+
+
+def test_odbc_cyrillic_with_varchar(started_cluster):
+    conn = get_postgres_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("DROP TABLE IF EXISTS clickhouse.test_cyrillic")
+    cursor.execute("CREATE TABLE clickhouse.test_cyrillic (name varchar(11))")
+
+    node1.query('''
+        CREATE TABLE test_cyrillic (name String)
+        ENGINE = ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_cyrillic')''')
+
+    cursor.execute("INSERT INTO clickhouse.test_cyrillic VALUES ('A-nice-word')")
+    cursor.execute("INSERT INTO clickhouse.test_cyrillic VALUES ('Красивенько')")
+
+    result = node1.query(''' SELECT * FROM test_cyrillic ORDER BY name''')
+    assert(result == 'A-nice-word\nКрасивенько\n')
+    result = node1.query(''' SELECT name FROM odbc('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_cyrillic') ''')
+    assert(result == 'A-nice-word\nКрасивенько\n')
+
+
+def test_many_connections(started_cluster):
+    conn = get_postgres_conn()
+    cursor = conn.cursor()
+
+    cursor.execute('DROP TABLE IF EXISTS clickhouse.test_pg_table')
+    cursor.execute('CREATE TABLE clickhouse.test_pg_table (key integer, value integer)')
+
+    node1.query('''
+        DROP TABLE IF EXISTS test_pg_table;
+        CREATE TABLE test_pg_table (key UInt32, value UInt32)
+        ENGINE = ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_pg_table')''')
+
+    node1.query("INSERT INTO test_pg_table SELECT number, number FROM numbers(10)")
+
+    query = "SELECT count() FROM ("
+    for i in range (24):
+        query += "SELECT key FROM {t} UNION ALL "
+    query += "SELECT key FROM {t})"
+
+    assert node1.query(query.format(t='test_pg_table')) == '250\n'
+
+
+def test_concurrent_queries(started_cluster):
+    conn = get_postgres_conn()
+    cursor = conn.cursor()
+
+    node1.query('''
+        DROP TABLE IF EXISTS test_pg_table;
+        CREATE TABLE test_pg_table (key UInt32, value UInt32)
+        ENGINE = ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_pg_table')''')
+
+    cursor.execute('DROP TABLE IF EXISTS clickhouse.test_pg_table')
+    cursor.execute('CREATE TABLE clickhouse.test_pg_table (key integer, value integer)')
+
+    def node_insert(_):
+        for i in range(5):
+            node1.query("INSERT INTO test_pg_table SELECT number, number FROM numbers(1000)", user='default')
+
+    busy_pool = Pool(5)
+    p = busy_pool.map_async(node_insert, range(5))
+    p.wait()
+    result = node1.query("SELECT count() FROM test_pg_table", user='default')
+    print(result)
+    assert(int(result) == 5 * 5 * 1000)
+
+    def node_insert_select(_):
+        for i in range(5):
+            result = node1.query("INSERT INTO test_pg_table SELECT number, number FROM numbers(1000)", user='default')
+            result = node1.query("SELECT * FROM test_pg_table LIMIT 100", user='default')
+
+    busy_pool = Pool(5)
+    p = busy_pool.map_async(node_insert_select, range(5))
+    p.wait()
+    result = node1.query("SELECT count() FROM test_pg_table", user='default')
+    print(result)
+    assert(int(result) == 5 * 5 * 1000  * 2)
+
+    node1.query('DROP TABLE test_pg_table;')
+    cursor.execute('DROP TABLE clickhouse.test_pg_table;')

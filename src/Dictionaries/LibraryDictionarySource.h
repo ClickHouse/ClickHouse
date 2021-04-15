@@ -7,6 +7,7 @@
 #include "DictionaryStructure.h"
 #include <Core/ExternalResultDescription.h>
 #include "IDictionarySource.h"
+#include <Interpreters/Context_fwd.h>
 
 
 namespace Poco
@@ -38,7 +39,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix_,
         Block & sample_block_,
-        const Context & context_,
+        ContextPtr context_,
         bool check_config);
 
     LibraryDictionarySource(const LibraryDictionarySource & other);
@@ -50,7 +51,7 @@ public:
 
     BlockInputStreamPtr loadUpdatedAll() override
     {
-        throw Exception{"Method loadUpdatedAll is unsupported for LibraryDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for LibraryDictionarySource");
     }
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
@@ -85,7 +86,7 @@ private:
     const Field dictionary_id;
 
     Block sample_block;
-    Context context;
+    ContextPtr context;
 
     LibraryBridgeHelperPtr bridge_helper;
     ExternalResultDescription description;

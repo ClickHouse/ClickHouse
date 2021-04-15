@@ -27,7 +27,7 @@ DirectDictionary<dictionary_key_type>::DirectDictionary(
     , source_ptr{std::move(source_ptr_)}
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception{full_name + ": source cannot be used with DirectDictionary", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", full_name);
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -290,20 +290,20 @@ namespace
         {
             if (dict_struct.key)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "'key' is not supported for dictionary of layout '({})'",
+                    "'key' is not supported for dictionary of layout '{}'",
                     layout_name);
         }
         else
         {
             if (dict_struct.id)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "'id' is not supported for dictionary of layout '({})'",
+                    "'id' is not supported for dictionary of layout '{}'",
                     layout_name);
         }
 
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "({}): elements .structure.range_min and .structure.range_max should be defined only " \
+                "{}: elements .structure.range_min and .structure.range_max should be defined only "
                 "for a dictionary of layout 'range_hashed'",
                 full_name);
 
@@ -311,7 +311,7 @@ namespace
 
         if (config.has(config_prefix + ".lifetime.min") || config.has(config_prefix + ".lifetime.max"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'lifetime' parameter is redundant for the dictionary' of layout '({})'",
+                "'lifetime' parameter is redundant for the dictionary' of layout '{}'",
                 layout_name);
 
         return std::make_unique<DirectDictionary<dictionary_key_type>>(dict_id, dict_struct, std::move(source_ptr));

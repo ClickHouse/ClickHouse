@@ -18,7 +18,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & /* context */,
+                                 ContextPtr /* context */,
                                  const std::string & /* default_database */,
                                  bool /* check_config */) -> DictionarySourcePtr {
 #if USE_MYSQL
@@ -28,8 +28,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         (void)config;
         (void)config_prefix;
         (void)sample_block;
-        throw Exception{"Dictionary source of type `mysql` is disabled because ClickHouse was built without mysql support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Dictionary source of type `mysql` is disabled because ClickHouse was built without mysql support.");
 #endif
     };
     factory.registerSource("mysql", create_table_source);
