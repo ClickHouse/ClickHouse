@@ -31,6 +31,10 @@ public:
     {
         return virtuals;
     }
+
+    /// support sub columns for materialize views
+    bool supportsSubcolumns() const override { return true; }
+
 private:
     Block res_block;
     NamesAndTypesList virtuals;

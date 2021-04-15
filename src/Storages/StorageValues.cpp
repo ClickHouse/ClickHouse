@@ -29,14 +29,22 @@ Pipe StorageValues::read(
     size_t /*max_block_size*/,
     unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    auto block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
+    auto column_names_and_types = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
 
-    /// Get only required columns.
-    Block block;
-    for (const auto & name : column_names)
-        block.insert(res_block.getByName(name));
+    Columns columns;
+    for (const auto & elem : column_names_and_types)
+    {
+        auto current_column = res_block.getByName(elem.getNameInStorage()).column;
+        current_column = current_column->decompress();
 
-    Chunk chunk(block.getColumns(), block.rows());
+        if (elem.isSubcolumn())
+            columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+        else
+            columns.emplace_back(std::move(current_column));
+    }
+
+    Chunk chunk(std::move(columns), res_block.rows());
     return Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));
 }
 
