@@ -80,7 +80,7 @@ OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT materialized_value;
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
 ```
 
-Дедупликация по любому столбцу, соответствующему регулярному выражению: столбцы `primary_key`, `secondary_key` и `partition_key`.
+Дедупликация по любому столбцу, соответствующему регулярному выражению: столбцам `primary_key`, `secondary_key` и `partition_key`.
 
 ``` sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
