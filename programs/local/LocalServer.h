@@ -7,7 +7,7 @@
 #include <optional>
 #include <loggers/Loggers.h>
 #include <Interpreters/Context.h>
-
+#include <Client/ProgressBar.h>
 
 namespace DB
 {
@@ -51,15 +51,9 @@ protected:
 
     /// Settings specified via command line args
     Settings cmd_settings;
-
-    /// The server periodically sends information about how much data was read since last time.
-    bool need_render_progress = true;    /// Render query execution progress.
+    ProgressBar progress_bar;
     Progress progress;
-    bool show_progress_bar = false;
     Stopwatch watch;
-
-    size_t written_progress_chars = 0;
-    bool written_first_block = false;
 
     std::optional<std::filesystem::path> temporary_directory_to_delete;
 };
