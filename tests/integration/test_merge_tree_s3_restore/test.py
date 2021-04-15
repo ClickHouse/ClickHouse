@@ -10,17 +10,17 @@ from helpers.cluster import ClickHouseCluster
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
-
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/node_not_restorable/configs/config.d/storage_conf_not_restorable.xml')
+NOT_RESTORABLE_CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/node_not_restorable/configs/config.d/storage_conf_not_restorable.xml')
+COMMON_CONFIGS = ["configs/config.d/bg_processing_pool_conf.xml", "configs/config.d/log_conf.xml", "configs/config.d/clusters.xml"]
 
 
 def replace_config(old, new):
-    config = open(CONFIG_PATH, 'r')
+    config = open(NOT_RESTORABLE_CONFIG_PATH, 'r')
     config_lines = config.readlines()
     config.close()
     config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(CONFIG_PATH, 'w')
+    config = open(NOT_RESTORABLE_CONFIG_PATH, 'w')
     config.writelines(config_lines)
     config.close()
 
@@ -29,22 +29,22 @@ def replace_config(old, new):
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", main_configs=[
-            "configs/config.d/storage_conf.xml",
-            "configs/config.d/bg_processing_pool_conf.xml",
-            "configs/config.d/log_conf.xml"], user_configs=[], with_minio=True, stay_alive=True)
-        cluster.add_instance("node_another_bucket", main_configs=[
-            "configs/config.d/storage_conf_another_bucket.xml",
-            "configs/config.d/bg_processing_pool_conf.xml",
-            "configs/config.d/log_conf.xml"], user_configs=[], stay_alive=True)
-        cluster.add_instance("node_another_bucket_path", main_configs=[
-            "configs/config.d/storage_conf_another_bucket_path.xml",
-            "configs/config.d/bg_processing_pool_conf.xml",
-            "configs/config.d/log_conf.xml"], user_configs=[], stay_alive=True)
-        cluster.add_instance("node_not_restorable", main_configs=[
-            "configs/config.d/storage_conf_not_restorable.xml",
-            "configs/config.d/bg_processing_pool_conf.xml",
-            "configs/config.d/log_conf.xml"], user_configs=[], stay_alive=True)
+
+        cluster.add_instance("node",
+                             main_configs=COMMON_CONFIGS + ["configs/config.d/storage_conf.xml"],
+                             macros={"cluster": "node", "replica": "0"},
+                             with_minio=True, with_zookeeper=True, stay_alive=True)
+        cluster.add_instance("node_another_bucket",
+                             main_configs=COMMON_CONFIGS + ["configs/config.d/storage_conf_another_bucket.xml"],
+                             macros={"cluster": "node_another_bucket", "replica": "0"},
+                             with_zookeeper=True, stay_alive=True)
+        cluster.add_instance("node_another_bucket_path",
+                             main_configs=COMMON_CONFIGS + ["configs/config.d/storage_conf_another_bucket_path.xml"],
+                             stay_alive=True)
+        cluster.add_instance("node_not_restorable",
+                             main_configs=COMMON_CONFIGS + ["configs/config.d/storage_conf_not_restorable.xml"],
+                             stay_alive=True)
+
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -65,28 +65,26 @@ def generate_values(date_str, count, sign=1):
     return ",".join(["('{}',{},'{}',{})".format(x, y, z, 0) for x, y, z in data])
 
 
-def create_table(node, table_name, additional_settings=None):
+def create_table(node, table_name, replicated=False):
     node.query("CREATE DATABASE IF NOT EXISTS s3 ENGINE = Ordinary")
 
     create_table_statement = """
-        CREATE TABLE s3.{} (
+        CREATE TABLE s3.{table_name} {on_cluster} (
             dt Date,
             id Int64,
             data String,
             counter Int64,
             INDEX min_max (id) TYPE minmax GRANULARITY 3
-        ) ENGINE=MergeTree()
+        ) ENGINE={engine}
         PARTITION BY dt
         ORDER BY (dt, id)
         SETTINGS
             storage_policy='s3',
             old_parts_lifetime=600,
             index_granularity=512
-        """.format(table_name)
-
-    if additional_settings:
-        create_table_statement += ","
-        create_table_statement += additional_settings
+        """.format(table_name=table_name,
+                   on_cluster="ON CLUSTER '{}'".format(node.name) if replicated else "",
+                   engine="ReplicatedMergeTree('/clickhouse/tables/{cluster}/test', '{replica}')" if replicated else "MergeTree()")
 
     node.query(create_table_statement)
 
@@ -119,7 +117,8 @@ def create_restore_file(node, revision=0, bucket=None, path=None, detached=None)
 
 
 def get_revision_counter(node, backup_number):
-    return int(node.exec_in_container(['bash', '-c', 'cat /var/lib/clickhouse/disks/s3/shadow/{}/revision.txt'.format(backup_number)], user='root'))
+    return int(node.exec_in_container(
+        ['bash', '-c', 'cat /var/lib/clickhouse/disks/s3/shadow/{}/revision.txt'.format(backup_number)], user='root'))
 
 
 @pytest.fixture(autouse=True)
@@ -130,7 +129,8 @@ def drop_table(cluster):
 
     for node_name in node_names:
         node = cluster.instances[node_name]
-        node.query("DROP TABLE IF EXISTS s3.test NO DELAY")
+        node.query("DROP TABLE IF EXISTS s3.test SYNC")
+        node.query("DROP DATABASE IF EXISTS s3 SYNC")
 
         drop_s3_metadata(node)
         drop_shadow_information(node)
@@ -140,30 +140,21 @@ def drop_table(cluster):
         purge_s3(cluster, bucket)
 
 
-def test_full_restore(cluster):
+@pytest.mark.parametrize(
+   "replicated", [False, True]
+)
+def test_full_restore(cluster, replicated):
     node = cluster.instances["node"]
 
-    create_table(node, "test")
+    create_table(node, "test", replicated)
 
     node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-03', 4096)))
     node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-04', 4096, -1)))
     node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-05', 4096)))
     node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-05', 4096, -1)))
 
-    # To ensure parts have merged
-    node.query("OPTIMIZE TABLE s3.test")
-
-    assert node.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 4)
-    assert node.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
-
     node.stop_clickhouse()
     drop_s3_metadata(node)
-    node.start_clickhouse()
-
-    # All data is removed.
-    assert node.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(0)
-
-    node.stop_clickhouse()
     create_restore_file(node)
     node.start_clickhouse(10)
 
@@ -348,7 +339,7 @@ def test_migrate_to_restorable_schema(cluster):
 
     replace_config("<send_metadata>false</send_metadata>", "<send_metadata>true</send_metadata>")
 
-    node.restart_clickhouse()
+    node.restart_clickhouse(10)
 
     node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-06', 4096)))
     node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-06', 4096, -1)))
@@ -373,16 +364,19 @@ def test_migrate_to_restorable_schema(cluster):
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
 
 
-def test_restore_to_detached(cluster):
+@pytest.mark.parametrize(
+    "replicated", [False, True]
+)
+def test_restore_to_detached(cluster, replicated):
     node = cluster.instances["node"]
 
-    create_table(node, "test")
+    create_table(node, "test", replicated)
 
     node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-03', 4096)))
     node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-04', 4096, -1)))
     node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-05', 4096)))
     node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-06', 4096, -1)))
-    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-07', 4096)))
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-07', 4096, 0)))
 
     # Add some mutation.
     node.query("ALTER TABLE s3.test UPDATE counter = 1 WHERE 1", settings={"mutations_sync": 2})
@@ -395,7 +389,7 @@ def test_restore_to_detached(cluster):
 
     node_another_bucket = cluster.instances["node_another_bucket"]
 
-    create_table(node_another_bucket, "test")
+    create_table(node_another_bucket, "test", replicated)
 
     node_another_bucket.stop_clickhouse()
     create_restore_file(node_another_bucket, revision=revision, bucket="root", path="data", detached=True)
@@ -411,3 +405,10 @@ def test_restore_to_detached(cluster):
     assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 4)
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
     assert node_another_bucket.query("SELECT sum(counter) FROM s3.test FORMAT Values") == "({})".format(4096 * 4)
+
+    # Attach partition that was already detached before backup-restore.
+    node_another_bucket.query("ALTER TABLE s3.test ATTACH PARTITION '2020-01-07'")
+
+    assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 5)
+    assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
+    assert node_another_bucket.query("SELECT sum(counter) FROM s3.test FORMAT Values") == "({})".format(4096 * 5)
