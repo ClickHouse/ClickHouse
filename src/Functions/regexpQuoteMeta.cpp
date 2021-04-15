@@ -21,7 +21,7 @@ class FunctionRegexpQuoteMeta : public IFunction
 public:
     static constexpr auto name = "regexpQuoteMeta";
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionRegexpQuoteMeta>();
     }

@@ -229,6 +229,8 @@ SRCS(
     defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
+    divide/divide.cpp
+    divide/divideImpl.cpp
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
