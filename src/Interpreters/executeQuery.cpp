@@ -510,7 +510,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
-        if (insert_query)
+        if (insert_query && insert_query->table_id)
             /// Resolve database before trying to use async insert feature - to properly hash the query.
             insert_query->table_id = context->resolveStorageID(insert_query->table_id);
 
