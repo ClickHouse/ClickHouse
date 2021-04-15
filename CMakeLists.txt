@@ -68,17 +68,30 @@ endif ()
 
 include (cmake/find/ccache.cmake)
 
-option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling" OFF)
+# Take care to add prlimit in command line before ccache, or else ccache thinks that
+# prlimit is compiler, and clang++ is its input file, and refuses to work  with
+# multiple inputs, e.g in ccache log:
+# [2021-03-31T18:06:32.655327 36900] Command line: /usr/bin/ccache prlimit --as=10000000000 --data=5000000000 --cpu=600 /usr/bin/clang++-11 - ...... std=gnu++2a -MD -MT src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -MF src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o.d -o src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -c ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
+#
+# [2021-03-31T18:06:32.656704 36900] Multiple input files: /usr/bin/clang++-11 and ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
+#
+# Another way would be to use --ccache-skip option before clang++-11 to make
+# ccache ignore it.
+option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling." OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
     # set DATA (since RSS does not work since 2.6.x+) to 2G
     set (RLIMIT_DATA 5000000000)
     # set VIRT (RLIMIT_AS) to 10G (DATA*10)
     set (RLIMIT_AS 10000000000)
+    # set CPU time limit to 600 seconds
+    set (RLIMIT_CPU 600)
+
     # gcc10/gcc10/clang -fsanitize=memory is too heavy
     if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
        set (RLIMIT_DATA 10000000000)
     endif()
-    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=600)
+
+    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
@@ -277,6 +290,12 @@ if (COMPILER_GCC OR COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 endif ()
 
+# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+# benchmarks.
+if (COMPILER_GCC OR COMPILER_CLANG)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+endif ()
+
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
 option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 
@@ -464,6 +483,7 @@ find_contrib_lib(double-conversion) # Must be before parquet
 include (cmake/find/ssl.cmake)
 include (cmake/find/ldap.cmake) # after ssl
 include (cmake/find/icu.cmake)
+include (cmake/find/xz.cmake)
 include (cmake/find/zlib.cmake)
 include (cmake/find/zstd.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
@@ -498,6 +518,7 @@ include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
+include (cmake/find/nanodbc.cmake)
 include (cmake/find/nuraft.cmake)
 
 

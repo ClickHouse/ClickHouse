@@ -53,7 +53,7 @@ class FunctionFuzzBits : public IFunction
 public:
     static constexpr auto name = "fuzzBits";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFuzzBits>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFuzzBits>(); }
 
     String getName() const override { return name; }
 

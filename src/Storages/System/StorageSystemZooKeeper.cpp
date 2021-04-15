@@ -63,7 +63,7 @@ static String pathCorrected(const String & path)
 }
 
 
-static bool extractPathImpl(const IAST & elem, Paths & res, const Context & context)
+static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context)
 {
     const auto * function = elem.as<ASTFunction>();
     if (!function)
@@ -94,8 +94,8 @@ static bool extractPathImpl(const IAST & elem, Paths & res, const Context & cont
         {
             auto interpreter_subquery = interpretSubquery(value, context, {}, {});
             auto stream = interpreter_subquery->execute().getInputStream();
-            SizeLimits limites(context.getSettingsRef().max_rows_in_set, context.getSettingsRef().max_bytes_in_set, OverflowMode::THROW);
-            Set set(limites, true, context.getSettingsRef().transform_null_in);
+            SizeLimits limites(context->getSettingsRef().max_rows_in_set, context->getSettingsRef().max_bytes_in_set, OverflowMode::THROW);
+            Set set(limites, true, context->getSettingsRef().transform_null_in);
             set.setHeader(stream->getHeader());
 
             stream->readPrefix();
@@ -165,7 +165,7 @@ static bool extractPathImpl(const IAST & elem, Paths & res, const Context & cont
 
 /** Retrieve from the query a condition of the form `path = 'path'`, from conjunctions in the WHERE clause.
   */
-static Paths extractPath(const ASTPtr & query, const Context & context)
+static Paths extractPath(const ASTPtr & query, ContextPtr context)
 {
     const auto & select = query->as<ASTSelectQuery &>();
     if (!select.where())
@@ -176,13 +176,13 @@ static Paths extractPath(const ASTPtr & query, const Context & context)
 }
 
 
-void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
+void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
     const Paths & paths = extractPath(query_info.query, context);
     if (paths.empty())
         throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' or path IN ('path1','path2'...) or path IN (subquery) in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
 
-    zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = context->getZooKeeper();
 
     std::unordered_set<String> paths_corrected;
     for (const auto & path : paths)

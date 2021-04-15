@@ -1,4 +1,5 @@
 #include <Interpreters/ExpressionActionsSettings.h>
+
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -16,9 +17,9 @@ ExpressionActionsSettings ExpressionActionsSettings::fromSettings(const Settings
     return settings;
 }
 
-ExpressionActionsSettings ExpressionActionsSettings::fromContext(const Context & from)
+ExpressionActionsSettings ExpressionActionsSettings::fromContext(ContextPtr from)
 {
-    return fromSettings(from.getSettingsRef());
+    return fromSettings(from->getSettingsRef());
 }
 
 }

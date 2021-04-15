@@ -257,10 +257,9 @@ WindowTransform::WindowTransform(const Block & input_header_,
         const IColumn * column = entry.column.get();
         APPLY_FOR_TYPES(compareValuesWithOffset)
 
-        // Check that the offset type matches the window type.
         // Convert the offsets to the ORDER BY column type. We can't just check
-        // that it matches, because e.g. the int literals are always (U)Int64,
-        // but the column might be Int8 and so on.
+        // that the type matches, because e.g. the int literals are always
+        // (U)Int64, but the column might be Int8 and so on.
         if (window_description.frame.begin_type
             == WindowFrame::BoundaryType::Offset)
         {
@@ -435,6 +434,9 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) con
             assertValid(x);
             assert(offset <= 0);
 
+            // abs(offset) is less than INT_MAX, as checked in the parser, so
+            // this negation should always work.
+            assert(offset >= -INT_MAX);
             if (x.row >= static_cast<uint64_t>(-offset))
             {
                 x.row -= -offset;
@@ -1375,6 +1377,8 @@ struct WindowFunctionRank final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1395,6 +1399,8 @@ struct WindowFunctionDenseRank final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1414,6 +1420,8 @@ struct WindowFunctionRowNumber final : public WindowFunction
 
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
@@ -1481,6 +1489,8 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return argument_types[0]; }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1499,6 +1509,12 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The offset for function {} must be nonnegative, {} given",
                     getName(), offset);
+            }
+            if (offset > INT_MAX)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The offset for function {} must be less than {}, {} given",
+                    getName(), INT_MAX, offset);
             }
         }
 
