@@ -258,8 +258,8 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
         }
 
-        if (parts.size() == 1) node = std::make_shared<ASTTableIdentifier>(parts[0]);
-        else node = std::make_shared<ASTTableIdentifier>(parts[0], parts[1]);
+        if (parts.size() == 1) node = std::make_shared<ASTTableIdentifier>(parts[0], std::move(params));
+        else node = std::make_shared<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
     }
     else

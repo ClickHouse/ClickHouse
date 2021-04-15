@@ -18,7 +18,7 @@ namespace ErrorCodes
 ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
     : full_name(short_name), name_parts{short_name}, semantic(std::make_shared<IdentifierSemanticImpl>())
 {
-    if (name_param == nullptr)
+    if (!name_param)
         assert(!full_name.empty());
     else
         children.push_back(std::move(name_param));
@@ -157,21 +157,22 @@ void ASTIdentifier::resetFullName()
         full_name += '.' + name_parts[i];
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const String & table_name) : ASTIdentifier({table_name}, true)
+ASTTableIdentifier::ASTTableIdentifier(const String & table_name, std::vector<ASTPtr> && name_params)
+    : ASTIdentifier({table_name}, true, std::move(name_params))
 {
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id)
+ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, std::vector<ASTPtr> && name_params)
     : ASTIdentifier(
         table_id.database_name.empty() ? std::vector<String>{table_id.table_name}
                                        : std::vector<String>{table_id.database_name, table_id.table_name},
-        true)
+        true, std::move(name_params))
 {
     uuid = table_id.uuid;
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name)
-    : ASTIdentifier({database_name, table_name}, true)
+ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, std::vector<ASTPtr> && name_params)
+    : ASTIdentifier({database_name, table_name}, true, std::move(name_params))
 {
 }
 

@@ -16,6 +16,9 @@ struct StorageID;
 
 class ASTTableIdentifier;
 
+/// FIXME: rewrite code about params - they should be substituted at the parsing stage,
+///        or parsed as a separate AST entity.
+
 /// Generic identifier. ASTTableIdentifier - for table identifier.
 class ASTIdentifier : public ASTWithAlias
 {
@@ -68,9 +71,9 @@ private:
 class ASTTableIdentifier : public ASTIdentifier
 {
     public:
-        explicit ASTTableIdentifier(const String & table_name);
-        explicit ASTTableIdentifier(const StorageID & table_id);
-        ASTTableIdentifier(const String & database_name, const String & table_name);
+        explicit ASTTableIdentifier(const String & table_name, std::vector<ASTPtr> && name_params = {});
+        explicit ASTTableIdentifier(const StorageID & table_id, std::vector<ASTPtr> && name_params = {});
+        ASTTableIdentifier(const String & database_name, const String & table_name, std::vector<ASTPtr> && name_params = {});
 
         String getID(char delim) const override { return "TableIdentifier" + (delim + name()); }
         ASTPtr clone() const override;
