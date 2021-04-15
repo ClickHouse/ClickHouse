@@ -914,7 +914,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             queue.push(insert_query, std::move(res), settings);
             return std::make_tuple(ast, BlockIO());
         }
-        else if (insert_query)
+        else if (insert_query && res.in)
         {
             auto in = std::static_pointer_cast<InputStreamFromASTInsertQuery>(res.in);
             auto ast_buffer = std::make_unique<ReadBufferFromMemory>(
