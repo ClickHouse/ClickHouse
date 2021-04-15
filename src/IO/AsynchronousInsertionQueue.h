@@ -43,7 +43,7 @@ class AsynchronousInsertQueue
         /// Logic and events behind queue are as follows:
         ///  - reset_timeout:  if queue is empty for some time, then we delete the queue and free all associated resources, e.g. tables.
         ///  - dump_timeout:   if queue is active for too long and there are a lot of rapid inserts, then we dump the data, so it doesn't
-        ///                    grow for a long period of time and users will be able to select new data in determenistic manner.
+        ///                    grow for a long period of time and users will be able to select new data in deterministic manner.
         ///  - stale_timeout:  if queue is stale for too long, then we dump the data too, so that users will be able to select the last
         ///                    piece of inserted data.
         ///  - access_timeout: also we have to check if user still has access to the tables periodically, and if the access is lost, then
