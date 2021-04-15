@@ -204,6 +204,13 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
             if (!stat.name.empty())
                 format_settings.out << prefix << indent << indent << "Name: " << stat.name << '\n';
 
+            if (!stat.used_keys.empty())
+            {
+                format_settings.out << prefix << indent << indent << "Keys: " << stat.name << '\n';
+                for (const auto & used_key : stat.used_keys)
+                    format_settings.out << prefix << indent << indent << indent << used_key << '\n';
+            }
+
             if (!stat.description.empty())
                 format_settings.out << prefix << indent << indent << "Description: " << stat.description << '\n';
 

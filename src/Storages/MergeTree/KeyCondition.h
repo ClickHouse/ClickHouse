@@ -293,6 +293,15 @@ public:
 
     String toString() const;
 
+    /// Condition description for EXPLAIN query.
+    struct Description
+    {
+        std::vector<std::string> used_keys;
+        std::string condition;
+    };
+
+    Description getDescription() const;
+
 
     /** A chain of possibly monotone functions.
       * If the key column is wrapped in functions that can be monotonous in some value ranges
@@ -345,6 +354,7 @@ private:
             : function(function_), range(range_), key_column(key_column_) {}
 
         String toString() const;
+        String toString(const std::string_view & column_name, bool print_constants) const;
 
         Function function = FUNCTION_UNKNOWN;
 

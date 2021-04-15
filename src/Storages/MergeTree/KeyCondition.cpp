@@ -938,6 +938,9 @@ public:
         return func->getMonotonicityForRange(type, left, right);
     }
 
+    Kind getKind() const { return kind; }
+    const ColumnWithTypeAndName & getConstArg() const { return const_arg; }
+
 private:
     FunctionBasePtr func;
     ColumnWithTypeAndName const_arg;
@@ -1308,6 +1311,203 @@ String KeyCondition::toString() const
     return res;
 }
 
+KeyCondition::Description KeyCondition::getDescription() const
+{
+    Description description;
+    struct Node
+    {
+        enum class Type
+        {
+            Leaf,
+            True,
+            False,
+            And,
+            Or,
+        };
+
+        Type type;
+
+        /// Only for Leaf
+        const RPNElement * element = nullptr;
+        bool negate = false;
+
+        std::unique_ptr<Node> left = nullptr;
+        std::unique_ptr<Node> right = nullptr;
+    };
+
+    struct Frame
+    {
+        std::unique_ptr<Node> can_be_true;
+        std::unique_ptr<Node> can_be_false;
+    };
+
+    auto combine = [](std::unique_ptr<Node> left, std::unique_ptr<Node> right, Node::Type type)
+    {
+        if (type == Node::Type::And)
+        {
+            /// false AND right
+            if (left->type == Node::Type::False)
+                return left;
+
+            /// left AND false
+            if (right->type == Node::Type::False)
+                return right;
+
+            /// true AND right
+            if (left->type == Node::Type::True)
+                return right;
+
+            /// left AND true
+            if (right->type == Node::Type::True)
+                return left;
+        }
+
+        if (type == Node::Type::Or)
+        {
+            /// false OR right
+            if (left->type == Node::Type::False)
+                return right;
+
+            /// left OR false
+            if (right->type == Node::Type::False)
+                return left;
+
+            /// true OR right
+            if (left->type == Node::Type::True)
+                return left;
+
+            /// left OR true
+            if (right->type == Node::Type::True)
+                return right;
+        }
+
+        return std::make_unique<Node>(Node{
+                .type = type,
+                .left = std::move(left),
+                .right = std::move(right)
+            });
+    };
+
+    std::vector<Frame> rpn_stack;
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        {
+            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
+            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
+            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+        }
+        else if (
+               element.function == RPNElement::FUNCTION_IN_RANGE
+            || element.function == RPNElement::FUNCTION_NOT_IN_RANGE
+            || element.function == RPNElement::FUNCTION_IN_SET
+            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        {
+            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = false});
+            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::Leaf, .element = &element, .negate = true});
+            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            assert(!rpn_stack.empty());
+
+            std::swap(rpn_stack.back().can_be_true, rpn_stack.back().can_be_false);
+        }
+        else if (element.function == RPNElement::FUNCTION_AND)
+        {
+            assert(!rpn_stack.empty());
+            auto arg1 = std::move(rpn_stack.back());
+
+            rpn_stack.pop_back();
+
+            assert(!rpn_stack.empty());
+            auto arg2 = std::move(rpn_stack.back());
+
+            Frame frame;
+            frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::And);
+            frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::Or);
+
+            rpn_stack.back() = std::move(frame);
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            assert(!rpn_stack.empty());
+            auto arg1 = std::move(rpn_stack.back());
+
+            rpn_stack.pop_back();
+
+            assert(!rpn_stack.empty());
+            auto arg2 = std::move(rpn_stack.back());
+
+            Frame frame;
+            frame.can_be_true = combine(std::move(arg1.can_be_true), std::move(arg2.can_be_true), Node::Type::Or);
+            frame.can_be_false = combine(std::move(arg1.can_be_false), std::move(arg2.can_be_false), Node::Type::And);
+
+            rpn_stack.back() = std::move(frame);
+        }
+        else if (element.function == RPNElement::ALWAYS_FALSE)
+        {
+            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::False});
+            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
+
+            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+        }
+        else if (element.function == RPNElement::ALWAYS_TRUE)
+        {
+            auto can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
+            auto can_be_false = std::make_unique<Node>(Node{.type = Node::Type::False});
+            rpn_stack.emplace_back(Frame{.can_be_true = std::move(can_be_true), .can_be_false = std::move(can_be_false)});
+        }
+        else
+            throw Exception("Unexpected function type in KeyCondition::RPNElement", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    if (rpn_stack.size() != 1)
+        throw Exception("Unexpected stack size in KeyCondition::checkInRange", ErrorCodes::LOGICAL_ERROR);
+
+    std::vector<std::string_view> key_names(key_columns.size());
+    std::vector<bool> is_key_used(key_columns.size(), false);
+
+    for (const auto & key : key_columns)
+        key_names[key.second] = key.first;
+
+    std::function<std::string(const Node *)> describe;
+    describe = [&describe, &key_names, &is_key_used](const Node * node) -> std::string
+    {
+        switch (node->type)
+        {
+            case Node::Type::Leaf:
+            {
+                is_key_used[node->element->key_column] = true;
+                std::string res;
+                if (node->negate)
+                    res += "not(";
+                res += node->element->toString(key_names[node->element->key_column], true);
+                if (node->negate)
+                    res += ")";
+                return res;
+            }
+            case Node::Type::True:
+                return "true";
+            case Node::Type::False:
+                return "false";
+            case Node::Type::And:
+                return "and(" + describe(node->left.get()) + ", " + describe(node->right.get()) + ")";
+            case Node::Type::Or:
+                return "or(" + describe(node->left.get()) + ", " + describe(node->right.get()) + ")";
+        }
+
+        __builtin_unreachable();
+    };
+
+    description.condition = describe(rpn_stack.front().can_be_true.get());
+
+    for (size_t i = 0; i < key_names.size(); ++i)
+        if (is_key_used[i])
+            description.used_keys.emplace_back(key_names[i]);
+
+    return description;
+}
 
 /** Index is the value of key every `index_granularity` rows.
   * This value is called a "mark". That is, the index consists of marks.
@@ -1732,18 +1932,38 @@ bool KeyCondition::mayBeTrueAfter(
     return checkInRange(used_key_size, left_key, nullptr, data_types, false, BoolMask::consider_only_can_be_true).can_be_true;
 }
 
-
-String KeyCondition::RPNElement::toString() const
+String KeyCondition::RPNElement::toString() const { return toString("column " + std::to_string(key_column), false); }
+String KeyCondition::RPNElement::toString(const std::string_view & column_name, bool print_constants) const
 {
-    auto print_wrapped_column = [this](WriteBuffer & buf)
+    auto print_wrapped_column = [this, &column_name, print_constants](WriteBuffer & buf)
     {
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
+        {
             buf << (*it)->getName() << "(";
+            if (print_constants)
+            {
+                if (const auto * func = typeid_cast<const FunctionWithOptionalConstArg *>(it->get()))
+                {
+                    if (func->getKind() == FunctionWithOptionalConstArg::Kind::LEFT_CONST)
+                        buf << applyVisitor(FieldVisitorToString(), (*func->getConstArg().column)[0]) << ", ";
+                }
+            }
+        }
 
-        buf << "column " << key_column;
+        buf << column_name;
 
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
+        {
+            if (print_constants)
+            {
+                if (const auto * func = typeid_cast<const FunctionWithOptionalConstArg *>(it->get()))
+                {
+                    if (func->getKind() == FunctionWithOptionalConstArg::Kind::RIGHT_CONST)
+                        buf << ", " << applyVisitor(FieldVisitorToString(), (*func->getConstArg().column)[0]);
+                }
+            }
             buf << ")";
+        }
     };
 
     WriteBufferFromOwnString buf;

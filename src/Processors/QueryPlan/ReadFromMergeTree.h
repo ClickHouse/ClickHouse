@@ -9,7 +9,7 @@ namespace DB
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
-class ReadFromMergeTree : public ISourceStep
+class ReadFromMergeTree final : public ISourceStep
 {
 public:
 
@@ -29,6 +29,7 @@ public:
         IndexType type;
         std::string name;
         std::string description;
+        std::vector<std::string> used_keys;
         size_t num_parts_after;
         size_t num_granules_after;
     };
@@ -64,7 +65,7 @@ public:
         InReverseOrder,
     };
 
-    explicit ReadFromMergeTree(
+    ReadFromMergeTree(
         const MergeTreeData & storage_,
         StorageMetadataPtr metadata_snapshot_,
         String query_id_,
