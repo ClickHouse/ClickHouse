@@ -19,10 +19,10 @@ static constexpr size_t DEFAULT_MAX_CONNECTIONS = 16;
 
 struct PoolConfiguration
 {
-    const size_t max_connections = DEFAULT_MAX_CONNECTIONS;
-    const size_t get_connection_timeout_milliseconds = 5000;
-    const bool share_connection = false;
-    const bool close_connection = false;
+    size_t max_connections = DEFAULT_MAX_CONNECTIONS;
+    size_t get_connection_timeout_milliseconds = 5000;
+    bool share_connection = false;
+    bool close_connection = false;
 };
 
 class Pool final: public IPool, public std::enable_shared_from_this<Pool>

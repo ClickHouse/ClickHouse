@@ -12,26 +12,16 @@ namespace
 
     mysqlxx::ConnectionConfiguration parseConnectionConfiguration(const Poco::Util::AbstractConfiguration & cfg, const std::string & config_name, const char * parent_config_name_)
     {
-        std::string db;
-        std::string server = cfg.getString(config_name + ".host");
-        std::string user;
-        std::string password;
-        unsigned port;
-        std::string socket;
-        std::string ssl_ca;
-        std::string ssl_cert;
-        std::string ssl_key;
-        bool enable_local_infile = mysqlxx::DEFAULT_ENABLE_LOCAL_INFILE;
-        bool opt_reconnect = mysqlxx::DEFAULT_MYSQL_OPT_RECONNECT;
+        mysqlxx::ConnectionConfiguration configuration;
 
         if (parent_config_name_)
         {
             const std::string parent_config_name(parent_config_name_);
-            db = cfg.getString(config_name + ".db", cfg.getString(parent_config_name + ".db", ""));
-            user = cfg.has(config_name + ".user")
+            configuration.db = cfg.getString(config_name + ".db", cfg.getString(parent_config_name + ".db", ""));
+            configuration.user = cfg.has(config_name + ".user")
                 ? cfg.getString(config_name + ".user")
                 : cfg.getString(parent_config_name + ".user");
-            password = cfg.has(config_name + ".password")
+            configuration.password = cfg.has(config_name + ".password")
                 ? cfg.getString(config_name + ".password")
                 : cfg.getString(parent_config_name + ".password");
 
@@ -39,79 +29,58 @@ namespace
                 && !cfg.has(parent_config_name + ".port") && !cfg.has(parent_config_name + ".socket"))
                 throw Poco::Exception("mysqlxx::parse connectionConfiguration from abstract configuration: expected port or socket");
 
-            port = cfg.has(config_name + ".port")
+            configuration.port = cfg.has(config_name + ".port")
                 ? cfg.getInt(config_name + ".port")
                 : cfg.getInt(parent_config_name + ".port", 0);
-            socket = cfg.has(config_name + ".socket")
+            configuration.socket = cfg.has(config_name + ".socket")
                 ? cfg.getString(config_name + ".socket")
                 : cfg.getString(parent_config_name + ".socket", "");
-            ssl_ca = cfg.has(config_name + ".ssl_ca")
+            configuration.ssl_ca = cfg.has(config_name + ".ssl_ca")
                 ? cfg.getString(config_name + ".ssl_ca")
                 : cfg.getString(parent_config_name + ".ssl_ca", "");
-            ssl_cert = cfg.has(config_name + ".ssl_cert")
+            configuration.ssl_cert = cfg.has(config_name + ".ssl_cert")
                 ? cfg.getString(config_name + ".ssl_cert")
                 : cfg.getString(parent_config_name + ".ssl_cert", "");
-            ssl_key = cfg.has(config_name + ".ssl_key")
+            configuration.ssl_key = cfg.has(config_name + ".ssl_key")
                 ? cfg.getString(config_name + ".ssl_key")
                 : cfg.getString(parent_config_name + ".ssl_key", "");
 
-            enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
+            configuration.enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
                 cfg.getBool(parent_config_name + ".enable_local_infile", mysqlxx::DEFAULT_ENABLE_LOCAL_INFILE));
 
-            opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
+            configuration.opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
                 cfg.getBool(parent_config_name + ".opt_reconnect", mysqlxx::DEFAULT_MYSQL_OPT_RECONNECT));
 
         }
         else
         {
-            db = cfg.getString(config_name + ".db", "");
-            user = cfg.getString(config_name + ".user");
-            password = cfg.getString(config_name + ".password");
+            configuration.db = cfg.getString(config_name + ".db", "");
+            configuration.user = cfg.getString(config_name + ".user");
+            configuration.password = cfg.getString(config_name + ".password");
 
             if (!cfg.has(config_name + ".port") && !cfg.has(config_name + ".socket"))
                 throw Poco::Exception("mysqlxx::Pool configuration: expected port or socket");
 
-            port = cfg.getInt(config_name + ".port", 0);
-            socket = cfg.getString(config_name + ".socket", "");
-            ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
-            ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
-            ssl_key = cfg.getString(config_name + ".ssl_key", "");
+            configuration.port = cfg.getInt(config_name + ".port", 0);
+            configuration.socket = cfg.getString(config_name + ".socket", "");
+            configuration.ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
+            configuration.ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
+            configuration.ssl_key = cfg.getString(config_name + ".ssl_key", "");
 
-            enable_local_infile = cfg.getBool(
+            configuration.enable_local_infile = cfg.getBool(
                 config_name + ".enable_local_infile", mysqlxx::DEFAULT_ENABLE_LOCAL_INFILE);
 
-            opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", mysqlxx::DEFAULT_MYSQL_OPT_RECONNECT);
+            configuration.opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", mysqlxx::DEFAULT_MYSQL_OPT_RECONNECT);
         }
 
-        unsigned connect_timeout = cfg.getInt(config_name + ".connect_timeout",
+        configuration.connect_timeout = cfg.getInt(config_name + ".connect_timeout",
             cfg.getInt("mysql_connect_timeout",
                 mysqlxx::DEFAULT_TIMEOUT));
 
-        unsigned rw_timeout =
+        configuration.rw_timeout =
             cfg.getInt(config_name + ".rw_timeout",
                 cfg.getInt("mysql_rw_timeout",
                     mysqlxx::DEFAULT_RW_TIMEOUT));
-
-        mysqlxx::ConnectionConfiguration configuration
-        {
-            .db = std::move(db),
-            .server = std::move(server),
-            .port = port,
-            .socket = std::move(socket),
-
-            .user = std::move(user),
-            .password = std::move(password),
-
-            .enable_local_infile = enable_local_infile,
-            .opt_reconnect = opt_reconnect,
-
-            .ssl_ca = std::move(ssl_ca),
-            .ssl_cert = std::move(ssl_cert),
-            .ssl_key = std::move(ssl_key),
-
-            .timeout = connect_timeout,
-            .rw_timeout = rw_timeout
-        };
 
         return configuration;
     }
@@ -165,8 +134,8 @@ std::shared_ptr<IPool> PoolFactory::getPoolWithFailover(const Poco::Util::Abstra
                 ReplicaConfiguration replica_configuration
                 {
                     .priority = priority,
-                    .connection_configuration = connection_configuration,
-                    .pool_configuration = pool_configuration
+                    .connection_configuration = std::move(connection_configuration),
+                    .pool_configuration = std::move(pool_configuration)
                 };
 
                 replicas_configurations.emplace_back(replica_configuration);
@@ -186,8 +155,8 @@ std::shared_ptr<IPool> PoolFactory::getPoolWithFailover(const Poco::Util::Abstra
         ReplicaConfiguration replica_configuration
         {
             .priority = 0,
-            .connection_configuration = connection_configuration,
-            .pool_configuration = pool_configuration
+            .connection_configuration = std::move(connection_configuration),
+            .pool_configuration = std::move(pool_configuration)
         };
 
         replicas_configurations.emplace_back(replica_configuration);
@@ -207,13 +176,13 @@ std::shared_ptr<IPool> PoolFactory::getPoolWithFailover(
 
     for (const auto & [host, port] : addresses)
     {
-        ConnectionConfiguration connection_configuration
-        {
-            .db = database,
-            .port = port,
-            .user = user,
-            .password = password
-        };
+        ConnectionConfiguration connection_configuration;
+
+        connection_configuration.db = database;
+        connection_configuration.server = host;
+        connection_configuration.port = port;
+        connection_configuration.user = user;
+        connection_configuration.password = password;
 
         ReplicaConfiguration replica_configuration
         {

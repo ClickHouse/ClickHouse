@@ -21,23 +21,23 @@ static constexpr bool DEFAULT_MYSQL_OPT_RECONNECT = true;
 
 struct ConnectionConfiguration
 {
-    const std::string db;
-    const std::string server;
+    std::string db;
+    std::string server;
 
-    const unsigned port = 0;
-    const std::string socket;
+    unsigned port = 0;
+    std::string socket;
 
-    const std::string user;
-    const std::string password;
+    std::string user;
+    std::string password;
 
-    const size_t connect_timeout = DEFAULT_TIMEOUT;
+    size_t connect_timeout = DEFAULT_TIMEOUT;
 
-    const bool enable_local_infile = DEFAULT_ENABLE_LOCAL_INFILE;
-    const bool opt_reconnect = DEFAULT_MYSQL_OPT_RECONNECT;
+    bool enable_local_infile = DEFAULT_ENABLE_LOCAL_INFILE;
+    bool opt_reconnect = DEFAULT_MYSQL_OPT_RECONNECT;
 
-    const std::string ssl_ca;
-    const std::string ssl_cert;
-    const std::string ssl_key;
+    std::string ssl_ca;
+    std::string ssl_cert;
+    std::string ssl_key;
 
     unsigned timeout = DEFAULT_TIMEOUT;
     unsigned rw_timeout = DEFAULT_RW_TIMEOUT;
