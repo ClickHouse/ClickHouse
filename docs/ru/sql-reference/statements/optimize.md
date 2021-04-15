@@ -51,7 +51,7 @@ CREATE TABLE example (
     aliased_value UInt32 ALIAS 2,
     PRIMARY KEY primary_key
 ) ENGINE=MergeTree
-PARTITION BY partition_key
+PARTITION BY partition_key;
 ```
 
 Прежний способ дедупликации, когда учитываются все столбцы. Строка удаляется только в том случае, если все значения во всех столбцах равны соответствующим значениям в предыдущей строке.
