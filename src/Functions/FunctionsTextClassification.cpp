@@ -20,7 +20,7 @@ namespace DB
 
 
 template <size_t N>
-struct TextClassificationImpl
+struct CharsetClassificationImpl
 {
 
     using ResultType = String;
@@ -124,10 +124,19 @@ struct TextClassificationImpl
             model[ngram_storage.get()[i]] = static_cast<Float64>(common_stats.get()[ngram_storage.get()[i]]);
         }
 
-        for (const auto& item : encodings_freq) {
-            ans += item.first + " " + std::to_string(Naive_bayes(item.second, model)) + "\n";
+        std::vector<std::pair<std::string, Float64>> results;
+
+        for (const auto& item : encodings_freq)
+        {
+            results.push_back(std::make_pair(item.first, Naive_bayes(item.second, model)));
         }
-        res = ans;
+
+        std::sort(results.begin(), results.end(), [](auto &left, auto &right)
+        {
+            return left.second > right.second;
+        });
+
+        res = results[0].first; 
     }
 
 
@@ -177,9 +186,7 @@ struct TextClassificationImpl
                 return left.second > right.second;
             });
 
-            for (size_t ind = 0; ind < 3; ++ind) {
-                prom += results[ind].first + " result=" + std::to_string(results[ind].second) + "\n"; 
-            }
+            prom = results[0].first; 
             
 
             const auto ans = prom.c_str();
@@ -207,9 +214,9 @@ struct NameCharsetDetect
 };
 
 
-using FunctionCharsetDetect = FunctionsTextClassification<TextClassificationImpl<2>, NameCharsetDetect>;
+using FunctionCharsetDetect = FunctionsTextClassification<CharsetClassificationImpl<2>, NameCharsetDetect>;
 
-void registerFunctionsTextClassification(FunctionFactory & factory)
+void registerFunctionsCharsetClassification(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCharsetDetect>();
 }
