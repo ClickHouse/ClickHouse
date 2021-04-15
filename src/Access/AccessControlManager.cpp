@@ -403,7 +403,7 @@ void AccessControlManager::checkSettingNameIsAllowed(const std::string_view & se
 
 std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
     const UUID & user_id,
-    const boost::container::flat_set<UUID> & current_roles,
+    const std::vector<UUID> & current_roles,
     bool use_default_roles,
     const Settings & settings,
     const String & current_database,
@@ -411,7 +411,7 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
 {
     ContextAccessParams params;
     params.user_id = user_id;
-    params.current_roles = current_roles;
+    params.current_roles.insert(current_roles.begin(), current_roles.end());
     params.use_default_roles = use_default_roles;
     params.current_database = current_database;
     params.readonly = settings.readonly;
@@ -444,8 +444,8 @@ std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(cons
 
 
 std::shared_ptr<const EnabledRoles> AccessControlManager::getEnabledRoles(
-    const boost::container::flat_set<UUID> & current_roles,
-    const boost::container::flat_set<UUID> & current_roles_with_admin_option) const
+    const std::vector<UUID> & current_roles,
+    const std::vector<UUID> & current_roles_with_admin_option) const
 {
     return role_cache->getEnabledRoles(current_roles, current_roles_with_admin_option);
 }

@@ -41,22 +41,24 @@ void NativeBlockOutputStream::flush()
 }
 
 
-void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
+static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
       */
     ColumnPtr full_column = column->convertToFullColumnIfConst();
 
-    IDataType::SerializeBinaryBulkSettings settings;
-    settings.getter = [&ostr](IDataType::SubstreamPath) -> WriteBuffer * { return &ostr; };
+    ISerialization::SerializeBinaryBulkSettings settings;
+    settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0;
 
-    IDataType::SerializeBinaryBulkStatePtr state;
-    type.serializeBinaryBulkStatePrefix(settings, state);
-    type.serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
-    type.serializeBinaryBulkStateSuffix(settings, state);
+    auto serialization = type.getDefaultSerialization();
+
+    ISerialization::SerializeBinaryBulkStatePtr state;
+    serialization->serializeBinaryBulkStatePrefix(settings, state);
+    serialization->serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
+    serialization->serializeBinaryBulkStateSuffix(settings, state);
 }
 
 

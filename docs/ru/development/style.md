@@ -911,4 +911,3 @@ function(
       size_t limit)
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/development/style/) <!--hide-->

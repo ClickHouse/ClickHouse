@@ -46,5 +46,4 @@ SET ROLE accountant;
 SELECT * FROM db.*;
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/role) 
 <!--hide-->

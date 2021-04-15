@@ -427,4 +427,3 @@ SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
 
 -   Таблица [system.settings](../../operations/system-tables/settings.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/show/) <!--hide-->

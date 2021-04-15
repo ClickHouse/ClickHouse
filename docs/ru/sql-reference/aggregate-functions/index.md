@@ -57,4 +57,3 @@ SELECT groupArray(y) FROM t_null_big
 
 `groupArray` не включает `NULL` в результирующий массив.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/) <!--hide-->

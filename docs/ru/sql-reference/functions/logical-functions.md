@@ -17,4 +17,3 @@ toc_title: "Логические функции"
 
 ## xor {#xor}
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/logical_functions/) <!--hide-->

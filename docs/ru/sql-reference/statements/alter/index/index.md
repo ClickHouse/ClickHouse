@@ -21,4 +21,3 @@ ALTER TABLE [db].name DROP INDEX name
 
 Запрос на изменение индексов реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/index/index/) <!--hide-->

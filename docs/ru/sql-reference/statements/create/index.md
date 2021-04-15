@@ -18,4 +18,3 @@ toc_title: "Обзор"
 -   [QUOTA](../../../sql-reference/statements/create/quota.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/create/settings-profile.md)
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/statements/create/) <!--hide-->

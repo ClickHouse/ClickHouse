@@ -15,21 +15,20 @@ namespace DB
 class IColumn;
 class IDataType;
 class WriteBuffer;
-class Context;
 
 /** A stream for outputting data in a binary line-by-line format.
   */
-class MySQLOutputFormat final : public IOutputFormat
+class MySQLOutputFormat final : public IOutputFormat, WithConstContext
 {
 public:
     MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
 
     String getName() const override { return "MySQLOutputFormat"; }
 
-    void setContext(const Context & context_)
+    void setContext(ContextConstPtr context_)
     {
-        context = &context_;
-        packet_endpoint = std::make_unique<MySQLProtocol::PacketEndpoint>(out, const_cast<uint8_t &>(context_.mysql.sequence_id)); /// TODO: fix it
+        context = context_;
+        packet_endpoint = std::make_unique<MySQLProtocol::PacketEndpoint>(out, const_cast<uint8_t &>(getContext()->mysql.sequence_id)); /// TODO: fix it
     }
 
     void consume(Chunk) override;
@@ -40,13 +39,12 @@ public:
     void initialize();
 
 private:
-
     bool initialized = false;
 
-    const Context * context = nullptr;
     std::unique_ptr<MySQLProtocol::PacketEndpoint> packet_endpoint;
     FormatSettings format_settings;
     DataTypes data_types;
+    Serializations serializations;
 };
 
 }

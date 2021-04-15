@@ -203,6 +203,13 @@ namespace
         format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
         settings.format(format);
     }
+
+
+    void formatGrantees(const ASTRolesOrUsersSet & grantees, const IAST::FormatSettings & settings)
+    {
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " GRANTEES " << (settings.hilite ? IAST::hilite_none : "");
+        grantees.format(settings);
+    }
 }
 
 
@@ -260,5 +267,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     if (settings && (!settings->empty() || alter))
         formatSettings(*settings, format);
+
+    if (grantees)
+        formatGrantees(*grantees, format);
 }
 }

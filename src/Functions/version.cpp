@@ -16,7 +16,7 @@ class FunctionVersion : public IFunction
 {
 public:
     static constexpr auto name = "version";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionVersion>();
     }
@@ -49,7 +49,7 @@ public:
 
 void registerFunctionVersion(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionVersion>();
+    factory.registerFunction<FunctionVersion>(FunctionFactory::CaseInsensitive);
 }
 
 }

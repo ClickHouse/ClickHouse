@@ -1111,21 +1111,13 @@ protected:
 
     /// Specialization for a particular value no_more_keys.
     template <bool no_more_keys, typename Method>
-    void executeImplCase(
+    void executeImplBatch(
         Method & method,
         typename Method::State & state,
         Arena * aggregates_pool,
         size_t rows,
         AggregateFunctionInstruction * aggregate_instructions,
         AggregateDataPtr overflow_row) const;
-
-    template <typename Method>
-    void executeImplBatch(
-        Method & method,
-        typename Method::State & state,
-        Arena * aggregates_pool,
-        size_t rows,
-        AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// For case when there are no keys (all aggregate into one row).
     static void executeWithoutKeyImpl(
@@ -1303,14 +1295,18 @@ protected:
         AggregateFunctionInstructions & instructions,
         NestedColumnsHolder & nested_columns_holder);
 
-    void fillAggregateColumnsWithSingleKey(
-        AggregatedDataVariants & data_variants,
-        MutableColumns & final_aggregate_columns);
+    void addSingleKeyToAggregateColumns(
+        const AggregatedDataVariants & data_variants,
+        MutableColumns & aggregate_columns) const;
+
+    void addArenasToAggregateColumns(
+        const AggregatedDataVariants & data_variants,
+        MutableColumns & aggregate_columns) const;
 
     void createStatesAndFillKeyColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
-        MutableColumns & final_key_columns);
+        MutableColumns & final_key_columns) const;
 };
 
 
