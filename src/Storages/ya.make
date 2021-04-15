@@ -111,6 +111,7 @@ SRCS(
     StorageBuffer.cpp
     StorageDictionary.cpp
     StorageDistributed.cpp
+    StorageExecutable.cpp
     StorageFactory.cpp
     StorageFile.cpp
     StorageGenerateRandom.cpp

@@ -29,19 +29,18 @@ public:
 protected:
     StorageExecutable(
         const StorageID & table_id,
-        const String & format_name_,
         const String & file_path_,
+        const String & format_,
+        BlockInputStreamPtr input_,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        Context & context_,
-        CompressionMethod compression_method_);
+        const Context & context_);
 
 private:
-    String format_name;
     String file_path;
-    Context & context;
-    CompressionMethod compression_method;
-    Poco::Logger * log = &Poco::Logger::get("StorageExecutable");
+    String format;
+    BlockInputStreamPtr input;
+    const Context & context;
 };
 }
 
