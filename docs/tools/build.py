@@ -65,8 +65,6 @@ def build_for_lang(lang, args):
         languages = {
             'en': 'English',
             'zh': '中文',
-            'es': 'Español',
-            'fr': 'Français',
             'ru': 'Русский',
             'ja': '日本語'
         }
@@ -74,8 +72,6 @@ def build_for_lang(lang, args):
         site_names = {
             'en': 'ClickHouse %s Documentation',
             'zh': 'ClickHouse文档 %s',
-            'es': 'Documentación de ClickHouse %s',
-            'fr': 'Documentation ClickHouse %s',
             'ru': 'Документация ClickHouse %s',
             'ja': 'ClickHouseドキュメント %s'
         }
@@ -183,7 +179,7 @@ if __name__ == '__main__':
     website_dir = os.path.join(src_dir, 'website')
 
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja')
+    arg_parser.add_argument('--lang', default='en,ru,zh,ja')
     arg_parser.add_argument('--blog-lang', default='en,ru')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)

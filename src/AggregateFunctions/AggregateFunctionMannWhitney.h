@@ -174,6 +174,8 @@ public:
         return "mannWhitneyUTest";
     }
 
+    bool allocatesMemoryInArena() const override { return true; }
+
     DataTypePtr getReturnType() const override
     {
         DataTypes types
@@ -208,7 +210,7 @@ public:
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = this->data(place);
-        auto & b = this->data(rhs);
+        const auto & b = this->data(rhs);
 
         a.merge(b, arena);
     }

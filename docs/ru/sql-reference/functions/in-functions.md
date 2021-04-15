@@ -9,4 +9,3 @@ toc_title: "Функции для реализации оператора IN"
 
 Смотрите раздел [Операторы IN](../operators/in.md#select-in-operators).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/in_functions/) <!--hide-->

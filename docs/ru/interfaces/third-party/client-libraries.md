@@ -58,4 +58,3 @@ toc_title: "Клиентские библиотеки от сторонних р
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/client_libraries/) <!--hide-->

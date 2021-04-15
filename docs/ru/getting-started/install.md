@@ -173,4 +173,3 @@ SELECT 1
 
 Для дальнейших экспериментов можно попробовать загрузить один из тестовых наборов данных или пройти [пошаговое руководство для начинающих](https://clickhouse.tech/tutorial.html).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/install/) <!--hide-->

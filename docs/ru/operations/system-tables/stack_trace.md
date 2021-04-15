@@ -85,4 +85,3 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 -   [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — Описание и пример использования функции `arrayMap`.
 -   [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — Описание и пример использования функции `arrayFilter`.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/stack_trace) <!--hide-->

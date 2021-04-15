@@ -87,6 +87,8 @@ public:
             return std::make_shared<DataTypeNumber<PointType>>();
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         PointType left = assert_cast<const ColumnVector<PointType> &>(*columns[0]).getData()[row_num];

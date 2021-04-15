@@ -42,5 +42,4 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluste
 
 `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/row-policy) 
 <!--hide-->

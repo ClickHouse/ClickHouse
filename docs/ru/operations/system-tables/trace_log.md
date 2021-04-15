@@ -50,4 +50,3 @@ trace:                   [371912858,371912789,371798468,371799717,371801313,3717
 size:                    5244400
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system-tables/trace_log) <!--hide-->
