@@ -193,7 +193,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
     table_join->splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
     required_right_keys = table_join->getRequiredRightKeys(right_table_keys, required_right_keys_sources);
 
-    JoinCommon::removeLowCardinalityInplace(right_table_keys);
+    JoinCommon::convertToFullColumnsInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
 
     ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right);

@@ -54,6 +54,7 @@ public:
     void get(size_t n, Field & res) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
+    bool isDefaultAt(size_t n) const override { return isNullAt(n); }
 
     /**
      * If isNullAt(n) returns false, returns the nested column's getDataAt(n), otherwise returns a special value
@@ -173,6 +174,7 @@ public:
 
     size_t getNumberOfDefaultRows(size_t step) const override;
     void getIndicesOfNonDefaultValues(Offsets & offsets, size_t from, size_t limit) const override;
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows) const override;
 
 private:
     WrappedPtr nested_column;

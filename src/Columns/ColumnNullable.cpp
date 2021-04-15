@@ -688,12 +688,31 @@ void ColumnNullable::checkConsistency() const
 
 size_t ColumnNullable::getNumberOfDefaultRows(size_t step) const
 {
-    return null_map->getNumberOfDefaultRows(step);
+    size_t res = 0;
+    const auto & null_map_data = getNullMapData();
+    for (size_t i = 0; i < null_map_data.size(); i += step)
+        res += (null_map_data != 0);
+
+    return res;
 }
 
 void ColumnNullable::getIndicesOfNonDefaultValues(Offsets & indices, size_t from, size_t limit) const
 {
-    return null_map->getIndicesOfNonDefaultValues(indices, from, limit);
+    size_t to = limit && from + limit < size() ? from + limit : size();
+    indices.reserve(indices.size() + to - from);
+
+    const auto & null_map_data = getNullMapData();
+    for (size_t i = from; i < to; ++i)
+        if (null_map_data[i] == 0)
+            indices.push_back(i);
+}
+
+ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, size_t total_rows) const
+{
+    auto new_values = nested_column->createWithOffsets(offsets, total_rows);
+    auto new_null_map = null_map->createWithOffsets(offsets, total_rows);
+
+    return ColumnNullable::create(new_values, new_null_map);
 }
 
 ColumnPtr makeNullable(const ColumnPtr & column)
