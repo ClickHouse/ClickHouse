@@ -4,6 +4,7 @@
             [clojure.pprint :refer [pprint]]
             [jepsen.clickhouse-keeper.set :as set]
             [jepsen.clickhouse-keeper.db :refer :all]
+            [jepsen.clickhouse-keeper.zookeeperdb :refer :all]
             [jepsen.clickhouse-keeper.nemesis :as custom-nemesis]
             [jepsen.clickhouse-keeper.register :as register]
             [jepsen.clickhouse-keeper.unique :as unique]
@@ -74,12 +75,26 @@
    [nil, "--lightweight-run" "Subset of workloads/nemesises which is simple to validate"]
    [nil, "--reuse-binary" "Use already downloaded binary if it exists, don't remove it on shutdown"]
    [nil, "--bench" "Run perf-test mode"]
+   [nil, "--zookeeper-version VERSION" "Run zookeeper with version"
+    :default ""]
    [nil, "--bench-opts STR" "Run perf-test mode"
     :default "--generator list_medium_nodes -c 30 -i 1000"]
    ["-c" "--clickhouse-source URL" "URL for clickhouse deb or tgz package"
     :default "https://clickhouse-builds.s3.yandex.net/21677/ef82333089156907a0979669d9374c2e18daabe5/clickhouse_build_check/clang-11_relwithdebuginfo_none_bundled_unsplitted_disable_False_deb/clickhouse-common-static_21.4.1.6313_amd64.deb"]
    [nil "--bench-path path" "Path to keeper-bench util"
     :default "/home/alesap/code/cpp/BuildCH/utils/keeper-bench/keeper-bench"]])
+
+(defn get-db
+  [opts]
+  (if (empty? (:zookeeper-version opts))
+    (db (:clickhouse-source opts) (boolean (:reuse-binary opts)))
+    (zookeeper-db (:zookeeper-version opts))))
+
+(defn get-port
+ [opts]
+  (if (empty? (:zookeeper-version opts))
+    9181
+    2181))
 
 (defn clickhouse-func-tests
   [opts]
@@ -91,7 +106,7 @@
            opts
            {:name (str "clickhouse-keeper-quorum=" quorum "-"  (name (:workload opts)) "-" (name (:nemesis opts)))
             :os ubuntu/os
-            :db (db (:clickhouse-source opts) (boolean (:reuse-binary opts)))
+            :db (get-db opts)
             :pure-generators true
             :client (:client workload)
             :nemesis (:nemesis current-nemesis)
@@ -117,9 +132,9 @@
          opts
          {:name (str "clickhouse-keeper-perf")
           :os ubuntu/os
-          :db (db (:clickhouse-source opts) (boolean (:reuse-binary opts)))
+          :db (get-db opts)
           :pure-generators true
-          :client (bench/bench-client)
+          :client (bench/bench-client (get-port opts))
           :nemesis nemesis/noop
           :generator (->> dct
                           (gen/stagger 1)

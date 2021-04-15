@@ -45,7 +45,7 @@
 
 (defn zk-connect
   [host port timeout]
-  (exec-with-retries 15 (fn [] (zk/connect (str host ":" port) :timeout-msec timeout))))
+  (exec-with-retries 30 (fn [] (zk/connect (str host ":" port) :timeout-msec timeout))))
 
 (defn zk-create-range
   [conn n]
