@@ -4,5 +4,3 @@ INSERT INTO markdown VALUES (1, 'name1', [1,2,3], 'Some long string', 'name1', 1
 
 SELECT * FROM markdown FORMAT Markdown;
 DROP TABLE IF EXISTS markdown
-
-
