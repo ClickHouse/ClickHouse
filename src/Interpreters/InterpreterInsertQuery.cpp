@@ -23,6 +23,7 @@
 #include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -304,6 +305,11 @@ BlockIO InterpreterInsertQuery::execute()
         res.pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             return std::make_shared<ExpressionTransform>(in_header, actions);
+        });
+
+        res.pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<MaterializingTransform>(in_header);
         });
 
         res.pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
