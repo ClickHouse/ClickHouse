@@ -24,8 +24,8 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 Columns materializeColumns(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
-void removeLowCardinalityInplace(Block & block);
-void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type = true);
+void convertToFullColumnsInplace(Block & block);
+void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type = true);
 void restoreLowCardinalityInplace(Block & block);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);

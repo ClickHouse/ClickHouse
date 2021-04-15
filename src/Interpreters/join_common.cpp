@@ -3,6 +3,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -53,7 +54,7 @@ void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nulla
 {
     if (low_card_nullability && column.type->lowCardinality())
     {
-        column.column = recursiveRemoveLowCardinality(column.column);
+        column.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(column.column));
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 
@@ -145,7 +146,7 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     for (const auto & column_name : names)
     {
         auto & column = block.getByName(column_name).column;
-        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
+        column = recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
         ptrs.push_back(column.get());
     }
 
@@ -160,7 +161,9 @@ Columns materializeColumns(const Block & block, const Names & names)
     for (const auto & column_name : names)
     {
         const auto & src_column = block.getByName(column_name).column;
-        materialized.emplace_back(recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst()));
+        materialized.emplace_back(
+            recursiveRemoveLowCardinality(
+                recursiveRemoveSparse(src_column->convertToFullColumnIfConst())));
     }
 
     return materialized;
@@ -177,22 +180,22 @@ ColumnRawPtrs getRawPointers(const Columns & columns)
     return ptrs;
 }
 
-void removeLowCardinalityInplace(Block & block)
+void convertToFullColumnsInplace(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & col = block.getByPosition(i);
-        col.column = recursiveRemoveLowCardinality(col.column);
+        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
         col.type = recursiveRemoveLowCardinality(col.type);
     }
 }
 
-void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type)
+void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type)
 {
     for (const String & column_name : names)
     {
         auto & col = block.getByName(column_name);
-        col.column = recursiveRemoveLowCardinality(col.column);
+        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
         if (change_type)
             col.type = recursiveRemoveLowCardinality(col.type);
     }
@@ -221,6 +224,9 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
         /// We will join only keys, where all components are not NULL.
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i]))
             key_columns[i] = &nullable->getNestedColumn();
+
+        if (const auto * sparse = checkAndGetColumn<ColumnSparse>(*key_columns[i]))
+            key_columns[i] = &sparse->getValuesColumn();
     }
 
     return key_columns;

@@ -1,5 +1,5 @@
 #include <DataStreams/materializeBlock.h>
-
+#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
@@ -14,7 +14,7 @@ Block materializeBlock(const Block & block)
     for (size_t i = 0; i < columns; ++i)
     {
         auto & element = res.getByPosition(i);
-        element.column = element.column->convertToFullColumnIfConst();
+        element.column = recursiveRemoveSparse(element.column->convertToFullColumnIfConst());
     }
 
     return res;
@@ -23,7 +23,7 @@ Block materializeBlock(const Block & block)
 void materializeBlockInplace(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
-        block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
+        block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
 }
 
 }

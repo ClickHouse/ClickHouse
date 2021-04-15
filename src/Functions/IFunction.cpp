@@ -21,8 +21,6 @@
 #include <memory>
 #include <optional>
 
-#include <Common/FieldVisitors.h>
-
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
@@ -508,8 +506,11 @@ ColumnPtr ExecutableFunctionAdaptor::execute(const ColumnsWithTypeAndName & argu
 
             auto res = executeWithoutSparseColumns(columns_without_sparse, result_type, values_size, dry_run);
 
+            if (isColumnConst(*res))
+                return res->cloneResized(input_rows_count);
+
             /// If default of sparse column was changed after execution of function, convert to full column.
-            if (res->compareAt(0, 0, *arg_with_sparse.column, 0) != 0)
+            if (!res->isDefaultAt(0))
             {
                 const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
                 return res->createWithOffsets(offsets_data, input_rows_count);

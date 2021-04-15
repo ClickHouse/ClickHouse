@@ -110,6 +110,12 @@ public:
         return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
+    bool isDefaultAt(size_t n) const override
+    {
+        assert(n < size());
+        return offsetAt(n) == 0;
+    }
+
 /// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
 #if !__clang__
 #pragma GCC diagnostic push

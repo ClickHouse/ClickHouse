@@ -69,6 +69,11 @@ public:
 
     virtual Ptr convertToFullColumnIfSparse() const { return getPtr(); }
 
+    Ptr convertToFullIfNeeded() const
+    {
+        return convertToFullColumnIfSparse()->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    }
+
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
 
