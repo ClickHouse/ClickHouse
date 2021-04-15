@@ -17,6 +17,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;

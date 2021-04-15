@@ -15,6 +15,7 @@
 
 namespace DB
 {
+struct Settings;
 
 /// Uses addOverflow method (if available) to avoid UB for sumWithOverflow()
 ///

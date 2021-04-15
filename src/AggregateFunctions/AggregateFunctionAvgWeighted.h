@@ -5,6 +5,7 @@
 
 namespace DB
 {
+struct Settings;
 template <class T>
 using AvgWeightedFieldType = std::conditional_t<IsDecimalNumber<T>,
     std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,

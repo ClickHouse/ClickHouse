@@ -13,6 +13,7 @@
 
 namespace DB
 {
+struct Settings;
 
 template <typename T = UInt64>
 class AggregateFunctionCategoricalIV final : public IAggregateFunctionHelper<AggregateFunctionCategoricalIV<T>>

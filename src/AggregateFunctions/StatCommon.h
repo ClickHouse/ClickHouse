@@ -10,6 +10,7 @@
 
 namespace DB
 {
+struct Settings;
 
 template <typename F>
 static Float64 integrateSimpson(Float64 a, Float64 b, F && func)

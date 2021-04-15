@@ -24,6 +24,7 @@
 #include <iostream>
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {

@@ -16,6 +16,7 @@
 
 namespace DB
 {
+struct Settings;
 
 enum BitmapKind
 {

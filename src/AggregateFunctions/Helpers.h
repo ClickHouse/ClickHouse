@@ -39,6 +39,7 @@
 
 namespace DB
 {
+struct Settings;
 
 /** Create an aggregate function with a numeric type in the template parameter, depending on the type of the argument.
   */

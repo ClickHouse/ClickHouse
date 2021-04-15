@@ -18,6 +18,7 @@
 
 namespace DB
 {
+struct Settings;
 
 
 template <typename T>

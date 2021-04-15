@@ -10,6 +10,7 @@
 
 namespace DB
 {
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -24,7 +25,7 @@ namespace
 constexpr UInt8 uniq_upto_max_threshold = 100;
 
 
-AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, const DataTypes & argument_types, const Array & params)
+AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     UInt8 threshold = 5;    /// default value
 
