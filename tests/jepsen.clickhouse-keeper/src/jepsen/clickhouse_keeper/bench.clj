@@ -13,7 +13,7 @@
     (let [p (.start pbuilder)]
       (.waitFor p))))
 
-(defrecord BenchClient [unused]
+(defrecord BenchClient [port]
   client/Client
   (open! [this test node]
     this)
@@ -24,7 +24,7 @@
   (invoke! [this test op]
     (let [bench-opts (into [] (clojure.string/split (:bench-opts op) #" "))
           bench-path (:bench-path op)
-          nodes (into [] (flatten (map (fn [x] (identity ["-h" (str x ":9181")])) (:nodes test))))
+          nodes (into [] (flatten (map (fn [x] (identity ["-h" (str x ":" port)])) (:nodes test))))
           all-args (concat [bench-path] bench-opts nodes)]
         (info "Running cmd" all-args)
         (apply exec-process-builder all-args)
@@ -35,5 +35,5 @@
   (close! [_ test]))
 
 (defn bench-client
-  []
-  (BenchClient. nil))
+  [port]
+  (BenchClient. port))
