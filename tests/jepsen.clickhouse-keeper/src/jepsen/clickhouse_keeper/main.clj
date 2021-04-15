@@ -91,7 +91,7 @@
     (zookeeper-db (:zookeeper-version opts))))
 
 (defn get-port
- [opts]
+  [opts]
   (if (empty? (:zookeeper-version opts))
     9181
     2181))
@@ -128,25 +128,25 @@
   [opts]
   (info "Starting performance test")
   (let [dct {:type :invoke :bench-opts (:bench-opts opts) :bench-path (:bench-path opts)}]
-  (merge tests/noop-test
-         opts
-         {:name (str "clickhouse-keeper-perf")
-          :os ubuntu/os
-          :db (get-db opts)
-          :pure-generators true
-          :client (bench/bench-client (get-port opts))
-          :nemesis nemesis/noop
-          :generator (->> dct
-                          (gen/stagger 1)
-                          (gen/nemesis nil))})))
+    (merge tests/noop-test
+           opts
+           {:name (str "clickhouse-keeper-perf")
+            :os ubuntu/os
+            :db (get-db opts)
+            :pure-generators true
+            :client (bench/bench-client (get-port opts))
+            :nemesis nemesis/noop
+            :generator (->> dct
+                            (gen/stagger 1)
+                            (gen/nemesis nil))})))
 
 (defn clickhouse-keeper-test
   "Given an options map from the command line runner (e.g. :nodes, :ssh,
   :concurrency, ...), constructs a test map."
   [opts]
   (if (boolean (:bench opts))
-   (clickhouse-perf-test opts)
-   (clickhouse-func-tests opts)))
+    (clickhouse-perf-test opts)
+    (clickhouse-func-tests opts)))
 
 (def all-nemesises (keys custom-nemesis/custom-nemesises))
 

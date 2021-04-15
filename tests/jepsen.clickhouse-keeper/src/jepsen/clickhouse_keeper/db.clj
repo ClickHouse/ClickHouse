@@ -128,9 +128,7 @@
        (c/exec :rm :-rf pid-file-path)
        (c/exec :rm :-rf data-dir)
        (c/exec :rm :-rf logs-dir)
-       (c/exec :rm :-rf configs-dir)))
-
-    ));db/LogFiles
+       (c/exec :rm :-rf configs-dir)))));db/LogFiles
     ;(log-files [_ test node]
     ;  (c/su
     ;   (if (cu/exists? pid-file-path)

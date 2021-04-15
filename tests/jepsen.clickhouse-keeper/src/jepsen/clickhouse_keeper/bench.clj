@@ -26,9 +26,9 @@
           bench-path (:bench-path op)
           nodes (into [] (flatten (map (fn [x] (identity ["-h" (str x ":" port)])) (:nodes test))))
           all-args (concat [bench-path] bench-opts nodes)]
-        (info "Running cmd" all-args)
-        (apply exec-process-builder all-args)
-        (assoc op :type :ok :value "ok")))
+      (info "Running cmd" all-args)
+      (apply exec-process-builder all-args)
+      (assoc op :type :ok :value "ok")))
 
   (teardown! [_ test])
 
