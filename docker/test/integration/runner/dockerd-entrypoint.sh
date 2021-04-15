@@ -1,6 +1,16 @@
 #!/bin/bash
 set -e
 
+cat > /etc/docker/daemon.json << EOF
+{
+    "ipv6": true,
+    "fixed-cidr-v6": "fd00::/8",
+    "ip-forward": true,
+    "insecure-registries" : ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
+    "registry-mirrors" : ["http://dockerhub-proxy.sas.yp-c.yandex.net:5000"]
+}
+EOF
+
 dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --default-address-pool base=172.17.0.0/12,size=24 &>/ClickHouse/tests/integration/dockerd.log &
 
 set +e
