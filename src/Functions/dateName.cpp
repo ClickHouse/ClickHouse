@@ -27,7 +27,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int BAD_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace {
@@ -118,7 +118,7 @@ public:
             throw Exception("Illegal value " + datepart
                             + " of first ('format') argument of function " + getName()
                             + ". Check documentation.",
-                            ErrorCodes::BAD_ARGUMENT);
+                            ErrorCodes::BAD_ARGUMENTS);
 
         const DateLUTImpl * time_zone_tmp;
         if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
@@ -290,7 +290,7 @@ private:
             else
             {
                 throw Exception("Illegal value of second ('datetime') argument of function datePart. Check documentation.",
-                                ErrorCodes::BAD_ARGUMENT);
+                                ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
