@@ -55,6 +55,7 @@ public:
         ContextPtr context_,
         const ColumnsDescription & columns_,
         UInt64 max_block_size_,
+        Int64 s3_max_single_read_retries_,
         const String compression_hint_,
         const std::shared_ptr<Aws::S3::S3Client> & client_,
         const String & bucket,
@@ -71,6 +72,7 @@ private:
     String format;
     ColumnsDescription columns_desc;
     UInt64 max_block_size;
+    Int64 s3_max_single_read_retries;
     String compression_hint;
     std::shared_ptr<Aws::S3::S3Client> client;
     Block sample_block;
