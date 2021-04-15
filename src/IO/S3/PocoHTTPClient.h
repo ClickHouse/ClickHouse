@@ -1,5 +1,7 @@
 #pragma once
 
+#if USE_AWS_S3
+
 #include <Common/RemoteHostFilter.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
@@ -94,3 +96,5 @@ private:
 };
 
 }
+
+#endif
