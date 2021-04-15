@@ -1054,7 +1054,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             false);
 
         /// Let's estimate total number of rows for progress bar.
-        LOG_TRACE(log, "Reading approx. {} rows with {} streams", total_rows, num_streams);
+        LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, num_streams);
 
         for (size_t i = 0; i < num_streams; ++i)
         {
@@ -1576,7 +1576,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             settings.preferred_block_size_bytes,
             false);
 
-        LOG_TRACE(log, "Reading approx. {} rows with {} streams", total_rows_in_lonely_parts, num_streams_for_lonely_parts);
+        LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows_in_lonely_parts, num_streams_for_lonely_parts);
 
         for (size_t i = 0; i < num_streams_for_lonely_parts; ++i)
         {
