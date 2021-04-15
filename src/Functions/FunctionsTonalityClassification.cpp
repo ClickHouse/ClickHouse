@@ -54,10 +54,11 @@ struct TonalityClassificationImpl
         Float64 freq = 0;
         Float64 count_words = 0;
 
-        String ans;
+        String answer;
 
         ReadBufferFromMemory in(data.data(), data.size() + 1);
         skipWhitespaceIfAny(in);
+
         String to_check;
         while (!in.eof())
         {
@@ -66,20 +67,19 @@ struct TonalityClassificationImpl
             }
             readStringUntilWhitespace(to_check, in);
             skipWhitespaceIfAny(in);
-            
+
             word_processing(to_check);
                 
 
             if (emotional_dict.find(to_check) != emotional_dict.cend())
             {
                 count_words += 1;
-                ans += to_check + " " + std::to_string(emotional_dict[to_check]) + "\n";
                 freq += emotional_dict[to_check];
             }            
         }
         Float64 total_tonality = freq / count_words;
-        ans += get_tonality(total_tonality) + std::to_string(total_tonality) + std::to_string(emotional_dict.size()) + "\n";
-        res = ans;
+        answer += get_tonality(total_tonality) + std::to_string(total_tonality) + "\n";
+        res = answer;
     }
 
 
@@ -102,13 +102,14 @@ struct TonalityClassificationImpl
             const char * haystack = reinterpret_cast<const char *>(&data[prev_offset]);
             String str = haystack;
 
-            String prom;
+            String buf;
 
             Float64 freq = 0;
             Float64 count_words = 0;
 
 
             ReadBufferFromMemory in(str.data(), str.size() + 1);
+
             skipWhitespaceIfAny(in);
             String to_check;
             while (!in.eof())
@@ -122,14 +123,13 @@ struct TonalityClassificationImpl
                 if (emotional_dict.find(to_check) != emotional_dict.cend())
                 {
                     count_words += 1;
-                    prom += to_check + " " + std::to_string(emotional_dict[to_check]) + "\n";
                     freq += emotional_dict[to_check];
                 }
             }
             Float64 total_tonality = freq / count_words;
-            prom += get_tonality(total_tonality) + std::to_string(total_tonality) + "\n";
+            buf += get_tonality(total_tonality) + std::to_string(total_tonality) + "\n";
 
-            const auto ans = prom.c_str();
+            const auto ans = buf.c_str();
             size_t cur_offset = offsets[i];
 
             res_data.resize(res_offset + strlen(ans) + 1);

@@ -39,6 +39,7 @@ public:
         is_true = pt;
         loadEmotionalDict("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/emotional_dictionary_rus.txt");
         loadEncodingsFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/charset_freq.txt");
+        loadProgrammingFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/programming_freq.txt");
     }
 
 
@@ -113,6 +114,47 @@ public:
     }
 
 
+    void loadProgrammingFrequency(const String & path_to_programming_freq)
+    {
+        String bigram;
+        Float64 frequency;
+        String programming_language;
+
+        Poco::Logger * log = &Poco::Logger::get("ProgrammingFrequency");
+
+        LOG_TRACE(log, "Programming langugages frequencies loading from {}", path_to_programming_freq);
+
+        ReadBufferFromFile in(path_to_programming_freq);
+        while (!in.eof())
+        {
+            char * newline = find_first_symbols<'\n'>(in.position(), in.buffer().end());
+
+            if (newline >= in.buffer().end())
+                break;
+
+            std::string_view line(in.position(), newline - in.position());
+
+            if (line.empty())
+                continue;
+            // Start load new charset
+            if (line.size() > 2 && line[0] == '/' && line[1] == '/')
+            {
+                ReadBufferFromMemory bufline(in.position() + 3, newline - in.position());
+                readString(programming_language, bufline);
+            } else
+            {
+                ReadBufferFromMemory buf_line(in.position(), newline - in.position());
+                readStringUntilWhitespace(bigram, buf_line);
+                buf_line.ignore();
+                readFloatText(frequency, buf_line);
+                programming_freq[programming_language][bigram] = frequency;
+            }
+            in.position() = newline + 1;
+        }
+        LOG_TRACE(log, "Programming languages frequencies was added");
+    }
+
+
     const String & get_path()
     {
         return is_true;
@@ -130,12 +172,18 @@ public:
         return encodings_freq;
     }
 
+    const std::unordered_map<String, std::unordered_map<String, Float64>> & getProgrammingFrequency()
+    {
+        return programming_freq;
+    }
+
 
 protected:
 
     String is_true;
     std::unordered_map<String, Float64> emotional_dict;
     Container encodings_freq;
+    std::unordered_map<String, std::unordered_map<String, Float64>> programming_freq;
 };
 }
 
