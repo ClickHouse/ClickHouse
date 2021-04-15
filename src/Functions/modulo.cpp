@@ -78,12 +78,11 @@ struct ModuloByConstantImpl
         if (b < 0)
             b = -b;
 
-        libdivide::divider<A> divider(b);
-
         /// Here we failed to make the SSE variant from libdivide give an advantage.
 
         if (b & (b - 1))
         {
+            libdivide::divider<A> divider(b);
             for (size_t i = 0; i < size; ++i)
                 dst[i] = src[i] - (src[i] / divider) * b; /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
         }

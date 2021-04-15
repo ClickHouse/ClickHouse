@@ -55,10 +55,8 @@ private:
     using StorageWithLockAndName = std::tuple<StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
 
-    StorageListWithLocks getSelectedTables(const String & query_id, const Settings & settings) const;
-
     StorageMerge::StorageListWithLocks getSelectedTables(
-        const SelectQueryInfo & query_info, bool has_virtual_column, const String & query_id, const Settings & settings) const;
+            ContextPtr query_context, const ASTPtr & query = nullptr, bool filter_by_virtual_column = false) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;

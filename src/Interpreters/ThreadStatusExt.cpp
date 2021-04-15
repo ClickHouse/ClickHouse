@@ -323,7 +323,7 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
 
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
     {
