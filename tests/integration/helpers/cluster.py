@@ -1124,7 +1124,7 @@ class ClickHouseInstance:
         return self.http_query(sql=sql, data=data, params=params, user=user, password=password,
                                expect_fail_and_get_error=True)
 
-    def stop_clickhouse(self, stop_wait_sec=5, kill=False):
+    def stop_clickhouse(self, stop_wait_sec=30, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be stopped only with stay_alive=True instance")
 
@@ -1136,7 +1136,7 @@ class ClickHouseInstance:
                 break
         assert self.get_process_pid("clickhouse") is None, "ClickHouse was not stopped"
 
-    def start_clickhouse(self, start_wait_sec=5):
+    def start_clickhouse(self, start_wait_sec=30):
         if not self.stay_alive:
             raise Exception("clickhouse can be started again only with stay_alive=True instance")
 
@@ -1145,7 +1145,7 @@ class ClickHouseInstance:
         from helpers.test_tools import assert_eq_with_retry
         assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
 
-    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
+    def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 
