@@ -58,8 +58,7 @@ ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the 
 
 ## inactive_parts_to_throw_insert {#inactive-parts-to-throw-insert}
 
-If the number of inactive parts in a single partition more than the `inactive_parts_to_throw_insert` value, `INSERT` is interrupted with the `Too many inactive parts (N). Parts cleaning are processing significantly slower than inserts` exception.
-
+If the number of inactive parts in a single partition more than the `inactive_parts_to_throw_insert` value, `INSERT` is interrupted with the "Too many inactive parts (N). Parts cleaning are processing significantly slower than inserts" exception.
 
 Possible values:
 

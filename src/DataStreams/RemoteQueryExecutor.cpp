@@ -22,20 +22,18 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
-    const String & query_,
-    const Block & header_,
-    ContextPtr context_,
-    ThrottlerPtr throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    const String & query_, const Block & header_, ContextPtr context_,
+    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    : header(header_), query(query_), context(context_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
 {
     create_connections = [this, &connection, throttler]()
     {
@@ -45,14 +43,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
-    const String & query_,
-    const Block & header_,
-    ContextPtr context_,
-    const ThrottlerPtr & throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    const String & query_, const Block & header_, ContextPtr context_,
+    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    : header(header_), query(query_), context(context_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
 {
     create_connections = [this, connections_, throttler]() mutable {
         return std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
@@ -61,14 +56,11 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool,
-    const String & query_,
-    const Block & header_,
-    ContextPtr context_,
-    const ThrottlerPtr & throttler,
-    const Scalars & scalars_,
-    const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_)
-    : header(header_), query(query_), context(context_), scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    const String & query_, const Block & header_, ContextPtr context_,
+    const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
+    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
+    : header(header_), query(query_), context(context_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
 {
     create_connections = [this, pool, throttler]()->std::unique_ptr<IConnections>
     {
@@ -307,6 +299,9 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
 {
     switch (packet.type)
     {
+        case Protocol::Server::ReadTaskRequest:
+            processReadTaskRequest();
+            break;
         case Protocol::Server::PartUUIDs:
             if (!setPartUUIDs(packet.part_uuids))
                 got_duplicated_part_uuids = true;
@@ -383,6 +378,14 @@ bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
         return false;
     }
     return true;
+}
+
+void RemoteQueryExecutor::processReadTaskRequest()
+{
+    if (!task_iterator)
+        throw Exception("Distributed task iterator is not initialized", ErrorCodes::LOGICAL_ERROR);
+    auto response = (*task_iterator)();
+    connections->sendReadTaskResponse(response);
 }
 
 void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
