@@ -17,6 +17,7 @@ def ping(self):
     for i in range(3):
         with When(f"curl ch_{i} kerberos"):
             r = ch_nodes[i].command(f"curl docker-compose_kerberos_1 -c 1")
+            kinit_no_keytab(node=ch_nodes[2])
         with Then(f"return code should be 0"):
             assert r.exitcode == 7, error()
 
