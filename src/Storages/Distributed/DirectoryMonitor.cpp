@@ -535,7 +535,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = readDistributedHeader(in, log);
 
-        LOG_TRACE(log, "Started processing `{}` ({} rows, {} bytes)", file_path,
+        LOG_DEBUG(log, "Started processing `{}` ({} rows, {} bytes)", file_path,
             formatReadableQuantity(distributed_header.rows),
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
@@ -631,7 +631,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         Stopwatch watch;
 
-        LOG_TRACE(parent.log, "Sending a batch of {} files ({} rows, {} bytes).", file_indices.size(),
+        LOG_DEBUG(parent.log, "Sending a batch of {} files ({} rows, {} bytes).", file_indices.size(),
             formatReadableQuantity(total_rows),
             formatReadableSizeWithBinarySuffix(total_bytes));
 
@@ -876,7 +876,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
 
             if (!total_rows || !header)
             {
-                LOG_TRACE(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
+                LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
 
                 CompressedReadBuffer decompressing_in(in);
                 NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
