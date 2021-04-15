@@ -73,7 +73,7 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
             throw Exception(
-                "Illegal type " + arguments[1].type->getName() + " of 3 argument of function " + getName()
+                "Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName()
                 + "Must be string",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
