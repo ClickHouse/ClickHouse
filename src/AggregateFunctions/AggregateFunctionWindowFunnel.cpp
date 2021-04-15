@@ -11,6 +11,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -23,9 +25,9 @@ namespace
 
 template <template <typename> class Data>
 AggregateFunctionPtr
-createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & arguments, const Array & params, const Settings & settings)
+createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & arguments, const Array & params, const Settings * settings)
 {
-    if (!settings.allow_experimental_funnel_functions)
+    if (settings == nullptr || !settings->allow_experimental_funnel_functions)
     {
         throw Exception{
             "Aggregate function " + name + " is experimental. Set `allow_experimental_funnel_functions` setting to enable it",

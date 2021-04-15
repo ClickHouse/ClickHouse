@@ -6,6 +6,7 @@
 
 namespace DB
 {
+struct Settings;
 
 class AggregateFunctionFactory;
 void registerAggregateFunctionAvg(AggregateFunctionFactory &);

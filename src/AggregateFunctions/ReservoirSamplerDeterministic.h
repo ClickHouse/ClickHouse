@@ -16,6 +16,8 @@
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -30,6 +32,8 @@ namespace ErrorCodes
 
 namespace DB
 {
+struct Settings;
+
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
