@@ -9,8 +9,9 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int TYPE_MISMATCH;
 }
 
 
@@ -26,8 +27,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// Called if at least one function argument is a lambda expression.
-    /// For argument-lambda expressions, it defines the types of arguments of these expressions.
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
         if (arguments.size() < 3)
@@ -64,8 +63,16 @@ public:
         if (!data_type_function)
             throw Exception("First argument for function " + getName() + " must be a function.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
-        return DataTypePtr(arguments.back().type);
+
+        auto const accumulator_type = arguments.back().type;
+        auto const lambda_type = data_type_function->getReturnType();
+        if (! accumulator_type->equals(*lambda_type))
+            throw Exception("Return type of lambda function must be the same as the accumulator type. "
+                            "Inferred type of lambda " + lambda_type->getName() + ", "
+                            + "inferred type of accumulator " + accumulator_type->getName() + ".",
+                ErrorCodes::TYPE_MISMATCH);
+
+        return accumulator_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override

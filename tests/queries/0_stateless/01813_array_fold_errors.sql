@@ -9,3 +9,4 @@ SELECT arrayFold(x,acc -> acc+x, number, toInt64(0)) FROM system.numbers LIMIT 1
 SELECT arrayFold(x,y,acc -> acc + x * 2 + y * 3, [1,2,3,4], [5,6,7], toInt64(3)); -- { serverError 190 }
 SELECT arrayFold(x,acc -> acc + x * 2 + y * 3, [1,2,3,4], [5,6,7,8], toInt64(3)); -- { serverError 47 }
 SELECT arrayFold(x,acc -> acc + x * 2, [1,2,3,4], [5,6,7,8], toInt64(3)); -- { serverError 43 }
+SELECT arrayFold(x,acc -> concat(acc,', ', x), [1, 2, 3, 4], '0') -- { serverError 44 }
