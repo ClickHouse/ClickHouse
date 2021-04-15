@@ -59,6 +59,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <common/logger_useful.h>
@@ -723,7 +724,7 @@ static void generateUUIDForTable(ASTCreateQuery & create)
     /// If destination table (to_table_id) is not specified for materialized view,
     /// then MV will create inner table. We should generate UUID of inner table here,
     /// so it will be the same on all hosts if query in ON CLUSTER or database engine is Replicated.
-    bool need_uuid_for_inner_table = create.is_materialized_view && !create.to_table_id;
+    bool need_uuid_for_inner_table = !create.attach && create.is_materialized_view && !create.to_table_id;
     if (need_uuid_for_inner_table && create.to_inner_uuid == UUIDHelpers::Nil)
         create.to_inner_uuid = UUIDHelpers::generateV4();
 }
@@ -890,6 +891,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.select && create.isView())
     {
+        // Expand CTE before filling default database
+        ApplyWithSubqueryVisitor().visit(*create.select);
         AddDefaultDatabaseVisitor visitor(current_database);
         visitor.visit(*create.select);
     }
