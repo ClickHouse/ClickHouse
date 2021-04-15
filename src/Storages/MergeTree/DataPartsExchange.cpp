@@ -517,7 +517,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
     new_data_part->partition.create(metadata_snapshot, block, 0);
 
-    MergedBlockOutputStream part_out(new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
+    MergedBlockOutputStream part_out(new_data_part, metadata_snapshot,
+        block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}), new_data_part->serialization_info);
+
     part_out.writePrefix();
     part_out.write(block);
     part_out.writeSuffixAndFinalizePart(new_data_part);

@@ -88,6 +88,7 @@ public:
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
+        const SerializationInfo & serialization_info_,
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
@@ -125,6 +126,7 @@ protected:
     const String part_path;
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
+    const SerializationInfo serialization_info;
 
     const bool compute_granularity;
 

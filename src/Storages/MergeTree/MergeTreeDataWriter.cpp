@@ -393,15 +393,22 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
-    new_data_part->serialization_info.add(block);
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
+    const auto & data_settings = data.getSettings();
+
+    SerializationInfo serialization_info(data_settings->ratio_for_sparse_serialization);
+    serialization_info.add(block);
+
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
-    bool sync_on_insert = data.getSettings()->fsync_after_insert;
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot,columns,
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
+        compression_codec, serialization_info);
+
+    bool sync_on_insert = data_settings->fsync_after_insert;
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

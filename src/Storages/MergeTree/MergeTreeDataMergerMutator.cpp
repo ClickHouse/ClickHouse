@@ -716,6 +716,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     bool need_remove_expired_values = false;
     bool force_ttl = false;
+    SerializationInfo new_serialization_info(data_settings->ratio_for_sparse_serialization);
+
     for (const auto & part : parts)
     {
         new_data_part->ttl_infos.update(part->ttl_infos);
@@ -726,7 +728,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             force_ttl = true;
         }
 
-        new_data_part->serialization_info.add(part->serialization_info);
+        new_serialization_info.add(part->serialization_info);
     }
 
     const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
@@ -923,6 +925,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merging_columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
         compression_codec,
+        new_serialization_info,
         blocks_are_granules_size};
 
     merged_stream->readPrefix();
@@ -1001,7 +1004,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             column_num < gathering_column_names_size;
             ++column_num, ++it_name_and_type)
         {
-            const String & column_name = it_name_and_type->name;
+            const auto & [column_name, column_type] = *it_name_and_type;
             Names column_names{column_name};
             Float64 progress_before = merge_entry->progress.load(std::memory_order_relaxed);
 
@@ -1023,13 +1026,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             }
 
             rows_sources_read_buf.seek(0, 0);
-            ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
+            ColumnGathererStream column_gathered_stream(
+                column_name, column_type->getSerialization(column_name, new_serialization_info),
+                column_part_streams, rows_sources_read_buf);
 
             MergedColumnOnlyOutputStream column_to(
                 new_data_part,
                 metadata_snapshot,
                 column_gathered_stream.getHeader(),
                 compression_codec,
+                new_serialization_info,
                 /// we don't need to recalc indices here
                 /// because all of them were already recalculated and written
                 /// as key part of vertical merge
@@ -1780,7 +1786,8 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
         metadata_snapshot,
         new_data_part->getColumns(),
         skip_indices,
-        compression_codec};
+        compression_codec,
+        new_data_part->serialization_info};
 
     mutating_stream->readPrefix();
     out.writePrefix();
@@ -1825,6 +1832,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
         metadata_snapshot,
         mutation_header,
         compression_codec,
+        source_part->serialization_info,
         std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
         nullptr,
         source_part->index_granularity,

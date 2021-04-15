@@ -43,6 +43,7 @@ protected:
     String part_path;
 
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
+    SerializationInfo new_serialization_info;
 };
 
 }

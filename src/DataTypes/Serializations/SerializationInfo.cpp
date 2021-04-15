@@ -47,6 +47,18 @@ void SerializationInfo::add(const SerializationInfo & other)
         default_rows[name] += num;
 }
 
+void SerializationInfo::update(const SerializationInfo & other)
+{
+    if (number_of_rows && number_of_rows != other.number_of_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot update SerializationInfo with {} rows by SerializationInfo with {} rows",
+            number_of_rows, other.number_of_rows);
+
+    number_of_rows = other.number_of_rows;
+    for (const auto & [name, num] : other.default_rows)
+        default_rows[name] = num;
+}
+
 size_t SerializationInfo::getNumberOfDefaultRows(const String & column_name) const
 {
     auto it = default_rows.find(column_name);

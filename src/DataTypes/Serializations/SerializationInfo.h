@@ -17,6 +17,7 @@ public:
         size_t default_rows_search_step_ = IColumn::DEFAULT_ROWS_SEARCH_STEP);
 
     void add(const Block & block);
+    void update(const SerializationInfo & other);
     void add(const SerializationInfo & other);
 
     size_t getNumberOfDefaultRows(const String & column_name) const;

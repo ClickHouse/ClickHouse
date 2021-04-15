@@ -20,11 +20,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec_,
+    const SerializationInfo & serialization_info,
     bool blocks_are_granules_size)
     : IMergedBlockOutputStream(data_part, metadata_snapshot_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
-    , serialization_info(storage.getSettings()->ratio_for_sparse_serialization)
 {
     MergeTreeWriterSettings writer_settings(
         storage.global_context.getSettings(),
@@ -36,7 +36,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     if (!part_path.empty())
         volume->getDisk()->createDirectories(part_path);
 
-    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, writer_settings);
+    writer = data_part->getWriter(columns_list, metadata_snapshot, skip_indices, default_codec, serialization_info, writer_settings);
 }
 
 /// If data is pre-sorted.
@@ -79,12 +79,13 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     else
         part_columns = *total_columns_list;
 
+    new_part->serialization_info.update(new_serialization_info);
+
     if (new_part->isStoredOnDisk())
         finalizePartOnDisk(new_part, part_columns, checksums, sync);
 
     new_part->setColumns(part_columns);
     new_part->rows_count = rows_count;
-    new_part->serialization_info = serialization_info;
     new_part->modification_time = time(nullptr);
     new_part->index = writer->releaseIndexColumns();
     new_part->checksums = checksums;
@@ -149,11 +150,11 @@ void MergedBlockOutputStream::finalizePartOnDisk(
 
     removeEmptyColumnsFromPart(new_part, part_columns, checksums);
 
-    if (serialization_info.getNumberOfRows() > 0)
+    if (new_part->serialization_info.getNumberOfRows() > 0)
     {
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096);
         HashingWriteBuffer out_hashing(*out);
-        serialization_info.write(out_hashing);
+        new_part->serialization_info.write(out_hashing);
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         out->finalize();
@@ -200,7 +201,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation);
-    serialization_info.add(block);
+    new_serialization_info.add(block);
 
     rows_count += rows;
 }
