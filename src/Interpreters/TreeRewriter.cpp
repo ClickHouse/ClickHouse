@@ -182,24 +182,28 @@ struct CustomizeAggregateFunctionsMoveSuffixData
     }
 };
 
-struct FuseFunctions
+struct FuseSumCountAggregates
 {
     std::vector<ASTFunction *> sums {};
     std::vector<ASTFunction *> counts {};
     std::vector<ASTFunction *> avgs {};
 
-    void addFuncNode(ASTFunction & func)
+    void addFuncNode(ASTFunction * func)
     {
-        if (func.name == "sum")
-            sums.push_back(&func);
-        else if (func.name == "count")
-            counts.push_back(&func);
-        else if (func.name == "avg")
-            avgs.push_back(&func);
+        if (func->name == "sum")
+            sums.push_back(func);
+        else if (func->name == "count")
+            counts.push_back(func);
+        else
+        {
+            assert(func->name == "avg");
+            avgs.push_back(func);
+        }
     }
 
     bool canBeFused() const
     {
+        // Need at least two different kinds of functions to fuse.
         if (sums.empty() && counts.empty())
             return false;
         if (sums.empty() && avgs.empty())
@@ -210,11 +214,11 @@ struct FuseFunctions
     }
 };
 
-struct CustomizeFuseAggregateFunctionsData
+struct FuseSumCountAggregatesVisitorData
 {
     using TypeToVisit = ASTFunction;
 
-    std::unordered_map<String, DB::FuseFunctions> fuse_map;
+    std::unordered_map<String, FuseSumCountAggregates> fuse_map;
 
     void visit(ASTFunction & func, ASTPtr &)
     {
@@ -223,19 +227,19 @@ struct CustomizeFuseAggregateFunctionsData
             if (func.arguments->children.empty())
                 return;
 
-            ASTIdentifier * ident = func.arguments->children.at(0)->as<ASTIdentifier>();
-            if (!ident)
-                return;
-            auto it = fuse_map.find(ident->name());
+            // Probably we can extend it to match count() for non-nullable arugment
+            // to sum/avg with any other argument. Now we require strict match.
+            const auto argument = func.arguments->children.at(0)->getColumnName();
+            auto it = fuse_map.find(argument);
             if (it != fuse_map.end())
             {
-                it->second.addFuncNode(func);
+                it->second.addFuncNode(&func);
             }
             else
             {
-                DB::FuseFunctions funcs{};
-                funcs.addFuncNode(func);
-                fuse_map[ident->name()] = funcs;
+                FuseSumCountAggregates funcs{};
+                funcs.addFuncNode(&func);
+                fuse_map[argument] = funcs;
             }
         }
     }
@@ -243,7 +247,7 @@ struct CustomizeFuseAggregateFunctionsData
 
 using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
 using CustomizeAggregateFunctionsMoveOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsMoveSuffixData>, true>;
-using CustomizeFuseAggregateFunctionsVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFuseAggregateFunctionsData>, true>;
+using FuseSumCountAggregatesVisitor = InDepthNodeVisitor<OneTypeMatcher<FuseSumCountAggregatesVisitorData>, true>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -261,7 +265,9 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
         throw Exception("Empty list of columns in SELECT query", ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 }
 
-void rewriterFusedFunction(String column_name, ASTFunction & func)
+// Replaces one avg/sum/count function with an appropriate expression with
+// sumCount().
+void replaceWithSumCount(String column_name, ASTFunction & func)
 {
     auto func_base = makeASTFunction("sumCount", std::make_shared<ASTIdentifier>(column_name));
     auto exp_list = std::make_shared<ASTExpressionList>();
@@ -286,18 +292,18 @@ void rewriterFusedFunction(String column_name, ASTFunction & func)
     func.children.push_back(func.arguments);
 }
 
-void fuseCandidates(std::unordered_map<String, DB::FuseFunctions> &fuse_map)
+void fuseSumCountAggregates(std::unordered_map<String, FuseSumCountAggregates> & fuse_map)
 {
     for (auto & it : fuse_map)
     {
         if (it.second.canBeFused())
         {
             for (auto & func: it.second.sums)
-                rewriterFusedFunction(it.first, *func);
+                replaceWithSumCount(it.first, *func);
             for (auto & func: it.second.avgs)
-                rewriterFusedFunction(it.first, *func);
+                replaceWithSumCount(it.first, *func);
             for (auto & func: it.second.counts)
-                rewriterFusedFunction(it.first, *func);
+                replaceWithSumCount(it.first, *func);
         }
     }
 }
@@ -1012,12 +1018,15 @@ void TreeRewriter::normalize(ASTPtr & query, Aliases & aliases, const NameSet & 
         CustomizeGlobalNotInVisitor(data_global_not_null_in).visit(query);
     }
 
-    /// Try to fuse sum/avg/count with identical column(at least two functions exist) to sumCount()
+    // Try to fuse sum/avg/count with identical arguments to one sumCount call,
+    // if we have at least two different functions. E.g. we will replace sum(x)
+    // and count(x) with sumCount(x).1 and sumCount(x).2, and sumCount() will
+    // be calculated only once because of CSE.
     if (settings.optimize_fuse_sum_count_avg)
     {
-        CustomizeFuseAggregateFunctionsVisitor::Data data;
-        CustomizeFuseAggregateFunctionsVisitor(data).visit(query);
-        fuseCandidates(data.fuse_map);
+        FuseSumCountAggregatesVisitor::Data data;
+        FuseSumCountAggregatesVisitor(data).visit(query);
+        fuseSumCountAggregates(data.fuse_map);
     }
 
     /// Rewrite all aggregate functions to add -OrNull suffix to them
