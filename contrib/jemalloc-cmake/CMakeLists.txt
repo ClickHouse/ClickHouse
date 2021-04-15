@@ -1,7 +1,7 @@
-if (SANITIZE OR NOT (ARCH_AMD64 OR ARCH_ARM) OR NOT (OS_LINUX OR OS_FREEBSD OR OS_DARWIN))
+if (SANITIZE OR NOT (ARCH_AMD64 OR ARCH_ARM OR ARCH_PPC64LE) OR NOT (OS_LINUX OR OS_FREEBSD OR OS_DARWIN))
     if (ENABLE_JEMALLOC)
         message (${RECONFIGURE_MESSAGE_LEVEL}
-                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64 or aarch64 on linux or freebsd.")
+                 "jemalloc is disabled implicitly: it doesn't work with sanitizers and can only be used with x86_64, aarch64 or ppc64le on linux or freebsd.")
     endif()
     set (ENABLE_JEMALLOC OFF)
 else()
@@ -107,6 +107,8 @@ if (ARCH_AMD64)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_x86_64")
 elseif (ARCH_ARM)
     set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_aarch64")
+elseif (ARCH_PPC64LE)
+    set(JEMALLOC_INCLUDE_PREFIX "${JEMALLOC_INCLUDE_PREFIX}_ppc64le")
 else ()
     message (FATAL_ERROR "internal jemalloc: This arch is not supported")
 endif ()
@@ -119,12 +121,14 @@ target_include_directories(jemalloc SYSTEM PRIVATE
 target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_DEBUG=1 -DJEMALLOC_PROF=1)
+    target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_DEBUG=1)
+endif ()
 
-    if (USE_UNWIND)
-        target_compile_definitions (jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
-        target_link_libraries (jemalloc PRIVATE unwind)
-    endif ()
+target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_PROF=1)
+
+if (USE_UNWIND)
+    target_compile_definitions (jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
+    target_link_libraries (jemalloc PRIVATE unwind)
 endif ()
 
 target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)

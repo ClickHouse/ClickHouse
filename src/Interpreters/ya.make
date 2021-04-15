@@ -103,6 +103,7 @@ SRCS(
     InterpreterSystemQuery.cpp
     InterpreterUseQuery.cpp
     InterpreterWatchQuery.cpp
+    InterserverCredentials.cpp
     JoinSwitcher.cpp
     JoinToSubqueryTransformVisitor.cpp
     JoinedTables.cpp
@@ -117,6 +118,7 @@ SRCS(
     OpenTelemetrySpanLog.cpp
     OptimizeIfChains.cpp
     OptimizeIfWithConstantConditionVisitor.cpp
+    OptimizeShardingKeyRewriteInVisitor.cpp
     PartLog.cpp
     PredicateExpressionsOptimizer.cpp
     PredicateRewriteVisitor.cpp

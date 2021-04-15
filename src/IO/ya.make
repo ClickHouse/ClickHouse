@@ -34,6 +34,9 @@ SRCS(
     LimitReadBuffer.cpp
     MMapReadBufferFromFile.cpp
     MMapReadBufferFromFileDescriptor.cpp
+    MMapReadBufferFromFileWithCache.cpp
+    MMappedFile.cpp
+    MMappedFileDescriptor.cpp
     MemoryReadWriteBuffer.cpp
     MySQLBinlogEventReadBuffer.cpp
     MySQLPacketPayloadReadBuffer.cpp

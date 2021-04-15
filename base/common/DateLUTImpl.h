@@ -853,21 +853,57 @@ public:
     {
         if (hours == 1)
             return toStartOfHour(t);
+
+        /** We will round the hour number since the midnight.
+          * It may split the day into non-equal intervals.
+          * For example, if we will round to 11-hour interval,
+          * the day will be split to the intervals 00:00:00..10:59:59, 11:00:00..21:59:59, 22:00:00..23:59:59.
+          * In case of daylight saving time or other transitions,
+          * the intervals can be shortened or prolonged to the amount of transition.
+          */
+
         UInt64 seconds = hours * 3600;
 
-        t = roundDown(t, seconds);
+        const LUTIndex index = findIndex(t);
+        const Values & values = lut[index];
 
-        if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
-            return t;
+        time_t time = t - values.date;
+        if (time >= values.time_at_offset_change())
+        {
+            /// Align to new hour numbers before rounding.
+            time += values.amount_of_offset_change();
+            time = time / seconds * seconds;
 
-        /// TODO check if it's correct.
-        return toStartOfHour(t);
+            /// Should subtract the shift back but only if rounded time is not before shift.
+            if (time >= values.time_at_offset_change())
+            {
+                time -= values.amount_of_offset_change();
+
+                /// With cutoff at the time of the shift. Otherwise we may end up with something like 23:00 previous day.
+                if (time < values.time_at_offset_change())
+                    time = values.time_at_offset_change();
+            }
+        }
+        else
+        {
+            time = time / seconds * seconds;
+        }
+
+        return values.date + time;
     }
 
     inline time_t toStartOfMinuteInterval(time_t t, UInt64 minutes) const
     {
         if (minutes == 1)
             return toStartOfMinute(t);
+
+        /** In contrast to "toStartOfHourInterval" function above,
+          * the minute intervals are not aligned to the midnight.
+          * You will get unexpected results if for example, you round down to 60 minute interval
+          * and there was a time shift to 30 minutes.
+          *
+          * But this is not specified in docs and can be changed in future.
+          */
 
         UInt64 seconds = 60 * minutes;
         return roundDown(t, seconds);

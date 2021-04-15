@@ -28,7 +28,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreePartCheckThread)")
     , log(&Poco::Logger::get(log_name))
 {
-    task = storage.global_context.getSchedulePool().createTask(log_name, [this] { run(); });
+    task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
     task->schedule();
 }
 
@@ -213,7 +213,7 @@ std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLo
     /// because our checks of local storage and zookeeper are not consistent.
     /// If part exists in zookeeper and doesn't exists in local storage definitely require
     /// to fetch this part. But if we check local storage first and than check zookeeper
-    /// some background process can successfully commit part between this checks (both to the local stoarge and zookeeper),
+    /// some background process can successfully commit part between this checks (both to the local storage and zookeeper),
     /// but checker thread will remove part from zookeeper and queue fetch.
     bool exists_in_zookeeper = zookeeper->exists(part_path);
 
@@ -234,6 +234,8 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
 
     auto [exists_in_zookeeper, part] = findLocalPart(part_name);
 
+    LOG_TRACE(log, "Part {} in zookeeper: {}, locally: {}", part_name, exists_in_zookeeper, part != nullptr);
+
     /// We do not have this or a covering part.
     if (!part)
     {
@@ -249,6 +251,9 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
 
         auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
             part->getColumns(), part->checksums);
+
+        /// The double get scheme is needed to retain compatibility with very old parts that were created
+        /// before the ReplicatedMergeTreePartHeader was introduced.
 
         String part_path = storage.replica_path + "/parts/" + part_name;
         String part_znode;
