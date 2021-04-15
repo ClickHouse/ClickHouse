@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/config.h>
+
 #if USE_AWS_S3
 
 #include <Common/RemoteHostFilter.h>
