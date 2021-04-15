@@ -13,7 +13,7 @@ class FunctionMathConstFloat64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathConstFloat64>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMathConstFloat64>(); }
 
 private:
     String getName() const override { return name; }

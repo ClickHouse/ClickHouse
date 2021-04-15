@@ -56,6 +56,26 @@ Default value: 150.
 
 ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
 
+## inactive_parts_to_throw_insert {#inactive-parts-to-throw-insert}
+
+If the number of inactive parts in a single partition more than the `inactive_parts_to_throw_insert` value, `INSERT` is interrupted with the "Too many inactive parts (N). Parts cleaning are processing significantly slower than inserts" exception.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 0 (unlimited).
+
+## inactive_parts_to_delay_insert {#inactive-parts-to-delay-insert}
+
+If the number of inactive parts in a single partition in the table at least that many the `inactive_parts_to_delay_insert` value, an `INSERT` artificially slows down. It is useful when a server fails to clean up parts quickly enough.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: 0 (unlimited).
+
 ## max_delay_to_insert {#max-delay-to-insert}
 
 The value in seconds, which is used to calculate the `INSERT` delay, if the number of active parts in a single partition exceeds the [parts_to_delay_insert](#parts-to-delay-insert) value.

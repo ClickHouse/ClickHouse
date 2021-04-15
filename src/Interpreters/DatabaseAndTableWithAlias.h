@@ -16,8 +16,6 @@ namespace DB
 class ASTSelectQuery;
 class ASTIdentifier;
 struct ASTTableExpression;
-class Context;
-
 
 /// Extracts database name (and/or alias) from table expression or identifier
 struct DatabaseAndTableWithAlias
@@ -28,9 +26,9 @@ struct DatabaseAndTableWithAlias
     UUID uuid = UUIDHelpers::Nil;
 
     DatabaseAndTableWithAlias() = default;
-    DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
-    DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
-    DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
 
     /// "alias." or "table." if alias is empty
     String getQualifiedNamePrefix(bool with_dot = true) const;
@@ -75,14 +73,14 @@ struct TableWithColumnNamesAndTypes
 
     void addMaterializedColumns(const NamesAndTypesList & addition)
     {
-        addAdditionalColumns(alias_columns, addition);
+        addAdditionalColumns(materialized_columns, addition);
     }
 
 private:
     void addAdditionalColumns(NamesAndTypesList & target, const NamesAndTypesList & addition)
     {
         target.insert(target.end(), addition.begin(), addition.end());
-        for (auto & col : addition)
+        for (const auto & col : addition)
             names.insert(col.name);
     }
 

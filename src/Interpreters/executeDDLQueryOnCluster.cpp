@@ -48,17 +48,17 @@ bool isSupportedAlterType(int type)
 }
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context)
 {
     return executeDDLQueryOnCluster(query_ptr_, context, {});
 }
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, const AccessRightsElements & query_requires_access)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, ContextPtr context, const AccessRightsElements & query_requires_access)
 {
     return executeDDLQueryOnCluster(query_ptr, context, AccessRightsElements{query_requires_access});
 }
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, AccessRightsElements && query_requires_access)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, AccessRightsElements && query_requires_access)
 {
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
@@ -71,7 +71,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         throw Exception("Distributed execution is not supported for such DDL queries", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    if (!context.getSettingsRef().allow_distributed_ddl)
+    if (!context->getSettingsRef().allow_distributed_ddl)
         throw Exception("Distributed DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 
     if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
@@ -83,9 +83,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         }
     }
 
-    query->cluster = context.getMacros()->expand(query->cluster);
-    ClusterPtr cluster = context.getCluster(query->cluster);
-    DDLWorker & ddl_worker = context.getDDLWorker();
+    query->cluster = context->getMacros()->expand(query->cluster);
+    ClusterPtr cluster = context->getCluster(query->cluster);
+    DDLWorker & ddl_worker = context->getDDLWorker();
 
     /// Enumerate hosts which will be used to send query.
     Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
@@ -109,7 +109,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
            != query_requires_access.end());
 
     bool use_local_default_database = false;
-    const String & current_database = context.getCurrentDatabase();
+    const String & current_database = context->getCurrentDatabase();
 
     if (need_replace_current_database)
     {
@@ -157,7 +157,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config
-    context.checkAccess(query_requires_access);
+    context->checkAccess(query_requires_access);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
@@ -169,14 +169,14 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     return getDistributedDDLStatus(node_path, entry, context);
 }
 
-BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, const Context & context, const std::optional<Strings> & hosts_to_wait)
+BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & entry, ContextPtr context, const std::optional<Strings> & hosts_to_wait)
 {
     BlockIO io;
-    if (context.getSettingsRef().distributed_ddl_task_timeout == 0)
+    if (context->getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
     auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, context, hosts_to_wait);
-    if (context.getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
+    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
     {
         /// Wait for query to finish, but ignore output
         NullBlockOutputStream output{Block{}};
@@ -189,18 +189,18 @@ BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & en
     return io;
 }
 
-DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context_,
+DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, ContextPtr context_,
                                                      const std::optional<Strings> & hosts_to_wait)
     : node_path(zk_node_path)
     , context(context_)
     , watch(CLOCK_MONOTONIC_COARSE)
     , log(&Poco::Logger::get("DDLQueryStatusInputStream"))
 {
-    if (context.getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::THROW ||
-        context.getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
+    if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::THROW ||
+        context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
         throw_on_timeout = true;
-    else if (context.getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT ||
-             context.getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NEVER_THROW)
+    else if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT ||
+             context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NEVER_THROW)
         throw_on_timeout = false;
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown output mode");
@@ -235,7 +235,7 @@ DDLQueryStatusInputStream::DDLQueryStatusInputStream(const String & zk_node_path
 
     addTotalRowsApprox(waiting_hosts.size());
 
-    timeout_seconds = context.getSettingsRef().distributed_ddl_task_timeout;
+    timeout_seconds = context->getSettingsRef().distributed_ddl_task_timeout;
 }
 
 std::pair<String, UInt16> DDLQueryStatusInputStream::parseHostAndPort(const String & host_id) const
@@ -259,21 +259,21 @@ Block DDLQueryStatusInputStream::readImpl()
     assert(num_hosts_finished <= waiting_hosts.size());
     if (all_hosts_finished || timeout_exceeded)
     {
-        bool throw_if_error_on_host = context.getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
+        bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
         if (first_exception && throw_if_error_on_host)
             throw Exception(*first_exception);
 
         return res;
     }
 
-    auto zookeeper = context.getZooKeeper();
+    auto zookeeper = context->getZooKeeper();
     size_t try_number = 0;
 
     while (res.rows() == 0)
     {
         if (isCancelled())
         {
-            bool throw_if_error_on_host = context.getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
+            bool throw_if_error_on_host = context->getSettingsRef().distributed_ddl_output_mode != DistributedDDLOutputMode::NEVER_THROW;
             if (first_exception && throw_if_error_on_host)
                 throw Exception(*first_exception);
 
