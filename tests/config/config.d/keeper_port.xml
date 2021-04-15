@@ -8,6 +8,8 @@
             <session_timeout_ms>30000</session_timeout_ms>
             <force_sync>false</force_sync>
             <startup_timeout>60000</startup_timeout>
+            <!-- we want all logs for complex problems investigation -->
+            <reserved_log_items>1000000000000000</reserved_log_items>
         </coordination_settings>
 
         <raft_configuration>
