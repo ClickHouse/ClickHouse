@@ -128,7 +128,7 @@ struct Bfloat16Histogram
         else
         {
             for (size_t i = 0; i < size; ++i)
-                result[indices[i]] = quantile<T>(levels[indices[i]]);
+                result[indices[i]] = quantile(levels[indices[i]]);
         }
     }
 
