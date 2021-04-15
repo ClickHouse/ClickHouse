@@ -1,5 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 #include <optional>
 #include <unordered_set>
 
@@ -39,6 +39,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <DataStreams/materializeBlock.h>
 
 namespace ProfileEvents
 {
@@ -71,28 +72,30 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
 }
 
 
-/// Construct a block consisting only of possible values of virtual columns
-static Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool with_uuid)
+Block MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns()
 {
-    auto part_column = ColumnString::create();
-    auto part_uuid_column = ColumnUUID::create();
+    return Block(std::initializer_list<ColumnWithTypeAndName>{
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
+        ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid")});
+}
+
+void MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, Block & block)
+{
+    MutableColumns columns = block.mutateColumns();
+
+    auto & part_column = columns[0];
+    auto & partition_id_column = columns[1];
+    auto & part_uuid_column = columns[2];
 
     for (const auto & part : parts)
     {
         part_column->insert(part->name);
-        if (with_uuid)
-            part_uuid_column->insert(part->uuid);
+        partition_id_column->insert(part->info.partition_id);
+        part_uuid_column->insert(part->uuid);
     }
 
-    if (with_uuid)
-    {
-        return Block(std::initializer_list<ColumnWithTypeAndName>{
-            ColumnWithTypeAndName(std::move(part_column), std::make_shared<DataTypeString>(), "_part"),
-            ColumnWithTypeAndName(std::move(part_uuid_column), std::make_shared<DataTypeUUID>(), "_part_uuid"),
-        });
-    }
-
-    return Block{ColumnWithTypeAndName(std::move(part_column), std::make_shared<DataTypeString>(), "_part")};
+    block.setColumns(std::move(columns));
 }
 
 
@@ -149,7 +152,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
@@ -165,7 +168,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
@@ -176,8 +179,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     Names real_column_names;
 
     size_t total_parts = parts.size();
-    bool part_column_queried = false;
-    bool part_uuid_column_queried = false;
 
     bool sample_factor_column_queried = false;
     Float64 used_sample_factor = 1;
@@ -186,7 +187,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         if (name == "_part")
         {
-            part_column_queried = true;
             virt_column_names.push_back(name);
         }
         else if (name == "_part_index")
@@ -199,7 +199,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         }
         else if (name == "_part_uuid")
         {
-            part_uuid_column_queried = true;
             virt_column_names.push_back(name);
         }
         else if (name == "_sample_factor")
@@ -219,16 +218,27 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     if (real_column_names.empty())
         real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
 
-    /// If `_part` or `_part_uuid` virtual columns are requested, we try to filter out data by them.
-    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, part_uuid_column_queried);
-    if (part_column_queried || part_uuid_column_queried)
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context);
+    std::unordered_set<String> part_values;
+    ASTPtr expression_ast;
+    auto virtual_columns_block = getSampleBlockWithVirtualPartColumns();
 
-    auto part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+    // Generate valid expressions for filtering
+    VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, context, virtual_columns_block, expression_ast);
+
+    // If there is still something left, fill the virtual block and do the filtering.
+    if (expression_ast)
+    {
+        fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context, expression_ast);
+        part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+        if (part_values.empty())
+            return std::make_unique<QueryPlan>();
+    }
+    // At this point, empty `part_values` means all parts.
 
     metadata_snapshot->check(real_column_names, data.getVirtuals(), data.getStorageID());
 
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
 
@@ -270,9 +280,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
-    const Context & query_context = context.hasQueryContext() ? context.getQueryContext() : context;
+    auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
 
-    if (query_context.getSettingsRef().allow_experimental_query_deduplication)
+    if (query_context->getSettingsRef().allow_experimental_query_deduplication)
         selectPartsToReadWithUUIDFilter(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, query_context);
     else
         selectPartsToRead(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read);
@@ -373,7 +383,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         LOG_DEBUG(log, "Will use no data on this replica because parallel replicas processing has been requested"
             " (the setting 'max_parallel_replicas') but the table does not support sampling and this replica is not the first.");
-        return {};
+        return std::make_unique<QueryPlan>();
     }
 
     bool use_sampling = relative_sample_size > 0 || (settings.parallel_replicas_count > 1 && data.supportsSampling());
@@ -546,6 +556,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
         .min_bytes_to_use_mmap_io = settings.min_bytes_to_use_mmap_io,
+        .mmap_cache = context->getMMappedFileCache(),
         .max_read_buffer_size = settings.max_read_buffer_size,
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
@@ -555,15 +566,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         MergeTreeIndexPtr index;
         MergeTreeIndexConditionPtr condition;
-        std::atomic<size_t> total_granules;
-        std::atomic<size_t> granules_dropped;
+        std::atomic<size_t> total_granules{0};
+        std::atomic<size_t> granules_dropped{0};
 
         DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
             : index(index_)
             , condition(condition_)
-            , total_granules(0)
-            , granules_dropped(0)
-        {}
+        {
+        }
     };
     std::list<DataSkippingIndexAndCondition> useful_indices;
 
@@ -694,7 +704,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()] {
-                    SCOPE_EXIT(
+                    SCOPE_EXIT_SAFE(
                         if (thread_group)
                             CurrentThread::detachQueryIfNotDetached();
                     );
@@ -766,7 +776,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         if (data_settings->min_marks_to_honor_max_concurrent_queries > 0
             && sum_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
         {
-            query_id = context.getCurrentQueryId();
+            query_id = context->getCurrentQueryId();
             if (!query_id.empty())
                 data.insertQueryIdOrThrow(query_id, data_settings->max_concurrent_queries);
         }
@@ -1350,8 +1360,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     for (const auto & plan : plans)
         input_streams.emplace_back(plan->getCurrentDataStream());
 
-    const auto & common_header = plans.front()->getCurrentDataStream().header;
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), common_header);
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
 
     auto plan = std::make_unique<QueryPlan>();
     plan->unitePlans(std::move(union_step), std::move(plans));
@@ -1894,7 +1903,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
 
     for (const auto & part : prev_parts)
     {
-        if (part_values.find(part->name) == part_values.end())
+        if (!part_values.empty() && part_values.find(part->name) == part_values.end())
             continue;
 
         if (part->isEmpty())
@@ -1928,16 +1937,13 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     const DataTypes & minmax_columns_types,
     std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    const Context & query_context) const
+    ContextPtr query_context) const
 {
-    /// const_cast to add UUIDs to context. Bad practice.
-    Context & non_const_context = const_cast<Context &>(query_context);
-
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
     auto select_parts = [&] (MergeTreeData::DataPartsVector & selected_parts) -> bool
     {
-        auto ignored_part_uuids = non_const_context.getIgnoredPartUUIDs();
+        auto ignored_part_uuids = query_context->getIgnoredPartUUIDs();
         std::unordered_set<UUID> temp_part_uuids;
 
         auto prev_parts = selected_parts;
@@ -1945,7 +1951,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
         for (const auto & part : prev_parts)
         {
-            if (part_values.find(part->name) == part_values.end())
+            if (!part_values.empty() && part_values.find(part->name) == part_values.end())
                 continue;
 
             if (part->isEmpty())
@@ -1986,12 +1992,12 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
         if (!temp_part_uuids.empty())
         {
-            auto duplicates = non_const_context.getPartUUIDs()->add(std::vector<UUID>{temp_part_uuids.begin(), temp_part_uuids.end()});
+            auto duplicates = query_context->getPartUUIDs()->add(std::vector<UUID>{temp_part_uuids.begin(), temp_part_uuids.end()});
             if (!duplicates.empty())
             {
                 /// on a local replica with prefer_localhost_replica=1 if any duplicates appeared during the first pass,
                 /// adding them to the exclusion, so they will be skipped on second pass
-                non_const_context.getIgnoredPartUUIDs()->add(duplicates);
+                query_context->getIgnoredPartUUIDs()->add(duplicates);
                 return false;
             }
         }
