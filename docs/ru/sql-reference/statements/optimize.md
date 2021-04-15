@@ -67,7 +67,7 @@ OPTIMIZE TABLE example FINAL DEDUPLICATE;
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
 ```
 
-Дедупликация по всем столбцам, кроме `ALIAS` и `MATERIALIZED` и `materialized_value`: столбцы `primary_key`, `secondary_key`, `value` и `partition_key`.
+Дедупликация по всем столбцам, кроме `ALIAS`, `MATERIALIZED` и `materialized_value`: столбцы `primary_key`, `secondary_key`, `value` и `partition_key`.
 
 
 ``` sql
