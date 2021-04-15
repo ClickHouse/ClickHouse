@@ -108,14 +108,6 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
         " UNION ALL "
         "SELECT cluster FROM system.clusters"
         " UNION ALL "
-        "SELECT name FROM system.errors"
-        " UNION ALL "
-        "SELECT event FROM system.events"
-        " UNION ALL "
-        "SELECT metric FROM system.asynchronous_metrics"
-        " UNION ALL "
-        "SELECT metric FROM system.metrics"
-        " UNION ALL "
         "SELECT macro FROM system.macros"
         " UNION ALL "
         "SELECT policy_name FROM system.storage_policies"
@@ -139,17 +131,12 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
 
     query << ") WHERE notEmpty(res)";
 
-    Settings settings;
-    /// To show all rows from:
-    /// - system.errors
-    /// - system.events
-    settings.system_events_show_zero_values = true;
-    fetch(connection, timeouts, query.str(), settings);
+    fetch(connection, timeouts, query.str());
 }
 
-void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query, Settings & settings)
+void Suggest::fetch(Connection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
 {
-    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete, &settings);
+    connection.sendQuery(timeouts, query, "" /* query_id */, QueryProcessingStage::Complete);
 
     while (true)
     {

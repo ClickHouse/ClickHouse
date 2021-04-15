@@ -191,10 +191,15 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, ContextPtr contex
     ConstantFilterDescription constant_filter(*filter_column);
 
     if (constant_filter.always_true)
+    {
         return;
+    }
 
     if (constant_filter.always_false)
+    {
         block = block.cloneEmpty();
+        return;
+    }
 
     FilterDescription filter(*filter_column);
 
