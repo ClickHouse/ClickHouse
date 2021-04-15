@@ -67,7 +67,6 @@ bool ParserClusterQuery::parse_server_port(Pos & pos, String & server, UInt16 & 
             ++pos;
         }
     }
-    return true;
 }
 
 bool ParserClusterQuery::parse_server_port(Pos & pos, std::shared_ptr<ASTClusterQuery> & query, Expected & expected)

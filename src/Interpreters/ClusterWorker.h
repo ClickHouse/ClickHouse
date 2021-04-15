@@ -93,7 +93,6 @@ private:
     void attachToThreadGroup();
 
 private:
-    bool is_circular_replicated;
     ContextPtr context;
     Poco::Logger * log;
     std::unique_ptr<Context> current_context;
