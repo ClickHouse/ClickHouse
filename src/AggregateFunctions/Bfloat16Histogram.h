@@ -67,12 +67,11 @@ struct Bfloat16Histogram
         buf.read(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
 
-    template <typename T>
-    T quantile(const Float64 & level)
+    Float32 quantile(const Float64 & level)
     {
         if (array.empty())
         {
-            return onEmpty<T>();
+            return onEmpty<Value>();
         }
         sortIfNeeded();
 
