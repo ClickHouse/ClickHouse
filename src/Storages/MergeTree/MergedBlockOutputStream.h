@@ -19,6 +19,7 @@ public:
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
         CompressionCodecPtr default_codec_,
+        const SerializationInfo & serialization_info,
         bool blocks_are_granules_size = false);
 
     Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
@@ -57,7 +58,6 @@ private:
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
-    SerializationInfo serialization_info;
 };
 
 }

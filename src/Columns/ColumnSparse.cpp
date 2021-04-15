@@ -5,6 +5,7 @@
 #include <Common/WeakHash.h>
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 namespace DB
 {
@@ -595,8 +596,7 @@ MutableColumns ColumnSparse::scatter(ColumnIndex num_columns, const Selector & s
 
 void ColumnSparse::gather(ColumnGathererStream & gatherer_stream)
 {
-    UNUSED(gatherer_stream);
-    throwMustBeDense();
+    gatherer_stream.gather(*this);
 }
 
 ColumnPtr ColumnSparse::compress() const
@@ -615,7 +615,7 @@ ColumnPtr ColumnSparse::compress() const
 
 bool ColumnSparse::structureEquals(const IColumn & rhs) const
 {
-    if (auto rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs))
+    if (const auto * rhs_sparse = typeid_cast<const ColumnSparse *>(&rhs))
         return values->structureEquals(*rhs_sparse->values);
     return false;
 }

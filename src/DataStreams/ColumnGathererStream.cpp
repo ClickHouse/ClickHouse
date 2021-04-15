@@ -18,9 +18,11 @@ namespace ErrorCodes
 }
 
 ColumnGathererStream::ColumnGathererStream(
-        const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
+        const String & column_name_, const SerializationPtr & serialization_,
+        const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_)
-    : column_name(column_name_), sources(source_streams.size()), row_sources_buf(row_sources_buf_)
+    : column_name(column_name_), serialization(serialization_)
+    , sources(source_streams.size()), row_sources_buf(row_sources_buf_)
     , block_preferred_size(block_preferred_size_), log(&Poco::Logger::get("ColumnGathererStream"))
 {
     if (source_streams.empty())
@@ -42,9 +44,9 @@ ColumnGathererStream::ColumnGathererStream(
         {
             column.name = column_name;
             column.type = header.getByName(column_name).type;
-            column.column = column.type->createColumn();
+            column.column = column.type->createColumn(*serialization);
         }
-        else if (header.getByName(column_name).column->getName() != column.column->getName())
+        else if (!header.getByName(column_name).type->equals(*column.type))
             throw Exception("Column types don't match", ErrorCodes::INCOMPATIBLE_COLUMNS);
     }
 }

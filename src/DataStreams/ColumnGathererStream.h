@@ -57,7 +57,8 @@ class ColumnGathererStream : public IBlockInputStream
 {
 public:
     ColumnGathererStream(
-        const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
+        const String & column_name_, const SerializationPtr & serialization_,
+        const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
 
     String getName() const override { return "ColumnGatherer"; }
@@ -93,6 +94,7 @@ private:
 
     String column_name;
     ColumnWithTypeAndName column;
+    SerializationPtr serialization;
 
     std::vector<Source> sources;
     ReadBuffer & row_sources_buf;
