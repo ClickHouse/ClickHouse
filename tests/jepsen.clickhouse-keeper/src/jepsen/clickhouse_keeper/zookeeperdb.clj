@@ -34,30 +34,30 @@
   (reify db/DB
     (setup! [_ test node]
       (c/su
-        (info node "Installing ZK" version)
-        (c/exec :apt-get :update)
-        (c/exec :apt-get :install (str "zookeeper=" version))
-        (c/exec :apt-get :install (str "zookeeperd=" version))
-        (c/exec :echo (zk-node-id test node) :> "/etc/zookeeper/conf/myid")
+       (info node "Installing ZK" version)
+       (c/exec :apt-get :update)
+       (c/exec :apt-get :install (str "zookeeper=" version))
+       (c/exec :apt-get :install (str "zookeeperd=" version))
+       (c/exec :echo (zk-node-id test node) :> "/etc/zookeeper/conf/myid")
 
-        (c/exec :echo (str (slurp (io/resource "zoo.cfg"))
-                           "\n"
-                           (zoo-cfg-servers test node))
-                :> "/etc/zookeeper/conf/zoo.cfg")
+       (c/exec :echo (str (slurp (io/resource "zoo.cfg"))
+                          "\n"
+                          (zoo-cfg-servers test node))
+               :> "/etc/zookeeper/conf/zoo.cfg")
 
-        (info node "ZK restarting")
-        (c/exec :service :zookeeper :restart)
-        (info "Connecting to zk" (name node))
-        (zk-connect (name node) 2181 1000)
-        (info node "ZK ready")))
+       (info node "ZK restarting")
+       (c/exec :service :zookeeper :restart)
+       (info "Connecting to zk" (name node))
+       (zk-connect (name node) 2181 1000)
+       (info node "ZK ready")))
 
     (teardown! [_ test node]
       (info node "tearing down ZK")
       (c/su
-        (c/exec :service :zookeeper :stop :|| true)
-        (c/exec :rm :-rf
-                (c/lit "/var/lib/zookeeper/version-*")
-                (c/lit "/var/log/zookeeper/*"))))
+       (c/exec :service :zookeeper :stop :|| true)
+       (c/exec :rm :-rf
+               (c/lit "/var/lib/zookeeper/version-*")
+               (c/lit "/var/log/zookeeper/*"))))
 
     db/LogFiles
     (log-files [_ test node]
