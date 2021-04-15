@@ -311,7 +311,7 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     UInt64 milliseconds = main_watch.elapsedMilliseconds();
     if (views.size() > 1)
     {
-        LOG_TRACE(log, "Pushing from {} to {} views took {} ms.",
+        LOG_DEBUG(log, "Pushing from {} to {} views took {} ms.",
             storage->getStorageID().getNameForLogs(), views.size(),
             milliseconds);
     }
