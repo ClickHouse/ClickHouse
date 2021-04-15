@@ -142,7 +142,7 @@ private:
         return ext::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16; 
     }
 
-    Float32 to_Float32(const bfloat & x) const
+    Float32 to_Float32(const bfloat16 & x) const
     {
         return ext::bit_cast<Float32>(x << 16);
     }
