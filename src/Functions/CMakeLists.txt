@@ -1,5 +1,7 @@
 configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
 
+add_subdirectory(divide)
+
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(clickhouse_functions .)
 
@@ -25,7 +27,7 @@ target_link_libraries(clickhouse_functions
     PRIVATE
         ${ZLIB_LIBRARIES}
         boost::filesystem
-        libdivide
+        divide_impl
 )
 
 if (OPENSSL_CRYPTO_LIBRARY)
