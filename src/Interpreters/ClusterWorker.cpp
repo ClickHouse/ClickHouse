@@ -49,13 +49,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_FORMAT_VERSION;
-    extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int UNFINISHED;
-    extern const int QUERY_IS_PROHIBITED;
 }
 
 class ZooKeeperLock
@@ -133,7 +130,7 @@ struct NodeInfo
 {
     enum Type
     {
-        ACTIVED = 1,
+        ACTIVATED = 1,
         PAUSED = 2,
         DECOMMISSION = 3,
         DROPPED = 4
@@ -313,15 +310,12 @@ public:
             {
                 size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
                 size_t num_active_hosts = current_active_hosts.size();
-
-                std::stringstream msg;
-                msg << "Watching task " << query_path << " is executing longer than distributed_ddl_task_timeout"
-                    << " (=" << timeout_seconds << ") seconds."
-                    << " There are " << num_unfinished_hosts << " unfinished hosts"
-                    << " (" << num_active_hosts << " of them are currently active)"
-                    << ", they are going to execute the query in background";
-
-                throw Exception(msg.str(), ErrorCodes::TIMEOUT_EXCEEDED);
+                               
+                constexpr const char * msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
+                                                    "There are {} unfinished hosts ({} of them are currently active), "
+                                                    "they are going to execute the query in background";
+                throw Exception(
+                    ErrorCodes::TIMEOUT_EXCEEDED, msg_format, query_path, timeout_seconds, num_unfinished_hosts, num_active_hosts);
             }
 
             if (num_hosts_finished != 0 || try_number != 0)
@@ -532,10 +526,10 @@ void ClusterWorker::parseQuery(ClusterEntry & entry, NodeInfo & node)
             node.status = NodeInfo::PAUSED;
             break;
         case ASTClusterQuery::START_NODE:
-            node.status = NodeInfo::ACTIVED;
+            node.status = NodeInfo::ACTIVATED;
             break;
         default:
-            node.status = NodeInfo::ACTIVED;
+            node.status = NodeInfo::ACTIVATED;
     }
 }
 
@@ -683,7 +677,7 @@ bool ClusterWorker::updateLocalNodes(Strings & cluster_nodes, const ZooKeeperPtr
             local_node->status = NodeInfo::PAUSED;
             LOG_DEBUG(
                 log,
-                "Cant find node {} from zookeeper, the node set to PAUSED, address size {}",
+                "Can't find node {} from zookeeper, the node set to PAUSED, address size {}",
                 it->first,
                 local_node->address_vec.size());
         }
@@ -851,8 +845,8 @@ void ClusterWorker::cleanupQueue(const ZooKeeperPtr & zookeeper)
 
             /// Deleting
             {
-                Strings childs = zookeeper->getChildren(query_path);
-                for (const String & child : childs)
+                Strings children = zookeeper->getChildren(query_path);
+                for (const String & child : children)
                 {
                     zookeeper->tryRemoveRecursive(query_path + "/" + child);
                 }
@@ -866,7 +860,7 @@ void ClusterWorker::cleanupQueue(const ZooKeeperPtr & zookeeper)
         catch (...)
         {
             LOG_INFO(
-                log, "An error occured while checking and cleaning task {} from queue: {}", query_name, getCurrentExceptionMessage(false));
+                log, "An error occurred while checking and cleaning task {} from queue: {}", query_name, getCurrentExceptionMessage(false));
         }
     }
 }

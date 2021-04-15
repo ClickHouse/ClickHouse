@@ -18,7 +18,7 @@ class AccessRightsElements;
 class ASTClusterQuery;
 
 /** Implement various CLUSTER queries.
-  * Examples: 
+  * Examples:
   *   CLUSTER PAUSE NODE IP[:PORT] [ON CLUSTER xxx]
   *   CLUSTER ADD NODE IP[:PORT] [ON CLUSTER xxx]
   */

@@ -13,9 +13,9 @@ namespace DB
 
 
 ///CLUSTER PAUSE NODE SERVER:PORT, status is paused
-///CLUSTER START NODE SERVER:PORT, status is actived
+///CLUSTER START NODE SERVER:PORT, status is activated
 ///TODO:
-///CLUSTER ADD NODE SERVER:PORT SHARD REPLICA ON CLUSTER XXX, status is actived
+///CLUSTER ADD NODE SERVER:PORT SHARD REPLICA ON CLUSTER XXX, status is activated
 ///CLUSTER DROP NODE SERVER[:PORT], status is dropped
 ///CLUSTER REPLACE NODE OLD_SERVER[:OLD_PORT] NEW_SERVER[:NEW_PORT]
 class ASTClusterQuery : public IAST, public ASTQueryWithOnCluster

@@ -74,7 +74,7 @@ private:
     /// Register local config node info to zookeeper
     void registerNodes(const ZooKeeperPtr & zookeeper);
 
-    /// Update lcoal server status from zookeeper
+    /// Update local server status from zookeeper
     bool updateLocalNodes(Strings & cluster_nodes, const ZooKeeperPtr & zookeeper);
 
     /// Update queue status
@@ -101,7 +101,7 @@ private:
 
     std::string cluster_dir; /// dir with root of cluster
     std::string node_dir; /// dir with node status
-    std::string queue_dir; ///dir with queue of lastest query
+    std::string queue_dir; ///dir with queue of latest query
     String current_entry_name; /// current entry name
 
     /// Name of last task that was skipped or successfully executed

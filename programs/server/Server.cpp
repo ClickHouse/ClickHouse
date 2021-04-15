@@ -1333,9 +1333,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
                                                                      "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
-                                                            
             String cluster_zookeeper_path = config().getString("distributed_cluster.path", "/clickhouse/cluster/");
-            global_context->setClusterWorker(std::make_unique<ClusterWorker>(cluster_zookeeper_path, global_context, &config(), "distributed_cluster"));                                                            
+            global_context->setClusterWorker(std::make_unique<ClusterWorker>(cluster_zookeeper_path, global_context, &config(), "distributed_cluster")); 
         }
 
         for (auto & server : *servers)
@@ -1360,7 +1359,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             else
                 LOG_INFO(log, "Closed all listening sockets.");
 
-            /// Killing remaining queries.
+            /// Killing remaining queries
             global_context->getProcessList().killAllQueries();
 
             if (current_connections)

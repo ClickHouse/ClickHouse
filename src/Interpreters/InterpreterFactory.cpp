@@ -212,7 +212,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextPtr
     }
     else if (query->as<ASTClusterQuery>())
     {
-        return std::make_unique<InterpreterClusterQuery>(query, context);       
+        return std::make_unique<InterpreterClusterQuery>(query, context); 
     }
     else if (query->as<ASTWatchQuery>())
     {
