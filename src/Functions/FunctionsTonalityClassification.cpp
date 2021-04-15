@@ -78,8 +78,7 @@ struct TonalityClassificationImpl
             }            
         }
         Float64 total_tonality = freq / count_words;
-        answer += get_tonality(total_tonality) + std::to_string(total_tonality) + "\n";
-        res = answer;
+        res = get_tonality(total_tonality);
     }
 
 
@@ -127,7 +126,7 @@ struct TonalityClassificationImpl
                 }
             }
             Float64 total_tonality = freq / count_words;
-            buf += get_tonality(total_tonality) + std::to_string(total_tonality) + "\n";
+            buf = get_tonality(total_tonality);
 
             const auto ans = buf.c_str();
             size_t cur_offset = offsets[i];
