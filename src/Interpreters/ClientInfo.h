@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Common/UInt128.h>
 #include <common/types.h>
@@ -95,6 +96,8 @@ public:
 
     /// Common
     String quota_key;
+
+    UInt64 distributed_depth = 0;
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 

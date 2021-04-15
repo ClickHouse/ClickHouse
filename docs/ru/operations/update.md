@@ -15,12 +15,12 @@ $ sudo service clickhouse-server restart
 
 Если ClickHouse установлен не из рекомендуемых deb-пакетов, используйте соответствующий метод обновления.
 
-!!! warning "Предупреждение"
-    ClickHouse не поддерживает распределенное обновление. Операция обновления должна выполняться последовательно на каждом отдельном сервере. Не обновляйте все серверы в кластере одновременно, иначе кластер станет недоступен в течение некоторого времени.
+!!! note "Примечание"
+    Вы можете обновить сразу несколько серверов, кроме случая, когда все реплики одного шарда отключены.
 
 Обновление ClickHouse до определенной версии:
 
-Пример:
+**Пример**
 
 `xx.yy.a.b` — это номер текущей стабильной версии. Последнюю стабильную версию можно узнать [здесь](https://github.com/ClickHouse/ClickHouse/releases)
 
@@ -29,5 +29,3 @@ $ sudo apt-get update
 $ sudo apt-get install clickhouse-server=xx.yy.a.b clickhouse-client=xx.yy.a.b clickhouse-common-static=xx.yy.a.b
 $ sudo service clickhouse-server restart
 ```
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/update/) <!--hide-->

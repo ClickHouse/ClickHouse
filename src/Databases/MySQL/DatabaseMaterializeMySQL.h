@@ -23,7 +23,7 @@ class DatabaseMaterializeMySQL : public Base
 public:
 
     DatabaseMaterializeMySQL(
-        const Context & context, const String & database_name_, const String & metadata_path_, UUID uuid,
+        ContextPtr context, const String & database_name_, const String & metadata_path_, UUID uuid,
         const String & mysql_database_name_, mysqlxx::Pool && pool_,
         MySQLClient && client_, std::unique_ptr<MaterializeMySQLSettings> settings_);
 
@@ -43,25 +43,25 @@ protected:
 public:
     String getEngineName() const override { return "MaterializeMySQL"; }
 
-    void loadStoredObjects(Context & context, bool has_force_restore_data_flag, bool force_attach) override;
+    void loadStoredObjects(ContextPtr context_, bool has_force_restore_data_flag, bool force_attach) override;
 
-    void createTable(const Context & context, const String & name, const StoragePtr & table, const ASTPtr & query) override;
+    void createTable(ContextPtr context_, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
-    void dropTable(const Context & context, const String & name, bool no_delay) override;
+    void dropTable(ContextPtr context_, const String & name, bool no_delay) override;
 
     void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(const String & name) override;
 
-    void renameTable(const Context & context, const String & name, IDatabase & to_database, const String & to_name, bool exchange, bool dictionary) override;
+    void renameTable(ContextPtr context_, const String & name, IDatabase & to_database, const String & to_name, bool exchange, bool dictionary) override;
 
-    void alterTable(const Context & context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
+    void alterTable(ContextPtr context_, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
 
-    void drop(const Context & context) override;
+    void drop(ContextPtr context_) override;
 
-    StoragePtr tryGetTable(const String & name, const Context & context) const override;
+    StoragePtr tryGetTable(const String & name, ContextPtr context_) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) override;
 
     void assertCalledFromSyncThreadOrDrop(const char * method) const;
 

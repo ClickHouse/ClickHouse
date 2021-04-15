@@ -51,7 +51,7 @@ public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionExtractAllGroups>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractAllGroups>(); }
 
     String getName() const override { return name; }
 
@@ -172,11 +172,12 @@ public:
                     for (size_t group = 1; group <= groups_count; ++group)
                         all_matches.push_back(matched_groups[group]);
 
-                    /// Additional limit to fail fast on supposedly incorrect usage.
-                    static constexpr size_t MAX_GROUPS_PER_ROW = 1000000;
-
-                    if (all_matches.size() > MAX_GROUPS_PER_ROW)
-                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in the result of function {}", getName());
+                    /// Additional limit to fail fast on supposedly incorrect usage, arbitrary value.
+                    static constexpr size_t MAX_MATCHES_PER_ROW = 1000;
+                    if (matches_per_row > MAX_MATCHES_PER_ROW)
+                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                                "Too many matches per row (> {}) in the result of function {}",
+                                MAX_MATCHES_PER_ROW, getName());
 
                     pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
 
