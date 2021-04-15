@@ -958,9 +958,9 @@ void DiskS3::findLastRevision()
     {
         auto revision_prefix = revision + "1";
 
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check object with revision prefix {} exists", revision_prefix);
+        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check object exists with revision prefix {}", revision_prefix);
 
-        /// Check file or operation with such revision exists.
+        /// Check file or operation with such revision prefix exists.
         if (checkObjectExists(bucket, s3_root_path + "r" + revision_prefix)
             || checkObjectExists(bucket, s3_root_path + "operations/r" + revision_prefix))
             revision += "1";
@@ -1402,7 +1402,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
                         if (!to_path.ends_with('/'))
                             to_path += '/';
 
-                        /// Always keep latest actual directory path to avoid detaching not existing paths.
+                        /// Always keep latest actual directory path to avoid 'detaching' not existing paths.
                         auto it = renames.find(from_path);
                         if (it != renames.end())
                             renames.erase(it);
@@ -1429,7 +1429,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
 
     if (detached)
     {
-        Strings invalid_prefixes{"tmp_", "delete_tmp_", "attaching_", "deleting_"};
+        Strings not_finished_prefixes{"tmp_", "delete_tmp_", "attaching_", "deleting_"};
 
         for (const auto & path : renames)
         {
@@ -1437,16 +1437,16 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
             if (path.find("/detached/") != std::string::npos)
                 continue;
 
-            /// Skip not finished parts.
+            /// Skip not finished parts. They shouldn't be in 'detached' directory, because CH wouldn't be able to finish processing them.
             Poco::Path directory_path (path);
             auto directory_name = directory_path.directory(directory_path.depth() - 1);
             auto predicate = [&directory_name](String & prefix) { return directory_name.starts_with(prefix); };
-            if (std::any_of(invalid_prefixes.begin(), invalid_prefixes.end(), predicate))
+            if (std::any_of(not_finished_prefixes.begin(), not_finished_prefixes.end(), predicate))
                 continue;
 
             auto detached_path = pathToDetached(path);
 
-            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Move directory to detached {} -> {}", path, detached_path);
+            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Move directory to 'detached' {} -> {}", path, detached_path);
 
             Poco::File(metadata_path + path).moveTo(metadata_path + detached_path);
         }
@@ -1464,11 +1464,7 @@ std::tuple<UInt64, String> DiskS3::extractRevisionAndOperationFromKey(const Stri
 
     re2::RE2::FullMatch(key, key_regexp, &revision_str, &operation);
 
-    auto revision = revision_str.empty() ? UNKNOWN_REVISION : static_cast<UInt64>(std::bitset<64>(revision_str).to_ullong());
-
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Parsed revision {} {} {}", key, revision_str, revision);
-
-    return {revision, operation};
+    return {(revision_str.empty() ? UNKNOWN_REVISION : static_cast<UInt64>(std::bitset<64>(revision_str).to_ullong())), operation};
 }
 
 String DiskS3::shrinkKey(const String & path, const String & key)
@@ -1484,17 +1480,17 @@ String DiskS3::revisionToString(UInt64 revision)
     return std::bitset<64>(revision).to_string();
 }
 
+String DiskS3::pathToDetached(const String & source_path)
+{
+    return Poco::Path(source_path).parent().append(Poco::Path("detached")).toString() + '/';
+}
+
 void DiskS3::onFreeze(const String & path)
 {
     createDirectories(path);
     WriteBufferFromFile revision_file_buf(metadata_path + path + "revision.txt", 32);
     writeIntText(revision_counter.load(), revision_file_buf);
     revision_file_buf.finalize();
-}
-
-String DiskS3::pathToDetached(const String & source_path)
-{
-    return Poco::Path(source_path).parent().append(Poco::Path("detached")).toString() + '/';
 }
 
 }
