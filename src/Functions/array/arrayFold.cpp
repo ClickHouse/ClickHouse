@@ -72,7 +72,7 @@ public:
                             + "inferred type of accumulator " + accumulator_type->getName() + ".",
                 ErrorCodes::TYPE_MISMATCH);
 
-        return accumulator_type;
+        return DataTypePtr(accumulator_type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
