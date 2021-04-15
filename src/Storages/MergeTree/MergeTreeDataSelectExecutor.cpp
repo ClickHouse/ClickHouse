@@ -774,9 +774,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     if (metadata_snapshot->hasPrimaryKey())
     {
+        auto description = key_condition.getDescription();
+
         index_stats->emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::PrimaryKey,
-            .description = key_condition.toString(),
+            .description = std::move(description.condition),
+            .used_keys = std::move(description.used_keys),
             .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
             .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed)});
     }
