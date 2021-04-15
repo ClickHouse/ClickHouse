@@ -8,7 +8,8 @@
 #include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <DataStreams/ShellCommandOwningBlockInputStream.h>
+#include <DataStreams/ShellCommandBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
 #include <Dictionaries/ExecutableDictionarySource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Block.h>
@@ -31,18 +32,18 @@ public:
     String getName() const override { return "Executable"; }
 
     StorageExecutableSource(
+        const String & file_path_,
         const String & format_,
+        BlockInputStreamPtr input_,
         const StorageMetadataPtr & metadata_snapshot_,
         const Context & context_,
-        const ColumnsDescription & /*columns*/,
-        UInt64 max_block_size_,
-        const CompressionMethod /*compression_method*/,
-        const String & file_path_)
+        UInt64 max_block_size_)
         : SourceWithProgress(metadata_snapshot_->getSampleBlock())
         , file_path(std::move(file_path_))
+        , format(format_)
+        , input(input_)
         , metadata_snapshot(metadata_snapshot_)
         , context(context_)
-        , format(format_)
         , max_block_size(max_block_size_)
     {
     }
@@ -52,9 +53,29 @@ public:
 
         if (!reader)
         {
-            auto process = ShellCommand::execute(file_path);
-            auto input_stream = context.getInputFormat(format, process->out, metadata_snapshot->getSampleBlock(), max_block_size);
-            reader = std::make_shared<ShellCommandOwningBlockInputStream>(log, input_stream, std::move(process));
+            auto sample_block = metadata_snapshot->getSampleBlock();
+            reader = std::make_shared<BlockInputStreamWithBackgroundThread>(context, format, sample_block, file_path, log, max_block_size, [this](WriteBufferFromFile & out)
+            {
+                if (!input)
+                {
+                    out.close();
+                    return;
+                }
+
+                auto output_stream = context.getOutputFormat(format, out, input->getHeader());
+                output_stream->writePrefix();
+
+                input->readPrefix();
+                while (auto block = input->read()) {
+                    output_stream->write(block);
+                }
+                input->readSuffix();
+                input.reset();
+
+                output_stream->writeSuffix();
+                output_stream->flush();
+                out.close();
+            });
 
             reader->readPrefix();
         }
@@ -73,10 +94,11 @@ public:
 
     private:
         String file_path;
+        const String & format;
+        BlockInputStreamPtr input;
         BlockInputStreamPtr reader;
         const StorageMetadataPtr & metadata_snapshot;
         const Context & context;
-        const String & format;
         UInt64 max_block_size;
         Poco::Logger * log = &Poco::Logger::get("StorageExecutableSource");
 };
@@ -85,69 +107,23 @@ public:
 
 StorageExecutable::StorageExecutable(
     const StorageID & table_id_,
-    const String & format_name_,
     const String & file_path_,
+    const String & format_,
+    BlockInputStreamPtr input_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    Context & context_,
-    CompressionMethod compression_method_)
+    const Context & context_)
     : IStorage(table_id_)
-    , format_name(format_name_)
     , file_path(file_path_)
+    , format(format_)
+    , input(input_)
     , context(context_)
-    , compression_method(compression_method_)
-    , log(&Poco::Logger::get("StorageExecutable (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints);
     setInMemoryMetadata(storage_metadata);
 }
-
-void registerStorageExecutable(StorageFactory & factory)
-{
-    factory.registerStorage(
-        "Executable",
-        [](const StorageFactory::Arguments & args)
-        {
-            ASTs & engine_args = args.engine_args;
-
-            if (!(engine_args.size() >= 1 && engine_args.size() <= 4)) // NOLINT
-                throw Exception(
-                    "Storage Executable requires from 1 to 4 arguments: name of used format, source and compression_method.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-            engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
-            String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-
-            String compression_method_str;
-            String source_path;
-
-            if (const auto * literal = engine_args[1]->as<ASTLiteral>())
-            {
-                auto type = literal->value.getType();
-                if (type == Field::Types::String)
-                    source_path = literal->value.get<String>();
-                else
-                    throw Exception("Second argument must be path or file descriptor", ErrorCodes::BAD_ARGUMENTS);
-            }
-
-            if (engine_args.size() == 3)
-            {
-                engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
-                compression_method_str = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-            }
-
-            CompressionMethod compression_method = chooseCompressionMethod("", compression_method_str);
-
-            return StorageExecutable::create(args.table_id, format_name, source_path, args.columns, args.constraints, args.context, compression_method);
-        },
-        {
-            .source_access_type = AccessType::FILE,
-        });
-}
-
-
 
 Pipe StorageExecutable::read(
     const Names & /*column_names*/,
@@ -159,13 +135,12 @@ Pipe StorageExecutable::read(
     unsigned /*num_streams*/)
 {
     return Pipe(std::make_shared<StorageExecutableSource>(
-        format_name,
+        file_path,
+        format,
+        input,
         metadata_snapshot,
         context_,
-        metadata_snapshot->getColumns(),
-        max_block_size,
-        compression_method,
-        file_path));
+        max_block_size));
 }
 };
 

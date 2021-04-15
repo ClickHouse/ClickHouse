@@ -11,6 +11,7 @@ SRCS(
     ITableFunctionFileLike.cpp
     ITableFunctionXDBC.cpp
     TableFunctionFactory.cpp
+    TableFunctionExecutable.cpp
     TableFunctionFile.cpp
     TableFunctionGenerateRandom.cpp
     TableFunctionInput.cpp

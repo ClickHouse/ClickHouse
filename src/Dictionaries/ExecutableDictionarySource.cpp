@@ -3,7 +3,7 @@
 #include <functional>
 #include <ext/scope_guard.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/ShellCommandOwningBlockInputStream.h>
+#include <DataStreams/ShellCommandBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -79,80 +79,12 @@ BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
     return std::make_shared<ShellCommandOwningBlockInputStream>(log, input_stream, std::move(process));
 }
 
-namespace
-{
-    /** A stream, that runs child process and sends data to its stdin in background thread,
-      *  and receives data from its stdout.
-      */
-    class BlockInputStreamWithBackgroundThread final : public IBlockInputStream
-    {
-    public:
-        BlockInputStreamWithBackgroundThread(
-            const Context & context,
-            const std::string & format,
-            const Block & sample_block,
-            const std::string & command_str,
-            Poco::Logger * log_,
-            std::function<void(WriteBufferFromFile &)> && send_data_)
-            : log(log_),
-            command(ShellCommand::execute(command_str)),
-            send_data(std::move(send_data_)),
-            thread([this] { send_data(command->in); })
-        {
-            stream = context.getInputFormat(format, command->out, sample_block, max_block_size);
-        }
-
-        ~BlockInputStreamWithBackgroundThread() override
-        {
-            if (thread.joinable())
-                thread.join();
-        }
-
-        Block getHeader() const override
-        {
-            return stream->getHeader();
-        }
-
-    private:
-        Block readImpl() override
-        {
-            return stream->read();
-        }
-
-        void readPrefix() override
-        {
-            stream->readPrefix();
-        }
-
-        void readSuffix() override
-        {
-            stream->readSuffix();
-
-            std::string err;
-            readStringUntilEOF(err, command->err);
-            if (!err.empty())
-                LOG_ERROR(log, "Having stderr: {}", err);
-
-            command->wait();
-        }
-
-        String getName() const override { return "WithBackgroundThread"; }
-
-        Poco::Logger * log;
-        BlockInputStreamPtr stream;
-        std::unique_ptr<ShellCommand> command;
-        std::function<void(WriteBufferFromFile &)> send_data;
-        ThreadFromGlobalPool thread;
-    };
-}
-
-
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
     return std::make_shared<BlockInputStreamWithBackgroundThread>(
-        context, format, sample_block, command, log,
+        context, format, sample_block, command, log, max_block_size,
         [&ids, this](WriteBufferFromFile & out) mutable
         {
             auto output_stream = context.getOutputFormat(format, out, sample_block);
@@ -166,7 +98,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_col
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
     return std::make_shared<BlockInputStreamWithBackgroundThread>(
-        context, format, sample_block, command, log,
+        context, format, sample_block, command, log, max_block_size,
         [key_columns, &requested_rows, this](WriteBufferFromFile & out) mutable
         {
             auto output_stream = context.getOutputFormat(format, out, sample_block);
