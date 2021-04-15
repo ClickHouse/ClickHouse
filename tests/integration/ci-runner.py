@@ -446,7 +446,7 @@ class ClickhouseIntegrationTestsRunner:
             time.sleep(5)
 
         logging.info("Finally all tests done, going to compress test dir")
-        test_logs = os.path.join(str(self.path()), "./test_dir.tar")
+        test_logs = os.path.join(str(self.path()), "./test_dir.tar.gz")
         self._compress_logs("{}/tests/integration".format(repo_path), test_logs)
         logging.info("Compression finished")
 
@@ -523,7 +523,7 @@ class ClickhouseIntegrationTestsRunner:
                 break
 
         logging.info("Finally all tests done, going to compress test dir")
-        test_logs = os.path.join(str(self.path()), "./test_dir.tar")
+        test_logs = os.path.join(str(self.path()), "./test_dir.tar.gz")
         self._compress_logs("{}/tests/integration".format(repo_path), test_logs)
         logging.info("Compression finished")
 
