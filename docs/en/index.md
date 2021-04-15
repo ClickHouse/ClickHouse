@@ -92,4 +92,8 @@ This is not done in “normal” databases, because it doesn’t make sense when
 
 Note that for CPU efficiency, the query language must be declarative (SQL or MDX), or at least a vector (J, K). The query should only contain implicit loops, allowing for optimization.
 
+### Languages and Operating System which supports ClickHouse
+
+ClickHouse is written in C++, and thereby supports the same. ClickHouse works on Linux, MacOS, FreeBSD Operating Systems.
+
 {## [Original article](https://clickhouse.tech/docs/en/) ##}
