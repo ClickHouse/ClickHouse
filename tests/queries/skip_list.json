@@ -105,7 +105,8 @@
         "00604_show_create_database",
         "00609_mv_index_in_in",
         "00510_materizlized_view_and_deduplication_zookeeper",
-        "00738_lock_for_inner_table"
+        "00738_lock_for_inner_table",
+        "01153_attach_mv_uuid"
     ],
     "database-replicated": [
         "memory_tracking",
@@ -557,6 +558,8 @@
         "01135_default_and_alter_zookeeper",
         "01148_zookeeper_path_macros_unfolding",
         "01150_ddl_guard_rwr",
+        "01153_attach_mv_uuid",
+        "01152_cross_replication",
         "01185_create_or_replace_table",
         "01190_full_attach_syntax",
         "01191_rename_dictionary",

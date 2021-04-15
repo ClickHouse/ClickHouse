@@ -76,10 +76,15 @@ StorageMaterializedView::StorageMaterializedView(
     storage_metadata.setSelectQuery(select);
     setInMemoryMetadata(storage_metadata);
 
+    bool point_to_itself_by_uuid = has_inner_table && query.to_inner_uuid != UUIDHelpers::Nil
+                                                   && query.to_inner_uuid == table_id_.uuid;
+    bool point_to_itself_by_name = !has_inner_table && query.to_table_id.database_name == table_id_.database_name
+                                                    && query.to_table_id.table_name == table_id_.table_name;
+    if (point_to_itself_by_uuid || point_to_itself_by_name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot point to itself", table_id_.getFullTableName());
+
     if (!has_inner_table)
     {
-        if (query.to_table_id.database_name == table_id_.database_name && query.to_table_id.table_name == table_id_.table_name)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Materialized view {} cannot point to itself", table_id_.getFullTableName());
         target_table_id = query.to_table_id;
     }
     else if (attach_)
