@@ -19,7 +19,6 @@
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ThreadPool.h>
-#include <common/logger_useful.h>
 
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/DeleteObjectsRequest.h>
@@ -492,7 +491,7 @@ public:
             if (disk->reserved_bytes < size)
             {
                 disk->reserved_bytes = 0;
-                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+                LOG_ERROR(disk->log, "Unbalanced reservations size for disk '{}'.", disk->getName());
             }
             else
             {
@@ -500,7 +499,7 @@ public:
             }
 
             if (disk->reservation_count == 0)
-                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+                LOG_ERROR(disk->log, "Unbalanced reservation count for disk '{}'.", disk->getName());
             else
                 --disk->reservation_count;
         }
@@ -536,7 +535,7 @@ public:
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(&Poco::Logger::get("DiskS3"), "Failed to run async task");
+                    tryLogCurrentException("DiskS3", "Failed to run async task");
 
                     try
                     {
@@ -676,7 +675,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
 {
     auto metadata = readMeta(path);
 
-    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Read from file by path: {}. Existing S3 objects: {}",
+    LOG_DEBUG(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_path + path), metadata.s3_objects.size());
 
     auto reader = std::make_unique<ReadIndirectBufferFromS3>(client, bucket, metadata, buf_size);
@@ -712,7 +711,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
         metadata.save();
 
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Write to file by path: {}. New S3 path: {}", backQuote(metadata_path + path), s3_root_path + s3_path);
+        LOG_DEBUG(log, "Write to file by path: {}. New S3 path: {}", backQuote(metadata_path + path), s3_root_path + s3_path);
 
         return std::make_unique<WriteIndirectBufferFromS3>(
             client, bucket, metadata, s3_path, object_metadata, min_upload_part_size, max_single_part_upload_size, buf_size);
@@ -721,7 +720,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     {
         auto metadata = readMeta(path);
 
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Append to file by path: {}. New S3 path: {}. Existing S3 objects: {}.",
+        LOG_DEBUG(log, "Append to file by path: {}. New S3 path: {}. Existing S3 objects: {}.",
             backQuote(metadata_path + path), s3_root_path + s3_path, metadata.s3_objects.size());
 
         return std::make_unique<WriteIndirectBufferFromS3>(
@@ -731,7 +730,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
 
 void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
 {
-    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Remove file by path: {}", backQuote(metadata_path + path));
+    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_path + path));
 
     Poco::File file(metadata_path + path);
 
@@ -763,7 +762,7 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
         if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
         {
             LOG_WARNING(
-                &Poco::Logger::get("DiskS3"),
+                log,
                 "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
                 backQuote(path),
                 e.nested() ? e.nested()->message() : e.message());
@@ -847,7 +846,7 @@ bool DiskS3::tryReserve(UInt64 bytes)
     std::lock_guard lock(reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Reserving 0 bytes on s3 disk {}", backQuote(name));
+        LOG_DEBUG(log, "Reserving 0 bytes on s3 disk {}", backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -856,7 +855,7 @@ bool DiskS3::tryReserve(UInt64 bytes)
     UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Reserving {} on disk {}, having unreserved {}.",
+        LOG_DEBUG(log, "Reserving {} on disk {}, having unreserved {}.",
             ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
@@ -941,14 +940,14 @@ void DiskS3::startup()
     if (!send_metadata)
         return;
 
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting up disk {}", name);
+    LOG_INFO(log, "Starting up disk {}", name);
 
     if (readSchemaVersion(bucket, s3_root_path) < RESTORABLE_SCHEMA_VERSION)
         migrateToRestorableSchema();
 
     findLastRevision();
 
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Disk {} started up", name);
+    LOG_INFO(log, "Disk {} started up", name);
 }
 
 void DiskS3::findLastRevision()
@@ -959,7 +958,7 @@ void DiskS3::findLastRevision()
     {
         auto revision_prefix = revision + "1";
 
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check object exists with revision prefix {}", revision_prefix);
+        LOG_DEBUG(log, "Check object exists with revision prefix {}", revision_prefix);
 
         /// Check file or operation with such revision prefix exists.
         if (checkObjectExists(bucket, s3_root_path + "r" + revision_prefix)
@@ -969,7 +968,7 @@ void DiskS3::findLastRevision()
             revision += "0";
     }
     revision_counter = static_cast<UInt64>(std::bitset<64>(revision).to_ullong());
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Found last revision number {} for disk {}", revision_counter, name);
+    LOG_INFO(log, "Found last revision number {} for disk {}", revision_counter, name);
 }
 
 int DiskS3::readSchemaVersion(const String & source_bucket, const String & source_path)
@@ -1006,7 +1005,7 @@ void DiskS3::updateObjectMetadata(const String & key, const ObjectMetadata & met
 
 void DiskS3::migrateFileToRestorableSchema(const String & path)
 {
-    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Migrate file {} to restorable schema", metadata_path + path);
+    LOG_DEBUG(log, "Migrate file {} to restorable schema", metadata_path + path);
 
     auto meta = readMeta(path);
 
@@ -1023,7 +1022,7 @@ void DiskS3::migrateToRestorableSchemaRecursive(const String & path, Futures & r
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
-    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Migrate directory {} to restorable schema", metadata_path + path);
+    LOG_DEBUG(log, "Migrate directory {} to restorable schema", metadata_path + path);
 
     bool dir_contains_only_files = true;
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
@@ -1066,7 +1065,7 @@ void DiskS3::migrateToRestorableSchema()
 {
     try
     {
-        LOG_INFO(&Poco::Logger::get("DiskS3"), "Start migration to restorable schema for disk {}", name);
+        LOG_INFO(log, "Start migration to restorable schema for disk {}", name);
 
         Futures results;
 
@@ -1083,7 +1082,7 @@ void DiskS3::migrateToRestorableSchema()
     }
     catch (const Exception &)
     {
-        tryLogCurrentException(&Poco::Logger::get("DiskS3"), fmt::format("Failed to migrate to restorable schema for disk {}", name));
+        tryLogCurrentException(log, fmt::format("Failed to migrate to restorable schema for disk {}", name));
 
         throw;
     }
@@ -1245,10 +1244,10 @@ void DiskS3::restore()
         if (readSchemaVersion(information.source_bucket, information.source_path) < RESTORABLE_SCHEMA_VERSION)
             throw Exception("Source bucket doesn't have restorable schema.", ErrorCodes::BAD_ARGUMENTS);
 
-        LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting to restore disk {}. Revision: {}, Source bucket: {}, Source path: {}",
+        LOG_INFO(log, "Starting to restore disk {}. Revision: {}, Source bucket: {}, Source path: {}",
                  name, information.revision, information.source_bucket, information.source_path);
 
-        LOG_INFO(&Poco::Logger::get("DiskS3"), "Removing old metadata...");
+        LOG_INFO(log, "Removing old metadata...");
 
         bool cleanup_s3 = information.source_bucket != bucket || information.source_path != s3_root_path;
         for (const auto & root : data_roots)
@@ -1263,11 +1262,11 @@ void DiskS3::restore()
 
         saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
 
-        LOG_INFO(&Poco::Logger::get("DiskS3"), "Restore disk {} finished", name);
+        LOG_INFO(log, "Restore disk {} finished", name);
     }
     catch (const Exception &)
     {
-        tryLogCurrentException(&Poco::Logger::get("DiskS3"), fmt::format("Failed to restore disk {}", name));
+        tryLogCurrentException(log, fmt::format("Failed to restore disk {}", name));
 
         throw;
     }
@@ -1275,7 +1274,7 @@ void DiskS3::restore()
 
 void DiskS3::restoreFiles(const String & source_bucket, const String & source_path, UInt64 target_revision)
 {
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting restore files for disk {}", name);
+    LOG_INFO(log, "Starting restore files for disk {}", name);
 
     std::vector<std::future<void>> results;
     listObjects(source_bucket, source_path, [this, &source_bucket, &source_path, &target_revision, &results](auto list_result)
@@ -1315,7 +1314,7 @@ void DiskS3::restoreFiles(const String & source_bucket, const String & source_pa
     for (auto & result : results)
         result.get();
 
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Files are restored for disk {}", name);
+    LOG_INFO(log, "Files are restored for disk {}", name);
 }
 
 void DiskS3::processRestoreFiles(const String & source_bucket, const String & source_path, Strings keys)
@@ -1330,7 +1329,7 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
         if (path_entry == object_metadata.end())
         {
             /// Such keys can remain after migration, we can skip them.
-            LOG_WARNING(&Poco::Logger::get("DiskS3"), "Skip key {} because it doesn't have 'path' in metadata", key);
+            LOG_WARNING(log, "Skip key {} because it doesn't have 'path' in metadata", key);
             continue;
         }
 
@@ -1347,13 +1346,13 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
         metadata.addObject(relative_key, head_result.GetContentLength());
         metadata.save();
 
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Restored file {}", path);
+        LOG_DEBUG(log, "Restored file {}", path);
     }
 }
 
 void DiskS3::restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 target_revision, bool detached)
 {
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting restore file operations for disk {}", name);
+    LOG_INFO(log, "Starting restore file operations for disk {}", name);
 
     /// Enable recording file operations if we restore to different bucket / path.
     send_metadata = bucket != source_bucket || s3_root_path != source_path;
@@ -1372,7 +1371,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
             const auto [revision, operation] = extractRevisionAndOperationFromKey(key);
             if (revision == UNKNOWN_REVISION)
             {
-                LOG_WARNING(&Poco::Logger::get("DiskS3"), "Skip key {} with unknown revision", key);
+                LOG_WARNING(log, "Skip key {} with unknown revision", key);
                 continue;
             }
 
@@ -1393,7 +1392,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
                 if (exists(from_path))
                 {
                     moveFile(from_path, to_path);
-                    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
+                    LOG_DEBUG(log, "Revision {}. Restored rename {} -> {}", revision, from_path, to_path);
 
                     if (detached && isDirectory(to_path))
                     {
@@ -1420,7 +1419,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
                 {
                     createDirectories(directoryPath(dst_path));
                     createHardLink(src_path, dst_path);
-                    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Revision {}. Restored hardlink {} -> {}", revision, src_path, dst_path);
+                    LOG_DEBUG(log, "Revision {}. Restored hardlink {} -> {}", revision, src_path, dst_path);
                 }
             }
         }
@@ -1447,7 +1446,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
 
             auto detached_path = pathToDetached(path);
 
-            LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Move directory to 'detached' {} -> {}", path, detached_path);
+            LOG_DEBUG(log, "Move directory to 'detached' {} -> {}", path, detached_path);
 
             Poco::File(metadata_path + path).moveTo(metadata_path + detached_path);
         }
@@ -1455,7 +1454,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
 
     send_metadata = true;
 
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "File operations restored for disk {}", name);
+    LOG_INFO(log, "File operations restored for disk {}", name);
 }
 
 std::tuple<UInt64, String> DiskS3::extractRevisionAndOperationFromKey(const String & key)

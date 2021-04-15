@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <common/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 #include "ProxyConfiguration.h"
@@ -211,6 +212,8 @@ private:
     static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
     /// Directories with data.
     const std::vector<String> data_roots {"data", "store"};
+
+    Poco::Logger * log = &Poco::Logger::get("DiskS3");
 };
 
 }
