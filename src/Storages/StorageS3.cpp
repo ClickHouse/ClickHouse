@@ -199,7 +199,7 @@ bool StorageS3Source::initialize()
     file_path = bucket + "/" + current_key;
 
     read_buf = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromS3>(client, bucket, current_key), chooseCompressionMethod(current_key, compression_hint));
+        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, s3_max_single_read_retries), chooseCompressionMethod(current_key, compression_hint));
     auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
     reader = std::make_shared<InputStreamFromInputFormat>(input_format);
 
