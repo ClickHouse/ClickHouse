@@ -10,14 +10,12 @@
 #include <unordered_map>
 #include <vector>
 #include <optional>
-#include <variant>
 
 
 namespace DB
 {
 
 class Context;
-struct Settings;
 class IDataType;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -29,12 +27,10 @@ using DataTypes = std::vector<DataTypePtr>;
  * For example, in quantileWeighted(0.9)(x, weight), 0.9 is "parameter" and x, weight are "arguments".
  */
 using AggregateFunctionCreator = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &)>;
-using AggregateFunctionCreatorWithSettings
-    = std::function<AggregateFunctionPtr(const String &, const DataTypes &, const Array &, const Settings &)>;
 
 struct AggregateFunctionWithProperties
 {
-    std::variant<AggregateFunctionCreator, AggregateFunctionCreatorWithSettings> creator;
+    AggregateFunctionCreator creator;
     AggregateFunctionProperties properties;
 
     AggregateFunctionWithProperties() = default;
@@ -46,9 +42,6 @@ struct AggregateFunctionWithProperties
         : creator(std::forward<Creator>(creator_)), properties(std::move(properties_))
     {
     }
-
-    bool hasCreator() const;
-    AggregateFunctionPtr create(String name, const DataTypes & argument_types, const Array & params, const Settings & settings) const;
 };
 
 

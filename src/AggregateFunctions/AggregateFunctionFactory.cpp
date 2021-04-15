@@ -35,25 +35,9 @@ const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
     return AggregateFunctionFactory::instance().getCanonicalNameIfAny(name);
 }
 
-
-bool AggregateFunctionWithProperties::hasCreator() const
-{
-    return std::visit([](auto func) { return func != nullptr; }, creator);
-}
-
-AggregateFunctionPtr
-AggregateFunctionWithProperties::create(String name, const DataTypes & argument_types, const Array & params, const Settings & settings) const
-{
-    if (std::holds_alternative<AggregateFunctionCreator>(creator))
-        return std::get<AggregateFunctionCreator>(creator)(name, argument_types, params);
-    if (std::holds_alternative<AggregateFunctionCreatorWithSettings>(creator))
-        return std::get<AggregateFunctionCreatorWithSettings>(creator)(name, argument_types, params, settings);
-    throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled aggregate function creator type");
-}
-
 void AggregateFunctionFactory::registerFunction(const String & name, Value creator_with_properties, CaseSensitiveness case_sensitiveness)
 {
-    if (!creator_with_properties.hasCreator())
+    if (creator_with_properties.creator == nullptr)
         throw Exception("AggregateFunctionFactory: the aggregate function " + name + " has been provided "
             " a null constructor", ErrorCodes::LOGICAL_ERROR);
 
@@ -141,7 +125,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 
-    if (found.hasCreator())
+    if (found.creator)
     {
         out_properties = found.properties;
 
@@ -153,7 +137,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         if (!out_properties.returns_default_when_only_null && has_null_arguments)
             return nullptr;
 
-        return found.create(name, argument_types, parameters, query_context->getSettingsRef());
+        return found.creator(name, argument_types, parameters);
     }
 
     /// Combinators of aggregate functions.
@@ -213,7 +197,7 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
     if (auto jt = case_insensitive_aggregate_functions.find(Poco::toLower(name)); jt != case_insensitive_aggregate_functions.end())
         found = jt->second;
 
-    if (found.hasCreator())
+    if (found.creator)
         return found.properties;
 
     /// Combinators of aggregate functions.
