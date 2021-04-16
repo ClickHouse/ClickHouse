@@ -133,9 +133,6 @@ public:
     /// Actions performed after disk creation.
     void startup();
 
-    /// Restore S3 metadata files on file system.
-    void restore();
-
     /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
 
@@ -167,6 +164,8 @@ private:
     void listObjects(const String & source_bucket, const String & source_path, std::function<bool(const Aws::S3::Model::ListObjectsV2Result &)> callback);
     void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key);
 
+    /// Restore S3 metadata files on file system.
+    void restore();
     void readRestoreInformation(RestoreInformation & restore_information);
     void restoreFiles(const RestoreInformation & restore_information);
     void processRestoreFiles(const String & source_bucket, const String & source_path, std::vector<String> keys);

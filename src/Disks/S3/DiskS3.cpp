@@ -950,6 +950,8 @@ void DiskS3::startup()
 
     LOG_INFO(log, "Starting up disk {}", name);
 
+    restore();
+
     if (readSchemaVersion(bucket, s3_root_path) < RESTORABLE_SCHEMA_VERSION)
         migrateToRestorableSchema();
 

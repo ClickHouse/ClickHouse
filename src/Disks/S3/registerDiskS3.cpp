@@ -19,6 +19,8 @@
 #include "ProxyConfiguration.h"
 #include "ProxyListConfiguration.h"
 #include "ProxyResolverConfiguration.h"
+#include "Disks/DiskRestartProxy.h"
+#include "Disks/DiskRestartProxy.cpp"
 
 
 namespace DB
@@ -177,7 +179,6 @@ void registerDiskS3(DiskFactory & factory)
             checkRemoveAccess(*s3disk);
         }
 
-        s3disk->restore();
         s3disk->startup();
 
         bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
