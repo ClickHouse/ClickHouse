@@ -2563,7 +2563,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception(
             ErrorCodes::TOO_MANY_PARTS,
-            "Too many parts ({}). Parts cleaning are processing significantly slower than inserts",
+            "Too many parts ({}). Merges are processing significantly slower than inserts",
             parts_count_in_partition);
     }
 
