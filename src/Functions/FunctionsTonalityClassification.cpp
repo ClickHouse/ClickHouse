@@ -5,16 +5,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-//#include <algorithm>
-//#include <cstring>
-//#include <cmath>
-//#include <limits>
 #include <unordered_map>
-//#include <memory>
-//#include <utility>
-//#include <sstream>
-//#include <set>
-
 namespace DB
 {
 

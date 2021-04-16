@@ -71,7 +71,10 @@ struct ProgrammingClassificationImpl
                 most_liked = item.first; 
             }
         }
-
+        if (most_liked == "")
+        {
+            most_liked = "Undefined";
+        }
         res = most_liked;
     }
 
@@ -134,6 +137,11 @@ struct ProgrammingClassificationImpl
                     max_result = result;
                     most_liked = item.first; 
                 }
+            }
+
+            if (most_liked == "")
+            {
+            most_liked = "Undefined";
             }
 
             const auto ans = most_liked.c_str();
