@@ -44,9 +44,10 @@ StorageExternalDistributed::StorageExternalDistributed(
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
 
-    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-    std::vector<String> shards_descriptions = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
-    std::vector<std::pair<std::string, UInt16>> addresses;
+    const auto & settings = context->getSettingsRef();
+    std::vector<String> shards_descriptions = parseRemoteDescription(
+            cluster_description, 0, cluster_description.size(), ',', settings.glob_expansion_max_elements);
+    std::vector<std::tuple<std::string, UInt16, String, String>> addresses;
 
     /// For each shard pass replicas description into storage, replicas are managed by storage's PoolWithFailover.
     for (const auto & shard_description : shards_descriptions)
@@ -58,12 +59,11 @@ StorageExternalDistributed::StorageExternalDistributed(
 #if USE_MYSQL
             case ExternalStorageEngine::MySQL:
             {
-                addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 3306);
+                addresses = parseRemoteDescriptionForExternalDatabase(shard_description, username, password, "mysql", context, 3306);
 
                 mysqlxx::PoolWithFailover pool(
                     remote_database,
-                    addresses,
-                    username, password);
+                    addresses);
 
                 shard = StorageMySQL::create(
                     table_id_,
@@ -81,14 +81,13 @@ StorageExternalDistributed::StorageExternalDistributed(
 
             case ExternalStorageEngine::PostgreSQL:
             {
-                addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
+                addresses = parseRemoteDescriptionForExternalDatabase(shard_description, username, password, "postgresql", context, 5432);
 
                 postgres::PoolWithFailover pool(
                     remote_database,
                     addresses,
-                    username, password,
-                    context->getSettingsRef().postgresql_connection_pool_size,
-                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+                    settings.postgresql_connection_pool_size,
+                    settings.postgresql_connection_pool_wait_timeout);
 
                 shard = StoragePostgreSQL::create(
                     table_id_,

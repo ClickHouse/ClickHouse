@@ -145,9 +145,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             {
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
                 /// Split into replicas if needed.
-                size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-                auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, addresses, mysql_user_name, mysql_user_password);
+                auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, mysql_user_name, mysql_user_password, "mysql", context, 3306);
+                auto mysql_pool = mysqlxx::PoolWithFailover(mysql_database_name, addresses);
 
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
@@ -239,7 +238,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
+        const auto & addresses_description = safeGetLiteralValue<String>(engine_args[0], engine_name);
         const auto & postgres_database_name = safeGetLiteralValue<String>(engine_args[1], engine_name);
         const auto & username = safeGetLiteralValue<String>(engine_args[2], engine_name);
         const auto & password = safeGetLiteralValue<String>(engine_args[3], engine_name);
@@ -248,15 +247,10 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (engine->arguments->children.size() == 5)
             use_table_cache = safeGetLiteralValue<UInt64>(engine_args[4], engine_name);
 
-        /// Split into replicas if needed.
-        size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
-
-        /// no connection is made here
+        auto addresses = parseRemoteDescriptionForExternalDatabase(addresses_description, username, password, "postgresql", context, 5432);
         auto connection_pool = std::make_shared<postgres::PoolWithFailover>(
             postgres_database_name,
             addresses,
-            username, password,
             context->getSettingsRef().postgresql_connection_pool_size,
             context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 

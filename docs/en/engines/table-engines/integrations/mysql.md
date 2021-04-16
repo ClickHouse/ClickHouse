@@ -7,6 +7,7 @@ toc_title: MySQL
 
 The MySQL engine allows you to perform `SELECT` queries on data that is stored on a remote MySQL server.
 
+
 ## Creating a Table {#creating-a-table}
 
 ``` sql
@@ -49,6 +50,32 @@ The table structure can differ from the original MySQL table structure:
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+
+
+Instead of `host:port` parameter it is possible to use:
+
+-   `addresses_expr` —  An expression that generates addresses of remote servers, which are regarded as replicas of the same priority. ([Detailed description](../../../sql-reference/table_functions/remote.md))
+
+**Engine configuration**
+
+Connection creadetials can be added via server configuration. Server config is always checked first. If there are no credentials in config for a given address, then credentials from table definition are used. In case of `addresses_expr` some of the addresses' credentials can be added via config, other, if absent, will be taken from definition.
+
+``` xml
+ <mysql>
+    <host1>
+        <user>user1</user>
+        <password>pass1</password>
+    <host1>
+    <host2>
+        <user>user2</user>
+        <password>pass2</password>
+    <host2>
+    ...
+ </mysql>
+```
+
+Credentials configuration via config is useful in case of `addresses_expr` and `INSERT QUERY`: if there is more than one replica for a table, `INSERT` query will be sent to a replica, where `user` has been granted an `INSERT` privilege on the table. This behavior can be turned of by setting `external_storage_check_insert_privilege`. By default is `true` and if a table has multiple replicas, it will always be checked.
+
 
 ## Usage Example {#usage-example}
 
@@ -95,6 +122,7 @@ SELECT * FROM mysql_table
 │           ᴺᵁᴸᴸ │      1 │
 └────────────────┴────────┘
 ```
+
 
 ## See Also {#see-also}
 

@@ -1,8 +1,12 @@
 #include "parseRemoteDescription.h"
+
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <common/logger_useful.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -171,23 +175,32 @@ std::vector<String> parseRemoteDescription(const String & description, size_t l,
 }
 
 
-std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDatabase(const String & description, size_t max_addresses, UInt16 default_port)
+RemoteDescription parseRemoteDescriptionForExternalDatabase(
+        const String & remote_description, const String & common_user, const String & common_password, const String remote_database, ContextPtr context, UInt16 default_port)
 {
-    auto addresses = parseRemoteDescription(description, 0, description.size(), '|', max_addresses);
-    std::vector<std::pair<String, uint16_t>> result;
+    auto addresses = parseRemoteDescription(remote_description, 0, remote_description.size(), '|', context->getSettingsRef().glob_expansion_max_elements);
+    RemoteDescription result(addresses.size());
+    String host;
+    UInt16 port;
 
-    for (const auto & address : addresses)
+    for (size_t i = 0; i < addresses.size(); ++i)
     {
-        size_t colon = address.find(':');
+        size_t colon = addresses[i].find(':');
         if (colon == String::npos)
         {
             LOG_WARNING(&Poco::Logger::get("ParseRemoteDescription"), "Port is not found for host: {}. Using default port {}", default_port);
-            result.emplace_back(std::make_pair(address, default_port));
+            host = addresses[i];
+            port = default_port;
         }
         else
         {
-            result.emplace_back(std::make_pair(address.substr(0, colon), DB::parseFromString<UInt16>(address.substr(colon + 1))));
+            host = addresses[i].substr(0, colon);
+            port = parseFromString<UInt16>(addresses[i].substr(colon + 1));
         }
+
+        result[i] = std::make_tuple(host, port,
+                context->getConfigRef().getString(remote_database + "." + host + ".user", common_user),
+                context->getConfigRef().getString(remote_database + "." + host + ".password", common_password));
     }
 
     return result;

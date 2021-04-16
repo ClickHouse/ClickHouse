@@ -4,6 +4,9 @@ services:
         image: mysql:5.7
         restart: always
         environment:
+            MYSQL_DATABASE: clickhouse
+            MYSQL_USER: user2
+            MYSQL_PASSWORD: password2
             MYSQL_ROOT_PASSWORD: clickhouse
         ports:
             - 3348:3306
@@ -11,6 +14,9 @@ services:
         image: mysql:5.7
         restart: always
         environment:
+            MYSQL_DATABASE: clickhouse
+            MYSQL_USER: user3
+            MYSQL_PASSWORD: password3
             MYSQL_ROOT_PASSWORD: clickhouse
         ports:
             - 3388:3306
@@ -18,6 +24,9 @@ services:
         image: mysql:5.7
         restart: always
         environment:
+            MYSQL_DATABASE: clickhouse
+            MYSQL_USER: user4
+            MYSQL_PASSWORD: password4
             MYSQL_ROOT_PASSWORD: clickhouse
         ports:
             - 3368:3306

@@ -188,6 +188,8 @@ public:
 
     ~Pool();
 
+    const std::string & getUser() { return user; }
+
     /// Allocates connection.
     Entry get();
 

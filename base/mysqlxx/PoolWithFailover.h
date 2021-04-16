@@ -81,9 +81,11 @@ namespace mysqlxx
         /// Can the Pool be shared
         bool shareable;
 
+        size_t num_replicas;
+
     public:
         using Entry = Pool::Entry;
-        using RemoteDescription = std::vector<std::pair<std::string, uint16_t>>;
+        using RemoteDescription = std::vector<std::tuple<std::string, uint16_t, std::string, std::string>>;
 
         /**
          * * Mysql dictionary sourse related params:
@@ -113,14 +115,14 @@ namespace mysqlxx
         PoolWithFailover(
             const std::string & database,
             const RemoteDescription & addresses,
-            const std::string & user,
-            const std::string & password,
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);
 
         PoolWithFailover(const PoolWithFailover & other);
 
         /** Allocates a connection to use. */
-        Entry get();
+        Entry get(String check_write_access_to_table = "");
+
+        size_t getReplicasNumber() { return num_replicas; }
     };
 
     using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;

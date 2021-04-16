@@ -1,0 +1,16 @@
+<yandex>
+    <mysql>
+        <mysql2>
+            <user>user2</user>
+            <password>password2</password>
+        </mysql2>
+        <mysql3>
+            <user>user3</user>
+            <password>password3</password>
+        </mysql3>
+        <mysql4>
+            <user>user4</user>
+            <password>password4</password>
+        </mysql4>
+    </mysql>
+</yandex>

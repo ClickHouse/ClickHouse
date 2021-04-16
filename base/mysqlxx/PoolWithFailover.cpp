@@ -76,14 +76,13 @@ PoolWithFailover::PoolWithFailover(
 PoolWithFailover::PoolWithFailover(
         const std::string & database,
         const RemoteDescription & addresses,
-        const std::string & user,
-        const std::string & password,
         size_t max_tries_)
     : max_tries(max_tries_)
     , shareable(false)
+    , num_replicas(addresses.size())
 {
     /// Replicas have the same priority, but traversed replicas are moved to the end of the queue.
-    for (const auto & [host, port] : addresses)
+    for (const auto & [host, port, user, password] : addresses)
     {
         replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database, host, user, password, port));
     }
@@ -93,6 +92,7 @@ PoolWithFailover::PoolWithFailover(
 PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
     : max_tries{other.max_tries}
     , shareable{other.shareable}
+    , num_replicas{other.num_replicas}
 {
     if (shareable)
     {
@@ -111,7 +111,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
     }
 }
 
-PoolWithFailover::Entry PoolWithFailover::get()
+PoolWithFailover::Entry PoolWithFailover::get(String check_write_access_to_table)
 {
     Poco::Util::Application & app = Poco::Util::Application::instance();
     std::lock_guard<std::mutex> locker(mutex);
@@ -136,6 +136,21 @@ PoolWithFailover::Entry PoolWithFailover::get()
 
                     if (!entry.isNull())
                     {
+                        /// For insert query chose only replicas with write access
+                        if (!check_write_access_to_table.empty())
+                        {
+                            auto query = entry->query("SELECT count(*) > 0 "
+                                                    "FROM information_schema.table_privileges "
+                                                    "WHERE privilege_type = 'INSERT' "
+                                                    "AND grantee = \"'" + pool->getUser() + "'@'%'\""
+                                                    "AND table_name = '" + check_write_access_to_table + "'");
+                            auto result{query.use()};
+                            auto row = result.fetch();
+                            if (!row || row[0].getUInt() == 0)
+                                continue;
+                            app.logger().debug("Found replica with INSERT privilege: " + pool->getDescription());
+                        }
+
                         /// Move all traversed replicas to the end of queue.
                         /// (No need to move replicas with another priority)
                         std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());

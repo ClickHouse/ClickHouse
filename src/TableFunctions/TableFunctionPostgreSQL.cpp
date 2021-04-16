@@ -69,20 +69,17 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     /// Split into replicas if needed. 5432 is a default postgresql port.
-    const auto & host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-    auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
-
+    const auto & addresses_description = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    const auto & remote_database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+    const auto & username = args[3]->as<ASTLiteral &>().value.safeGet<String>();
+    const auto & password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (args.size() == 6)
         remote_table_schema = args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
-    connection_pool = std::make_shared<postgres::PoolWithFailover>(
-        args[1]->as<ASTLiteral &>().value.safeGet<String>(),
-        addresses,
-        args[3]->as<ASTLiteral &>().value.safeGet<String>(),
-        args[4]->as<ASTLiteral &>().value.safeGet<String>());
+    auto addresses = parseRemoteDescriptionForExternalDatabase(addresses_description, username, password, "postgresql", context, 5432);
+    connection_pool = std::make_shared<postgres::PoolWithFailover>(remote_database_name, addresses);
 }
 
 

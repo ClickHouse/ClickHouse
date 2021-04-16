@@ -1,6 +1,9 @@
 #pragma once
 #include <common/types.h>
 #include <vector>
+#include <Interpreters/Context_fwd.h>
+
+
 namespace DB
 {
 /* Parse a string that generates shards and replicas. Separator - one of two characters | or ,
@@ -17,7 +20,12 @@ namespace DB
  */
 std::vector<String> parseRemoteDescription(const String & description, size_t l, size_t r, char separator, size_t max_addresses);
 
+
+using RemoteDescription = std::vector<std::tuple<std::string, uint16_t, std::string, std::string>>;
+
 /// Parse remote description for external database (MySQL or PostgreSQL).
-std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDatabase(const String & description, size_t max_addresses, UInt16 default_port);
+RemoteDescription parseRemoteDescriptionForExternalDatabase(
+        const String & description, const String & common_user, const String & common_password,
+        const String remote_database_name, ContextPtr context, UInt16 default_port);
 
 }

@@ -8,7 +8,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], with_mysql_cluster=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml', 'configs/mysql.xml'], with_mysql_cluster=True)
 
 create_table_sql_template = """
     CREATE TABLE `clickhouse`.`{}` (
@@ -22,6 +22,10 @@ create_table_sql_template = """
 
 def get_mysql_conn(port=3308):
     conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=port)
+    return conn
+
+def get_mysql_user_conn(user, password, port=3308):
+    conn = pymysql.connect(user=user, password=password, host='127.0.0.1', port=port)
     return conn
 
 
@@ -196,10 +200,6 @@ def test_mysql_distributed(started_cluster):
     conn3 = get_mysql_conn(port=3368)
     conn4 = get_mysql_conn(port=3308)
 
-    create_mysql_db(conn1, 'clickhouse')
-    create_mysql_db(conn2, 'clickhouse')
-    create_mysql_db(conn3, 'clickhouse')
-
     create_mysql_table(conn1, table_name)
     create_mysql_table(conn2, table_name)
     create_mysql_table(conn3, table_name)
@@ -258,6 +258,51 @@ def test_mysql_distributed(started_cluster):
     result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
     started_cluster.unpause_container('mysql1')
     assert(result == 'host2\nhost4\n' or result == 'host3\nhost4\n')
+
+
+def test_insert_to_replicas(started_cluster):
+    table_name = 'test'
+    conn2 = get_mysql_conn(port=3348)
+    conn3 = get_mysql_conn(port=3388)
+    conn4 = get_mysql_conn(port=3368)
+
+    create_mysql_table(conn2, table_name)
+    create_mysql_table(conn3, table_name)
+    create_mysql_table(conn4, table_name)
+
+   # Only select access
+    with conn2.cursor() as cursor:
+        cursor.execute("REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'user2';")
+        cursor.execute("GRANT SELECT ON clickhouse.test TO 'user2';")
+        cursor.execute("FLUSH PRIVILEGES;")
+
+   # Only select access
+    with conn3.cursor() as cursor:
+        cursor.execute("REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'user3';")
+        cursor.execute("GRANT SELECT ON clickhouse.test TO 'user3';")
+        cursor.execute("FLUSH PRIVILEGES;")
+
+   # Select and insert access
+    with conn4.cursor() as cursor:
+        cursor.execute("REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'user4';")
+        cursor.execute("GRANT SELECT ON clickhouse.test TO 'user4';")
+        cursor.execute("GRANT INSERT ON clickhouse.test TO 'user4';")
+        cursor.execute("FLUSH PRIVILEGES;")
+
+    node2.query('''
+        CREATE TABLE test
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test', '', ''); ''')
+    node2.query(
+        "INSERT INTO {}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(100) ".format(table_name))
+    assert(node2.contains_in_log('Found replica with INSERT privilege: clickhouse@mysql4:3306 as user user4'))
+
+    # Check that at least one of the replicas for the insert (this storage regards those replicas as shards)
+    node2.query('''
+        CREATE TABLE unite_test
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = ExternalDistributed('MySQL', `mysql2:3306,mysql3:3306,mysql4:3306`, 'clickhouse', 'test', '', ''); ''')
+    assert node2.query("SELECT count() FROM unite_test").rstrip() == '100'
 
 
 if __name__ == '__main__':

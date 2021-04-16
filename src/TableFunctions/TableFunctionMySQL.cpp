@@ -54,16 +54,15 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-    String host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    String addresses_description = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     remote_database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
     password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
     /// Split into replicas if needed. 3306 is the default MySQL port number
-    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-    auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-    pool.emplace(remote_database_name, addresses, user_name, password);
+    auto addresses = parseRemoteDescriptionForExternalDatabase(addresses_description, user_name, password, "mysql", context, 3306);
+    pool.emplace(remote_database_name, addresses);
 
     if (args.size() >= 6)
         replace_query = args[5]->as<ASTLiteral &>().value.safeGet<UInt64>() > 0;

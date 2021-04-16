@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "PostgreSQLConnectionPool.h"
+#include <Common/parseRemoteDescription.h>
 
 
 namespace postgres
@@ -10,8 +11,6 @@ namespace postgres
 
 class PoolWithFailover
 {
-
-using RemoteDescription = std::vector<std::pair<String, uint16_t>>;
 
 public:
     static constexpr inline auto POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES = 5;
@@ -24,9 +23,7 @@ public:
 
     PoolWithFailover(
         const std::string & database,
-        const RemoteDescription & addresses,
-        const std::string & user,
-        const std::string & password,
+        const DB::RemoteDescription & addresses,
         size_t pool_size = POSTGRESQL_POOL_DEFAULT_SIZE,
         int64_t pool_wait_timeout = -1,
         size_t max_tries_ = POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES);

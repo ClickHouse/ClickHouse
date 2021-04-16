@@ -218,7 +218,7 @@ BlockOutputStreamPtr StorageMySQL::write(const ASTPtr & /*query*/, const Storage
         metadata_snapshot,
         remote_database_name,
         remote_table_name,
-        pool->get(),
+        pool->get(remote_table_name),
         local_context->getSettingsRef().mysql_max_rows_to_insert);
 }
 
@@ -237,15 +237,14 @@ void registerStorageMySQL(StorageFactory & factory)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
         /// 3306 is the default MySQL port.
-        const String & host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & addresses_description = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-        size_t max_addresses = args.getContext()->getSettingsRef().glob_expansion_max_elements;
 
-        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 3306);
-        mysqlxx::PoolWithFailover pool(remote_database, addresses, username, password);
+        auto addresses = parseRemoteDescriptionForExternalDatabase(addresses_description, username, password, "mysql", args.getContext(), 3306);
+        mysqlxx::PoolWithFailover pool(remote_database, addresses);
 
         bool replace_query = false;
         std::string on_duplicate_clause;
