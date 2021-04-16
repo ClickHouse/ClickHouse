@@ -33,7 +33,7 @@ public:
 
     bool isUseless() const { return useless; }
 
-    std::string toString() const { return partition_condition.toString(); }
+    const KeyCondition & getKeyCondition() const { return partition_condition; }
 };
 
 }

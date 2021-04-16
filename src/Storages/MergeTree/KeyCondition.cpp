@@ -1313,14 +1313,22 @@ String KeyCondition::toString() const
 
 KeyCondition::Description KeyCondition::getDescription() const
 {
+    /// This code may seem to be too difficult.
+    /// Here we want to convert RPN back to tree, and also simplify some logical expressions like `and(x, true) -> x`.
     Description description;
+
+    /// That's a binary tree. Explicit.
+    /// Build and optimize it simultaneously.
     struct Node
     {
         enum class Type
         {
+            /// Leaf, which is RPNElement.
             Leaf,
+            /// Leafs, which are logical constants.
             True,
             False,
+            /// Binary operators.
             And,
             Or,
         };
@@ -1329,20 +1337,27 @@ KeyCondition::Description KeyCondition::getDescription() const
 
         /// Only for Leaf
         const RPNElement * element = nullptr;
+        /// This means that logical NOT is applied to leaf.
         bool negate = false;
 
         std::unique_ptr<Node> left = nullptr;
         std::unique_ptr<Node> right = nullptr;
     };
 
+    /// The algorithm is the same as in KeyCondition::checkInHyperrectangle
+    /// We build a pair of trees on stack. For checking if key condition may be true, and if it may be false.
+    /// We need only `can_be_true` in result.
     struct Frame
     {
         std::unique_ptr<Node> can_be_true;
         std::unique_ptr<Node> can_be_false;
     };
 
+    /// Combine two subtrees using logical operator.
     auto combine = [](std::unique_ptr<Node> left, std::unique_ptr<Node> right, Node::Type type)
     {
+        /// Simplify operators with for one constant condition.
+
         if (type == Node::Type::And)
         {
             /// false AND right
@@ -1471,36 +1486,53 @@ KeyCondition::Description KeyCondition::getDescription() const
     for (const auto & key : key_columns)
         key_names[key.second] = key.first;
 
-    std::function<std::string(const Node *)> describe;
-    describe = [&describe, &key_names, &is_key_used](const Node * node) -> std::string
+    WriteBufferFromOwnString buf;
+
+    std::function<void(const Node *)> describe;
+    describe = [&describe, &key_names, &is_key_used, &buf](const Node * node)
     {
         switch (node->type)
         {
             case Node::Type::Leaf:
             {
                 is_key_used[node->element->key_column] = true;
-                std::string res;
+
+                /// Note: for condition with double negation, like `not(x not in set)`,
+                /// we can replace it to `x in set` here.
+                /// But I won't do it, because `cloneASTWithInversionPushDown` already push down `not`.
+                /// So, this seem to be impossible for `can_be_true` tree.
                 if (node->negate)
-                    res += "not(";
-                res += node->element->toString(key_names[node->element->key_column], true);
+                    buf << "not(";
+                buf << node->element->toString(key_names[node->element->key_column], true);
                 if (node->negate)
-                    res += ")";
-                return res;
+                    buf << ")";
+                break;
             }
             case Node::Type::True:
-                return "true";
+                buf << "true";
+                break;
             case Node::Type::False:
-                return "false";
+                buf << "false";
+                break;
             case Node::Type::And:
-                return "and(" + describe(node->left.get()) + ", " + describe(node->right.get()) + ")";
+                buf << "and(";
+                describe(node->left.get());
+                buf << ", ";
+                describe(node->right.get());
+                buf << ")";
+                break;
             case Node::Type::Or:
-                return "or(" + describe(node->left.get()) + ", " + describe(node->right.get()) + ")";
+                buf << "or(";
+                describe(node->left.get());
+                buf << ", ";
+                describe(node->right.get());
+                buf << ")";
+                break;
         }
-
-        __builtin_unreachable();
     };
 
-    description.condition = describe(rpn_stack.front().can_be_true.get());
+    describe(rpn_stack.front().can_be_true.get());
+    description.condition = std::move(buf.str());
 
     for (size_t i = 0; i < key_names.size(); ++i)
         if (is_key_used[i])
