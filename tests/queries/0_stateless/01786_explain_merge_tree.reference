@@ -10,7 +10,7 @@
           Keys: 
             y
             bitAnd(z, 3)
-          Condition: and((bitAnd(z, 3) not in [1, 1]), (y in [1, +inf)))
+          Condition: and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))
           Parts: 3/4
           Granules: 10/11
         PrimaryKey
