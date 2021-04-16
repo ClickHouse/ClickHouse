@@ -114,7 +114,7 @@ void KeeperStorageDispatcher::requestThread()
                 if (has_read_request && server->isLeaderAlive())
                     server->putLocalReadRequest(request);
                 else
-                    addErrorResponses(std::move({request}), Coordination::Error::ZRUNTIMEINCONSISTENCY);
+                    addErrorResponses({request}, Coordination::Error::ZRUNTIMEINCONSISTENCY);
             }
         }
         catch (...)
