@@ -1,61 +1,75 @@
       ReadFromMergeTree
       ReadType: Default
       Indexes:
-        None
-          Parts: 5
-          Granules: 12
         MinMax
-          Parts: 4
-          Granules: 11
+          Keys: 
+            y
+          Description: (y in [1, +inf))
+          Parts: 4/5
+          Granules: 11/12
         Partition
-          Parts: 3
-          Granules: 10
+          Keys: 
+            y
+            bitAnd(z, 3)
+          Description: and((bitAnd(z, 3) not in [1, 1]), (y in [1, +inf)))
+          Parts: 3/4
+          Granules: 10/11
         PrimaryKey
-          Parts: 2
-          Granules: 6
+          Keys: 
+            x
+            y
+          Description: and((x in [11, +inf)), (y in [1, +inf)))
+          Parts: 2/3
+          Granules: 6/10
         Skip
           Name: t_minmax
-          Parts: 1
-          Granules: 2
+          Description: minmax GRANULARITY 2
+          Parts: 1/2
+          Granules: 2/6
         Skip
           Name: t_set
-          Parts: 1
-          Granules: 1
+          Description: set GRANULARITY 2
+          Parts: 1/1
+          Granules: 1/2
+      Parts: 1
+      Granules: 1
 -----------------
           ReadFromMergeTree
           ReadType: InOrder
           Indexes:
-            None
-              Parts: 5
-              Granules: 12
             MinMax
-              Description: unknown
-              Parts: 5
-              Granules: 12
+              Description: true
+              Parts: 5/5
+              Granules: 12/12
             Partition
-              Description: unknown
-              Parts: 5
-              Granules: 12
+              Description: true
+              Parts: 5/5
+              Granules: 12/12
             PrimaryKey
-              Description: (column 0 in [16, +inf))
-              Parts: 1
-              Granules: 3
+              Keys: 
+                x
+              Description: (x in [16, +inf))
+              Parts: 1/5
+              Granules: 3/12
+          Parts: 1
+          Granules: 3
 -----------------
           ReadFromMergeTree
           ReadType: InReverseOrder
           Indexes:
-            None
-              Parts: 5
-              Granules: 12
             MinMax
-              Description: unknown
-              Parts: 5
-              Granules: 12
+              Description: true
+              Parts: 5/5
+              Granules: 12/12
             Partition
-              Description: unknown
-              Parts: 5
-              Granules: 12
+              Description: true
+              Parts: 5/5
+              Granules: 12/12
             PrimaryKey
-              Description: (column 0 in [16, +inf))
-              Parts: 1
-              Granules: 3
+              Keys: 
+                x
+              Description: (x in [16, +inf))
+              Parts: 1/5
+              Granules: 3/12
+          Parts: 1
+          Granules: 3
