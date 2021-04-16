@@ -26,6 +26,7 @@
 #include <Parsers/formatAST.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
@@ -349,6 +350,34 @@ static void validateUpdateColumns(
     }
 }
 
+std::pair<bool, std::vector<ASTPtr>> getFullNestedSubColumnUpdatedExpr(
+    const String & column,
+    NamesAndTypesList & all_columns,
+    std::unordered_map<String, ASTPtr> & column_to_update_expression)
+{
+    std::vector<ASTPtr> res;
+    auto source_name = Nested::splitName(column).first;
+
+    /// Check this nested subcolumn
+    for (const auto & it : all_columns)
+    {
+        auto split = Nested::splitName(it.name);
+        if (split.first == source_name && !split.second.empty())
+        {
+            if (column_to_update_expression.find(it.name) == column_to_update_expression.end())
+            {
+                /// Update partial nested subcolumns
+                return std::make_pair(false, res);
+            }
+            else
+            {
+                res.push_back(column_to_update_expression[it.name]);
+            }
+        }
+    }
+
+    return std::make_pair(true, res);
+}
 
 ASTPtr MutationsInterpreter::prepare(bool dry_run)
 {
@@ -398,7 +427,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     auto dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
     /// First, break a sequence of commands into stages.
-    for (const auto & command : commands)
+    for (auto & command : commands)
     {
         if (command.type == MutationCommand::DELETE)
         {
@@ -441,9 +470,39 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 auto type_literal = std::make_shared<ASTLiteral>(columns_desc.getPhysical(column).type->getName());
 
                 const auto & update_expr = kv.second;
+
+                ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command);
+
+                /// And new check validateNestedArraySizes for Nested subcolumns
+                if (!Nested::splitName(column).second.empty())
+                {
+                    std::shared_ptr<ASTFunction> function = nullptr;
+
+                    auto nested_update_exprs = getFullNestedSubColumnUpdatedExpr(column, all_columns, command.column_to_update_expression);
+                    if (!nested_update_exprs.first)
+                    {
+                        function = makeASTFunction("validateNestedArraySizes",
+                            condition,
+                            update_expr->clone(),
+                            std::make_shared<ASTIdentifier>(column));
+                        condition = makeASTFunction("and", condition, function);
+                    }
+                    else if (nested_update_exprs.second.size() > 1)
+                    {
+                        function = std::make_shared<ASTFunction>();
+                        function->name = "validateNestedArraySizes";
+                        function->arguments = std::make_shared<ASTExpressionList>();
+                        function->children.push_back(function->arguments);
+                        function->arguments->children.push_back(condition);
+                        for (const auto & it : nested_update_exprs.second)
+                            function->arguments->children.push_back(it->clone());
+                        condition = makeASTFunction("and", condition, function);
+                    }
+                }
+
                 auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
-                        getPartitionAndPredicateExpressionForMutationCommand(command),
+                        condition,
                         makeASTFunction("CAST",
                             update_expr->clone(),
                             type_literal),
