@@ -61,6 +61,7 @@ struct ZooKeeperRequest : virtual Request
 
     virtual ZooKeeperResponsePtr makeResponse() const = 0;
     virtual bool isReadRequest() const = 0;
+    virtual String toString() const { return "not implemented"; }
 };
 
 using ZooKeeperRequestPtr = std::shared_ptr<ZooKeeperRequest>;
@@ -274,6 +275,7 @@ struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 
     size_t bytesSize() const override { return SetRequest::bytesSize() + sizeof(xid); }
+    String toString() const override;
 };
 
 struct ZooKeeperSetResponse final : SetResponse, ZooKeeperResponse
@@ -396,6 +398,8 @@ struct ZooKeeperSessionIDRequest final : ZooKeeperRequest
 {
     int64_t internal_id;
     int64_t session_timeout_ms;
+    /// Who requested this session
+    int32_t server_id;
 
     Coordination::OpNum getOpNum() const override { return OpNum::SessionID; }
     String getPath() const override { return {}; }
@@ -412,6 +416,8 @@ struct ZooKeeperSessionIDResponse final : ZooKeeperResponse
 {
     int64_t internal_id;
     int64_t session_id;
+    /// Who requested this session
+    int32_t server_id;
 
     void readImpl(ReadBuffer & in) override;
 
