@@ -111,10 +111,13 @@ void KeeperStorageDispatcher::requestThread()
                 }
 
                 /// Read request always goes after write batch (last request)
-                if (has_read_request && server->isLeaderAlive())
-                    server->putLocalReadRequest(request);
-                else
-                    addErrorResponses({request}, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+                if (has_read_request)
+                {
+                    if (server->isLeaderAlive())
+                        server->putLocalReadRequest(request);
+                    else
+                        addErrorResponses({request}, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+                }
             }
         }
         catch (...)
