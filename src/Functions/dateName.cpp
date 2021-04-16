@@ -60,25 +60,28 @@ public:
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                + ", should be 2 or 3",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}",
+                getName(),
+                toString(arguments.size()));
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(
-                "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName()
-                + ". Must be string",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of 1 argument of function {}. Must be string",
+                arguments[0].type->getName(),
+                getName());
         if (!WhichDataType(arguments[1].type).isDateOrDateTime())
             throw Exception(
-                "Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName()
-                + "Must be a date or a date with time",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of 2 argument of function {}. Must be a date or a date with time",
+                arguments[1].type->getName(),
+                getName());
         if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isString())
             throw Exception(
-                "Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName()
-                + "Must be string",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of 3 argument of function {}. Must be string",
+                arguments[2].type->getName(),
+                getName());
         return std::make_shared<DataTypeString>();
     }
 
@@ -91,9 +94,10 @@ public:
               || (res = executeType<DataTypeDateTime>(arguments, result_type))
               || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
             throw Exception(
-                "Illegal column " + arguments[1].column->getName() + " of function " + getName()
-                + ", must be Date or DateTime.",
-                ErrorCodes::ILLEGAL_COLUMN);
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of function {], must be Date or DateTime.",
+                arguments[1].column->getName(),
+                getName());
 
         return res;
     }
@@ -107,20 +111,22 @@ public:
 
         const ColumnConst * datepart_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!datepart_column)
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                            + " of first ('datepart') argument of function " + getName()
-                            + ". Must be constant string.",
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first ('datepart') argument of function {}. Must be constant string.",
+                arguments[0].column->getName(),
+                getName());
 
         using T = typename ActionValueTypeMap<DataType>::ActionValueType;
         auto datepart_writer = DatePartWriter<T>();
         String datepart = datepart_column->getValue<String>();
 
         if (!datepart_writer.isCorrectDatePart(datepart))
-            throw Exception("Illegal value " + datepart
-                            + " of first ('format') argument of function " + getName()
-                            + ". Check documentation.",
-                            ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Illegal value {} of first ('format') argument of function {}. Check documentation",
+                datepart,
+                getName());
 
         const DateLUTImpl * time_zone_tmp;
         if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
