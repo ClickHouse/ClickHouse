@@ -395,7 +395,7 @@ void LocalServer::processQueries()
     ///Set progress show
     progress_bar.setNeedRenderProgress(config().getBool("progress", false));
 
-    context.setProgressCallback([progress_bar, progress, watch](const Progress &value){
+    context.setProgressCallback([&](const Progress &value){
         progress_bar.updateProgress(progress, value);
         progress_bar.writeProgress(progress, watch);
         return true;

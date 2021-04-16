@@ -11,8 +11,8 @@ class ProgressBar
 {
 public:
 
-    void updateProgress(Progress progress, const Progress &value);
-    void writeProgress(Progress progress, Stopwatch watch);
+    void updateProgress(Progress & progress, const Progress &value);
+    void writeProgress(const Progress & progress, const Stopwatch & watch);
 
     ///Required Getters
     bool getNeedRenderProgress() const;
@@ -26,7 +26,7 @@ public:
     void setWrittenProgressChars(size_t writtenProgressChars);
     void setWrittenFirstBlock(bool writtenFirstBlock);
 
-protected:
+private:
     /// The server periodically sends information about how much data was read since last time.
     bool need_render_progress = false;
     /// Render query execution progress.
