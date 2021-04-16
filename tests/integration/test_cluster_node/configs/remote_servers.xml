@@ -1,28 +1,18 @@
 <yandex>
     <remote_servers>
-        <test_cluster_node>
+        <test_cluster_two_shards>
             <shard>
-                <internal_replication>true</internal_replication>
                 <replica>
-                    <host>node1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>node2</host>
+                    <host>127.0.0.1</host>
                     <port>9000</port>
                 </replica>
             </shard>
             <shard>
-                <internal_replication>true</internal_replication>
                 <replica>
-                    <host>node3</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>node4</host>
+                    <host>127.0.0.2</host>
                     <port>9000</port>
                 </replica>
             </shard>
-        </test_cluster_node>
+        </test_cluster_two_shards>
     </remote_servers>
 </yandex>

@@ -1334,7 +1334,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
                                                                      "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
             String cluster_zookeeper_path = config().getString("distributed_cluster.path", "/clickhouse/cluster/");
-            global_context->setClusterWorker(std::make_unique<ClusterWorker>(cluster_zookeeper_path, global_context, &config(), "distributed_cluster")); 
+            global_context->setClusterWorker(std::make_unique<ClusterWorker>(cluster_zookeeper_path, global_context, &config(), "distributed_cluster"));
         }
 
         for (auto & server : *servers)

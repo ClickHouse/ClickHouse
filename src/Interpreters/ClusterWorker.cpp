@@ -310,7 +310,7 @@ public:
             {
                 size_t num_unfinished_hosts = waiting_hosts.size() - num_hosts_finished;
                 size_t num_active_hosts = current_active_hosts.size();
-                               
+
                 constexpr const char * msg_format = "Watching task {} is executing longer than distributed_ddl_task_timeout (={}) seconds. "
                                                     "There are {} unfinished hosts ({} of them are currently active), "
                                                     "they are going to execute the query in background";
