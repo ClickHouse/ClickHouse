@@ -20,7 +20,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/UnicodeBar.h>
 #include <Common/config_version.h>
-#include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -393,7 +392,7 @@ void LocalServer::processQueries()
     ///Set progress show
     progress_bar.setNeedRenderProgress(config().getBool("progress", false));
 
-    context.setProgressCallback([&](const Progress &value){
+    context->setProgressCallback([&](const Progress &value){
         progress_bar.updateProgress(progress, value);
         progress_bar.writeProgress(progress, watch);
         return true;
