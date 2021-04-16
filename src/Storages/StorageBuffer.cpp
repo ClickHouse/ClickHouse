@@ -40,6 +40,9 @@ namespace ProfileEvents
     extern const Event StorageBufferPassedTimeMaxThreshold;
     extern const Event StorageBufferPassedRowsMaxThreshold;
     extern const Event StorageBufferPassedBytesMaxThreshold;
+    extern const Event StorageBufferPassedTimeFlushThreshold;
+    extern const Event StorageBufferPassedRowsFlushThreshold;
+    extern const Event StorageBufferPassedBytesFlushThreshold;
     extern const Event StorageBufferLayerLockReadersWaitMilliseconds;
     extern const Event StorageBufferLayerLockWritersWaitMilliseconds;
 }
@@ -103,6 +106,7 @@ StorageBuffer::StorageBuffer(
     size_t num_shards_,
     const Thresholds & min_thresholds_,
     const Thresholds & max_thresholds_,
+    const Thresholds & flush_thresholds_,
     const StorageID & destination_id_,
     bool allow_materialized_)
     : IStorage(table_id_)
@@ -110,6 +114,7 @@ StorageBuffer::StorageBuffer(
     , num_shards(num_shards_), buffers(num_shards_)
     , min_thresholds(min_thresholds_)
     , max_thresholds(max_thresholds_)
+    , flush_thresholds(flush_thresholds_)
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
     , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
@@ -602,7 +607,7 @@ private:
         {
             buffer.data = sorted_block.cloneEmpty();
         }
-        else if (storage.checkThresholds(buffer, current_time, sorted_block.rows(), sorted_block.bytes()))
+        else if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()))
         {
             /** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
               * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
@@ -713,7 +718,7 @@ bool StorageBuffer::supportsPrewhere() const
     return false;
 }
 
-bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, size_t additional_rows, size_t additional_bytes) const
+bool StorageBuffer::checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows, size_t additional_bytes) const
 {
     time_t time_passed = 0;
     if (buffer.first_write_time)
@@ -722,11 +727,11 @@ bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, 
     size_t rows = buffer.data.rows() + additional_rows;
     size_t bytes = buffer.data.bytes() + additional_bytes;
 
-    return checkThresholdsImpl(rows, bytes, time_passed);
+    return checkThresholdsImpl(direct, rows, bytes, time_passed);
 }
 
 
-bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const
+bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const
 {
     if (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
     {
@@ -750,6 +755,27 @@ bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_p
     {
         ProfileEvents::increment(ProfileEvents::StorageBufferPassedBytesMaxThreshold);
         return true;
+    }
+
+    if (!direct)
+    {
+        if (flush_thresholds.time && time_passed > flush_thresholds.time)
+        {
+            ProfileEvents::increment(ProfileEvents::StorageBufferPassedTimeFlushThreshold);
+            return true;
+        }
+
+        if (flush_thresholds.rows && rows > flush_thresholds.rows)
+        {
+            ProfileEvents::increment(ProfileEvents::StorageBufferPassedRowsFlushThreshold);
+            return true;
+        }
+
+        if (flush_thresholds.bytes && bytes > flush_thresholds.bytes)
+        {
+            ProfileEvents::increment(ProfileEvents::StorageBufferPassedBytesFlushThreshold);
+            return true;
+        }
     }
 
     return false;
@@ -785,7 +811,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     if (check_thresholds)
     {
-        if (!checkThresholdsImpl(rows, bytes, time_passed))
+        if (!checkThresholdsImpl(/* direct= */false, rows, bytes, time_passed))
             return;
     }
     else
@@ -1040,16 +1066,17 @@ void registerStorageBuffer(StorageFactory & factory)
       *
       * db, table - in which table to put data from buffer.
       * num_buckets - level of parallelism.
-      * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer.
+      * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer,
+      * flush_time, flush_rows, flush_bytes - conditions for flushing.
       */
 
     factory.registerStorage("Buffer", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 9)
-            throw Exception("Storage Buffer requires 9 parameters: "
-                " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
+        if (engine_args.size() < 9 || engine_args.size() > 12)
+            throw Exception("Storage Buffer requires from 9 to 12 parameters: "
+                " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes].",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         // Table and database name arguments accept expressions, evaluate them.
@@ -1058,7 +1085,7 @@ void registerStorageBuffer(StorageFactory & factory)
 
         // After we evaluated all expressions, check that all arguments are
         // literals.
-        for (size_t i = 0; i < 9; i++)
+        for (size_t i = 0; i < engine_args.size(); i++)
         {
             if (!typeid_cast<ASTLiteral *>(engine_args[i].get()))
             {
@@ -1068,17 +1095,29 @@ void registerStorageBuffer(StorageFactory & factory)
             }
         }
 
-        String destination_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        String destination_table = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        size_t i = 0;
 
-        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[2]->as<ASTLiteral &>().value);
+        String destination_database = engine_args[i++]->as<ASTLiteral &>().value.safeGet<String>();
+        String destination_table = engine_args[i++]->as<ASTLiteral &>().value.safeGet<String>();
 
-        Int64 min_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), engine_args[3]->as<ASTLiteral &>().value);
-        Int64 max_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), engine_args[4]->as<ASTLiteral &>().value);
-        UInt64 min_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[5]->as<ASTLiteral &>().value);
-        UInt64 max_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[6]->as<ASTLiteral &>().value);
-        UInt64 min_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[7]->as<ASTLiteral &>().value);
-        UInt64 max_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[8]->as<ASTLiteral &>().value);
+        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+
+        StorageBuffer::Thresholds min;
+        StorageBuffer::Thresholds max;
+        StorageBuffer::Thresholds flush;
+
+        min.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        max.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        min.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        max.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        min.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        max.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        if (engine_args.size() > i)
+            flush.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        if (engine_args.size() > i)
+            flush.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        if (engine_args.size() > i)
+            flush.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
 
         /// If destination_id is not set, do not write data from the buffer, but simply empty the buffer.
         StorageID destination_id = StorageID::createEmpty();
@@ -1094,8 +1133,7 @@ void registerStorageBuffer(StorageFactory & factory)
             args.constraints,
             args.getContext(),
             num_buckets,
-            StorageBuffer::Thresholds{min_time, min_rows, min_bytes},
-            StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
+            min, max, flush,
             destination_id,
             static_cast<bool>(args.getLocalContext()->getSettingsRef().insert_allow_materialized_columns));
     },
