@@ -237,7 +237,9 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                  * but the old comment said it is impossible, without mentioning
                  * the reason. We should also negate the nonnegative literals,
                  * for symmetry. We print the negated value without parentheses,
-                 * because they are not needed around a single literal.
+                 * because they are not needed around a single literal. Also we
+                 * use formatting from FieldVisitorToString, so that the type is
+                 * preserved (e.g. -0. is printed with trailing period).
                  */
                 if (literal && name == "negate")
                 {
@@ -257,14 +259,15 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                                 // fuzzer. Decimals are always signed, so no need
                                 // to deduce the result type like we do for ints.
                                 const auto int_value = value.getValue().value;
-                                settings.ostr << ValueType{
+                                settings.ostr << FieldVisitorToString{}(ValueType{
                                     -int_value,
-                                    value.getScale()};
+                                    value.getScale()});
                             }
                             else if constexpr (std::is_arithmetic_v<ValueType>)
                             {
                                 using ResultType = typename NumberTraits::ResultOfNegate<ValueType>::Type;
-                                settings.ostr << -static_cast<ResultType>(value);
+                                settings.ostr << FieldVisitorToString{}(
+                                    -static_cast<ResultType>(value));
                                 return true;
                             }
 
