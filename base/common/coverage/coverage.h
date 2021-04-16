@@ -9,11 +9,39 @@
 #include <string_view>
 #include <filesystem>
 #include <unordered_map>
+#include <queue>
 #include <vector>
-//#include <sanitizer/coverage_interface.h>
 
-namespace coverage
+#include <Common/ShellCommand.h>
+#include <sanitizer/coverage_interface.h>
+
+namespace detail
 {
+using ShellCommand = DB::ShellCommand;
+
+constexpr const auto genhtml_proc_limit = 1;
+
+constexpr const std::string_view genhtml_command =
+    "genhtml {} --output-directory {} --";
+
+class GenProcInfo
+{
+    FILE * const file;
+    std::unique_ptr<ShellCommand> proc;
+
+    GenProcInfo(FILE * file_)
+        : file(file_), proc(ShellCommand::execute())
+    {
+
+    }
+
+    ~GenProcInfo()
+    {
+        proc->wait();
+        std::filesystem::remove(tmp_file_path);
+    }
+};
+
 class Writer
 {
 public:
@@ -23,12 +51,15 @@ public:
         return w;
     }
 
-    //count, start
-    void initialized(uint32_t , uint32_t * /*start*/)
+    void initialized(uint32_t count, uint32_t * start)
     {
+        const auto signal_hander = [](int, siginfo_t * info, auto)
+        {
+            Writer::instance().updateTest(info->si_value.sival_int);
+        };
+
         const struct sigaction sa = {
-            .sa_sigaction =
-                [](int, siginfo_t * info, auto) { Writer::instance().updateTest(info->si_value.sival_int); },
+            .sa_sigaction = std::move(signal_hander),
             .sa_flags = SA_SIGINFO
         };
 
@@ -86,11 +117,11 @@ private:
     const std::filesystem::path coverage_dir { std::filesystem::current_path() / "../../coverage" };
 
     std::optional<size_t> test_id;
-    std::vector<uint32_t> bb_edge_indices;
-    std::unordered_map<uint32_t, void*> bb_edge_index_to_addr;
-};
+    std::vector<void *> edges; //index = bb_edge index
 
-inline void hit(uint32_t edge_index, void * addr) { Writer::instance().hit(edge_index, addr); }
-inline void dumpReport() { Writer::instance().writeReport(); }
-inline void initialized(uint32_t bb_count, uint32_t * start) { Writer::instance().initialized(bb_count, start); }
+    std::unordered_map<void *, std::string> symbolizer_cache;
+
+    std::vector<GenProcInfo> executing_processes;
+    std::queue<FILE *> waiting_processes;
+};
 }

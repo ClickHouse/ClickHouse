@@ -1,5 +1,7 @@
 #!/bin/bash
 
+ASAN_OPTIONS=coverage=1:coverage_dir=/sancov
+
 kill_clickhouse () {
     echo "clickhouse pids $(pgrep -u clickhouse)" | ts '%Y-%m-%d %H:%M:%S'
     pkill -f "clickhouse-server" 2>/dev/null
@@ -48,6 +50,7 @@ dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-client_*.deb; \
     dpkg -i package_folder/clickhouse-test_*.deb
 
+mkdir -p /sancov # reports will be stored there
 mkdir -p /var/lib/clickhouse
 mkdir -p /var/log/clickhouse-server
 chmod 777 -R /var/log/clickhouse-server/
@@ -102,11 +105,10 @@ else
     echo "No failed tests"
 fi
 
-mkdir -p "$COVERAGE_DIR"
-mv /*.profraw "$COVERAGE_DIR"
 
 mkdir -p "$SOURCE_DIR"/obj-x86_64-linux-gnu
 cd "$SOURCE_DIR"/obj-x86_64-linux-gnu && CC=clang-11 CXX=clang++-11 cmake .. && cd /
-llvm-profdata-11 merge -sparse "${COVERAGE_DIR}"/* -o clickhouse.profdata
+
+sancov-11 --symbolize /sancov/* -o clickhouse.symcov
 llvm-cov-11 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -j=16 -format=lcov -skip-functions -ignore-filename-regex "$IGNORE" > output.lcov
 genhtml output.lcov --ignore-errors source --output-directory "${OUTPUT_DIR}"

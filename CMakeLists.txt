@@ -68,7 +68,9 @@ endif ()
 
 include (cmake/find/ccache.cmake)
 
-option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling" OFF)
+option(ENABLE_CHECK_HEAVY_BUILDS
+    "Don't allow C++ translation units to compile too long or to take too much memory while compiling" OFF)
+
 if (ENABLE_CHECK_HEAVY_BUILDS)
     # set DATA (since RSS does not work since 2.6.x+) to 2G
     set (RLIMIT_DATA 5000000000)
@@ -127,14 +129,10 @@ endif()
 # clang only.
 option(WITH_COVERAGE "Generate functional tests code coverage reports." OFF)
 
-# Must be set before sanitizers cmake inclusion as implies ASan.
 if (WITH_COVERAGE)
     if (COMPILER_CLANG)
         message(STATUS "Code coverage runtime: ON")
-
-        set(WITH_COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard")
-        set(WITHOUT_COVERAGE "-fno-sanitize-coverage=trace-pc-guard")
-        set(SANITIZE "address") # needed to symbolize the reports
+        include(cmake/coverage.cmake)
     else()
         message(ERROR "As for now, the code coverage is supported in Clang only")
     endif()

@@ -270,11 +270,10 @@ int ShellCommand::tryWait()
     LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 
     int status = 0;
+
     while (waitpid(pid, &status, 0) < 0)
-    {
         if (errno != EINTR)
             throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
-    }
 
     LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
 
@@ -282,12 +281,14 @@ int ShellCommand::tryWait()
         return WEXITSTATUS(status);
 
     if (WIFSIGNALED(status))
-        throw Exception("Child process was terminated by signal " + toString(WTERMSIG(status)), ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY);
+        throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY,
+            "Child process was terminated by signal {}", WTERMSIG(status));
 
     if (WIFSTOPPED(status))
-        throw Exception("Child process was stopped by signal " + toString(WSTOPSIG(status)), ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY);
+        throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY,
+            "Child process was stopped by signal {}", WSTOPSIG(status));
 
-    throw Exception("Child process was not exited normally by unknown reason", ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY);
+    throw Exception("Child process exited abnormally by unknown reason", ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY);
 }
 
 
