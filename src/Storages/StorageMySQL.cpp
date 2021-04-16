@@ -213,12 +213,13 @@ private:
 
 BlockOutputStreamPtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
+    auto check_insert_privilege = getContext()->getSettingsRef().external_storage_check_insert_privilege && pool->getReplicasNumber() > 1 ? remote_table_name : "";
     return std::make_shared<StorageMySQLBlockOutputStream>(
         *this,
         metadata_snapshot,
         remote_database_name,
         remote_table_name,
-        pool->get(remote_table_name),
+        pool->get(check_insert_privilege),
         local_context->getSettingsRef().mysql_max_rows_to_insert);
 }
 
