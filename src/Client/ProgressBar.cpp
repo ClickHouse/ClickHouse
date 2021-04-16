@@ -1,4 +1,4 @@
-#include <ProgressBar.h>
+#include "ProgressBar.h"
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
