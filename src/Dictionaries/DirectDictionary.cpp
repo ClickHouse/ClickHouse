@@ -51,6 +51,14 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     key_to_fetched_index.reserve(requested_keys.size());
 
     auto fetched_columns_from_storage = request.makeAttributesResultColumns();
+    for (size_t attribute_index = 0; attribute_index < request.attributesSize(); ++attribute_index)
+    {
+        if (!request.shouldFillResultColumnWithIndex(attribute_index))
+            continue;
+
+        auto & fetched_column_from_storage = fetched_columns_from_storage[attribute_index];
+        fetched_column_from_storage->reserve(requested_keys.size());
+    }
 
     size_t fetched_key_index = 0;
 
