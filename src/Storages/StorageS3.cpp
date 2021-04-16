@@ -81,6 +81,13 @@ public:
         return nextAssumeLocked();
     }
 
+    /// Return number of objects in one result.
+    /// If it's less than limit of s3 list objects (usually 1000) then estimation is accurate, otherwise it can be greater
+    size_t totalObjectsEstimate() const
+    {
+        return buffer.size();
+    }
+
 private:
 
     String nextAssumeLocked()
@@ -147,6 +154,10 @@ String StorageS3Source::DisclosedGlobIterator::next()
     return pimpl->next();
 }
 
+size_t StorageS3Source::DisclosedGlobIterator::totalObjectsEstimate() const
+{
+    return pimpl->totalObjectsEstimate();
+}
 
 Block StorageS3Source::getHeader(Block sample_block, bool with_path_column, bool with_file_column)
 {
@@ -196,7 +207,7 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
 {
     size_t object_size = DB::S3::getObjectSize(client, bucket, key, false);
 
-    bool use_parallel_download = download_buffer_size > 0 && max_download_threads >= 1;
+    bool use_parallel_download = download_buffer_size > 0 && max_download_threads > 1;
     bool object_too_small = object_size < max_download_threads * download_buffer_size;
     if (!use_parallel_download || object_too_small)
     {
@@ -397,6 +408,8 @@ Pipe StorageS3::read(
             need_file_column = true;
     }
 
+    size_t total_objects = 0;
+
     std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper{nullptr};
     if (distributed_processing)
     {
@@ -414,13 +427,18 @@ Pipe StorageS3::read(
         {
             return glob_iterator->next();
         });
+        total_objects = glob_iterator->totalObjectsEstimate();
     }
+    total_objects = std::min<size_t>(total_objects, num_streams);
 
-    size_t threads_per_file = std::max<size_t>(max_download_threads / num_streams, 1);
-    size_t buffer_size_per_file = std::max<size_t>(max_download_buffer_size / num_streams, DBMS_DEFAULT_BUFFER_SIZE);
+    size_t threads_per_file = 1, buffer_size_per_file = DBMS_DEFAULT_BUFFER_SIZE;
+    if (total_objects)
+    {
+        threads_per_file = std::max<size_t>(max_download_threads / total_objects, threads_per_file);
+        buffer_size_per_file = std::max<size_t>(max_download_buffer_size / total_objects, buffer_size_per_file);
+    }
     LOG_TRACE(&Poco::Logger::get("StorageS3"),
-              "Will use up to {} thread with buffer {} bytes to download each object from S3",
-              threads_per_file, buffer_size_per_file);
+              "Will use up to {} thread(s) with buffer {} bytes to download each object from S3", threads_per_file, buffer_size_per_file);
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
