@@ -8,7 +8,6 @@
 #include <Coordination/SnapshotableHashTable.h>
 #include <unordered_map>
 #include <unordered_set>
-#include <set>
 #include <vector>
 
 namespace DB
@@ -18,7 +17,7 @@ using namespace DB;
 struct KeeperStorageRequest;
 using KeeperStorageRequestPtr = std::shared_ptr<KeeperStorageRequest>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-using ChildrenSet = std::set<std::string>;
+using ChildrenSet = std::unordered_set<std::string>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
 struct KeeperStorageSnapshot;
