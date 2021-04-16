@@ -224,6 +224,9 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coord
 
 void KeeperServer::putLocalReadRequest(const KeeperStorage::RequestForSession & request_for_session)
 {
+    if (!request_for_session.request->isReadRequest())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
+
     state_machine->processReadRequest(request_for_session);
 }
 
