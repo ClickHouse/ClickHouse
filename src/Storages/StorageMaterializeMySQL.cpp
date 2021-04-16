@@ -92,7 +92,7 @@ Pipe StorageMaterializeMySQL::read(
     {
         Block pipe_header = pipe.getHeader();
         auto syntax = TreeRewriter(context).analyze(expressions, pipe_header.getNamesAndTypesList());
-        ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true);
+        ExpressionActionsPtr expression_actions = ExpressionAnalyzer(expressions, syntax, context).getActions(true, false);
 
         pipe.addSimpleTransform([&](const Block & header)
         {
