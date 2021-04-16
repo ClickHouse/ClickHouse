@@ -11,6 +11,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <re2/re2.h>
+#include <Disks/IDiskRemote.h>
 
 
 namespace DB
@@ -21,7 +22,7 @@ namespace DB
  * Files are represented by file in local filesystem (clickhouse_root/disks/disk_name/path/to/file)
  * that contains S3 object key with actual data.
  */
-class DiskS3 : public IDisk
+class DiskS3 : public IDiskRemote
 {
 public:
     using ObjectMetadata = std::map<std::string, std::string>;
@@ -30,7 +31,6 @@ public:
     friend class DiskS3Reservation;
 
     class AwsS3KeyKeeper;
-    struct Metadata;
     struct RestoreInformation;
 
     DiskS3(
@@ -49,41 +49,13 @@ public:
 
     const String & getName() const override { return name; }
 
-    const String & getPath() const override { return metadata_path; }
-
     ReservationPtr reserve(UInt64 bytes) override;
-
-    UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
-
-    UInt64 getAvailableSpace() const override { return std::numeric_limits<UInt64>::max(); }
-
-    UInt64 getUnreservedSpace() const override { return std::numeric_limits<UInt64>::max(); }
-
-    UInt64 getKeepingFreeSpace() const override { return 0; }
-
-    bool exists(const String & path) const override;
-
-    bool isFile(const String & path) const override;
-
-    bool isDirectory(const String & path) const override;
-
-    size_t getFileSize(const String & path) const override;
-
-    void createDirectory(const String & path) override;
-
-    void createDirectories(const String & path) override;
-
-    void clearDirectory(const String & path) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
 
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
     void moveFile(const String & from_path, const String & to_path) override;
-
-    void replaceFile(const String & from_path, const String & to_path) override;
-
-    void listFiles(const String & path, std::vector<String> & file_names) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
@@ -100,21 +72,12 @@ public:
 
     void removeFile(const String & path) override { removeSharedFile(path, false); }
     void removeFileIfExists(const String & path) override;
-    void removeDirectory(const String & path) override;
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
 
     void removeSharedFile(const String & path, bool keep_s3) override;
     void removeSharedRecursive(const String & path, bool keep_s3) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
-
-    void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
-
-    Poco::Timestamp getLastModified(const String & path) override;
-
-    void createFile(const String & path) override;
-
-    void setReadOnly(const String & path) override;
 
     DiskType::Type getType() const override { return DiskType::Type::S3; }
 
@@ -143,9 +106,6 @@ private:
     void removeMeta(const String & path, AwsS3KeyKeeper & keys);
     void removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys);
     void removeAws(const AwsS3KeyKeeper & keys);
-
-    Metadata readMeta(const String & path) const;
-    Metadata createMeta(const String & path) const;
 
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
     static String revisionToString(UInt64 revision);
@@ -178,8 +138,6 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client;
     std::shared_ptr<S3::ProxyConfiguration> proxy_configuration;
     const String bucket;
-    const String s3_root_path;
-    String metadata_path;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
     size_t min_bytes_for_seek;

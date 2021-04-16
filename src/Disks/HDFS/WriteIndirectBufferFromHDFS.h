@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/WriteBufferFromFile.h>
-#include "DiskHDFSMetadata.h"
+#include <Disks/IDiskRemote.h>
 
 
 namespace DB
@@ -12,13 +12,13 @@ class WriteIndirectBufferFromHDFS final : public WriteBufferFromFileBase
 {
 public:
     WriteIndirectBufferFromHDFS(
-        ContextPtr context,
+        const Poco::Util::AbstractConfiguration & config_,
         const String & hdfs_name_,
         const String & hdfs_path_,
-        Metadata metadata_,
+        DiskHDFS::Metadata metadata_,
         size_t buf_size_)
         : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-        , impl(WriteBufferFromHDFS(hdfs_name_, context->getGlobalContext()->getConfigRef(), buf_size_))
+        , impl(WriteBufferFromHDFS(hdfs_name_, config_, buf_size_))
         , metadata(std::move(metadata_))
         , hdfs_path(hdfs_path_)
     {
@@ -73,7 +73,7 @@ private:
 
     WriteBufferFromHDFS impl;
     bool finalized = false;
-    Metadata metadata;
+    DiskHDFS::Metadata metadata;
     String hdfs_path;
 };
 

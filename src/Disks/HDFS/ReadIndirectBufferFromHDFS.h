@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/ReadBufferFromFile.h>
-#include "DiskHDFSMetadata.h"
+#include <Disks/IDiskRemote.h>
 
 
 namespace DB
@@ -18,12 +18,12 @@ class ReadIndirectBufferFromHDFS final : public ReadBufferFromFileBase
 {
 public:
     ReadIndirectBufferFromHDFS(
-            ContextPtr context,
+            const Poco::Util::AbstractConfiguration & config_,
             const String & hdfs_name_,
             const String & /* bucket */,
-            Metadata metadata_,
+            DiskHDFS::Metadata metadata_,
             size_t buf_size_)
-        : config(context->getGlobalContext()->getConfigRef())
+        : config(config_)
         , hdfs_name(hdfs_name_)
         , metadata(std::move(metadata_))
         , buf_size(buf_size_)
@@ -78,10 +78,10 @@ private:
     {
         size_t offset = absolute_position;
 
-        for (size_t i = 0; i < metadata.hdfs_objects.size(); ++i)
+        for (size_t i = 0; i < metadata.remote_fs_objects.size(); ++i)
         {
             current_buf_idx = i;
-            const auto & [path, size] = metadata.hdfs_objects[i];
+            const auto & [path, size] = metadata.remote_fs_objects[i];
 
             if (size > offset)
             {
@@ -111,11 +111,11 @@ private:
         }
 
         /// If there is no available buffers - nothing to read.
-        if (current_buf_idx + 1 >= metadata.hdfs_objects.size())
+        if (current_buf_idx + 1 >= metadata.remote_fs_objects.size())
             return false;
 
         ++current_buf_idx;
-        const auto & path = metadata.hdfs_objects[current_buf_idx].first;
+        const auto & path = metadata.remote_fs_objects[current_buf_idx].first;
         current_buf = std::make_unique<ReadBufferFromHDFS>(hdfs_name + path, config, buf_size);
         current_buf->next();
         working_buffer = current_buf->buffer();
@@ -126,7 +126,7 @@ private:
 
     const Poco::Util::AbstractConfiguration & config;
     const String & hdfs_name;
-    Metadata metadata;
+    DiskHDFS::Metadata metadata;
     size_t buf_size;
 
     size_t absolute_position = 0;

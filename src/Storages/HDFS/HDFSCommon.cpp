@@ -116,17 +116,19 @@ void HDFSBuilderWrapper::runKinit()
 HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration & config)
 {
     const Poco::URI uri(uri_str);
+
     const auto & host = uri.getHost();
-    auto port = uri.getPort();
-    const String path = "//";
     if (host.empty())
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
+    auto port = uri.getPort();
+    const String path = "//";
+
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
-        throw Exception("Unable to create builder to connect to HDFS: " +
-            uri.toString() + " " + String(hdfsGetLastError()),
-            ErrorCodes::NETWORK_ERROR);
+        throw Exception(ErrorCodes::NETWORK_ERROR,
+            "Unable to create builder to connect to HDFS: {}. Error: {}",
+            uri.toString(), String(hdfsGetLastError()));
 
     hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
     hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
@@ -144,6 +146,7 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
 
         hdfsBuilderSetUserName(builder.get(), user.c_str());
     }
+
     hdfsBuilderSetNameNode(builder.get(), host.c_str());
     if (port != 0)
     {
