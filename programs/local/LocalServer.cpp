@@ -47,8 +47,6 @@
 #include <filesystem>
 
 
-/// http://en.wikipedia.org/wiki/ANSI_escape_code
-#define CLEAR_TO_END_OF_LINE "\033[K"
 
 namespace DB
 {
