@@ -205,13 +205,6 @@ void ZooKeeperSetRequest::readImpl(ReadBuffer & in)
     Coordination::read(version, in);
 }
 
-String ZooKeeperSetRequest::toString() const
-{
-    WriteBufferFromOwnString result;
-    result << "type: Set " << "xid: " << xid << " path: " << path << "data: " << data << '\n';
-    return result.str();
-}
-
 void ZooKeeperSetResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(stat, in);

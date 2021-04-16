@@ -61,7 +61,6 @@ struct ZooKeeperRequest : virtual Request
 
     virtual ZooKeeperResponsePtr makeResponse() const = 0;
     virtual bool isReadRequest() const = 0;
-    virtual String toString() const { return "not implemented"; }
 };
 
 using ZooKeeperRequestPtr = std::shared_ptr<ZooKeeperRequest>;
@@ -275,7 +274,6 @@ struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
     bool isReadRequest() const override { return false; }
 
     size_t bytesSize() const override { return SetRequest::bytesSize() + sizeof(xid); }
-    String toString() const override;
 };
 
 struct ZooKeeperSetResponse final : SetResponse, ZooKeeperResponse
