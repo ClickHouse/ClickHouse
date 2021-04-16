@@ -298,7 +298,7 @@ private:
             }
             else
             {
-                throw Exception("Illegal value of second ('datetime') argument of function datePart. Check documentation.",
+                throw Exception("Illegal value of second ('datetime') argument of function dateName. Check documentation.",
                                 ErrorCodes::BAD_ARGUMENTS);
             }
         }
