@@ -11,7 +11,7 @@ class ProgressBar
 {
 public:
 
-    void updateProgress(Progress & progress, const Progress &value);
+    bool updateProgress(Progress & progress, const Progress &value);
     void writeProgress(const Progress & progress, const Stopwatch & watch);
 
     ///Required Getters
