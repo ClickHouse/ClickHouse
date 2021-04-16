@@ -1,19 +1,9 @@
 #include <Functions/FunctionsTextClassification.h>
 #include <Common/FrequencyHolder.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/UTF8Helpers.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <algorithm>
-#include <cstring>
-#include <cmath>
-#include <limits>
 #include <unordered_map>
-#include <memory>
-#include <utility>
-#include <sstream>
-#include <set>
 
 namespace DB
 {
@@ -27,7 +17,8 @@ struct ProgrammingClassificationImpl
     static ALWAYS_INLINE inline Float64 state_machine(std::unordered_map<String, Float64> standart, std::unordered_map<String, Float64> model)
     {
         Float64 res = 0;
-        for (auto & el : model) {
+        for (auto & el : model)
+        {
             res += el.second * standart[el.first];
         }
         return res;
@@ -50,15 +41,19 @@ struct ProgrammingClassificationImpl
         
         while (!in.eof())
         {
-            if (data.size() - (in.position() - data.data()) <= 3) {
+            if (data.size() - (in.position() - data.data()) <= 3)
+            {
                 break;
             }
             readStringUntilWhitespace(new_word, in);
             skipWhitespaceIfAny(in);
 
-            if (prev == "") {
+            if (prev == "")
+            {
                 prev = new_word;
-            } else {
+            }
+            else
+            {
                 data_freq[prev + new_word] += 1;
                 prev = new_word;
             }
@@ -67,9 +62,11 @@ struct ProgrammingClassificationImpl
         String most_liked;
         Float64 max_result = 0;
 
-        for (const auto& item : programming_freq) {
+        for (const auto& item : programming_freq)
+        {
             Float64 result = state_machine(item.second, data_freq);
-            if (result > max_result) {
+            if (result > max_result)
+            {
                 max_result = result;
                 most_liked = item.first; 
             }
@@ -108,15 +105,19 @@ struct ProgrammingClassificationImpl
             String prev;
             while (!in.eof())
             {
-                if (str.size() - (in.position() - str.data()) <= 3) {
+                if (str.size() - (in.position() - str.data()) <= 3)
+                {
                     break;
                 }
                 readStringUntilWhitespace(new_word, in);
                 skipWhitespaceIfAny(in);
 
-                if (prev == "") {
+                if (prev == "")
+                {
                     prev = new_word;
-                } else {
+                } 
+                else
+                {
                     data_freq[prev + new_word] += 1;
                     prev = new_word;
                 }
@@ -125,9 +126,11 @@ struct ProgrammingClassificationImpl
             String most_liked;
             Float64 max_result = 0;
 
-            for (const auto& item : programming_freq) {
+            for (const auto& item : programming_freq)
+            {
                 Float64 result = state_machine(item.second, data_freq);
-                if (result > max_result) {
+                if (result > max_result)
+                {
                     max_result = result;
                     most_liked = item.first; 
                 }

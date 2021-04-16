@@ -6,13 +6,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
+
 #include <string_view>
 #include <string>
-#include <common/find_symbols.h>
-#include <fstream>
-#include <algorithm>
 #include <cstring>
-#include <limits>
 #include <unordered_map>
 #include <common/logger_useful.h>
 
@@ -34,11 +31,24 @@ public:
     }
 
 
-    void parseDictionaries(const String & pt)
+    void parseEncodingFrequencies(const String & pt)
     {
-        is_true = pt;
-        loadEmotionalDict("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/emotional_dictionary_rus.txt");
+        path_to_enc_freq = pt;
+        //loadEncodingsFrequency(pt);
         loadEncodingsFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/charset_freq.txt");
+    }
+
+    void parseEmotionalDict(const String & pt)
+    {
+        path_to_emo_dict = pt;
+        //loadEmotionalDict(pt);
+        loadEmotionalDict("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/emotional_dictionary_rus.txt");
+    }
+
+    void parseProgrammingFrequency(const String & pt) 
+    {
+        path_to_prog_freq = pt;
+        //loadProgrammingFrequency(pt);
         loadProgrammingFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/programming_freq.txt");
     }
 
@@ -154,13 +164,6 @@ public:
         LOG_TRACE(log, "Programming languages frequencies was added");
     }
 
-
-    const String & get_path()
-    {
-        return is_true;
-    }
-
-
     const std::unordered_map<String, Float64> & getEmotionalDict()
     {
         return emotional_dict;
@@ -178,12 +181,15 @@ public:
     }
 
 
-protected:
+private:
 
-    String is_true;
     std::unordered_map<String, Float64> emotional_dict;
     Container encodings_freq;
     std::unordered_map<String, std::unordered_map<String, Float64>> programming_freq;
+
+    String path_to_emo_dict;
+    String path_to_enc_freq;
+    String path_to_prog_freq;
 };
 }
 

@@ -843,9 +843,11 @@
          Path to the list is under top_level_domains_path (see above).
     -->
 
-    <!-- MY CHANGES -->
+    <!-- Text classification -->
 
-    <encodings_frequency_path>/var/lib/clickhouse/encodings_frequency/</encodings_frequency_path>
+    <encoding_frequencies_path>/ClassificationDictionaries/charset_freq.txt</encoding_frequencies_path>
+    <programming_lang_frequencies_path>/ClassificationDictionaries/programming_freq.txt</programming_lang_frequencies_path>
+    <emotional_dict_path>/ClassificationDictionaries/emotional_dictionary_rus.txt</emotional_dict_path>
 
     <top_level_domains_lists>
         <!--

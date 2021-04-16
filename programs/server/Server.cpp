@@ -632,11 +632,24 @@ int Server::main(const std::vector<std::string> & /*args*/)
         TLDListsHolder::getInstance().parseConfig(top_level_domains_path, config());
     }
 
-    /// my test
+    /// encoding frequencies
     {
-        const std::string & encode_frequency_path = config().getString("encodings_frequency_path", path + "encodings_frequency/");
-        FrequencyHolder::getInstance().parseDictionaries(encode_frequency_path);
+        const std::string & encode_frequency_path = config().getString("encoding_frequencies_path", path);
+        FrequencyHolder::getInstance().parseEncodingFrequencies(encode_frequency_path);
     }
+
+    /// programming languages frequencies
+    {
+        const std::string & programming_frequency_path = config().getString("programming_lang_frequencies_path", path);
+        FrequencyHolder::getInstance().parseProgrammingFrequency(programming_frequency_path);
+    }
+
+    /// emotional dictionary
+    {
+        const std::string & emotional_dict_path = config().getString("emotional_dict_path", path);
+        FrequencyHolder::getInstance().parseEmotionalDict(emotional_dict_path);
+    }
+
 
     {
         Poco::File(path + "data/").createDirectories();
