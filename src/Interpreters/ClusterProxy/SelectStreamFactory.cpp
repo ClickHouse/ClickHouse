@@ -160,7 +160,7 @@ void SelectStreamFactory::createForShard(
 
     const auto & settings = context->getSettingsRef();
 
-    if (settings.prefer_localhost_replica && shard_info.isLocal())
+    if ((settings.prefer_localhost_replica && shard_info.isLocal()) || !shard_info.hasRemoteConnections())
     {
         StoragePtr main_table_storage;
 
