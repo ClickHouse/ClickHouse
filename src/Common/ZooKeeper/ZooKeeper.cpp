@@ -254,7 +254,7 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
     };
 
     impl->list(path, callback, watch_callback);
-    event.wait();
+    event.wait(operation_timeout_ms);
     return code;
 }
 
@@ -310,7 +310,7 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
     };
 
     impl->create(path, data, mode & 1, mode & 2, {}, callback);  /// TODO better mode
-    event.wait();
+    event.wait(operation_timeout_ms);
     return code;
 }
 
@@ -377,7 +377,7 @@ Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t vers
     };
 
     impl->remove(path, version, callback);
-    event.wait();
+    event.wait(operation_timeout_ms);
     return code;
 }
 
@@ -411,7 +411,7 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
     };
 
     impl->exists(path, callback, watch_callback);
-    event.wait();
+    event.wait(operation_timeout_ms);
     return code;
 }
 
@@ -447,7 +447,7 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
     };
 
     impl->get(path, callback, watch_callback);
-    event.wait();
+    event.wait(operation_timeout_ms);
     return code;
 }
 
@@ -515,7 +515,7 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
     };
 
     impl->set(path, data, version, callback);
-    event.wait();
+    event.wait(operation_timeout_ms);
     return code;
 }
 
@@ -564,7 +564,7 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
     };
 
     impl->multi(requests, callback);
-    event.wait();
+    event.wait(operation_timeout_ms);
     return code;
 }
 
@@ -701,7 +701,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         impl->get(path, callback, watch);
 
         if (!condition)
-            state->event.wait();
+            state->event.wait(operation_timeout_ms);
         else if (!state->event.tryWait(1000))
             continue;
 

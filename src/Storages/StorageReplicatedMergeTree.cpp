@@ -2837,6 +2837,7 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
 {
 
     LogEntryPtr & entry = selected_entry->log_entry;
+    LOG_TRACE(log, "Processing log entry '{}'", entry.toString());
     return queue.processEntry([this]{ return getZooKeeper(); }, entry, [&](LogEntryPtr & entry_to_process)
     {
         try
