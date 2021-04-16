@@ -120,7 +120,6 @@ struct CharsetClassificationImpl
         // Float64 count_bigram = data.size() - 1;
         std::unordered_map<UInt16, Float64> model;
         for (size_t i = 0; i < len; ++i) {
-            ans += std::to_string(ngram_storage.get()[i]) + " " + std::to_string(static_cast<Float64>(common_stats.get()[ngram_storage.get()[i]])) + "\n";
             model[ngram_storage.get()[i]] = static_cast<Float64>(common_stats.get()[ngram_storage.get()[i]]);
         }
 
