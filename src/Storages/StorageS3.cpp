@@ -63,7 +63,7 @@ namespace
         bool object_too_small = object_size < max_download_threads * download_buffer_size;
         if (!use_parallel_download || object_too_small)
         {
-            LOG_TRACE(&Poco::Logger::get("StorageS3Source"), "Downloading object of size {} from S3 in single thread", object_size);
+            LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
             download_buffer_size = std::max<size_t>(download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
             return std::make_unique<ReadBufferFromS3>(client, bucket, key, download_buffer_size);
         }
@@ -72,14 +72,13 @@ namespace
 
         if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
         {
-            LOG_WARNING(&Poco::Logger::get("StorageS3Source"), "Downloading buffer {} bytes too small, set at least {} bytes",
+            LOG_WARNING(log, "Downloading buffer {} bytes too small, set at least {} bytes",
                         download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
             download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
         }
 
         auto factory = std::make_unique<ReadBufferS3Factory>(client, bucket, key, download_buffer_size, object_size);
-        LOG_TRACE(&Poco::Logger::get("StorageS3Source"),
-                  "Downloading from S3 in {} threads. Object size: {}, Range size: {} ({} ranges total).",
+        LOG_TRACE(log, "Downloading from S3 in {} threads. Object size: {}, Range size: {} ({} ranges total).",
                   max_download_threads, object_size, download_buffer_size, factory->totalRanges());
 
         return std::make_unique<ParallelReadBuffer>(std::move(factory), max_download_threads);

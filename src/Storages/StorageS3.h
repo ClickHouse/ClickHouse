@@ -74,6 +74,8 @@ private:
 
     S3AuthSettings auth_settings;
     void updateAuthSettings(ContextPtr context);
+
+    Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
 };
 
 }
