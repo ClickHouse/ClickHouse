@@ -227,7 +227,7 @@ struct FuseSumCountAggregatesVisitorData
             if (func.arguments->children.empty())
                 return;
 
-            // Probably we can extend it to match count() for non-nullable arugment
+            // Probably we can extend it to match count() for non-nullable argument
             // to sum/avg with any other argument. Now we require strict match.
             const auto argument = func.arguments->children.at(0)->getColumnName();
             auto it = fuse_map.find(argument);
