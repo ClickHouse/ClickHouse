@@ -8,7 +8,7 @@ $CLICKHOUSE_CLIENT -q "create table test_index (x UInt32, y UInt32, z UInt32, t 
 $CLICKHOUSE_CLIENT -q "insert into test_index select number, number > 3 ? 3 : number, number = 1 ? 1 : 0, number from numbers(20)"
 
 $CLICKHOUSE_CLIENT -q "
-    explain actions = 1 select *, _part from test_index where t % 19 = 16 and y > 0 and bitAnd(z, 3) != 1 and x > 10 and t % 20 > 14;
+    explain indexes = 1 select *, _part from test_index where t % 19 = 16 and y > 0 and bitAnd(z, 3) != 1 and x > 10 and t % 20 > 14;
     " | grep -A 100 "ReadFromMergeTree" # | grep -v "Description"
 
 echo "-----------------"

@@ -193,6 +193,16 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 
     if (index_stats && !index_stats->empty())
     {
+        format_settings.out << prefix << "Parts: " << index_stats->back().num_parts_after << '\n';
+        format_settings.out << prefix << "Granules: " << index_stats->back().num_granules_after << '\n';
+    }
+}
+
+void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
+{
+    std::string prefix(format_settings.offset, format_settings.indent_char);
+    if (index_stats && !index_stats->empty())
+    {
         std::string indent(format_settings.indent, format_settings.indent_char);
 
         /// Do not print anything if no indexes is applied.
@@ -233,9 +243,6 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
                 format_settings.out << '/' << (*index_stats)[i - 1].num_granules_after;
             format_settings.out << '\n';
         }
-
-        format_settings.out << prefix << "Parts: " << index_stats->back().num_parts_after << '\n';
-        format_settings.out << prefix << "Granules: " << index_stats->back().num_granules_after << '\n';
     }
 }
 

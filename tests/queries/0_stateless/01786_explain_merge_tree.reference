@@ -1,5 +1,4 @@
       ReadFromMergeTree
-      ReadType: Default
       Indexes:
         MinMax
           Keys: 
@@ -31,45 +30,13 @@
           Description: set GRANULARITY 2
           Parts: 1/1
           Granules: 1/2
-      Parts: 1
-      Granules: 1
 -----------------
           ReadFromMergeTree
           ReadType: InOrder
-          Indexes:
-            MinMax
-              Description: true
-              Parts: 5/5
-              Granules: 12/12
-            Partition
-              Description: true
-              Parts: 5/5
-              Granules: 12/12
-            PrimaryKey
-              Keys: 
-                x
-              Description: (x in [16, +inf))
-              Parts: 1/5
-              Granules: 3/12
           Parts: 1
           Granules: 3
 -----------------
           ReadFromMergeTree
           ReadType: InReverseOrder
-          Indexes:
-            MinMax
-              Description: true
-              Parts: 5/5
-              Granules: 12/12
-            Partition
-              Description: true
-              Parts: 5/5
-              Granules: 12/12
-            PrimaryKey
-              Keys: 
-                x
-              Description: (x in [16, +inf))
-              Parts: 1/5
-              Granules: 3/12
           Parts: 1
           Granules: 3
