@@ -31,7 +31,7 @@ namespace ErrorCodes
 }
 
 StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
-    : max_read_mysql_row_nums(settings.external_storage_max_read_rows)
+    : max_read_mysql_row_nums((settings.external_storage_max_read_rows) ? settings.external_storage_max_read_rows : settings.max_block_size)
     , max_read_mysql_bytes_size(settings.external_storage_max_read_bytes)
     , auto_close(auto_close_)
     , fetch_by_name(fetch_by_name_)

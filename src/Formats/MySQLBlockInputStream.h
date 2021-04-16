@@ -13,6 +13,7 @@ namespace DB
 
 struct StreamSettings
 {
+    /// Check if setting is enabled, otherwise use common `max_block_size` setting.
     size_t max_read_mysql_row_nums;
     size_t max_read_mysql_bytes_size;
     bool auto_close;
@@ -38,7 +39,7 @@ public:
     Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
 protected:
-    MySQLBlockInputStream(const Block & sample_block_, const struct StreamSettings & settings);
+    MySQLBlockInputStream(const Block & sample_block_, const StreamSettings & settings);
     Block readImpl() override;
     void initPositionMappingFromQueryResultStructure();
 
