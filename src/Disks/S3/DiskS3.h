@@ -167,9 +167,9 @@ private:
     void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key);
 
     void readRestoreInformation(RestoreInformation & restore_information);
-    void restoreFiles(const String & source_bucket, const String & source_path, UInt64 target_revision);
+    void restoreFiles(const RestoreInformation & restore_information);
     void processRestoreFiles(const String & source_bucket, const String & source_path, std::vector<String> keys);
-    void restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 target_revision, bool detached);
+    void restoreFileOperations(const RestoreInformation & restore_information);
 
     /// Remove 'path' prefix from 'key' to get relative key.
     /// It's needed to store keys to metadata files in RELATIVE_PATHS version.
@@ -204,7 +204,7 @@ private:
     int list_object_keys_size;
 
     /// Key has format: ../../r{revision}-{operation}
-    const re2::RE2 key_regexp {".*/r(\\w+)-(\\w+).*"};
+    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
 
     /// Object contains information about schema version.
     inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";

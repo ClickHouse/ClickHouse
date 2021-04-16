@@ -106,15 +106,18 @@ def drop_shadow_information(node):
     node.exec_in_container(['bash', '-c', 'rm -rf /var/lib/clickhouse/shadow/*'], user='root')
 
 
-def create_restore_file(node, revision=0, bucket=None, path=None, detached=None):
-    add_restore_option = 'echo -en "{}\n" >> /var/lib/clickhouse/disks/s3/restore'
-    node.exec_in_container(['bash', '-c', add_restore_option.format(revision)], user='root')
+def create_restore_file(node, revision=None, bucket=None, path=None, detached=None):
+    node.exec_in_container(['bash', '-c', 'touch /var/lib/clickhouse/disks/s3/restore'], user='root')
+
+    add_restore_option = 'echo -en "{}={}\n" >> /var/lib/clickhouse/disks/s3/restore'
+    if revision:
+        node.exec_in_container(['bash', '-c', add_restore_option.format('revision', revision)], user='root')
     if bucket:
-        node.exec_in_container(['bash', '-c', add_restore_option.format(bucket)], user='root')
+        node.exec_in_container(['bash', '-c', add_restore_option.format('source_bucket', bucket)], user='root')
     if path:
-        node.exec_in_container(['bash', '-c', add_restore_option.format(path)], user='root')
+        node.exec_in_container(['bash', '-c', add_restore_option.format('source_path', path)], user='root')
     if detached:
-        node.exec_in_container(['bash', '-c', add_restore_option.format('true')], user='root')
+        node.exec_in_container(['bash', '-c', add_restore_option.format('detached', 'true')], user='root')
 
 
 def get_revision_counter(node, backup_number):
