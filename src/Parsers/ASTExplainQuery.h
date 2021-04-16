@@ -27,13 +27,7 @@ public:
     {
         auto res = std::make_shared<ASTExplainQuery>(*this);
         res->children.clear();
-
-        if (query)
-            res->children.push_back(query->clone());
-
-        if (ast_settings)
-            res->children.push_back(query->clone());
-
+        res->children.push_back(children[0]->clone());
         cloneOutputOptions(*res);
         return res;
     }
