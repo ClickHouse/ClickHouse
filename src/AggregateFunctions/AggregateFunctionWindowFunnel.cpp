@@ -29,9 +29,9 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
 {
     if (settings == nullptr || !settings->allow_experimental_funnel_functions)
     {
-        throw Exception{
+        throw Exception(
             "Aggregate function " + name + " is experimental. Set `allow_experimental_funnel_functions` setting to enable it",
-            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION};
+            ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
     }
 
     if (params.empty())
