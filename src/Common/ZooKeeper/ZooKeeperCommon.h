@@ -390,6 +390,36 @@ struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
     size_t bytesSize() const override { return MultiResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
 
+/// Fake internal coordination (keeper) response. Never received from client
+/// and never send to client.
+struct ZooKeeperSessionIDRequest final : ZooKeeperRequest
+{
+    int64_t internal_id;
+    int64_t session_timeout_ms;
+
+    Coordination::OpNum getOpNum() const override { return OpNum::SessionID; }
+    String getPath() const override { return {}; }
+    void writeImpl(WriteBuffer & out) const override;
+    void readImpl(ReadBuffer & in) override;
+
+    Coordination::ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return false; }
+};
+
+/// Fake internal coordination (keeper) response. Never received from client
+/// and never send to client.
+struct ZooKeeperSessionIDResponse final : ZooKeeperResponse
+{
+    int64_t internal_id;
+    int64_t session_id;
+
+    void readImpl(ReadBuffer & in) override;
+
+    void writeImpl(WriteBuffer & out) const override;
+
+    Coordination::OpNum getOpNum() const override { return OpNum::SessionID; }
+};
+
 class ZooKeeperRequestFactory final : private boost::noncopyable
 {
 
