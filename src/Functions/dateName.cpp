@@ -276,25 +276,25 @@ private:
             {
                 *target = value + '0';
                 target += 2;
-                *target = 0;
+                *target = '\0';
             }
             else if (value < 100)
             {
                 writeNumber2(target, value);
                 target += 3;
-                *target = 0;
+                *target = '\0';
             }
             else if (value < 1000)
             {
                 writeNumber3(target, value);
                 target += 4;
-                *target = 0;
+                *target = '\0';
             }
             else if (value < 10000)
             {
                 writeNumber4(target, value);
                 target += 5;
-                *target = 0;
+                *target = '\0';
             }
             else
             {
