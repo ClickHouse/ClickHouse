@@ -141,6 +141,4 @@ void ProgressBar::writeProgress(const Progress & progress, const Stopwatch & wat
 
     message.next();
 }
-
-
 }
