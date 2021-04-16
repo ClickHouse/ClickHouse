@@ -21,6 +21,9 @@ ActionsDAGPtr addMissingDefaults(
     const ColumnsDescription & columns,
     const Context & context)
 {
+
+    std::cerr << "====== addMissingDefaults " << header.dumpStructure() << std::endl;
+
     auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
     auto & index = actions->getIndex();
 
