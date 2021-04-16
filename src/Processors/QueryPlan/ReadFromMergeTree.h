@@ -85,6 +85,7 @@ public:
     void initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(FormatSettings & format_settings) const override;
+    void describeIndexes(FormatSettings & format_settings) const override;
 
 private:
     const MergeTreeData & storage;
