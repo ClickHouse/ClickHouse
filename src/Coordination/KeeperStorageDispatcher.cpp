@@ -39,7 +39,7 @@ void KeeperStorageDispatcher::requestThread()
         UInt64 max_wait = UInt64(coordination_settings->operation_timeout_ms.totalMilliseconds());
         uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
 
-        /// The code bellow do a very simple thing: batch all write (quorum) requests into vector until
+        /// The code below do a very simple thing: batch all write (quorum) requests into vector until
         /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
         /// the ability to process read requests without quorum (from local state). So when we are collecting
         /// requests into a batch we must check that the new request is not read request. Otherwise we have to
