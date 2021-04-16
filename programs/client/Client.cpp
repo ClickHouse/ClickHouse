@@ -96,8 +96,6 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
-/// http://en.wikipedia.org/wiki/ANSI_escape_code
-#define CLEAR_TO_END_OF_LINE "\033[K"
 
 
 namespace DB
@@ -2202,7 +2200,7 @@ private:
                 current_format = "Vertical";
 
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-            if (!need_render_progress)
+            if (!progress_bar.getNeedRenderProgress())
                 block_out_stream = context->getOutputStreamParallelIfPossible(current_format, *out_buf, block);
             else
                 block_out_stream = context->getOutputStream(current_format, *out_buf, block);
@@ -2735,8 +2733,6 @@ public:
     }
 };
 
-}
-
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 
@@ -2764,4 +2760,5 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;
     }
+}
 }
