@@ -297,18 +297,22 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     if (minmax_idx_condition)
     {
+        auto description = minmax_idx_condition->getDescription();
         index_stats->emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::MinMax,
-            .description = minmax_idx_condition->toString(),
+            .condition = std::move(description.condition),
+            .used_keys = std::move(description.used_keys),
             .num_parts_after = part_filter_counters.num_parts_after_minmax,
             .num_granules_after = part_filter_counters.num_granules_after_minmax});
     }
 
     if (partition_pruner)
     {
+        auto description = partition_pruner->getKeyCondition().getDescription();
         index_stats->emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Partition,
-            .description = partition_pruner->toString(),
+            .condition = std::move(description.condition),
+            .used_keys = std::move(description.used_keys),
             .num_parts_after = part_filter_counters.num_parts_after_partition_pruner,
             .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
     }
@@ -778,7 +782,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
         index_stats->emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::PrimaryKey,
-            .description = std::move(description.condition),
+            .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
             .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
             .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed)});

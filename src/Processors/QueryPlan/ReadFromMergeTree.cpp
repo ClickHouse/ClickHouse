@@ -193,16 +193,25 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
 
     if (index_stats && !index_stats->empty())
     {
-
         std::string indent(format_settings.indent, format_settings.indent_char);
-        format_settings.out << prefix << "Indexes:\n";
 
-        for (const auto & stat : *index_stats)
+        /// Do not print anything if no indexes is applied.
+        if (index_stats->size() > 1 || index_stats->front().type != IndexType::None)
+            format_settings.out << prefix << "Indexes:\n";
+
+        for (size_t i = 0; i < index_stats->size(); ++i)
         {
+            const auto & stat = (*index_stats)[i];
+            if (stat.type == IndexType::None)
+                continue;
+
             format_settings.out << prefix << indent << indexTypeToString(stat.type) << '\n';
 
             if (!stat.name.empty())
                 format_settings.out << prefix << indent << indent << "Name: " << stat.name << '\n';
+
+            if (!stat.description.empty())
+                format_settings.out << prefix << indent << indent << "Description: " << stat.description << '\n';
 
             if (!stat.used_keys.empty())
             {
@@ -211,12 +220,22 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
                     format_settings.out << prefix << indent << indent << indent << used_key << '\n';
             }
 
-            if (!stat.description.empty())
-                format_settings.out << prefix << indent << indent << "Description: " << stat.description << '\n';
+            if (!stat.condition.empty())
+                format_settings.out << prefix << indent << indent << "Description: " << stat.condition << '\n';
 
-            format_settings.out << prefix << indent << indent << "Parts: " << stat.num_parts_after << '\n';
-            format_settings.out << prefix << indent << indent << "Granules: " << stat.num_granules_after << '\n';
+            format_settings.out << prefix << indent << indent << "Parts: " << stat.num_parts_after;
+            if (i)
+                format_settings.out << '/' << (*index_stats)[i - 1].num_parts_after;
+            format_settings.out << '\n';
+
+            format_settings.out << prefix << indent << indent << "Granules: " << stat.num_granules_after;
+            if (i)
+                format_settings.out << '/' << (*index_stats)[i - 1].num_granules_after;
+            format_settings.out << '\n';
         }
+
+        format_settings.out << prefix << "Parts: " << index_stats->back().num_parts_after << '\n';
+        format_settings.out << prefix << "Granules: " << index_stats->back().num_granules_after << '\n';
     }
 }
 

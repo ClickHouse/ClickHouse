@@ -296,12 +296,13 @@ public:
     /// Condition description for EXPLAIN query.
     struct Description
     {
+        /// Which columns from PK were used, in PK order.
         std::vector<std::string> used_keys;
+        /// Condition which was applied, mostly human-readable.
         std::string condition;
     };
 
     Description getDescription() const;
-
 
     /** A chain of possibly monotone functions.
       * If the key column is wrapped in functions that can be monotonous in some value ranges
