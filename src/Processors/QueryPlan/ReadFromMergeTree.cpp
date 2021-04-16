@@ -231,7 +231,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             }
 
             if (!stat.condition.empty())
-                format_settings.out << prefix << indent << indent << "Description: " << stat.condition << '\n';
+                format_settings.out << prefix << indent << indent << "Condition: " << stat.condition << '\n';
 
             format_settings.out << prefix << indent << indent << "Parts: " << stat.num_parts_after;
             if (i)
