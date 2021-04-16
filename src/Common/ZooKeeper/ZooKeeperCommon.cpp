@@ -205,6 +205,13 @@ void ZooKeeperSetRequest::readImpl(ReadBuffer & in)
     Coordination::read(version, in);
 }
 
+String ZooKeeperSetRequest::toString() const
+{
+    WriteBufferFromOwnString result;
+    result << "type: Set " << "xid: " << xid << " path: " << path << "data: " << data << '\n';
+    return result.str();
+}
+
 void ZooKeeperSetResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(stat, in);
@@ -459,12 +466,14 @@ void ZooKeeperSessionIDRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(internal_id, out);
     Coordination::write(session_timeout_ms, out);
+    Coordination::write(server_id, out);
 }
 
 void ZooKeeperSessionIDRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(internal_id, in);
     Coordination::read(session_timeout_ms, in);
+    Coordination::read(server_id, in);
 }
 
 Coordination::ZooKeeperResponsePtr ZooKeeperSessionIDRequest::makeResponse() const
@@ -476,12 +485,14 @@ void ZooKeeperSessionIDResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(internal_id, in);
     Coordination::read(session_id, in);
+    Coordination::read(server_id, in);
 }
 
 void ZooKeeperSessionIDResponse::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(internal_id, out);
     Coordination::write(session_id, out);
+    Coordination::write(server_id, out);
 }
 
 void ZooKeeperRequestFactory::registerRequest(OpNum op_num, Creator creator)

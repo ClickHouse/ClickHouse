@@ -104,6 +104,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
         std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
         response->internal_id = session_id_request.internal_id;
         response->session_id = session_id;
+        response->server_id = session_id_request.server_id;
 
         KeeperStorage::ResponseForSession response_for_session;
         response_for_session.session_id = -1;
@@ -120,7 +121,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
                 responses_queue.push(response_for_session);
         }
     }
-
 
     last_committed_idx = log_idx;
     return nullptr;

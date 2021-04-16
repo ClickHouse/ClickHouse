@@ -17,7 +17,7 @@ using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buff
 class KeeperServer
 {
 private:
-    int server_id;
+    const int server_id;
 
     CoordinationSettingsPtr coordination_settings;
 
@@ -72,6 +72,8 @@ public:
     void waitInit();
 
     void shutdown();
+
+    int getServerID() const { return server_id; }
 };
 
 }

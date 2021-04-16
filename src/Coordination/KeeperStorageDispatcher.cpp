@@ -63,6 +63,8 @@ void KeeperStorageDispatcher::requestThread()
                     current_batch.emplace_back(request);
 
                     /// Waiting until previous append will be successful, or batch is big enough
+                    /// has_result == false && get_result_code == OK means that our request still not processed.
+                    /// Sometimes NuRaft set errorcode without setting result, so we check both here.
                     while (prev_result && (!prev_result->has_result() && prev_result->get_result_code() == nuraft::cmd_result_code::OK) && current_batch.size() <= max_batch_size)
                     {
                         /// Trying to get batch requests as fast as possible
@@ -74,8 +76,11 @@ void KeeperStorageDispatcher::requestThread()
                                 has_read_request = true;
                                 break;
                             }
+                            else
+                            {
 
-                            current_batch.emplace_back(request);
+                                current_batch.emplace_back(request);
+                            }
                         }
 
                         if (shutdown_called)
@@ -95,12 +100,12 @@ void KeeperStorageDispatcher::requestThread()
                 /// Process collected write requests batch
                 if (!current_batch.empty())
                 {
-                    prev_result = server->putRequestBatch(current_batch);
+                    auto result = server->putRequestBatch(current_batch);
 
-                    if (prev_result)
+                    if (result)
                     {
                         if (has_read_request) /// If we will execute read request next, than we have to process result now
-                            forceWaitAndProcessResult(std::move(prev_result), std::move(current_batch));
+                            forceWaitAndProcessResult(std::move(result), std::move(current_batch));
                     }
                     else
                     {
@@ -108,6 +113,7 @@ void KeeperStorageDispatcher::requestThread()
                     }
 
                     prev_batch = current_batch;
+                    prev_result = result;
                 }
 
                 /// Read request always goes after write batch (last request)
@@ -181,8 +187,9 @@ void KeeperStorageDispatcher::setResponse(int64_t session_id, const Coordination
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::SessionID)
     {
         const Coordination::ZooKeeperSessionIDResponse & session_id_resp = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
+
         /// Nobody waits for this session id
-        if (!new_session_id_response_callback.count(session_id_resp.internal_id))
+        if (session_id_resp.server_id != server->getServerID() || !new_session_id_response_callback.count(session_id_resp.internal_id))
             return;
 
         auto callback = new_session_id_response_callback[session_id_resp.internal_id];
@@ -196,6 +203,7 @@ void KeeperStorageDispatcher::setResponse(int64_t session_id, const Coordination
             return;
 
         session_writer->second(response);
+
         /// Session closed, no more writes
         if (response->xid != Coordination::WATCH_XID && response->getOpNum() == Coordination::OpNum::Close)
         {
@@ -394,7 +402,7 @@ void KeeperStorageDispatcher::forceWaitAndProcessResult(RaftAppendResult && resu
         result->get();
 
     /// If we get some errors, than send them to clients
-    if (result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+    if (!result->get_accepted() || result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
         addErrorResponses(std::move(requests_for_sessions), Coordination::Error::ZOPERATIONTIMEOUT);
     else if (result->get_result_code() != nuraft::cmd_result_code::OK)
         addErrorResponses(std::move(requests_for_sessions), Coordination::Error::ZRUNTIMEINCONSISTENCY);
@@ -408,6 +416,8 @@ int64_t KeeperStorageDispatcher::getSessionID(long session_timeout_ms)
     std::shared_ptr<Coordination::ZooKeeperSessionIDRequest> request = std::make_shared<Coordination::ZooKeeperSessionIDRequest>();
     request->internal_id = internal_session_id_counter.fetch_add(1);
     request->session_timeout_ms = session_timeout_ms;
+    request->server_id = server->getServerID();
+
     request_info.request = request;
     request_info.session_id = -1;
 
@@ -415,16 +425,23 @@ int64_t KeeperStorageDispatcher::getSessionID(long session_timeout_ms)
     auto future = promise->get_future();
     {
         std::lock_guard lock(session_to_response_callback_mutex);
-        new_session_id_response_callback[request->internal_id] = [promise] (const Coordination::ZooKeeperResponsePtr & response)
+        new_session_id_response_callback[request->internal_id] = [promise, internal_id = request->internal_id] (const Coordination::ZooKeeperResponsePtr & response)
         {
             if (response->getOpNum() != Coordination::OpNum::SessionID)
                 promise->set_exception(std::make_exception_ptr(Exception(ErrorCodes::LOGICAL_ERROR,
                             "Incorrect response of type {} instead of SessionID response", Coordination::toString(response->getOpNum()))));
 
+            auto session_id_response = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
+            if (session_id_response.internal_id != internal_id)
+            {
+                promise->set_exception(std::make_exception_ptr(Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Incorrect response with internal id {} instead of {}", session_id_response.internal_id, internal_id)));
+            }
+
             if (response->error != Coordination::Error::ZOK)
                 promise->set_exception(std::make_exception_ptr(zkutil::KeeperException("SessionID request failed with error", response->error)));
 
-            promise->set_value(dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response).session_id);
+            promise->set_value(session_id_response.session_id);
         };
     }
 
