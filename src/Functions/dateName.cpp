@@ -313,7 +313,7 @@ private:
         static inline void writeNumber3(char * p, T v)
         {
             writeNumber2(p, v / 10);
-            p[2] += v % 10;
+            p[2] = v % 10 + '0';
         }
 
         template <typename T>
