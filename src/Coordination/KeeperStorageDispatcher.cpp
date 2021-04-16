@@ -58,7 +58,7 @@ void KeeperStorageDispatcher::requestThread()
 
                 /// If new request is not read request or we must to process it through quorum.
                 /// Otherwise we will process it locally.
-                if (coordination_settings->quorum_reads || !request.request->isReadRequest() || !server->isLeaderAlive())
+                if (coordination_settings->quorum_reads || !request.request->isReadRequest())
                 {
                     current_batch.emplace_back(request);
 
@@ -69,7 +69,7 @@ void KeeperStorageDispatcher::requestThread()
                         if (requests_queue->tryPop(request, 1))
                         {
                             /// Don't append read request into batch, we have to process them separately
-                            if (!coordination_settings->quorum_reads && request.request->isReadRequest() && server->isLeaderAlive())
+                            if (!coordination_settings->quorum_reads && request.request->isReadRequest())
                             {
                                 has_read_request = true;
                                 break;
@@ -111,9 +111,7 @@ void KeeperStorageDispatcher::requestThread()
                 }
 
                 /// Read request always goes after write batch (last request)
-                /// We don't check leader aliveness, because it was alive when this request happen
-                /// so our state is consistent.
-                if (has_read_request)
+                if (has_read_request && server->isLeaderAlive())
                     server->putLocalReadRequest(request);
             }
         }
