@@ -100,7 +100,7 @@ public:
 
     /// Creates connection. Either port either socket should be specified.
     /// If server is localhost and socket is not empty, than socket is used. Otherwise, server and port is used.
-    explicit Connection(ConnectionConfiguration & connection_configuration);
+    explicit Connection(const ConnectionConfiguration & connection_configuration);
 
     Connection(Connection && rhs) noexcept;
 
@@ -108,10 +108,10 @@ public:
 
     ~Connection();
 
-    bool tryConnect(ConnectionConfiguration & connection_configuration);
+    bool tryConnect(const ConnectionConfiguration & connection_configuration);
 
     /// Provides delayed initialization or reconnection with other settings.
-    void connect(ConnectionConfiguration & connection_configuration);
+    void connect(const ConnectionConfiguration & connection_configuration);
 
     /// If MySQL connection was established.
     bool connected() const;

@@ -158,14 +158,13 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
             MySQLClient client(remote_host_name, remote_port, mysql_user_name, mysql_user_password);
-            mysqlxx::ConnectionConfiguration configuration
-            {
-                .db = mysql_database_name,
-                .server = remote_host_name,
-                .port = remote_port,
-                .user = mysql_user_name,
-                .password = mysql_user_password
-            };
+            mysqlxx::ConnectionConfiguration configuration;
+
+            configuration.db = mysql_database_name;
+            configuration.server = remote_host_name;
+            configuration.port = remote_port;
+            configuration.user = mysql_user_name;
+            configuration.password = mysql_user_password;
 
             auto pool = mysqlxx::PoolFactory::instance().getPool(configuration);
             auto materialize_mode_settings = std::make_unique<MaterializeMySQLSettings>();

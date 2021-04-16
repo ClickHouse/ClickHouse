@@ -39,7 +39,7 @@ Connection::Connection()
     LibrarySingleton::instance();
 }
 
-Connection::Connection(ConnectionConfiguration & configuration)
+Connection::Connection(const ConnectionConfiguration & configuration)
     : Connection()
 {
     connect(configuration);
@@ -75,7 +75,7 @@ Connection::~Connection()
     disconnect();
 }
 
-bool Connection::tryConnect(ConnectionConfiguration & configuration)
+bool Connection::tryConnect(const ConnectionConfiguration & configuration)
 {
     if (is_connected)
         disconnect();
@@ -126,7 +126,7 @@ bool Connection::tryConnect(ConnectionConfiguration & configuration)
     return true;
 }
 
-void Connection::connect(ConnectionConfiguration & configuration)
+void Connection::connect(const ConnectionConfiguration & configuration)
 {
     bool result = tryConnect(configuration);
 
