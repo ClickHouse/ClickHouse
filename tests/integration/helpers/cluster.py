@@ -54,6 +54,26 @@ def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=su
         raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr.decode('utf-8')))
 
 
+def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
+    """
+    Retry if `func()` throws, `num` times.
+
+    :param func: func to run
+    :param num: number of retries
+
+    :throws StopIteration
+    """
+    i = 0
+    while i <= num:
+        try:
+            func(*args, **kwargs)
+            time.sleep(delay)
+        except exception: # pylint: disable=broad-except
+            i += 1
+            continue
+        return
+    raise StopIteration('Function did not finished successfully')
+
 def subprocess_check_call(args):
     # Uncomment for debugging
     # print('run:', ' ' . join(args))
@@ -632,16 +652,6 @@ class ClickHouseCluster:
         if self.is_up:
             return
 
-        # Just in case kill unstopped containers from previous launch
-        try:
-            print("Trying to kill unstopped containers...")
-
-            if not subprocess_call(['docker-compose', 'kill']):
-                subprocess_call(['docker-compose', 'down', '--volumes'])
-            print("Unstopped containers killed")
-        except:
-            pass
-
         try:
             if destroy_dirs and p.exists(self.instances_dir):
                 print(("Removing instances dir %s", self.instances_dir))
@@ -651,9 +661,24 @@ class ClickHouseCluster:
                 print(('Setup directory for instance: {} destroy_dirs: {}'.format(instance.name, destroy_dirs)))
                 instance.create_dir(destroy_dir=destroy_dirs)
 
+            # In case of multiple cluster we should not stop compose services.
+            if destroy_dirs:
+                # Just in case kill unstopped containers from previous launch
+                try:
+                    print("Trying to kill unstopped containers...")
+                    subprocess_call(['docker-compose', 'kill'])
+                    subprocess_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+                    print("Unstopped containers killed")
+                except:
+                    pass
+
+            clickhouse_pull_cmd = self.base_cmd + ['pull']
+            print(f"Pulling images for {self.base_cmd}")
+            retry_exception(10, 5, subprocess_check_call, Exception, clickhouse_pull_cmd)
+
             self.docker_client = docker.from_env(version=self.docker_api_version)
 
-            common_opts = ['up', '-d', '--force-recreate']
+            common_opts = ['up', '-d']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 print('Setup ZooKeeper')
@@ -735,7 +760,7 @@ class ClickHouseCluster:
 
             if self.with_redis and self.base_redis_cmd:
                 print('Setup Redis')
-                subprocess_check_call(self.base_redis_cmd + ['up', '-d', '--force-recreate'])
+                subprocess_check_call(self.base_redis_cmd + ['up', '-d'])
                 time.sleep(10)
 
             if self.with_minio and self.base_minio_cmd:
@@ -769,7 +794,7 @@ class ClickHouseCluster:
                             os.environ.pop('SSL_CERT_FILE')
 
             if self.with_cassandra and self.base_cassandra_cmd:
-                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
+                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'])
                 self.wait_cassandra_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']

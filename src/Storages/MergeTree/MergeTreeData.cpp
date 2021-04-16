@@ -2880,7 +2880,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Volume " + name + " does not exists on policy " + getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_DISK);
 
     if (parts.empty())
-        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
+        throw Exception("Nothing to move (сheck that the partition exists).", ErrorCodes::NO_SUCH_DATA_PART);
 
     parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
         {

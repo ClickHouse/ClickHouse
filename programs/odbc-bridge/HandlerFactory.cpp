@@ -38,9 +38,9 @@ std::unique_ptr<HTTPRequestHandler> ODBCBridgeHandlerFactory::createRequestHandl
             return nullptr;
 #endif
         else if (uri.getPath() == "/write")
-            return std::make_unique<ODBCHandler>(pool_map, keep_alive_timeout, getContext(), "write");
+            return std::make_unique<ODBCHandler>(keep_alive_timeout, getContext(), "write");
         else
-            return std::make_unique<ODBCHandler>(pool_map, keep_alive_timeout, getContext(), "read");
+            return std::make_unique<ODBCHandler>(keep_alive_timeout, getContext(), "read");
     }
     return nullptr;
 }

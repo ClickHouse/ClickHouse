@@ -152,6 +152,8 @@ public:
     void shutdown() override
     {
         stopFlushThread();
+        if (table)
+            table->shutdown();
     }
 
     String getName() override
