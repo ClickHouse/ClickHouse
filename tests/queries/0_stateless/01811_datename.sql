@@ -10,16 +10,16 @@ SELECT dateName('minute', toDateTime('2021-04-14 11:22:33'));
 SELECT dateName('second', toDateTime('2021-04-14 11:22:33'));
 
 
-SELECT dateName('year', toDateTime64('2021-04-14 11:22:33'));
-SELECT dateName('quarter', toDateTime64('2021-04-14 11:22:33'));
-SELECT dateName('month', toDateTime64('2021-04-14 11:22:33'));
-SELECT dateName('dayofyear', toDateTime64('2021-04-14 11:22:33'));
-SELECT dateName('day', toDateTime64('2021-04-14 11:22:33'));
-SELECT dateName('week', toDateTime64('2021-04-14 11:22:33'));
-SELECT dateName('weekday', toDateTime64('2021-04-14 11:22:33'));
-SELECT dateName('hour', toDateTime64('2021-04-14 11:22:33'));
-SELECT dateName('minute', toDateTime64('2021-04-14 11:22:33'));
-SELECT dateName('second', toDateTime64('2021-04-14 11:22:33'));
+SELECT dateName('year', toDateTime64('2021-04-14 11:22:33', 3));
+SELECT dateName('quarter', toDateTime64('2021-04-14 11:22:33', 3));
+SELECT dateName('month', toDateTime64('2021-04-14 11:22:33', 3));
+SELECT dateName('dayofyear', toDateTime64('2021-04-14 11:22:33', 3));
+SELECT dateName('day', toDateTime64('2021-04-14 11:22:33', 3));
+SELECT dateName('week', toDateTime64('2021-04-14 11:22:33', 3));
+SELECT dateName('weekday', toDateTime64('2021-04-14 11:22:33', 3));
+SELECT dateName('hour', toDateTime64('2021-04-14 11:22:33', 3));
+SELECT dateName('minute', toDateTime64('2021-04-14 11:22:33', 3));
+SELECT dateName('second', toDateTime64('2021-04-14 11:22:33', 3));
 
 
 SELECT dateName('year', toDate('2021-04-14'));
@@ -29,9 +29,6 @@ SELECT dateName('dayofyear', toDate('2021-04-14'));
 SELECT dateName('day', toDate('2021-04-14'));
 SELECT dateName('week', toDate('2021-04-14'));
 SELECT dateName('weekday', toDate('2021-04-14'));
-SELECT dateName('hour', toDate('2021-04-14'));
-SELECT dateName('minute', toDate('2021-04-14'));
-SELECT dateName('second', toDate('2021-04-14'));
 
 
 SELECT dateName('day', toDateTime('2021-04-14 11:22:33'), 'Europe/Moscow'),
