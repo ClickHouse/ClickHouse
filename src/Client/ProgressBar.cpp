@@ -50,9 +50,9 @@ void ProgressBar::setWrittenFirstBlock(bool writtenFirstBlock)
     written_first_block = writtenFirstBlock;
 }
 
-void ProgressBar::updateProgress(Progress & progress, const Progress &value)
+bool ProgressBar::updateProgress(Progress & progress, const Progress &value)
 {
-    progress.incrementPiecewiseAtomically(value);
+    return progress.incrementPiecewiseAtomically(value);
 }
 
 void ProgressBar::writeProgress(const Progress & progress, const Stopwatch & watch) {

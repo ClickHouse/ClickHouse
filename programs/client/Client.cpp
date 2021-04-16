@@ -2300,7 +2300,7 @@ private:
 
     void onProgress(const Progress & value)
     {
-        if (!progress.incrementPiecewiseAtomically(value))
+        if (!progress_bar.updateProgress(progress, value))
         {
             // Just a keep-alive update.
             return;
