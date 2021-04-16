@@ -73,16 +73,16 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
         size_t length = 0;
         for (size_t args_idx = 1; args_idx < args_num; ++args_idx)
         {
-            ColumnWithTypeAndName current_arg = arguments[args_idx];
+            const auto & current_arg = arguments[args_idx];
             const ColumnArray * current_column = nullptr;
-            if (const auto *const_array = checkAndGetColumnConst<ColumnArray>(current_arg.column.get()))
+            if (const auto * const_array = checkAndGetColumnConst<ColumnArray>(current_arg.column.get()))
             {
                 current_column = checkAndGetColumn<ColumnArray>(&const_array->getDataColumn());
                 length = current_column->getOffsets()[0];
             }
             else
             {
-                current_column = typeid_cast<const ColumnArray *>(current_arg.column.get());
+                current_column = checkAndGetColumn<ColumnArray>(current_arg.column.get());
                 const auto & offsets = current_column->getOffsets();
                 length = offsets[i] - offsets[i - 1];
             }
@@ -102,12 +102,7 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
         }
     }
 
-    auto res = ColumnUInt8::create(input_rows_count);
-    auto & vec_res = res->getData();
-    for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
-        vec_res[row_num] = 1;
-
-    return res;
+    return ColumnUInt8::create(input_rows_count, 1);
 }
 
 void registerFunctionValidateNestedArraySizes(FunctionFactory & factory)
