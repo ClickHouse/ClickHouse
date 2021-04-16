@@ -19,6 +19,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnNullable.h>
 
 #include <Access/AccessFlags.h>
 
@@ -141,7 +142,6 @@ public:
 
     String getName() const override { return name; }
 
-private:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
@@ -231,6 +231,7 @@ private:
             return dictionary->hasKeys({key_column, range_col}, {std::make_shared<DataTypeUInt64>(), range_col_type});
     }
 
+private:
     mutable FunctionDictHelper helper;
 };
 
@@ -295,7 +296,7 @@ public:
         }
 
         if (types.size() > 1)
-            return std::make_shared<DataTypeTuple>(types);
+            return std::make_shared<DataTypeTuple>(types, attribute_names);
         else
             return types.front();
     }
@@ -694,6 +695,163 @@ using FunctionDictGetDecimal64OrDefault = FunctionDictGetOrDefault<DataTypeDecim
 using FunctionDictGetDecimal128OrDefault = FunctionDictGetOrDefault<DataTypeDecimal<Decimal128>, NameDictGetDecimal128OrDefault>;
 using FunctionDictGetStringOrDefault = FunctionDictGetOrDefault<DataTypeString, NameDictGetStringOrDefault>;
 
+class FunctionDictGetOrNull final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetOrNull";
+
+    static FunctionPtr create(const Context &context)
+    {
+        return std::make_shared<FunctionDictGetOrNull>(context);
+    }
+
+    explicit FunctionDictGetOrNull(const Context & context_)
+        : dictionary_get_func_impl(context_)
+        , dictionary_has_func_impl(context_)
+    {}
+
+    String getName() const override { return name; }
+
+private:
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    bool isVariadic() const override { return true; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    bool isDeterministic() const override { return false; }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    {
+        return dictionary_get_func_impl.isInjective(sample_columns);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto result_type = dictionary_get_func_impl.getReturnTypeImpl(arguments);
+
+        WhichDataType result_data_type(result_type);
+        if (result_data_type.isTuple())
+        {
+            const auto & data_type_tuple = static_cast<const DataTypeTuple &>(*result_type);
+            auto elements_types_copy = data_type_tuple.getElements();
+            for (auto & element_type : elements_types_copy)
+                element_type = makeNullable(element_type);
+
+            result_type = std::make_shared<DataTypeTuple>(elements_types_copy, data_type_tuple.getElementNames());
+        }
+        else
+            result_type = makeNullable(result_type);
+
+        return result_type;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        /** We call dictHas function to get which map is key presented in dictionary.
+            For key that presented in dictionary dict has result for that key index value will be 1. Otherwise 0.
+            We invert result, and then for key that is not presented in dictionary value will be 1. Otherwise 0.
+            This inverted result will be used as null column map.
+            After that we call dict get function, by contract for key that are not presented in dictionary we
+            return default value.
+            We create nullable column from dict get result column and null column map.
+
+            2 additional implementation details:
+            1. Result from dict get can be tuple if client requested multiple attributes we apply such operation on each result column.
+            2. If column is already nullable we merge column null map with null map that we get from dict has.
+          */
+
+        auto dict_has_arguments = filterAttributeNameArgumentForDictHas(arguments);
+        auto is_key_in_dictionary_column = dictionary_has_func_impl.executeImpl(dict_has_arguments, std::make_shared<DataTypeUInt8>(), input_rows_count);
+        auto is_key_in_dictionary_column_mutable = is_key_in_dictionary_column->assumeMutable();
+        ColumnVector<UInt8> & is_key_in_dictionary_column_typed = assert_cast<ColumnVector<UInt8> &>(*is_key_in_dictionary_column_mutable);
+        PaddedPODArray<UInt8> & is_key_in_dictionary_data = is_key_in_dictionary_column_typed.getData();
+        for (auto & key : is_key_in_dictionary_data)
+            key = !key;
+
+        auto result_type = dictionary_get_func_impl.getReturnTypeImpl(arguments);
+        auto dictionary_get_result_column = dictionary_get_func_impl.executeImpl(arguments, result_type, input_rows_count);
+
+        ColumnPtr result;
+
+        WhichDataType result_data_type(result_type);
+        auto dictionary_get_result_column_mutable = dictionary_get_result_column->assumeMutable();
+
+        if (result_data_type.isTuple())
+        {
+            ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(*dictionary_get_result_column_mutable);
+
+            const auto & columns = column_tuple.getColumns();
+            size_t tuple_size = columns.size();
+
+            MutableColumns new_columns(tuple_size);
+            for (size_t tuple_column_index = 0; tuple_column_index < tuple_size; ++tuple_column_index)
+            {
+                auto nullable_column_map = ColumnVector<UInt8>::create();
+                auto & nullable_column_map_data = nullable_column_map->getData();
+                nullable_column_map_data.assign(is_key_in_dictionary_data);
+
+                auto mutable_column = columns[tuple_column_index]->assumeMutable();
+                if (ColumnNullable * nullable_column = typeid_cast<ColumnNullable *>(mutable_column.get()))
+                {
+                    auto & null_map_data = nullable_column->getNullMapData();
+                    addNullMap(null_map_data, is_key_in_dictionary_data);
+                    new_columns[tuple_column_index] = std::move(mutable_column);
+                }
+                else
+                    new_columns[tuple_column_index] = ColumnNullable::create(std::move(mutable_column), std::move(nullable_column_map));
+            }
+
+            result = ColumnTuple::create(std::move(new_columns));
+        }
+        else
+        {
+            if (ColumnNullable * nullable_column = typeid_cast<ColumnNullable *>(dictionary_get_result_column_mutable.get()))
+            {
+                auto & null_map_data = nullable_column->getNullMapData();
+                addNullMap(null_map_data, is_key_in_dictionary_data);
+                result = std::move(dictionary_get_result_column);
+            }
+            else
+                result = ColumnNullable::create(std::move(dictionary_get_result_column), std::move(is_key_in_dictionary_column_mutable));
+        }
+
+        return result;
+    }
+
+    static void addNullMap(PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & null_map_to_add)
+    {
+        assert(null_map.size() == null_map_to_add.size());
+
+        for (size_t i = 0; i < null_map.size(); ++i)
+            null_map[i] = null_map[i] || null_map_to_add[i];
+    }
+
+    static ColumnsWithTypeAndName filterAttributeNameArgumentForDictHas(const ColumnsWithTypeAndName & arguments)
+    {
+        ColumnsWithTypeAndName dict_has_arguments;
+        dict_has_arguments.reserve(arguments.size() - 1);
+        size_t attribute_name_argument_index = 1;
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (i == attribute_name_argument_index)
+                continue;
+
+            dict_has_arguments.emplace_back(arguments[i]);
+        }
+
+        return dict_has_arguments;
+    }
+
+    const FunctionDictGetNoType<DictionaryGetFunctionType::get> dictionary_get_func_impl;
+    const FunctionDictHas dictionary_has_func_impl;
+};
 /// Functions to work with hierarchies.
 
 class FunctionDictGetHierarchy final : public IFunction
