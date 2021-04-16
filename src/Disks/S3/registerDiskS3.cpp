@@ -1,9 +1,17 @@
-#include <aws/core/client/DefaultRetryStrategy.h>
+#if !defined(ARCADIA_BUILD)
+    #include <Common/config.h>
+#endif
+
 #include <IO/ReadHelpers.h>
-#include <IO/S3Common.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <common/logger_useful.h>
+
+
+#if USE_AWS_S3
+
+#include <aws/core/client/DefaultRetryStrategy.h>
+#include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
 #include "Disks/DiskFactory.h"
@@ -196,3 +204,10 @@ void registerDiskS3(DiskFactory & factory)
 }
 
 }
+
+#else
+
+void registerDiskS3(DiskFactory &) {}
+
+#endif
+
