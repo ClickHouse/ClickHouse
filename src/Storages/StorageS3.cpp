@@ -351,9 +351,13 @@ Pipe StorageS3::read(
     }
 
     Strings keys = listFilesWithRegexpMatching(*client, uri);
-    size_t threads_per_file = keys.empty() ? 1 : std::max<size_t>(max_download_threads / keys.size(), 1);
-    LOG_TRACE(&Poco::Logger::get("StorageS3Source"), "Will use up to {} thread to download each of {} objects from S3",
-              threads_per_file, keys.size());
+    if (keys.empty())
+        return Pipe();
+
+    size_t threads_per_file = std::max<size_t>(max_download_threads / keys.size(), 1);
+    size_t buffer_size_per_file = std::max<size_t>(max_download_buffer_size / keys.size(), DBMS_DEFAULT_BUFFER_SIZE);
+    LOG_TRACE(log, "Will use up to {} thread with buffer {} bytes to download each of {} objects from S3",
+              threads_per_file, buffer_size_per_file, keys.size());
     for (const String & key : keys)
         pipes.emplace_back(std::make_shared<StorageS3Source>(
             need_path_column,
@@ -369,8 +373,7 @@ Pipe StorageS3::read(
             uri.bucket,
             key,
             threads_per_file,
-            max_download_buffer_size));
-
+            buffer_size_per_file));
     auto pipe = Pipe::unitePipes(std::move(pipes));
     // It's possible to have many buckets read from s3, resize(num_streams) might open too many handles at the same time.
     // Using narrowPipe instead.
