@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../Common/Stopwatch.h"
-#include "../IO/Progress.h"
+#include <Common/Stopwatch.h>
+#include <IO/Progress.h>
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 #define CLEAR_TO_END_OF_LINE "\033[K"

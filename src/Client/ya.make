@@ -16,7 +16,7 @@ SRCS(
     HedgedConnections.cpp
     HedgedConnectionsFactory.cpp
     MultiplexedConnections.cpp
-
+    ProgressBar.cpp
 )
 
 END()
