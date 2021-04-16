@@ -3,21 +3,21 @@
         MinMax
           Keys: 
             y
-          Description: (y in [1, +inf))
+          Condition: (y in [1, +inf))
           Parts: 4/5
           Granules: 11/12
         Partition
           Keys: 
             y
             bitAnd(z, 3)
-          Description: and((bitAnd(z, 3) not in [1, 1]), (y in [1, +inf)))
+          Condition: and((bitAnd(z, 3) not in [1, 1]), (y in [1, +inf)))
           Parts: 3/4
           Granules: 10/11
         PrimaryKey
           Keys: 
             x
             y
-          Description: and((x in [11, +inf)), (y in [1, +inf)))
+          Condition: and((x in [11, +inf)), (y in [1, +inf)))
           Parts: 2/3
           Granules: 6/10
         Skip
@@ -46,6 +46,6 @@
           Keys: 
             x
             plus(x, y)
-          Description: or((x in 2-element set), (plus(plus(x, y), 1) in (-inf, 2]))
+          Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-inf, 2]))
           Parts: 1/1
           Granules: 1/1
