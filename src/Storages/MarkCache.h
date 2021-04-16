@@ -26,7 +26,7 @@ struct MarksWeightFunction
 
     size_t operator()(const MarksInCompressedFile & marks) const
     {
-        return marks.size() * sizeof(MarkInCompressedFile) + MARK_CACHE_OVERHEAD;
+        return marks.size_in_bytes() + MARK_CACHE_OVERHEAD;
     }
 };
 

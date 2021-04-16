@@ -30,7 +30,7 @@ MergeTreeMarksLoader::MergeTreeMarksLoader(
     , save_marks_in_cache(save_marks_in_cache_)
     , columns_in_mark(columns_in_mark_) {}
 
-const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
+MarkInCompressedFile MergeTreeMarksLoader::getMark(size_t row_index, size_t column_index)
 {
     if (!marks)
         loadMarks();
@@ -41,7 +41,7 @@ const MarkInCompressedFile & MergeTreeMarksLoader::getMark(size_t row_index, siz
             + " is out of range [0, " + toString(columns_in_mark) + ")", ErrorCodes::LOGICAL_ERROR);
 #endif
 
-    return (*marks)[row_index * columns_in_mark + column_index];
+    return marks->get(row_index * columns_in_mark + column_index);
 }
 
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
@@ -84,7 +84,8 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         if (i * mark_size != file_size)
             throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
     }
-    res->protect();
+    res->finish();
+    //res->protect();
     return res;
 }
 

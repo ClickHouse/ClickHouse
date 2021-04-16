@@ -21,7 +21,7 @@ public:
         bool save_marks_in_cache_,
         size_t columns_in_mark_ = 1);
 
-    const MarkInCompressedFile & getMark(size_t row_index, size_t column_index = 0);
+    MarkInCompressedFile getMark(size_t row_index, size_t column_index = 0);
 
     bool initialized() const { return marks != nullptr; }
 
