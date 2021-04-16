@@ -42,8 +42,6 @@ private:
     void setupUsers();
     void cleanup();
 
-    void updateProgress(const Progress &value);
-    void writeProgress();
 
 protected:
     SharedContextHolder shared_context;
