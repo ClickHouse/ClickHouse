@@ -1,6 +1,5 @@
 #include <IO/ParallelReadBuffer.h>
 
-
 namespace DB
 {
 
@@ -65,8 +64,6 @@ bool ParallelReadBuffer::nextImpl()
     working_buffer = internal_buffer = Buffer(segment.data(), segment.data() + segment.size());
     return true;
 }
-
-
 
 void ParallelReadBuffer::processor()
 {

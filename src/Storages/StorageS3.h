@@ -160,8 +160,6 @@ private:
     size_t max_download_threads;
     size_t max_download_buffer_size;
 
-    Poco::Logger * log = &Poco::Logger::get("StorageS3Source");
-
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentificaiton &);
 };
 

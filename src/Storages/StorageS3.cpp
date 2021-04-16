@@ -200,7 +200,8 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
     bool object_too_small = object_size < max_download_threads * download_buffer_size;
     if (!use_parallel_download || object_too_small)
     {
-        LOG_TRACE(log, "Downloading object of size {} from S3 in single thread", object_size);
+        LOG_TRACE(&Poco::Logger::get("StorageS3Source"),
+                  "Downloading object of size {} from S3 in single thread", object_size);
         download_buffer_size = std::max<size_t>(download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
         return std::make_unique<ReadBufferFromS3>(client, bucket, key, download_buffer_size);
     }
@@ -209,13 +210,15 @@ std::unique_ptr<ReadBuffer> StorageS3Source::createS3ReadBuffer(const String & k
 
     if (download_buffer_size < DBMS_DEFAULT_BUFFER_SIZE)
     {
-        LOG_WARNING(log, "Downloading buffer {} bytes too small, set at least {} bytes",
+        LOG_WARNING(&Poco::Logger::get("StorageS3Source"),
+                    "Downloading buffer {} bytes too small, set at least {} bytes",
                     download_buffer_size, DBMS_DEFAULT_BUFFER_SIZE);
         download_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     }
 
     auto factory = std::make_unique<ReadBufferS3Factory>(client, bucket, key, download_buffer_size, object_size);
-    LOG_TRACE(log, "Downloading from S3 in {} threads. Object size: {}, Range size: {} ({} ranges total).",
+    LOG_TRACE(&Poco::Logger::get("StorageS3Source"),
+              "Downloading from S3 in {} threads. Object size: {}, Range size: {} ({} ranges total).",
               max_download_threads, object_size, download_buffer_size, factory->totalRanges());
 
     return std::make_unique<ParallelReadBuffer>(std::move(factory), max_download_threads);
@@ -415,7 +418,9 @@ Pipe StorageS3::read(
 
     size_t threads_per_file = std::max<size_t>(max_download_threads / num_streams, 1);
     size_t buffer_size_per_file = std::max<size_t>(max_download_buffer_size / num_streams, DBMS_DEFAULT_BUFFER_SIZE);
-    LOG_TRACE(log, "Will use up to {} thread with buffer {} bytes to download each object from S3", threads_per_file, buffer_size_per_file);
+    LOG_TRACE(&Poco::Logger::get("StorageS3"),
+              "Will use up to {} thread with buffer {} bytes to download each object from S3",
+              threads_per_file, buffer_size_per_file);
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
@@ -430,7 +435,9 @@ Pipe StorageS3::read(
             compression_method,
             client_auth.client,
             client_auth.uri.bucket,
-            iterator_wrapper));
+            iterator_wrapper,
+            threads_per_file,
+            buffer_size_per_file));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
