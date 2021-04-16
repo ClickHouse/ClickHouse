@@ -13,7 +13,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/CountingBlockOutputStream.h>
-#include <DataStreams/SingleStringColumnBlockOutputStream.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -26,7 +25,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTWatchQuery.h>
-#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/Lexer.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -1016,13 +1014,7 @@ void executeQuery(
                 ? getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
-            BlockOutputStreamPtr out;
-            if (typeid_cast<const ASTExplainQuery *>(ast.get()))
-                /// For EXPLAIN query, ignore output format.
-                /// It's output is a column with single row print it as is.
-                out = std::make_shared<SingleStringColumnBlockOutputStream>(*out_buf, streams.in->getHeader());
-            else
-                out = context.getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader());
+            auto out = context.getOutputStreamParallelIfPossible(format_name, *out_buf, streams.in->getHeader());
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context.getProgressCallback();

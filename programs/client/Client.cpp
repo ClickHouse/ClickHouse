@@ -70,7 +70,6 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -87,7 +86,6 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
-#include <DataStreams/SingleStringColumnBlockOutputStream.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -2204,12 +2202,8 @@ private:
             if (has_vertical_output_suffix)
                 current_format = "Vertical";
 
-            /// For EXPLAIN query, ignore output format.
-            /// It's output is a column with single row print it as is.
-            if (typeid_cast<const ASTExplainQuery *>(parsed_query.get()))
-                block_out_stream = std::make_shared<SingleStringColumnBlockOutputStream>(*out_buf, block);
             /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-            else if (!need_render_progress)
+            if (!need_render_progress)
                 block_out_stream = context.getOutputStreamParallelIfPossible(current_format, *out_buf, block);
             else
                 block_out_stream = context.getOutputStream(current_format, *out_buf, block);
