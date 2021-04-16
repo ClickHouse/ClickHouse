@@ -345,7 +345,7 @@ public:
 
     virtual void assertCanBeDetached(bool /*cleanup*/) {}
 
-    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/) { assert(false); }
+    virtual void waitDetachedTableNotInUseOrThrow(const UUID & /*uuid*/, bool /*throw_if_in_use*/) { }
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
