@@ -17,6 +17,7 @@ namespace DB
   * getTonality(string data) - defines the emotional coloring of the text.
   * Returns NEG if text is negative, POS if text is postive or NEUT if text is neutral.
   * 
+  * getProgrammingLanguage(string data) - detect programming language
   */
 namespace ErrorCodes
 {
