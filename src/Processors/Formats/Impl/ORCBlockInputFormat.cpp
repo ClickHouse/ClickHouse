@@ -78,7 +78,7 @@ void ORCBlockInputFormat::prepareReader()
     {
         if (getPort().getHeader().has(schema->field(i)->name()))
         {
-            include_indices.push_back(i);
+            include_indices.push_back(i+1);
         }
     }
 }
