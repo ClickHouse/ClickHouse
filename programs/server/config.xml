@@ -130,7 +130,7 @@
         <password></password>
     </interserver_http_credentials>-->
 
-/home/sergey/datadump/test.txt    <!-- Listen specified address.
+    <!-- Listen specified address.
          Use :: (wildcard IPv6 address), if you want to accept connections both with IPv4 and IPv6 from everywhere.
          Notes:
          If you open connections from wildcard address, make sure that at least one of the following measures applied:
