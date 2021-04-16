@@ -138,7 +138,8 @@ public:
         size_t arr_cursor = 0;
         for (size_t irow = 0; irow < column_first_array->size(); ++irow) // for each row of result
         {
-            // Make accumulator column for this row
+            // Make accumulator column for this row. We initialize it
+            // with the starting value given as the last argument.
             ColumnWithTypeAndName accumulator_column = arguments.back();
             ColumnPtr acc(accumulator_column.column->cut(irow, 1));
             auto accumulator = ColumnWithTypeAndName(acc,
