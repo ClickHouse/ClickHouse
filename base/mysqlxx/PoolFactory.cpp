@@ -14,6 +14,8 @@ namespace
     {
         mysqlxx::ConnectionConfiguration configuration;
 
+        configuration.server = cfg.getString(config_name + ".host");
+
         if (parent_config_name_)
         {
             const std::string parent_config_name(parent_config_name_);

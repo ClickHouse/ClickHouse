@@ -58,7 +58,7 @@ private:
         const ConnectionConfiguration & connection_configuration_,
         const PoolConfiguration & pool_configuration_);
 
-    ConnectionConfiguration connection_configuration;
+    const ConnectionConfiguration connection_configuration;
     PoolConfiguration pool_configuration;
     BorrowedObjectPool<mysqlxx::Connection> connections_object_pool;
     Poco::Logger & logger;
