@@ -23,8 +23,8 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 -   По умолчанию, если запросу `OPTIMIZE` не удалось выполнить слияние, то
 ClickHouse не оповещает клиента. Чтобы включить оповещения, используйте настройку [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop).
 -   Если указать `PARTITION`, то оптимизация выполняется только для указанной партиции. [Как задавать имя партиции в запросах](alter/index.md#alter-how-to-specify-part-expr).
--   Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одной партиции. Кроме того, слияние является принудительным, даже если выполняются параллельные слияния.
--   Если указать `DEDUPLICATE`, то произойдет схлопывание полностью одинаковых строк (сравниваются значения во всех колонках), имеет смысл только для движка MergeTree.
+-   Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одном куске данных. Кроме того, слияние является принудительным, даже если выполняются параллельные слияния.
+-   Если указать `DEDUPLICATE`, то произойдет схлопывание полностью одинаковых строк (сравниваются значения во всех столбцах), имеет смысл только для движка MergeTree.
 
 ## Выражение BY {#by-expression}
 
@@ -74,7 +74,7 @@ OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT materialized_value;
 ```
 
-Дедупликация по столцам `primary_key`, `secondary_key` и `partition_key`.
+Дедупликация по столбцам `primary_key`, `secondary_key` и `partition_key`.
 
 ``` sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
