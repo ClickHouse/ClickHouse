@@ -165,14 +165,22 @@ void assertEOF(ReadBuffer & buf);
 
 [[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
+inline bool checkChar(char c, ReadBuffer & buf)
+{
+    char a;
+    if (!buf.peek(a) || a != c)
+        return false;
+    buf.ignore();
+    return true;
+}
+
 inline void assertChar(char symbol, ReadBuffer & buf)
 {
-    if (buf.eof() || *buf.position() != symbol)
+    if (!checkChar(symbol, buf))
     {
         char err[2] = {symbol, '\0'};
         throwAtAssertionFailed(err, buf);
     }
-    ++buf.position();
 }
 
 inline void assertString(const String & s, ReadBuffer & buf)
@@ -184,14 +192,6 @@ bool checkString(const char * s, ReadBuffer & buf);
 inline bool checkString(const String & s, ReadBuffer & buf)
 {
     return checkString(s.c_str(), buf);
-}
-
-inline bool checkChar(char c, ReadBuffer & buf)
-{
-    if (buf.eof() || *buf.position() != c)
-        return false;
-    ++buf.position();
-    return true;
 }
 
 bool checkStringCaseInsensitive(const char * s, ReadBuffer & buf);

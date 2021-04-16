@@ -40,6 +40,7 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
         format = "Values";
     }
 
+    /// NOTE: can't create an input-format with empty buffer here, because parallel input-format starts to read immediately.
     res_stream = context->getInputFormat(format, input_buffer, header, context->getSettings().max_insert_block_size);
 
     if (context->getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
