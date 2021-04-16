@@ -228,6 +228,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     WriteBufferFromOwnString buf;
+    bool single_line = false;
 
     if (ast.getKind() == ASTExplainQuery::ParsedAST)
     {
@@ -275,6 +276,8 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
             JSONBuilder::FormatContext format_context{.out = buf};
 
             plan_array->format(json_format_settings, format_context);
+
+            single_line = true;
         }
         else
             plan.explainPlan(buf, settings.query_plan_options);
@@ -310,7 +313,10 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
         }
     }
 
-    fillColumn(*res_columns[0], buf.str());
+    if (single_line)
+        res_columns[0]->insertData(buf.str().data(), buf.str().size());
+    else
+        fillColumn(*res_columns[0], buf.str());
 
     return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }
