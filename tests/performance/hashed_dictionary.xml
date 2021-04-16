@@ -1,6 +1,6 @@
 <test max_ignored_relative_change="0.3">
     <create_query>
-        CREATE TABLE simple_key_direct_dictionary_source_table
+        CREATE TABLE simple_key_hashed_dictionary_source_table
         (
             id UInt64,
             value_int UInt64,
@@ -11,7 +11,7 @@
     </create_query>
 
     <create_query>
-        CREATE TABLE complex_key_direct_dictionary_source_table
+        CREATE TABLE complex_key_hashed_dictionary_source_table
         (
             id UInt64,
             id_key String,
@@ -19,11 +19,11 @@
             value_string String,
             value_decimal Decimal64(8),
             value_string_nullable Nullable(String)
-        ) ENGINE = TinyLog;
+        ) ENGINE = Memory;
     </create_query>
 
     <create_query>
-        CREATE DICTIONARY simple_key_direct_dictionary
+        CREATE DICTIONARY simple_key_hashed_dictionary
         (
             id UInt64,
             value_int UInt64,
@@ -32,12 +32,13 @@
             value_string_nullable Nullable(String)
         )
         PRIMARY KEY id
-        SOURCE(CLICKHOUSE(DB 'default' TABLE 'simple_key_direct_dictionary_source_table'))
-        LAYOUT(DIRECT())
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'simple_key_hashed_dictionary_source_table'))
+        LAYOUT(HASHED())
+        LIFETIME(MIN 0 MAX 1000);
     </create_query>
 
     <create_query>
-        CREATE DICTIONARY complex_key_direct_dictionary
+        CREATE DICTIONARY complex_key_hashed_dictionary
         (
             id UInt64,
             id_key String,
@@ -47,22 +48,23 @@
             value_string_nullable Nullable(String)
         )
         PRIMARY KEY id, id_key
-        SOURCE(CLICKHOUSE(DB 'default' TABLE 'complex_key_direct_dictionary_source_table'))
-        LAYOUT(COMPLEX_KEY_DIRECT())
+        SOURCE(CLICKHOUSE(DB 'default' TABLE 'complex_key_hashed_dictionary_source_table'))
+        LAYOUT(COMPLEX_KEY_HASHED())
+        LIFETIME(MIN 0 MAX 1000);
     </create_query>
 
     <fill_query>
-        INSERT INTO simple_key_direct_dictionary_source_table
+        INSERT INTO simple_key_hashed_dictionary_source_table
         SELECT number, number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
-        LIMIT 100000;
+        LIMIT 5000000;
     </fill_query>
 
     <fill_query>
-        INSERT INTO complex_key_direct_dictionary_source_table
+        INSERT INTO complex_key_hashed_dictionary_source_table
         SELECT number, toString(number), number, toString(number), toDecimal64(number, 8), toString(number)
         FROM system.numbers
-        LIMIT 100000;
+        LIMIT 5000000;
     </fill_query>
 
     <substitutions>
@@ -79,44 +81,44 @@
         <substitution>
             <name>elements_count</name>
             <values>
-                <value>25000</value>
-                <value>50000</value>
-                <value>75000</value>
-                <value>100000</value>
+                <value>2500000</value>
+                <value>5000000</value>
+                <value>7500000</value>
+                <value>10000000</value>
             </values>
         </substitution>
     </substitutions>
 
     <query>
-        SELECT dictGet('default.simple_key_direct_dictionary', {column_name}, number)
+        SELECT dictGet('default.simple_key_hashed_dictionary', {column_name}, number)
         FROM system.numbers
         LIMIT {elements_count}
         FORMAT Null;
     </query>
     <query>
-        SELECT dictHas('default.simple_key_direct_dictionary', number)
+        SELECT dictHas('default.simple_key_hashed_dictionary', number)
         FROM system.numbers
         LIMIT {elements_count}
         FORMAT Null;
     </query>
 
     <query>
-        SELECT dictGet('default.complex_key_direct_dictionary', {column_name}, (number, toString(number)))
+        SELECT dictGet('default.complex_key_hashed_dictionary', {column_name}, (number, toString(number)))
         FROM system.numbers
         LIMIT {elements_count}
         FORMAT Null;
     </query>
     <query>
-        SELECT dictHas('default.complex_key_direct_dictionary', (number, toString(number)))
+        SELECT dictHas('default.complex_key_hashed_dictionary', (number, toString(number)))
         FROM system.numbers
         LIMIT {elements_count}
         FORMAT Null;
     </query>
 
-    <drop_query>DROP TABLE IF EXISTS simple_key_direct_dictionary_source_table;</drop_query>
-    <drop_query>DROP TABLE IF EXISTS complex_key_direct_dictionary_source_table;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS simple_key_hashed_dictionary_source_table;</drop_query>
+    <drop_query>DROP TABLE IF EXISTS complex_key_hashed_dictionary_source_table;</drop_query>
 
-    <drop_query>DROP DICTIONARY IF EXISTS simple_key_direct_dictionary;</drop_query>
-    <drop_query>DROP DICTIONARY IF EXISTS complex_key_direct_dictionary;</drop_query>
+    <drop_query>DROP DICTIONARY IF EXISTS simple_key_hashed_dictionary;</drop_query>
+    <drop_query>DROP DICTIONARY IF EXISTS complex_key_hashed_dictionary;</drop_query>
 
 </test>
