@@ -352,7 +352,9 @@ Pipe StorageS3::read(
     }
 
     Strings keys = listFilesWithRegexpMatching(*client, uri);
-    size_t threads_per_file = max_download_threads / keys.size();
+    size_t threads_per_file = keys.empty() ? 1 : std::max<size_t>(max_download_threads / keys.size(), 1);
+    LOG_TRACE(&Poco::Logger::get("StorageS3Source"), "Will use up to {} thread to download each of {} objects from S3",
+              threads_per_file, keys.size());
     for (const String & key : keys)
         pipes.emplace_back(std::make_shared<StorageS3Source>(
             need_path_column,
