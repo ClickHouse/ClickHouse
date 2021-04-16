@@ -40,3 +40,12 @@
           ReadType: InReverseOrder
           Parts: 1
           Granules: 3
+      ReadFromMergeTree
+      Indexes:
+        PrimaryKey
+          Keys: 
+            x
+            plus(x, y)
+          Description: or((x in 2-element set), (plus(plus(x, y), 1) in (-inf, 2]))
+          Parts: 1/1
+          Granules: 1/1
