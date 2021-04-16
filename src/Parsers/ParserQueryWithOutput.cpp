@@ -1,29 +1,29 @@
-#include <Parsers/ParserQueryWithOutput.h>
-#include <Parsers/ParserShowTablesQuery.h>
-#include <Parsers/ParserSelectWithUnionQuery.h>
-#include <Parsers/ParserTablePropertiesQuery.h>
-#include <Parsers/ParserDescribeTableQuery.h>
-#include <Parsers/ParserShowProcesslistQuery.h>
-#include <Parsers/ParserCheckQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserRenameQuery.h>
-#include <Parsers/ParserAlterQuery.h>
-#include <Parsers/ParserDropQuery.h>
-#include <Parsers/ParserKillQueryQuery.h>
-#include <Parsers/ParserOptimizeQuery.h>
-#include <Parsers/ParserWatchQuery.h>
-#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserCheckQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDescribeTableQuery.h>
+#include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserExplainQuery.h>
+#include <Parsers/ParserIntersectOrExcept.h>
+#include <Parsers/ParserKillQueryQuery.h>
+#include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/ParserRenameQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/ParserShowAccessQuery.h>
 #include <Parsers/ParserShowCreateAccessEntityQuery.h>
 #include <Parsers/ParserShowGrantsQuery.h>
 #include <Parsers/ParserShowPrivilegesQuery.h>
-#include <Parsers/ParserExplainQuery.h>
+#include <Parsers/ParserShowProcesslistQuery.h>
+#include <Parsers/ParserShowTablesQuery.h>
+#include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/ParserWatchQuery.h>
 #include <Parsers/QueryWithOutputSettingsPushDownVisitor.h>
-
 
 namespace DB
 {
@@ -31,6 +31,7 @@ namespace DB
 bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserShowTablesQuery show_tables_p;
+    ParserIntersectOrExcept intersect_p;
     ParserSelectWithUnionQuery select_p;
     ParserTablePropertiesQuery table_p;
     ParserDescribeTableQuery describe_table_p;
@@ -54,6 +55,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     bool parsed =
            explain_p.parse(pos, query, expected)
+        || intersect_p.parse(pos, query, expected)
         || select_p.parse(pos, query, expected)
         || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
         || show_tables_p.parse(pos, query, expected)

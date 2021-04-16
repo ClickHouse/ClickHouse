@@ -1,14 +1,17 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTCreateUserQuery.h>
-#include <Parsers/ASTCreateRoleQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
+#include <Parsers/ASTCreateRoleQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTIntersectOrExcept.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -24,11 +27,9 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
-#include <Parsers/ASTExplainQuery.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTWatchQuery.h>
-#include <Parsers/ASTGrantQuery.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -44,9 +45,11 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
+#include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterGrantQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterIntersectOrExcept.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -65,7 +68,6 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Parsers/ASTSystemQuery.h>
@@ -108,6 +110,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
+    }
+    else if (query->as<ASTIntersectOrExcept>())
+    {
+        return std::make_unique<InterpreterIntersectOrExcept>(query, context);
     }
     else if (query->as<ASTInsertQuery>())
     {
