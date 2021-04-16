@@ -12,7 +12,8 @@
 ///
 /// NOTE: it should be used with caution.
 #define SCOPE_EXIT_MEMORY(...) SCOPE_EXIT(                    \
-    MemoryTracker::LockExceptionInThread lock_memory_tracker; \
+    MemoryTracker::LockExceptionInThread                      \
+                lock_memory_tracker(VariableContext::Global); \
     __VA_ARGS__;                                              \
 )
 
@@ -56,7 +57,8 @@
 #define SCOPE_EXIT_MEMORY_SAFE(...) SCOPE_EXIT(                   \
     try                                                           \
     {                                                             \
-        MemoryTracker::LockExceptionInThread lock_memory_tracker; \
+        MemoryTracker::LockExceptionInThread                      \
+                    lock_memory_tracker(VariableContext::Global); \
         __VA_ARGS__;                                              \
     }                                                             \
     catch (...)                                                   \
