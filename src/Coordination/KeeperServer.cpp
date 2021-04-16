@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
