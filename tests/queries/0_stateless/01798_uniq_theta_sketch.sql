@@ -1,33 +1,3 @@
-DROP TABLE IF EXISTS stored_aggregates;
-
-SELECT 'uniqThetaSketch';
-
-SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 15) GROUP BY Y;
-SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 3000) GROUP BY Y;
-SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 1000000) GROUP BY Y;
-
-SELECT 'uniqThetaSketch round(float)';
-
-SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(1/(1 + (3*X*X - 7*X + 11) % 37), 3) AS Y FROM system.numbers LIMIT 15) GROUP BY Y;
-SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(1/(1 + (3*X*X - 7*X + 11) % 37), 3) AS Y FROM system.numbers LIMIT 3000) GROUP BY Y;
-SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(1/(1 + (3*X*X - 7*X + 11) % 37), 3) AS Y FROM system.numbers LIMIT 1000000) GROUP BY Y;
-
-SELECT 'uniqThetaSketch round(toFloat32())';
-
-SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(toFloat32(1/(1 + (3*X*X - 7*X + 11) % 37)), 3) AS Y FROM system.numbers LIMIT 15) GROUP BY Y;
-SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(toFloat32(1/(1 + (3*X*X - 7*X + 11) % 37)), 3) AS Y FROM system.numbers LIMIT 3000) GROUP BY Y;
-SELECT Y, uniqThetaSketch(X) FROM (SELECT number AS X, round(toFloat32(1/(1 + (3*X*X - 7*X + 11) % 37)), 3) AS Y FROM system.numbers LIMIT 1000000) GROUP BY Y;
-
-SELECT 'uniqThetaSketch IPv4NumToString';
-
-SELECT Y, uniqThetaSketch(Z) FROM (SELECT number AS X, IPv4NumToString(toUInt32(X)) AS Z, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 15) GROUP BY Y;
-SELECT Y, uniqThetaSketch(Z) FROM (SELECT number AS X, IPv4NumToString(toUInt32(X)) AS Z, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 3000) GROUP BY Y;
-SELECT Y, uniqThetaSketch(Z) FROM (SELECT number AS X, IPv4NumToString(toUInt32(X)) AS Z, (3*X*X - 7*X + 11) % 37 AS Y FROM system.numbers LIMIT 1000000) GROUP BY Y;
-
-SELECT 'uniqThetaSketch remote()';
-
-SELECT uniqThetaSketch(dummy) FROM remote('127.0.0.{2,3}', system.one);
-
 SELECT 'uniqThetaSketch many agrs';
 
 SELECT
@@ -129,6 +99,8 @@ EXPLAIN SYNTAX select uniqThetaSketch(bitNot(x)) from (select number % 2 as x fr
 EXPLAIN SYNTAX select uniqThetaSketch(bitNot(-x)) from (select number % 2 as x from numbers(10));
 EXPLAIN SYNTAX select uniqThetaSketch(-bitNot(-x)) from (select number % 2 as x from numbers(10));
 
+
+DROP TABLE IF EXISTS stored_aggregates;
 
 -- simple
 CREATE TABLE stored_aggregates
@@ -237,8 +209,3 @@ select k, sum(c), uniqMerge(un), uniqThetaSketchMerge(ut) from summing_merge_tre
 drop table summing_merge_tree_aggregate_function;
 drop table summing_merge_tree_null;
 
--- precise
-SELECT uniqExact(number) FROM numbers(1e7);
-SELECT uniqCombined(number) FROM numbers(1e7);
-SELECT uniqCombined64(number) FROM numbers(1e7);
-SELECT uniqThetaSketch(number) FROM numbers(1e7);
