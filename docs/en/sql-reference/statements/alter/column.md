@@ -74,6 +74,8 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
+**NOTE**: You can't delete a column if it is used in a [Materialized View](../../../sql-reference/statements/create/view.md/#materialized). Otherwise, it returns an error.
+
 Example:
 
 ``` sql
@@ -180,7 +182,7 @@ ALTER TABLE table_name MODIFY column_name REMOVE property;
 ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ```
 
-## See Also
+**See Also**
 
 - [REMOVE TTL](ttl.md).
 
