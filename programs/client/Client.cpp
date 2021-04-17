@@ -148,8 +148,8 @@ public:
 
 private:
     using StringSet = std::unordered_set<String>;
-    StringSet exit_strings{"exit",  "quit",    "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж",
-                           "йгшеж", "дщпщгеж", "q",      "й",    "\\q",  "\\Q",    "\\й",   "\\Й",   ":q",      "Жй"};
+    StringSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж",
+                           "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
     bool is_interactive = true; /// Use either interactive line editing interface or batch mode.
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error
@@ -390,9 +390,10 @@ private:
         time_t current_time = time(nullptr);
 
         if (chineseNewYearTimeZoneIndicators + M
-            == std::find_if(chineseNewYearTimeZoneIndicators, chineseNewYearTimeZoneIndicators + M, [&local_tz](const char * tz) {
-                   return tz == local_tz;
-               }))
+            == std::find_if(chineseNewYearTimeZoneIndicators, chineseNewYearTimeZoneIndicators + M, [&local_tz](const char * tz)
+                            {
+                                return tz == local_tz;
+                            }))
             return false;
 
         /// It's bad to be intrusive.
@@ -1551,7 +1552,8 @@ private:
                 if (old_settings)
                     context->setSettings(*old_settings);
             });
-            auto apply_query_settings = [&](const IAST & settings_ast) {
+            auto apply_query_settings = [&](const IAST & settings_ast)
+            {
                 if (!old_settings)
                     old_settings.emplace(context->getSettingsRef());
                 context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
