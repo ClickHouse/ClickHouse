@@ -1,6 +1,6 @@
 ---
 toc_priority: 66
-toc_title: "Прочие функции"
+toc_title: "\u041f\u0440\u043e\u0447\u0438\u0435\u0020\u0444\u0443\u043d\u043a\u0446\u0438\u0438"
 ---
 
 # Прочие функции {#other-functions}
@@ -16,16 +16,16 @@ toc_title: "Прочие функции"
 **Синтаксис** 
 
 ```sql
-getMacro(name)
+getMacro(name);
 ```
 
-**Аргументы**
+**Параметры**
 
--   `name` — имя, которое необходимо получить из секции `macros`. [String](../../sql-reference/data-types/string.md#string).
+- `name` — Имя, которое необходимо получить из секции `macros`. [String](../../sql-reference/data-types/string.md#string).
 
 **Возвращаемое значение**
 
--   Значение по указанному имени.
+- Значение по указанному имени.
 
 Тип: [String](../../sql-reference/data-types/string.md).
 
@@ -66,6 +66,7 @@ WHERE macro = 'test'
 └───────┴──────────────┘
 ```
 
+
 ## FQDN {#fqdn}
 
 Возвращает полное имя домена.
@@ -73,7 +74,7 @@ WHERE macro = 'test'
 **Синтаксис**
 
 ``` sql
-fqdn()
+fqdn();
 ```
 
 Эта функция регистронезависимая.
@@ -92,7 +93,7 @@ fqdn()
 SELECT FQDN();
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─FQDN()──────────────────────────┐
@@ -108,9 +109,9 @@ SELECT FQDN();
 basename( expr )
 ```
 
-**Аргументы**
+**Параметры**
 
--   `expr` — выражение, возвращающее значение типа [String](../../sql-reference/functions/other-functions.md). В результирующем значении все бэкслэши должны быть экранированы.
+-   `expr` — Выражение, возвращающее значение типа [String](../../sql-reference/functions/other-functions.md). В результирующем значении все бэкслэши должны быть экранированы.
 
 **Возвращаемое значение**
 
@@ -125,7 +126,7 @@ basename( expr )
 **Пример**
 
 ``` sql
-SELECT 'some/long/path/to/file' AS a, basename(a);
+SELECT 'some/long/path/to/file' AS a, basename(a)
 ```
 
 ``` text
@@ -135,7 +136,7 @@ SELECT 'some/long/path/to/file' AS a, basename(a);
 ```
 
 ``` sql
-SELECT 'some\\long\\path\\to\\file' AS a, basename(a);
+SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 ```
 
 ``` text
@@ -145,7 +146,7 @@ SELECT 'some\\long\\path\\to\\file' AS a, basename(a);
 ```
 
 ``` sql
-SELECT 'some-file-name' AS a, basename(a);
+SELECT 'some-file-name' AS a, basename(a)
 ```
 
 ``` text
@@ -192,7 +193,7 @@ SELECT visibleWidth(NULL)
 byteSize(argument [, ...])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `argument` — значение.
 
@@ -245,7 +246,7 @@ INSERT INTO test VALUES(1, 8, 16, 32, 64,  -8, -16, -32, -64, 32.32, 64.64);
 SELECT key, byteSize(u8) AS `byteSize(UInt8)`, byteSize(u16) AS `byteSize(UInt16)`, byteSize(u32) AS `byteSize(UInt32)`, byteSize(u64) AS `byteSize(UInt64)`, byteSize(i8) AS `byteSize(Int8)`, byteSize(i16) AS `byteSize(Int16)`, byteSize(i32) AS `byteSize(Int32)`, byteSize(i64) AS `byteSize(Int64)`, byteSize(f32) AS `byteSize(Float32)`, byteSize(f64) AS `byteSize(Float64)` FROM test ORDER BY key ASC FORMAT Vertical;
 ```
 
-Результат:
+Result:
 
 ``` text
 Row 1:
@@ -323,7 +324,7 @@ SELECT currentUser();
 SELECT currentUser();
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─currentUser()─┐
@@ -345,14 +346,14 @@ SELECT currentUser();
 isConstant(x)
 ```
 
-**Аргументы**
+**Параметры**
 
-- `x` — выражение для проверки.
+- `x` — Выражение для проверки.
 
 **Возвращаемые значения**
 
-- `1` — выражение `x` является константным.
-- `0` — выражение `x` не является константным.
+- `1` — Выражение `x` является константным.
+- `0` — Выражение `x` не является константным.
 
 Тип: [UInt8](../data-types/int-uint.md).
 
@@ -361,7 +362,7 @@ isConstant(x)
 Запрос:
 
 ```sql
-SELECT isConstant(x + 1) FROM (SELECT 43 AS x);
+SELECT isConstant(x + 1) FROM (SELECT 43 AS x)
 ```
 
 Результат:
@@ -375,7 +376,7 @@ SELECT isConstant(x + 1) FROM (SELECT 43 AS x);
 Запрос:
 
 ```sql
-WITH 3.14 AS pi SELECT isConstant(cos(pi));
+WITH 3.14 AS pi SELECT isConstant(cos(pi))
 ```
 
 Результат:
@@ -412,10 +413,10 @@ SELECT isConstant(number) FROM numbers(1)
 
     ifNotFinite(x,y)
 
-**Аргументы**
+**Параметры**
 
--   `x` — значение, которое нужно проверить на бесконечность. Тип: [Float\*](../../sql-reference/functions/other-functions.md).
--   `y` — запасное значение. Тип: [Float\*](../../sql-reference/functions/other-functions.md).
+-   `x` — Значение, которое нужно проверить на бесконечность. Тип: [Float\*](../../sql-reference/functions/other-functions.md).
+-   `y` — Запасное значение. Тип: [Float\*](../../sql-reference/functions/other-functions.md).
 
 **Возвращаемые значения**
 
@@ -457,7 +458,7 @@ SELECT isConstant(number) FROM numbers(1)
 
 `bar(x, min, max, width)` рисует полосу ширины пропорциональной `(x - min)` и равной `width` символов при `x = max`.
 
-Аргументы:
+Параметры:
 
 -   `x` — Величина для отображения.
 -   `min, max` — Целочисленные константы, значение должно помещаться в `Int64`.
@@ -672,13 +673,13 @@ neighbor(column, offset[, default_value])
     Функция может получить доступ к значению в столбце соседней строки только внутри обрабатываемого в данный момент блока данных.
 
 Порядок строк, используемый при вычислении функции `neighbor`, может отличаться от порядка строк, возвращаемых пользователю.
-Чтобы этого не случилось, вы можете сделать подзапрос с [ORDER BY](../../sql-reference/statements/select/order-by.md) и вызвать функцию извне подзапроса.
+Чтобы этого не случилось, вы можете сделать подзапрос с [ORDER BY](../../sql-reference/statements/select/order-by.md) и вызвать функцию изне подзапроса.
 
-**Аргументы**
+**Параметры**
 
--   `column` — имя столбца или скалярное выражение.
--   `offset` — смещение от текущей строки `column`. [Int64](../../sql-reference/functions/other-functions.md).
--   `default_value` — опциональный параметр. Значение, которое будет возвращено, если смещение выходит за пределы блока данных.
+-   `column` — Имя столбца или скалярное выражение.
+-   `offset` - Смещение от текущей строки `column`. [Int64](../../sql-reference/functions/other-functions.md).
+-   `default_value` - Опциональный параметр. Значение, которое будет возвращено, если смещение выходит за пределы блока данных.
 
 **Возвращаемое значение**
 
@@ -695,7 +696,7 @@ neighbor(column, offset[, default_value])
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─number─┬─neighbor(number, 2)─┐
@@ -718,7 +719,7 @@ SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─number─┬─neighbor(number, 2, 999)─┐
@@ -749,7 +750,7 @@ SELECT
 FROM numbers(16)
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌──────month─┬─money─┬─prev_year─┬─year_over_year─┐
@@ -772,7 +773,7 @@ FROM numbers(16)
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## runningDifference(x) {#other_functions-runningdifference}
+## runningDifference(x) {#runningdifferencex}
 
 Считает разницу между последовательными значениями строк в блоке данных.
 Возвращает 0 для первой строки и разницу с предыдущей строкой для каждой последующей строки.
@@ -849,64 +850,7 @@ WHERE diff != 1
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
-То же, что и [runningDifference](./other-functions.md#other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
-
-## runningConcurrency {#runningconcurrency}
-
-Подсчитывает количество одновременно идущих событий.
-У каждого события есть время начала и время окончания. Считается, что время начала включено в событие, а время окончания исключено из него. Столбцы со временем начала и окончания событий должны иметь одинаковый тип данных. 
-Функция подсчитывает количество событий, происходящих одновременно на момент начала каждого из событий в выборке. 
-
-!!! warning "Предупреждение"
-    События должны быть отсортированы по возрастанию времени начала. Если это требование нарушено, то функция вызывает исключение.
-    Каждый блок данных обрабатывается независимо. Если события из разных блоков данных накладываются по времени, они не могут быть корректно обработаны.
-
-**Синтаксис**
-
-``` sql
-runningConcurrency(start, end)
-```
-
-**Аргументы**
-
--   `start` — Столбец с временем начала событий. [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `end` — Столбец с временем окончания событий.  [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md).
-
-**Возвращаемое значение**
-
--   Количество одновременно идущих событий на момент начала каждого события.
-
-Тип: [UInt32](../../sql-reference/data-types/int-uint.md)
-
-**Пример**
-
-Рассмотрим таблицу:
-
-``` text
-┌──────start─┬────────end─┐
-│ 2021-03-03 │ 2021-03-11 │
-│ 2021-03-06 │ 2021-03-12 │
-│ 2021-03-07 │ 2021-03-08 │
-│ 2021-03-11 │ 2021-03-12 │
-└────────────┴────────────┘
-```
-
-Запрос:
-
-``` sql
-SELECT start, runningConcurrency(start, end) FROM example_table;
-```
-
-Результат:
-
-``` text
-┌──────start─┬─runningConcurrency(start, end)─┐
-│ 2021-03-03 │                              1 │
-│ 2021-03-06 │                              2 │
-│ 2021-03-07 │                              3 │
-│ 2021-03-11 │                              2 │
-└────────────┴────────────────────────────────┘
-```
+То же, что и \[runningDifference\] (./other_functions.md # other_functions-runningdifference), но в первой строке возвращается значение первой строки, а не ноль.
 
 ## MACNumToString(num) {#macnumtostringnum}
 
@@ -928,9 +872,9 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 getSizeOfEnumType(value)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `value` — значение типа `Enum`.
+-   `value` — Значение типа `Enum`.
 
 **Возвращаемые значения**
 
@@ -957,9 +901,9 @@ SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 blockSerializedSize(value[, value[, ...]])
 ```
 
-**Аргументы**
+**Параметры**
 
--   `value` — значение произвольного типа.
+-   `value` — Значение произвольного типа.
 
 **Возвращаемые значения**
 
@@ -989,9 +933,9 @@ SELECT blockSerializedSize(maxState(1)) as x
 toColumnTypeName(value)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `value` — значение произвольного типа.
+-   `value` — Значение произвольного типа.
 
 **Возвращаемые значения**
 
@@ -1029,9 +973,9 @@ SELECT toColumnTypeName(CAST('2018-01-01 01:02:03' AS DateTime))
 dumpColumnStructure(value)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `value` — значение произвольного типа.
+-   `value` — Значение произвольного типа.
 
 **Возвращаемые значения**
 
@@ -1059,9 +1003,9 @@ SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
 defaultValueOfArgumentType(expression)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `expression` — значение произвольного типа или выражение, результатом которого является значение произвольного типа.
+-   `expression` — Значение произвольного типа или выражение, результатом которого является значение произвольного типа.
 
 **Возвращаемые значения**
 
@@ -1101,7 +1045,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 defaultValueOfTypeName(type)
 ```
 
-**Аргументы**
+**Параметры:**
 
 -   `type` — тип данных.
 
@@ -1143,10 +1087,10 @@ SELECT defaultValueOfTypeName('Nullable(Int8)')
 SELECT replicate(x, arr);
 ```
 
-**Аргументы**
+**Параметры**
 
--   `arr` — исходный массив. ClickHouse создаёт новый массив такой же длины как исходный и заполняет его значением `x`.
--   `x` — значение, которым будет заполнен результирующий массив.
+-   `arr` — Исходный массив. ClickHouse создаёт новый массив такой же длины как исходный и заполняет его значением `x`.
+-   `x` — Значение, которым будет заполнен результирующий массив.
 
 **Возвращаемое значение**
 
@@ -1226,7 +1170,7 @@ filesystemFree()
 SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesystemFree()) AS "Type";
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─Free space─┬─Type───┐
@@ -1258,7 +1202,7 @@ filesystemCapacity()
 SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesystemCapacity()) AS "Type"
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─Capacity──┬─Type───┐
@@ -1276,7 +1220,7 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity", toTypeName(filesy
 finalizeAggregation(state)
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `state` — состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
 
@@ -1377,17 +1321,17 @@ FROM numbers(10);
 **Синтаксис**
 
 ```sql
-runningAccumulate(agg_state[, grouping])
+runningAccumulate(agg_state[, grouping]);
 ```
 
-**Аргументы**
+**Параметры**
 
--   `agg_state` — состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
--   `grouping` — ключ группировки. Опциональный параметр. Состояние функции обнуляется, если значение `grouping` меняется. Параметр может быть любого [поддерживаемого типа данных](../../sql-reference/data-types/index.md), для которого определен оператор равенства.
+- `agg_state` — Состояние агрегатной функции. [AggregateFunction](../../sql-reference/data-types/aggregatefunction.md#data-type-aggregatefunction).
+- `grouping` — Ключ группировки. Опциональный параметр. Состояние функции обнуляется, если значение `grouping` меняется. Параметр может быть любого [поддерживаемого типа данных](../../sql-reference/data-types/index.md), для которого определен оператор равенства.
 
 **Возвращаемое значение**
 
--   Каждая результирующая строка содержит результат агрегатной функции, накопленный для всех входных строк от 0 до текущей позиции. `runningAccumulate` обнуляет состояния для каждого нового блока данных или при изменении значения `grouping`.
+- Каждая результирующая строка содержит результат агрегатной функции, накопленный для всех входных строк от 0 до текущей позиции. `runningAccumulate` обнуляет состояния для каждого нового блока данных или при изменении значения `grouping`.
 
 Тип зависит от используемой агрегатной функции.
 
@@ -1486,7 +1430,7 @@ FROM
 joinGet(join_storage_table_name, `value_column`, join_keys)
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `join_storage_table_name` — [идентификатор](../syntax.md#syntax-identifiers), который указывает, откуда производится выборка данных. Поиск по идентификатору осуществляется в базе данных по умолчанию (см. конфигурацию `default_database`). Чтобы переопределить базу данных по умолчанию, используйте команду `USE db_name`, или укажите базу данных и таблицу через разделитель `db_name.db_table`, см. пример.
 -   `value_column` — столбец, из которого нужно произвести выборку данных.
@@ -1591,9 +1535,9 @@ SELECT identity(42)
 randomPrintableASCII(length)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `length` — длина результирующей строки. Положительное целое число.
+-   `length` — Длина результирующей строки. Положительное целое число.
 
         Если передать `length < 0`, то поведение функции не определено.
 
@@ -1627,7 +1571,7 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 randomString(length)
 ```
 
-**Аргументы** 
+**Параметры** 
 
 -   `length` — длина строки. Положительное целое число.
 
@@ -1675,11 +1619,11 @@ len: 30
 randomFixedString(length);
 ```
 
-**Аргументы**
+**Параметры**
 
--   `length` — длина строки в байтах. [UInt64](../../sql-reference/data-types/int-uint.md).
+-   `length` — Длина строки в байтах. [UInt64](../../sql-reference/data-types/int-uint.md).
 
-**Возвращаемое значение**
+**Returned value(s)**
 
 -   Строка, заполненная случайными байтами.
 
@@ -1709,12 +1653,12 @@ SELECT randomFixedString(13) as rnd, toTypeName(rnd)
 **Синтаксис**
 
 ``` sql
-randomStringUTF8(length)
+randomStringUTF8(length);
 ```
 
-**Аргументы**
+**Параметры**
 
--   `length` — длина итоговой строки в кодовых точках. [UInt64](../../sql-reference/data-types/int-uint.md).
+-   `length` — Длина итоговой строки в кодовых точках. [UInt64](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемое значение**
 
@@ -1746,7 +1690,7 @@ SELECT randomStringUTF8(13)
 **Синтаксис** 
 
 ```sql
-getSetting('custom_setting')
+getSetting('custom_setting');    
 ```
 
 **Параметр** 
@@ -1784,7 +1728,7 @@ SELECT getSetting('custom_a');
 isDecimalOverflow(d, [p])
 ```
 
-**Аргументы** 
+**Параметры** 
 
 -   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md).
 -   `p` — точность. Необязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges). 
@@ -1821,7 +1765,7 @@ SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
 countDigits(x)
 ```
 
-**Аргументы** 
+**Параметры** 
 
 -   `x` — [целое](../../sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-int8-int16-int32-int64) или [дробное](../../sql-reference/data-types/decimal.md) число.
 
@@ -1880,7 +1824,7 @@ UNSUPPORTED_METHOD
 tcpPort()
 ```
 
-**Аргументы**
+**Параметры**
 
 -   Нет.
 
@@ -1910,3 +1854,4 @@ SELECT tcpPort();
 
 -   [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/other_functions/) <!--hide-->

@@ -28,9 +28,9 @@ class FunctionAddressToSymbol : public IFunction
 {
 public:
     static constexpr auto name = "addressToSymbol";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
-        context->checkAccess(AccessType::addressToSymbol);
+        context.checkAccess(AccessType::addressToSymbol);
         return std::make_shared<FunctionAddressToSymbol>();
     }
 

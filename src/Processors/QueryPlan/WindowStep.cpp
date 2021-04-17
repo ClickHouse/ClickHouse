@@ -62,13 +62,8 @@ WindowStep::WindowStep(const DataStream & input_stream_,
 
 }
 
-void WindowStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void WindowStep::transformPipeline(QueryPipeline & pipeline)
 {
-    // This resize is needed for cases such as `over ()` when we don't have a
-    // sort node, and the input might have multiple streams. The sort node would
-    // have resized it.
-    pipeline.resize(1);
-
     pipeline.addSimpleTransform([&](const Block & /*header*/)
     {
         return std::make_shared<WindowTransform>(input_header,

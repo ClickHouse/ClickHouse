@@ -64,7 +64,6 @@ void registerInputFormatProcessorORC(FormatFactory &factory)
             {
                 return std::make_shared<ORCBlockInputFormat>(buf, sample);
             });
-    factory.markFormatAsColumnOriented("ORC");
 }
 
 }

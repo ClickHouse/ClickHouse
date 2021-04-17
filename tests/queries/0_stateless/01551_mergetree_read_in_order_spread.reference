@@ -2,7 +2,7 @@
 ExpressionTransform
   (Aggregating)
   FinalizingSimpleTransform
-    FinishAggregatingInOrderTransform 3 → 1
+    AggregatingSortedTransform 3 → 1
       AggregatingInOrderTransform × 3
         (Expression)
         ExpressionTransform × 3

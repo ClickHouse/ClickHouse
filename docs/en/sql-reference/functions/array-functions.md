@@ -245,7 +245,7 @@ Elements set to `NULL` are handled as normal values.
 
 Returns the number of elements in the arr array for which func returns something other than 0. If ‘func’ is not specified, it returns the number of non-zero elements in the array.
 
-Note that the `arrayCount` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+Note that the `arrayCount` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument. 
 
 ## countEqual(arr, x) {#countequalarr-x}
 
@@ -376,7 +376,7 @@ arrayPopBack(array)
 **Example**
 
 ``` sql
-SELECT arrayPopBack([1, 2, 3]) AS res;
+SELECT arrayPopBack([1, 2, 3]) AS res
 ```
 
 ``` text
@@ -400,7 +400,7 @@ arrayPopFront(array)
 **Example**
 
 ``` sql
-SELECT arrayPopFront([1, 2, 3]) AS res;
+SELECT arrayPopFront([1, 2, 3]) AS res
 ```
 
 ``` text
@@ -425,7 +425,7 @@ arrayPushBack(array, single_value)
 **Example**
 
 ``` sql
-SELECT arrayPushBack(['a'], 'b') AS res;
+SELECT arrayPushBack(['a'], 'b') AS res
 ```
 
 ``` text
@@ -450,7 +450,7 @@ arrayPushFront(array, single_value)
 **Example**
 
 ``` sql
-SELECT arrayPushFront(['b'], 'a') AS res;
+SELECT arrayPushFront(['b'], 'a') AS res
 ```
 
 ``` text
@@ -482,7 +482,7 @@ An array of length `size`.
 **Examples of calls**
 
 ``` sql
-SELECT arrayResize([1], 3);
+SELECT arrayResize([1], 3)
 ```
 
 ``` text
@@ -492,7 +492,7 @@ SELECT arrayResize([1], 3);
 ```
 
 ``` sql
-SELECT arrayResize([1], 3, NULL);
+SELECT arrayResize([1], 3, NULL)
 ```
 
 ``` text
@@ -513,12 +513,12 @@ arraySlice(array, offset[, length])
 
 -   `array` – Array of data.
 -   `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
--   `length` – The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length)`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.
+-   `length` - The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length)`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.
 
 **Example**
 
 ``` sql
-SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;
+SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 ```
 
 ``` text
@@ -766,7 +766,7 @@ Type: [UInt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges)
 Query:
 
 ``` sql
-SELECT arrayDifference([1, 2, 3, 4]);
+SELECT arrayDifference([1, 2, 3, 4])
 ```
 
 Result:
@@ -782,7 +782,7 @@ Example of the overflow due to result type Int64:
 Query:
 
 ``` sql
-SELECT arrayDifference([0, 10000000000000000000]);
+SELECT arrayDifference([0, 10000000000000000000])
 ```
 
 Result:
@@ -816,7 +816,7 @@ Returns an array containing the distinct elements.
 Query:
 
 ``` sql
-SELECT arrayDistinct([1, 2, 2, 3, 1]);
+SELECT arrayDistinct([1, 2, 2, 3, 1])
 ```
 
 Result:
@@ -883,7 +883,7 @@ arrayReduce(agg_func, arr1, arr2, ..., arrN)
 Query:
 
 ``` sql
-SELECT arrayReduce('max', [1, 2, 3]);
+SELECT arrayReduce('max', [1, 2, 3])
 ```
 
 Result:
@@ -899,7 +899,7 @@ If an aggregate function takes multiple arguments, then this function must be ap
 Query:
 
 ``` sql
-SELECT arrayReduce('maxIf', [3, 5], [1, 0]);
+SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 ```
 
 Result:
@@ -915,7 +915,7 @@ Example with a parametric aggregate function:
 Query:
 
 ``` sql
-SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 ```
 
 Result:
@@ -1014,7 +1014,7 @@ Alias: `flatten`.
 **Examples**
 
 ``` sql
-SELECT flatten([[[1]], [[2], [3]]]);
+SELECT flatten([[[1]], [[2], [3]]])
 ```
 
 ``` text
@@ -1048,7 +1048,7 @@ Type: `Array`.
 Query:
 
 ``` sql
-SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3]);
+SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3])
 ```
 
 Result:
@@ -1086,7 +1086,7 @@ Type: [Array](../../sql-reference/data-types/array.md).
 Query:
 
 ``` sql
-SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1]);
+SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1])
 ```
 
 Result:
@@ -1108,20 +1108,17 @@ arrayAUC(arr_scores, arr_labels)
 ```
 
 **Arguments**
-
 - `arr_scores` — scores prediction model gives.
 - `arr_labels` — labels of samples, usually 1 for positive sample and 0 for negtive sample.
 
 **Returned value**
-
 Returns AUC value with type Float64.
 
 **Example**
-
 Query:
 
 ``` sql
-select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])
 ```
 
 Result:
@@ -1213,62 +1210,6 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, 
 
 Note that the `arrayFill` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
-## arrayFold(func, arr1, …, init) {#array-fold}
-
-Returns an result of [folding](https://en.wikipedia.org/wiki/Fold_(higher-order_function)) arrays and value `init` using function `func`.
-I.e. result of calculation `func(arr1[n], …, func(arr1[n - 1], …, func(…, func(arr1[2], …,  func(arr1[1], …, init)))))`.
-
-Note that the `arrayMap` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
-
-**Arguments**
-
--   `func` — The lambda function with `n+1` arguments (where `n` is number of input arrays), first `n` arguments are for
-    current elements of input arrays, and last argument is for current value of accumulator.
--   `arr` — Any number of [arrays](../../sql-reference/data-types/array.md).
--   `init` - Initial value of accumulator.
-
-**Returned value**
-
-Final value of accumulator.
-
-**Examples**
-
-The following example shows how to acquire product and sum of elements of array:
-
-``` sql
-SELECT arrayMap(x, accum -> (accum.1 * x, accum.2 + x), [1, 2, 3], (0, 1)) as res;
-```
-
-``` text
-┌─res───────┐
-│ (120, 15) │
-└───────────┘
-```
-
-The following example shows how to reverse elements of array:
-
-``` sql
-SELECT arrayFold(x, acc -> arrayPushFront(acc, x), [1,2,3,4,5], emptyArrayUInt64()) as res;
-```
-
-``` text
-┌─res─────────┐
-│ [5,4,3,2,1] │
-└─────────────┘
-```
-
-Folding may be used to access of already passed elements due to function calculation, for example:
-
-``` sql
-SELECT arrayFold(x, acc -> (x, concat(acc.2, toString(acc.1), ',')), [1,2], (0,''))
-```
-
-``` text
-┌─res────────┐
-│ (2,'0,1,') │
-└────────────┘
-```
-
 ## arrayReverseFill(func, arr1, …) {#array-reverse-fill}
 
 Scan through `arr1` from the last element to the first element and replace `arr1[i]` by `arr1[i + 1]` if `func` returns 0. The last element of `arr1` will not be replaced.
@@ -1285,7 +1226,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 
 └────────────────────────────────────┘
 ```
 
-Note that the `arrayReverseFill` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayReverseFilter` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
 ## arraySplit(func, arr1, …) {#array-split}
 
@@ -1349,7 +1290,7 @@ Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference
 
 ## arrayMin {#array-min}
 
-Returns the minimum of elements in the source array.
+Returns the minimum of elements in the source array. 
 
 If the `func` function is specified, returns the mininum of elements converted by this function.
 
@@ -1368,9 +1309,9 @@ arrayMin([func,] arr)
 
 **Returned value**
 
--   The minimum of function values (or the array minimum).
+-   The minimum of function values (or the array minimum). 
 
-Type: if `func` is specified, matches `func` return value type, else matches the array elements type.
+Type: if `func` is specified, matches `func` return value type, else matches the array elements type. 
 
 **Examples**
 
@@ -1404,7 +1345,7 @@ Result:
 
 ## arrayMax {#array-max}
 
-Returns the maximum of elements in the source array.
+Returns the maximum of elements in the source array. 
 
 If the `func` function is specified, returns the maximum of elements converted by this function.
 
@@ -1423,9 +1364,9 @@ arrayMax([func,] arr)
 
 **Returned value**
 
--   The maximum of function values (or the array maximum).
+-   The maximum of function values (or the array maximum). 
 
-Type: if `func` is specified, matches `func` return value type, else matches the array elements type.
+Type: if `func` is specified, matches `func` return value type, else matches the array elements type. 
 
 **Examples**
 
@@ -1459,7 +1400,7 @@ Result:
 
 ## arraySum {#array-sum}
 
-Returns the sum of elements in the source array.
+Returns the sum of elements in the source array. 
 
 If the `func` function is specified, returns the sum of elements converted by this function.
 
@@ -1474,7 +1415,7 @@ arraySum([func,] arr)
 **Arguments**
 
 -   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
--   `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+-   `arr` — Array. [Array](../../sql-reference/data-types/array.md).   
 
 **Returned value**
 
@@ -1514,7 +1455,7 @@ Result:
 
 ## arrayAvg {#array-avg}
 
-Returns the average of elements in the source array.
+Returns the average of elements in the source array. 
 
 If the `func` function is specified, returns the average of elements converted by this function.
 
@@ -1529,7 +1470,7 @@ arrayAvg([func,] arr)
 **Arguments**
 
 -   `func` — Function. [Expression](../../sql-reference/data-types/special-data-types/expression.md).
--   `arr` — Array. [Array](../../sql-reference/data-types/array.md).
+-   `arr` — Array. [Array](../../sql-reference/data-types/array.md).   
 
 **Returned value**
 
@@ -1600,3 +1541,4 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 Note that the `arraySumNonNegative` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/array_functions/) <!--hide-->

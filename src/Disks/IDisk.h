@@ -5,7 +5,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
-#include <Disks/DiskType.h>
 
 #include <memory>
 #include <mutex>
@@ -31,7 +30,6 @@ using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
-class MMappedFileCache;
 
 /**
  * Mode of opening a file for write.
@@ -58,6 +56,29 @@ public:
 };
 
 using SpacePtr = std::shared_ptr<Space>;
+
+struct DiskType
+{
+    enum class Type
+    {
+        Local,
+        RAM,
+        S3
+    };
+    static String toString(Type disk_type)
+    {
+        switch (disk_type)
+        {
+            case Type::Local:
+                return "local";
+            case Type::RAM:
+                return "memory";
+            case Type::S3:
+                return "s3";
+        }
+        __builtin_unreachable();
+    }
+};
 
 /**
  * A guard, that should synchronize file's or directory's state
@@ -154,8 +175,7 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         size_t estimated_size = 0,
         size_t aio_threshold = 0,
-        size_t mmap_threshold = 0,
-        MMappedFileCache * mmap_cache = nullptr) const = 0;
+        size_t mmap_threshold = 0) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
@@ -174,21 +194,6 @@ public:
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
-
-    /// Remove file. Throws exception if file doesn't exists or if directory is not empty.
-    /// Differs from removeFile for S3 disks
-    /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedFile(const String & path, bool) { removeFile(path); }
-
-    /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
-    /// Differs from removeRecursive for S3 disks
-    /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedRecursive(const String & path, bool) { removeRecursive(path); }
-
-    /// Remove file or directory if it exists.
-    /// Differs from removeFileIfExists for S3 disks
-    /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedFileIfExists(const String & path, bool) { removeFileIfExists(path); }
 
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
@@ -210,15 +215,6 @@ public:
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
-
-    /// Return some uniq string for file, overrode for S3
-    /// Required for distinguish different copies of the same part on S3
-    virtual String getUniqueId(const String & path) const { return path; }
-
-    /// Check file exists and ClickHouse has an access to it
-    /// Overrode in DiskS3
-    /// Required for S3 to ensure that replica has access to data wroten by other node
-    virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
