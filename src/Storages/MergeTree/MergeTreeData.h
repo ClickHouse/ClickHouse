@@ -970,7 +970,12 @@ protected:
     virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) = 0;
 
     /// Makes sense only for replicated tables
-    virtual void fetchPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, const String & from, ContextPtr query_context);
+    virtual void fetchPartition(
+        const ASTPtr & partition,
+        const StorageMetadataPtr & metadata_snapshot,
+        const String & from,
+        bool fetch_part,
+        ContextPtr query_context);
 
     void writePartLog(
         PartLogElement::Type type,
