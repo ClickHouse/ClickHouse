@@ -1,7 +1,8 @@
 #pragma once
 
+#include <common/BorrowedObjectPool.h>
+
 #include <Core/Block.h>
-#include <Common/BorrowedObjectPool.h>
 #include <Interpreters/Context.h>
 
 #include "IDictionarySource.h"

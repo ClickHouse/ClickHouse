@@ -29,6 +29,7 @@
 #include <Disks/DiskLocal.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <Access/AccessControlManager.h>
@@ -225,7 +226,6 @@ private:
     void cleanThread()
     {
         setThreadName("SessionCleaner");
-
         std::unique_lock lock{mutex};
 
         while (true)
@@ -338,6 +338,9 @@ struct ContextSharedPart
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
+    ConfigurationPtr external_models_config;
+    ext::scope_guard models_repository_guard;
+
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
     String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
@@ -370,7 +373,7 @@ struct ContextSharedPart
     std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
-    std::optional<SystemLogs> system_logs;                  /// Used to log queries and operations on parts
+    std::unique_ptr<SystemLogs> system_logs;                /// Used to log queries and operations on parts
     std::optional<StorageS3Settings> storage_s3_settings;   /// Settings of S3 storage
 
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
@@ -439,24 +442,32 @@ struct ContextSharedPart
 
         DatabaseCatalog::shutdown();
 
-        /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
-        /// TODO: Get rid of this.
+        std::unique_ptr<SystemLogs> delete_system_logs;
+        {
+            auto lock = std::lock_guard(mutex);
 
-        system_logs.reset();
-        embedded_dictionaries.reset();
-        external_dictionaries_loader.reset();
-        external_models_loader.reset();
-        buffer_flush_schedule_pool.reset();
-        schedule_pool.reset();
-        distributed_schedule_pool.reset();
-        message_broker_schedule_pool.reset();
-        ddl_worker.reset();
+            /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
+            /// TODO: Get rid of this.
 
-        /// Stop trace collector if any
-        trace_collector.reset();
-        /// Stop zookeeper connection
-        zookeeper.reset();
+            delete_system_logs = std::move(system_logs);
+            embedded_dictionaries.reset();
+            external_dictionaries_loader.reset();
+            models_repository_guard.reset();
+            external_models_loader.reset();
+            buffer_flush_schedule_pool.reset();
+            schedule_pool.reset();
+            distributed_schedule_pool.reset();
+            message_broker_schedule_pool.reset();
+            ddl_worker.reset();
 
+            /// Stop trace collector if any
+            trace_collector.reset();
+            /// Stop zookeeper connection
+            zookeeper.reset();
+        }
+
+        /// Can be removed w/o context lock
+        delete_system_logs.reset();
     }
 
     bool hasTraceCollector() const
@@ -1353,9 +1364,27 @@ const ExternalModelsLoader & Context::getExternalModelsLoader() const
 ExternalModelsLoader & Context::getExternalModelsLoader()
 {
     std::lock_guard lock(shared->external_models_mutex);
+    return getExternalModelsLoaderUnlocked();
+}
+
+ExternalModelsLoader & Context::getExternalModelsLoaderUnlocked()
+{
     if (!shared->external_models_loader)
         shared->external_models_loader.emplace(getGlobalContext());
     return *shared->external_models_loader;
+}
+
+void Context::setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name)
+{
+    std::lock_guard lock(shared->external_models_mutex);
+
+    if (shared->external_models_config && isSameConfigurationWithMultipleKeys(*config, *shared->external_models_config, "", config_name))
+        return;
+
+    shared->external_models_config = config;
+    shared->models_repository_guard .reset();
+    shared->models_repository_guard = getExternalModelsLoaderUnlocked().addConfigRepository(
+        std::make_unique<ExternalLoaderXMLConfigRepository>(*config, config_name));
 }
 
 
@@ -1889,7 +1918,7 @@ void Context::setCluster(const String & cluster_name, const std::shared_ptr<Clus
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
-    shared->system_logs.emplace(getGlobalContext(), getConfigRef());
+    shared->system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
 }
 
 void Context::initializeTraceCollector()
@@ -2592,6 +2621,20 @@ PartUUIDsPtr Context::getPartUUIDs()
         part_uuids = std::make_shared<PartUUIDs>();
 
     return part_uuids;
+}
+
+
+ReadTaskCallback Context::getReadTaskCallback() const
+{
+    if (!next_task_callback.has_value())
+        throw Exception(fmt::format("Next task callback is not set for query {}", getInitialQueryId()), ErrorCodes::LOGICAL_ERROR);
+    return next_task_callback.value();
+}
+
+
+void Context::setReadTaskCallback(ReadTaskCallback && callback)
+{
+    next_task_callback = callback;
 }
 
 PartUUIDsPtr Context::getIgnoredPartUUIDs()

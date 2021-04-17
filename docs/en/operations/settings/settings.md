@@ -1565,6 +1565,17 @@ Possible values:
 
 Default value: 0
 
+## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shardslrewrite-in}
+
+Rewrite IN in query for remote shards to exclude values that does not belong to the shard (requires optimize_skip_unused_shards).
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1 (since it requires `optimize_skip_unused_shards` anyway, which `0` by default)
+
 ## allow_nondeterministic_optimize_skip_unused_shards {#allow-nondeterministic-optimize-skip-unused-shards}
 
 Allow nondeterministic (like `rand` or `dictGet`, since later has some caveats with updates) functions in sharding key.

@@ -159,8 +159,7 @@ bool StorageMerge::isRemote() const
 bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     /// It's beneficial if it is true for at least one table.
-    StorageListWithLocks selected_tables = getSelectedTables(
-            query_context->getCurrentQueryId(), query_context->getSettingsRef());
+    StorageListWithLocks selected_tables = getSelectedTables(query_context);
 
     size_t i = 0;
     for (const auto & table : selected_tables)
@@ -250,8 +249,7 @@ Pipe StorageMerge::read(
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
-    StorageListWithLocks selected_tables
-        = getSelectedTables(query_info, has_table_virtual_column, local_context->getCurrentQueryId(), local_context->getSettingsRef());
+    StorageListWithLocks selected_tables = getSelectedTables(local_context, query_info.query, has_table_virtual_column);
 
     if (selected_tables.empty())
         /// FIXME: do we support sampling in this case?
@@ -427,34 +425,20 @@ Pipe StorageMerge::createSources(
     return pipe;
 }
 
-
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String & query_id, const Settings & settings) const
-{
-    StorageListWithLocks selected_tables;
-    auto iterator = getDatabaseIterator(getContext());
-
-    while (iterator->isValid())
-    {
-        const auto & table = iterator->table();
-        if (table && table.get() != this)
-            selected_tables.emplace_back(
-                    table, table->lockForShare(query_id, settings.lock_acquire_timeout), iterator->name());
-
-        iterator->next();
-    }
-
-    return selected_tables;
-}
-
-
 StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
-        const SelectQueryInfo & query_info, bool has_virtual_column, const String & query_id, const Settings & settings) const
+        ContextPtr query_context,
+        const ASTPtr & query /* = nullptr */,
+        bool filter_by_virtual_column /* = false */) const
 {
-    const ASTPtr & query = query_info.query;
+    assert(!filter_by_virtual_column || query);
+
+    const Settings & settings = query_context->getSettingsRef();
     StorageListWithLocks selected_tables;
     DatabaseTablesIteratorPtr iterator = getDatabaseIterator(getContext());
 
-    auto virtual_column = ColumnString::create();
+    MutableColumnPtr table_name_virtual_column;
+    if (filter_by_virtual_column)
+        table_name_virtual_column = ColumnString::create();
 
     while (iterator->isValid())
     {
@@ -467,18 +451,20 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
 
         if (storage.get() != this)
         {
-            selected_tables.emplace_back(
-                    storage, storage->lockForShare(query_id, settings.lock_acquire_timeout), iterator->name());
-            virtual_column->insert(iterator->name());
+            auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings.lock_acquire_timeout);
+            selected_tables.emplace_back(storage, std::move(table_lock), iterator->name());
+            if (filter_by_virtual_column)
+                table_name_virtual_column->insert(iterator->name());
         }
 
         iterator->next();
     }
 
-    if (has_virtual_column)
+    if (filter_by_virtual_column)
     {
-        Block virtual_columns_block = Block{ColumnWithTypeAndName(std::move(virtual_column), std::make_shared<DataTypeString>(), "_table")};
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, getContext());
+        /// Filter names of selected tables if there is a condition on "_table" virtual column in WHERE clause
+        Block virtual_columns_block = Block{ColumnWithTypeAndName(std::move(table_name_virtual_column), std::make_shared<DataTypeString>(), "_table")};
+        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, query_context);
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list
@@ -487,7 +473,6 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
 
     return selected_tables;
 }
-
 
 DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(ContextPtr local_context) const
 {

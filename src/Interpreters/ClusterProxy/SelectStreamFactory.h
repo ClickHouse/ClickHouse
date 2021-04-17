@@ -34,7 +34,7 @@ public:
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
-        const String & query, const ASTPtr & query_ast,
+        const ASTPtr & query_ast,
         ContextPtr context, const ThrottlerPtr & throttler,
         const SelectQueryInfo & query_info,
         std::vector<QueryPlanPtr> & plans,

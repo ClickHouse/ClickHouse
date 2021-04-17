@@ -7,7 +7,20 @@
 -->
 <yandex>
     <logger>
-        <!-- Possible levels: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105 -->
+        <!-- Possible levels [1]:
+
+          - none (turns off logging)
+          - fatal
+          - critical
+          - error
+          - warning
+          - notice
+          - information
+          - debug
+          - trace
+
+            [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
+        -->
         <level>trace</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
         <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
@@ -76,7 +89,7 @@
     <!-- Compatibility with PostgreSQL protocol.
          ClickHouse will pretend to be PostgreSQL for applications connecting to this port.
     -->
-    <!-- <postgresql_port>9005</postgresql_port> -->
+    <postgresql_port>9005</postgresql_port>
 
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.
