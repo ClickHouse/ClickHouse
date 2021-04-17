@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Core/Settings.h>
-#include <Poco/Util/Application.h>
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <loggers/Loggers.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Client/ProgressBar.h>
+#include <loggers/Loggers.h>
+#include <Poco/Util/Application.h>
+#include <Common/ProgressBar.h>
 
 namespace DB
 {

@@ -1,8 +1,7 @@
-#include "TestHint.h"
 #include "ConnectionParameters.h"
 #include "QueryFuzzer.h"
 #include "Suggest.h"
-#include <Client/ProgressBar.h>
+#include "TestHint.h"
 
 #if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
@@ -87,6 +86,7 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/ProgressBar.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -95,7 +95,6 @@
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
-
 
 
 namespace DB
