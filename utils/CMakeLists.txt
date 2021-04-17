@@ -37,7 +37,8 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
         add_subdirectory (keeper-data-dumper)
     endif ()
 
-    if (NOT OS_DARWIN)
+    # memcpy_jart.S contains position dependent code
+    if (NOT CMAKE_POSITION_INDEPENDENT_CODE AND NOT OS_DARWIN)
         add_subdirectory (memcpy-bench)
     endif ()
 endif ()

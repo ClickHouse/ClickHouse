@@ -18,18 +18,17 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <common/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
+#include "ODBCConnectionFactory.h"
 
 #include <mutex>
 #include <memory>
 
+#include <nanodbc/nanodbc.h>
 
-#if USE_ODBC
-#include <Poco/Data/ODBC/SessionImpl.h>
-#define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
-#endif
 
 namespace DB
 {
+
 namespace
 {
     std::unique_ptr<Block> parseColumns(std::string && column_string)
@@ -42,37 +41,6 @@ namespace
     }
 }
 
-using PocoSessionPoolConstructor = std::function<std::shared_ptr<Poco::Data::SessionPool>()>;
-/** Is used to adjust max size of default Poco thread pool. See issue #750
-  * Acquire the lock, resize pool and construct new Session.
-  */
-static std::shared_ptr<Poco::Data::SessionPool> createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr)
-{
-    static std::mutex mutex;
-
-    Poco::ThreadPool & pool = Poco::ThreadPool::defaultPool();
-
-    /// NOTE: The lock don't guarantee that external users of the pool don't change its capacity
-    std::unique_lock lock(mutex);
-
-    if (pool.available() == 0)
-        pool.addCapacity(2 * std::max(pool.capacity(), 1));
-
-    return pool_constr();
-}
-
-ODBCHandler::PoolPtr ODBCHandler::getPool(const std::string & connection_str)
-{
-    std::lock_guard lock(mutex);
-    if (!pool_map->count(connection_str))
-    {
-        pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str]
-        {
-            return std::make_shared<Poco::Data::SessionPool>("ODBC", validateODBCConnectionString(connection_str));
-        }));
-    }
-    return pool_map->at(connection_str);
-}
 
 void ODBCHandler::processError(HTTPServerResponse & response, const std::string & message)
 {
@@ -81,6 +49,7 @@ void ODBCHandler::processError(HTTPServerResponse & response, const std::string 
         *response.send() << message << std::endl;
     LOG_WARNING(log, message);
 }
+
 
 void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
@@ -141,6 +110,10 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     try
     {
+        auto connection = ODBCConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string),
+                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
+
         if (mode == "write")
         {
             if (!params.has("db_name"))
@@ -159,15 +132,12 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
             auto quoting_style = IdentifierQuotingStyle::None;
 #if USE_ODBC
-            POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
-            quoting_style = getQuotingStyle(session.dbc().handle());
+            quoting_style = getQuotingStyle(*connection);
 #endif
-
-            auto pool = getPool(connection_string);
             auto & read_buf = request.getStream();
-            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, context, max_block_size);
+            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, getContext(), max_block_size);
             auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
-            ODBCBlockOutputStream output_stream(pool->get(), db_name, table_name, *sample_block, quoting_style);
+            ODBCBlockOutputStream output_stream(*connection, db_name, table_name, *sample_block, getContext(), quoting_style);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
         }
@@ -176,9 +146,8 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             std::string query = params.get("query");
             LOG_TRACE(log, "Query: {}", query);
 
-            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, context);
-            auto pool = getPool(connection_string);
-            ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
+            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, getContext());
+            ODBCBlockInputStream inp(*connection, query, *sample_block, max_block_size);
             copyData(inp, *writer);
         }
     }

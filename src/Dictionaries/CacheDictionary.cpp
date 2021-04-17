@@ -70,7 +70,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception{full_name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", full_name);
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -133,7 +133,7 @@ ColumnPtr CacheDictionary<dictionary_key_type>::getColumn(
 template <DictionaryKeyType dictionary_key_type>
 Columns CacheDictionary<dictionary_key_type>::getColumns(
     const Strings & attribute_names,
-    const DataTypes &,
+    const DataTypes & result_types,
     const Columns & key_columns,
     const DataTypes & key_types,
     const Columns & default_values_columns) const
@@ -159,7 +159,7 @@ Columns CacheDictionary<dictionary_key_type>::getColumns(
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
     auto keys = extractor.extractAllKeys();
 
-    DictionaryStorageFetchRequest request(dict_struct, attribute_names, default_values_columns);
+    DictionaryStorageFetchRequest request(dict_struct, attribute_names, result_types, default_values_columns);
 
     FetchResult result_of_fetch_from_storage;
 
@@ -277,7 +277,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     const auto keys = extractor.extractAllKeys();
 
     /// We make empty request just to fetch if keys exists
-    DictionaryStorageFetchRequest request(dict_struct, {}, {});
+    DictionaryStorageFetchRequest request(dict_struct, {}, {}, {});
 
     FetchResult result_of_fetch_from_storage;
 

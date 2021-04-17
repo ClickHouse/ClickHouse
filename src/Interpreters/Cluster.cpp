@@ -292,7 +292,7 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
     std::lock_guard lock(mutex);
 
-    /// If old congig is set, remove deleted clusters from impl, otherwise just clear it.
+    /// If old config is set, remove deleted clusters from impl, otherwise just clear it.
     if (old_config)
     {
         for (const auto & key : deleted_keys)
