@@ -371,7 +371,6 @@ const char * auto_contributors[] {
     "Mikahil Nacharov",
     "Mike",
     "Mike F",
-    "Mike Kot",
     "Mikhail",
     "Mikhail Cheshkov",
     "Mikhail Fandyushin",

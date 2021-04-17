@@ -4,8 +4,6 @@
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Interpreters/JoinSwitcher.h>
 
 namespace DB
 {
@@ -110,14 +108,12 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     settings.out << '\n';
 }
 
-JoinStep::JoinStep(const DataStream & input_stream_, JoinPtr join_, bool has_non_joined_rows_, size_t max_block_size_)
+JoinStep::JoinStep(const DataStream & input_stream_, JoinPtr join_)
     : ITransformingStep(
         input_stream_,
         Transform::transformHeader(input_stream_.header, join_),
         getJoinTraits())
     , join(std::move(join_))
-    , has_non_joined_rows(has_non_joined_rows_)
-    , max_block_size(max_block_size_)
 {
 }
 
@@ -136,21 +132,6 @@ void JoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipel
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<Transform>(header, join, on_totals, add_default_totals);
     });
-
-    if (has_non_joined_rows)
-    {
-        const Block & join_result_sample = pipeline.getHeader();
-        auto stream = std::make_shared<LazyNonJoinedBlockInputStream>(*join, join_result_sample, max_block_size);
-        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
-
-        source->setQueryPlanStep(this);
-        pipeline.addDelayedStream(source);
-
-        /// Now, after adding delayed stream, it has implicit dependency on other port.
-        /// Here we add resize processor to remove this dependency.
-        /// Otherwise, if we add MergeSorting + MergingSorted transform to pipeline, we could get `Pipeline stuck`
-        pipeline.resize(pipeline.getNumStreams(), true);
-    }
 }
 
 }

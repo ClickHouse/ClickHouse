@@ -93,6 +93,7 @@ SRCS(
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
+    QueryPlan/AddingDelayedSourceStep.cpp
     QueryPlan/AggregatingStep.cpp
     QueryPlan/ArrayJoinStep.cpp
     QueryPlan/BuildQueryPipelineSettings.cpp

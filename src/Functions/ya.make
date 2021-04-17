@@ -144,7 +144,6 @@ SRCS(
     array/arrayFirst.cpp
     array/arrayFirstIndex.cpp
     array/arrayFlatten.cpp
-    array/arrayFold.cpp
     array/arrayIntersect.cpp
     array/arrayJoin.cpp
     array/arrayMap.cpp
@@ -230,8 +229,6 @@ SRCS(
     defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
-    divide/divide.cpp
-    divide/divideImpl.cpp
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp

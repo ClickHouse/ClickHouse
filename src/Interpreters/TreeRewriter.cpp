@@ -305,10 +305,10 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
 }
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(ASTPtr & query, ContextPtr context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
+void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t subquery_depth, Scalars & scalars, bool only_analyze)
 {
     LogAST log;
-    ExecuteScalarSubqueriesVisitor::Data visitor_data{WithContext{context}, subquery_depth, scalars, only_analyze};
+    ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth, scalars, only_analyze};
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
@@ -403,13 +403,13 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 
 /// Find the columns that are obtained by JOIN.
 void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & select_query,
-                          const TablesWithColumns & tables, const Aliases & aliases)
+                          const TablesWithColumns & tables, const Aliases & aliases, ASTPtr & new_where_conditions)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
-    if (!node || tables.size() < 2)
+    if (!node)
         return;
 
-    const auto & table_join = node->table_join->as<ASTTableJoin &>();
+    auto & table_join = node->table_join->as<ASTTableJoin &>();
 
     if (table_join.using_expression_list)
     {
@@ -428,14 +428,31 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
     {
         bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
 
-        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
+        CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof, table_join.kind};
         CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
         if (!data.has_some)
             throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
                             ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
         if (is_asof)
+        {
             data.asofToJoinKeys();
+        }
+        else if (data.new_on_expression)
+        {
+            table_join.on_expression = data.new_on_expression;
+            new_where_conditions = data.new_where_conditions;
+        }
     }
+}
+
+/// Move joined key related to only one table to WHERE clause
+void moveJoinedKeyToWhere(ASTSelectQuery * select_query, ASTPtr & new_where_conditions)
+{
+    if (select_query->where())
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE,
+            makeASTFunction("and", new_where_conditions, select_query->where()));
+    else
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, new_where_conditions->clone());
 }
 
 
@@ -770,7 +787,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
 
-    const auto & settings = getContext()->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
 
@@ -813,22 +830,25 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(query, getContext(), subquery_depth, result.scalars, select_options.only_analyze);
+    executeScalarSubqueries(query, context, subquery_depth, result.scalars, select_options.only_analyze);
 
-    TreeOptimizer::apply(
-        query, result.aliases, source_columns_set, tables_with_columns, getContext(), result.metadata_snapshot, result.rewrite_subqueries);
+    TreeOptimizer::apply(query, result.aliases, source_columns_set, tables_with_columns, context, result.metadata_snapshot, result.rewrite_subqueries);
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
     setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
                         result.analyzed_join->table_join);
-    collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases);
+
+    ASTPtr new_where_condition = nullptr;
+    collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_columns, result.aliases, new_where_condition);
+    if (new_where_condition)
+        moveJoinedKeyToWhere(select_query, new_where_condition);
 
     /// rewrite filters for select query, must go after getArrayJoinedColumns
     if (settings.optimize_respect_aliases && result.metadata_snapshot)
     {
-        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), getContext());
+        replaceAliasColumnsInQuery(query, result.metadata_snapshot->getColumns(), result.getArrayJoinSourceNameSet(), context);
     }
 
     result.aggregates = getAggregates(query, *select_query);
@@ -855,14 +875,14 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & settings = getContext()->getSettingsRef();
+    const auto & settings = context.getSettingsRef();
 
     TreeRewriterResult result(source_columns, storage, metadata_snapshot, false);
 
     normalize(query, result.aliases, result.source_columns_set, settings);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, getContext(), 0, result.scalars, false);
+    executeScalarSubqueries(query, context, 0, result.scalars, false);
 
     TreeOptimizer::optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
 

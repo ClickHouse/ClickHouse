@@ -121,7 +121,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
 
 /// QuantileExactExclusive is equivalent to Excel PERCENTILE.EXC, R-6, SAS-4, SciPy-(0,0)
 template <typename Value>
-/// There are no virtual-like functions. So we don't inherit from QuantileExactBase.
+/// There is no virtual-like functions. So we don't inherit from QuantileExactBase.
 struct QuantileExactExclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
@@ -189,7 +189,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
 
 /// QuantileExactInclusive is equivalent to Excel PERCENTILE and PERCENTILE.INC, R-7, SciPy-(1,1)
 template <typename Value>
-/// There are no virtual-like functions. So we don't inherit from QuantileExactBase.
+/// There is no virtual-like functions. So we don't inherit from QuantileExactBase.
 struct QuantileExactInclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;

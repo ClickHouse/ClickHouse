@@ -164,9 +164,6 @@ public:
 
     bool isEmpty() const { return rows_count == 0; }
 
-    /// Compute part block id for zero level part. Otherwise throws an exception.
-    String getZeroLevelPartBlockID() const;
-
     const MergeTreeData & storage;
 
     String name;

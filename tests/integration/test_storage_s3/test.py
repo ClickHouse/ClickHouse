@@ -113,18 +113,13 @@ def run_query(instance, query, stdin=None, settings=None):
     return result
 
 
-# Test simple put. Also checks that wrong credentials produce an error with every compression method.
-@pytest.mark.parametrize("maybe_auth,positive,compression", [
-    ("", True, 'auto'),
-    ("'minio','minio123',", True, 'auto'),
-    ("'wrongid','wrongkey',", False, 'auto'),
-    ("'wrongid','wrongkey',", False, 'gzip'),
-    ("'wrongid','wrongkey',", False, 'deflate'),
-    ("'wrongid','wrongkey',", False, 'brotli'),
-    ("'wrongid','wrongkey',", False, 'xz'),
-    ("'wrongid','wrongkey',", False, 'zstd')
+# Test simple put.
+@pytest.mark.parametrize("maybe_auth,positive", [
+    ("", True),
+    ("'minio','minio123',", True),
+    ("'wrongid','wrongkey',", False)
 ])
-def test_put(cluster, maybe_auth, positive, compression):
+def test_put(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
 
     bucket = cluster.minio_bucket if not maybe_auth else cluster.minio_restricted_bucket
@@ -133,8 +128,8 @@ def test_put(cluster, maybe_auth, positive, compression):
     values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test.csv"
-    put_query = f"""insert into table function s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
-                    {maybe_auth}'CSV', '{table_format}', {compression}) values {values}"""
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') values {}".format(
+        cluster.minio_host, cluster.minio_port, bucket, filename, maybe_auth, table_format, values)
 
     try:
         run_query(instance, put_query)
