@@ -2,7 +2,7 @@
 
 Contains metadata of each table that the server knows about. 
 
-Detached tables are not shown in `system.tables`.
+[Detached](../../sql-reference/statements/detach.md) tables are not shown in `system.tables`.
 
 [Temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in the `system.tables` only in those session where they have been created. They are shown with the empty `database` field and with the `is_temporary` flag switched on. 
 
