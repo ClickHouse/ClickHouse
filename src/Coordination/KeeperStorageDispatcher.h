@@ -77,11 +77,11 @@ private:
 
     /// Add error responses for requests to responses queue.
     /// Clears requests.
-    void addErrorResponses(KeeperStorage::RequestsForSessions && requests_for_sessions, Coordination::Error error);
+    void addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error);
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    void forceWaitAndProcessResult(RaftAppendResult && result, KeeperStorage::RequestsForSessions && requests_for_sessions);
+    void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
 public:
     KeeperStorageDispatcher();
@@ -104,7 +104,7 @@ public:
         return server->isLeaderAlive();
     }
 
-    int64_t getSessionID(long session_timeout_ms);
+    int64_t getSessionID(int64_t session_timeout_ms);
 
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
     /// Call if we don't need any responses for this session no more (session was expired)
