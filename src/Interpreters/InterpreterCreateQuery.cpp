@@ -361,7 +361,7 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, const Context & context, bool sanity_check_compression_codecs)
+    const ASTExpressionList & columns_ast, const Context & context, bool attach)
 {
     /// First, deduce implicit types.
 
@@ -370,6 +370,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
+    bool make_columns_nullable = !attach && context.getSettingsRef().data_type_default_nullable;
 
     for (const auto & ast : columns_ast.children)
     {
@@ -388,7 +389,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 if (*col_decl.null_modifier)
                     column_type = makeNullable(column_type);
             }
-            else if (context.getSettingsRef().data_type_default_nullable)
+            else if (make_columns_nullable)
             {
                 column_type = makeNullable(column_type);
             }
@@ -433,6 +434,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!default_expr_list->children.empty())
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context);
 
+    bool sanity_check_compression_codecs = !attach && !context.getSettingsRef().allow_suspicious_codecs;
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
     for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
@@ -508,8 +510,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
         if (create.columns_list->columns)
         {
-            bool sanity_check_compression_codecs = !create.attach && !context.getSettingsRef().allow_suspicious_codecs;
-            properties.columns = getColumnsDescription(*create.columns_list->columns, context, sanity_check_compression_codecs);
+            properties.columns = getColumnsDescription(*create.columns_list->columns, context, create.attach);
         }
 
         if (create.columns_list->indices)
