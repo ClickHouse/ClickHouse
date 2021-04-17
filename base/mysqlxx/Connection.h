@@ -5,7 +5,6 @@
 
 #include <Poco/Util/Application.h>
 
-
 #include <mysqlxx/Query.h>
 #include <mysqlxx/Exception.h>
 

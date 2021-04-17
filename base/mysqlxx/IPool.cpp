@@ -1,13 +1,10 @@
-#include "IPool.h"
-
 #if __has_include(<mysql.h>)
 #include <mysql.h>
-#include <mysqld_error.h>
 #else
 #include <mysql/mysql.h>
-#include <mysql/mysqld_error.h>
 #endif
 
+#include "IPool.h"
 
 namespace
 {
