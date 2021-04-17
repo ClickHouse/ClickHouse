@@ -23,6 +23,6 @@ SELECT marks FROM system.parts WHERE table = 'adaptive_table' and database=curre
 -- If we have computed granularity incorrectly than we will exceed this limit.
 SET max_memory_usage='30M';
 
-SELECT max(length(value)) FROM adaptive_table;
+SELECT max(length(value)) FROM adaptive_table SETTINGS min_bytes_to_use_mmap_io=0;
 
 DROP TABLE IF EXISTS adaptive_table;
