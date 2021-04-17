@@ -51,6 +51,7 @@ public:
     bool isNullable() const override { return false; }
     bool onlyNull() const override { return false; }
     bool lowCardinality() const override { return true; }
+    bool canBeInsideNullable() const override { return true; }
 
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);

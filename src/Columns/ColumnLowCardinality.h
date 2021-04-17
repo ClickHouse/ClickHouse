@@ -167,6 +167,8 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
+    bool canBeInsideNullable() const override { return true; }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         if (auto rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
