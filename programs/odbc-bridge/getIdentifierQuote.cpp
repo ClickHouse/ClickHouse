@@ -26,7 +26,7 @@ std::string getIdentifierQuote(nanodbc::connection & connection)
     }
     catch (...)
     {
-        LOG_WARNING(&Poco::Logger::get("ODBCGetIdentifierQuote"), "Cannot fetch identifier quote. Default double quote is used");
+        LOG_WARNING(&Poco::Logger::get("ODBCGetIdentifierQuote"), "Cannot fetch identifier quote. Default double quote is used. Reason: {}", getCurrentExceptionMessage(false));
         return "\"";
     }
 
