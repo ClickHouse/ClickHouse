@@ -230,7 +230,7 @@ CREATE TABLE codec_example
 )
 ENGINE = MergeTree()
 ```
-## Временные таблицы {#vremennye-tablitsy}
+## Временные таблицы {#temporary-tables}
 
 ClickHouse поддерживает временные таблицы со следующими характеристиками:
 
