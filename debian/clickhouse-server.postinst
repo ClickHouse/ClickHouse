@@ -23,11 +23,13 @@ if [ ! -f "/etc/debian_version" ]; then
 fi
 
 if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
+
+    ${CLICKHOUSE_GENERIC_PROGRAM} install --user "${CLICKHOUSE_USER}" --group "${CLICKHOUSE_GROUP}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}" --log-path "${CLICKHOUSE_LOGDIR}" --data-path "${CLICKHOUSE_DATADIR}"
+
     if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
         # if old rc.d service present - remove it
         if [ -x "/etc/init.d/clickhouse-server" ] && [ -x "/usr/sbin/update-rc.d" ]; then
             /usr/sbin/update-rc.d clickhouse-server remove
-            echo "ClickHouse init script has migrated to systemd. Please manually stop old server and restart the service: sudo killall clickhouse-server && sleep 5 && sudo service clickhouse-server restart"
         fi
 
         /bin/systemctl daemon-reload
@@ -38,10 +40,8 @@ if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
             if [ -x "/usr/sbin/update-rc.d" ]; then
                 /usr/sbin/update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
             else
-                echo # TODO [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ]
+                echo # Other OS
             fi
         fi
     fi
-
-    ${CLICKHOUSE_GENERIC_PROGRAM} install --user "${CLICKHOUSE_USER}" --group "${CLICKHOUSE_GROUP}" --pid-path "${CLICKHOUSE_PIDDIR}" --config-path "${CLICKHOUSE_CONFDIR}" --binary-path "${CLICKHOUSE_BINDIR}" --log-path "${CLICKHOUSE_LOGDIR}" --data-path "${CLICKHOUSE_DATADIR}"
 fi
