@@ -16,46 +16,60 @@ toc_title: JSON
 
 ## visitParamHas(params, name) {#visitparamhasparams-name}
 
-Проверить наличие поля с именем name.
+Проверить наличие поля с именем `name`.
+
+Алиас: `simpleJSONHas`.
 
 ## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
 
-Распарсить UInt64 из значения поля с именем name. Если поле строковое - попытаться распарсить число из начала строки. Если такого поля нет, или если оно есть, но содержит не число, то вернуть 0.
+Распарсить UInt64 из значения поля с именем `name`. Если поле строковое - попытаться распарсить число из начала строки. Если такого поля нет, или если оно есть, но содержит не число, то вернуть 0.
+
+Алиас: `simpleJSONExtractUInt`.
 
 ## visitParamExtractInt(params, name) {#visitparamextractintparams-name}
 
 Аналогично для Int64.
 
+Алиас: `simpleJSONExtractInt`.
+
 ## visitParamExtractFloat(params, name) {#visitparamextractfloatparams-name}
 
 Аналогично для Float64.
+
+Алиас: `simpleJSONExtractFloat`.
 
 ## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
 
 Распарсить значение true/false. Результат - UInt8.
 
+Алиас: `simpleJSONExtractBool`.
+
 ## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
 
 Вернуть значение поля, включая разделители.
 
+Алиас: `simpleJSONExtractRaw`.
+
 Примеры:
 
 ``` sql
-visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
-visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
+visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"';
+visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
 ```
 
 ## visitParamExtractString(params, name) {#visitparamextractstringparams-name}
 
 Распарсить строку в двойных кавычках. У значения убирается экранирование. Если убрать экранированные символы не удалось, то возвращается пустая строка.
 
+Алиас: `simpleJSONExtractString`.
+
 Примеры:
 
 ``` sql
-visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
-visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
-visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
-visitParamExtractString('{"abc":"hello}', 'abc') = ''
+visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0';
+visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺';
+visitParamExtractString('{"abc":"\\u263"}', 'abc') = '';
+visitParamExtractString('{"abc":"hello}', 'abc') = '';
 ```
 
 На данный момент, не поддерживаются записанные в формате `\uXXXX\uYYYY` кодовые точки не из basic multilingual plane (они переводятся не в UTF-8, а в CESU-8).
