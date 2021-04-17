@@ -111,6 +111,10 @@
         "name": "yandex/clickhouse-mysql-golang-client",
         "dependent": []
     },
+    "docker/test/integration/dotnet_client": {
+        "name": "yandex/clickhouse-dotnet-client",
+        "dependent": []
+    },
     "docker/test/integration/mysql_java_client": {
         "name": "yandex/clickhouse-mysql-java-client",
         "dependent": []
