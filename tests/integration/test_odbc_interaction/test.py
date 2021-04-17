@@ -507,6 +507,38 @@ def test_concurrent_queries(started_cluster):
     cursor.execute('DROP TABLE clickhouse.test_pg_table;')
 
 
+def test_odbc_long_column_names(started_cluster):
+    conn = get_postgres_conn();
+    cursor = conn.cursor()
+
+    column_name = "column" * 8
+    create_table = "CREATE TABLE clickhouse.test_long_column_names ("
+    for i in range(1000):
+        if i != 0:
+            create_table += ", "
+        create_table += "{} integer".format(column_name + str(i))
+    create_table += ")"
+    cursor.execute(create_table)
+    insert = "INSERT INTO clickhouse.test_long_column_names SELECT i" + ", i" * 999 + " FROM generate_series(0, 99) as t(i)"
+    cursor.execute(insert)
+    conn.commit()
+
+    create_table = "CREATE TABLE test_long_column_names ("
+    for i in range(1000):
+        if i != 0:
+            create_table += ", "
+        create_table += "{} UInt32".format(column_name + str(i))
+    create_table += ") ENGINE=ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_long_column_names')"
+    result = node1.query(create_table);
+
+    result = node1.query('SELECT * FROM test_long_column_names');
+    expected = node1.query("SELECT number" + ", number" * 999 + " FROM numbers(100)")
+    assert(result == expected)
+
+    cursor.execute("DROP TABLE IF EXISTS clickhouse.test_long_column_names")
+    node1.query("DROP TABLE IF EXISTS test_long_column_names")
+
+
 def test_odbc_long_text(started_cluster):
     conn = get_postgres_conn()
     cursor = conn.cursor()
@@ -528,3 +560,4 @@ def test_odbc_long_text(started_cluster):
     cursor.execute("""insert into clickhouse.test_long_text (flen, field1) values (400000, '{}')""".format(long_text));
     result = node1.query("select field1 from test_long_text where flen=400000;")
     assert(result.strip() == long_text)
+
