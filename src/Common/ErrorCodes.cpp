@@ -548,6 +548,7 @@
     M(578, INVALID_FORMAT_INSERT_QUERY_WITH_DATA) \
     M(579, INCORRECT_PART_TYPE) \
     M(580, CANNOT_SET_ROUNDING_MODE) \
+    M(581, TOO_LARGE_DISTRIBUTED_DEPTH) \
     \
     M(998, POSTGRESQL_CONNECTION_FAILURE) \
     M(999, KEEPER_EXCEPTION) \
@@ -590,7 +591,7 @@ namespace ErrorCodes
 
     void increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace)
     {
-        if (error_code >= end())
+        if (error_code < 0 || error_code >= end())
         {
             /// For everything outside the range, use END.
             /// (end() is the pointer pass the end, while END is the last value that has an element in values array).

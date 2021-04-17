@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -34,7 +35,7 @@ public:
     static constexpr size_t max_shingle_size = 25;
     static constexpr size_t max_num_hashes = 25;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsStringHash>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringHash>(); }
 
     String getName() const override { return name; }
 

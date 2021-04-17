@@ -122,7 +122,7 @@ namespace
         else if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapUniqueIndexImpl(*data_uint64);
         else
-            throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got" + column.getName(),
+            throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got " + column.getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
 }
@@ -151,7 +151,7 @@ void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
 

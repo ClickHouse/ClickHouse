@@ -190,6 +190,7 @@ add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_client Client)
+add_object_library(clickhouse_bridge Bridge)
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
 add_object_library(clickhouse_formats Formats)
@@ -506,6 +507,11 @@ if (ENABLE_TESTS AND USE_GTEST)
         dbms
         clickhouse_common_zookeeper
         string_utils)
+
+    # For __udivmodti4 referenced in Core/tests/gtest_DecimalFunctions.cpp
+    if (OS_DARWIN AND COMPILER_GCC)
+        target_link_libraries(unit_tests_dbms PRIVATE gcc)
+    endif ()
 
     add_check(unit_tests_dbms)
 endif ()
