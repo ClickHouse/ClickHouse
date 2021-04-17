@@ -811,6 +811,14 @@ void IMergeTreeDataPart::loadChecksums(bool require)
 void IMergeTreeDataPart::loadRowsCount()
 {
     String path = getFullRelativePath() + "count.txt";
+
+    auto read_rows_count = [&]()
+    {
+        auto buf = openForReading(volume->getDisk(), path);
+        readIntText(rows_count, *buf);
+        assertEOF(*buf);
+    };
+
     if (index_granularity.empty())
     {
         rows_count = 0;
@@ -820,9 +828,7 @@ void IMergeTreeDataPart::loadRowsCount()
         if (!volume->getDisk()->exists(path))
             throw Exception("No count.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        auto buf = openForReading(volume->getDisk(), path);
-        readIntText(rows_count, *buf);
-        assertEOF(*buf);
+        read_rows_count();
 
 #ifndef NDEBUG
         /// columns have to be loaded
@@ -875,6 +881,12 @@ void IMergeTreeDataPart::loadRowsCount()
     }
     else
     {
+        if (volume->getDisk()->exists(path))
+        {
+            read_rows_count();
+            return;
+        }
+
         for (const NameAndTypePair & column : columns)
         {
             ColumnPtr column_col = column.type->createColumn(*getSerializationForColumn(column));

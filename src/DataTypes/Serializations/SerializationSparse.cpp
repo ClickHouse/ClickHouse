@@ -55,10 +55,12 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
     /// TODO:
     offsets.reserve(limit / 10);
 
+    bool first = true;
     size_t total_rows = state.num_trailing_defaults;
     if (state.has_value_after_defaults)
     {
         offsets.push_back(start + state.num_trailing_defaults);
+        first = false;
 
         state.has_value_after_defaults = false;
         state.num_trailing_defaults = 0;
@@ -66,7 +68,6 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
     }
 
     size_t group_size;
-    bool first = true;
     while (!istr.eof())
     {
         readIntBinary(group_size, istr);
