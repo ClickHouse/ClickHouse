@@ -6,6 +6,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnSparse.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Core/Block.h>
@@ -347,7 +348,7 @@ public:
 
         if constexpr (key_type == DictionaryKeyType::simple)
         {
-            key_columns[0] = key_columns[0]->convertToFullColumnIfConst();
+            key_columns[0] = recursiveRemoveSparse(key_columns[0]->convertToFullColumnIfConst());
 
             const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(key_columns[0].get());
             if (!vector_col)
@@ -543,7 +544,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
     PaddedPODArray<T> & backup_storage)
 {
     bool is_const_column = isColumnConst(*column);
-    auto full_column = column->convertToFullColumnIfConst();
+    auto full_column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
     if (!vector_col)
