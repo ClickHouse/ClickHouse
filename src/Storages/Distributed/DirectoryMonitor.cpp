@@ -9,6 +9,8 @@
 #include <Common/quoteString.h>
 #include <Common/hex.h>
 #include <Common/ActionBlocker.h>
+#include <Common/formatReadable.h>
+#include <Common/Stopwatch.h>
 #include <common/StringRef.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -104,12 +106,14 @@ namespace
         size_t rows = 0;
         size_t bytes = 0;
 
-        std::string header;
+        /// dumpStructure() of the header -- obsolete
+        std::string block_header_string;
+        Block block_header;
     };
 
-    DistributedHeader readDistributedHeader(ReadBuffer & in, Poco::Logger * log)
+    DistributedHeader readDistributedHeader(ReadBufferFromFile & in, Poco::Logger * log)
     {
-        DistributedHeader header;
+        DistributedHeader distributed_header;
 
         UInt64 query_size;
         readVarUInt(query_size, in);
@@ -135,17 +139,25 @@ namespace
                 LOG_WARNING(log, "ClickHouse shard version is older than ClickHouse initiator version. It may lack support for new features.");
             }
 
-            readStringBinary(header.insert_query, header_buf);
-            header.insert_settings.read(header_buf);
+            readStringBinary(distributed_header.insert_query, header_buf);
+            distributed_header.insert_settings.read(header_buf);
 
             if (header_buf.hasPendingData())
-                header.client_info.read(header_buf, initiator_revision);
+                distributed_header.client_info.read(header_buf, initiator_revision);
 
             if (header_buf.hasPendingData())
             {
-                readVarUInt(header.rows, header_buf);
-                readVarUInt(header.bytes, header_buf);
-                readStringBinary(header.header, header_buf);
+                readVarUInt(distributed_header.rows, header_buf);
+                readVarUInt(distributed_header.bytes, header_buf);
+                readStringBinary(distributed_header.block_header_string, header_buf);
+            }
+
+            if (header_buf.hasPendingData())
+            {
+                NativeBlockInputStream header_block_in(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                distributed_header.block_header = header_block_in.read();
+                if (!distributed_header.block_header)
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read header from the {} batch", in.getFileName());
             }
 
             /// Add handling new data here, for example:
@@ -155,20 +167,20 @@ namespace
             ///
             /// And note that it is safe, because we have checksum and size for header.
 
-            return header;
+            return distributed_header;
         }
 
         if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER_OLD_FORMAT)
         {
-            header.insert_settings.read(in, SettingsWriteFormat::BINARY);
-            readStringBinary(header.insert_query, in);
-            return header;
+            distributed_header.insert_settings.read(in, SettingsWriteFormat::BINARY);
+            readStringBinary(distributed_header.insert_query, in);
+            return distributed_header;
         }
 
-        header.insert_query.resize(query_size);
-        in.readStrict(header.insert_query.data(), query_size);
+        distributed_header.insert_query.resize(query_size);
+        in.readStrict(distributed_header.insert_query.data(), query_size);
 
-        return header;
+        return distributed_header;
     }
 
     /// remote_error argument is used to decide whether some errors should be
@@ -200,35 +212,58 @@ namespace
         return nullptr;
     }
 
-    void writeRemoteConvert(const DistributedHeader & header, RemoteBlockOutputStream & remote, ReadBufferFromFile & in, Poco::Logger * log)
+    void writeAndConvert(RemoteBlockOutputStream & remote, ReadBufferFromFile & in)
     {
-        if (remote.getHeader() && header.header != remote.getHeader().dumpStructure())
+        CompressedReadBuffer decompressing_in(in);
+        NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+        block_in.readPrefix();
+
+        while (Block block = block_in.read())
         {
-            LOG_WARNING(log,
-                "Structure does not match (remote: {}, local: {}), implicit conversion will be done",
-                remote.getHeader().dumpStructure(), header.header);
-
-            CompressedReadBuffer decompressing_in(in);
-            /// Lack of header, requires to read blocks
-            NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-
-            block_in.readPrefix();
-            while (Block block = block_in.read())
-            {
-                ConvertingBlockInputStream convert(
-                    std::make_shared<OneBlockInputStream>(block),
-                    remote.getHeader(),
-                    ConvertingBlockInputStream::MatchColumnsMode::Name);
-                auto adopted_block = convert.read();
-                remote.write(adopted_block);
-            }
-            block_in.readSuffix();
+            ConvertingBlockInputStream convert(
+                std::make_shared<OneBlockInputStream>(block),
+                remote.getHeader(),
+                ConvertingBlockInputStream::MatchColumnsMode::Name);
+            auto adopted_block = convert.read();
+            remote.write(adopted_block);
         }
-        else
+
+        block_in.readSuffix();
+    }
+
+    void writeRemoteConvert(const DistributedHeader & distributed_header, RemoteBlockOutputStream & remote, ReadBufferFromFile & in, Poco::Logger * log)
+    {
+        if (!remote.getHeader())
         {
             CheckingCompressedReadBuffer checking_in(in);
             remote.writePrepared(checking_in);
+            return;
         }
+
+        /// This is old format, that does not have header for the block in the file header,
+        /// applying ConvertingBlockInputStream in this case is not a big overhead.
+        ///
+        /// Anyway we can get header only from the first block, which contain all rows anyway.
+        if (!distributed_header.block_header)
+        {
+            LOG_TRACE(log, "Processing batch {} with old format (no header)", in.getFileName());
+
+            writeAndConvert(remote, in);
+            return;
+        }
+
+        if (!blocksHaveEqualStructure(distributed_header.block_header, remote.getHeader()))
+        {
+            LOG_WARNING(log,
+                "Structure does not match (remote: {}, local: {}), implicit conversion will be done",
+                remote.getHeader().dumpStructure(), distributed_header.block_header.dumpStructure());
+
+            writeAndConvert(remote, in);
+            return;
+        }
+
+        CheckingCompressedReadBuffer checking_in(in);
+        remote.writePrepared(checking_in);
     }
 }
 
@@ -245,14 +280,14 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , disk(disk_)
     , relative_path(relative_path_)
     , path(disk->getPath() + relative_path + '/')
-    , should_batch_inserts(storage.global_context.getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , should_batch_inserts(storage.getContext()->getSettingsRef().distributed_directory_monitor_batch_inserts)
     , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
-    , min_batched_block_size_rows(storage.global_context.getSettingsRef().min_insert_block_size_rows)
-    , min_batched_block_size_bytes(storage.global_context.getSettingsRef().min_insert_block_size_bytes)
+    , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
+    , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path(path + "current_batch.txt")
-    , default_sleep_time(storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds())
+    , default_sleep_time(storage.getContext()->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
-    , max_sleep_time(storage.global_context.getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds())
+    , max_sleep_time(storage.getContext()->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds())
     , log(&Poco::Logger::get(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
@@ -427,7 +462,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 
     auto pools = createPoolsForAddresses(name, pool_factory, storage.log);
 
-    const auto settings = storage.global_context.getSettings();
+    const auto settings = storage.getContext()->getSettings();
     return pools.size() == 1 ? pools.front() : std::make_shared<ConnectionPoolWithFailover>(pools,
         settings.load_balancing,
         settings.distributed_replica_error_half_life.totalSeconds(),
@@ -490,21 +525,27 @@ bool StorageDistributedDirectoryMonitor::processFiles(const std::map<UInt64, std
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
-    LOG_TRACE(log, "Started processing `{}`", file_path);
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
+    Stopwatch watch;
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.getContext()->getSettingsRef());
 
     try
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
         ReadBufferFromFile in(file_path);
-        const auto & header = readDistributedHeader(in, log);
+        const auto & distributed_header = readDistributedHeader(in, log);
 
-        auto connection = pool->get(timeouts, &header.insert_settings);
+        LOG_DEBUG(log, "Started processing `{}` ({} rows, {} bytes)", file_path,
+            formatReadableQuantity(distributed_header.rows),
+            formatReadableSizeWithBinarySuffix(distributed_header.bytes));
+
+        auto connection = pool->get(timeouts, &distributed_header.insert_settings);
         RemoteBlockOutputStream remote{*connection, timeouts,
-            header.insert_query, header.insert_settings, header.client_info};
+            distributed_header.insert_query,
+            distributed_header.insert_settings,
+            distributed_header.client_info};
         remote.writePrefix();
-        writeRemoteConvert(header, remote, in, log);
+        writeRemoteConvert(distributed_header, remote, in, log);
         remote.writeSuffix();
     }
     catch (const Exception & e)
@@ -515,7 +556,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
     auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, disk, relative_path);
     markAsSend(file_path);
-    LOG_TRACE(log, "Finished processing `{}`", file_path);
+    LOG_TRACE(log, "Finished processing `{}` (took {} ms)", file_path, watch.elapsedMilliseconds());
 }
 
 struct StorageDistributedDirectoryMonitor::BatchHeader
@@ -523,20 +564,21 @@ struct StorageDistributedDirectoryMonitor::BatchHeader
     Settings settings;
     String query;
     ClientInfo client_info;
-    String sample_block_structure;
+    Block header;
 
-    BatchHeader(Settings settings_, String query_, ClientInfo client_info_, String sample_block_structure_)
+    BatchHeader(Settings settings_, String query_, ClientInfo client_info_, Block header_)
         : settings(std::move(settings_))
         , query(std::move(query_))
         , client_info(std::move(client_info_))
-        , sample_block_structure(std::move(sample_block_structure_))
+        , header(std::move(header_))
     {
     }
 
     bool operator==(const BatchHeader & other) const
     {
-        return std::tie(settings, query, client_info.query_kind, sample_block_structure) ==
-               std::tie(other.settings, other.query, other.client_info.query_kind, other.sample_block_structure);
+        return std::tie(settings, query, client_info.query_kind) ==
+               std::tie(other.settings, other.query, other.client_info.query_kind) &&
+               blocksHaveEqualStructure(header, other.header);
     }
 
     struct Hash
@@ -545,7 +587,7 @@ struct StorageDistributedDirectoryMonitor::BatchHeader
         {
             SipHash hash_state;
             hash_state.update(batch_header.query.data(), batch_header.query.size());
-            hash_state.update(batch_header.sample_block_structure.data(), batch_header.sample_block_structure.size());
+            batch_header.header.updateHash(hash_state);
             return hash_state.get64();
         }
     };
@@ -587,6 +629,12 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
+        Stopwatch watch;
+
+        LOG_DEBUG(parent.log, "Sending a batch of {} files ({} rows, {} bytes).", file_indices.size(),
+            formatReadableQuantity(total_rows),
+            formatReadableSizeWithBinarySuffix(total_bytes));
+
         if (!recovered)
         {
             /// For deduplication in Replicated tables to work, in case of error
@@ -613,7 +661,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
             Poco::File{tmp_file}.renameTo(parent.current_batch_file_path);
         }
-        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.global_context.getSettingsRef());
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(parent.storage.getContext()->getSettingsRef());
         auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;
@@ -632,16 +680,17 @@ struct StorageDistributedDirectoryMonitor::Batch
                 }
 
                 ReadBufferFromFile in(file_path->second);
-                const auto & header = readDistributedHeader(in, parent.log);
+                const auto & distributed_header = readDistributedHeader(in, parent.log);
 
                 if (!remote)
                 {
                     remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts,
-                        header.insert_query, header.insert_settings, header.client_info);
+                        distributed_header.insert_query,
+                        distributed_header.insert_settings,
+                        distributed_header.client_info);
                     remote->writePrefix();
                 }
-
-                writeRemoteConvert(header, *remote, in, parent.log);
+                writeRemoteConvert(distributed_header, *remote, in, parent.log);
             }
 
             if (remote)
@@ -660,7 +709,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         if (!batch_broken)
         {
-            LOG_TRACE(parent.log, "Sent a batch of {} files.", file_indices.size());
+            LOG_TRACE(parent.log, "Sent a batch of {} files (took {} ms).", file_indices.size(), watch.elapsedMilliseconds());
 
             auto dir_sync_guard = getDirectorySyncGuard(dir_fsync, parent.disk, parent.relative_path);
             for (UInt64 file_index : file_indices)
@@ -808,22 +857,27 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
 
         size_t total_rows = 0;
         size_t total_bytes = 0;
-        std::string sample_block_structure;
-        DistributedHeader header;
+        Block header;
+        DistributedHeader distributed_header;
         try
         {
             /// Determine metadata of the current file and check if it is not broken.
             ReadBufferFromFile in{file_path};
-            header = readDistributedHeader(in, log);
+            distributed_header = readDistributedHeader(in, log);
 
-            if (header.rows)
+            if (distributed_header.rows)
             {
-                total_rows += header.rows;
-                total_bytes += header.bytes;
-                sample_block_structure = header.header;
+                total_rows += distributed_header.rows;
+                total_bytes += distributed_header.bytes;
             }
-            else
+
+            if (distributed_header.block_header)
+                header = distributed_header.block_header;
+
+            if (!total_rows || !header)
             {
+                LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
+
                 CompressedReadBuffer decompressing_in(in);
                 NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
                 block_in.readPrefix();
@@ -833,8 +887,8 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                     total_rows += block.rows();
                     total_bytes += block.bytes();
 
-                    if (sample_block_structure.empty())
-                        sample_block_structure = block.cloneEmpty().dumpStructure();
+                    if (!header)
+                        header = block.cloneEmpty();
                 }
                 block_in.readSuffix();
             }
@@ -850,7 +904,12 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 throw;
         }
 
-        BatchHeader batch_header(std::move(header.insert_settings), std::move(header.insert_query), std::move(header.client_info), std::move(sample_block_structure));
+        BatchHeader batch_header(
+            std::move(distributed_header.insert_settings),
+            std::move(distributed_header.insert_query),
+            std::move(distributed_header.client_info),
+            std::move(header)
+        );
         Batch & batch = header_to_batch.try_emplace(batch_header, *this, files).first->second;
 
         batch.file_indices.push_back(file_idx);

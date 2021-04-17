@@ -52,7 +52,7 @@ static std::unordered_map<String, String> fetchTablesCreateQuery(
 static std::vector<String> fetchTablesInDB(const mysqlxx::PoolWithFailover::Entry & connection, const std::string & database)
 {
     Block header{{std::make_shared<DataTypeString>(), "table_name"}};
-    String query = "SELECT TABLE_NAME AS table_name FROM INFORMATION_SCHEMA.TABLES  WHERE TABLE_SCHEMA = " + quoteString(database);
+    String query = "SELECT TABLE_NAME AS table_name FROM INFORMATION_SCHEMA.TABLES  WHERE TABLE_TYPE != 'VIEW' AND TABLE_SCHEMA = " + quoteString(database);
 
     std::vector<String> tables_in_db;
     MySQLBlockInputStream input(connection, query, header, DEFAULT_BLOCK_SIZE);

@@ -1085,7 +1085,7 @@ nuraft::ptr<nuraft::log_entry> getLogEntryFromZKRequest(size_t term, int64_t ses
     return nuraft::cs_new<nuraft::log_entry>(term, buffer);
 }
 
-void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, size_t total_logs)
+void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint64_t total_logs)
 {
     using namespace Coordination;
     using namespace DB;

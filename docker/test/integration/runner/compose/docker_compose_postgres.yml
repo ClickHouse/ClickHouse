@@ -11,10 +11,3 @@ services:
             default:
                 aliases:
                     - postgre-sql.local
-    postgres2:
-        image: postgres
-        restart: always
-        environment:
-            POSTGRES_PASSWORD: mysecretpassword
-        ports:
-            - 5441:5432
