@@ -48,12 +48,13 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(
     const std::string & path,
     size_t estimated_size,
     size_t aio_threshold,
-    size_t mmap_threshold,
+    size_t mmap_min_threshold,
+    size_t mmap_max_threshold,
     MMappedFileCache * mmap_cache,
     size_t buf_size,
     bool allow_different_codecs_)
     : BufferWithOwnMemory<ReadBuffer>(0)
-    , p_file_in(createReadBufferFromFileBase(path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size))
+    , p_file_in(createReadBufferFromFileBase(path, estimated_size, aio_threshold, mmap_min_threshold, mmap_max_threshold, mmap_cache, buf_size))
     , file_in(*p_file_in)
 {
     compressed_in = &file_in;

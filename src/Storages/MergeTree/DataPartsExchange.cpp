@@ -292,7 +292,12 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
         writeStringBinary(it.first, out);
         writeBinary(file_size, out);
 
-        auto file_in = createReadBufferFromFileBase(metadata_file, 0, 0, 0, nullptr, DBMS_DEFAULT_BUFFER_SIZE);
+        auto file_in = createReadBufferFromFileBase(metadata_file,
+            /* estimated_size= */ 0,
+            /* aio_threshold= */ 0,
+            /* mmap_min_threshold= */ 0,
+            /* mmap_max_threshold= */ 0,
+            /* mmap_cache= */ nullptr);
         HashingWriteBuffer hashing_out(out);
         copyData(*file_in, hashing_out, blocker.getCounter());
         if (blocker.isCancelled())

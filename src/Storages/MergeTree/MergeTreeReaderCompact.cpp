@@ -85,6 +85,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                         0,
                         settings.min_bytes_to_use_direct_io,
                         settings.min_bytes_to_use_mmap_io,
+                        settings.max_bytes_to_use_mmap_io,
                         settings.mmap_cache.get());
                 },
                 uncompressed_cache,
@@ -109,6 +110,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                         0,
                         settings.min_bytes_to_use_direct_io,
                         settings.min_bytes_to_use_mmap_io,
+                        settings.max_bytes_to_use_mmap_io,
                         settings.mmap_cache.get()),
                     /* allow_different_codecs = */ true);
 

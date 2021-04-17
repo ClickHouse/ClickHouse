@@ -108,16 +108,24 @@ DiskCacheWrapper::readFile(
     size_t buf_size,
     size_t estimated_size,
     size_t aio_threshold,
-    size_t mmap_threshold,
+    size_t mmap_min_threshold,
+    size_t mmap_max_threshold,
     MMappedFileCache * mmap_cache) const
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+        return DiskDecorator::readFile(path,
+            buf_size, estimated_size,
+            aio_threshold,
+            mmap_min_threshold, mmap_max_threshold, mmap_cache);
 
     LOG_DEBUG(&Poco::Logger::get("DiskCache"), "Read file {} from cache", backQuote(path));
 
     if (cache_disk->exists(path))
-        return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+        return cache_disk->readFile(path,
+            buf_size, estimated_size,
+            aio_threshold,
+            mmap_min_threshold, mmap_max_threshold,
+            mmap_cache);
 
     auto metadata = acquireDownloadMetadata(path);
 
@@ -151,7 +159,10 @@ DiskCacheWrapper::readFile(
 
                 auto tmp_path = path + ".tmp";
                 {
-                    auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+                    auto src_buffer = DiskDecorator::readFile(path,
+                        buf_size, estimated_size,
+                        aio_threshold,
+                        mmap_min_threshold, mmap_max_threshold, mmap_cache);
                     auto dst_buffer = cache_disk->writeFile(tmp_path, buf_size, WriteMode::Rewrite);
                     copyData(*src_buffer, *dst_buffer);
                 }
@@ -175,9 +186,15 @@ DiskCacheWrapper::readFile(
     }
 
     if (metadata->status == DOWNLOADED)
-        return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+        return cache_disk->readFile(path,
+            buf_size, estimated_size,
+            aio_threshold,
+            mmap_min_threshold, mmap_max_threshold, mmap_cache);
 
-    return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+    return DiskDecorator::readFile(path,
+        buf_size, estimated_size,
+        aio_threshold,
+        mmap_min_threshold, mmap_max_threshold, mmap_cache);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -197,7 +214,10 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         [this, path, buf_size, mode]()
         {
             /// Copy file from cache to actual disk when cached buffer is finalized.
-            auto src_buffer = cache_disk->readFile(path, buf_size, 0, 0, 0, nullptr);
+            auto src_buffer = cache_disk->readFile(path,
+                buf_size, /* estimated_size= */ 0,
+                /* aio_threshold= */ 0,
+                /* mmap_min_threshold=0 */ 0, /* mmap_max_threshold= */ 0, /* mmap_cache= */ nullptr);
             auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode);
             copyData(*src_buffer, *dst_buffer);
             dst_buffer->finalize();

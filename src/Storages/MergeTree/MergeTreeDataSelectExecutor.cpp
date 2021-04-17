@@ -556,6 +556,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
         .min_bytes_to_use_mmap_io = settings.min_bytes_to_use_mmap_io,
+        .max_bytes_to_use_mmap_io = settings.max_bytes_to_use_mmap_io,
         .mmap_cache = context->getMMappedFileCache(),
         .max_read_buffer_size = settings.max_read_buffer_size,
         .save_marks_in_cache = true,

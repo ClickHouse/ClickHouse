@@ -15,6 +15,7 @@ struct MergeTreeReaderSettings
 {
     size_t min_bytes_to_use_direct_io = 0;
     size_t min_bytes_to_use_mmap_io = 0;
+    size_t max_bytes_to_use_mmap_io = 0;
     MMappedFileCachePtr mmap_cache;
     size_t max_read_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     /// If save_marks_in_cache is false, then, if marks are not in cache,

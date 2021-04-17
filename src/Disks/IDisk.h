@@ -154,7 +154,8 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         size_t estimated_size = 0,
         size_t aio_threshold = 0,
-        size_t mmap_threshold = 0,
+        size_t mmap_min_threshold = 0,
+        size_t mmap_max_threshold = 0,
         MMappedFileCache * mmap_cache = nullptr) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.

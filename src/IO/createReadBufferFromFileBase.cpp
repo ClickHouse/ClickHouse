@@ -21,8 +21,15 @@ namespace DB
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename_,
-    size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache,
-    size_t buffer_size_, int flags_, char * existing_memory_, size_t alignment)
+    size_t estimated_size,
+    size_t aio_threshold,
+    size_t mmap_min_threshold,
+    size_t mmap_max_threshold,
+    MMappedFileCache * mmap_cache,
+    size_t buffer_size_,
+    int flags_,
+    char * existing_memory_,
+    size_t alignment)
 {
 #if defined(OS_LINUX) || defined(__FreeBSD__)
     if (aio_threshold && estimated_size >= aio_threshold)
@@ -45,7 +52,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     (void)estimated_size;
 #endif
 
-    if (!existing_memory_ && mmap_threshold && mmap_cache && estimated_size >= mmap_threshold)
+    if (!existing_memory_ && mmap_min_threshold && mmap_cache && estimated_size >= mmap_min_threshold && (!mmap_max_threshold || estimated_size < mmap_max_threshold))
     {
         try
         {
