@@ -4,7 +4,8 @@
 #include <Common/UnicodeBar.h>
 #include <Databases/DatabaseMemory.h>
 
-namespace DB {
+namespace DB
+{
 bool ProgressBar::getNeedRenderProgress() const
 {
     return need_render_progress;
