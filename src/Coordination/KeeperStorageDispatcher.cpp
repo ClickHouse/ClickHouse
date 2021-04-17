@@ -95,7 +95,7 @@ void KeeperStorageDispatcher::requestThread()
 
                 /// Forcefully process all previous pending requests
                 if (prev_result)
-                    forceWaitAndProcessResult(std::move(prev_result), std::move(prev_batch));
+                    forceWaitAndProcessResult(prev_result, prev_batch);
 
                 /// Process collected write requests batch
                 if (!current_batch.empty())
@@ -105,11 +105,12 @@ void KeeperStorageDispatcher::requestThread()
                     if (result)
                     {
                         if (has_read_request) /// If we will execute read request next, than we have to process result now
-                            forceWaitAndProcessResult(std::move(result), std::move(current_batch));
+                            forceWaitAndProcessResult(result, current_batch);
                     }
                     else
                     {
-                        addErrorResponses(std::move(current_batch), Coordination::Error::ZRUNTIMEINCONSISTENCY);
+                        addErrorResponses(current_batch, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+                        current_batch.clear();
                     }
 
                     prev_batch = current_batch;
@@ -382,7 +383,7 @@ void KeeperStorageDispatcher::finishSession(int64_t session_id)
         session_to_response_callback.erase(session_it);
 }
 
-void KeeperStorageDispatcher::addErrorResponses(KeeperStorage::RequestsForSessions && requests_for_sessions, Coordination::Error error)
+void KeeperStorageDispatcher::addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error)
 {
     for (const auto & [session_id, request] : requests_for_sessions)
     {
@@ -393,24 +394,24 @@ void KeeperStorageDispatcher::addErrorResponses(KeeperStorage::RequestsForSessio
         response->error = error;
         responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response});
     }
-    requests_for_sessions.clear();
 }
 
-void KeeperStorageDispatcher::forceWaitAndProcessResult(RaftAppendResult && result, KeeperStorage::RequestsForSessions && requests_for_sessions)
+void KeeperStorageDispatcher::forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions)
 {
     if (!result->has_result())
         result->get();
 
     /// If we get some errors, than send them to clients
     if (!result->get_accepted() || result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
-        addErrorResponses(std::move(requests_for_sessions), Coordination::Error::ZOPERATIONTIMEOUT);
+        addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
     else if (result->get_result_code() != nuraft::cmd_result_code::OK)
-        addErrorResponses(std::move(requests_for_sessions), Coordination::Error::ZRUNTIMEINCONSISTENCY);
+        addErrorResponses(requests_for_sessions, Coordination::Error::ZRUNTIMEINCONSISTENCY);
 
     result = nullptr;
+    requests_for_sessions.clear();
 }
 
-int64_t KeeperStorageDispatcher::getSessionID(long session_timeout_ms)
+int64_t KeeperStorageDispatcher::getSessionID(int64_t session_timeout_ms)
 {
     KeeperStorage::RequestForSession request_info;
     std::shared_ptr<Coordination::ZooKeeperSessionIDRequest> request = std::make_shared<Coordination::ZooKeeperSessionIDRequest>();
