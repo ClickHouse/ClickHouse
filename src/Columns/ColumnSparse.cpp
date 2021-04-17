@@ -85,6 +85,26 @@ bool ColumnSparse::getBool(size_t n) const
     return values->getBool(getValueIndex(n));
 }
 
+Float64 ColumnSparse::getFloat64(size_t n) const
+{
+    return values->getFloat64(getValueIndex(n));
+}
+
+Float32 ColumnSparse::getFloat32(size_t n) const
+{
+    return values->getFloat32(getValueIndex(n));
+}
+
+UInt64 ColumnSparse::getUInt(size_t n) const
+{
+    return values->getUInt(getValueIndex(n));
+}
+
+Int64 ColumnSparse::getInt(size_t n) const
+{
+    return values->getInt(getValueIndex(n));
+}
+
 UInt64 ColumnSparse::get64(size_t n) const
 {
     return values->get64(getValueIndex(n));
