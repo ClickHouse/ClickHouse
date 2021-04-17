@@ -15,7 +15,7 @@ class FunctionBlockSerializedSize : public IFunction
 public:
     static constexpr auto name = "blockSerializedSize";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionBlockSerializedSize>();
     }
@@ -44,20 +44,18 @@ public:
     {
         ColumnPtr full_column = elem.column->convertToFullColumnIfConst();
 
-        ISerialization::SerializeBinaryBulkSettings settings;
+        IDataType::SerializeBinaryBulkSettings settings;
         NullWriteBuffer out;
 
-        settings.getter = [&out](ISerialization::SubstreamPath) -> WriteBuffer * { return &out; };
+        settings.getter = [&out](IDataType::SubstreamPath) -> WriteBuffer * { return &out; };
 
-        ISerialization::SerializeBinaryBulkStatePtr state;
+        IDataType::SerializeBinaryBulkStatePtr state;
 
-        auto serialization = elem.type->getDefaultSerialization();
-
-        serialization->serializeBinaryBulkStatePrefix(settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(*full_column,
+        elem.type->serializeBinaryBulkStatePrefix(settings, state);
+        elem.type->serializeBinaryBulkWithMultipleStreams(*full_column,
             0 /** offset */, 0 /** limit */,
             settings, state);
-        serialization->serializeBinaryBulkStateSuffix(settings, state);
+        elem.type->serializeBinaryBulkStateSuffix(settings, state);
 
         return out.count();
     }

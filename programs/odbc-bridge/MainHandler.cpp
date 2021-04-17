@@ -7,7 +7,7 @@
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/FormatFactory.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromIStream.h>
@@ -17,18 +17,18 @@
 #include <Poco/ThreadPool.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <common/logger_useful.h>
-#include <Server/HTTP/HTMLForm.h>
-#include "ODBCConnectionFactory.h"
 
 #include <mutex>
 #include <memory>
 
-#include <nanodbc/nanodbc.h>
 
+#if USE_ODBC
+#include <Poco/Data/ODBC/SessionImpl.h>
+#define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
+#endif
 
 namespace DB
 {
-
 namespace
 {
     std::unique_ptr<Block> parseColumns(std::string && column_string)
@@ -41,21 +41,51 @@ namespace
     }
 }
 
-
-void ODBCHandler::processError(HTTPServerResponse & response, const std::string & message)
+using PocoSessionPoolConstructor = std::function<std::shared_ptr<Poco::Data::SessionPool>()>;
+/** Is used to adjust max size of default Poco thread pool. See issue #750
+  * Acquire the lock, resize pool and construct new Session.
+  */
+static std::shared_ptr<Poco::Data::SessionPool> createAndCheckResizePocoSessionPool(PocoSessionPoolConstructor pool_constr)
 {
-    response.setStatusAndReason(HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
+    static std::mutex mutex;
+
+    Poco::ThreadPool & pool = Poco::ThreadPool::defaultPool();
+
+    /// NOTE: The lock don't guarantee that external users of the pool don't change its capacity
+    std::unique_lock lock(mutex);
+
+    if (pool.available() == 0)
+        pool.addCapacity(2 * std::max(pool.capacity(), 1));
+
+    return pool_constr();
+}
+
+ODBCHandler::PoolPtr ODBCHandler::getPool(const std::string & connection_str)
+{
+    std::lock_guard lock(mutex);
+    if (!pool_map->count(connection_str))
+    {
+        pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str]
+        {
+            return std::make_shared<Poco::Data::SessionPool>("ODBC", validateODBCConnectionString(connection_str));
+        }));
+    }
+    return pool_map->at(connection_str);
+}
+
+void ODBCHandler::processError(Poco::Net::HTTPServerResponse & response, const std::string & message)
+{
+    response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
     if (!response.sent())
-        *response.send() << message << std::endl;
+        response.send() << message << std::endl;
     LOG_WARNING(log, message);
 }
 
-
-void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
+void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
-    HTMLForm params(request);
+    Poco::Net::HTMLForm params(request);
     if (mode == "read")
-        params.read(request.getStream());
+        params.read(request.stream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     if (mode == "read" && !params.has("query"))
@@ -106,14 +136,10 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     std::string connection_string = params.get("connection_string");
     LOG_TRACE(log, "Connection string: '{}'", connection_string);
 
-    WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+    WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
 
     try
     {
-        auto connection = ODBCConnectionFactory::instance().get(
-                validateODBCConnectionString(connection_string),
-                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
-
         if (mode == "write")
         {
             if (!params.has("db_name"))
@@ -132,12 +158,16 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
             auto quoting_style = IdentifierQuotingStyle::None;
 #if USE_ODBC
-            quoting_style = getQuotingStyle(*connection);
+            POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
+            quoting_style = getQuotingStyle(session.dbc().handle());
 #endif
-            auto & read_buf = request.getStream();
-            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block, getContext(), max_block_size);
+
+            auto pool = getPool(connection_string);
+            ReadBufferFromIStream read_buf(request.stream());
+            auto input_format = FormatFactory::instance().getInput(format, read_buf, *sample_block,
+                                                                   context, max_block_size);
             auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
-            ODBCBlockOutputStream output_stream(*connection, db_name, table_name, *sample_block, getContext(), quoting_style);
+            ODBCBlockOutputStream output_stream(pool->get(), db_name, table_name, *sample_block, quoting_style);
             copyData(*input_stream, output_stream);
             writeStringBinary("Ok.", out);
         }
@@ -146,8 +176,9 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             std::string query = params.get("query");
             LOG_TRACE(log, "Query: {}", query);
 
-            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, out, *sample_block, getContext());
-            ODBCBlockInputStream inp(*connection, query, *sample_block, max_block_size);
+            BlockOutputStreamPtr writer = FormatFactory::instance().getOutputStream(format, out, *sample_block, context);
+            auto pool = getPool(connection_string);
+            ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
             copyData(inp, *writer);
         }
     }
@@ -156,27 +187,9 @@ void ODBCHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         auto message = getCurrentExceptionMessage(true);
         response.setStatusAndReason(
                 Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, because of too soon response sending
-
-        try
-        {
-            writeStringBinary(message, out);
-            out.finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-
+        writeStringBinary(message, out);
         tryLogCurrentException(log);
-    }
 
-    try
-    {
-        out.finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
     }
 }
 

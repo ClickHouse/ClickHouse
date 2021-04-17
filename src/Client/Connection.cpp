@@ -8,10 +8,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <IO/TimeoutSetter.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
+#include <Client/TimeoutSetter.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -109,8 +109,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-        in->setAsyncCallback(std::move(async_callback));
-
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
@@ -544,21 +542,6 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->add(out->count() - prev_bytes);
 }
 
-void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
-    writeVectorBinary(uuids, *out);
-    out->next();
-}
-
-
-void Connection::sendReadTaskResponse(const String & response)
-{
-    writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
-    writeStringBinary(response, *out);
-    out->next();
-}
 
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
@@ -764,8 +747,15 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-Packet Connection::receivePacket()
+Packet Connection::receivePacket(std::function<void(Poco::Net::Socket &)> async_callback)
 {
+    in->setAsyncCallback(std::move(async_callback));
+    SCOPE_EXIT({
+        /// disconnect() will reset "in".
+        if (in)
+            in->setAsyncCallback({});
+    });
+
     try
     {
         Packet res;
@@ -810,13 +800,6 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::EndOfStream:
-                return res;
-
-            case Protocol::Server::PartUUIDs:
-                readVectorBinary(res.part_uuids, *in);
-                return res;
-
-            case Protocol::Server::ReadTaskRequest:
                 return res;
 
             default:
@@ -919,13 +902,13 @@ void Connection::setDescription()
 }
 
 
-std::unique_ptr<Exception> Connection::receiveException() const
+std::unique_ptr<Exception> Connection::receiveException()
 {
     return std::make_unique<Exception>(readException(*in, "Received from " + getDescription(), true /* remote */));
 }
 
 
-std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
     std::vector<String> strings(num);
@@ -935,7 +918,7 @@ std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
 }
 
 
-Progress Connection::receiveProgress() const
+Progress Connection::receiveProgress()
 {
     Progress progress;
     progress.read(*in, server_revision);
@@ -943,7 +926,7 @@ Progress Connection::receiveProgress() const
 }
 
 
-BlockStreamProfileInfo Connection::receiveProfileInfo() const
+BlockStreamProfileInfo Connection::receiveProfileInfo()
 {
     BlockStreamProfileInfo profile_info;
     profile_info.read(*in);

@@ -261,18 +261,6 @@
                 "with_coverage": false
             }
         },
-        "Functional stateful tests (release, DatabaseReplicated)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "deb",
-                "build_type": "relwithdebuginfo",
-                "sanitizer": "none",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
         "Functional stateless tests (address)": {
             "required_build_properties": {
                 "compiler": "clang-11",
@@ -382,18 +370,6 @@
             }
         },
         "Functional stateless tests (release, DatabaseOrdinary)": {
-            "required_build_properties": {
-                "compiler": "clang-11",
-                "package_type": "deb",
-                "build_type": "relwithdebuginfo",
-                "sanitizer": "none",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
-        "Functional stateless tests (release, DatabaseReplicated)": {
             "required_build_properties": {
                 "compiler": "clang-11",
                 "package_type": "deb",

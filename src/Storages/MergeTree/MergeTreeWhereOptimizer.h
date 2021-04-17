@@ -1,14 +1,11 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/SelectQueryInfo.h>
-
-#include <boost/noncopyable.hpp>
-
 #include <memory>
-#include <set>
 #include <unordered_map>
+#include <set>
+#include <boost/noncopyable.hpp>
+#include <Core/Block.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace Poco { class Logger; }
@@ -35,8 +32,8 @@ class MergeTreeWhereOptimizer : private boost::noncopyable
 public:
     MergeTreeWhereOptimizer(
         SelectQueryInfo & query_info,
-        ContextPtr context,
-        std::unordered_map<std::string, UInt64> column_sizes_,
+        const Context & context,
+        const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & queried_columns_,
         Poco::Logger * log_);
@@ -70,13 +67,15 @@ private:
 
     using Conditions = std::list<Condition>;
 
-    void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const;
+    void analyzeImpl(Conditions & res, const ASTPtr & node) const;
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.
-    Conditions analyze(const ASTPtr & expression, bool is_final) const;
+    Conditions analyze(const ASTPtr & expression) const;
 
     /// Transform Conditions list to WHERE or PREWHERE expression.
     static ASTPtr reconstruct(const Conditions & conditions);
+
+    void calculateColumnSizes(const MergeTreeData & data, const Names & column_names);
 
     void optimizeConjunction(ASTSelectQuery & select, ASTFunction * const fun) const;
 
@@ -88,8 +87,6 @@ private:
 
     bool isPrimaryKeyAtom(const ASTPtr & ast) const;
 
-    bool isSortingKey(const String & column_name) const;
-
     bool isConstant(const ASTPtr & expr) const;
 
     bool isSubsetOfTableColumns(const NameSet & identifiers) const;
@@ -100,7 +97,7 @@ private:
       *
       * Also, disallow moving expressions with GLOBAL [NOT] IN.
       */
-    bool cannotBeMoved(const ASTPtr & ptr, bool is_final) const;
+    bool cannotBeMoved(const ASTPtr & ptr) const;
 
     void determineArrayJoinedNames(ASTSelectQuery & select);
 
@@ -109,7 +106,6 @@ private:
     String first_primary_key_column;
     const StringSet table_columns;
     const Names queried_columns;
-    const NameSet sorting_key_names;
     const Block block_with_constants;
     Poco::Logger * log;
     std::unordered_map<std::string, UInt64> column_sizes;

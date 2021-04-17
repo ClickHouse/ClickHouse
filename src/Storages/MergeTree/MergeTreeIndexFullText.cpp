@@ -166,7 +166,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
 
 MergeTreeConditionFullText::MergeTreeConditionFullText(
     const SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
     TokenExtractorPtr token_extactor_)
@@ -179,7 +179,7 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
     rpn = std::move(
             RPNBuilder<RPNElement>(
                     query_info, context,
-                    [this] (const ASTPtr & node, ContextPtr /* context */, Block & block_with_constants, RPNElement & out) -> bool
+                    [this] (const ASTPtr & node, const Context & /* context */, Block & block_with_constants, RPNElement & out) -> bool
                     {
                         return this->atomFromAST(node, block_with_constants, out);
                     }).extractRPN());
@@ -370,7 +370,7 @@ bool MergeTreeConditionFullText::atomFromAST(
             return false;
         }
 
-        if (key_arg_pos == 1 && (func_name != "equals" && func_name != "notEquals"))
+        if (key_arg_pos == 1 && (func_name != "equals" || func_name != "notEquals"))
             return false;
         else if (!token_extractor->supportLike() && (func_name == "like" || func_name == "notLike"))
             return false;
@@ -566,7 +566,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator() cons
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
-        const SelectQueryInfo & query, ContextPtr context) const
+        const SelectQueryInfo & query, const Context & context) const
 {
     return std::make_shared<MergeTreeConditionFullText>(query, context, index.sample_block, params, token_extractor.get());
 };

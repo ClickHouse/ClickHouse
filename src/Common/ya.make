@@ -14,7 +14,7 @@ PEERDIR(
     clickhouse/base/common
     clickhouse/base/pcg-random
     clickhouse/base/widechar_width
-    contrib/libs/libcpuid
+    contrib/libs/libcpuid/libcpuid
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
@@ -39,7 +39,6 @@ SRCS(
     DNSResolver.cpp
     Dwarf.cpp
     Elf.cpp
-    Epoll.cpp
     ErrorCodes.cpp
     Exception.cpp
     ExternalLoaderStatus.cpp
@@ -84,6 +83,8 @@ SRCS(
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
+    ZooKeeper/TestKeeperStorage.cpp
+    ZooKeeper/TestKeeperStorageDispatcher.cpp
     ZooKeeper/ZooKeeper.cpp
     ZooKeeper/ZooKeeperCommon.cpp
     ZooKeeper/ZooKeeperConstants.cpp

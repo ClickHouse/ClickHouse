@@ -1,23 +1,21 @@
 #pragma once
 
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/Block.h>
-#include <Core/ColumnNumbers.h>
-#include <Core/Field.h>
-#include <Interpreters/Context_fwd.h>
-#include <Common/Exception.h>
-#include <common/types.h>
-
 #include <cstddef>
 #include <memory>
 #include <type_traits>
 #include <vector>
 
+#include <common/types.h>
+#include <Common/Exception.h>
+#include <Core/Block.h>
+#include <Core/ColumnNumbers.h>
+#include <Core/Field.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -28,7 +26,6 @@ class ReadBuffer;
 class WriteBuffer;
 class IColumn;
 class IDataType;
-class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
@@ -75,10 +72,10 @@ public:
     /** Create empty data for aggregation with `placement new` at the specified location.
       * You will have to destroy them using the `destroy` method.
       */
-    virtual void create(AggregateDataPtr __restrict place) const = 0;
+    virtual void create(AggregateDataPtr place) const = 0;
 
     /// Delete data for aggregation.
-    virtual void destroy(AggregateDataPtr __restrict place) const noexcept = 0;
+    virtual void destroy(AggregateDataPtr place) const noexcept = 0;
 
     /// It is not necessary to delete data.
     virtual bool hasTrivialDestructor() const = 0;
@@ -94,19 +91,19 @@ public:
      *  row_num is number of row which should be added.
      *  Additional parameter arena should be used instead of standard memory allocator if the addition requires memory allocation.
      */
-    virtual void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
+    virtual void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
 
     /// Merges state (on which place points to) with other state of current aggregation function.
-    virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
+    virtual void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
     /// Serializes state (to transmit it over the network, for example).
-    virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const = 0;
+    virtual void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const = 0;
 
     /// Deserializes state. This function is called only for empty (just created) states.
-    virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const = 0;
+    virtual void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
-    virtual bool allocatesMemoryInArena() const = 0;
+    virtual bool allocatesMemoryInArena() const { return false; }
 
     /// Inserts results into a column. This method might modify the state (e.g.
     /// sort an array), so must be called once, from single thread. The state
@@ -114,7 +111,7 @@ public:
     /// insertResultInto must work correctly. This kind of call sequence occurs
     /// in `runningAccumulate`, or when calculating an aggregate function as a
     /// window function.
-    virtual void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const = 0;
+    virtual void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const = 0;
 
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
@@ -124,7 +121,7 @@ public:
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
-        ContextPtr /*context*/) const
+        const Context & /*context*/) const
     {
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -218,20 +215,6 @@ public:
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
 
-    // Any aggregate function can be calculated over a window, but there are some
-    // window functions such as rank() that require a different interface, e.g.
-    // because they don't respect the window frame, or need to be notified when
-    // a new peer group starts. They pretend to be normal aggregate functions,
-    // but will fail if you actually try to use them in Aggregator. The
-    // WindowTransform recognizes these functions and handles them differently.
-    // We could have a separate factory for window functions, and make all
-    // aggregate functions implement IWindowFunction interface and so on. This
-    // would be more logically correct, but more complex. We only have a handful
-    // of true window functions, so this hack-ish interface suffices.
-    virtual IWindowFunction * asWindowFunction() { return nullptr; }
-    virtual const IWindowFunction * asWindowFunction() const
-    { return const_cast<IAggregateFunction *>(this)->asWindowFunction(); }
-
 protected:
     DataTypes argument_types;
     Array parameters;
@@ -269,15 +252,14 @@ public:
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = 0; i < batch_size; ++i)
             {
-                if (flags[i] && places[i])
+                if (flags[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
             }
         }
         else
         {
             for (size_t i = 0; i < batch_size; ++i)
-                if (places[i])
-                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
         }
     }
 
@@ -352,8 +334,7 @@ public:
         {
             size_t next_offset = offsets[i];
             for (size_t j = current_offset; j < next_offset; ++j)
-                if (places[i])
-                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
         }
     }
@@ -406,8 +387,8 @@ class IAggregateFunctionDataHelper : public IAggregateFunctionHelper<Derived>
 protected:
     using Data = T;
 
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
-    static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
+    static Data & data(AggregateDataPtr place) { return *reinterpret_cast<Data *>(place); }
+    static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data *>(place); }
 
 public:
     // Derived class can `override` this to flag that DateTime64 is not supported.
@@ -418,9 +399,9 @@ public:
     {
     }
 
-    void create(AggregateDataPtr __restrict place) const override { new (place) Data; }
+    void create(AggregateDataPtr place) const override { new (place) Data; }
 
-    void destroy(AggregateDataPtr __restrict place) const noexcept override { data(place).~Data(); }
+    void destroy(AggregateDataPtr place) const noexcept override { data(place).~Data(); }
 
     bool hasTrivialDestructor() const override { return std::is_trivially_destructible_v<Data>; }
 

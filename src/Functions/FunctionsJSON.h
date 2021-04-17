@@ -25,7 +25,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Context.h>
 #include <ext/range.h>
-#include <type_traits>
 #include <boost/tti/has_member_function.hpp>
 
 #if !defined(ARCADIA_BUILD)
@@ -270,11 +269,11 @@ private:
 
 
 template <typename Name, template<typename> typename Impl>
-class FunctionJSON : public IFunction, WithContext
+class FunctionJSON : public IFunction
 {
 public:
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionJSON>(context_); }
-    FunctionJSON(ContextPtr context_) : WithContext(context_) {}
+    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionJSON>(context_); }
+    FunctionJSON(const Context & context_) : context(context_) {}
 
     static constexpr auto name = Name::name;
     String getName() const override { return Name::name; }
@@ -291,7 +290,7 @@ public:
     {
         /// Choose JSONParser.
 #if USE_SIMDJSON
-        if (getContext()->getSettingsRef().allow_simdjson)
+        if (context.getSettingsRef().allow_simdjson)
             return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
 
@@ -301,6 +300,9 @@ public:
         return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser>::run(arguments, result_type, input_rows_count);
 #endif
     }
+
+private:
+    const Context & context;
 };
 
 
@@ -505,20 +507,11 @@ public:
         }
         else if (element.isDouble())
         {
-            if constexpr (std::is_floating_point_v<NumberType>)
-            {
-                /// We permit inaccurate conversion of double to float.
-                /// Example: double 0.1 from JSON is not representable in float.
-                /// But it will be more convenient for user to perform conversion.
-                value = element.getDouble();
-            }
-            else if (!accurate::convertNumeric(element.getDouble(), value))
+            if (!accurate::convertNumeric(element.getDouble(), value))
                 return false;
         }
         else if (element.isBool() && is_integer_v<NumberType> && convert_bool_to_integer)
-        {
             value = static_cast<NumberType>(element.getBool());
-        }
         else
             return false;
 
@@ -610,8 +603,8 @@ struct JSONExtractTree
     class Node
     {
     public:
-        Node() = default;
-        virtual ~Node() = default;
+        Node() {}
+        virtual ~Node() {}
         virtual bool insertResultToColumn(IColumn &, const Element &) = 0;
     };
 

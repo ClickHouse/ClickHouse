@@ -1,21 +1,16 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-
-#include <memory>
-#include <string>
 #include <unordered_map>
+#include <string>
 
 
 namespace DB
 {
 
 class Block;
+class Context;
 class NamesAndTypesList;
 class ColumnsDescription;
-
-class ActionsDAG;
-using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 /** Adds three types of columns into block
   * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)
@@ -23,6 +18,10 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
   * 3. Columns that materialized from other columns (materialized columns)
   * All three types of columns are materialized (not constants).
   */
-ActionsDAGPtr addMissingDefaults(
-    const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, ContextPtr context);
+Block addMissingDefaults(
+    const Block & block,
+    const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns,
+    const Context & context);
+
 }

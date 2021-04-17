@@ -7,87 +7,75 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Core/Block.h>
 #include <Storages/ColumnsDescription.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/materialize.h>
 
 
 namespace DB
 {
 
-ActionsDAGPtr addMissingDefaults(
-    const Block & header,
+Block addMissingDefaults(
+    const Block & block,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
-    ContextPtr context)
+    const Context & context)
 {
-    auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
-    auto & index = actions->getIndex();
-
     /// For missing columns of nested structure, you need to create not a column of empty arrays, but a column of arrays of correct lengths.
     /// First, remember the offset columns for all arrays in the block.
-    std::map<String, ActionsDAG::NodeRawConstPtrs> nested_groups;
+    std::map<String, ColumnPtr> offset_columns;
 
-    for (size_t i = 0, size = header.columns(); i < size; ++i)
+    for (size_t i = 0, size = block.columns(); i < size; ++i)
     {
-        const auto & elem = header.getByPosition(i);
+        const auto & elem = block.getByPosition(i);
 
-        if (typeid_cast<const ColumnArray *>(&*elem.column))
+        if (const ColumnArray * array = typeid_cast<const ColumnArray *>(&*elem.column))
         {
             String offsets_name = Nested::extractTableName(elem.name);
+            auto & offsets_column = offset_columns[offsets_name];
 
-            auto & group = nested_groups[offsets_name];
-            if (group.empty())
-                group.push_back(nullptr);
-
-            group.push_back(actions->getInputs()[i]);
+            /// If for some reason there are different offset columns for one nested structure, then we take nonempty.
+            if (!offsets_column || offsets_column->empty())
+                offsets_column = array->getOffsetsPtr();
         }
     }
 
-    FunctionOverloadResolverPtr func_builder_replicate = FunctionFactory::instance().get("replicate", context);
+    const size_t rows = block.rows();
+    Block res;
 
     /// We take given columns from input block and missed columns without default value
     /// (default and materialized will be computed later).
     for (const auto & column : required_columns)
     {
-        if (header.has(column.name))
+        if (block.has(column.name))
+        {
+            res.insert(block.getByName(column.name));
             continue;
+        }
 
         if (columns.hasDefault(column.name))
             continue;
 
         String offsets_name = Nested::extractTableName(column.name);
-        if (nested_groups.count(offsets_name))
+        if (offset_columns.count(offsets_name))
         {
-
+            ColumnPtr offsets_column = offset_columns[offsets_name];
             DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column.type).getNestedType();
-            ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(0);
-            const auto & constant = actions->addColumn({std::move(nested_column), nested_type, column.name});
+            UInt64 nested_rows = rows ? get<UInt64>((*offsets_column)[rows - 1]) : 0;
 
-            auto & group = nested_groups[offsets_name];
-            group[0] = &constant;
-            index.push_back(&actions->addFunction(func_builder_replicate, group, constant.result_name));
-
+            ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
+            auto new_column = ColumnArray::create(nested_column, offsets_column);
+            res.insert(ColumnWithTypeAndName(std::move(new_column), column.type, column.name));
             continue;
         }
 
         /** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
         *  it can be full (or the interpreter may decide that it is constant everywhere).
         */
-        auto new_column = column.type->createColumnConstWithDefaultValue(0);
-        const auto * col = &actions->addColumn({std::move(new_column), column.type, column.name});
-        index.push_back(&actions->materializeNode(*col));
+        auto new_column = column.type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
+        res.insert(ColumnWithTypeAndName(std::move(new_column), column.type, column.name));
     }
 
     /// Computes explicitly specified values by default and materialized columns.
-    if (auto dag = evaluateMissingDefaults(actions->getResultColumns(), required_columns, columns, context))
-        actions = ActionsDAG::merge(std::move(*actions), std::move(*dag));
-    else
-        /// Removes unused columns and reorders result.
-        /// The same is done in evaluateMissingDefaults if not empty dag is returned.
-        actions->removeUnusedActions(required_columns.getNames());
-
-    return actions;
+    evaluateMissingDefaults(res, required_columns, columns, context);
+    return res;
 }
 
 }

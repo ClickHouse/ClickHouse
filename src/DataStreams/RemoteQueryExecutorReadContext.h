@@ -7,9 +7,7 @@
 #include <Common/Fiber.h>
 #include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
-#include <Common/Epoll.h>
 #include <Client/Connection.h>
-#include <Client/IConnections.h>
 #include <Poco/Timespan.h>
 
 namespace Poco::Net
@@ -35,30 +33,27 @@ public:
     std::mutex fiber_lock;
 
     Poco::Timespan receive_timeout;
-    IConnections & connections;
+    MultiplexedConnections & connections;
     Poco::Net::Socket * last_used_socket = nullptr;
 
     /// Here we have three descriptors we are going to wait:
-    /// * connection_fd is a descriptor of connection. It may be changed in case of reading from several replicas.
+    /// * socket_fd is a descriptor of connection. It may be changed in case of reading from several replicas.
     /// * timer is a timerfd descriptor to manually check socket timeout
     /// * pipe_fd is a pipe we use to cancel query and socket polling by executor.
-    /// We put those descriptors into our own epoll which is used by external executor.
+    /// We put those descriptors into our own epoll_fd which is used by external executor.
     TimerDescriptor timer{CLOCK_MONOTONIC, 0};
     bool is_timer_alarmed = false;
-    int connection_fd = -1;
+    int socket_fd = -1;
+    int epoll_fd = -1;
     int pipe_fd[2] = { -1, -1 };
 
-    Epoll epoll;
-
-    std::string connection_fd_description;
-
-    explicit RemoteQueryExecutorReadContext(IConnections & connections_);
+    explicit RemoteQueryExecutorReadContext(MultiplexedConnections & connections_);
     ~RemoteQueryExecutorReadContext();
 
     bool checkTimeout(bool blocking = false);
     bool checkTimeoutImpl(bool blocking);
 
-    void setConnectionFD(int fd, const Poco::Timespan & timeout = 0, const std::string & fd_description = "");
+    void setSocket(Poco::Net::Socket & socket);
     void setTimer() const;
 
     bool resumeRoutine();

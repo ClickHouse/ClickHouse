@@ -21,10 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-const String & getFunctionCanonicalNameIfAny(const String & name)
-{
-    return FunctionFactory::instance().getCanonicalNameIfAny(name);
-}
 
 void FunctionFactory::registerFunction(const
     std::string & name,
@@ -40,19 +36,16 @@ void FunctionFactory::registerFunction(const
         throw Exception("FunctionFactory: the function name '" + name + "' is already registered as alias",
                         ErrorCodes::LOGICAL_ERROR);
 
-    if (case_sensitiveness == CaseInsensitive)
-    {
-        if (!case_insensitive_functions.emplace(function_name_lowercase, creator).second)
-            throw Exception("FunctionFactory: the case insensitive function name '" + name + "' is not unique",
-                ErrorCodes::LOGICAL_ERROR);
-        case_insensitive_name_mapping[function_name_lowercase] = name;
-    }
+    if (case_sensitiveness == CaseInsensitive
+        && !case_insensitive_functions.emplace(function_name_lowercase, creator).second)
+        throw Exception("FunctionFactory: the case insensitive function name '" + name + "' is not unique",
+                        ErrorCodes::LOGICAL_ERROR);
 }
 
 
 FunctionOverloadResolverImplPtr FunctionFactory::getImpl(
     const std::string & name,
-    ContextPtr context) const
+    const Context & context) const
 {
     auto res = tryGetImpl(name, context);
     if (!res)
@@ -82,14 +75,14 @@ std::vector<std::string> FunctionFactory::getAllNames() const
 
 FunctionOverloadResolverPtr FunctionFactory::get(
     const std::string & name,
-    ContextPtr context) const
+    const Context & context) const
 {
     return std::make_shared<FunctionOverloadResolverAdaptor>(getImpl(name, context));
 }
 
 FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
-    ContextPtr context) const
+    const Context & context) const
 {
     String name = getAliasToOrName(name_param);
     FunctionOverloadResolverImplPtr res;
@@ -99,8 +92,7 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
         res = it->second(context);
     else
     {
-        name = Poco::toLower(name);
-        it = case_insensitive_functions.find(name);
+        it = case_insensitive_functions.find(Poco::toLower(name));
         if (case_insensitive_functions.end() != it)
             res = it->second(context);
     }
@@ -110,7 +102,7 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
 
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        const auto * query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef().log_queries)
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
     }
@@ -120,7 +112,7 @@ FunctionOverloadResolverImplPtr FunctionFactory::tryGetImpl(
 
 FunctionOverloadResolverPtr FunctionFactory::tryGet(
         const std::string & name,
-        ContextPtr context) const
+        const Context & context) const
 {
     auto impl = tryGetImpl(name, context);
     return impl ? std::make_shared<FunctionOverloadResolverAdaptor>(std::move(impl))

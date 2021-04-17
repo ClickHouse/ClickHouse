@@ -17,22 +17,22 @@ namespace ErrorCodes
 using EntityType = IAccessEntity::Type;
 
 
-InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, ContextPtr context_)
-    : WithContext(context_), query_ptr(query_ptr_)
+InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, Context & context_)
+    : query_ptr(query_ptr_), context(context_)
 {
 }
 
 
 BlockIO InterpreterShowAccessEntitiesQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), true);
+    return executeQuery(getRewrittenQuery(), context, true);
 }
 
 
 String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
 {
     auto & query = query_ptr->as<ASTShowAccessEntitiesQuery &>();
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
     String origin;
     String expr = "*";
     String filter, order;

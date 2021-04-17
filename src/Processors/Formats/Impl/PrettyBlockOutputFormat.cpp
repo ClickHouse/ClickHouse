@@ -59,8 +59,7 @@ void PrettyBlockOutputFormat::calculateWidths(
         {
             {
                 WriteBufferFromString out_serialize(serialized_value);
-                auto serialization = elem.type->getDefaultSerialization();
-                serialization->serializeText(*column, j, out_serialize, format_settings);
+                elem.type->serializeAsText(*column, j, out_serialize, format_settings);
             }
 
             /// Avoid calculating width of too long strings by limiting the size in bytes.
@@ -154,10 +153,6 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
     auto num_columns = chunk.getNumColumns();
     const auto & columns = chunk.getColumns();
     const auto & header = getPort(port_kind).getHeader();
-
-    Serializations serializations(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -295,10 +290,11 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
         {
             if (j != 0)
                 writeCString(grid_symbols.bar, out);
+
             const auto & type = *header.getByPosition(j).type;
-            writeValueWithPadding(*columns[j], *serializations[j], i,
+            writeValueWithPadding(*columns[j], type, i,
                 widths[j].empty() ? max_widths[j] : widths[j][i],
-                max_widths[j], type.shouldAlignRightInPrettyFormats());
+                max_widths[j]);
         }
 
         writeCString(grid_symbols.bar, out);
@@ -317,13 +313,12 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
 
 
 void PrettyBlockOutputFormat::writeValueWithPadding(
-    const IColumn & column, const ISerialization & serialization, size_t row_num,
-    size_t value_width, size_t pad_to_width, bool align_right)
+        const IColumn & column, const IDataType & type, size_t row_num, size_t value_width, size_t pad_to_width)
 {
     String serialized_value = " ";
     {
         WriteBufferFromString out_serialize(serialized_value, WriteBufferFromString::AppendModeTag());
-        serialization.serializeText(column, row_num, out_serialize, format_settings);
+        type.serializeAsText(column, row_num, out_serialize, format_settings);
     }
 
     if (value_width > format_settings.pretty.max_value_width)
@@ -353,7 +348,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
                 writeChar(' ', out);
     };
 
-    if (align_right)
+    if (type.shouldAlignRightInPrettyFormats())
     {
         write_padding();
         out.write(serialized_value.data(), serialized_value.size());

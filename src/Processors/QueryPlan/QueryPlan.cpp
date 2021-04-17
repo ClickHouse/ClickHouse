@@ -7,8 +7,6 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <stack>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
 namespace DB
 {
@@ -132,12 +130,10 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                     " input expected", ErrorCodes::LOGICAL_ERROR);
 }
 
-QueryPipelinePtr QueryPlan::buildQueryPipeline(
-    const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
+QueryPipelinePtr QueryPlan::buildQueryPipeline()
 {
     checkInitialized();
-    optimize(optimization_settings);
+    optimize();
 
     struct Frame
     {
@@ -164,7 +160,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
         if (next_child == frame.node->children.size())
         {
             bool limit_max_threads = frame.pipelines.empty();
-            last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines), build_pipeline_settings);
+            last_pipeline = frame.node->step->updatePipeline(std::move(frame.pipelines));
 
             if (limit_max_threads && max_threads)
                 last_pipeline->limitMaxThreads(max_threads);
@@ -181,9 +177,7 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
     return last_pipeline;
 }
 
-Pipe QueryPlan::convertToPipe(
-    const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
+Pipe QueryPlan::convertToPipe()
 {
     if (!isInitialized())
         return {};
@@ -191,7 +185,7 @@ Pipe QueryPlan::convertToPipe(
     if (isCompleted())
         throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
 
-    return QueryPipeline::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
+    return QueryPipeline::getPipe(std::move(*buildQueryPipeline()));
 }
 
 void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
@@ -339,9 +333,9 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
     }
 }
 
-void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
+void QueryPlan::optimize()
 {
-    QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
+    QueryPlanOptimizations::optimizeTree(*root, nodes);
 }
 
 }

@@ -62,7 +62,7 @@ class Backport:
         RE_NO_BACKPORT = re.compile(r'^v(\d+\.\d+)-no-backport$')
         RE_BACKPORTED = re.compile(r'^v(\d+\.\d+)-backported$')
 
-        # pull-requests are sorted by ancestry from the most recent.
+        # pull-requests are sorted by ancestry from the least recent.
         for pr in pull_requests:
             while repo.comparator(branches[-1][1]) >= repo.comparator(pr['mergeCommit']['oid']):
                 logging.info("PR #{} is already inside {}. Dropping this branch for further PRs".format(pr['number'], branches[-1][0]))
@@ -76,7 +76,7 @@ class Backport:
 
             # First pass. Find all must-backports
             for label in pr['labels']['nodes']:
-                if label['name'] == 'pr-bugfix' or label['name'] == 'pr-must-backport':
+                if label['name'] == 'pr-bugfix':
                     backport_map[pr['number']] = branch_set.copy()
                     continue
                 matched = RE_MUST_BACKPORT.match(label['name'])

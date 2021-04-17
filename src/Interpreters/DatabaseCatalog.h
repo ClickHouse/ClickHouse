@@ -1,28 +1,25 @@
 #pragma once
-
-#include <Core/UUID.h>
-#include <Interpreters/Context_fwd.h>
+#include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
-#include <Storages/IStorage_fwd.h>
-
-#include <boost/noncopyable.hpp>
+#include <Core/UUID.h>
 #include <Poco/Logger.h>
-
-#include <array>
-#include <list>
-#include <map>
+#include <boost/noncopyable.hpp>
 #include <memory>
-#include <mutex>
+#include <map>
 #include <set>
-#include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <mutex>
+#include <shared_mutex>
+#include <array>
+#include <list>
 
 
 namespace DB
 {
 
+class Context;
 class IDatabase;
 class Exception;
 class ColumnsDescription;
@@ -54,16 +51,8 @@ public:
     /// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
     using Map = std::map<String, Entry>;
 
-    DDLGuard(
-        Map & map_,
-        std::shared_mutex & db_mutex_,
-        std::unique_lock<std::mutex> guards_lock_,
-        const String & elem,
-        const String & database_name);
+    DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name);
     ~DDLGuard();
-
-    /// Unlocks table name, keeps holding read lock for database name
-    void releaseTableLock() noexcept;
 
 private:
     Map & map;
@@ -71,26 +60,24 @@ private:
     Map::iterator it;
     std::unique_lock<std::mutex> guards_lock;
     std::unique_lock<std::mutex> table_lock;
-    bool table_lock_removed = false;
-    bool is_database_guard = false;
-};
 
-using DDLGuardPtr = std::unique_ptr<DDLGuard>;
+    void removeTableLock();
+};
 
 
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
 /// Removes the table from database on destruction.
 /// TemporaryTableHolder object can be attached to a query or session Context, so table will be accessible through the context.
-struct TemporaryTableHolder : boost::noncopyable, WithContext
+struct TemporaryTableHolder : boost::noncopyable
 {
-    using Creator = std::function<StoragePtr (const StorageID &)>;
+    typedef std::function<StoragePtr(const StorageID &)> Creator;
 
-    TemporaryTableHolder(ContextPtr context, const Creator & creator, const ASTPtr & query = {});
+    TemporaryTableHolder(const Context & context, const Creator & creator, const ASTPtr & query = {});
 
     /// Creates temporary table with Engine=Memory
     TemporaryTableHolder(
-        ContextPtr context,
+        const Context & context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         const ASTPtr & query = {},
@@ -107,6 +94,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     operator bool () const { return id != UUIDHelpers::Nil; }
 
+    const Context & global_context;
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
 };
@@ -116,21 +104,20 @@ using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHo
 
 class BackgroundSchedulePoolTaskHolder;
 
-/// For some reason Context is required to get Storage from Database object
-class DatabaseCatalog : boost::noncopyable, WithContext
+class DatabaseCatalog : boost::noncopyable
 {
 public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
 
-    static DatabaseCatalog & init(ContextPtr global_context_);
+    static DatabaseCatalog & init(Context & global_context_);
     static DatabaseCatalog & instance();
     static void shutdown();
 
     void loadDatabases();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
-    DDLGuardPtr getDDLGuard(const String & database, const String & table);
+    std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table);
     /// Get an object that protects the database from concurrent DDL queries all tables in the database
     std::unique_lock<std::shared_mutex> getExclusiveDDLGuardForDatabase(const String & database);
 
@@ -154,19 +141,19 @@ public:
     Databases getDatabases() const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
-    DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
+    DatabasePtr getDatabase(const String & database_name, const Context & local_context) const;
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
-    void assertTableDoesntExist(const StorageID & table_id, ContextPtr context) const;
-    bool isTableExist(const StorageID & table_id, ContextPtr context) const;
+    void assertTableDoesntExist(const StorageID & table_id, const Context & context) const;
+    bool isTableExist(const StorageID & table_id, const Context & context) const;
     bool isDictionaryExist(const StorageID & table_id) const;
 
-    StoragePtr getTable(const StorageID & table_id, ContextPtr context) const;
-    StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
+    StoragePtr getTable(const StorageID & table_id, const Context & context) const;
+    StoragePtr tryGetTable(const StorageID & table_id, const Context & context) const;
+    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, const Context & context) const;
+    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, const Context & context) const;
     DatabaseAndTable getTableImpl(const StorageID & table_id,
-                                  ContextPtr context,
+                                  const Context & context,
                                   std::optional<Exception> * exception = nullptr) const;
 
     void addDependency(const StorageID & from, const StorageID & where);
@@ -200,6 +187,9 @@ public:
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
 
+    /// Try convert qualified dictionary name to persistent UUID
+    String resolveDictionaryName(const String & name) const;
+
     void waitTableFinallyDropped(const UUID & uuid);
 
 private:
@@ -208,7 +198,7 @@ private:
     // make emplace(global_context_) compile with private constructor ¯\_(ツ)_/¯.
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
-    explicit DatabaseCatalog(ContextPtr global_context_);
+    DatabaseCatalog(Context & global_context_);
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 
@@ -224,7 +214,7 @@ private:
     static constexpr UInt64 bits_for_first_level = 4;
     using UUIDToStorageMap = std::array<UUIDToStorageMapPart, 1ull << bits_for_first_level>;
 
-    static inline size_t getFirstLevelIdx(const UUID & uuid)
+    inline size_t getFirstLevelIdx(const UUID & uuid) const
     {
         return uuid.toUnderType().low >> (64 - bits_for_first_level);
     }
@@ -245,8 +235,11 @@ private:
     static constexpr size_t reschedule_time_ms = 100;
     static constexpr time_t drop_error_cooldown_sec = 5;
 
+private:
     using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
 
+    /// For some reason Context is required to get Storage from Database object
+    Context & global_context;
     mutable std::mutex databases_mutex;
 
     ViewDependencies view_dependencies;
