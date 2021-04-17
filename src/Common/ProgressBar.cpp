@@ -21,9 +21,14 @@ size_t ProgressBar::getWrittenProgressChars() const
     return written_progress_chars;
 }
 
-bool ProgressBar::isWrittenFirstBlock() const
+bool ProgressBar::getWrittenFirstBlock() const
 {
     return written_first_block;
+}
+
+bool ProgressBar::getClearProgress() const
+{
+    return clear_progress;
 }
 
 void ProgressBar::setNeedRenderProgress(bool needRenderProgress)
@@ -44,6 +49,11 @@ void ProgressBar::setWrittenProgressChars(size_t writtenProgressChars)
 void ProgressBar::setWrittenFirstBlock(bool writtenFirstBlock)
 {
     written_first_block = writtenFirstBlock;
+}
+
+void ProgressBar::setClearProgress(bool clearProgress)
+{
+    clear_progress = clearProgress;
 }
 
 bool ProgressBar::updateProgress(Progress &progress, const Progress &value)
@@ -138,4 +148,14 @@ void ProgressBar::writeProgress(const Progress &progress, const Stopwatch &watch
 
     message.next();
 }
+
+void ProgressBar::clearProgress()
+{
+    if (written_progress_chars)
+    {
+        written_progress_chars = 0;
+        std::cerr << "\r" CLEAR_TO_END_OF_LINE;
+    }
+}
+
 }

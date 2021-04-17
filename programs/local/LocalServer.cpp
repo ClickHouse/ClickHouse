@@ -399,7 +399,7 @@ void LocalServer::processQueries()
                                      return true;
                                  }
                                  );
-
+    progress_bar.clearProgress();
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;
 
