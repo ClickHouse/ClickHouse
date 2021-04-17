@@ -462,8 +462,9 @@ class IColumn;
     \
     M(Bool, database_replicated_ddl_output, true, "Obsolete setting, does nothing. Will be removed after 2021-09-08", 0) \
     M(HandleKafkaErrorMode, handle_kafka_error_mode, HandleKafkaErrorMode::DEFAULT, "How to handle errors for Kafka engine. Passible values: default, stream.", 0) \
-    M(UInt64, limit, 0, "Limit on read rows from the most 'end' result for select query, default 0 means no limit length", 0) \
-    M(UInt64, offset, 0, "Offset on read rows from the most 'end' result for select query", 0) \
+    M(UInt64, limit, 0, "Limit on read rows from the most 'end' result for select query, default 0 means no limit. This limit is combined with LIMIT in the query if it is exist - treat it as one final limit on the result. It is useful to implement pagination in APIs without the need of editing SQL query.", 0) \
+    M(UInt64, offset, 0, "Offset on read rows from the most 'end' result for select query. See the setting `limit`.", 0) \
+    M(UInt64, default_limit, 0, "If the outermost SELECT query does not have LIMIT (or TOP) clause, add it with this value. By default (0) means - no default limit. If SELECT already has LIMIT, this setting is ignored. Note that this setting differs from both `limit` (the final limit that is always enforced) and `max_result_rows` (works on per-block basis, allow to throw exception) settings. The `default_limit` setting is compatible to the `SQL_SELECT_LIMIT` setting in MySQL.", 0) \
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS below.

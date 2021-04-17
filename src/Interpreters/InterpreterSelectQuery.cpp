@@ -782,8 +782,16 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
         if (query.limitOffset() && length)
             offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
     }
-    else if (query.limitOffset())
-        offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
+    else
+    {
+        length = context->getSettingsRef().default_limit;
+
+        if (query.limitOffset())
+        {
+            offset = getLimitUIntValue(query.limitOffset(), context, "OFFSET");
+        }
+    }
+
     return {length, offset};
 }
 
@@ -791,7 +799,11 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, ContextPtr context)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
-    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList() && query.limitLength())
+    if (!query.distinct
+        && !query.limitBy()
+        && !query.limit_with_ties
+        && !query.arrayJoinExpressionList()
+        && (query.limitLength() || context->getSettingsRef().default_limit))
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         if (limit_length > std::numeric_limits<UInt64>::max() - limit_offset)
@@ -1000,7 +1012,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 if (expressions.has_order_by)
                     executeOrder(query_plan, query_info.input_order_info);
 
-                if (expressions.has_order_by && query.limitLength())
+                if (expressions.has_order_by && (query.limitLength() || settings.default_limit))
                     executeDistinct(query_plan, false, expressions.selected_columns, true);
 
                 if (expressions.hasLimitBy())
@@ -1615,7 +1627,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && !query.having()
         && !query.orderBy()
         && !query.limitBy()
-        && query.limitLength()
+        && (query.limitLength() || settings.default_limit)
         && !query_analyzer->hasAggregation()
         && !query_analyzer->hasWindow()
         && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset
