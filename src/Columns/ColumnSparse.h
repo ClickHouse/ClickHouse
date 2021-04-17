@@ -157,11 +157,6 @@ public:
     IColumn & getOffsetsColumn() { return *offsets; }
 
 private:
-    [[noreturn]] void throwMustBeDense() const
-    {
-        throw Exception("Not implemented for ColumnSparse", ErrorCodes::LOGICAL_ERROR);
-    }
-
     class Iterator
     {
     public:

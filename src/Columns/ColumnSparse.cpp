@@ -7,6 +7,8 @@
 #include <Common/HashTable/Hash.h>
 #include <DataStreams/ColumnGathererStream.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -41,6 +43,13 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
     if (_size < offsets->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Size of sparse column ({}) cannot be lower than number of non-default values ({})", _size, offsets->size());
+
+#ifndef NDEBUG
+    const auto & offsets_data = getOffsetsData();
+    auto it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<UInt64>());
+    if (it != offsets_data.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Offsets of ColumnSparse must be strictly sorted");
+#endif
 }
 
 MutableColumnPtr ColumnSparse::cloneResized(size_t new_size) const

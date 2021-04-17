@@ -115,7 +115,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
             out->sync();
     }
 
-    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
+    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
         if (new_part->minmax_idx.initialized)
@@ -123,7 +123,9 @@ void MergedBlockOutputStream::finalizePartOnDisk(
         else if (rows_count)
             throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
                 + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+    }
 
+    {
         auto count_out = volume->getDisk()->writeFile(part_path + "count.txt", 4096);
         HashingWriteBuffer count_out_hashing(*count_out);
         writeIntText(rows_count, count_out_hashing);
