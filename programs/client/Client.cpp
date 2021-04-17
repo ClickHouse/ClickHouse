@@ -1916,7 +1916,7 @@ private:
                         cancelled = true;
                         if (is_interactive)
                         {
-                            clearProgress();
+                            progress_bar.clearProgress();
                             std::cout << "Cancelling query." << std::endl;
                         }
 
@@ -2220,7 +2220,7 @@ private:
     void onLogData(Block & block)
     {
         initLogsOutputStream();
-        clearProgress();
+        progress_bar.clearProgress();
         logs_out_stream->write(block);
         logs_out_stream->flush();
     }
@@ -2250,17 +2250,6 @@ private:
             block_out_stream->onProgress(value);
         progress_bar.writeProgress(progress, watch);
     }
-
-
-    void clearProgress()
-    {
-        if (progress_bar.getWrittenProgressChars())
-        {
-            progress_bar.setWrittenProgressChars(0);
-            std::cerr << "\r" CLEAR_TO_END_OF_LINE;
-        }
-    }
-
 
 
     void writeFinalProgress()
@@ -2294,7 +2283,7 @@ private:
 
     void onEndOfStream()
     {
-        clearProgress();
+        progress_bar.clearProgress();
 
         if (block_out_stream)
             block_out_stream->writeSuffix();
@@ -2304,9 +2293,9 @@ private:
 
         resetOutput();
 
-        if (is_interactive && !progress_bar.isWrittenFirstBlock())
+        if (is_interactive && !progress_bar.getWrittenFirstBlock())
         {
-            clearProgress();
+            progress_bar.clearProgress();
             std::cout << "Ok." << std::endl;
         }
     }
