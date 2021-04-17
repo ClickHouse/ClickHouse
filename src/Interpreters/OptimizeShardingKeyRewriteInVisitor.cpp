@@ -4,6 +4,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 
 namespace
@@ -52,6 +53,13 @@ bool shardContains(
         return false;
 
     Field sharding_value = executeFunctionOnField(sharding_column_value, sharding_column_name, sharding_expr, sharding_key_column_name);
+    /// The value from IN can be non-numeric,
+    /// but in this case it should be convertible to numeric type, let's try.
+    sharding_value = convertFieldToType(sharding_value, DataTypeUInt64());
+    /// In case of conversion is not possible (NULL), shard cannot contain the value anyway.
+    if (sharding_value.isNull())
+        return false;
+
     UInt64 value = sharding_value.get<UInt64>();
     const auto shard_num = slots[value % slots.size()] + 1;
     return shard_info.shard_num == shard_num;
