@@ -34,22 +34,22 @@ public:
     void parseEncodingFrequencies(const String & pt)
     {
         path_to_enc_freq = pt;
-        loadEncodingsFrequency(pt);
-        //loadEncodingsFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/charset_freq.txt");
+        //loadEncodingsFrequency(pt);
+        loadEncodingsFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/charset_freq.txt");
     }
 
     void parseEmotionalDict(const String & pt)
     {
         path_to_emo_dict = pt;
-        loadEmotionalDict(pt);
-        //loadEmotionalDict("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/emotional_dictionary_rus.txt");
+        //loadEmotionalDict(pt);
+        loadEmotionalDict("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/emotional_dictionary_rus.txt");
     }
 
     void parseProgrammingFrequency(const String & pt) 
     {
         path_to_prog_freq = pt;
-        loadProgrammingFrequency(pt);
-        //loadProgrammingFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/programming_freq.txt");
+        //loadProgrammingFrequency(pt);
+        loadProgrammingFrequency("/home/sergey/ClickHouse/src/Common/ClassificationDictionaries/programming_freq.txt");
     }
 
 
@@ -103,24 +103,29 @@ public:
         Poco::Logger * log = &Poco::Logger::get("EmotionalDict");
         LOG_TRACE(log, "Emotional dictionary loading from {}", path_to_emotional_dict);
 
-        ReadBufferFromFile in(path_to_emotional_dict);
+        size_t buf_size = 10000000;
+        ReadBufferFromFile in(path_to_emotional_dict, buf_size);
+        size_t count = 0;
         while (!in.eof())
         {
             char * newline = find_first_symbols<'\n'>(in.position(), in.buffer().end());
 
-            if (newline >= in.buffer().end()) { break; }
+            //if (newline >= in.buffer().end()) { break; }
 
             ReadBufferFromMemory buf_line(in.position(), newline - in.position());
             in.position() = newline + 1;
+
+            if (newline >= in.buffer().end())
+                break;
 
             readStringUntilWhitespace(word, buf_line);
             buf_line.ignore();
             readFloatText(tonality, buf_line);
 
             emotional_dict[word] = tonality;
-
+            ++count;
         }
-        LOG_TRACE(log, "Emotional dictionary was added");
+        LOG_TRACE(log, "Emotional dictionary was added. Word count: {}", std::to_string(count));
     }
 
 
@@ -134,7 +139,8 @@ public:
 
         LOG_TRACE(log, "Programming langugages frequencies loading from {}", path_to_programming_freq);
 
-        ReadBufferFromFile in(path_to_programming_freq);
+        size_t buf_size = 10000000;
+        ReadBufferFromFile in(path_to_programming_freq, buf_size);
         while (!in.eof())
         {
             char * newline = find_first_symbols<'\n'>(in.position(), in.buffer().end());

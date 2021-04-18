@@ -31,31 +31,33 @@ struct ProgrammingClassificationImpl
         static std::unordered_map<String, std::unordered_map<String, Float64>> programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
         std::unordered_map<String, Float64> data_freq;
 
-        String answer;
+        String prev_command;
+        String command;
 
-        ReadBufferFromMemory in(data.data(), data.size() + 1);
-        skipWhitespaceIfAny(in);
-
-        String prev = "";
-        String new_word;
-        
-        while (!in.eof())
+        for (size_t i = 0; i < data.size();)
         {
-            if (data.size() - (in.position() - data.data()) <= 3)
+            if (!isspace(data[i]))
             {
-                break;
-            }
-            readStringUntilWhitespace(new_word, in);
-            skipWhitespaceIfAny(in);
+                command.push_back(data[i]);
+                ++i;
 
-            if (prev == "")
-            {
-                prev = new_word;
-            }
+                while ((i < data.size()) && (!isspace(data[i]))) {
+                    command.push_back(data[i]);
+                    ++i;
+                }
+                if (prev_command == "") {
+                    prev_command = command;
+                }
+                else
+                {
+                    data_freq[prev_command + command] += 1;
+                    prev_command = command;
+                }
+                command = "";
+            } 
             else
             {
-                data_freq[prev + new_word] += 1;
-                prev = new_word;
+                ++i;
             }
         }
 
@@ -97,32 +99,35 @@ struct ProgrammingClassificationImpl
         for (size_t i = 0; i < offsets.size(); ++i)
         {
             const char * haystack = reinterpret_cast<const char *>(&data[prev_offset]);
-            String str = haystack;
+            String str_data = haystack;
 
-            String buf;
+            String prev_command;
+            String command;
 
-            ReadBufferFromMemory in(str.data(), str.size() + 1);
-
-            skipWhitespaceIfAny(in);
-            String new_word;
-            String prev;
-            while (!in.eof())
+            for (size_t ind = 0; ind < str_data.size();)
             {
-                if (str.size() - (in.position() - str.data()) <= 3)
+                if (!isspace(str_data[ind]))
                 {
-                    break;
-                }
-                readStringUntilWhitespace(new_word, in);
-                skipWhitespaceIfAny(in);
+                    command.push_back(str_data[ind]);
+                    ++ind;
 
-                if (prev == "")
-                {
-                    prev = new_word;
+                    while ((ind < str_data.size()) && (!isspace(str_data[ind]))) {
+                        command.push_back(str_data[ind]);
+                        ++ind;
+                    }
+                    if (prev_command == "") {
+                        prev_command = command;
+                    }
+                    else
+                    {
+                        data_freq[prev_command + command] += 1;
+                        prev_command = command;
+                    }
+                    command = "";
                 } 
                 else
                 {
-                    data_freq[prev + new_word] += 1;
-                    prev = new_word;
+                    ++ind;
                 }
             }
 
@@ -141,7 +146,7 @@ struct ProgrammingClassificationImpl
 
             if (most_liked == "")
             {
-            most_liked = "Undefined";
+                most_liked = "Undefined";
             }
 
             const auto ans = most_liked.c_str();

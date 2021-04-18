@@ -48,6 +48,7 @@ add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (xz)
+add_subdirectory (cld2-cmake) 
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
