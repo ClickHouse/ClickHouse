@@ -54,7 +54,7 @@ public:
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context, bool sanity_check_compression_codecs);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context, bool attach);
     static ConstraintsDescription getConstraintsDescription(const ASTExpressionList * constraints);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, const Context & context, const String & cluster_name);

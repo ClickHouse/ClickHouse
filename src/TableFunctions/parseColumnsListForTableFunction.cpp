@@ -25,7 +25,7 @@ ColumnsDescription parseColumnsListFromString(const std::string & structure, con
     if (!columns_list)
         throw Exception("Could not cast AST to ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
 
-    return InterpreterCreateQuery::getColumnsDescription(*columns_list, context, !settings.allow_suspicious_codecs);
+    return InterpreterCreateQuery::getColumnsDescription(*columns_list, context, false);
 }
 
 }
