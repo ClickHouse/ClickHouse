@@ -28,13 +28,15 @@ namespace ErrorCodes
 
 ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_) : IInputFormat(std::move(header_), in_)
 {
-    prepareReader();
 }
 
 Chunk ORCBlockInputFormat::generate()
 {
     Chunk res;
     const Block & header = getPort().getHeader();
+
+    if (!file_reader)
+        prepareReader();
 
     if (stripe_current >= stripe_total)
         return res;
@@ -62,7 +64,7 @@ void ORCBlockInputFormat::resetParser()
 
     file_reader.reset();
     include_indices.clear();
-    prepareReader();
+    stripe_current = 0;
 }
 
 void ORCBlockInputFormat::prepareReader()
