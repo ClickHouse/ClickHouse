@@ -175,7 +175,7 @@ Features:
 
 -   Business users-friendly reports builder.
 -   Powerful report parameters for SQL filtering and report-specific query customizations.
--   Can connect to ClickHouse both with a native TCP/IP endpoint and a HTTP(S) interface (2 different drivers).
+-   Can connect to ClickHouse both with a native TCP/IP endpoint and a HTTP(S) interface (two different drivers).
 -   It is possible to use all power of CH SQL dialect in dimensions/measures definitions.
 -   [Web API](https://www.seektable.com/help/web-api-integration) for automated reports generation.
 -   Supports reports development flow with account data [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore), data models (cubes) / reports configuration is a human-readable XML and can be stored under version control.
