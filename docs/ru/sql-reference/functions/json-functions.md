@@ -16,13 +16,13 @@ toc_title: JSON
 
 ## visitParamHas(params, name) {#visitparamhasparams-name}
 
-Проверить наличие поля с именем `name`.
+Проверяет наличие поля с именем `name`.
 
 Алиас: `simpleJSONHas`.
 
 ## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
 
-Распарсить UInt64 из значения поля с именем `name`. Если поле строковое - попытаться распарсить число из начала строки. Если такого поля нет, или если оно есть, но содержит не число, то вернуть 0.
+Разбирает UInt64 из значения поля с именем `name`. Если поле строковое, пытается разобрать число из начала строки. Если такого поля нет, или если оно есть, но содержит не число, то вернуть 0.
 
 Алиас: `simpleJSONExtractUInt`.
 
@@ -40,13 +40,13 @@ toc_title: JSON
 
 ## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
 
-Распарсить значение true/false. Результат - UInt8.
+Разбирает значение true/false. Результат — UInt8.
 
 Алиас: `simpleJSONExtractBool`.
 
 ## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
 
-Вернуть значение поля, включая разделители.
+Возвращает значение поля, включая разделители.
 
 Алиас: `simpleJSONExtractRaw`.
 
@@ -59,7 +59,7 @@ visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}';
 
 ## visitParamExtractString(params, name) {#visitparamextractstringparams-name}
 
-Распарсить строку в двойных кавычках. У значения убирается экранирование. Если убрать экранированные символы не удалось, то возвращается пустая строка.
+Разбирает строку в двойных кавычках. У значения убирается экранирование. Если убрать экранированные символы не удалось, то возвращается пустая строка.
 
 Алиас: `simpleJSONExtractString`.
 
@@ -72,9 +72,9 @@ visitParamExtractString('{"abc":"\\u263"}', 'abc') = '';
 visitParamExtractString('{"abc":"hello}', 'abc') = '';
 ```
 
-На данный момент, не поддерживаются записанные в формате `\uXXXX\uYYYY` кодовые точки не из basic multilingual plane (они переводятся не в UTF-8, а в CESU-8).
+На данный момент не поддерживаются записанные в формате `\uXXXX\uYYYY` кодовые точки не из basic multilingual plane (они переводятся не в UTF-8, а в CESU-8).
 
-Следующие функции используют [simdjson](https://github.com/lemire/simdjson) который разработан под более сложные требования для разбора JSON. Упомянутое выше предположение 2 по-прежнему применимо.
+Следующие функции используют [simdjson](https://github.com/lemire/simdjson), который разработан под более сложные требования для разбора JSON. Упомянутое выше предположение 2 по-прежнему применимо.
 
 ## isValidJSON(json) {#isvalidjsonjson}
 
