@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -286,6 +287,7 @@ BlockIO InterpreterSystemQuery::execute()
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
             external_dictionaries_loader.reloadDictionary(query.target_dictionary, getContext());
 
+
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -297,6 +299,22 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { system_context->getEmbeddedDictionaries().reload(); }
             );
             ExternalDictionariesLoader::resetAll();
+            break;
+        }
+        case Type::RELOAD_MODEL:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
+
+            auto & external_models_loader = system_context->getExternalModelsLoader();
+            external_models_loader.reloadModel(query.target_model);
+            break;
+        }
+        case Type::RELOAD_MODELS:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
+
+            auto & external_models_loader = system_context->getExternalModelsLoader();
+            external_models_loader.reloadAllTriedToLoad();
             break;
         }
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
@@ -650,6 +668,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
+            break;
+        }
+        case Type::RELOAD_MODEL: [[fallthrough]];
+        case Type::RELOAD_MODELS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
             break;
         }
         case Type::RELOAD_CONFIG:
