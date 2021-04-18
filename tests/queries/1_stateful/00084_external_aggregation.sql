@@ -2,6 +2,8 @@ SET max_bytes_before_external_group_by = 200000000;
 
 SET max_memory_usage = 1500000000;
 SET max_threads = 12;
+SET min_bytes_to_use_mmap_io = 0;
+
 SELECT URL, uniq(SearchPhrase) AS u FROM test.hits GROUP BY URL ORDER BY u DESC, URL LIMIT 10;
 
 SET max_memory_usage = 300000000;
