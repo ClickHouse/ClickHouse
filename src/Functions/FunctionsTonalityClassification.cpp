@@ -1,4 +1,5 @@
 #include <Functions/FunctionsTextClassification.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/FrequencyHolder.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/UTF8Helpers.h>
@@ -15,26 +16,11 @@ struct TonalityClassificationImpl
 
     using ResultType = String;
 
-    
-    static ALWAYS_INLINE inline void word_processing(String & word)
-    {
-        std::set<char> to_skip {',', '.', '!', '?', ')', '(', '\"', '\'', '[', ']', '{', '}', ':', ';'};
-
-        while (to_skip.find(word.back()) != to_skip.end())
-        {
-            word.pop_back();
-        }
-
-        while (to_skip.find(word.front()) != to_skip.end())
-        {
-            word.erase(0, 1);
-        }
-    }
 
     static String get_tonality(const Float64 & tonality_level)
     {
-        if (tonality_level < 0.5) { return "NEG"; }
-        if (tonality_level > 1) { return "POS"; }
+        if (tonality_level < 0.25) { return "NEG"; }
+        if (tonality_level > 0.5) { return "POS"; }
         return "NEUT";
     } 
     
@@ -42,34 +28,38 @@ struct TonalityClassificationImpl
     {
         static std::unordered_map<String, Float64> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
 
-        Float64 freq = 0;
+        Float64 weight = 0;
         Float64 count_words = 0;
 
         String answer;
+        String word;
 
-        ReadBufferFromMemory in(data.data(), data.size() + 1);
-        skipWhitespaceIfAny(in);
-
-        String to_check;
-        while (!in.eof())
+        for (size_t i = 0; i < data.size();)
         {
-            if (data.size() - (in.position() - data.data()) <= 3) {
-                break;
-            }
-            readStringUntilWhitespace(to_check, in);
-            skipWhitespaceIfAny(in);
-
-            word_processing(to_check);
-                
-
-            if (emotional_dict.find(to_check) != emotional_dict.cend())
+            if (!isASCII(data[i]))
             {
-                count_words += 1;
-                freq += emotional_dict[to_check];
-            }            
+                word.push_back(data[i]);
+                ++i;
+
+                while ((i < data.size()) && (!isASCII(data[i]))) {
+                    word.push_back(data[i]);
+                    ++i;
+                }
+                if (emotional_dict.find(word) != emotional_dict.cend())
+                {
+                    count_words += 1;
+                    weight += emotional_dict[word];
+                }
+                word = "";
+            } 
+            else
+            {
+                ++i;
+            }
         }
-        Float64 total_tonality = freq / count_words;
-        res = get_tonality(total_tonality);
+
+        Float64 total_tonality = weight / count_words;
+        res += get_tonality(total_tonality);
     }
 
 
@@ -94,29 +84,38 @@ struct TonalityClassificationImpl
 
             String buf;
 
-            Float64 freq = 0;
+            Float64 weight = 0;
             Float64 count_words = 0;
 
 
-            ReadBufferFromMemory in(str.data(), str.size() + 1);
+            String answer;
+            String word;
 
-            skipWhitespaceIfAny(in);
-            String to_check;
-            while (!in.eof())
+            for (size_t ind = 0; ind < str.size();)
             {
-                if (str.size() - (in.position() - str.data()) <= 3) {
-                    break;
-                }
-                readStringUntilWhitespace(to_check, in);
-                skipWhitespaceIfAny(in);
-
-                if (emotional_dict.find(to_check) != emotional_dict.cend())
+                if (!isASCII(str[ind]))
                 {
-                    count_words += 1;
-                    freq += emotional_dict[to_check];
+                    word.push_back(str[ind]);
+                    ++ind;
+
+                    while ((ind < str.size()) && (!isASCII(str[ind]))) {
+                        word.push_back(str[ind]);
+                        ++ind;
+                    }
+                    if (emotional_dict.find(word) != emotional_dict.cend())
+                    {
+                        count_words += 1;
+                        weight += emotional_dict[word];
+                    }
+                    word = "";
+                }
+                else
+                {
+                    ++ind;
                 }
             }
-            Float64 total_tonality = freq / count_words;
+
+            Float64 total_tonality = weight / count_words;
             buf = get_tonality(total_tonality);
 
             const auto ans = buf.c_str();
