@@ -36,6 +36,7 @@ SRCS(
     Settings.cpp
     SettingsEnums.cpp
     SettingsFields.cpp
+    SettingsQuirks.cpp
     SortDescription.cpp
     iostream_debug_helpers.cpp
 

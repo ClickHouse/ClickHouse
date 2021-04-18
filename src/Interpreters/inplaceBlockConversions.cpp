@@ -43,7 +43,7 @@ void addDefaultRequiredExpressionsRecursively(const Block & block, const String 
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
 
-        auto cast_func = makeASTFunction("cast", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column).type->getName()));
+        auto cast_func = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column).type->getName()));
         default_expr_list_accum->children.emplace_back(setAlias(cast_func, required_column));
         added_columns.emplace(required_column);
 
@@ -79,7 +79,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
             continue;
 
         auto cast_func = makeASTFunction(
-            "cast", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
+            "CAST", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
 
         conversion_expr_list->children.emplace_back(setAlias(cast_func, required_column.name));
 
@@ -92,7 +92,7 @@ ActionsDAGPtr createExpressions(
     ASTPtr expr_list,
     bool save_unneeded_columns,
     const NamesAndTypesList & required_columns,
-    const Context & context)
+    ContextPtr context)
 {
     if (!expr_list)
         return nullptr;
@@ -114,7 +114,7 @@ ActionsDAGPtr createExpressions(
 
 }
 
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, const Context & context)
+void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context)
 {
     ASTPtr conversion_expr_list = convertRequiredExpressions(block, required_columns);
     if (conversion_expr_list->children.empty())
@@ -122,7 +122,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
 
     if (auto dag = createExpressions(block, conversion_expr_list, true, required_columns, context))
     {
-        auto expression = std::make_shared<ExpressionActions>(std::move(dag));
+        auto expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context));
         expression->execute(block);
     }
 }
@@ -131,7 +131,7 @@ ActionsDAGPtr evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
-    const Context & context, bool save_unneeded_columns)
+    ContextPtr context, bool save_unneeded_columns)
 {
     if (!columns.hasDefaults())
         return nullptr;

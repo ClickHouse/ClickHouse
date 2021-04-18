@@ -1,6 +1,6 @@
 ---
 toc_priority: 68
-toc_title: "\u041a\u0430\u043a\u0020\u043f\u0438\u0441\u0430\u0442\u044c\u0020\u043a\u043e\u0434\u0020\u043d\u0430\u0020\u0043\u002b\u002b"
+toc_title: "Как писать код на C++"
 ---
 
 
@@ -911,4 +911,3 @@ function(
       size_t limit)
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/development/style/) <!--hide-->

@@ -168,11 +168,19 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
 void WriteBufferFromHTTPServerResponse::finalize()
 {
-    next();
-    if (out)
+    try
     {
-        out->next();
+        next();
+        if (out)
+            out->finalize();
         out.reset();
+    }
+    catch (...)
+    {
+        /// Avoid calling WriteBufferFromOStream::next() from dtor
+        /// (via WriteBufferFromHTTPServerResponse::next())
+        out.reset();
+        throw;
     }
 
     if (!offset())
@@ -188,7 +196,7 @@ void WriteBufferFromHTTPServerResponse::finalize()
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     finalize();
 }
 

@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Client/ConnectionPool.h>
-#include <Client/MultiplexedConnections.h>
+#include <Client/IConnections.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
@@ -25,6 +26,9 @@ using ProfileInfoCallback = std::function<void(const BlockStreamProfileInfo & in
 
 class RemoteQueryExecutorReadContext;
 
+/// This is the same type as StorageS3Source::IteratorWrapper
+using TaskIterator = std::function<String()>;
+
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
 {
@@ -34,23 +38,23 @@ public:
     /// Takes already set connection.
     RemoteQueryExecutor(
         Connection & connection,
-        const String & query_, const Block & header_, const Context & context_,
+        const String & query_, const Block & header_, ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
-        std::vector<IConnectionPool::Entry> && connections,
-        const String & query_, const Block & header_, const Context & context_,
+        std::vector<IConnectionPool::Entry> && connections_,
+        const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
-        const String & query_, const Block & header_, const Context & context_,
+        const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {});
 
     ~RemoteQueryExecutor();
 
@@ -103,12 +107,12 @@ private:
     Block totals;
     Block extremes;
 
-    std::function<std::unique_ptr<MultiplexedConnections>()> create_multiplexed_connections;
-    std::unique_ptr<MultiplexedConnections> multiplexed_connections;
+    std::function<std::unique_ptr<IConnections>()> create_connections;
+    std::unique_ptr<IConnections> connections;
 
     const String query;
-    String query_id = "";
-    Context context;
+    String query_id;
+    ContextPtr context;
 
     ProgressCallback progress_callback;
     ProfileInfoCallback profile_info_callback;
@@ -118,6 +122,8 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
+    /// Initiator identifier for distributed task processing
+    std::shared_ptr<TaskIterator> task_iterator;
 
     /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
@@ -177,6 +183,8 @@ private:
     /// Set part uuids to a query context, collected from remote replicas.
     /// Return true if duplicates found.
     bool setPartUUIDs(const std::vector<UUID> & uuids);
+
+    void processReadTaskRequest();
 
     /// Cancell query and restart it with info about duplicated UUIDs
     /// only for `allow_experimental_query_deduplication`.

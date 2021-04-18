@@ -26,7 +26,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         Block & sample_block_,
-        const Context & context_,
+        ContextPtr context_,
         bool check_config);
 
     HTTPDictionarySource(const HTTPDictionarySource & other);
@@ -65,7 +65,7 @@ private:
     std::string update_field;
     const std::string format;
     Block sample_block;
-    Context context;
+    ContextPtr context;
     ConnectionTimeouts timeouts;
 };
 
