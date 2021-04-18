@@ -82,7 +82,7 @@ void StorageJoin::truncate(
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    for(const auto& command: commands) {
+    for (const auto & command: commands) {
         switch (command.type) {
             case MutationCommand::Type::DELETE:
                 break;
@@ -129,7 +129,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
         std::vector<std::string> files;
         disk->listFiles(path, files);
-        for (const auto& file_name: files) {
+        for (const auto & file_name: files) {
             if (file_name.ends_with(".bin")) {
                 disk->removeFileIfExists(path + file_name);
             }
@@ -164,7 +164,8 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join)
 
 
 void StorageJoin::insertBlock(const Block & block)
-{std::unique_lock<std::shared_mutex> lock(rwlock);
+{
+    std::unique_lock<std::shared_mutex> lock(rwlock);
     join->addJoinedBlock(block, true);
 }
 
