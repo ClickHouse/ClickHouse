@@ -5,41 +5,27 @@
 #include <cstdlib>
 #include <csignal>
 #include <fstream>
+#include <mutex>
 #include <optional>
 #include <string_view>
 #include <filesystem>
 #include <unordered_map>
 #include <queue>
 #include <vector>
+#include <shared_mutex>
 
-#include <Common/ShellCommand.h>
-#include <sanitizer/coverage_interface.h>
+#include <Common/ThreadPool.h>
+#include <Common/CurrentThread.h>
 
 namespace detail
 {
-using ShellCommand = DB::ShellCommand;
-
-constexpr const auto genhtml_proc_limit = 1;
-
 constexpr const std::string_view genhtml_command =
-    "genhtml {} --output-directory {} --";
+    "genhtml {} --output-directory {} --show-details --num-spaces 4 --legend";
 
-class GenProcInfo
+struct TestData
 {
-    FILE * const file;
-    std::unique_ptr<ShellCommand> proc;
-
-    GenProcInfo(FILE * file_)
-        : file(file_), proc(ShellCommand::execute())
-    {
-
-    }
-
-    ~GenProcInfo()
-    {
-        proc->wait();
-        std::filesystem::remove(tmp_file_path);
-    }
+    std::string test_name;
+    std::vector<void*> hits;
 };
 
 class Writer
@@ -51,34 +37,33 @@ public:
         return w;
     }
 
-    void initialized(uint32_t count, uint32_t * start)
+    void initialized(uint32_t count, const uint32_t * start)
     {
-        const auto signal_hander = [](int, siginfo_t * info, auto)
-        {
-            Writer::instance().updateTest(info->si_value.sival_int);
-        };
+        (void)start;
 
-        const struct sigaction sa = {
-            .sa_sigaction = std::move(signal_hander),
-            .sa_flags = SA_SIGINFO
-        };
+        const struct sigaction sa = { .sa_handler=[](int) { Writer::instance().updateTest(); }};
 
         sigaction(SIGRTMIN + 1, &sa, nullptr);
 
         std::filesystem::remove_all(coverage_dir);
         std::filesystem::create_directory(coverage_dir);
+
+        edges.reserve(count);
     }
 
     void hit(uint32_t edge_index, void * addr)
     {
-        bb_edge_indices.push_back(edge_index);
-        bb_edge_index_to_addr.insert_or_assign(edge_index, addr);
+        (void)edge_index;
+        std::lock_guard _(edges_mutex);
+        edges.push_back(addr);
     }
 
-    void updateTest(size_t id)
+    void updateTest()
     {
-        if (test_id)
+        if (test)
             dump();
+
+        test = DB::CurrentThread::get()
 
         test_id = id;
     }
@@ -113,15 +98,16 @@ public:
     }
 
 private:
-    char symbolizer_buffer[1024];
     const std::filesystem::path coverage_dir { std::filesystem::current_path() / "../../coverage" };
 
-    std::optional<size_t> test_id;
-    std::vector<void *> edges; //index = bb_edge index
+    std::optional<std::string> test;
+
+    std::vector<void *> edges;
+    std::mutex edges_mutex; // to prevent multithreading inserts
 
     std::unordered_map<void *, std::string> symbolizer_cache;
+    std::shared_mutex symbolizer_cache_mutex;
 
-    std::vector<GenProcInfo> executing_processes;
-    std::queue<FILE *> waiting_processes;
+    FreeThreadPool pool;
 };
 }
