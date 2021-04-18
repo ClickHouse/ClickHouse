@@ -387,6 +387,52 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 └────────────┴───────────┴───────────┴───────────┘
 ```
 
+## timezoneOffset {#timezoneoffset}
+
+Returns the offset from UTC in seconds. The function supports daylight saving time.
+*Describe DST in more details?*
+*Remark that leap seconds are not considered by the function*
+
+
+**Syntax**
+
+``` sql
+timezoneOffset(datetime)
+```
+
+**Arguments**
+
+-   `datetime` — date time object. [DateTime](../../sql-reference/data-types/datetime.md) *or [DateTime64](../../sql-reference/data-types/datetime64.md)*. 
+
+**Returned value(s)**
+
+-   Returned values list. 
+
+Type: [Float64](../../sql-reference/data-types/float.md#float32-float64). *Really?*
+
+**Example**
+
+Query:
+
+``` sql
+SELECT timezoneOffset(toDateTime('2020-01-01 01:02:03', 'Europe/Moscow')) AS Offset_seconds, 
+       (Offset_seconds / 3600) AS Offset_hours;
+```
+
+Result:
+
+``` text
+┌─Offset_seconds─┬─Offset_hours─┐
+│          10800 │            3 │
+└────────────────┴──────────────┘
+```
+
+**See Also** (Optional)
+
+-   [link](#) ~List of timezones~  *- link is in DateTime type desctiption.*
+-   *Daylight saving info*
+
+
 ## date\_trunc {#date_trunc}
 
 Truncates date and time data to the specified part of date.
