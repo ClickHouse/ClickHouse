@@ -94,8 +94,9 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     endif ()
 
     add_subdirectory (${INTERNAL_ZLIB_NAME})
-    # We should use same defines when including zlib.h as used when zlib compiled
-    target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    # We should use same defines when including zlib.h as used when zlib compiled, hence PUBLIC
+    # Z_TLS is needed, because otherwise the initialization of "functable" is a (bening) data race.
+    target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP Z_TLS=__thread)
     if (ARCH_AMD64 OR ARCH_AARCH64)
         target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
     endif ()
