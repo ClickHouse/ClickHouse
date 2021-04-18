@@ -206,7 +206,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                                  bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `http` does not support attribute expressions");
 
         auto context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
