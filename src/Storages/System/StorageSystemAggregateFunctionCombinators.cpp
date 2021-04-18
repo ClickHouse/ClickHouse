@@ -17,8 +17,8 @@ void StorageSystemAggregateFunctionCombinators::fillData(MutableColumns & res_co
     const auto & combinators = AggregateFunctionCombinatorFactory::instance().getAllAggregateFunctionCombinators();
     for (const auto & pair : combinators)
     {
-        res_columns[0]->insert(pair.first);
-        res_columns[1]->insert(pair.second->isForInternalUsageOnly());
+        res_columns[0]->insert(pair.name);
+        res_columns[1]->insert(pair.combinator_ptr->isForInternalUsageOnly());
     }
 }
 

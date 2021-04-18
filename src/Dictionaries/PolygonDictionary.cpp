@@ -151,7 +151,7 @@ BlockInputStreamPtr IPolygonDictionary::getBlockInputStream(const Names &, size_
 {
     // TODO: In order for this to work one would first have to support retrieving arrays from dictionaries.
     //  I believe this is a separate task done by some other people.
-    throw Exception{"Reading the dictionary is not allowed", ErrorCodes::UNSUPPORTED_METHOD};
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Reading the dictionary is not allowed");
 }
 
 void IPolygonDictionary::setup()
@@ -164,9 +164,9 @@ void IPolygonDictionary::setup()
         attributes.emplace_back(std::move(column));
 
         if (attribute.hierarchical)
-            throw Exception{ErrorCodes::TYPE_MISMATCH,
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
                             "{}: hierarchical attributes not supported for dictionary of polygonal type",
-                            getDictionaryID().getNameForLogs()};
+                            getDictionaryID().getNameForLogs());
     }
 }
 
@@ -248,13 +248,13 @@ void IPolygonDictionary::calculateBytesAllocated()
 std::vector<IPolygonDictionary::Point> IPolygonDictionary::extractPoints(const Columns & key_columns)
 {
     if (key_columns.size() != 2)
-        throw Exception{"Expected two columns of coordinates with type Float64", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected two columns of coordinates with type Float64");
 
     const auto * column_x = typeid_cast<const ColumnVector<Float64>*>(key_columns[0].get());
     const auto * column_y = typeid_cast<const ColumnVector<Float64>*>(key_columns[1].get());
 
     if (!column_x || !column_y)
-        throw Exception{"Expected columns of Float64", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected columns of Float64");
 
     const auto rows = key_columns.front()->size();
 
@@ -392,17 +392,17 @@ const IColumn * unrollMultiPolygons(const ColumnPtr & column, Offset & offset)
 {
     const auto * ptr_multi_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_multi_polygons)
-        throw Exception{"Expected a column containing arrays of polygons", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of polygons");
     offset.multi_polygon_offsets.assign(ptr_multi_polygons->getOffsets());
 
     const auto * ptr_polygons = typeid_cast<const ColumnArray*>(&ptr_multi_polygons->getData());
     if (!ptr_polygons)
-        throw Exception{"Expected a column containing arrays of rings when reading polygons", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of rings when reading polygons");
     offset.polygon_offsets.assign(ptr_polygons->getOffsets());
 
     const auto * ptr_rings = typeid_cast<const ColumnArray*>(&ptr_polygons->getData());
     if (!ptr_rings)
-        throw Exception{"Expected a column containing arrays of points when reading rings", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of points when reading rings");
     offset.ring_offsets.assign(ptr_rings->getOffsets());
 
     return ptr_rings->getDataPtr().get();
@@ -412,7 +412,7 @@ const IColumn * unrollSimplePolygons(const ColumnPtr & column, Offset & offset)
 {
     const auto * ptr_polygons = typeid_cast<const ColumnArray*>(column.get());
     if (!ptr_polygons)
-        throw Exception{"Expected a column containing arrays of points", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column containing arrays of points");
     offset.ring_offsets.assign(ptr_polygons->getOffsets());
     std::iota(offset.polygon_offsets.begin(), offset.polygon_offsets.end(), 1);
     offset.multi_polygon_offsets.assign(offset.polygon_offsets);
@@ -425,13 +425,13 @@ void handlePointsReprByArrays(const IColumn * column, Data & data, Offset & offs
     const auto * ptr_points = typeid_cast<const ColumnArray*>(column);
     const auto * ptr_coord = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getData());
     if (!ptr_coord)
-        throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected coordinates to be of type Float64");
     const auto & offsets = ptr_points->getOffsets();
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < offsets.size(); ++i)
     {
         if (offsets[i] - prev_offset != 2)
-            throw Exception{"All points should be two-dimensional", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "All points should be two-dimensional");
         prev_offset = offsets[i];
         addNewPoint(ptr_coord->getElement(2 * i), ptr_coord->getElement(2 * i + 1), data, offset);
     }
@@ -441,13 +441,13 @@ void handlePointsReprByTuples(const IColumn * column, Data & data, Offset & offs
 {
     const auto * ptr_points = typeid_cast<const ColumnTuple*>(column);
     if (!ptr_points)
-        throw Exception{"Expected a column of tuples representing points", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected a column of tuples representing points");
     if (ptr_points->tupleSize() != 2)
-        throw Exception{"Points should be two-dimensional", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Points should be two-dimensional");
     const auto * column_x = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(0));
     const auto * column_y = typeid_cast<const ColumnVector<Float64>*>(&ptr_points->getColumn(1));
     if (!column_x || !column_y)
-        throw Exception{"Expected coordinates to be of type Float64", ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Expected coordinates to be of type Float64");
     for (size_t i = 0; i < column_x->size(); ++i)
     {
         addNewPoint(column_x->getElement(i), column_y->getElement(i), data, offset);
@@ -473,8 +473,8 @@ void IPolygonDictionary::extractPolygons(const ColumnPtr & column)
     }
 
     if (!offset.allRingsHaveAPositiveArea())
-        throw Exception{"Every ring included in a polygon or excluded from it should contain at least 3 points",
-                        ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Every ring included in a polygon or excluded from it should contain at least 3 points");
 
     /** Adding the first empty polygon */
     data.addPolygon(true);

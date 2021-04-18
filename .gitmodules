@@ -221,6 +221,9 @@
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse-Extras/NuRaft.git
+[submodule "contrib/nanodbc"]
+	path = contrib/nanodbc
+	url = https://github.com/ClickHouse-Extras/nanodbc.git
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/ClickHouse-Extras/datasketches-cpp.git

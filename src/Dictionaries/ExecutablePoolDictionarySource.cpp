@@ -70,12 +70,12 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(const ExecutableP
 
 BlockInputStreamPtr ExecutablePoolDictionarySource::loadAll()
 {
-    throw Exception("ExecutablePoolDictionarySource with implicit_key does not support loadAll method", ErrorCodes::UNSUPPORTED_METHOD);
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource with implicit_key does not support loadAll method");
 }
 
 BlockInputStreamPtr ExecutablePoolDictionarySource::loadUpdatedAll()
 {
-    throw Exception("ExecutablePoolDictionarySource with implicit_key does not support loadAll method", ErrorCodes::UNSUPPORTED_METHOD);
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutablePoolDictionarySource with implicit_key does not support loadAll method");
 }
 
 namespace
