@@ -19,14 +19,10 @@
 
 namespace detail
 {
+using namespace DB;
+
 constexpr const std::string_view genhtml_command =
     "genhtml {} --output-directory {} --show-details --num-spaces 4 --legend";
-
-struct TestData
-{
-    std::string test_name;
-    std::vector<void*> hits;
-};
 
 class Writer
 {
@@ -60,53 +56,48 @@ public:
 
     void updateTest()
     {
-        if (test)
-            dump();
-
-        test = DB::CurrentThread::get()
-
-        test_id = id;
+        dump();
+        auto lck = std::lock_guard(edges_mutex);
+        test = CurrentThread::get()->
     }
 
     void dump()
     {
-        if (!test_id)
+        if (!test)
             return;
 
-        std::ofstream ofs(coverage_dir / std::to_string(*test_id), std::ios::binary);
-        ofs << bb_edge_indices.size();
-
-        for (const auto& e: bb_edge_indices)
-            ofs << e;
-
-        test_id = std::nullopt;
-        bb_edge_indices.clear();
-    }
-
-    void writeReport()
-    {
-        dump();
-
-        std::ofstream ofs(coverage_dir / "report");
-        ofs << bb_edge_index_to_addr.size() << "\n";
-
-        for (const auto& [index, addr] : bb_edge_index_to_addr)
+        pool.scheduleOrThrowOnError([this] () mutable
         {
-            //__sanitizer_symbolize_pc(addr, "%p %F %L", symbolizer_buffer, sizeof(symbolizer_buffer));
-            ofs << index << " " << symbolizer_buffer << "\n";
-        }
+            std::vector<void*> edges_copies;
+            std::string test_name;
+
+            {
+                auto lock = std::lock_guard(edges_mutex);
+                edges_copies = edges;
+                test_name = *test;
+                test = std::nullopt; //already copied the data, can process the new test
+                edges.clear(); // hope that it's O(1).
+            }
+
+            convertToLCOVAndDumpToDisk(edges_copies, test_name);
+        });
     }
 
 private:
+    void convertToLCOVAndDumpToDisk(const std::vector<void*>& hits, std::string_view test_name)
+    {
+        (void)hits;
+        (void)test_name;
+    }
+
     const std::filesystem::path coverage_dir { std::filesystem::current_path() / "../../coverage" };
 
     std::optional<std::string> test;
-
     std::vector<void *> edges;
     std::mutex edges_mutex; // to prevent multithreading inserts
 
-    std::unordered_map<void *, std::string> symbolizer_cache;
-    std::shared_mutex symbolizer_cache_mutex;
+    //std::unordered_map<void *, std::string> symbolizer_cache;
+    //std::shared_mutex symbolizer_cache_mutex;
 
     FreeThreadPool pool;
 };

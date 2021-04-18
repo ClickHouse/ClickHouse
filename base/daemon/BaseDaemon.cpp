@@ -508,7 +508,7 @@ void BaseDaemon::terminate()
 void BaseDaemon::kill()
 {
 #if WITH_COVERAGE
-    coverage::dumpReport();
+    detail::Writer::instance().dump();
 #endif
 
     pid_file.reset();
