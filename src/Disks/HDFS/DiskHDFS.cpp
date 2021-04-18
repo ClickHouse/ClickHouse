@@ -116,7 +116,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 
 void DiskHDFS::removeFile(const String & path)
 {
-    LOG_DEBUG(&Poco::Logger::get("DiskHDFS"), "Remove file by path: {}", backQuote(metadata_path + path));
+    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_path + path));
 
     Poco::File file(metadata_path + path);
 
@@ -137,6 +137,7 @@ void DiskHDFS::removeFile(const String & path)
                 const size_t begin_of_path = remote_fs_root_path.find('/', remote_fs_root_path.find("//") + 2);
                 const String hdfs_path = remote_fs_root_path.substr(begin_of_path) + hdfs_object_path;
 
+                LOG_DEBUG(log, "Removing file by path: {}", hdfs_path);
                 int res = hdfsDelete(hdfs_fs.get(), hdfs_path.c_str(), 0);
                 if (res == -1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
@@ -170,11 +171,21 @@ void DiskHDFS::removeFile(const String & path)
 
 void DiskHDFS::removeFileIfExists(const String & path)
 {
-    int exists_status = hdfsExists(hdfs_fs.get(), path.data());
-    if (exists_status == 0)
-        removeFile(path);
-    else
-        LOG_DEBUG(&Poco::Logger::get("DiskHDFS"), "File by path {} does not exist", backQuote(metadata_path + path));
+    LOG_DEBUG(&Poco::Logger::get("DiskHDFS"), "Checking existance of file by path {}", backQuote(path));
+    if (Poco::File(metadata_path + path).exists())
+    {
+        const size_t begin_of_path = remote_fs_root_path.find('/', remote_fs_root_path.find("//") + 2);
+        const String hdfs_file_path = remote_fs_root_path.substr(begin_of_path) + path;
+
+        int exists_status = hdfsExists(hdfs_fs.get(), hdfs_file_path.data());
+        if (exists_status == 0)
+        {
+            LOG_DEBUG(&Poco::Logger::get("DiskHDFS"), "Path exists in HDFS: {}", remote_fs_root_path + backQuote(path));
+            removeFile(path);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Path '{}' does not exist in HDFS (root path: {})", path, remote_fs_root_path);
+    }
 }
 
 
