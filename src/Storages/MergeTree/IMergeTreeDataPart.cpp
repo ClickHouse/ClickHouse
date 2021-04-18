@@ -1356,6 +1356,24 @@ String IMergeTreeDataPart::getUniqueId() const
     return id;
 }
 
+
+String IMergeTreeDataPart::getZeroLevelPartBlockID() const
+{
+    if (info.level != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
+
+    SipHash hash;
+    checksums.computeTotalChecksumDataOnly(hash);
+    union
+    {
+        char bytes[16];
+        UInt64 words[2];
+    } hash_value;
+    hash.get128(hash_value.bytes);
+
+    return info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
+}
+
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::COMPACT);
@@ -1372,4 +1390,3 @@ bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
 }
 
 }
-

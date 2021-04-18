@@ -16,10 +16,10 @@ namespace DB
 {
 
 IBackgroundJobExecutor::IBackgroundJobExecutor(
-        Context & global_context_,
+        ContextPtr global_context_,
         const BackgroundTaskSchedulingSettings & sleep_settings_,
         const std::vector<PoolConfig> & pools_configs_)
-    : global_context(global_context_)
+    : WithContext(global_context_)
     , sleep_settings(sleep_settings_)
     , rng(randomSeed())
 {
@@ -155,7 +155,7 @@ void IBackgroundJobExecutor::start()
     std::lock_guard lock(scheduling_task_mutex);
     if (!scheduling_task)
     {
-        scheduling_task = global_context.getSchedulePool().createTask(
+        scheduling_task = getContext()->getSchedulePool().createTask(
             getBackgroundTaskName(), [this]{ jobExecutingTask(); });
     }
 
@@ -187,12 +187,12 @@ IBackgroundJobExecutor::~IBackgroundJobExecutor()
 
 BackgroundJobsExecutor::BackgroundJobsExecutor(
        MergeTreeData & data_,
-       Context & global_context_)
+       ContextPtr global_context_)
     : IBackgroundJobExecutor(
         global_context_,
-        global_context_.getBackgroundProcessingTaskSchedulingSettings(),
-        {PoolConfig{PoolType::MERGE_MUTATE, global_context_.getSettingsRef().background_pool_size, CurrentMetrics::BackgroundPoolTask},
-         PoolConfig{PoolType::FETCH, global_context_.getSettingsRef().background_fetches_pool_size, CurrentMetrics::BackgroundFetchesPoolTask}})
+        global_context_->getBackgroundProcessingTaskSchedulingSettings(),
+        {PoolConfig{PoolType::MERGE_MUTATE, global_context_->getSettingsRef().background_pool_size, CurrentMetrics::BackgroundPoolTask},
+         PoolConfig{PoolType::FETCH, global_context_->getSettingsRef().background_fetches_pool_size, CurrentMetrics::BackgroundFetchesPoolTask}})
     , data(data_)
 {
 }
@@ -209,11 +209,11 @@ std::optional<JobAndPool> BackgroundJobsExecutor::getBackgroundJob()
 
 BackgroundMovesExecutor::BackgroundMovesExecutor(
        MergeTreeData & data_,
-       Context & global_context_)
+       ContextPtr global_context_)
     : IBackgroundJobExecutor(
         global_context_,
-        global_context_.getBackgroundMoveTaskSchedulingSettings(),
-      {PoolConfig{PoolType::MOVE, global_context_.getSettingsRef().background_move_pool_size, CurrentMetrics::BackgroundMovePoolTask}})
+        global_context_->getBackgroundMoveTaskSchedulingSettings(),
+      {PoolConfig{PoolType::MOVE, global_context_->getSettingsRef().background_move_pool_size, CurrentMetrics::BackgroundMovePoolTask}})
     , data(data_)
 {
 }

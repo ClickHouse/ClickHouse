@@ -21,7 +21,7 @@ namespace ErrorCodes
 struct FunctionPort : public IFunction
 {
     static constexpr auto name = "port";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionPort>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

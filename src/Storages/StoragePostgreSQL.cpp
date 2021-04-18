@@ -26,6 +26,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Common/parseRemoteDescription.h>
 #include <Processors/Pipe.h>
 #include <IO/WriteHelpers.h>
 
@@ -41,17 +42,17 @@ namespace ErrorCodes
 
 StoragePostgreSQL::StoragePostgreSQL(
     const StorageID & table_id_,
+    const postgres::PoolWithFailover & pool_,
     const String & remote_table_name_,
-    PostgreSQLConnectionPoolPtr connection_pool_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context_,
+    ContextPtr context_,
     const String & remote_table_schema_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
     , global_context(context_)
-    , connection_pool(std::move(connection_pool_))
+    , pool(std::make_shared<postgres::PoolWithFailover>(pool_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -64,7 +65,7 @@ Pipe StoragePostgreSQL::read(
     const Names & column_names_,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info_,
-    const Context & context_,
+    ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,
     unsigned)
@@ -88,7 +89,7 @@ Pipe StoragePostgreSQL::read(
     }
 
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<PostgreSQLBlockInputStream>(connection_pool->get(), query, sample_block, max_block_size_)));
+            std::make_shared<PostgreSQLBlockInputStream>(pool->get(), query, sample_block, max_block_size_)));
 }
 
 
@@ -97,7 +98,7 @@ class PostgreSQLBlockOutputStream : public IBlockOutputStream
 public:
     explicit PostgreSQLBlockOutputStream(
         const StorageMetadataPtr & metadata_snapshot_,
-        PostgreSQLConnectionHolderPtr connection_,
+        postgres::ConnectionHolderPtr connection_,
         const std::string & remote_table_name_)
         : metadata_snapshot(metadata_snapshot_)
         , connection(std::move(connection_))
@@ -276,7 +277,7 @@ public:
 
 private:
     StorageMetadataPtr metadata_snapshot;
-    PostgreSQLConnectionHolderPtr connection;
+    postgres::ConnectionHolderPtr connection;
     std::string remote_table_name;
 
     std::unique_ptr<pqxx::work> work;
@@ -285,9 +286,9 @@ private:
 
 
 BlockOutputStreamPtr StoragePostgreSQL::write(
-        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /* context */)
+        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
-    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, connection_pool->get(), remote_table_name);
+    return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, pool->get(), remote_table_name);
 }
 
 
@@ -303,26 +304,33 @@ void registerStoragePostgreSQL(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
+        auto host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        /// Split into replicas if needed.
+        size_t max_addresses = args.getContext()->getSettingsRef().glob_expansion_max_elements;
+        auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
+
+        const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
         String remote_table_schema;
         if (engine_args.size() == 6)
             remote_table_schema = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
-        auto connection_pool = std::make_shared<PostgreSQLConnectionPool>(
-            engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
-            parsed_host_port.first,
-            parsed_host_port.second,
-            engine_args[3]->as<ASTLiteral &>().value.safeGet<String>(),
-            engine_args[4]->as<ASTLiteral &>().value.safeGet<String>(),
-            args.context.getSettingsRef().postgresql_connection_pool_size,
-            args.context.getSettingsRef().postgresql_connection_pool_wait_timeout);
+        postgres::PoolWithFailover pool(
+            remote_database,
+            addresses,
+            username,
+            password,
+            args.getContext()->getSettingsRef().postgresql_connection_pool_size,
+            args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return StoragePostgreSQL::create(
-            args.table_id, remote_table, connection_pool, args.columns, args.constraints, args.context, remote_table_schema);
+            args.table_id, pool, remote_table,
+            args.columns, args.constraints, args.getContext(), remote_table_schema);
     },
     {
         .source_access_type = AccessType::POSTGRES,

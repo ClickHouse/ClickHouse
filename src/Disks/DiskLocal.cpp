@@ -363,7 +363,7 @@ void registerDiskLocal(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      const Context & context) -> DiskPtr {
+                      ContextConstPtr context) -> DiskPtr {
         String path = config.getString(config_prefix + ".path", "");
         if (name == "default")
         {
@@ -371,7 +371,7 @@ void registerDiskLocal(DiskFactory & factory)
                 throw Exception(
                     "\"default\" disk path should be provided in <path> not it <storage_configuration>",
                     ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-            path = context.getPath();
+            path = context->getPath();
         }
         else
         {
@@ -402,7 +402,7 @@ void registerDiskLocal(DiskFactory & factory)
                 throw Exception("'keep_free_space_ratio' have to be between 0 and 1", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
             String tmp_path = path;
             if (tmp_path.empty())
-                tmp_path = context.getPath();
+                tmp_path = context->getPath();
 
             // Create tmp disk for getting total disk space.
             keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
