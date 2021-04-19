@@ -1,15 +1,15 @@
 #pragma once
 
-#include <vector>
-#include <list>
-#include <set>
-#include <map>
-#include <initializer_list>
-
 #include <Core/BlockInfo.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/NamesAndTypes.h>
+
+#include <initializer_list>
+#include <list>
+#include <map>
+#include <set>
+#include <vector>
 
 
 namespace DB
@@ -21,8 +21,6 @@ namespace DB
   *  (either original names from a table, or generated names during temporary calculations).
   * Allows to insert, remove columns in arbitrary position, to change order of columns.
   */
-
-class Context;
 
 class Block
 {

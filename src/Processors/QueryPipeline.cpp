@@ -258,7 +258,7 @@ QueryPipeline QueryPipeline::unitePipelines(
 }
 
 
-void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context)
+void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context)
 {
     resize(1);
 

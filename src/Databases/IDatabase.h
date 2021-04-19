@@ -10,6 +10,7 @@
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
+
 #include <ctime>
 #include <functional>
 #include <memory>
@@ -18,7 +19,6 @@
 namespace DB
 {
 
-class Context;
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
@@ -153,10 +153,10 @@ public:
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
-    virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
+    virtual void loadStoredObjects(ContextPtr /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
 
     /// Check the existence of the table.
-    virtual bool isTableExist(const String & name, const Context & context) const = 0;
+    virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
 
     /// Check the existence of the dictionary
     virtual bool isDictionaryExist(const String & /*name*/) const
@@ -165,7 +165,7 @@ public:
     }
 
     /// Get the table for work. Return nullptr if there is no table.
-    virtual StoragePtr tryGetTable(const String & name, const Context & context) const = 0;
+    virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -173,7 +173,7 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
+    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Get an iterator to pass through all the dictionaries.
     virtual DatabaseDictionariesIteratorPtr getDictionariesIterator([[maybe_unused]] const FilterByNameFunction & filter_by_dictionary_name = {})
@@ -186,7 +186,7 @@ public:
 
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
-        const Context & /*context*/,
+        ContextPtr /*context*/,
         const String & /*name*/,
         const StoragePtr & /*table*/,
         const ASTPtr & /*query*/)
@@ -196,7 +196,7 @@ public:
 
     /// Add the dictionary to the database. Record its presence in the metadata.
     virtual void createDictionary(
-        const Context & /*context*/,
+        ContextPtr /*context*/,
         const String & /*dictionary_name*/,
         const ASTPtr & /*query*/)
     {
@@ -205,7 +205,7 @@ public:
 
     /// Delete the table from the database, drop table and delete the metadata.
     virtual void dropTable(
-        const Context & /*context*/,
+        ContextPtr /*context*/,
         const String & /*name*/,
         [[maybe_unused]] bool no_delay = false)
     {
@@ -214,7 +214,7 @@ public:
 
     /// Delete the dictionary from the database. Delete the metadata.
     virtual void removeDictionary(
-        const Context & /*context*/,
+        ContextPtr /*context*/,
         const String & /*dictionary_name*/)
     {
         throw Exception("There is no DROP DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -249,14 +249,14 @@ public:
 
     /// Forget about the table without deleting it's data, but rename metadata file to prevent reloading it
     /// with next restart. The database may not support this method.
-    virtual void detachTablePermanently(const Context & /*context*/, const String & /*name*/)
+    virtual void detachTablePermanently(ContextPtr /*context*/, const String & /*name*/)
     {
         throw Exception("There is no DETACH TABLE PERMANENTLY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Rename the table and possibly move the table to another database.
     virtual void renameTable(
-        const Context & /*context*/,
+        ContextPtr /*context*/,
         const String & /*name*/,
         IDatabase & /*to_database*/,
         const String & /*to_name*/,
@@ -271,7 +271,7 @@ public:
     /// Change the table structure in metadata.
     /// You must call under the alter_lock of the corresponding table . If engine_modifier is empty, then engine does not change.
     virtual void alterTable(
-        const Context & /*context*/,
+        ContextPtr /*context*/,
         const StorageID & /*table_id*/,
         const StorageInMemoryMetadata & /*metadata*/)
     {
@@ -285,12 +285,12 @@ public:
     }
 
     /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    ASTPtr tryGetCreateTableQuery(const String & name, const Context & context) const noexcept
+    ASTPtr tryGetCreateTableQuery(const String & name, ContextPtr context) const noexcept
     {
         return getCreateTableQueryImpl(name, context, false);
     }
 
-    ASTPtr getCreateTableQuery(const String & name, const Context & context) const
+    ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const
     {
         return getCreateTableQueryImpl(name, context, true);
     }
@@ -351,12 +351,12 @@ public:
     virtual void shutdown() = 0;
 
     /// Delete data and metadata stored inside the database, if exists.
-    virtual void drop(const Context & /*context*/) {}
+    virtual void drop(ContextPtr /*context*/) {}
 
-    virtual ~IDatabase() {}
+    virtual ~IDatabase() = default;
 
 protected:
-    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, const Context & /*context*/, bool throw_on_error) const
+    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const
     {
         if (throw_on_error)
             throw Exception("There is no SHOW CREATE TABLE query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);

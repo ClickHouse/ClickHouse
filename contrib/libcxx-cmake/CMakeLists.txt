@@ -56,6 +56,11 @@ if (USE_UNWIND)
     target_compile_definitions(cxx PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
 endif ()
 
+# Override the deduced attribute support that causes error.
+if (OS_DARWIN AND COMPILER_GCC)
+    add_compile_definitions(_LIBCPP_INIT_PRIORITY_MAX)
+endif ()
+
 target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
 
 # Third party library may have substandard code.

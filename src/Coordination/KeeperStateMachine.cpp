@@ -90,25 +90,29 @@ void KeeperStateMachine::init()
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    if (data.size() == sizeof(int64_t))
+    auto request_for_session = parseRequest(data);
+    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
     {
-        nuraft::buffer_serializer timeout_data(data);
-        int64_t session_timeout_ms = timeout_data.get_i64();
-        auto response = nuraft::buffer::alloc(sizeof(int64_t));
+        const Coordination::ZooKeeperSessionIDRequest & session_id_request = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
         int64_t session_id;
-        nuraft::buffer_serializer bs(response);
         {
             std::lock_guard lock(storage_lock);
-            session_id = storage->getSessionID(session_timeout_ms);
-            bs.put_i64(session_id);
+            session_id = storage->getSessionID(session_id_request.session_timeout_ms);
         }
-        LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_timeout_ms);
-        last_committed_idx = log_idx;
-        return response;
+        LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
+
+        std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
+        response->internal_id = session_id_request.internal_id;
+        response->session_id = session_id;
+        response->server_id = session_id_request.server_id;
+
+        KeeperStorage::ResponseForSession response_for_session;
+        response_for_session.session_id = -1;
+        response_for_session.response = response;
+        responses_queue.push(response_for_session);
     }
     else
     {
-        auto request_for_session = parseRequest(data);
         KeeperStorage::ResponsesForSessions responses_for_sessions;
         {
             std::lock_guard lock(storage_lock);
@@ -116,10 +120,10 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             for (auto & response_for_session : responses_for_sessions)
                 responses_queue.push(response_for_session);
         }
-
-        last_committed_idx = log_idx;
-        return nullptr;
     }
+
+    last_committed_idx = log_idx;
+    return nullptr;
 }
 
 bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)

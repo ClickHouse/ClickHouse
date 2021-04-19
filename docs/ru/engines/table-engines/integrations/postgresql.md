@@ -22,7 +22,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Структура таблицы может отличаться от исходной структуры таблицы PostgreSQL:
 
--   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
+-   Имена столбцов должны быть такими же, как в исходной таблице PostgreSQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
 -   Типы столбцов могут отличаться от типов в исходной таблице PostgreSQL. ClickHouse пытается [приводить](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
 -   Настройка `external_table_functions_use_nulls` определяет как обрабатывать Nullable столбцы. По умолчанию 1, если 0 - табличная функция не будет делать nullable столбцы и будет вместо null выставлять значения по умолчанию для скалярного типа. Это также применимо для null значений внутри массивов.
 
@@ -94,10 +94,10 @@ postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
 INSERT 0 1
 
 postgresql> SELECT * FROM test;
- int_id | int_nullable | float | str  | float_nullable
---------+--------------+-------+------+----------------
-      1 |              |     2 | test |
-(1 row)
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+ (1 row)
 ```
 
 Таблица в ClickHouse, получение данных из PostgreSQL таблицы, созданной выше:

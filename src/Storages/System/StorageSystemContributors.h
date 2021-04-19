@@ -16,7 +16,7 @@ class StorageSystemContributors final : public ext::shared_ptr_helper<StorageSys
 {
     friend struct ext::shared_ptr_helper<StorageSystemContributors>;
 protected:
-    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 

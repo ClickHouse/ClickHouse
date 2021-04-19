@@ -123,7 +123,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
                 [&](const size_t row, const auto value) { return out[row] = value; },
                 [&](const size_t row)
                 {
-                    out[row] = 0;
+                    out[row] = ValueType();
                     (*vec_null_map_to)[row] = true;
                 },
                 default_value_extractor);
@@ -547,7 +547,7 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 
     if (require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
-            "({}): dictionary source is empty and 'require_nonempty' property is set.",
+            "{}: dictionary source is empty and 'require_nonempty' property is set.",
             full_name);
 }
 
@@ -676,10 +676,10 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for complex key hashed dictionary");
 
         if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception{full_name
-                                + ": elements .structure.range_min and .structure.range_max should be defined only "
-                                  "for a dictionary of layout 'range_hashed'",
-                            ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{}: elements .structure.range_min and .structure.range_max should be defined only "
+                "for a dictionary of layout 'range_hashed'",
+                full_name);
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};

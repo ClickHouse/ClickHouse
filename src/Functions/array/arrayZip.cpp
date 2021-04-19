@@ -23,7 +23,7 @@ class FunctionArrayZip : public IFunction
 {
 public:
     static constexpr auto name = "arrayZip";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayZip>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayZip>(); }
 
     String getName() const override
     {

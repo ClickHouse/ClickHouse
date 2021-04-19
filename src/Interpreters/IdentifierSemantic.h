@@ -99,7 +99,7 @@ public:
 class IdentifierMembershipCollector
 {
 public:
-    IdentifierMembershipCollector(const ASTSelectQuery & select, const Context & context);
+    IdentifierMembershipCollector(const ASTSelectQuery & select, ContextPtr context);
     std::optional<size_t> getIdentsMembership(ASTPtr ast) const;
 
 private:
