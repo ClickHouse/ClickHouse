@@ -201,6 +201,15 @@ def test_write_gzip_storage(started_cluster):
     assert started_cluster.hdfs_api.read_gzip_data("/gzip_storage") == "1\tMark\t72.53\n"
     assert node1.query("select * from GZIPHDFSStorage") == "1\tMark\t72.53\n"
 
+
+def test_read_files_with_spaces(started_cluster):
+    started_cluster.hdfs_api.write_data("/test test test 1.txt", "1\n")
+    started_cluster.hdfs_api.write_data("/test test test 2.txt", "2\n")
+    started_cluster.hdfs_api.write_data("/test test test 3.txt", "3\n")
+    node1.query("create table test (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/test*', 'TSV')")
+    assert node1.query("select * from test order by id") == "1\n2\n3\n"
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")
