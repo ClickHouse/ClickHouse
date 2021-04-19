@@ -311,16 +311,29 @@ public:
         Float64 prev_x = 0;
         Count sum = 0;
         Value prev_mean = centroids.front().mean;
+        Count prev_count = centroids.front().count;
 
         for (const auto & c : centroids)
         {
             Float64 current_x = sum + c.count * 0.5;
 
             if (current_x >= x)
-                return interpolate(x, prev_x, prev_mean, current_x, c.mean);
+            {
+                /// Special handling of singletons.
+                Float64 left = prev_x + 0.5*(prev_count == 1);
+                Float64 right = current_x - 0.5*(c.count == 1);
+
+                if (x <= left)
+                    return prev_mean;
+                if (x >= right)
+                    return c.mean;
+
+                return interpolate(x, left, prev_mean, right, c.mean);
+            }
 
             sum += c.count;
             prev_mean = c.mean;
+            prev_count = c.count;
             prev_x = current_x;
         }
 
