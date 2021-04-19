@@ -31,8 +31,6 @@ public:
 
     DiskType::Type getType() const override { return DiskType::Type::HDFS; }
 
-    void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
-
     void moveFile(const String & from_path, const String & to_path) override;
 
     void removeFile(const String & path) override;
@@ -61,10 +59,7 @@ public:
 private:
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }
 
-    void remove(const String & path);
-
     const Poco::Util::AbstractConfiguration & config;
-    String hdfs_root_path;
     HDFSBuilderWrapper hdfs_builder;
     HDFSFSPtr hdfs_fs;
 
