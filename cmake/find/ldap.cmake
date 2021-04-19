@@ -62,8 +62,10 @@ if (NOT OPENLDAP_FOUND AND NOT MISSING_INTERNAL_LDAP_LIBRARY)
     if (
         ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "x86_64"  ) OR
         ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "aarch64" ) OR
+        ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "ppc64le" ) OR
         ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "x86_64"  ) OR
-        ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "x86_64"  )
+        ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "x86_64"  ) OR
+        ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "aarch64"   )
     )
         set (_ldap_supported_platform TRUE)
     endif ()

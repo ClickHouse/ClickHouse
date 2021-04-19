@@ -1,4 +1,4 @@
-<test max_ignored_relative_change="0.2">
+<test max_ignored_relative_change="0.3">
     <settings>
         <do_not_merge_across_partitions_select_final>1</do_not_merge_across_partitions_select_final>
     </settings>

@@ -34,4 +34,3 @@ ClickHouse создает `trace spans` для каждого запроса и 
 
 Теги или атрибуты сохраняются в виде двух параллельных массивов, содержащих ключи и значения. Для работы с ними используйте [ARRAY JOIN](../sql-reference/statements/select/array-join.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/opentelemetry/) <!--hide-->

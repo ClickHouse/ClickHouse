@@ -24,7 +24,7 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeCleanupThread)")
     , log(&Poco::Logger::get(log_name))
 {
-    task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeCleanupThread::run()
@@ -342,6 +342,15 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
+    auto num_nodes_to_delete = timed_blocks.end() - first_outdated_block;
+    if (!num_nodes_to_delete)
+        return;
+
+    auto last_outdated_block = timed_blocks.end() - 1;
+    LOG_TRACE(log, "Will clear {} old blocks from {} (ctime {}) to {} (ctime {})", num_nodes_to_delete,
+              first_outdated_block->node, first_outdated_block->ctime,
+              last_outdated_block->node, last_outdated_block->ctime);
+
     zkutil::AsyncResponses<Coordination::RemoveResponse> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
@@ -372,9 +381,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         first_outdated_block++;
     }
 
-    auto num_nodes_to_delete = timed_blocks.end() - first_outdated_block;
-    if (num_nodes_to_delete)
-        LOG_TRACE(log, "Cleared {} old blocks from ZooKeeper", num_nodes_to_delete);
+    LOG_TRACE(log, "Cleared {} old blocks from ZooKeeper", num_nodes_to_delete);
 }
 
 

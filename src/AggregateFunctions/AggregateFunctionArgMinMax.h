@@ -39,6 +39,8 @@ class AggregateFunctionArgMinMax final : public IAggregateFunctionTupleArgHelper
 private:
     const DataTypePtr & type_res;
     const DataTypePtr & type_val;
+    const SerializationPtr serialization_res;
+    const SerializationPtr serialization_val;
     bool tuple_argument;
 
     using Base = IAggregateFunctionTupleArgHelper<Data, AggregateFunctionArgMinMax<Data>, 2>;
@@ -48,6 +50,8 @@ public:
         : Base({type_res_, type_val_}, {}, tuple_argument_)
         , type_res(this->argument_types[0])
         , type_val(this->argument_types[1])
+        , serialization_res(type_res->getDefaultSerialization())
+        , serialization_val(type_val->getDefaultSerialization())
     {
         if (!type_val->isComparable())
             throw Exception(
@@ -84,14 +88,14 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
-        this->data(place).result.write(buf, *type_res);
-        this->data(place).value.write(buf, *type_val);
+        this->data(place).result.write(buf, *serialization_res);
+        this->data(place).value.write(buf, *serialization_val);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
-        this->data(place).result.read(buf, *type_res, arena);
-        this->data(place).value.read(buf, *type_val, arena);
+        this->data(place).result.read(buf, *serialization_res, arena);
+        this->data(place).value.read(buf, *serialization_val, arena);
     }
 
     bool allocatesMemoryInArena() const override { return Data::allocatesMemoryInArena(); }

@@ -13,4 +13,3 @@ mv /*.rpm /output ||: # if exists
 mv /*.tgz /output ||: # if exists
 
 ccache --show-stats ||:
-ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:
