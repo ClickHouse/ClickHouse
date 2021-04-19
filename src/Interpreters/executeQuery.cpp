@@ -46,6 +46,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/PushdownLimitToUnionAll.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -489,6 +490,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Normalize SelectWithUnionQuery
         NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef().union_default_mode};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+
+        PushdownLimitToUnionAllVisitor::Data limit{};
+        PushdownLimitToUnionAllVisitor{limit}.visit(ast);
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);

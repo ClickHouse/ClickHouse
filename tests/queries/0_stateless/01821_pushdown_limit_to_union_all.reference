@@ -1,0 +1,67 @@
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+SELECT number
+FROM 
+(
+    SELECT number
+    FROM numbers(100)
+    ORDER BY number ASC
+    LIMIT 10
+)
+ORDER BY number ASC
+LIMIT 10
+0
+0
+1
+1
+2
+2
+3
+3
+4
+4
+SELECT number
+FROM 
+(
+    SELECT number
+    FROM numbers(100)
+    ORDER BY number ASC
+    LIMIT 10
+    UNION ALL
+    SELECT number
+    FROM numbers(100)
+    ORDER BY number ASC
+    LIMIT 10
+)
+ORDER BY number ASC
+LIMIT 10
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+SELECT number
+FROM 
+(
+    SELECT number
+    FROM numbers(100)
+    UNION DISTINCT
+    SELECT number
+    FROM numbers(100)
+    ORDER BY number ASC
+)
+ORDER BY number ASC
+LIMIT 10

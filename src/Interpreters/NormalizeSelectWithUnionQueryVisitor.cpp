@@ -18,7 +18,7 @@ void NormalizeSelectWithUnionQueryMatcher::getSelectsFromUnionListNode(ASTPtr & 
             getSelectsFromUnionListNode(child, selects);
 
         return;
-        }
+    }
 
         selects.push_back(ast_select);
 }
