@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <common/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 #include "ProxyConfiguration.h"
@@ -103,6 +104,7 @@ private:
     void removeAws(const AwsS3KeyKeeper & keys);
 
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
+    /// Converts revision to binary string with leading zeroes (64 bit).
     static String revisionToString(UInt64 revision);
 
     bool checkObjectExists(const String & source_bucket, const String & prefix);
@@ -120,14 +122,17 @@ private:
     void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key);
 
     void readRestoreInformation(RestoreInformation & restore_information);
-    void restoreFiles(const String & source_bucket, const String & source_path, UInt64 target_revision);
+    void restoreFiles(const RestoreInformation & restore_information);
     void processRestoreFiles(const String & source_bucket, const String & source_path, std::vector<String> keys);
-    void restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 target_revision);
+    void restoreFileOperations(const RestoreInformation & restore_information);
 
     /// Remove 'path' prefix from 'key' to get relative key.
     /// It's needed to store keys to metadata files in RELATIVE_PATHS version.
     static String shrinkKey(const String & path, const String & key);
     std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const String & key);
+
+    /// Forms detached path '../../detached/part_name/' from '../../part_name/'
+    static String pathToDetached(const String & source_path);
 
     std::shared_ptr<Aws::S3::S3Client> client;
     std::shared_ptr<S3::ProxyConfiguration> proxy_configuration;
