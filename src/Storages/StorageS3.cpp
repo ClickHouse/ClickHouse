@@ -166,7 +166,7 @@ StorageS3Source::StorageS3Source(
     ContextPtr context_,
     const ColumnsDescription & columns_,
     UInt64 max_block_size_,
-    Int64 s3_max_single_read_retries_,
+    UInt64 s3_max_single_read_retries_,
     const String compression_hint_,
     const std::shared_ptr<Aws::S3::S3Client> & client_,
     const String & bucket_,
@@ -314,7 +314,7 @@ StorageS3::StorageS3(
     const String & secret_access_key_,
     const StorageID & table_id_,
     const String & format_name_,
-    Int64 s3_max_single_read_retries_,
+    UInt64 s3_max_single_read_retries_,
     UInt64 min_upload_part_size_,
     UInt64 max_single_part_upload_size_,
     UInt64 max_connections_,
@@ -478,10 +478,10 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             secret_access_key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         }
 
+        UInt64 s3_max_single_read_retries = args.getLocalContext()->getSettingsRef().s3_max_single_read_retries;
         UInt64 min_upload_part_size = args.getLocalContext()->getSettingsRef().s3_min_upload_part_size;
         UInt64 max_single_part_upload_size = args.getLocalContext()->getSettingsRef().s3_max_single_part_upload_size;
         UInt64 max_connections = args.getLocalContext()->getSettingsRef().s3_max_connections;
-        Int64 s3_max_single_read_retries = args.getLocalContext()->getSettingsRef().s3_max_single_read_retries;
 
         String compression_method;
         String format_name;
