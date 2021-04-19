@@ -11,6 +11,8 @@ from ldap.role_mapping.requirements import *
 # Cross-outs of known fails
 xfails = {
    "mapping/roles removed and added in parallel":
+       [(Fail, "known bug")],
+   "user dn detection/mapping/roles removed and added in parallel":
        [(Fail, "known bug")]
 }
 
@@ -42,6 +44,7 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
         Scenario(run=load("ldap.authentication.tests.sanity", "scenario"), name="ldap sanity")
         Feature(run=load("ldap.role_mapping.tests.server_config", "feature"))
         Feature(run=load("ldap.role_mapping.tests.mapping", "feature"))
+        Feature(run=load("ldap.role_mapping.tests.user_dn_detection", "feature"))
 
 if main():
     regression()
