@@ -52,9 +52,13 @@ namespace JoinCommon
 
 void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability)
 {
+
+    if (column.column->isSparse())
+        column.column = recursiveRemoveSparse(column.column);
+
     if (low_card_nullability && column.type->lowCardinality())
     {
-        column.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(column.column));
+        column.column = recursiveRemoveLowCardinality(column.column);
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 

@@ -230,6 +230,7 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         return Status::NeedData;
     }
     current_chunk = input.pull(!is_consume_finished);
+    convertToFullIfSparse(current_chunk);
     return Status::Ready;
 }
 
