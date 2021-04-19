@@ -195,15 +195,6 @@ public:
             BetterFloat l_count = l->count;
             while (r != centroids.end())
             {
-                if (l->mean == r->mean) // Perfect aggregation (fast). We compare l->mean, not l_mean, to avoid identical elements after compress
-                {
-                    l_count += r->count;
-                    l->count = l_count;
-                    ++r;
-                    continue;
-                }
-                // we use quantile which gives us the smallest error
-
                 /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
                 BetterFloat ql = (sum + l_count * 0.5) / count;
                 BetterFloat err = ql * (1 - ql);
