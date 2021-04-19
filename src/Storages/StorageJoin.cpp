@@ -82,8 +82,10 @@ void StorageJoin::truncate(
 
 void StorageJoin::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    for (const auto & command: commands) {
-        switch (command.type) {
+    for (const auto & command: commands)
+    {
+        switch (command.type)
+        {
             case MutationCommand::Type::DELETE:
                 break;
             case MutationCommand::Type::UPDATE:
@@ -112,7 +114,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     auto compressed_backup_buf = CompressedWriteBuffer(*backup_buf);
     auto backup_stream = NativeBlockOutputStream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock());
 
-    while (const Block & block = in->read()) {
+    while (const Block & block = in->read())
+    {
         new_data->addJoinedBlock(block, true);
         if (persistent)
             backup_stream.write(block);
@@ -121,7 +124,8 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     join = std::move(new_data);
     increment = 1;
 
-    if (persistent) {
+    if (persistent)
+    {
         backup_stream.flush();
         compressed_backup_buf.next();
         backup_buf->next();
@@ -129,10 +133,10 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
 
         std::vector<std::string> files;
         disk->listFiles(path, files);
-        for (const auto & file_name: files) {
-            if (file_name.ends_with(".bin")) {
+        for (const auto & file_name: files)
+        {
+            if (file_name.ends_with(".bin"))
                 disk->removeFileIfExists(path + file_name);
-            }
         }
 
         disk->replaceFile(path + "tmp/" + backup_file_name, path + backup_file_name);
