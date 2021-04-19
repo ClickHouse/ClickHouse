@@ -289,6 +289,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
             /// In this case, invalidate replica, so that we would not read from it anymore.
             current_connection->disconnect();
             invalidateReplica(state);
+            throw;
         }
     }
 
