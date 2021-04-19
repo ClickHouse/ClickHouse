@@ -28,3 +28,13 @@ create table xyz(x int, y int, z int) engine MergeTree partition by if(toUInt8(x
 insert into xyz values (1, 2, 3);
 select * from xyz where y = 2;
 drop table if exists xyz;
+
+-- Test if we obey strict rules when facing NOT contitions
+drop table if exists test;
+create table test(d Date, k Int64, s String) Engine=MergeTree partition by (toYYYYMM(d),k) order by (d, k);
+
+insert into test values ('2020-01-01', 1, '');
+insert into test values ('2020-01-02', 1, '');
+
+select * from test where d != '2020-01-01';
+drop table test;
