@@ -1107,13 +1107,13 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
         {
             /// Remove each expected file in directory, then remove directory itself.
 
-    #if !__clang__
+    #if !defined(__clang__)
     #    pragma GCC diagnostic push
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
                 volume->getDisk()->removeSharedFile(to + "/" + file, keep_s3);
-    #if !__clang__
+    #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
