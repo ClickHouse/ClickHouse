@@ -300,6 +300,8 @@ void TCPHandler::runImpl()
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
 
+            unknown_packet_in_send_data = query_context->getSettingsRef().unknown_packet_in_send_data;
+
             after_check_cancelled.restart();
             after_send_progress.restart();
 
@@ -1464,11 +1466,10 @@ void TCPHandler::sendData(const Block & block)
     try
     {
         /// For testing hedged requests
-        const Settings & settings = query_context->getSettingsRef();
-        if (settings.unknown_packet_in_send_data)
+        if (unknown_packet_in_send_data)
         {
-            --const_cast<SettingFieldUInt64 &>(settings.unknown_packet_in_send_data).value;
-            if (settings.unknown_packet_in_send_data == 0)
+            --unknown_packet_in_send_data;
+            if (unknown_packet_in_send_data == 0)
                 writeVarUInt(UInt64(-1), *out);
         }
 
