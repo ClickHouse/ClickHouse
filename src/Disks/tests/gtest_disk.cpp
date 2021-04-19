@@ -254,27 +254,39 @@ TEST(DiskTest, AppendFileHDFS)
 
 TEST(DiskTest, SeekHDFS)
 {
-    //{
-    //    String buf(4, '0');
-    //    std::unique_ptr<DB::SeekableReadBuffer> in = disk.readFile("test_file", 1024, 1024, 1024, 1024);
+    Poco::Util::AbstractConfiguration *config = new Poco::Util::XMLConfiguration(config_path);
+    auto disk = DB::DiskHDFS("disk_hdfs", hdfs_uri, metadata_path, *config);
 
-    //    in->seek(5, SEEK_SET);
+    {
+        std::unique_ptr<DB::WriteBuffer> out = disk.writeFile(file_name, 1024, DB::WriteMode::Rewrite);
+        writeString("test data", *out);
+    }
 
-    //    in->readStrict(buf.data(), 4);
-    //    EXPECT_EQ("data", buf);
-    //}
-    //// Test SEEK_CUR
-    //{
-    //    std::unique_ptr<DB::SeekableReadBuffer> in = disk.readFile("test_file", 1024, 1024, 1024, 1024);
-    //    String buf(4, '0');
+    /// Test SEEK_SET
+    {
+        String buf(4, '0');
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk.readFile(file_name, 1024, 1024, 1024, 1024, nullptr);
 
-    //    in->readStrict(buf.data(), 4);
-    //    EXPECT_EQ("test", buf);
+        in->seek(5, SEEK_SET);
 
-    //    // Skip whitespace
-    //    in->seek(1, SEEK_CUR);
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("data", buf);
+    }
 
-    //    in->readStrict(buf.data(), 4);
-    //    EXPECT_EQ("data", buf);
-    //}
+    /// Test SEEK_CUR
+    {
+        std::unique_ptr<DB::SeekableReadBuffer> in = disk.readFile(file_name, 1024, 1024, 1024, 1024, nullptr);
+        String buf(4, '0');
+
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("test", buf);
+
+        // Skip whitespace
+        in->seek(1, SEEK_CUR);
+
+        in->readStrict(buf.data(), 4);
+        EXPECT_EQ("data", buf);
+    }
+
+    disk.removeFileIfExists(file_name);
 }
