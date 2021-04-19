@@ -89,7 +89,7 @@ def grant_option_check(grant_option_target, grant_target, user_name, table_type,
 @Examples("privilege", [
     ("ALTER MOVE PARTITION",), ("ALTER MOVE PART",), ("MOVE PARTITION",), ("MOVE PART",),
     ("ALTER DELETE",), ("DELETE",),
-    ("ALTER FETCH PARTITION",), ("FETCH PARTITION",),
+    ("ALTER FETCH PARTITION",), ("ALTER FETCH PART",), ("FETCH PARTITION",),
     ("ALTER FREEZE PARTITION",), ("FREEZE PARTITION",),
     ("ALTER UPDATE",), ("UPDATE",),
     ("ALTER ADD COLUMN",), ("ADD COLUMN",),
