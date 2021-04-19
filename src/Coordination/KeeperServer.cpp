@@ -1,4 +1,9 @@
 #include <Coordination/KeeperServer.h>
+
+#if !defined(ARCADIA_BUILD)
+#   include "config_core.h"
+#endif
+
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
@@ -9,6 +14,7 @@
 #include <chrono>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <string>
+#include <Poco/Util/Application.h>
 
 namespace DB
 {
@@ -16,6 +22,42 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
+    extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+#if USE_SSL
+void setSSLParams(nuraft::asio_service::options & asio_opts)
+{
+    const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
+    String certificate_file_property = "openSSL.server.certificateFile";
+    String private_key_file_property = "openSSL.server.privateKeyFile";
+    String root_ca_file_property = "openSSL.server.caConfig";
+
+    if (!config.has(certificate_file_property))
+        throw Exception("Server certificate file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    if (!config.has(private_key_file_property))
+        throw Exception("Server private key file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    asio_opts.enable_ssl_ = true;
+    asio_opts.server_cert_file_ = config.getString(certificate_file_property);
+    asio_opts.server_key_file_ = config.getString(private_key_file_property);
+
+    if (config.has(root_ca_file_property))
+        asio_opts.root_cert_file_ = config.getString(root_ca_file_property);
+
+    if (config.getBool("openSSL.server.loadDefaultCAFile", false))
+        asio_opts.load_default_ca_file_ = true;
+
+    if (config.getString("openSSL.server.verificationMode", "none") == "none")
+        asio_opts.skip_verification_ = true;
+}
+#endif
+
 }
 
 KeeperServer::KeeperServer(
@@ -72,6 +114,15 @@ void KeeperServer::startup()
     params.return_method_ = nuraft::raft_params::blocking;
 
     nuraft::asio_service::options asio_opts{};
+    if (state_manager->isSecure())
+    {
+#if USE_SSL
+        setSSLParams(asio_opts);
+#else
+        throw Exception{"SSL support for NuRaft is disabled because ClickHouse was built without SSL support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+    }
 
     launchRaftServer(params, asio_opts);
 

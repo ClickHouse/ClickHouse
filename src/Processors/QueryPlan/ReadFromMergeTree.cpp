@@ -67,7 +67,7 @@ Pipe ReadFromMergeTree::readFromPool()
         false);
 
     auto * logger = &Poco::Logger::get(storage.getLogName() + " (SelectExecutor)");
-    LOG_TRACE(logger, "Reading approx. {} rows with {} streams", total_rows, num_streams);
+    LOG_DEBUG(logger, "Reading approx. {} rows with {} streams", total_rows, num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {

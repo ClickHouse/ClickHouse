@@ -115,7 +115,7 @@ String formattedAST(const ASTPtr & ast)
 
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
-    const String &, const ASTPtr & query_ast,
+    const ASTPtr & query_ast,
     ContextPtr context, const ThrottlerPtr & throttler,
     const SelectQueryInfo &,
     std::vector<QueryPlanPtr> & plans,
