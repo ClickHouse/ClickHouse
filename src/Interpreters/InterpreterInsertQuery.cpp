@@ -293,6 +293,8 @@ BlockIO InterpreterInsertQuery::execute()
     }
     else if (query.select || query.watch)
     {
+        /// XXX: is this branch also triggered for select+input() case?
+
         const auto & header = out_streams.at(0)->getHeader();
         auto actions_dag = ActionsDAG::makeConvertingActions(
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
