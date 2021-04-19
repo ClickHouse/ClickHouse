@@ -64,6 +64,8 @@ public:
 
     void clearDirectory(const String & path) override;
 
+    void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
+
     void removeDirectory(const String & path) override;
 
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;

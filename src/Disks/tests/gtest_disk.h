@@ -4,7 +4,6 @@
 #include <Disks/DiskMemory.h>
 #include <Disks/IDisk.h>
 
-
 template <typename T>
 DB::DiskPtr createDisk();
 
