@@ -16,9 +16,10 @@ public:
         const String & hdfs_name_,
         const String & hdfs_path_,
         DiskHDFS::Metadata metadata_,
-        size_t buf_size_)
+        size_t buf_size_,
+        int flags_)
         : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-        , impl(WriteBufferFromHDFS(hdfs_name_, config_, buf_size_))
+        , impl(WriteBufferFromHDFS(hdfs_name_, config_, buf_size_, flags_))
         , metadata(std::move(metadata_))
         , hdfs_path(hdfs_path_)
     {

@@ -2,7 +2,6 @@
 
 #include <Disks/DiskFactory.h>
 #include <Disks/IDiskRemote.h>
-
 #include <Poco/DirectoryIterator.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <hdfs/hdfs.h> // Y_IGNORE
@@ -28,7 +27,7 @@ public:
         const String & disk_name_,
         const String & hdfs_root_path_,
         const String & metadata_path_,
-        ContextPtr context_);
+        const Poco::Util::AbstractConfiguration & config);
 
     DiskType::Type getType() const override { return DiskType::Type::HDFS; }
 
