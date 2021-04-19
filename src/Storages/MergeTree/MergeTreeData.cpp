@@ -1305,6 +1305,9 @@ void MergeTreeData::clearEmptyParts()
     if (!getSettings()->remove_empty_parts)
         return;
 
+    /// There is no need to wait for drop and hold thread in background pool.
+    auto context_for_drop = Context::createCopy(getContext());
+    context_for_drop->setSetting("replication_alter_partitions_sync", Field(0));
     auto parts = getDataPartsVector();
     for (const auto & part : parts)
     {
@@ -1312,7 +1315,7 @@ void MergeTreeData::clearEmptyParts()
         {
             ASTPtr literal = std::make_shared<ASTLiteral>(part->name);
             /// If another replica has already started drop, it's ok, no need to throw.
-            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, getContext(), /* throw_if_noop = */ false);
+            dropPartition(literal, /* detach = */ false, /*drop_part = */ true, context_for_drop, /* throw_if_noop = */ false);
         }
     }
 }
