@@ -598,8 +598,8 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
             }
             else
             {
-                auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zookeeper);
-                if (!removeTableNodesFromZooKeeper(zookeeper, zookeeper_path, drop_lock, log))
+                auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zookeeper);
+                if (!removeTableNodesFromZooKeeper(zookeeper, zookeeper_path, metadata_drop_lock, log))
                 {
                     /// Someone is recursively removing table right now, we cannot create new table until old one is removed
                     continue;
@@ -829,14 +829,14 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
     }
     else
     {
-        auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zookeeper);
+        auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zookeeper);
         LOG_INFO(logger, "Removing table {} (this might take several minutes)", zookeeper_path);
-        removeTableNodesFromZooKeeper(zookeeper, zookeeper_path, drop_lock, logger);
+        removeTableNodesFromZooKeeper(zookeeper, zookeeper_path, metadata_drop_lock, logger);
     }
 }
 
 bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper,
-        const String & zookeeper_path, const zkutil::EphemeralNodeHolder::Ptr & drop_lock, Poco::Logger * logger)
+        const String & zookeeper_path, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger)
 {
     bool completely_removed = false;
     Strings children;
@@ -851,7 +851,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 
     Coordination::Requests ops;
     Coordination::Responses responses;
-    ops.emplace_back(zkutil::makeRemoveRequest(drop_lock->getPath(), -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path, -1));
     code = zookeeper->tryMulti(ops, responses);
@@ -872,7 +872,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
     }
     else
     {
-        drop_lock->setAlreadyRemoved();
+        metadata_drop_lock->setAlreadyRemoved();
         completely_removed = true;
         LOG_INFO(logger, "Table {} was successfully removed from ZooKeeper", zookeeper_path);
     }
