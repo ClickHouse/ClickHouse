@@ -28,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
+    extern const int INCORRECT_DISK_INDEX;
 }
 
 
@@ -155,13 +156,61 @@ IDiskRemote::Metadata IDiskRemote::createMeta(const String & path) const
 }
 
 
+DiskPtr DiskRemoteReservation::getDisk(size_t i) const
+{
+    if (i != 0)
+        throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+    return disk;
+}
+
+
+void DiskRemoteReservation::update(UInt64 new_size)
+{
+    std::lock_guard lock(disk->reservation_mutex);
+    disk->reserved_bytes -= size;
+    size = new_size;
+    disk->reserved_bytes += size;
+}
+
+
+DiskRemoteReservation::~DiskRemoteReservation()
+{
+    try
+    {
+        std::lock_guard lock(disk->reservation_mutex);
+        if (disk->reserved_bytes < size)
+        {
+            disk->reserved_bytes = 0;
+            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+        }
+        else
+        {
+            disk->reserved_bytes -= size;
+        }
+
+        if (disk->reservation_count == 0)
+            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+        else
+            --disk->reservation_count;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+
 IDiskRemote::IDiskRemote(
+    const String & disk_name_,
     const String & remote_fs_root_path_,
     const String & metadata_path_,
+    const String & log_name_,
     std::unique_ptr<Executor> executor_)
     : IDisk(std::move(executor_))
+    , disk_name(disk_name_)
     , remote_fs_root_path(remote_fs_root_path_)
     , metadata_path(metadata_path_)
+    , log(&Poco::Logger::get(log_name_))
 {
 }
 
@@ -248,20 +297,53 @@ void IDiskRemote::removeDirectory(const String & path)
     Poco::File(metadata_path + path).remove();
 }
 
+
+DiskDirectoryIteratorPtr IDiskRemote::iterateDirectory(const String & path)
+{
+    return std::make_unique<RemoteDiskDirectoryIterator>(metadata_path + path, path);
+}
+
+
 void IDiskRemote::listFiles(const String & path, std::vector<String> & file_names)
 {
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
         file_names.push_back(it->name());
 }
 
+
 void IDiskRemote::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
     Poco::File(metadata_path + path).setLastModified(timestamp);
 }
 
+
 Poco::Timestamp IDiskRemote::getLastModified(const String & path)
 {
     return Poco::File(metadata_path + path).getLastModified();
+}
+
+
+bool IDiskRemote::tryReserve(UInt64 bytes)
+{
+    std::lock_guard lock(reservation_mutex);
+    if (bytes == 0)
+    {
+        LOG_DEBUG(log, "Reserving 0 bytes on s3 disk {}", backQuote(disk_name));
+        ++reservation_count;
+        return true;
+    }
+
+    auto available_space = getAvailableSpace();
+    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
+    if (unreserved_space >= bytes)
+    {
+        LOG_DEBUG(log, "Reserving {} on disk {}, having unreserved {}.",
+            ReadableSize(bytes), backQuote(disk_name), ReadableSize(unreserved_space));
+        ++reservation_count;
+        reserved_bytes += bytes;
+        return true;
+    }
+    return false;
 }
 
 }

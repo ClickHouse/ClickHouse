@@ -12,6 +12,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <re2/re2.h>
 #include <Disks/IDiskRemote.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -34,7 +35,7 @@ public:
     struct RestoreInformation;
 
     DiskS3(
-        String name_,
+        String disk_name_,
         std::shared_ptr<Aws::S3::S3Client> client_,
         std::shared_ptr<S3::ProxyConfiguration> proxy_configuration_,
         String bucket_,
@@ -47,13 +48,9 @@ public:
         int thread_pool_size_,
         int list_object_keys_size_);
 
-    const String & getName() const override { return name; }
-
     ReservationPtr reserve(UInt64 bytes) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
-
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
     void moveFile(const String & from_path, const String & to_path) override;
 
@@ -101,8 +98,6 @@ public:
     void onFreeze(const String & path) override;
 
 private:
-    bool tryReserve(UInt64 bytes);
-
     void removeMeta(const String & path, AwsS3KeyKeeper & keys);
     void removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys);
     void removeAws(const AwsS3KeyKeeper & keys);
@@ -134,7 +129,6 @@ private:
     static String shrinkKey(const String & path, const String & key);
     std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const String & key);
 
-    const String name;
     std::shared_ptr<Aws::S3::S3Client> client;
     std::shared_ptr<S3::ProxyConfiguration> proxy_configuration;
     const String bucket;
@@ -142,10 +136,6 @@ private:
     size_t max_single_part_upload_size;
     size_t min_bytes_for_seek;
     bool send_metadata;
-
-    UInt64 reserved_bytes = 0;
-    UInt64 reservation_count = 0;
-    std::mutex reservation_mutex;
 
     std::atomic<UInt64> revision_counter;
     static constexpr UInt64 LATEST_REVISION = std::numeric_limits<UInt64>::max();

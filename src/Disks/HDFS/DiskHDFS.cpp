@@ -4,7 +4,6 @@
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include "ReadIndirectBufferFromHDFS.h"
 #include "WriteIndirectBufferFromHDFS.h"
-#include "DiskHDFSReservation.h"
 #include "DiskHDFSDirectoryIterator.h"
 
 #include <random>
@@ -30,6 +29,7 @@ namespace ErrorCodes
     extern const int CANNOT_DELETE_DIRECTORY;
     extern const int UNKNOWN_FORMAT;
     extern const int PATH_ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -38,19 +38,11 @@ DiskHDFS::DiskHDFS(
     const String & hdfs_root_path_,
     const String & metadata_path_,
     ContextPtr context_)
-    : IDiskRemote(hdfs_root_path_, metadata_path_)
-    , log(&Poco::Logger::get("DiskHDFS"))
-    , disk_name(disk_name_)
+    : IDiskRemote(disk_name_, hdfs_root_path_, metadata_path_, "DiskHDFS")
     , config(context_->getGlobalContext()->getConfigRef())
     , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
     , hdfs_fs(createHDFSFS(hdfs_builder.get()))
 {
-}
-
-
-DiskDirectoryIteratorPtr DiskHDFS::iterateDirectory(const String & path)
-{
-    return std::make_unique<DiskHDFSDirectoryIterator>(metadata_path + path, path);
 }
 
 
@@ -223,34 +215,7 @@ ReservationPtr DiskHDFS::reserve(UInt64 bytes)
 {
     if (!tryReserve(bytes))
         return {};
-    return std::make_unique<DiskHDFSReservation>(std::static_pointer_cast<DiskHDFS>(shared_from_this()), bytes);
-}
-
-
-bool DiskHDFS::tryReserve(UInt64 bytes)
-{
-    std::lock_guard lock(reservation_mutex);
-
-    if (bytes == 0)
-    {
-        LOG_DEBUG(log, "Reserving 0 bytes on HDFS disk {}", backQuote(disk_name));
-        ++reservation_count;
-        return true;
-    }
-
-    auto available_space = getAvailableSpace();
-    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
-    if (unreserved_space >= bytes)
-    {
-        LOG_DEBUG(log,
-            "Reserving {} on disk {}, having unreserved {}",
-            formatReadableSizeWithBinarySuffix(bytes), backQuote(disk_name), formatReadableSizeWithBinarySuffix(unreserved_space));
-        ++reservation_count;
-        reserved_bytes += bytes;
-        return true;
-    }
-
-    return false;
+    return std::make_unique<DiskRemoteReservation>(std::static_pointer_cast<DiskHDFS>(shared_from_this()), bytes);
 }
 
 
