@@ -35,35 +35,38 @@ RUN apt-get update \
 RUN apt-get update \
     && apt-get install \
         bash \
-        cmake \
+        build-essential \
         ccache \
-        curl \
-        gcc-9 \
-        g++-9 \
         clang-10 \
-        clang-tidy-10 \
-        lld-10 \
-        llvm-10 \
-        llvm-10-dev \
         clang-11 \
+        clang-tidy-10 \
         clang-tidy-11 \
-        lld-11 \
-        llvm-11 \
-        llvm-11-dev \
+        cmake \
+        cmake \
+        curl \
+        g++-9 \
+        gcc-9 \
+        gdb \
+        git \
+        gperf \
+        gperf \
+        intel-opencl-icd \
         libicu-dev \
         libreadline-dev \
+        lld-10 \
+        lld-11 \
+        llvm-10 \
+        llvm-10-dev \
+        llvm-11 \
+        llvm-11-dev \
+        moreutils \
         ninja-build \
-        gperf \
-        git \
-        opencl-headers \
         ocl-icd-libopencl1 \
-        intel-opencl-icd \
-        tzdata \
-        gperf \
-        cmake \
-        gdb \
+        opencl-headers \
+        pigz \
+        pixz \
         rename \
-        build-essential \
+        tzdata \
         --yes --no-install-recommends
 
 # This symlink required by gcc to find lld compiler
@@ -111,4 +114,4 @@ RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
 
 COPY build.sh /
-CMD ["/bin/bash", "/build.sh"]
+CMD ["bash", "-c", "/build.sh 2>&1 | ts"]

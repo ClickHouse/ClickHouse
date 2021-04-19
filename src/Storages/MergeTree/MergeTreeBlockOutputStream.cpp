@@ -38,7 +38,7 @@ void MergeTreeBlockOutputStream::write(const Block & block)
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (storage.renameTempPartAndAdd(part, &storage.increment, nullptr, storage.getDeduplicationLog()))
         {
-            PartLog::addNewPart(storage.global_context, part, watch.elapsed());
+            PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
 
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
             storage.background_executor.triggerTask();

@@ -10,7 +10,6 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
-#include <pqxx/pqxx>
 
 
 namespace DB
@@ -27,7 +26,7 @@ public:
         const String & remote_table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const Context & context_,
+        ContextPtr context_,
         const std::string & remote_table_schema_ = "");
 
     String getName() const override { return "PostgreSQL"; }
@@ -36,19 +35,19 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 private:
     friend class PostgreSQLBlockOutputStream;
 
     String remote_table_name;
     String remote_table_schema;
-    Context global_context;
+    ContextPtr global_context;
     postgres::PoolWithFailoverPtr pool;
 };
 

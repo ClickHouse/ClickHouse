@@ -87,7 +87,7 @@ class MergeTreeConditionFullText final : public IMergeTreeIndexCondition
 public:
     MergeTreeConditionFullText(
             const SelectQueryInfo & query_info,
-            const Context & context,
+            ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
             TokenExtractorPtr token_extactor_);
@@ -208,7 +208,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query, const Context & context) const override;
+            const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
