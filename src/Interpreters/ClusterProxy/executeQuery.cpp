@@ -5,7 +5,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/ProcessList.h>
-#include <Parsers/queryToString.h>
+#include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Processors/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -91,7 +91,10 @@ ContextPtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context,
 void executeQuery(
     QueryPlan & query_plan,
     IStreamFactory & stream_factory, Poco::Logger * log,
-    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info)
+    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
+    const ExpressionActionsPtr & sharding_key_expr,
+    const std::string & sharding_key_column_name,
+    const ClusterPtr & not_optimized_cluster)
 {
     assert(log);
 
@@ -104,9 +107,7 @@ void executeQuery(
     Pipes remote_pipes;
     Pipes delayed_pipes;
 
-    const std::string query = queryToString(query_ast);
-
-    auto new_context = updateSettingsForCluster(*query_info.cluster, context, settings, log);
+    auto new_context = updateSettingsForCluster(*query_info.getCluster(), context, settings, log);
 
     new_context->getClientInfo().distributed_depth += 1;
 
@@ -127,9 +128,28 @@ void executeQuery(
     else
         throttler = user_level_throttler;
 
-    for (const auto & shard_info : query_info.cluster->getShardsInfo())
+    size_t shards = query_info.getCluster()->getShardCount();
+    for (const auto & shard_info : query_info.getCluster()->getShardsInfo())
     {
-        stream_factory.createForShard(shard_info, query, query_ast,
+        ASTPtr query_ast_for_shard;
+        if (query_info.optimized_cluster && settings.optimize_skip_unused_shards_rewrite_in && shards > 1)
+        {
+            query_ast_for_shard = query_ast->clone();
+
+            OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
+                sharding_key_expr,
+                sharding_key_column_name,
+                shard_info,
+                not_optimized_cluster->getSlotToShard(),
+            };
+            OptimizeShardingKeyRewriteInVisitor visitor(visitor_data);
+            visitor.visit(query_ast_for_shard);
+        }
+        else
+            query_ast_for_shard = query_ast;
+
+        stream_factory.createForShard(shard_info,
+            query_ast_for_shard,
             new_context, throttler, query_info, plans,
             remote_pipes, delayed_pipes, log);
     }

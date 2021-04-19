@@ -89,7 +89,7 @@ struct QueryState
         *this = QueryState();
     }
 
-    bool empty()
+    bool empty() const
     {
         return is_empty;
     }
@@ -150,6 +150,7 @@ private:
     String cluster;
     String cluster_secret;
 
+    std::mutex task_callback_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
@@ -169,9 +170,11 @@ private:
     bool receivePacket();
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
+    String receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
     void readData(const Settings & connection_settings);
+    void receiveClusterNameAndSalt();
     std::tuple<size_t, int> getReadTimeouts(const Settings & connection_settings);
 
     [[noreturn]] void receiveUnexpectedData();
@@ -198,11 +201,10 @@ private:
     void sendLogs();
     void sendEndOfStream();
     void sendPartUUIDs();
+    void sendReadTaskRequestAssumeLocked();
     void sendProfileInfo(const BlockStreamProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
-
-    void receiveClusterNameAndSalt();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

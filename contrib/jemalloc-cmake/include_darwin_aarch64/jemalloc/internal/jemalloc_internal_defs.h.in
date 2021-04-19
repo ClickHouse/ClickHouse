@@ -42,7 +42,7 @@
  * total number of bits in a pointer, e.g. on x64, for which the uppermost 16
  * bits are the same as bit 47.
  */
-#define LG_VADDR 48
+#define LG_VADDR 64
 
 /* Defined if C11 atomics are available. */
 #define JEMALLOC_C11_ATOMICS 1
@@ -100,11 +100,6 @@
  * Defined if mach_absolute_time() is available.
  */
 #define JEMALLOC_HAVE_MACH_ABSOLUTE_TIME 1
-
-/*
- * Defined if clock_gettime(CLOCK_REALTIME, ...) is available.
- */
-#define JEMALLOC_HAVE_CLOCK_REALTIME 1
 
 /*
  * Defined if _malloc_thread_cleanup() exists.  At least in the case of
@@ -181,14 +176,14 @@
 /* #undef LG_QUANTUM */
 
 /* One page is 2^LG_PAGE bytes. */
-#define LG_PAGE 16
+#define LG_PAGE 14
 
 /*
  * One huge page is 2^LG_HUGEPAGE bytes.  Note that this is defined even if the
  * system does not explicitly support huge pages; system calls that require
  * explicit huge page support are separately configured.
  */
-#define LG_HUGEPAGE 29
+#define LG_HUGEPAGE 21
 
 /*
  * If defined, adjacent virtual memory mappings with identical attributes
@@ -356,7 +351,7 @@
 /* #undef JEMALLOC_EXPORT */
 
 /* config.malloc_conf options string. */
-#define JEMALLOC_CONFIG_MALLOC_CONF "@JEMALLOC_CONFIG_MALLOC_CONF@"
+#define JEMALLOC_CONFIG_MALLOC_CONF ""
 
 /* If defined, jemalloc takes the malloc/free/etc. symbol names. */
 /* #undef JEMALLOC_IS_MALLOC */

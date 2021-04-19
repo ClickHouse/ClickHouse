@@ -16,7 +16,7 @@ The following operations with [partitions](../../../engines/table-engines/merget
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — Resets the value of a specified column in a partition.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — Resets the specified secondary index in a partition.
 -   [FREEZE PARTITION](#alter_freeze-partition) — Creates a backup of a partition.
--   [FETCH PARTITION](#alter_fetch-partition) — Downloads a partition from another server.
+-   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
 -   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
 
 <!-- -->
@@ -198,29 +198,35 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 
 The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
 
-## FETCH PARTITION {#alter_fetch-partition}
+## FETCH PARTITION|PART {#alter_fetch-partition}
 
 ``` sql
-ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
+ALTER TABLE table_name FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
 ```
 
 Downloads a partition from another server. This query only works for the replicated tables.
 
 The query does the following:
 
-1.  Downloads the partition from the specified shard. In ‘path-in-zookeeper’ you must specify a path to the shard in ZooKeeper.
+1.  Downloads the partition|part from the specified shard. In ‘path-in-zookeeper’ you must specify a path to the shard in ZooKeeper.
 2.  Then the query puts the downloaded data to the `detached` directory of the `table_name` table. Use the [ATTACH PARTITION\|PART](#alter_attach-partition) query to add the data to the table.
 
 For example:
 
+1. FETCH PARTITION
 ``` sql
 ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
+2. FETCH PART
+``` sql
+ALTER TABLE users FETCH PART 201901_2_2_0 FROM '/clickhouse/tables/01-01/visits';
+ALTER TABLE users ATTACH PART 201901_2_2_0;
+```
 
 Note that:
 
--   The `ALTER ... FETCH PARTITION` query isn’t replicated. It places the partition to the `detached` directory only on the local server.
+-   The `ALTER ... FETCH PARTITION|PART` query isn’t replicated. It places the part or partition to the `detached` directory only on the local server.
 -   The `ALTER TABLE ... ATTACH` query is replicated. It adds the data to all replicas. The data is added to one of the replicas from the `detached` directory, and to the others - from neighboring replicas.
 
 Before downloading, the system checks if the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
