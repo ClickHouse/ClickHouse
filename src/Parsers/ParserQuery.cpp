@@ -18,6 +18,7 @@
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserUseQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
+#include <Parsers/ParserTransactionQuery.h>
 
 
 namespace DB
@@ -40,6 +41,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserGrantQuery grant_p;
     ParserSetRoleQuery set_role_p;
     ParserExternalDDLQuery external_ddl_p;
+    ParserTransactionQuery transaction_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -54,7 +56,9 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
-        || external_ddl_p.parse(pos, node, expected);
+        || external_ddl_p.parse(pos, node, expected)
+        || transaction_p.parse(pos, node, expected)
+        ;
 
     return res;
 }
