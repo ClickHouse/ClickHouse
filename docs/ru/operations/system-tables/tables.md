@@ -17,7 +17,7 @@
 -   `metadata_modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время последней модификации табличных метаданных.
 -   `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — зависимости базы данных.
 -   `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — табличные зависимости (таблицы [MaterializedView](../../engines/table-engines/special/materializedview.md), созданные на базе текущей таблицы).
--   `create_table_query` ([String](../../sql-reference/data-types/string.md)) — запрос, которым создавалась таблица.
+-   `create_table_query` ([String](../../sql-reference/data-types/string.md)) — запрос, при помощи которого создавалась таблица.
 -   `engine_full` ([String](../../sql-reference/data-types/string.md)) — параметры табличного движка.
 -   `partition_key` ([String](../../sql-reference/data-types/string.md)) — ключ партиционирования таблицы.
 -   `sorting_key` ([String](../../sql-reference/data-types/string.md)) — ключ сортировки таблицы.
@@ -28,9 +28,9 @@
     -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
     -   [Distributed](../../engines/table-engines/special/distributed.md#distributed)
 
--   `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - общее количество строк, если есть возможность быстро определить точное количество строк в таблице, в противном случае `Null` (включая базовую таблицу `Buffer`).
+-   `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - общее количество строк, если есть возможность быстро определить точное количество строк в таблице, в противном случае `NULL` (включая базовую таблицу `Buffer`).
 
--   `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - общее количество байт, если можно быстро определить точное количество байт для таблицы на накопителе, в противном случае `Null` (**не включает** в себя никакого базового хранилища).
+-   `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - общее количество байт, если можно быстро определить точное количество байт для таблицы на накопителе, в противном случае `NULL` (не включает в себя никакого базового хранилища).
 
     -   Если таблица хранит данные на диске, возвращает используемое пространство на диске (т. е. сжатое).
     -   Если таблица хранит данные в памяти, возвращает приблизительное количество используемых байт в памяти.
