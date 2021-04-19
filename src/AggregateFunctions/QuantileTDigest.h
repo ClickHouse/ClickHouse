@@ -325,10 +325,10 @@ public:
 
                 if (x <= left)
                     return prev_mean;
-                if (x >= right)
+                else if (x >= right)
                     return c.mean;
-
-                return interpolate(x, left, prev_mean, right, c.mean);
+                else
+                    return interpolate(x, left, prev_mean, right, c.mean);
             }
 
             sum += c.count;
@@ -368,25 +368,40 @@ public:
         Float64 prev_x = 0;
         Count sum = 0;
         Value prev_mean = centroids.front().mean;
+        Count prev_count = centroids.front().count;
 
         size_t result_num = 0;
         for (const auto & c : centroids)
         {
             Float64 current_x = sum + c.count * 0.5;
 
-            while (current_x >= x)
+            if (current_x >= x)
             {
-                result[levels_permutation[result_num]] = interpolate(x, prev_x, prev_mean, current_x, c.mean);
+                /// Special handling of singletons.
+                Float64 left = prev_x + 0.5*(prev_count == 1);
+                Float64 right = current_x - 0.5*(c.count == 1);
 
-                ++result_num;
-                if (result_num >= size)
-                    return;
+                while (current_x >= x)
+                {
 
-                x = levels[levels_permutation[result_num]] * count;
+                    if (x <= left)
+                        result[levels_permutation[result_num]] = prev_mean;
+                    else if (x >= right)
+                        result[levels_permutation[result_num]] = c.mean;
+                    else
+                        result[levels_permutation[result_num]] = interpolate(x, left, prev_mean, right, c.mean);
+
+                    ++result_num;
+                    if (result_num >= size)
+                        return;
+
+                    x = levels[levels_permutation[result_num]] * count;
+                }
             }
 
             sum += c.count;
             prev_mean = c.mean;
+            prev_count = c.count;
             prev_x = current_x;
         }
 
