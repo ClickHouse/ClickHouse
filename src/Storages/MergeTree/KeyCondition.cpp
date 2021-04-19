@@ -596,18 +596,6 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     Field & out_value,
     DataTypePtr & out_type)
 {
-    /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
-    /// Consider the following test case:
-    ///
-    /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
-    /// insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
-    /// select count() from test1 where p > toDateTime('2020-09-01 10:00:00');
-    ///
-    /// toDate(DateTime) is always monotonic, but we cannot relaxing the predicates to be
-    /// >= toDate(toDateTime('2020-09-01 10:00:00')), which returns 3 instead of the right count: 2.
-    if (strict)
-        return false;
-
     // Constant expr should use alias names if any
     String expr_name = node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
@@ -674,9 +662,6 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
-    if (strict)
-        return false;
-
     // Constant expr should use alias names if any
     String expr_name = ast->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
@@ -1109,6 +1094,23 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
             bool is_set_const = false;
             bool is_constant_transformed = false;
 
+            /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
+            /// Consider the following test case:
+            ///
+            /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
+            /// insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
+            /// select count() from test1 where p > toDateTime('2020-09-01 10:00:00');
+            ///
+            /// toDate(DateTime) is always monotonic, but we cannot relaxing the predicates to be
+            /// >= toDate(toDateTime('2020-09-01 10:00:00')), which returns 3 instead of the right count: 2.
+            bool strict_ = strict;
+
+            /// If we are using this key condition to prune partitions by single value, we cannot relax conditions for NOT.
+            if (single_point
+                && (func_name == "notLike" || func_name == "notIn" || func_name == "globalNotIn" || func_name == "notEquals"
+                    || func_name == "notEmpty"))
+                strict_ = true;
+
             if (functionIsInOrGlobalInOperator(func_name))
             {
                 if (tryPrepareSetIndex(args, context, out, key_column_num))
@@ -1125,13 +1127,13 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 {
                     key_arg_pos = 0;
                 }
-                else if (canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                else if (!strict_ && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
                 }
                 else if (
-                    single_point && func_name == "equals"
+                    single_point && func_name == "equals" && !strict_
                     && canConstantBeWrappedByFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
@@ -1146,13 +1148,13 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 {
                     key_arg_pos = 1;
                 }
-                else if (canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                else if (!strict_ && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 1;
                     is_constant_transformed = true;
                 }
                 else if (
-                    single_point && func_name == "equals"
+                    single_point && func_name == "equals" && !strict_
                     && canConstantBeWrappedByFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
