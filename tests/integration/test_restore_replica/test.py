@@ -79,7 +79,9 @@ def test_restore_replica(start_cluster):
     zk.delete("/clickhouse/tables/test/replicas/replica1", recursive=True)
     assert zk.exists("/clickhouse/tables/test/replicas/replica1") is None
 
+    node_1.query("SYSTEM RESTART REPLICA test")
     node_1.query("SYSTEM RESTORE REPLICA test") # Should restore by detaching and attaching the table
+    node_2.query("SYSTEM RESTART REPLICA test")
     node_2.query("SYSTEM RESTORE REPLICA test") # Same
 
     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)") # assert all the tables are working

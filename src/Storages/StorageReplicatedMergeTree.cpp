@@ -400,11 +400,21 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
     else
     {
-        /// In old tables this node may missing or be empty
         String replica_metadata;
-        bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
+        const bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
+
         if (!replica_metadata_exists || replica_metadata.empty())
         {
+            /// Either the table version is old or we lost the replica metadata.
+            /// May it be the ZK lost not the whole root, so the upper checks passed, but only the /replicas/replica
+            /// folder.
+            if (!current_zookeeper->exists(replica_path))
+            {
+                LOG_WARNING(log, "No metadata in ZooKeeper: table will be in readonly mode.");
+                is_readonly = true;
+                return;
+            }
+
             /// We have to check shared node granularity before we create ours.
             other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
             ReplicatedMergeTreeTableMetadata current_metadata(*this, metadata_snapshot);
