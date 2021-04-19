@@ -1478,6 +1478,7 @@ void TCPHandler::sendData(const Block & block)
         writeStringBinary("", *out);
 
         /// For testing hedged requests
+        const Settings & settings = query_context->getSettingsRef();
         if (block.rows() > 0 && settings.sleep_in_send_data_ms.totalMilliseconds())
         {
             out->next();
