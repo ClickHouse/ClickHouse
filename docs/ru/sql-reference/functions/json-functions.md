@@ -40,7 +40,7 @@ toc_title: JSON
 
 ## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
 
-Разбирает значение true/false. Результат — UInt8.
+Пытается выделить значение true/false. Результат — UInt8.
 
 Алиас: `simpleJSONExtractBool`.
 
