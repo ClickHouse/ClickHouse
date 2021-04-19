@@ -112,6 +112,7 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 
@@ -513,7 +514,6 @@ ContextPtr Context::createGlobal(ContextSharedPart * shared)
 void Context::initGlobal()
 {
     DatabaseCatalog::init(shared_from_this());
-    shared->async_insert_queue = std::make_shared<AsynchronousInsertQueue>(16, 1000, AsynchronousInsertQueue::Timeout{1, 1});
 }
 
 SharedContextHolder Context::createShared()
@@ -2652,7 +2652,18 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs()
 
 AsynchronousInsertQueue & Context::getAsynchronousInsertQueue() const
 {
+    /// Assume that dereference of shared_ptr will assert on uninitialized object.
     return *shared->async_insert_queue;
+}
+
+void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
+{
+    using namespace std::chrono;
+
+    if (std::chrono::seconds(settings.async_insert_busy_timeout) == 0s)
+        throw Exception("Setting async_insert_busy_timeout can't be zero", ErrorCodes::INVALID_SETTING_VALUE);
+
+    shared->async_insert_queue = ptr;
 }
 
 }

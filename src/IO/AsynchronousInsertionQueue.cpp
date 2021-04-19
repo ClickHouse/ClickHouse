@@ -75,8 +75,11 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(size_t pool_size, size_t max_da
     , queue(new Queue)
     , pool(pool_size)
     , dump_by_first_update_thread(&AsynchronousInsertQueue::busyCheck, this)
-    , dump_by_last_update_thread(&AsynchronousInsertQueue::staleCheck, this)
 {
+    using namespace std::chrono;
+
+    if (stale_timeout > 0s)
+        dump_by_last_update_thread = ThreadFromGlobalPool(&AsynchronousInsertQueue::staleCheck, this);
 }
 
 AsynchronousInsertQueue::~AsynchronousInsertQueue()
@@ -88,8 +91,8 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     assert(dump_by_first_update_thread.joinable());
     dump_by_first_update_thread.join();
 
-    assert(dump_by_last_update_thread.joinable());
-    dump_by_last_update_thread.join();
+    if (dump_by_last_update_thread.joinable())
+        dump_by_last_update_thread.join();
 
     pool.wait();
 }

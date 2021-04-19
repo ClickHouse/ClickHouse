@@ -20,7 +20,7 @@ class AsynchronousInsertQueue
         /// Using structure to allow and benefit from designated initialization and not mess with a positional arguments in ctor.
         struct Timeout
         {
-            size_t busy, stale;  /// in seconds
+            std::chrono::seconds busy, stale;
         };
 
         AsynchronousInsertQueue(size_t pool_size, size_t max_data_size, const Timeout & timeouts);
