@@ -369,7 +369,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
             zookeeper->removeRecursive(path);
             cached_block_stats.erase(first_outdated_block->node);
         }
-        else if (rc == Coordination::Error::ZOK || rc == Coordination::Error::ZNONODE)
+        else if (rc == Coordination::Error::ZOK || rc == Coordination::Error::ZNONODE || rc == Coordination::Error::ZBADVERSION)
         {
             /// No node is Ok. Another replica is removing nodes concurrently.
             /// Successfully removed blocks have to be removed from cache
