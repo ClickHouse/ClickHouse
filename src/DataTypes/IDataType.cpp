@@ -217,17 +217,8 @@ SerializationPtr IDataType::getSerialization(const NameAndTypePair & column, con
             return subcolumn_type.getSerialization(column.name, callback);
         };
 
-        const auto & type_in_storage = column.getTypeInStorage();
-        auto subcolumn_serialization = type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization_getter);
-
-        if (type_in_storage->supportsSparseSerialization())
-        {
-            auto sparse_idx_name = escapeForFileName(column.getNameInStorage()) + ".sparse.idx";
-            if (callback(sparse_idx_name))
-                subcolumn_serialization = std::make_shared<SerializationSparse>(subcolumn_serialization);
-
-            return subcolumn_serialization;
-        }
+        auto type_in_storage = column.getTypeInStorage();
+        return type_in_storage->getSubcolumnSerialization(column.getSubcolumnName(), base_serialization_getter);
     }
 
     return column.type->getSerialization(column.name, callback);
