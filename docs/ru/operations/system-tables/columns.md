@@ -28,7 +28,7 @@ Cтолбцы:
 **Пример**
 
 ```sql
-select * from system.columns LIMIT 2 FORMAT Vertical;
+SELECT * FROM system.columns LIMIT 2 FORMAT Vertical;
 ```
 
 ```text
