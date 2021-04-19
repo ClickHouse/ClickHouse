@@ -26,8 +26,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
             {
                 std::unique_lock<std::mutex> lock(mutex);
-                segmentator_condvar.wait(lock,
-                                         [&]{ return unit.status == READY_TO_INSERT || parsing_finished; });
+                segmentator_condvar.wait(lock, [&] { return unit.status == READY_TO_INSERT || parsing_finished; });
             }
 
             if (parsing_finished)
@@ -147,6 +146,10 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 
 Chunk ParallelParsingInputFormat::generate()
 {
+    bool expected = false;
+    if (unlikely(initialized.compare_exchange_strong(expected, true)))
+        segmentator_thread = ThreadFromGlobalPool(&ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
+
     if (isCancelled() || parsing_finished)
     {
         /**
