@@ -14,19 +14,25 @@ namespace DB
 class IDiskRemote : public IDisk
 {
 
+friend class DiskRemoteReservation;
+
 public:
     IDiskRemote(
+        const String & disk_name_,
         const String & remote_fs_root_path_,
         const String & metadata_path_,
+        const String & log_name_,
         std::unique_ptr<Executor> executor_ = std::make_unique<SyncExecutor>());
 
     struct Metadata;
 
+    const String & getName() const override { return disk_name; }
+
+    const String & getPath() const override { return metadata_path; }
+
     Metadata readMeta(const String & path) const;
 
     Metadata createMeta(const String & path) const;
-
-    const String & getPath() const override { return metadata_path; }
 
     UInt64 getTotalSpace() const override { return std::numeric_limits<UInt64>::max(); }
 
@@ -60,14 +66,26 @@ public:
 
     void removeDirectory(const String & path) override;
 
+    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
+
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
     Poco::Timestamp getLastModified(const String & path) override;
 
 protected:
+    bool tryReserve(UInt64 bytes);
+
+    const String disk_name;
     const String remote_fs_root_path;
     const String metadata_path;
+    Poco::Logger * log;
+
+    UInt64 reserved_bytes = 0;
+    UInt64 reservation_count = 0;
+    std::mutex reservation_mutex;
 };
+
+using DiskRemotePtr = std::shared_ptr<IDiskRemote>;
 
 /// Remote FS (S3, HDFS) metadata file layout:
 /// Number of FS objects, Total size of all FS objects.
@@ -116,5 +134,54 @@ struct IDiskRemote::Metadata
 
 };
 
+
+class RemoteDiskDirectoryIterator final : public IDiskDirectoryIterator
+{
+public:
+    RemoteDiskDirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
+
+    void next() override { ++iter; }
+
+    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
+
+    String path() const override
+    {
+        if (iter->isDirectory())
+            return folder_path + iter.name() + '/';
+        else
+            return folder_path + iter.name();
+    }
+
+    String name() const override { return iter.name(); }
+
+private:
+    Poco::DirectoryIterator iter;
+    String folder_path;
+};
+
+
+class DiskRemoteReservation final : public IReservation
+{
+public:
+    DiskRemoteReservation(const DiskRemotePtr & disk_, UInt64 size_)
+        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
+    {
+    }
+
+    UInt64 getSize() const override { return size; }
+
+    DiskPtr getDisk(size_t i) const override;
+
+    Disks getDisks() const override { return {disk}; }
+
+    void update(UInt64 new_size) override;
+
+    ~DiskRemoteReservation() override;
+
+private:
+    DiskRemotePtr disk;
+    UInt64 size;
+    CurrentMetrics::Increment metric_increment;
+};
 
 }

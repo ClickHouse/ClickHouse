@@ -32,11 +32,7 @@ public:
 
     DiskType::Type getType() const override { return DiskType::Type::HDFS; }
 
-    const String & getName() const override { return disk_name; }
-
     void moveDirectory(const String & from_path, const String & to_path) override { moveFile(from_path, to_path); }
-
-    DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
     void moveFile(const String & from_path, const String & to_path) override;
 
@@ -66,21 +62,13 @@ public:
 private:
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }
 
-    bool tryReserve(UInt64 bytes);
-
     void remove(const String & path);
 
-    Poco::Logger * log;
-    const String disk_name;
     const Poco::Util::AbstractConfiguration & config;
-
     String hdfs_root_path;
     HDFSBuilderWrapper hdfs_builder;
     HDFSFSPtr hdfs_fs;
 
-    UInt64 reserved_bytes = 0;
-    UInt64 reservation_count = 0;
-    std::mutex reservation_mutex;
     std::mutex copying_mutex;
 };
 

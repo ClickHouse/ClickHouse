@@ -285,94 +285,6 @@ private:
 };
 
 
-class DiskS3DirectoryIterator final : public IDiskDirectoryIterator
-{
-public:
-    DiskS3DirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
-
-    void next() override { ++iter; }
-
-    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
-
-    String path() const override
-    {
-        if (iter->isDirectory())
-            return folder_path + iter.name() + '/';
-        else
-            return folder_path + iter.name();
-    }
-
-    String name() const override { return iter.name(); }
-
-private:
-    Poco::DirectoryIterator iter;
-    String folder_path;
-};
-
-
-using DiskS3Ptr = std::shared_ptr<DiskS3>;
-
-class DiskS3Reservation final : public IReservation
-{
-public:
-    DiskS3Reservation(const DiskS3Ptr & disk_, UInt64 size_)
-        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
-    {
-    }
-
-    UInt64 getSize() const override { return size; }
-
-    DiskPtr getDisk(size_t i) const override
-    {
-        if (i != 0)
-        {
-            throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
-        }
-        return disk;
-    }
-
-    Disks getDisks() const override { return {disk}; }
-
-    void update(UInt64 new_size) override
-    {
-        std::lock_guard lock(disk->reservation_mutex);
-        disk->reserved_bytes -= size;
-        size = new_size;
-        disk->reserved_bytes += size;
-    }
-
-    ~DiskS3Reservation() override
-    {
-        try
-        {
-            std::lock_guard lock(disk->reservation_mutex);
-            if (disk->reserved_bytes < size)
-            {
-                disk->reserved_bytes = 0;
-                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
-            }
-            else
-            {
-                disk->reserved_bytes -= size;
-            }
-
-            if (disk->reservation_count == 0)
-                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
-            else
-                --disk->reservation_count;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-private:
-    DiskS3Ptr disk;
-    UInt64 size;
-    CurrentMetrics::Increment metric_increment;
-};
-
 /// Runs tasks asynchronously using thread pool.
 class AsyncExecutor : public Executor
 {
@@ -411,7 +323,7 @@ private:
 
 
 DiskS3::DiskS3(
-    String name_,
+    String disk_name_,
     std::shared_ptr<Aws::S3::S3Client> client_,
     std::shared_ptr<S3::ProxyConfiguration> proxy_configuration_,
     String bucket_,
@@ -423,8 +335,7 @@ DiskS3::DiskS3(
     bool send_metadata_,
     int thread_pool_size_,
     int list_object_keys_size_)
-    : IDiskRemote(s3_root_path_, metadata_path_, std::make_unique<AsyncExecutor>(thread_pool_size_))
-    , name(std::move(name_))
+    : IDiskRemote(disk_name_, s3_root_path_, metadata_path_, "DiskS3", std::make_unique<AsyncExecutor>(thread_pool_size_))
     , client(std::move(client_))
     , proxy_configuration(std::move(proxy_configuration_))
     , bucket(std::move(bucket_))
@@ -441,7 +352,7 @@ ReservationPtr DiskS3::reserve(UInt64 bytes)
 {
     if (!tryReserve(bytes))
         return {};
-    return std::make_unique<DiskS3Reservation>(std::static_pointer_cast<DiskS3>(shared_from_this()), bytes);
+    return std::make_unique<DiskRemoteReservation>(std::static_pointer_cast<DiskS3>(shared_from_this()), bytes);
 }
 
 String DiskS3::getUniqueId(const String & path) const
@@ -451,11 +362,6 @@ String DiskS3::getUniqueId(const String & path) const
     if (!metadata.remote_fs_objects.empty())
         id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
     return id;
-}
-
-DiskDirectoryIteratorPtr DiskS3::iterateDirectory(const String & path)
-{
-    return std::make_unique<DiskS3DirectoryIterator>(metadata_path + path, path);
 }
 
 void DiskS3::moveFile(const String & from_path, const String & to_path)
@@ -641,29 +547,6 @@ void DiskS3::removeSharedRecursive(const String & path, bool keep_s3)
         removeAws(keys);
 }
 
-bool DiskS3::tryReserve(UInt64 bytes)
-{
-    std::lock_guard lock(reservation_mutex);
-    if (bytes == 0)
-    {
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Reserving 0 bytes on s3 disk {}", backQuote(name));
-        ++reservation_count;
-        return true;
-    }
-
-    auto available_space = getAvailableSpace();
-    UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
-    if (unreserved_space >= bytes)
-    {
-        LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Reserving {} on disk {}, having unreserved {}.",
-            ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
-        ++reservation_count;
-        reserved_bytes += bytes;
-        return true;
-    }
-    return false;
-}
-
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)
 {
     /// We don't need to record hardlinks created to shadow folder.
@@ -708,14 +591,14 @@ void DiskS3::startup()
     if (!send_metadata)
         return;
 
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting up disk {}", name);
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting up disk {}", disk_name);
 
     if (readSchemaVersion(bucket, remote_fs_root_path) < RESTORABLE_SCHEMA_VERSION)
         migrateToRestorableSchema();
 
     findLastRevision();
 
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Disk {} started up", name);
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Disk {} started up", disk_name);
 }
 
 void DiskS3::findLastRevision()
@@ -741,7 +624,7 @@ void DiskS3::findLastRevision()
             r = revision - 1;
     }
     revision_counter = l;
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Found last revision number {} for disk {}", revision_counter, name);
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Found last revision number {} for disk {}", revision_counter, disk_name);
 }
 
 int DiskS3::readSchemaVersion(const String & source_bucket, const String & source_path)
@@ -838,7 +721,7 @@ void DiskS3::migrateToRestorableSchema()
 {
     try
     {
-        LOG_INFO(&Poco::Logger::get("DiskS3"), "Start migration to restorable schema for disk {}", name);
+        LOG_INFO(&Poco::Logger::get("DiskS3"), "Start migration to restorable schema for disk {}", disk_name);
 
         Futures results;
 
@@ -1011,7 +894,7 @@ void DiskS3::restore()
             throw Exception("Source bucket doesn't have restorable schema.", ErrorCodes::BAD_ARGUMENTS);
 
         LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting to restore disk {}. Revision: {}, Source bucket: {}, Source path: {}",
-                 name, information.revision, information.source_bucket, information.source_path);
+                 disk_name, information.revision, information.source_bucket, information.source_path);
 
         LOG_INFO(&Poco::Logger::get("DiskS3"), "Removing old metadata...");
 
@@ -1028,7 +911,7 @@ void DiskS3::restore()
 
         saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
 
-        LOG_INFO(&Poco::Logger::get("DiskS3"), "Restore disk {} finished", name);
+        LOG_INFO(&Poco::Logger::get("DiskS3"), "Restore disk {} finished", disk_name);
     }
     catch (const Exception & e)
     {
@@ -1040,7 +923,7 @@ void DiskS3::restore()
 
 void DiskS3::restoreFiles(const String & source_bucket, const String & source_path, UInt64 target_revision)
 {
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting restore files for disk {}", name);
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting restore files for disk {}", disk_name);
 
     std::vector<std::future<void>> results;
     listObjects(source_bucket, source_path, [this, &source_bucket, &source_path, &target_revision, &results](auto list_result)
@@ -1080,7 +963,7 @@ void DiskS3::restoreFiles(const String & source_bucket, const String & source_pa
     for (auto & result : results)
         result.get();
 
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Files are restored for disk {}", name);
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Files are restored for disk {}", disk_name);
 }
 
 void DiskS3::processRestoreFiles(const String & source_bucket, const String & source_path, Strings keys)
@@ -1118,7 +1001,7 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
 
 void DiskS3::restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 target_revision)
 {
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting restore file operations for disk {}", name);
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting restore file operations for disk {}", disk_name);
 
     /// Enable recording file operations if we restore to different bucket / path.
     send_metadata = bucket != source_bucket || remote_fs_root_path != source_path;
@@ -1177,7 +1060,7 @@ void DiskS3::restoreFileOperations(const String & source_bucket, const String & 
 
     send_metadata = true;
 
-    LOG_INFO(&Poco::Logger::get("DiskS3"), "File operations restored for disk {}", name);
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "File operations restored for disk {}", disk_name);
 }
 
 std::tuple<UInt64, String> DiskS3::extractRevisionAndOperationFromKey(const String & key)
