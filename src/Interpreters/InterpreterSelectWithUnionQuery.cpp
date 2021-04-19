@@ -29,7 +29,7 @@ namespace ErrorCodes
 }
 
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-    const ASTPtr & query_ptr_, const Context & context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
+    const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
@@ -197,26 +197,26 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
 Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return InterpreterSelectWithUnionQuery(ast_ptr_, *context, options.copy().analyze().noModify(), required_result_column_names)
+        return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
             .getSampleBlock();
     else
-        return InterpreterSelectQuery(ast_ptr_, *context, options.copy().analyze().noModify()).getSampleBlock();
+        return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, *context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
     else
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, *context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
 
-Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, const Context & context_, bool is_subquery)
+Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, ContextPtr context_, bool is_subquery)
 {
-    auto & cache = context_.getSampleBlockCache();
+    auto & cache = context_->getSampleBlockCache();
     /// Using query string because query_ptr changes for every internal SELECT
     auto key = queryToString(query_ptr_);
     if (cache.find(key) != cache.end())
@@ -311,8 +311,8 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     buildQueryPlan(query_plan);
 
     auto pipeline = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(*context),
-        BuildQueryPipelineSettings::fromContext(*context));
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 
     res.pipeline = std::move(*pipeline);
     res.pipeline.addInterpreterContext(context);

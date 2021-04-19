@@ -1,8 +1,9 @@
 #pragma once
+
 #include <Processors/IProcessor.h>
-#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 namespace DB
 {

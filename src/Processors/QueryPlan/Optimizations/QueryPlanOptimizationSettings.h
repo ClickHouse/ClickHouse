@@ -1,12 +1,13 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
+
 #include <cstddef>
 
 namespace DB
 {
 
 struct Settings;
-class Context;
 
 struct QueryPlanOptimizationSettings
 {
@@ -21,7 +22,7 @@ struct QueryPlanOptimizationSettings
     bool filter_push_down = true;
 
     static QueryPlanOptimizationSettings fromSettings(const Settings & from);
-    static QueryPlanOptimizationSettings fromContext(const Context & from);
+    static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };
 
 }

@@ -869,7 +869,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, compressed_bytes);
     ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, uncompressed_bytes);
 
-    LOG_TRACE(log,
+    LOG_DEBUG(log,
         "Written part in {} sec., {} rows, {} uncompressed, {} compressed,"
         " {} uncompressed bytes per row, {} compressed bytes per row, compression rate: {}"
         " ({} rows/sec., {}/sec. uncompressed, {}/sec. compressed)",
@@ -982,7 +982,7 @@ void Aggregator::writeToTemporaryFileImpl(
     /// `data_variants` will not destroy them in the destructor, they are now owned by ColumnAggregateFunction objects.
     data_variants.aggregator = nullptr;
 
-    LOG_TRACE(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, ReadableSize(max_temporary_block_size_bytes));
+    LOG_DEBUG(log, "Max size of temporary block: {} rows, {}.", max_temporary_block_size_rows, ReadableSize(max_temporary_block_size_bytes));
 }
 
 
@@ -1516,7 +1516,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     }
 
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log,
+    LOG_DEBUG(log,
         "Converted aggregated data to blocks. {} rows, {} in {} sec. ({} rows/sec., {}/sec.)",
         rows, ReadableSize(bytes),
         elapsed_seconds, rows / elapsed_seconds,
@@ -2144,7 +2144,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     size_t rows = block.rows();
     size_t bytes = block.bytes();
     double elapsed_seconds = watch.elapsedSeconds();
-    LOG_TRACE(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({} rows/sec., {}/sec.)",
+    LOG_DEBUG(log, "Merged partially aggregated blocks. {} rows, {}. in {} sec. ({} rows/sec., {}/sec.)",
         rows, ReadableSize(bytes),
         elapsed_seconds, rows / elapsed_seconds,
         ReadableSize(bytes / elapsed_seconds));

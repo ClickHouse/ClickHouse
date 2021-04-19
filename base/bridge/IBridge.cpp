@@ -200,8 +200,8 @@ int IBridge::main(const std::vector<std::string> & /*args*/)
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
     auto shared_context = Context::createShared();
-    Context context(Context::createGlobal(shared_context.get()));
-    context.makeGlobalContext();
+    auto context = Context::createGlobal(shared_context.get());
+    context->makeGlobalContext();
 
     if (config().has("query_masking_rules"))
         SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));

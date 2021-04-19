@@ -150,7 +150,7 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     ///
     /// And in this case the exception will not be logged, so let's block the
     /// MemoryTracker until the exception will be logged.
-    MemoryTracker::LockExceptionInThread lock_memory_tracker;
+    MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     try
     {

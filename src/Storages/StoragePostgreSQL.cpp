@@ -46,7 +46,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context_,
+    ContextPtr context_,
     const String & remote_table_schema_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
@@ -65,7 +65,7 @@ Pipe StoragePostgreSQL::read(
     const Names & column_names_,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info_,
-    const Context & context_,
+    ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size_,
     unsigned)
@@ -286,7 +286,7 @@ private:
 
 
 BlockOutputStreamPtr StoragePostgreSQL::write(
-        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /* context */)
+        const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /* context */)
 {
     return std::make_shared<PostgreSQLBlockOutputStream>(metadata_snapshot, pool->get(), remote_table_name);
 }
@@ -304,11 +304,11 @@ void registerStoragePostgreSQL(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
         auto host_port = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         /// Split into replicas if needed.
-        size_t max_addresses = args.context.getSettingsRef().glob_expansion_max_elements;
+        size_t max_addresses = args.getContext()->getSettingsRef().glob_expansion_max_elements;
         auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
 
         const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
@@ -325,12 +325,12 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             addresses,
             username,
             password,
-            args.context.getSettingsRef().postgresql_connection_pool_size,
-            args.context.getSettingsRef().postgresql_connection_pool_wait_timeout);
+            args.getContext()->getSettingsRef().postgresql_connection_pool_size,
+            args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return StoragePostgreSQL::create(
             args.table_id, pool, remote_table,
-            args.columns, args.constraints, args.context, remote_table_schema);
+            args.columns, args.constraints, args.getContext(), remote_table_schema);
     },
     {
         .source_access_type = AccessType::POSTGRES,

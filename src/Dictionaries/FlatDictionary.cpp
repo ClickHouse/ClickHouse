@@ -322,7 +322,7 @@ void FlatDictionary::loadData()
         updateData();
 
     if (configuration.require_nonempty && 0 == element_count)
-        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", full_name);
 }
 
 void FlatDictionary::calculateBytesAllocated()
@@ -407,7 +407,7 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
 {
     if (key >= configuration.max_array_size)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-            "({}): identifier should be less than ({})",
+            "{}: identifier should be less than {}",
             full_name,
             toString(configuration.max_array_size));
 
@@ -489,7 +489,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
 
         if (dict_struct.range_min || dict_struct.range_max)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "({}): elements .structure.range_min and .structure.range_max should be defined only "
+                            "{}: elements .structure.range_min and .structure.range_max should be defined only "
                             "for a dictionary of layout 'range_hashed'",
                             full_name);
 

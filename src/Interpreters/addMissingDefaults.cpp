@@ -19,7 +19,7 @@ ActionsDAGPtr addMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
-    const Context & context)
+    ContextPtr context)
 {
 
     std::cerr << "====== addMissingDefaults " << header.dumpStructure() << std::endl;

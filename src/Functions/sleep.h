@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <common/sleep.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -35,7 +36,7 @@ class FunctionSleep : public IFunction
 {
 public:
     static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionSleep<variant>>();
     }

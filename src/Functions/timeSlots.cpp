@@ -109,7 +109,7 @@ class FunctionTimeSlots : public IFunction
 public:
     static constexpr auto name = "timeSlots";
     static constexpr UInt32 TIME_SLOT_SIZE = 1800;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlots>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeSlots>(); }
 
     String getName() const override
     {
