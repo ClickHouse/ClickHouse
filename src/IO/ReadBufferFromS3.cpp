@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, Int64 s3_max_single_read_retries_, size_t buffer_size_)
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, UInt64 s3_max_single_read_retries_, size_t buffer_size_)
     : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -52,7 +52,7 @@ bool ReadBufferFromS3::nextImpl()
     Stopwatch watch;
     bool next_result = false;
 
-    for (Int64 attempt = s3_max_single_read_retries; s3_max_single_read_retries < 0 || attempt >= 0; --attempt)
+    for (Int64 attempt = static_cast<Int64>(s3_max_single_read_retries); attempt >= 0; --attempt)
     {
         if (!impl)
             impl = initialize();

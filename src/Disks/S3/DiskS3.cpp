@@ -249,7 +249,7 @@ class ReadIndirectBufferFromS3 final : public ReadBufferFromFileBase
 {
 public:
     ReadIndirectBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, DiskS3::Metadata metadata_, Int64 s3_max_single_read_retries_, size_t buf_size_)
+        std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, DiskS3::Metadata metadata_, UInt64 s3_max_single_read_retries_, size_t buf_size_)
         : client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
         , metadata(std::move(metadata_))
@@ -350,7 +350,7 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     const String & bucket;
     DiskS3::Metadata metadata;
-    Int64 s3_max_single_read_retries;
+    UInt64 s3_max_single_read_retries;
     size_t buf_size;
 
     size_t absolute_position = 0;
@@ -564,7 +564,7 @@ DiskS3::DiskS3(
     String bucket_,
     String s3_root_path_,
     String metadata_path_,
-    Int64 s3_max_single_read_retries_,
+    UInt64 s3_max_single_read_retries_,
     size_t min_upload_part_size_,
     size_t max_single_part_upload_size_,
     size_t min_bytes_for_seek_,

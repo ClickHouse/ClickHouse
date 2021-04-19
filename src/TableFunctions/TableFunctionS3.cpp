@@ -83,10 +83,10 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & /*ast_function*/, Context
 {
     Poco::URI uri (filename);
     S3::URI s3_uri (uri);
+    UInt64 s3_max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
     UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
     UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
     UInt64 max_connections = context->getSettingsRef().s3_max_connections;
-    Int64 s3_max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
 
     StoragePtr storage = StorageS3::create(
             s3_uri,
