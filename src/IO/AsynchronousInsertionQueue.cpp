@@ -100,10 +100,13 @@ bool AsynchronousInsertQueue::push(ASTInsertQuery * query, const Settings & sett
 
     auto it = queue->find(InsertQuery{query->shared_from_this(), settings});
 
-    /// FIXME: we should take a data lock before reading `reset` or make this field atomic.
-    ///        On the other side it looks fine even as it is - since we don't reset `data` explicitly.
-    if (it != queue->end() && !it->second->reset)
+    if (it != queue->end())
     {
+        std::unique_lock<std::mutex> data_lock(it->second->mutex);
+
+        if (it->second->reset)
+            return false;
+
         pushImpl(query, it);
         return true;
     }
@@ -128,6 +131,7 @@ void AsynchronousInsertQueue::push(ASTInsertQuery * query, BlockIO && io, const 
         it->second->io = std::move(io);
     }
 
+    std::unique_lock<std::mutex> data_lock(it->second->mutex);
     pushImpl(query, it);
 }
 
@@ -190,8 +194,6 @@ void AsynchronousInsertQueue::pushImpl(ASTInsertQuery * query, QueueIterator & i
         concat_buf.appendBuffer(wrapReadBufferReference(*query->tail));
 
     /// NOTE: must not read from |query->tail| before read all between |query->data| and |query->end|.
-
-    std::unique_lock<std::mutex> data_lock(it->second->mutex);
 
     /// It's important to read the whole data per query as a single chunk, so we can safely drop it in case of parsing failure.
     auto & new_data = it->second->data.emplace_back();

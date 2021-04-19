@@ -513,7 +513,7 @@ ContextPtr Context::createGlobal(ContextSharedPart * shared)
 void Context::initGlobal()
 {
     DatabaseCatalog::init(shared_from_this());
-    shared->async_insert_queue = std::make_shared<AsynchronousInsertQueue>(16, 1024, AsynchronousInsertQueue::Timeout{1, 1});
+    shared->async_insert_queue = std::make_shared<AsynchronousInsertQueue>(16, 1000, AsynchronousInsertQueue::Timeout{1, 1});
 }
 
 SharedContextHolder Context::createShared()
