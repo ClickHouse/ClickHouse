@@ -15,6 +15,11 @@ void PushdownLimitToUnionAllMatcher::visit(ASTPtr & ast, Data & data)
 
 void PushdownLimitToUnionAllMatcher::visit(ASTSelectQuery & select, Data &)
 {
+    /// When there are filter condition in SelectQuery, we can't
+    /// pushdown LIMIT to UNION ALL query.
+    if (select.prewhere() || select.where() || select.having())
+        return;
+
     const auto & limit_length_ast = select.limitLength();
     auto * tables = select.tables()->as<ASTTablesInSelectQuery>();
 

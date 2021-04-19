@@ -491,8 +491,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef().union_default_mode};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
 
-        PushdownLimitToUnionAllVisitor::Data limit{};
-        PushdownLimitToUnionAllVisitor{limit}.visit(ast);
+        if (settings.optimize_pushdown_limit_to_union_all_query)
+        {
+            PushdownLimitToUnionAllVisitor::Data limit{};
+            PushdownLimitToUnionAllVisitor{limit}.visit(ast);
+        }
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
