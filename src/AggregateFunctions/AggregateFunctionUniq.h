@@ -22,6 +22,7 @@
 
 #include <AggregateFunctions/UniquesHashSet.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/ThetaSketchData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
 
@@ -124,6 +125,19 @@ struct AggregateFunctionUniqExactData<String>
 };
 
 
+/// uniqThetaSketch
+#if USE_DATASKETCHES
+
+struct AggregateFunctionUniqThetaSketchData
+{
+    using Set = ThetaSketchData<UInt64>;
+    Set set;
+
+    static String getName() { return "uniqThetaSketch"; }
+};
+
+#endif
+
 namespace detail
 {
 
@@ -189,6 +203,12 @@ struct OneAdder
                 data.set.insert(key);
             }
         }
+#if USE_DATASKETCHES
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaSketchData>)
+        {
+            data.set.insertOriginal(column.getDataAt(row_num));
+        }
+#endif
     }
 };
 
