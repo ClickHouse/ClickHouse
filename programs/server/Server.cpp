@@ -428,6 +428,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
     LOG_WARNING(log, "Server was built with sanitizer. It will work slowly.");
 #endif
 
+    // Initialize global thread pool. Do it before we fetch configs from zookeeper
+    // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
+    // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
+    // Also do it before global context initialization since it also may use threads from global pool.
+    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
+
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
@@ -436,11 +442,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
-
-    // Initialize global thread pool. Do it before we fetch configs from zookeeper
-    // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
-    // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
 
     bool has_zookeeper = config().has("zookeeper");
 

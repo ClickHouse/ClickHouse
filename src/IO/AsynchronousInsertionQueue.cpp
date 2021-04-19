@@ -27,7 +27,7 @@ struct AsynchronousInsertQueue::InsertData
 
     /// Timestamp of the first insert into queue, or after the last queue dump.
     /// Used to detect for how long the queue is active, so we can dump it by timer.
-    std::chrono::time_point<std::chrono::steady_clock> first_update;
+    std::chrono::time_point<std::chrono::steady_clock> first_update = std::chrono::steady_clock::now();
 
     /// Timestamp of the last insert into queue.
     /// Used to detect for how long the queue is stale, so we can dump it by another timer.
@@ -67,9 +67,31 @@ bool AsynchronousInsertQueue::InsertQueryEquality::operator() (const InsertQuery
     return true;
 }
 
-AsynchronousInsertQueue::AsynchronousInsertQueue(size_t pool_size, size_t max_data_size_)
-    : max_data_size(max_data_size_), lock(RWLockImpl::create()), queue(new Queue), pool(pool_size)
+AsynchronousInsertQueue::AsynchronousInsertQueue(size_t pool_size, size_t max_data_size_, const Timeout & timeouts)
+    : max_data_size(max_data_size_)
+    , busy_timeout(timeouts.busy)
+    , stale_timeout(timeouts.stale)
+    , lock(RWLockImpl::create())
+    , queue(new Queue)
+    , pool(pool_size)
+    , dump_by_first_update_thread(&AsynchronousInsertQueue::busyCheck, this)
+    , dump_by_last_update_thread(&AsynchronousInsertQueue::staleCheck, this)
 {
+}
+
+AsynchronousInsertQueue::~AsynchronousInsertQueue()
+{
+    /// TODO: add a setting for graceful shutdown.
+
+    shutdown = true;
+
+    assert(dump_by_first_update_thread.joinable());
+    dump_by_first_update_thread.join();
+
+    assert(dump_by_last_update_thread.joinable());
+    dump_by_last_update_thread.join();
+
+    pool.wait();
 }
 
 bool AsynchronousInsertQueue::push(ASTInsertQuery * query, const Settings & settings)
@@ -77,6 +99,9 @@ bool AsynchronousInsertQueue::push(ASTInsertQuery * query, const Settings & sett
     auto read_lock = lock->getLock(RWLockImpl::Read, String());
 
     auto it = queue->find(InsertQuery{query->shared_from_this(), settings});
+
+    /// FIXME: we should take a data lock before reading `reset` or make this field atomic.
+    ///        On the other side it looks fine even as it is - since we don't reset `data` explicitly.
     if (it != queue->end() && !it->second->reset)
     {
         pushImpl(query, it);
@@ -90,42 +115,81 @@ void AsynchronousInsertQueue::push(ASTInsertQuery * query, BlockIO && io, const 
 {
     auto write_lock = lock->getLock(RWLockImpl::Write, String());
 
-    auto it = queue->find(InsertQuery{query->shared_from_this(), settings});
+    InsertQuery key{query->shared_from_this(), settings};
+    auto it = queue->find(key);
     if (it == queue->end())
     {
-        InsertQuery key{query->shared_from_this(), settings};
         it = queue->insert({key, std::make_shared<InsertData>()}).first;
         it->second->io = std::move(io);
-        it->second->first_update = std::chrono::steady_clock::now();
     }
-    else
+    else if (it->second->reset)
     {
-        std::unique_lock<std::mutex> data_lock(it->second->mutex);
-
-        it->second->reset = false;
+        it->second = std::make_shared<InsertData>();
         it->second->io = std::move(io);
-
-        /// All other fields should have been already reset.
     }
 
     pushImpl(query, it);
 }
 
+void AsynchronousInsertQueue::busyCheck()
+{
+    auto timeout = busy_timeout;
+
+    while (!shutdown)
+    {
+        std::this_thread::sleep_for(timeout);
+
+        auto read_lock = lock->getLock(RWLockImpl::Read, String());
+
+        /// TODO: use priority queue instead of raw unsorted queue.
+        timeout = busy_timeout;
+        for (auto & [_, data] : *queue)
+        {
+            std::unique_lock<std::mutex> data_lock(data->mutex);
+
+            auto lag = std::chrono::steady_clock::now() - data->first_update;
+
+            if (lag >= busy_timeout)
+                pool.scheduleOrThrowOnError([data = data] { processData(data); });
+            else
+                timeout = std::min(timeout, std::chrono::ceil<std::chrono::seconds>(busy_timeout - lag));
+        }
+    }
+}
+
+void AsynchronousInsertQueue::staleCheck()
+{
+    while(!shutdown)
+    {
+        std::this_thread::sleep_for(stale_timeout);
+
+        auto read_lock = lock->getLock(RWLockImpl::Read, String());
+
+        for (auto & [_, data] : *queue)
+        {
+            std::unique_lock<std::mutex> data_lock(data->mutex);
+
+            auto lag = std::chrono::steady_clock::now() - data->last_update;
+
+            if (lag >= stale_timeout)
+                pool.scheduleOrThrowOnError([data = data] { processData(data); });
+        }
+    }
+}
+
 void AsynchronousInsertQueue::pushImpl(ASTInsertQuery * query, QueueIterator & it)
 {
-    ConcatReadBuffer::Buffers buffers;
+    ConcatReadBuffer concat_buf;
 
     auto ast_buf = std::make_unique<ReadBufferFromMemory>(query->data, query->data ? query->end - query->data : 0);
 
     if (query->data)
-        buffers.push_back(std::move(ast_buf));
+        concat_buf.appendBuffer(std::move(ast_buf));
 
     if (query->tail)
-        buffers.push_back(wrapReadBufferReference(*query->tail));
+        concat_buf.appendBuffer(wrapReadBufferReference(*query->tail));
 
     /// NOTE: must not read from |query->tail| before read all between |query->data| and |query->end|.
-
-    ConcatReadBuffer concat_buf(std::move(buffers));
 
     std::unique_lock<std::mutex> data_lock(it->second->mutex);
 
@@ -156,17 +220,21 @@ void AsynchronousInsertQueue::processData(std::shared_ptr<InsertData> data)
 {
     std::unique_lock<std::mutex> data_lock(data->mutex);
 
+    if (data->reset)
+        return;
+
     auto in = std::dynamic_pointer_cast<InputStreamFromASTInsertQuery>(data->io.in);
     assert(in);
 
+    auto log_progress = [](const Block & block)
+    {
+        LOG_INFO(&Poco::Logger::get("AsynchronousInsertQueue"), "Flushed {} rows", block.rows());
+    };
+
     for (const auto & datum : data->data)
         in->appendBuffer(std::make_unique<ReadBufferFromString>(datum));
-    copyData(*in, *data->io.out);
+    copyData(*in, *data->io.out, [] {return false;}, log_progress);
 
-    data->data.clear();
-    data->size = 0;
-    data->first_update = std::chrono::steady_clock::now();
-    data->last_update = data->first_update;
     data->reset = true;
 }
 
