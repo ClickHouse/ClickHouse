@@ -46,17 +46,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 ### Из запроса SELECT {#from-select-query}
 
 ``` sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
 ```
 
-Создаёт таблицу со структурой, как результат запроса `SELECT`, с движком `engine`, и заполняет её данными из `SELECT`.
+Создаёт таблицу со структурой, как результат запроса `SELECT`, с движком `engine`, и заполняет её данными из `SELECT`. Также вы можете явно задать описание столбцов.
 
 Если таблица уже существует и указано `IF NOT EXISTS`, то запрос ничего не делает.
 
 После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../../../engines/table-engines/index.md#table_engines).
-
-!!! warning "Предупреждение"
-    Результаты запроса `SELECT` должны соответствовать структуре таблицы, в противном случае генерируется исключение.
 
 **Пример**
 
