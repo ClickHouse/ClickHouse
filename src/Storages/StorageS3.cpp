@@ -81,8 +81,11 @@ public:
         return nextAssumeLocked();
     }
 
-    /// Return number of objects in one result.
-    /// If it's less than limit of s3 list objects (usually 1000) then estimation is accurate, otherwise it can be greater
+    /*
+     * Returns lower bound for number of objects.
+     * It's limited by S3 ListObjects method, if number of objects high enough it's truncated,
+     * but it should be suitable for estimating number of downloading threads and disabling parallel downloading for many objects.
+     */
     size_t totalObjectsEstimate() const
     {
         return buffer.size();
@@ -431,14 +434,12 @@ Pipe StorageS3::read(
     }
     total_objects = std::min<size_t>(total_objects, num_streams);
 
-    size_t threads_per_file = 1, buffer_size_per_file = DBMS_DEFAULT_BUFFER_SIZE;
+    size_t threads_per_file = 1;
     if (total_objects)
-    {
         threads_per_file = std::max<size_t>(max_download_threads / total_objects, threads_per_file);
-        buffer_size_per_file = std::max<size_t>(max_download_buffer_size / total_objects, buffer_size_per_file);
-    }
     LOG_TRACE(&Poco::Logger::get("StorageS3"),
-              "Will use up to {} thread(s) with buffer {} bytes to download each object from S3", threads_per_file, buffer_size_per_file);
+              "Will use up to {} thread(s) with buffer {} bytes to download each if {}+ objects from S3",
+              threads_per_file, max_download_buffer_size, total_objects);
     for (size_t i = 0; i < num_streams; ++i)
     {
         pipes.emplace_back(std::make_shared<StorageS3Source>(
@@ -455,7 +456,7 @@ Pipe StorageS3::read(
             client_auth.uri.bucket,
             iterator_wrapper,
             threads_per_file,
-            buffer_size_per_file));
+            max_download_buffer_size));
     }
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
