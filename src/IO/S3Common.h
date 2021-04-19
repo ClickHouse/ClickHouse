@@ -7,10 +7,10 @@
 #include <Common/Exception.h>
 #include <common/types.h>
 
-#include <aws/core/Aws.h>
-#include <aws/core/client/ClientConfiguration.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/core/Aws.h>  // Y_IGNORE
+#include <aws/core/client/ClientConfiguration.h>  // Y_IGNORE
+#include <aws/s3/S3Client.h>  // Y_IGNORE
+#include <aws/s3/model/HeadObjectRequest.h>  // Y_IGNORE
 
 #include <IO/S3/PocoHTTPClient.h>
 #include <Poco/URI.h>
