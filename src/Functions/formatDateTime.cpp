@@ -46,9 +46,8 @@ template <> struct ActionValueTypeMap<DataTypeInt64>      { using ActionValueTyp
 template <> struct ActionValueTypeMap<DataTypeUInt64>     { using ActionValueType = UInt32; };
 template <> struct ActionValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
 template <> struct ActionValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
-// TODO(vnemkov): once there is support for Int64 in LUT, make that Int64.
 // TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
-template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
+template <> struct ActionValueTypeMap<DataTypeDateTime64> { using ActionValueType = Int64; };
 
 
 /** formatDateTime(time, 'pattern')
@@ -282,7 +281,7 @@ private:
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
 
     String getName() const override
     {
@@ -434,7 +433,6 @@ public:
             time_zone_tmp = &DateLUT::instance();
 
         const DateLUTImpl & time_zone = *time_zone_tmp;
-
         const auto & vec = times->getData();
 
         UInt32 scale [[maybe_unused]] = 0;
@@ -482,7 +480,7 @@ public:
                     // since right now LUT does not support Int64-values and not format instructions for subsecond parts,
                     // treat DatTime64 values just as DateTime values by ignoring fractional and casting to UInt32.
                     const auto c = DecimalUtils::split(vec[i], scale);
-                    instruction.perform(pos, static_cast<UInt32>(c.whole), time_zone);
+                    instruction.perform(pos, static_cast<Int64>(c.whole), time_zone);
                 }
             }
             else
@@ -518,6 +516,8 @@ public:
         auto add_instruction_or_shift = [&](typename Action<T>::Func func [[maybe_unused]], size_t shift)
         {
             if constexpr (std::is_same_v<T, UInt32>)
+                instructions.emplace_back(func, shift);
+            else if constexpr (std::is_same_v<T, Int64>)
                 instructions.emplace_back(func, shift);
             else
                 add_shift(shift);

@@ -1,6 +1,6 @@
 ---
 toc_priority: 4
-toc_title: "\u041e\u0442\u043b\u0438\u0447\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0435\u0020\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e\u0441\u0442\u0438\u0020\u0043\u006c\u0069\u0063\u006b\u0048\u006f\u0075\u0073\u0065"
+toc_title: "Отличительные возможности ClickHouse"
 ---
 
 # Отличительные возможности ClickHouse {#otlichitelnye-vozmozhnosti-clickhouse}
@@ -73,4 +73,3 @@ ClickHouse предоставляет различные способы разм
 3.  Разреженный индекс делает ClickHouse плохо пригодным для точечных чтений одиночных строк по своим
     ключам.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/introduction/distinctive_features/) <!--hide-->

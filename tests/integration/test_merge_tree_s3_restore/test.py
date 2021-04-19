@@ -1,3 +1,4 @@
+import os
 import logging
 import random
 import string
@@ -8,6 +9,20 @@ from helpers.cluster import ClickHouseCluster
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
+
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/node_not_restorable/configs/config.d/storage_conf_not_restorable.xml')
+
+
+def replace_config(old, new):
+    config = open(CONFIG_PATH, 'r')
+    config_lines = config.readlines()
+    config.close()
+    config_lines = [line.replace(old, new) for line in config_lines]
+    config = open(CONFIG_PATH, 'w')
+    config.writelines(config_lines)
+    config.close()
 
 
 @pytest.fixture(scope="module")
@@ -24,6 +39,10 @@ def cluster():
             "configs/config.d/log_conf.xml"], user_configs=[], stay_alive=True)
         cluster.add_instance("node_another_bucket_path", main_configs=[
             "configs/config.d/storage_conf_another_bucket_path.xml",
+            "configs/config.d/bg_processing_pool_conf.xml",
+            "configs/config.d/log_conf.xml"], user_configs=[], stay_alive=True)
+        cluster.add_instance("node_not_restorable", main_configs=[
+            "configs/config.d/storage_conf_not_restorable.xml",
             "configs/config.d/bg_processing_pool_conf.xml",
             "configs/config.d/log_conf.xml"], user_configs=[], stay_alive=True)
         logging.info("Starting cluster...")
@@ -75,6 +94,8 @@ def create_table(node, table_name, additional_settings=None):
 def purge_s3(cluster, bucket):
     minio = cluster.minio_client
     for obj in list(minio.list_objects(bucket, recursive=True)):
+        if str(obj.object_name).find(".SCHEMA_VERSION") != -1:
+            continue
         minio.remove_object(bucket, obj.object_name)
 
 
@@ -103,7 +124,7 @@ def get_revision_counter(node, backup_number):
 def drop_table(cluster):
     yield
 
-    node_names = ["node", "node_another_bucket", "node_another_bucket_path"]
+    node_names = ["node", "node_another_bucket", "node_another_bucket_path", "node_not_restorable"]
 
     for node_name in node_names:
         node = cluster.instances[node_name]
@@ -311,3 +332,40 @@ def test_restore_mutations(cluster):
     assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)
     assert node_another_bucket.query("SELECT sum(counter) FROM s3.test FORMAT Values") == "({})".format(4096 * 2)
     assert node_another_bucket.query("SELECT sum(counter) FROM s3.test WHERE id > 0 FORMAT Values") == "({})".format(4096)
+
+
+def test_migrate_to_restorable_schema(cluster):
+    node = cluster.instances["node_not_restorable"]
+
+    create_table(node, "test")
+
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-03', 4096)))
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-04', 4096, -1)))
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-05', 4096)))
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-05', 4096, -1)))
+
+    replace_config("<send_metadata>false</send_metadata>", "<send_metadata>true</send_metadata>")
+
+    node.restart_clickhouse()
+
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-06', 4096)))
+    node.query("INSERT INTO s3.test VALUES {}".format(generate_values('2020-01-06', 4096, -1)))
+
+    node.query("ALTER TABLE s3.test FREEZE")
+    revision = get_revision_counter(node, 1)
+
+    assert revision != 0
+
+    node_another_bucket = cluster.instances["node_another_bucket"]
+
+    create_table(node_another_bucket, "test")
+
+    # Restore to revision before mutation.
+    node_another_bucket.stop_clickhouse()
+    drop_s3_metadata(node_another_bucket)
+    purge_s3(cluster, cluster.minio_bucket_2)
+    create_restore_file(node_another_bucket, revision=revision, bucket="root", path="another_data")
+    node_another_bucket.start_clickhouse(10)
+
+    assert node_another_bucket.query("SELECT count(*) FROM s3.test FORMAT Values") == "({})".format(4096 * 6)
+    assert node_another_bucket.query("SELECT sum(id) FROM s3.test FORMAT Values") == "({})".format(0)

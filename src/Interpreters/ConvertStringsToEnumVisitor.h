@@ -41,8 +41,8 @@ String makeStringsEnum(const std::set<String> & values)
 
 void changeIfArguments(ASTPtr & first, ASTPtr & second)
 {
-    String first_value = first->as<ASTLiteral>()->value.get<NearestFieldType<String>>();
-    String second_value = second->as<ASTLiteral>()->value.get<NearestFieldType<String>>();
+    String first_value = first->as<ASTLiteral>()->value.get<String>();
+    String second_value = second->as<ASTLiteral>()->value.get<String>();
 
     std::set<String> values;
     values.insert(first_value);
@@ -67,9 +67,9 @@ void changeTransformArguments(ASTPtr & array_to, ASTPtr & other)
 {
     std::set<String> values;
 
-    for (const auto & item : array_to->as<ASTLiteral>()->value.get<NearestFieldType<Array>>())
-        values.insert(item.get<NearestFieldType<String>>());
-    values.insert(other->as<ASTLiteral>()->value.get<NearestFieldType<String>>());
+    for (const auto & item : array_to->as<ASTLiteral>()->value.get<Array>())
+        values.insert(item.get<String>());
+    values.insert(other->as<ASTLiteral>()->value.get<String>());
 
     String enum_string = makeStringsEnum(values);
 
@@ -197,7 +197,7 @@ struct ConvertStringsToEnumMatcher
                 String(literal_other->value.getTypeName()) != "String")
                 return;
 
-            Array array_to = literal_to->value.get<NearestFieldType<Array>>();
+            Array array_to = literal_to->value.get<Array>();
             if (array_to.size() == 0)
                 return;
 

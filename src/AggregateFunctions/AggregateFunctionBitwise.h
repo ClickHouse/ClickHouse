@@ -54,6 +54,8 @@ public:
         return std::make_shared<DataTypeNumber<T>>();
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).update(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);

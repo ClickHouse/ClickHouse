@@ -12,13 +12,13 @@ namespace
 
 /** Returns the server time zone.
   */
-class FunctionTimeZone : public IFunction
+class FunctionTimezone : public IFunction
 {
 public:
     static constexpr auto name = "timezone";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionTimeZone>();
+        return std::make_shared<FunctionTimezone>();
     }
 
     String getName() const override
@@ -45,9 +45,10 @@ public:
 
 }
 
-void registerFunctionTimeZone(FunctionFactory & factory)
+void registerFunctionTimezone(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionTimeZone>();
+    factory.registerFunction<FunctionTimezone>();
+    factory.registerAlias("timeZone", "timezone");
 }
 
 }

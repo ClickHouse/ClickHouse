@@ -7,6 +7,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionImpl.h>
+#include <Functions/TransformDateTime64.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -35,10 +36,15 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 years, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfYearInterval(DayNum(d), years);
+            return time_zone.toStartOfYearInterval(ExtendedDayNum(d), years);
         }
 
         static UInt16 execute(UInt32 t, UInt64 years, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfYearInterval(time_zone.toDayNum(t), years);
+        }
+
+        static UInt16 execute(Int64 t, UInt64 years, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t), years);
         }
@@ -51,10 +57,15 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 quarters, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfQuarterInterval(DayNum(d), quarters);
+            return time_zone.toStartOfQuarterInterval(ExtendedDayNum(d), quarters);
         }
 
         static UInt16 execute(UInt32 t, UInt64 quarters, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t), quarters);
+        }
+
+        static UInt16 execute(Int64 t, UInt64 quarters, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t), quarters);
         }
@@ -67,10 +78,15 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 months, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfMonthInterval(DayNum(d), months);
+            return time_zone.toStartOfMonthInterval(ExtendedDayNum(d), months);
         }
 
         static UInt16 execute(UInt32 t, UInt64 months, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t), months);
+        }
+
+        static UInt16 execute(Int64 t, UInt64 months, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfMonthInterval(time_zone.toDayNum(t), months);
         }
@@ -83,10 +99,15 @@ namespace
 
         static UInt16 execute(UInt16 d, UInt64 weeks, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfWeekInterval(DayNum(d), weeks);
+            return time_zone.toStartOfWeekInterval(ExtendedDayNum(d), weeks);
         }
 
         static UInt16 execute(UInt32 t, UInt64 weeks, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
+        }
+
+        static UInt16 execute(Int64 t, UInt64 weeks, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
         }
@@ -99,10 +120,15 @@ namespace
 
         static UInt32 execute(UInt16 d, UInt64 days, const DateLUTImpl & time_zone)
         {
-            return time_zone.toStartOfDayInterval(DayNum(d), days);
+            return time_zone.toStartOfDayInterval(ExtendedDayNum(d), days);
         }
 
         static UInt32 execute(UInt32 t, UInt64 days, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days);
+        }
+
+        static UInt32 execute(Int64 t, UInt64 days, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days);
         }
@@ -114,8 +140,8 @@ namespace
         static constexpr auto name = function_name;
 
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
-
         static UInt32 execute(UInt32 t, UInt64 hours, const DateLUTImpl & time_zone) { return time_zone.toStartOfHourInterval(t, hours); }
+        static UInt32 execute(Int64 t, UInt64 hours, const DateLUTImpl & time_zone) { return time_zone.toStartOfHourInterval(t, hours); }
     };
 
     template <>
@@ -126,6 +152,11 @@ namespace
         static UInt32 execute(UInt16, UInt64, const DateLUTImpl &) { return dateIsNotSupported(function_name); }
 
         static UInt32 execute(UInt32 t, UInt64 minutes, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfMinuteInterval(t, minutes);
+        }
+
+        static UInt32 execute(Int64 t, UInt64 minutes, const DateLUTImpl & time_zone)
         {
             return time_zone.toStartOfMinuteInterval(t, minutes);
         }
@@ -142,13 +173,18 @@ namespace
         {
             return time_zone.toStartOfSecondInterval(t, seconds);
         }
+
+        static Int64 execute(Int64 t, UInt64 seconds, const DateLUTImpl & time_zone)
+        {
+            return time_zone.toStartOfSecondInterval(t, seconds);
+        }
     };
 
 
 class FunctionToStartOfInterval : public IFunction
 {
 public:
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToStartOfInterval>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStartOfInterval>(); }
 
     static constexpr auto name = function_name;
     String getName() const override { return name; }
@@ -230,7 +266,7 @@ public:
     {
         const auto & time_column = arguments[0];
         const auto & interval_column = arguments[1];
-        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
+        const auto & time_zone = extractTimeZoneFromFunctionArguments(arguments, 2, 0);
         auto result_column = dispatchForColumns(time_column, interval_column, time_zone);
         return result_column;
     }

@@ -13,7 +13,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 
 
 namespace DB
@@ -40,7 +40,7 @@ class FunctionArrayReduceInRanges : public IFunction
 public:
     static const size_t minimum_step = 64;
     static constexpr auto name = "arrayReduceInRanges";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayReduceInRanges>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayReduceInRanges>(); }
 
     String getName() const override { return name; }
 
@@ -252,7 +252,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName 
             }
         }
 
-        SCOPE_EXIT({
+        SCOPE_EXIT_MEMORY_SAFE({
             for (size_t j = 0; j < place_total; ++j)
                 agg_func.destroy(places[j]);
         });
@@ -331,7 +331,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(const ColumnsWithTypeAndName 
             AggregateDataPtr place = arena->alignedAlloc(agg_func.sizeOfData(), agg_func.alignOfData());
             agg_func.create(place);
 
-            SCOPE_EXIT({
+            SCOPE_EXIT_MEMORY_SAFE({
                 agg_func.destroy(place);
             });
 
