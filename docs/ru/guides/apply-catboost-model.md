@@ -159,7 +159,7 @@ FROM amazon_train
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 !!! note "Примечание"
-    Вы можете позднее изменить путь к CatBoost и конфигурации модели без перезагрузки сервера.
+    Вы можете позднее изменить путь к конфигурации модели CatBoost без перезагрузки сервера.
     
 ## 4. Запустите вывод модели из SQL {#run-model-inference}
 
