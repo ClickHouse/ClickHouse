@@ -37,9 +37,9 @@ DiskHDFS::DiskHDFS(
     const String & disk_name_,
     const String & hdfs_root_path_,
     const String & metadata_path_,
-    ContextPtr context_)
+    const Poco::Util::AbstractConfiguration & config_)
     : IDiskRemote(disk_name_, hdfs_root_path_, metadata_path_, "DiskHDFS")
-    , config(context_->getGlobalContext()->getConfigRef())
+    , config(config_)
     , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
     , hdfs_fs(createHDFSFS(hdfs_builder.get()))
 {
@@ -91,7 +91,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
         LOG_DEBUG(log,
             "Write to file by path: {}. New hdfs path: {}", backQuote(metadata_path + path), hdfs_path);
 
-        return std::make_unique<WriteIndirectBufferFromHDFS>(config, hdfs_path, file_name, metadata, buf_size);
+        return std::make_unique<WriteIndirectBufferFromHDFS>(config, hdfs_path, file_name, metadata, buf_size, O_WRONLY);
     }
     else
     {
@@ -101,7 +101,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
             "Append to file by path: {}. New hdfs path: {}. Existing HDFS objects: {}",
             backQuote(metadata_path + path), hdfs_path, metadata.remote_fs_objects.size());
 
-        return std::make_unique<WriteIndirectBufferFromHDFS>(config, hdfs_path, file_name, metadata, buf_size);
+        return std::make_unique<WriteIndirectBufferFromHDFS>(config, hdfs_path, file_name, metadata, buf_size, O_WRONLY | O_APPEND);
     }
 }
 
@@ -163,20 +163,9 @@ void DiskHDFS::removeFile(const String & path)
 
 void DiskHDFS::removeFileIfExists(const String & path)
 {
-    LOG_DEBUG(&Poco::Logger::get("DiskHDFS"), "Checking existance of file by path {}", backQuote(path));
     if (Poco::File(metadata_path + path).exists())
     {
-        const size_t begin_of_path = remote_fs_root_path.find('/', remote_fs_root_path.find("//") + 2);
-        const String hdfs_file_path = remote_fs_root_path.substr(begin_of_path) + path;
-
-        int exists_status = hdfsExists(hdfs_fs.get(), hdfs_file_path.data());
-        if (exists_status == 0)
-        {
-            LOG_DEBUG(&Poco::Logger::get("DiskHDFS"), "Path exists in HDFS: {}", remote_fs_root_path + backQuote(path));
-            removeFile(path);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Path '{}' does not exist in HDFS (root path: {})", path, remote_fs_root_path);
+        removeFile(path);
     }
 }
 
@@ -235,9 +224,8 @@ void registerDiskHDFS(DiskFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
         String metadata_path = context_->getPath() + "disks/" + name + "/";
-        auto context = Context::createCopy(context_);
 
-        return std::make_shared<DiskHDFS>(name, uri, metadata_path, context);
+        return std::make_shared<DiskHDFS>(name, uri, metadata_path, config);
     };
 
     factory.registerDiskType("hdfs", creator);
