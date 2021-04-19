@@ -50,8 +50,15 @@ private:
     void restartReplicas(ContextPtr system_context);
     void syncReplica(ASTSystemQuery & query);
 
-    /// Moves all active parts from this table to new_table_name detached/ folder
+    /// Helper, moves all active parts from this table to new_table_name detached/ folder
     Strings movePartsToNewTableDetachedFolder(const String& db_name, const String& new_table_name);
+
+    struct ReplicaAndZK { std::string replica_name; std::string zk_root_path; };
+
+    /// Helper, checks if the server failed before finishing the restored query, swaps tables names if needed.
+    /// Also checks if the current table is existing and replicated.
+    ReplicaAndZK checkTablesAndSwapIfNeeded(
+        const String& db_name, const String& old_table_name, const String& new_table_name) const;
 
     void restoreReplica();
 

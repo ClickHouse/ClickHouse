@@ -471,6 +471,44 @@ Strings InterpreterSystemQuery::movePartsToNewTableDetachedFolder(const String& 
     return parts_names;
 }
 
+InterpreterSystemQuery::ReplicaAndZK InterpreterSystemQuery::checkTablesAndSwapIfNeeded(
+    const String& db_name, const String& old_table_name, const String& new_table_name) const
+{
+    const StoragePtr table = DatabaseCatalog::instance().getTable({db_name, old_table_name}, getContext());
+    StorageReplicatedMergeTree *old_table;
+
+    if (!table || ((old_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get())) == nullptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no replicated table \"{}.{}\"", db_name, old_table_name);
+
+    const String replica_name = old_table->getReplicaName();
+
+    /**
+     * What if server failed while processing the query?
+     * - If failed before step 4, everything is ok.
+     * - If failed after, everything would break down when trying to restart the restore query, so we need to check
+     *   it and rename tables if needed.
+     */
+    StorageReplicatedMergeTree::Status status;
+    old_table->getStatus(status);
+
+    if (auto new_table_ptr = DatabaseCatalog::instance().tryGetTable({db_name, new_table_name}, getContext());
+        new_table_ptr && !status.is_readonly)
+    {
+        /// Both of the tables are present, and the table with old_table_name is not readonly, so we need to rename
+        assert(static_cast<StorageReplicatedMergeTree*>(new_table_ptr.get())->isReadonly());
+        LOG_DEBUG(log, "Looks like server failed while processing the query, renaming the tables");
+
+        executeQuery(fmt::format("EXCHANGE TABLES {0}.{1} AND {0}.{2}", db_name, new_table_name, old_table_name),
+            getContext(), true);
+
+        /// Now the old_table_name is really the old table.
+        static_cast<StorageReplicatedMergeTree*>(
+            DatabaseCatalog::instance().getTable({db_name, old_table_name}, getContext()).get())->getStatus(status);
+    }
+
+    return {replica_name, status.zookeeper_path};
+}
+
 void InterpreterSystemQuery::restoreReplica()
 {
     /**
@@ -486,38 +524,26 @@ void InterpreterSystemQuery::restoreReplica()
 
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    auto [db, table] = DatabaseCatalog::instance().getDatabaseAndTable(table_id, getContext());
-    StorageReplicatedMergeTree * storage_replicated;
-
-    if (!table || ((storage_replicated = dynamic_cast<StorageReplicatedMergeTree*>(table.get())) == nullptr))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no replicated table \"{}.{}\"",
-            table_id.database_name, table_id.table_name);
-
-    /// 0. Check if the replica needs to be restored (metadata missing).
-
-    const zkutil::ZooKeeperPtr& zookeeper = context.getZooKeeper();
+    const zkutil::ZooKeeperPtr& zookeeper = getContext()->getZooKeeper();
 
     if (zookeeper->expired())
         throw Exception(ErrorCodes::NO_ZOOKEEPER,
             "Cannot restore table metadata because ZooKeeper session has expired");
 
-    StorageReplicatedMergeTree::Status status;
-    storage_replicated->getStatus(status);
-
     const String& db_name = table_id.database_name;
     const String& old_table_name = table_id.table_name;
+    const std::hash<String> table_name_hash;
+    const String new_table_name = fmt::format("{}_tmp_{}", old_table_name, table_name_hash(old_table_name));
 
-    const String& zk_root_path = status.zookeeper_path;
+    const auto [replica_name, zk_root_path] = checkTablesAndSwapIfNeeded(db_name, old_table_name, new_table_name);
 
     if (const String replicas_zk_path = zk_root_path + "/replicas"; zookeeper->exists(replicas_zk_path))
     {
-        if (const String replica = storage_replicated->getReplicaName(),
-                         replica_zk_path = replicas_zk_path + "/" + replica;
-            zookeeper->exists(replica_zk_path))
+        if (const String replica_zk_path = replicas_zk_path + "/" + replica_name; zookeeper->exists(replica_zk_path))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "The metadata for {}.{} (replica {}) is present at {} -- nothing to restore",
-                db_name, old_table_name, replica, replica_zk_path);
+                db_name, old_table_name, replica_name, replica_zk_path);
         }
 
         Strings replicas_present;
@@ -534,9 +560,6 @@ void InterpreterSystemQuery::restoreReplica()
 
         LOG_DEBUG(log, "Replicas path is empty");
     }
-
-    const std::hash<String> table_name_hash;
-    const String new_table_name = fmt::format("{}_tmp_{}", old_table_name, table_name_hash(old_table_name));
 
     LOG_DEBUG(log, "Started restoring {}.{}, zk root path at {}", db_name, old_table_name, zk_root_path);
 
@@ -567,10 +590,11 @@ void InterpreterSystemQuery::restoreReplica()
     LOG_DEBUG(log, "Renamed tables {0}.{1} <=> {0}.{2}", db_name, old_table_name, new_table_name);
 
     /// 5.
-    executeQuery(fmt::format("DETACH TABLE {}.{}", db_name, new_table_name), context, true);
+    executeQuery(fmt::format("DETACH TABLE {}.{}", db_name, new_table_name), getContext(), true);
     LOG_DEBUG(log, "Detached old table {}.{}", db_name, new_table_name);
 
     /// 6. Delete information about the old table, so it wouldn't be attached after server restart.
+    const DatabasePtr db = DatabaseCatalog::instance().getDatabase(db_name, getContext());
     const String old_table_metadata_file = db->getObjectMetadataPath(new_table_name);
 
     if (auto ec = std::error_code{}; !std::filesystem::remove(old_table_metadata_file, ec))
@@ -584,7 +608,10 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
 
-    auto table_ddl_guard = need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName()) : nullptr;
+    auto table_ddl_guard = need_ddl_guard
+        ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName())
+        : nullptr;
+
     auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
     ASTPtr create_ast;
 

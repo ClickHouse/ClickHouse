@@ -233,6 +233,7 @@ public:
     String getSharedDataReplica(const IMergeTreeDataPart & part) const;
 
     inline String getReplicaName() const { return replica_name; }
+    inline bool isReadonly() const { return is_readonly.load(std::memory_order_relaxed); }
 
 private:
     /// Get a sequential consistent view of current parts.
