@@ -290,6 +290,12 @@ if (COMPILER_GCC OR COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 endif ()
 
+# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+# benchmarks.
+if (COMPILER_GCC OR COMPILER_CLANG)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+endif ()
+
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
 option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 

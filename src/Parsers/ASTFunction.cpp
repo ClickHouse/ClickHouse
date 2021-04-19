@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/NumberTraits.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -234,7 +235,11 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                  * interpreted as a comment. Instead, negate the literal
                  * in place. Another possible solution is to use parentheses,
                  * but the old comment said it is impossible, without mentioning
-                 * the reason.
+                 * the reason. We should also negate the nonnegative literals,
+                 * for symmetry. We print the negated value without parentheses,
+                 * because they are not needed around a single literal. Also we
+                 * use formatting from FieldVisitorToString, so that the type is
+                 * preserved (e.g. -0. is printed with trailing period).
                  */
                 if (literal && name == "negate")
                 {
@@ -251,26 +256,18 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                             {
                                 // The parser doesn't create decimal literals, but
                                 // they can be produced by constant folding or the
-                                // fuzzer.
+                                // fuzzer. Decimals are always signed, so no need
+                                // to deduce the result type like we do for ints.
                                 const auto int_value = value.getValue().value;
-                                // We compare to zero so we don't care about scale.
-                                if (int_value >= 0)
-                                {
-                                    return false;
-                                }
-
-                                settings.ostr << ValueType{-int_value,
-                                    value.getScale()};
+                                settings.ostr << FieldVisitorToString{}(ValueType{
+                                    -int_value,
+                                    value.getScale()});
                             }
                             else if constexpr (std::is_arithmetic_v<ValueType>)
                             {
-                                if (value >= 0)
-                                {
-                                    return false;
-                                }
-                                // We don't need parentheses around a single
-                                // literal.
-                                settings.ostr << -value;
+                                using ResultType = typename NumberTraits::ResultOfNegate<ValueType>::Type;
+                                settings.ostr << FieldVisitorToString{}(
+                                    -static_cast<ResultType>(value));
                                 return true;
                             }
 

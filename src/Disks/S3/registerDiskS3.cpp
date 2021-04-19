@@ -1,9 +1,17 @@
-#include <aws/core/client/DefaultRetryStrategy.h>
+#if !defined(ARCADIA_BUILD)
+    #include <Common/config.h>
+#endif
+
 #include <IO/ReadHelpers.h>
-#include <IO/S3Common.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <common/logger_useful.h>
+
+
+#if USE_AWS_S3
+
+#include <aws/core/client/DefaultRetryStrategy.h>
+#include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
 #include "Disks/DiskFactory.h"
@@ -122,7 +130,7 @@ void registerDiskS3(DiskFactory & factory)
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
         client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
-        client_configuration.httpRequestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
+        client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
         client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
         client_configuration.endpointOverride = uri.endpoint;
 
@@ -140,7 +148,8 @@ void registerDiskS3(DiskFactory & factory)
             config.getString(config_prefix + ".secret_access_key", ""),
             config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
             {},
-            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false))
+            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
+            config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false))
         );
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
@@ -196,3 +205,10 @@ void registerDiskS3(DiskFactory & factory)
 }
 
 }
+
+#else
+
+void registerDiskS3(DiskFactory &) {}
+
+#endif
+
