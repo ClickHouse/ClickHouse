@@ -1463,12 +1463,20 @@ void TCPHandler::sendData(const Block & block)
 
     try
     {
+        /// For testing hedged requests
+        const Settings & settings = query_context->getSettingsRef();
+        if (settings.unknown_packet_in_send_data)
+        {
+            --const_cast<SettingFieldUInt64 &>(settings.unknown_packet_in_send_data).value;
+            if (settings.unknown_packet_in_send_data == 0)
+                writeVarUInt(UInt64(-1), *out);
+        }
+
         writeVarUInt(Protocol::Server::Data, *out);
         /// Send external table name (empty name is the main table)
         writeStringBinary("", *out);
 
         /// For testing hedged requests
-        const Settings & settings = query_context->getSettingsRef();
         if (block.rows() > 0 && settings.sleep_in_send_data_ms.totalMilliseconds())
         {
             out->next();
