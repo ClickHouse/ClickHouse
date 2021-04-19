@@ -4,6 +4,10 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
+    <settings>
+        <min_bytes_to_use_mmap_io>0</min_bytes_to_use_mmap_io>
+    </settings>
+
     <substitutions>
        <substitution>
            <name>str1</name>

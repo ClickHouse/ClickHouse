@@ -3,6 +3,10 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
+    <settings>
+        <min_bytes_to_use_mmap_io>0</min_bytes_to_use_mmap_io>
+    </settings>
+
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(URL, URL))</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(URL, SearchPhrase))</query>
     <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(concat(MobilePhoneModel, SearchPhrase))</query>
