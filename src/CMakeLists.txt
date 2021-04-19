@@ -508,5 +508,10 @@ if (ENABLE_TESTS AND USE_GTEST)
         clickhouse_common_zookeeper
         string_utils)
 
+    # For __udivmodti4 referenced in Core/tests/gtest_DecimalFunctions.cpp
+    if (OS_DARWIN AND COMPILER_GCC)
+        target_link_libraries(unit_tests_dbms PRIVATE gcc)
+    endif ()
+
     add_check(unit_tests_dbms)
 endif ()

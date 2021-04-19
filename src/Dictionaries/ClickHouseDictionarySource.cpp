@@ -27,9 +27,9 @@ namespace
 {
     constexpr size_t MAX_CONNECTIONS = 16;
 
-    inline UInt16 getPortFromContext(const Context & context, bool secure)
+    inline UInt16 getPortFromContext(ContextPtr context, bool secure)
     {
-        return secure ? context.getTCPPortSecure().value_or(0) : context.getTCPPort();
+        return secure ? context->getTCPPortSecure().value_or(0) : context->getTCPPort();
     }
 
     ConnectionPoolWithFailoverPtr createPool(const ClickHouseDictionarySource::Configuration & configuration)
@@ -60,19 +60,19 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     const Block & sample_block_,
-    const Context & context_)
+    ContextPtr context_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , configuration{configuration_}
     , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.where, IdentifierQuotingStyle::Backticks}
     , sample_block{sample_block_}
-    , context{context_}
+    , context(Context::createCopy(context_))
     , pool{createPool(configuration)}
     , load_all_query{query_builder.composeLoadAllQuery()}
 {
     /// Query context is needed because some code in executeQuery function may assume it exists.
     /// Current example is Context::getSampleBlockCache from InterpreterSelectWithUnionQuery::getSampleBlock.
-    context.makeQueryContext();
+    context->makeQueryContext();
 }
 
 ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionarySource & other)
@@ -82,11 +82,11 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionar
     , invalidate_query_response{other.invalidate_query_response}
     , query_builder{dict_struct, configuration.db, "", configuration.table, configuration.where, IdentifierQuotingStyle::Backticks}
     , sample_block{other.sample_block}
-    , context{other.context}
+    , context(Context::createCopy(other.context))
     , pool{createPool(configuration)}
     , load_all_query{other.load_all_query}
 {
-    context.makeQueryContext();
+    context->makeQueryContext();
 }
 
 std::string ClickHouseDictionarySource::getUpdateFieldAndDate()
@@ -172,7 +172,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     LOG_TRACE(log, "Performing invalidate query");
     if (configuration.is_local)
     {
-        Context query_context = context;
+        auto query_context = Context::createCopy(context);
         auto input_block = executeQuery(request, query_context, true).getInputStream();
         return readInvalidateQuery(*input_block);
     }
@@ -191,12 +191,12 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context,
+                                 ContextPtr context,
                                  const std::string & default_database [[maybe_unused]],
                                  bool /* check_config */) -> DictionarySourcePtr
     {
         bool secure = config.getBool(config_prefix + ".secure", false);
-        Context context_copy = context;
+        auto context_copy = Context::createCopy(context);
 
         UInt16 default_port = getPortFromContext(context_copy, secure);
 
@@ -221,7 +221,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
         if (configuration.is_local)
         {
-            context_copy.setUser(configuration.user, configuration.password, Poco::Net::SocketAddress("127.0.0.1", 0));
+            context_copy->setUser(configuration.user, configuration.password, Poco::Net::SocketAddress("127.0.0.1", 0));
             context_copy = copyContextAndApplySettings(config_prefix, context_copy, config);
         }
 

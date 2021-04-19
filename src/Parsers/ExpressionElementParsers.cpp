@@ -580,18 +580,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         else if (parser_literal.parse(pos, ast_literal, expected))
         {
             const Field & value = ast_literal->as<ASTLiteral &>().value;
-            if ((node->frame.type == WindowFrame::FrameType::Rows
-                    || node->frame.type == WindowFrame::FrameType::Groups)
-                && !(value.getType() == Field::Types::UInt64
-                     || (value.getType() == Field::Types::Int64
-                            && value.get<Int64>() >= 0)))
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Frame offset for '{}' frame must be a nonnegative integer, '{}' of type '{}' given.",
-                    WindowFrame::toString(node->frame.type),
-                    applyVisitor(FieldVisitorToString(), value),
-                    Field::Types::toString(value.getType()));
-            }
             node->frame.begin_offset = value;
             node->frame.begin_type = WindowFrame::BoundaryType::Offset;
         }
@@ -641,18 +629,6 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             else if (parser_literal.parse(pos, ast_literal, expected))
             {
                 const Field & value = ast_literal->as<ASTLiteral &>().value;
-                if ((node->frame.type == WindowFrame::FrameType::Rows
-                        || node->frame.type == WindowFrame::FrameType::Groups)
-                    && !(value.getType() == Field::Types::UInt64
-                         || (value.getType() == Field::Types::Int64
-                                && value.get<Int64>() >= 0)))
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Frame offset for '{}' frame must be a nonnegative integer, '{}' of type '{}' given.",
-                        WindowFrame::toString(node->frame.type),
-                        applyVisitor(FieldVisitorToString(), value),
-                        Field::Types::toString(value.getType()));
-                }
                 node->frame.end_offset = value;
                 node->frame.end_type = WindowFrame::BoundaryType::Offset;
             }

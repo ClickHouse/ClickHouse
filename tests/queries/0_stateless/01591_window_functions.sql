@@ -329,8 +329,9 @@ SELECT
 FROM numbers(2)
 ;
 
--- optimize_read_in_order conflicts with sorting for window functions, must
--- be disabled.
+-- optimize_read_in_order conflicts with sorting for window functions, check that
+-- it is disabled.
+drop table if exists window_mt;
 create table window_mt engine MergeTree order by number
     as select number, mod(number, 3) p from numbers(100);
 
@@ -402,10 +403,16 @@ select count() over (order by toInt64(number) range between -1 following and unb
 select count() over (order by toInt64(number) range between unbounded preceding and -1 preceding) from numbers(1); -- { serverError 36 }
 select count() over (order by toInt64(number) range between unbounded preceding and -1 following) from numbers(1); -- { serverError 36 }
 
----- a test with aggregate function that allocates memory in arena
+-- a test with aggregate function that allocates memory in arena
 select sum(a[length(a)])
 from (
     select groupArray(number) over (partition by modulo(number, 11)
             order by modulo(number, 1111), number) a
     from numbers_mt(10000)
 ) settings max_block_size = 7;
+
+-- -INT_MIN row offset that can lead to problems with negation, found when fuzzing
+-- under UBSan. Should be limited to at most INT_MAX.
+select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
+
+drop table window_mt;

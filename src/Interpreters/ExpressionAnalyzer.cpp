@@ -128,11 +128,12 @@ ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settin
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
     const TreeRewriterResultPtr & syntax_analyzer_result_,
-    const Context & context_,
+    ContextPtr context_,
     size_t subquery_depth_,
     bool do_global,
     SubqueriesForSets subqueries_for_sets_)
-    : query(query_), context(context_), settings(context.getSettings())
+    : WithContext(context_)
+    , query(query_), settings(getContext()->getSettings())
     , subquery_depth(subquery_depth_)
     , syntax(syntax_analyzer_result_)
 {
@@ -292,7 +293,7 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 {
     if (do_global)
     {
-        GlobalSubqueriesVisitor::Data subqueries_data(context, subquery_depth, isRemoteStorage(),
+        GlobalSubqueriesVisitor::Data subqueries_data(getContext(), subquery_depth, isRemoteStorage(),
                                                    external_tables, subqueries_for_sets, has_global_subqueries);
         GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
@@ -312,11 +313,11 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
         return;
     }
 
-    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
+    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, getContext(), {}, query_options);
     auto io = interpreter_subquery->execute();
     PullingAsyncPipelineExecutor executor(io.pipeline);
 
-    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
+    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, getContext()->getSettingsRef().transform_null_in);
     set->setHeader(executor.getHeader());
 
     Block block;
@@ -340,8 +341,8 @@ SetPtr ExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr & subquery_o
     const auto * table = subquery_or_table_name->as<ASTIdentifier>();
     if (!table)
         return nullptr;
-    auto table_id = context.resolveStorageID(subquery_or_table_name);
-    const auto storage = DatabaseCatalog::instance().getTable(table_id, context);
+    auto table_id = getContext()->resolveStorageID(subquery_or_table_name);
+    const auto storage = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (storage->getName() != "Set")
         return nullptr;
     const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
@@ -375,7 +376,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
         const IAST & args = *func->arguments;
         const ASTPtr & left_in_operand = args.children.at(0);
 
-        if (storage()->mayBenefitFromIndexForIn(left_in_operand, context, metadata_snapshot))
+        if (storage()->mayBenefitFromIndexForIn(left_in_operand, getContext(), metadata_snapshot))
         {
             const ASTPtr & arg = args.children.at(1);
             if (arg->as<ASTSubquery>() || arg->as<ASTIdentifier>())
@@ -389,7 +390,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
                 getRootActions(left_in_operand, true, temp_actions);
 
                 if (temp_actions->tryFindInIndex(left_in_operand->getColumnName()))
-                    makeExplicitSet(func, *temp_actions, true, context,
+                    makeExplicitSet(func, *temp_actions, true, getContext(),
                         settings.size_limits_for_set, prepared_sets);
             }
         }
@@ -400,7 +401,7 @@ void SelectQueryExpressionAnalyzer::makeSetsForIndex(const ASTPtr & node)
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
-    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
+    ActionsVisitor::Data visitor_data(getContext(), settings.size_limits_for_set, subquery_depth,
                                    sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
                                    no_subqueries, false, only_consts, !isRemoteStorage());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
@@ -411,7 +412,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
 void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
-    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
+    ActionsVisitor::Data visitor_data(getContext(), settings.size_limits_for_set, subquery_depth,
                                    sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
                                    no_subqueries, true, only_consts, !isRemoteStorage());
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
@@ -421,7 +422,7 @@ void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, bool no_sub
 void ExpressionAnalyzer::getRootActionsForHaving(const ASTPtr & ast, bool no_subqueries, ActionsDAGPtr & actions, bool only_consts)
 {
     LogAST log;
-    ActionsVisitor::Data visitor_data(context, settings.size_limits_for_set, subquery_depth,
+    ActionsVisitor::Data visitor_data(getContext(), settings.size_limits_for_set, subquery_depth,
                                    sourceColumns(), std::move(actions), prepared_sets, subqueries_for_sets,
                                    no_subqueries, false, only_consts, true);
     ActionsVisitor(visitor_data, log.stream()).visit(ast);
@@ -532,7 +533,7 @@ void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAGPtr actions)
 {
     // Convenient to check here because at least we have the Context.
     if (!syntax->window_function_asts.empty() &&
-        !context.getSettingsRef().allow_experimental_window_functions)
+        !getContext()->getSettingsRef().allow_experimental_window_functions)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "The support for window functions is experimental and will change"
@@ -685,7 +686,7 @@ ArrayJoinActionPtr ExpressionAnalyzer::addMultipleArrayJoinAction(ActionsDAGPtr 
         result_columns.insert(result_source.first);
     }
 
-    return std::make_shared<ArrayJoinAction>(result_columns, array_join_is_left, context);
+    return std::make_shared<ArrayJoinAction>(result_columns, array_join_is_left, getContext());
 }
 
 ArrayJoinActionPtr SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types)
@@ -745,21 +746,21 @@ static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
     return {};
 }
 
-static ExpressionActionsPtr createJoinedBlockActions(const Context & context, const TableJoin & analyzed_join)
+static ExpressionActionsPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
 {
     ASTPtr expression_list = analyzed_join.rightKeysList();
     auto syntax_result = TreeRewriter(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
-static bool allowDictJoin(StoragePtr joined_storage, const Context & context, String & dict_name, String & key_name)
+static bool allowDictJoin(StoragePtr joined_storage, ContextPtr context, String & dict_name, String & key_name)
 {
     const auto * dict = dynamic_cast<const StorageDictionary *>(joined_storage.get());
     if (!dict)
         return false;
 
     dict_name = dict->dictionaryName();
-    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dict_name, context);
+    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
     if (!dictionary)
         return false;
 
@@ -772,7 +773,7 @@ static bool allowDictJoin(StoragePtr joined_storage, const Context & context, St
     return false;
 }
 
-static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, const Context & context)
+static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, ContextPtr context)
 {
     bool allow_merge_join = analyzed_join->allowMergeJoin();
 
@@ -813,7 +814,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     if (!subquery_for_join.join)
     {
         /// Actions which need to be calculated on joined block.
-        ExpressionActionsPtr joined_block_actions = createJoinedBlockActions(context, analyzedJoin());
+        ExpressionActionsPtr joined_block_actions = createJoinedBlockActions(getContext(), analyzedJoin());
 
         Names original_right_columns;
         if (!subquery_for_join.source)
@@ -828,7 +829,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
                 *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
                 * - this function shows the expression JOIN _data1.
                 */
-            auto interpreter = interpretSubquery(join_element.table_expression, context, original_right_columns, query_options);
+            auto interpreter = interpretSubquery(join_element.table_expression, getContext(), original_right_columns, query_options);
 
             subquery_for_join.makeSource(interpreter, std::move(required_columns_with_aliases));
         }
@@ -841,9 +842,9 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         if (need_convert)
             subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(
                 syntax->analyzed_join->rightConvertingActions(),
-                ExpressionActionsSettings::fromContext(context)));
+                ExpressionActionsSettings::fromContext(getContext())));
 
-        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, context);
+        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, getContext());
 
         /// Do not make subquery for join over dictionary.
         if (syntax->analyzed_join->dictionary_reader)
@@ -893,7 +894,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         auto tmp_actions_dag = std::make_shared<ActionsDAG>(sourceColumns());
         getRootActions(select_query->prewhere(), only_types, tmp_actions_dag);
         tmp_actions_dag->removeUnusedActions(NameSet{prewhere_column_name});
-        auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag, ExpressionActionsSettings::fromContext(context));
+        auto tmp_actions = std::make_shared<ExpressionActions>(tmp_actions_dag, ExpressionActionsSettings::fromContext(getContext()));
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
         required_source_columns.insert(first_action_names.begin(), first_action_names.end());
@@ -1011,7 +1012,8 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
         {
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
-            group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context)));
+            group_by_elements_actions.emplace_back(
+                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext())));
         }
     }
 
@@ -1170,7 +1172,7 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
             auto actions_dag = std::make_shared<ActionsDAG>(columns_after_join);
             getRootActions(child, only_types, actions_dag);
             order_by_elements_actions.emplace_back(
-                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(context)));
+                std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext())));
         }
     }
 
@@ -1330,7 +1332,8 @@ ActionsDAGPtr ExpressionAnalyzer::getActionsDAG(bool add_aliases, bool project_r
 
 ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
 {
-    return std::make_shared<ExpressionActions>(getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(context));
+    return std::make_shared<ExpressionActions>(
+        getActionsDAG(add_aliases, project_result), ExpressionActionsSettings::fromContext(getContext()));
 }
 
 
@@ -1339,12 +1342,12 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAn
     auto actions = std::make_shared<ActionsDAG>(constant_inputs);
 
     getRootActions(query, true, actions, true);
-    return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(context));
+    return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
 {
-    ExpressionActionsChain new_chain(context);
+    ExpressionActionsChain new_chain(getContext());
     appendSelect(new_chain, false);
     return new_chain.getLastActions();
 }
@@ -1371,8 +1374,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         */
 
     const ASTSelectQuery & query = *query_analyzer.getSelectQuery();
-    const Context & context = query_analyzer.context;
-    const Settings & settings = context.getSettingsRef();
+    auto context = query_analyzer.getContext();
+    const Settings & settings = context->getSettingsRef();
     const ConstStoragePtr & storage = query_analyzer.storage();
 
     bool finalized = false;
@@ -1432,7 +1435,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 {
                     ExpressionActions(
                         prewhere_info->prewhere_actions,
-                        ExpressionActionsSettings::fromSettings(context.getSettingsRef())).execute(before_prewhere_sample);
+                        ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_prewhere_sample);
                     auto & column_elem = before_prewhere_sample.getByName(query.prewhere()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -1467,7 +1470,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 {
                     ExpressionActions(
                         before_where,
-                        ExpressionActionsSettings::fromSettings(context.getSettingsRef())).execute(before_where_sample);
+                        ExpressionActionsSettings::fromSettings(context->getSettingsRef())).execute(before_where_sample);
                     auto & column_elem = before_where_sample.getByName(query.where()->getColumnName());
                     /// If the filter column is a constant, record it.
                     if (column_elem.column)
@@ -1481,7 +1484,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             /// TODO correct conditions
             optimize_aggregation_in_order =
-                    context.getSettingsRef().optimize_aggregation_in_order
+                    context->getSettingsRef().optimize_aggregation_in_order
                     && storage && query.groupBy();
 
             query_analyzer.appendGroupBy(chain, only_types || !first_stage, optimize_aggregation_in_order, group_by_elements_actions);

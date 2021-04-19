@@ -370,7 +370,7 @@ inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisi
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block KeyCondition::getBlockWithConstants(
-    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context)
+    const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, ContextPtr context)
 {
     Block result
     {
@@ -387,7 +387,7 @@ Block KeyCondition::getBlockWithConstants(
 
 KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
@@ -556,7 +556,7 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
-void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
+void KeyCondition::traverseAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants)
 {
     RPNElement element;
 
@@ -786,7 +786,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 
 bool KeyCondition::tryPrepareSetIndex(
     const ASTs & args,
-    const Context & context,
+    ContextPtr context,
     RPNElement & out,
     size_t & out_key_column_num)
 {
@@ -947,7 +947,7 @@ private:
 
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     const ASTPtr & node,
-    const Context & context,
+    ContextPtr context,
     size_t & out_key_column_num,
     DataTypePtr & out_key_res_column_type,
     MonotonicFunctionsChain & out_functions_chain)
@@ -1075,7 +1075,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 }
 
 
-bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
+bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants, RPNElement & out)
 {
     /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of key,
       *  or itself, wrapped in a chain of possibly-monotonic functions,
@@ -1326,11 +1326,12 @@ String KeyCondition::toString() const
   * The set of all possible tuples can be considered as an n-dimensional space, where n is the size of the tuple.
   * A range of tuples specifies some subset of this space.
   *
-  * Hyperrectangles (you can also find the term "rail")
-  *  will be the subrange of an n-dimensional space that is a direct product of one-dimensional ranges.
-  * In this case, the one-dimensional range can be: a period, a segment, an interval, a half-interval, unlimited on the left, unlimited on the right ...
+  * Hyperrectangles will be the subrange of an n-dimensional space that is a direct product of one-dimensional ranges.
+  * In this case, the one-dimensional range can be:
+  * a point, a segment, an open interval, a half-open interval;
+  * unlimited on the left, unlimited on the right ...
   *
-  * The range of tuples can always be represented as a combination of hyperrectangles.
+  * The range of tuples can always be represented as a combination (union) of hyperrectangles.
   * For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of the following three hyperrectangles:
   * [x1]       x [y1 .. +inf)
   * (x1 .. x2) x (-inf .. +inf)

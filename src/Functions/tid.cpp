@@ -13,7 +13,7 @@ namespace
     {
     public:
         static constexpr auto name = "tid";
-        static FunctionPtr create(const Context &) { return std::make_shared<FunctionTid>(); }
+        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTid>(); }
 
         String getName() const override { return name; }
 
