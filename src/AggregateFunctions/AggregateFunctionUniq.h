@@ -22,6 +22,7 @@
 
 #include <AggregateFunctions/UniquesHashSet.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/ThetaSketchData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
 
@@ -124,6 +125,19 @@ struct AggregateFunctionUniqExactData<String>
 };
 
 
+/// uniqThetaSketch
+#if USE_DATASKETCHES
+
+struct AggregateFunctionUniqThetaSketchData
+{
+    using Set = ThetaSketchData<UInt64>;
+    Set set;
+
+    static String getName() { return "uniqThetaSketch"; }
+};
+
+#endif
+
 namespace detail
 {
 
@@ -189,6 +203,12 @@ struct OneAdder
                 data.set.insert(key);
             }
         }
+#if USE_DATASKETCHES
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaSketchData>)
+        {
+            data.set.insertOriginal(column.getDataAt(row_num));
+        }
+#endif
     }
 };
 
@@ -209,6 +229,8 @@ public:
     {
         return std::make_shared<DataTypeUInt64>();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -264,6 +286,8 @@ public:
     {
         return std::make_shared<DataTypeUInt64>();
     }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

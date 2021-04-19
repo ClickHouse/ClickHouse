@@ -287,7 +287,9 @@ REPLACE TABLE myOldTable SELECT * FROM myOldTable WHERE CounterID <12345;
 
 ### Syntax
 
-{CREATE [OR REPLACE]|REPLACE} TABLE [db.]table_name
+``` sql
+{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
+```
 
 All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
 

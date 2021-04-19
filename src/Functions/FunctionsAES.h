@@ -141,7 +141,7 @@ class FunctionEncrypt : public IFunction
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionEncrypt>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEncrypt>(); }
 
 private:
     using CipherMode = OpenSSLDetails::CipherMode;
@@ -416,7 +416,7 @@ class FunctionDecrypt : public IFunction
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDecrypt>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDecrypt>(); }
 
 private:
     using CipherMode = OpenSSLDetails::CipherMode;

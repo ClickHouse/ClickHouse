@@ -4,13 +4,13 @@
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
 {
 
 class IAST;
-class Context;
 
 /** For given ClickHouse query,
   * creates another query in a form of
@@ -29,6 +29,6 @@ String transformQueryForExternalDatabase(
     IdentifierQuotingStyle identifier_quoting_style,
     const String & database,
     const String & table,
-    const Context & context);
+    ContextPtr context);
 
 }

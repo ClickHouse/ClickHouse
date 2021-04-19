@@ -40,13 +40,17 @@ class JoinStep : public ITransformingStep
 public:
     using Transform = JoiningTransform;
 
-    explicit JoinStep(const DataStream & input_stream_, JoinPtr join_);
+    explicit JoinStep(const DataStream & input_stream_, JoinPtr join_, bool has_non_joined_rows_, size_t max_block_size_);
     String getName() const override { return "Join"; }
 
     void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
+    const JoinPtr & getJoin() const { return join; }
+
 private:
     JoinPtr join;
+    bool has_non_joined_rows;
+    size_t max_block_size;
 };
 
 }

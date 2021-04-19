@@ -397,8 +397,11 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
     Field converted = convertFieldToType(from_value, to_type, from_type_hint);
     if (!is_null && converted.isNull())
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Cannot convert value{}: it cannot be represented as {}",
-                        from_type_hint ? " from " + from_type_hint->getName() : "", to_type.getName());
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot convert value '{}'{}: it cannot be represented as {}",
+            toString(from_value),
+            from_type_hint ? " from " + from_type_hint->getName() : "",
+            to_type.getName());
     return converted;
 }
 

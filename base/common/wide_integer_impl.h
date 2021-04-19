@@ -271,9 +271,13 @@ struct integer<Bits, Signed>::_impl
         /// As to_Integral does a static_cast to int64_t, it may result in UB.
         /// The necessary check here is that long double has enough significant (mantissa) bits to store the
         /// int64_t max value precisely.
+
+        //TODO Be compatible with Apple aarch64
+#if not (defined(__APPLE__) && defined(__aarch64__))
         static_assert(LDBL_MANT_DIG >= 64,
             "On your system long double has less than 64 precision bits,"
             "which may result in UB when initializing double from int64_t");
+#endif
 
         if ((rhs > 0 && rhs < static_cast<long double>(max_int)) || (rhs < 0 && rhs > static_cast<long double>(min_int)))
         {

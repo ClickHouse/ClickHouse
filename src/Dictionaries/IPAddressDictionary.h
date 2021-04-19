@@ -101,6 +101,7 @@ private:
             Decimal32,
             Decimal64,
             Decimal128,
+            Decimal256,
             Float32,
             Float64,
             String>
@@ -118,6 +119,7 @@ private:
             ContainerType<Decimal32>,
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
+            ContainerType<Decimal256>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<StringRef>>

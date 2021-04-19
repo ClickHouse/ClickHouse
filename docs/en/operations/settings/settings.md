@@ -1565,6 +1565,17 @@ Possible values:
 
 Default value: 0
 
+## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shardslrewrite-in}
+
+Rewrite IN in query for remote shards to exclude values that does not belong to the shard (requires optimize_skip_unused_shards).
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1 (since it requires `optimize_skip_unused_shards` anyway, which `0` by default)
+
 ## allow_nondeterministic_optimize_skip_unused_shards {#allow-nondeterministic-optimize-skip-unused-shards}
 
 Allow nondeterministic (like `rand` or `dictGet`, since later has some caveats with updates) functions in sharding key.
@@ -2787,6 +2798,28 @@ Possible values:
 
 Default value: `0`.
 
+## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
+
+Adds a modifier `SYNC` to all `DROP` and `DETACH` queries. 
+
+Possible values:
+
+-   0 — Queries will be executed with delay.
+-   1 — Queries will be executed without delay.
+
+Default value: `0`.
+
+## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil}
+
+Sets the `SHOW TABLE` query display.
+
+Possible values:
+
+-   0 — The query will be displayed without table UUID.
+-   1 — The query will be displayed with table UUID.
+
+Default value: `0`.
+
 ## allow_experimental_live_view {#allow-experimental-live-view}
 
 Allows creation of experimental [live views](../../sql-reference/statements/create/view.md#live-view).
@@ -2821,5 +2854,16 @@ Default value: `5`.
 Sets the interval in seconds after which periodically refreshed [live view](../../sql-reference/statements/create/view.md#live-view) is forced to refresh.
 
 Default value: `60`.
+
+## check_query_single_value_result {#check_query_single_value_result}
+
+Defines the level of detail for the [CHECK TABLE](../../sql-reference/statements/check-table.md#checking-mergetree-tables) query result for `MergeTree` family engines .
+
+Possible values:
+
+-   0 — the query shows a check status for every individual data part of a table.
+-   1 — the query shows the general table check status.
+
+Default value: `0`.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

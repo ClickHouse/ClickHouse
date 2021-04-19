@@ -1,21 +1,22 @@
 #pragma once
 
-#include <common/types.h>
 #include <Columns/IColumn.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <Formats/FormatSettings.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <common/types.h>
+
+#include <boost/noncopyable.hpp>
 
 #include <functional>
 #include <memory>
 #include <unordered_map>
-#include <boost/noncopyable.hpp>
 
 namespace DB
 {
 
 class Block;
-class Context;
 struct Settings;
 struct FormatFactorySettings;
 
@@ -34,11 +35,10 @@ struct RowOutputFormatParams;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
-FormatSettings getFormatSettings(const Context & context);
+FormatSettings getFormatSettings(ContextConstPtr context);
 
 template <typename T>
-FormatSettings getFormatSettings(const Context & context,
-    const T & settings);
+FormatSettings getFormatSettings(ContextConstPtr context, const T & settings);
 
 /** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
@@ -101,6 +101,7 @@ private:
         OutputProcessorCreator output_processor_creator;
         FileSegmentationEngine file_segmentation_engine;
         bool supports_parallel_formatting{false};
+        bool is_column_oriented{false};
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -112,38 +113,52 @@ public:
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        const Context & context,
+        ContextConstPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     /// Checks all preconditions. Returns ordinary stream if parallel formatting cannot be done.
     /// Currently used only in Client. Don't use it something else! Better look at getOutputFormatParallelIfPossible.
-    BlockOutputStreamPtr getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context, WriteCallback callback = {},
+    BlockOutputStreamPtr getOutputStreamParallelIfPossible(
+        const String & name,
+        WriteBuffer & buf,
+        const Block & sample,
+        ContextConstPtr context,
+        WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     /// Currently used only in Client. Don't use it something else! Better look at getOutputFormat.
-    BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf,
-        const Block & sample, const Context & context, WriteCallback callback = {},
+    BlockOutputStreamPtr getOutputStream(
+        const String & name,
+        WriteBuffer & buf,
+        const Block & sample,
+        ContextConstPtr context,
+        WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        const Context & context,
+        ContextConstPtr context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
-        const String & name, WriteBuffer & buf, const Block & sample,
-        const Context & context, WriteCallback callback = {},
+        const String & name,
+        WriteBuffer & buf,
+        const Block & sample,
+        ContextConstPtr context,
+        WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(
-        const String & name, WriteBuffer & buf, const Block & sample,
-        const Context & context, WriteCallback callback = {},
+        const String & name,
+        WriteBuffer & buf,
+        const Block & sample,
+        ContextConstPtr context,
+        WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     /// Register format by its name.
@@ -155,6 +170,9 @@ public:
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
+    void markFormatAsColumnOriented(const String & name);
+
+    bool checkIfFormatIsColumnOriented(const String & name);
 
     const FormatsDictionary & getAllFormats() const
     {

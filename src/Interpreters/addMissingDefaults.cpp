@@ -19,7 +19,7 @@ ActionsDAGPtr addMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
-    const Context & context)
+    ContextPtr context)
 {
     auto actions = std::make_shared<ActionsDAG>(header.getColumnsWithTypeAndName());
     auto & index = actions->getIndex();
