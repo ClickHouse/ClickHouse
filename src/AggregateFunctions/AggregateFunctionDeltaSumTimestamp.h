@@ -84,7 +84,7 @@ public:
         {
             return true;
         }
-        if (lhs->last_ts == rhs->first_ts && lhs->last_ts < rhs->last_ts)
+        if (lhs->last_ts == rhs->first_ts && (lhs->last_ts < rhs->last_ts || lhs->first_ts < rhs->first_ts))
         {
             return true;
         }
@@ -106,14 +106,13 @@ public:
             place_data->last_ts = rhs_data->last_ts;
         }
         else if (place_data->seen && !rhs_data->seen)
-        {
-            // Do nothing
-        }
+            return;
         else if (before(place_data, rhs_data))
         {
             // This state came before the rhs state
 
-            place_data->sum += rhs_data->sum + (rhs_data->first - place_data->last);
+            if (rhs_data->first > place_data->last)
+                place_data->sum += rhs_data->sum + (rhs_data->first - place_data->last);
             place_data->last = rhs_data->last;
             place_data->last_ts = rhs_data->last_ts;
         }
@@ -121,13 +120,22 @@ public:
         {
             // This state came after the rhs state
 
-            place_data->sum += rhs_data->sum + (place_data->first - rhs_data->last);
+            if (place_data->first > rhs_data->last)
+                place_data->sum += rhs_data->sum + (place_data->first - rhs_data->last);
             place_data->first = rhs_data->first;
             place_data->first_ts = rhs_data->first_ts;
         }
+        else
+        {
+            // If none of those conditions matched, it means both states we are merging have all 
+            // same timestamps. We have to pick either the smaller or larger value so that the
+            // result is deterministic.
 
-        // If none of those conditions matched, it means both states we are merging have the same
-        // timestamps. This doesn't make sense to merge.
+            if (place_data->first < rhs_data->first) {
+                place_data->first = rhs_data->first;
+                place_data->last = rhs_data->last;
+            }
+        }
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
