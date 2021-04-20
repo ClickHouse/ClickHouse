@@ -16,7 +16,8 @@ cluster = ClickHouseCluster(__file__)
 
 node_db_ordinary = cluster.add_instance('node1', user_configs=["configs/users.xml"], with_mysql=False, stay_alive=True)
 node_db_atomic = cluster.add_instance('node2', user_configs=["configs/users_db_atomic.xml"], with_mysql=False, stay_alive=True)
-
+node_disable_bytes_settings = cluster.add_instance('node3', user_configs=["configs/users_disable_bytes_settings.xml"], with_mysql=False, stay_alive=True)
+node_disable_rows_settings = cluster.add_instance('node4', user_configs=["configs/users_disable_rows_settings.xml"], with_mysql=False, stay_alive=True)
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -289,5 +290,12 @@ def test_multi_table_update(started_cluster, started_mysql_8_0, started_mysql_5_
 
 
 @pytest.mark.parametrize(('clickhouse_node'), [node_db_ordinary, node_db_ordinary])
-def test_system_tables_table(started_cluster, started_mysql_8_0, clickhouse_node):
+def test_system_tables_table(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.system_tables_test(clickhouse_node, started_mysql_5_7, "mysql1")
     materialize_with_ddl.system_tables_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
+
+
+@pytest.mark.parametrize(('clickhouse_node'), [node_disable_bytes_settings, node_disable_rows_settings])
+def test_mysql_settings(started_cluster, started_mysql_8_0, started_mysql_5_7, clickhouse_node):
+    materialize_with_ddl.mysql_settings_test(clickhouse_node, started_mysql_5_7, "mysql1")
+    materialize_with_ddl.mysql_settings_test(clickhouse_node, started_mysql_8_0, "mysql8_0")
