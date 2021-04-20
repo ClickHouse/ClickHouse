@@ -571,17 +571,8 @@ void DatabaseAtomic::renameDictionaryInMemoryUnlocked(const StorageID & old_name
     const auto & dict = dynamic_cast<const IDictionary &>(*result.object);
     dict.updateDictionaryName(new_name);
 }
-void DatabaseAtomic::waitDetachedTableNotInUseOrThrow(const UUID & uuid, bool throw_if_in_use)
+void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
 {
-    if (throw_if_in_use)
-    {
-        DetachedTables not_in_use;
-        std::lock_guard lock{mutex};
-        not_in_use = cleanupDetachedTables();
-        assertDetachedTableNotInUse(uuid);
-        return;
-    }
-
     /// Table is in use while its shared_ptr counter is greater than 1.
     /// We cannot trigger condvar on shared_ptr destruction, so it's busy wait.
     while (true)
@@ -595,6 +586,14 @@ void DatabaseAtomic::waitDetachedTableNotInUseOrThrow(const UUID & uuid, bool th
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
+}
+
+void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
+{
+    DetachedTables not_in_use;
+    std::lock_guard lock{mutex};
+    not_in_use = cleanupDetachedTables();
+    assertDetachedTableNotInUse(uuid);
 }
 
 }

@@ -81,7 +81,7 @@ void InterpreterDropQuery::waitForTableToBeActuallyDroppedOrDetached(const ASTDr
     if (query.kind == ASTDropQuery::Kind::Drop)
         DatabaseCatalog::instance().waitTableFinallyDropped(uuid_to_wait);
     else if (query.kind == ASTDropQuery::Kind::Detach)
-        db->waitDetachedTableNotInUseOrThrow(uuid_to_wait, false);
+        db->waitDetachedTableNotInUse(uuid_to_wait);
 }
 
 BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)

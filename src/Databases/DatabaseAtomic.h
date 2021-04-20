@@ -57,7 +57,8 @@ public:
     void tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist = false);
     void tryRemoveSymlink(const String & table_name);
 
-    void waitDetachedTableNotInUseOrThrow(const UUID & uuid, bool throw_if_in_use) override;
+    void waitDetachedTableNotInUse(const UUID & uuid) override;
+    void checkDetachedTableNotInUse(const UUID & uuid) override;
     void setDetachedTableNotInUseForce(const UUID & uuid);
 
 protected:
