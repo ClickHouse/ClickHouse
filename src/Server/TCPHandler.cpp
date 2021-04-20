@@ -996,8 +996,6 @@ bool TCPHandler::receivePacket()
 
     switch (packet_type)
     {
-        case Protocol::Client::ReadTaskResponse:
-            throw Exception("ReadTaskResponse must be received only after requesting in callback", ErrorCodes::LOGICAL_ERROR);
         case Protocol::Client::IgnoredPartUUIDs:
             /// Part uuids packet if any comes before query.
             receiveIgnoredPartUUIDs();

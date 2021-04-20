@@ -210,6 +210,14 @@ def test_virtual_columns(started_cluster):
     expected = "1\tfile1\thdfs://hdfs1:9000//file1\n2\tfile2\thdfs://hdfs1:9000//file2\n3\tfile3\thdfs://hdfs1:9000//file3\n"
     assert node1.query("select id, _file as file_name, _path as file_path from virtual_cols order by id") == expected
 
+    
+def test_read_files_with_spaces(started_cluster):
+    started_cluster.hdfs_api.write_data("/test test test 1.txt", "1\n")
+    started_cluster.hdfs_api.write_data("/test test test 2.txt", "2\n")
+    started_cluster.hdfs_api.write_data("/test test test 3.txt", "3\n")
+    node1.query("create table test (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/test*', 'TSV')")
+    assert node1.query("select * from test order by id") == "1\n2\n3\n"
+
 
 if __name__ == '__main__':
     cluster.start()
