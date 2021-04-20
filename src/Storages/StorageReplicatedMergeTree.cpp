@@ -130,6 +130,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
     extern const int INTERSERVER_SCHEME_DOESNT_MATCH;
+    extern const int DUPLICATE_DATA_PART;
 }
 
 namespace ActionLocks
@@ -5356,11 +5357,11 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
     }
 }
 
-
 void StorageReplicatedMergeTree::fetchPartition(
     const ASTPtr & partition,
     const StorageMetadataPtr & metadata_snapshot,
     const String & from_,
+    bool fetch_part,
     ContextPtr query_context)
 {
     Macros::MacroExpansionInfo info;
@@ -5373,40 +5374,54 @@ void StorageReplicatedMergeTree::fetchPartition(
     if (from.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    String partition_id = getPartitionIDFromQuery(partition, query_context);
     zkutil::ZooKeeperPtr zookeeper;
     if (auxiliary_zookeeper_name != default_zookeeper_name)
-    {
         zookeeper = getContext()->getAuxiliaryZooKeeper(auxiliary_zookeeper_name);
-
-        LOG_INFO(log, "Will fetch partition {} from shard {} (auxiliary zookeeper '{}')", partition_id, from_, auxiliary_zookeeper_name);
-    }
     else
-    {
         zookeeper = getZooKeeper();
-
-        LOG_INFO(log, "Will fetch partition {} from shard {}", partition_id, from_);
-    }
 
     if (from.back() == '/')
         from.resize(from.size() - 1);
 
+    if (fetch_part)
+    {
+        String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
+        auto part_path = findReplicaHavingPart(part_name, from, zookeeper);
+
+        if (part_path.empty())
+            throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Part {} does not exist on any replica", part_name);
+        /** Let's check that there is no such part in the `detached` directory (where we will write the downloaded parts).
+          * Unreliable (there is a race condition) - such a part may appear a little later.
+          */
+        if (checkIfDetachedPartExists(part_name))
+            throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Detached part " + part_name + " already exists.");
+        LOG_INFO(log, "Will fetch part {} from shard {} (zookeeper '{}')", part_name, from_, auxiliary_zookeeper_name);
+
+        try
+        {
+            /// part name , metadata, part_path , true, 0, zookeeper
+            if (!fetchPart(part_name, metadata_snapshot, part_path, true, 0, zookeeper))
+                throw Exception(ErrorCodes::UNFINISHED, "Failed to fetch part {} from {}", part_name, from_);
+        }
+        catch (const DB::Exception & e)
+        {
+            if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+                && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
+                throw;
+
+            LOG_INFO(log, e.displayText());
+        }
+        return;
+    }
+
+    String partition_id = getPartitionIDFromQuery(partition, query_context);
+    LOG_INFO(log, "Will fetch partition {} from shard {} (zookeeper '{}')", partition_id, from_, auxiliary_zookeeper_name);
 
     /** Let's check that there is no such partition in the `detached` directory (where we will write the downloaded parts).
       * Unreliable (there is a race condition) - such a partition may appear a little later.
       */
-    Poco::DirectoryIterator dir_end;
-    for (const std::string & path : getDataPaths())
-    {
-        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
-        {
-            MergeTreePartInfo part_info;
-            if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, format_version)
-                && part_info.partition_id == partition_id)
-                throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
-        }
-
-    }
+    if (checkIfDetachedPartitionExists(partition_id))
+        throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
 
     zkutil::Strings replicas;
     zkutil::Strings active_replicas;
@@ -5701,6 +5716,56 @@ CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutatio
     return CancellationCode::CancelSent;
 }
 
+void StorageReplicatedMergeTree::removePartsFromFilesystem(const DataPartsVector & parts)
+{
+    auto remove_part = [&](const auto & part)
+    {
+        LOG_DEBUG(log, "Removing part from filesystem {}", part.name);
+        try
+        {
+            bool keep_s3 = !this->unlockSharedData(part);
+            part.remove(keep_s3);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "There is a problem with deleting part " + part.name + " from filesystem");
+        }
+    };
+
+    const auto settings = getSettings();
+    if (settings->max_part_removal_threads > 1 && parts.size() > settings->concurrent_part_removal_threshold)
+    {
+        /// Parallel parts removal.
+
+        size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts.size());
+        ThreadPool pool(num_threads);
+
+        /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
+        for (const DataPartPtr & part : parts)
+        {
+            pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
+            {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+                );
+                if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
+                remove_part(*part);
+            });
+        }
+
+        pool.wait();
+    }
+    else
+    {
+        for (const DataPartPtr & part : parts)
+        {
+            remove_part(*part);
+        }
+    }
+}
 
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
@@ -5726,26 +5791,10 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     }
     parts.clear();
 
-    auto remove_parts_from_filesystem = [log=log, this] (const DataPartsVector & parts_to_remove)
-    {
-        for (const auto & part : parts_to_remove)
-        {
-            try
-            {
-                bool keep_s3 = !this->unlockSharedData(*part);
-                part->remove(keep_s3);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "There is a problem with deleting part " + part->name + " from filesystem");
-            }
-        }
-    };
-
     /// Delete duplicate parts from filesystem
     if (!parts_to_delete_only_from_filesystem.empty())
     {
-        remove_parts_from_filesystem(parts_to_delete_only_from_filesystem);
+        removePartsFromFilesystem(parts_to_delete_only_from_filesystem);
         removePartsFinally(parts_to_delete_only_from_filesystem);
 
         LOG_DEBUG(log, "Removed {} old duplicate parts", parts_to_delete_only_from_filesystem.size());
@@ -5790,7 +5839,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
     /// Remove parts from filesystem and finally from data_parts
     if (!parts_to_remove_from_filesystem.empty())
     {
-        remove_parts_from_filesystem(parts_to_remove_from_filesystem);
+        removePartsFromFilesystem(parts_to_remove_from_filesystem);
         removePartsFinally(parts_to_remove_from_filesystem);
 
         LOG_DEBUG(log, "Removed {} old parts", parts_to_remove_from_filesystem.size());
@@ -6879,4 +6928,46 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     return best_replica;
 }
 
+String StorageReplicatedMergeTree::findReplicaHavingPart(
+    const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_)
+{
+    Strings replicas = zookeeper_->getChildren(zookeeper_path_ + "/replicas");
+
+    /// Select replicas in uniformly random order.
+    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
+
+    for (const String & replica : replicas)
+    {
+        if (zookeeper_->exists(zookeeper_path_ + "/replicas/" + replica + "/parts/" + part_name)
+            && zookeeper_->exists(zookeeper_path_ + "/replicas/" + replica + "/is_active"))
+            return zookeeper_path_ + "/replicas/" + replica;
+    }
+
+    return {};
+}
+
+bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_name)
+{
+    Poco::DirectoryIterator dir_end;
+    for (const std::string & path : getDataPaths())
+        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
+            if (dir_it.name() == part_name)
+                return true;
+    return false;
+}
+
+bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & partition_name)
+{
+    Poco::DirectoryIterator dir_end;
+    for (const std::string & path : getDataPaths())
+    {
+        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
+        {
+            MergeTreePartInfo part_info;
+            if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, format_version) && part_info.partition_id == partition_name)
+                return true;
+        }
+    }
+    return false;
+}
 }

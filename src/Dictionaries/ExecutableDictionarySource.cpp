@@ -104,7 +104,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
     if (implicit_key)
-        throw Exception("ExecutableDictionarySource with implicit_key does not support loadAll method", ErrorCodes::UNSUPPORTED_METHOD);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadAll method");
 
     LOG_TRACE(log, "loadAll {}", toString());
     auto process = ShellCommand::execute(command);
@@ -115,7 +115,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
 {
     if (implicit_key)
-        throw Exception("ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method", ErrorCodes::UNSUPPORTED_METHOD);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
 
     time_t new_update_time = time(nullptr);
     SCOPE_EXIT(update_time = new_update_time);

@@ -56,6 +56,8 @@
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
 
+#include <ext/scope_guard_safe.h>
+
 #include <algorithm>
 #include <iomanip>
 #include <optional>
@@ -317,8 +319,8 @@ void MergeTreeData::checkProperties(
         {
             const String & pk_column = new_primary_key.column_names[i];
             if (pk_column != sorting_key_column)
-                throw Exception("Primary key must be a prefix of the sorting key, but in position "
-                    + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
+                throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
+                    + toString(i) + " is " + sorting_key_column +", not " + pk_column,
                     ErrorCodes::BAD_ARGUMENTS);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
@@ -1211,14 +1213,21 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
     {
         /// Parallel parts removal.
 
-        size_t num_threads = std::min(size_t(settings->max_part_removal_threads), parts_to_remove.size());
+        size_t num_threads = std::min<size_t>(settings->max_part_removal_threads, parts_to_remove.size());
         ThreadPool pool(num_threads);
 
         /// NOTE: Under heavy system load you may get "Cannot schedule a task" from ThreadPool.
         for (const DataPartPtr & part : parts_to_remove)
         {
-            pool.scheduleOrThrowOnError([&]
+            pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
             {
+                SCOPE_EXIT_SAFE(
+                    if (thread_group)
+                        CurrentThread::detachQueryIfNotDetached();
+                );
+                if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
                 LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
                 part->remove();
             });
@@ -2554,7 +2563,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception(
             ErrorCodes::TOO_MANY_PARTS,
-            "Too many parts ({}). Parts cleaning are processing significantly slower than inserts",
+            "Too many parts ({}). Merges are processing significantly slower than inserts",
             parts_count_in_partition);
     }
 
@@ -2871,7 +2880,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Volume " + name + " does not exists on policy " + getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_DISK);
 
     if (parts.empty())
-        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
+        throw Exception("Nothing to move (сheck that the partition exists).", ErrorCodes::NO_SUCH_DATA_PART);
 
     parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
         {
@@ -2900,7 +2909,12 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
-void MergeTreeData::fetchPartition(const ASTPtr & /*partition*/, const StorageMetadataPtr & /*metadata_snapshot*/, const String & /*from*/, ContextPtr /*query_context*/)
+void MergeTreeData::fetchPartition(
+    const ASTPtr & /*partition*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const String & /*from*/,
+    bool /*fetch_part*/,
+    ContextPtr /*query_context*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FETCH PARTITION is not supported by storage {}", getName());
 }
@@ -2963,7 +2977,7 @@ Pipe MergeTreeData::alterPartition(
             break;
 
             case PartitionCommand::FETCH_PARTITION:
-                fetchPartition(command.partition, metadata_snapshot, command.from_zookeeper_path, query_context);
+                fetchPartition(command.partition, metadata_snapshot, command.from_zookeeper_path, command.part, query_context);
                 break;
 
             case PartitionCommand::FREEZE_PARTITION:
