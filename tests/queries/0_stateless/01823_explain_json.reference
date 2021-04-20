@@ -1,0 +1,141 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Union",
+      "Plans": [
+        {
+          "Node Type": "Expression",
+          "Plans": [
+            {
+              "Node Type": "SettingQuotaAndLimits",
+              "Plans": [
+                {
+                  "Node Type": "ReadFromStorage"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Node Type": "Expression",
+          "Plans": [
+            {
+              "Node Type": "SettingQuotaAndLimits",
+              "Plans": [
+                {
+                  "Node Type": "ReadFromStorage"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+--------
+      "Header": [
+        {
+          "Name": "1",
+          "Type": "UInt8"
+        },
+        {
+          "Name": "plus(2, dummy)",
+          "Type": "UInt16"
+        }
+--------
+          "Node Type": "Aggregating",
+          "Header": [
+            {
+              "Name": "number",
+              "Type": "UInt64"
+            },
+            {
+              "Name": "plus(number, 1)",
+              "Type": "UInt64"
+            },
+            {
+              "Name": "quantile(0.2)(number)",
+              "Type": "Float64"
+            },
+            {
+              "Name": "sumIf(number, greater(number, 0))",
+              "Type": "UInt64"
+            }
+          ],
+          "Keys": ["number", "plus(number, 1)"],
+          "Aggregates": [
+            {
+              "Name": "quantile(0.2)(number)",
+              "Function": {
+                "Name": "quantile",
+                "Parameters": ["0.2"],
+                "Argument Types": ["UInt64"],
+                "Result Type": "Float64"
+              },
+              "Arguments": ["number"],
+              "Argument Positions": [0]
+            },
+            {
+              "Name": "sumIf(number, greater(number, 0))",
+              "Function": {
+                "Name": "sumIf",
+                "Argument Types": ["UInt64", "UInt8"],
+                "Result Type": "UInt64"
+              },
+              "Arguments": ["number", "greater(number, 0)"],
+              "Argument Positions": [0, 2]
+            }
+          ],
+--------
+          "Node Type": "ArrayJoin",
+          "Left": false,
+          "Columns": ["x", "y"],
+--------
+          "Node Type": "Distinct",
+          "Columns": ["intDiv(number, 3)", "intDiv(number, 2)"],
+--
+              "Node Type": "Distinct",
+              "Columns": ["intDiv(number, 3)", "intDiv(number, 2)"],
+--------
+              "Sort Description": [
+                {
+                  "Column": "number",
+                  "Ascending": false,
+                  "With Fill": false
+                },
+                {
+                  "Column": "plus(number, 1)",
+                  "Ascending": true,
+                  "With Fill": false
+                }
+              ],
+              "Limit": 3,
+--
+                  "Sort Description": [
+                    {
+                      "Column": "number",
+                      "Ascending": false,
+                      "With Fill": false
+                    },
+                    {
+                      "Column": "plus(number, 1)",
+                      "Ascending": true,
+                      "With Fill": false
+                    }
+                  ],
+                  "Limit": 3,
+--
+                      "Sort Description": [
+                        {
+                          "Column": "number",
+                          "Ascending": false,
+                          "With Fill": false
+                        },
+                        {
+                          "Column": "plus(number, 1)",
+                          "Ascending": true,
+                          "With Fill": false
+                        }
+                      ],
+                      "Limit": 3,
