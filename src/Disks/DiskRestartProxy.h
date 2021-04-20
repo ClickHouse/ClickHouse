@@ -7,17 +7,20 @@
 
 namespace DB
 {
+using ReadLock = std::shared_lock<std::shared_timed_mutex>;
+using WriteLock = std::unique_lock<std::shared_timed_mutex>;
 
 class RestartAwareReadBuffer;
 class RestartAwareWriteBuffer;
 
+/**
+ * Gives possibility to change underlying disk settings at runtime calling 'restart' method.
+ * All disk methods are protected by read-lock. Read/Write buffers produced by disk holds read-lock till buffer is finalized/destructed.
+ * When 'restart' method is called write-lock is acquired to make sure that no operations are running on that disk.
+ */
 class DiskRestartProxy : public DiskDecorator
 {
 public:
-    using ReadLock = std::shared_lock<std::shared_timed_mutex>;
-    using WriteLock = std::unique_lock<std::shared_timed_mutex>;
-
-
     explicit DiskRestartProxy(DiskPtr & delegate_);
 
     ReservationPtr reserve(UInt64 bytes) override;

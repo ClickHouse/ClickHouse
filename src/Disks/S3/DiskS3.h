@@ -4,7 +4,6 @@
 #include <common/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
-#include "ProxyConfiguration.h"
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/HeadObjectResult.h>
@@ -17,6 +16,27 @@
 namespace DB
 {
 
+/// Settings for DiskS3 that can be changed in runtime.
+struct DiskS3Settings
+{
+    DiskS3Settings(
+        const std::shared_ptr<Aws::S3::S3Client> & client_,
+        size_t min_upload_part_size_,
+        size_t max_single_part_upload_size_,
+        size_t min_bytes_for_seek_,
+        bool send_metadata_,
+        int thread_pool_size_,
+        int list_object_keys_size_);
+
+    std::shared_ptr<Aws::S3::S3Client> client;
+    size_t min_upload_part_size;
+    size_t max_single_part_upload_size;
+    size_t min_bytes_for_seek;
+    bool send_metadata;
+    int thread_pool_size;
+    int list_object_keys_size;
+};
+
 /**
  * Storage for persisting data in S3 and metadata on the local disk.
  * Files are represented by file in local filesystem (clickhouse_root/disks/disk_name/path/to/file)
@@ -27,6 +47,7 @@ class DiskS3 : public IDisk
 public:
     using ObjectMetadata = std::map<std::string, std::string>;
     using Futures = std::vector<std::future<void>>;
+    using GetDiskSettings = std::function<DiskS3Settings(const Poco::Util::AbstractConfiguration &, const String, ContextConstPtr)>;
 
     friend class DiskS3Reservation;
 
@@ -36,18 +57,11 @@ public:
 
     DiskS3(
         String name_,
-        std::shared_ptr<Aws::S3::S3Client> client_,
-        std::shared_ptr<S3::ProxyConfiguration> proxy_configuration_,
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
-        UInt64 s3_max_single_read_retries_,
-        size_t min_upload_part_size_,
-        size_t max_single_part_upload_size_,
-        size_t min_bytes_for_seek_,
-        bool send_metadata_,
-        int thread_pool_size_,
-        int list_object_keys_size_);
+        DiskS3Settings settings,
+        GetDiskSettings settings_getter);
 
     const String & getName() const override { return name; }
 
@@ -122,6 +136,8 @@ public:
 
     void shutdown() override;
 
+    void startup() override;
+
     /// Return some uniq string for file
     /// Required for distinguish different copies of the same part on S3
     String getUniqueId(const String & path) const override;
@@ -130,11 +146,11 @@ public:
     /// Required for S3 to ensure that replica has access to data wroten by other node
     bool checkUniqueId(const String & id) const override;
 
-    /// Actions performed after disk creation.
-    void startup();
-
     /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
+
+protected:
+    void applyNewSettings(ContextConstPtr context) override;
 
 private:
     bool tryReserve(UInt64 bytes);
@@ -143,6 +159,7 @@ private:
     void removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys);
     void removeAws(const AwsS3KeyKeeper & keys);
 
+    Metadata readOrCreateMetaForWriting(const String & path, WriteMode mode);
     Metadata readMeta(const String & path) const;
     Metadata createMeta(const String & path) const;
 
@@ -180,29 +197,30 @@ private:
     static String pathToDetached(const String & source_path);
 
     const String name;
-    std::shared_ptr<Aws::S3::S3Client> client;
-    std::shared_ptr<S3::ProxyConfiguration> proxy_configuration;
     const String bucket;
     const String s3_root_path;
-    String metadata_path;
+    const String metadata_path;
+    std::shared_ptr<Aws::S3::S3Client> client;
     UInt64 s3_max_single_read_retries;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
     size_t min_bytes_for_seek;
     bool send_metadata;
+    /// The number of keys listed in one request (1000 is max value)
+    int list_object_keys_size;
+    /// Gets current disk settings from context.
+    GetDiskSettings disk_settings_getter;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 
-    std::atomic<UInt64> revision_counter;
+    std::atomic<UInt64> revision_counter = 0;
     static constexpr UInt64 LATEST_REVISION = std::numeric_limits<UInt64>::max();
     static constexpr UInt64 UNKNOWN_REVISION = 0;
 
     /// File at path {metadata_path}/restore contains metadata restore information
     inline static const String RESTORE_FILE_NAME = "restore";
-    /// The number of keys listed in one request (1000 is max value)
-    int list_object_keys_size;
 
     /// Key has format: ../../r{revision}-{operation}
     const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
