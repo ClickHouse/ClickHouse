@@ -4,19 +4,9 @@
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include "ReadIndirectBufferFromHDFS.h"
 #include "WriteIndirectBufferFromHDFS.h"
-#include "DiskHDFSDirectoryIterator.h"
 
-#include <random>
-#include <utility>
-#include <memory>
-#include <Poco/File.h>
-#include <Interpreters/Context.h>
-#include <Common/checkStackSize.h>
-#include <Common/createHardLink.h>
 #include <Common/quoteString.h>
-#include <Common/filesystemHelpers.h>
 #include <common/logger_useful.h>
-#include <Common/thread_local_rng.h>
 
 
 namespace DB
@@ -80,7 +70,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
             "Write to file by path: {}. New hdfs path: {}", backQuote(metadata_path + path), hdfs_path);
 
         return std::make_unique<WriteIndirectBufferFromHDFS>(config, hdfs_path, file_name, metadata, buf_size, O_WRONLY);
-}
+    }
     else
     {
         auto metadata = readMeta(path);
@@ -99,7 +89,14 @@ void DiskHDFS::removeFromRemoteFS(const Metadata & metadata)
 {
     for (const auto & [hdfs_object_path, _] : metadata.remote_fs_objects)
     {
-        const size_t begin_of_path = remote_fs_root_path.find('/', remote_fs_root_path.find("//") + 2);
+        size_t begin_of_path;
+        auto two_slash = remote_fs_root_path.find("//");
+
+        if (two_slash == std::string::npos)
+            begin_of_path = remote_fs_root_path.find('/');
+        else
+            begin_of_path = remote_fs_root_path.find('/', two_slash + 2);
+
         const String hdfs_path = remote_fs_root_path.substr(begin_of_path) + hdfs_object_path;
 
         LOG_DEBUG(log, "Removing file by path: {}", hdfs_path);
