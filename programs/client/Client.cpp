@@ -2244,6 +2244,7 @@ private:
         if (!progress_bar.updateProgress(progress, value))
         {
             // Just a keep-alive update.
+            progress_bar.clearProgress();
             return;
         }
         if (block_out_stream)
