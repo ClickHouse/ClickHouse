@@ -8,9 +8,11 @@ INSERT INTO data VALUES (0, 0);
 
 SET prefer_localhost_replica = 1;
 SELECT a / (SELECT sum(number) FROM numbers(10)) FROM data_distributed;
+SELECT a < (SELECT 1) FROM data_distributed;
 
 SET prefer_localhost_replica = 0;
 SELECT a / (SELECT sum(number) FROM numbers(10)) FROM data_distributed;
+SELECT a < (SELECT 1) FROM data_distributed;
 
 DROP TABLE data_distributed;
 DROP TABLE data;
