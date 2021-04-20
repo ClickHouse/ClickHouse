@@ -842,3 +842,19 @@ def system_tables_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("CREATE TABLE system_tables_test.test (id int NOT NULL PRIMARY KEY) ENGINE=InnoDB")
     clickhouse_node.query("CREATE DATABASE system_tables_test ENGINE = MaterializeMySQL('{}:3306', 'system_tables_test', 'root', 'clickhouse')".format(service_name))
     check_query(clickhouse_node, "SELECT partition_key, sorting_key, primary_key FROM system.tables WHERE database = 'system_tables_test' AND name = 'test'", "intDiv(id, 4294967)\tid\tid\n")
+
+def mysql_settings_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+    mysql_node.query("CREATE DATABASE test_database")
+    mysql_node.query("CREATE TABLE test_database.a (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))")
+    mysql_node.query("INSERT INTO test_database.a VALUES(1, 'foo')")
+    mysql_node.query("INSERT INTO test_database.a VALUES(2, 'bar')")
+
+    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT COUNT() FROM test_database.a FORMAT TSV", "2\n")
+
+    assert clickhouse_node.query("SELECT COUNT(DISTINCT  blockNumber()) FROM test_database.a FORMAT TSV") == "2\n"
+
+    clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
