@@ -29,15 +29,23 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
+    std::unordered_map<String, SerializationPtr> serialziations;
     for (const NameAndTypePair & column : columns)
     {
-        auto serialization = data_part->getSerializationForColumn(column);
+        auto serialization = IDataType::getSerialization(column, [&](const String & stream_name)
+        {
+            /// Checksums of data_part are not initialized here.
+            return checksums.files.count(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION) != 0;
+        });
+
         serialization->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
             },
             {});
+
+        serialziations[column.name] = std::move(serialization);
     }
 
     NameSet remove_files;
@@ -59,8 +67,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             }
         };
 
-        auto serialization = data_part->getSerializationForColumn(*column_with_type);
-        serialization->enumerateStreams(callback);
+        serialziations[column_name]->enumerateStreams(callback);
     }
 
     /// Remove files on disk and checksums
