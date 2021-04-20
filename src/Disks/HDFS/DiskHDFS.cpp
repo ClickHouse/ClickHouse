@@ -4,6 +4,7 @@
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include "ReadIndirectBufferFromHDFS.h"
 #include "WriteIndirectBufferFromHDFS.h"
+#include <IO/SeekAvoidingReadBuffer.h>
 
 #include <Common/quoteString.h>
 #include <common/logger_useful.h>
@@ -24,9 +25,11 @@ DiskHDFS::DiskHDFS(
     const String & disk_name_,
     const String & hdfs_root_path_,
     const String & metadata_path_,
-    const Poco::Util::AbstractConfiguration & config_)
+    const Poco::Util::AbstractConfiguration & config_,
+    size_t min_bytes_for_seek_)
     : IDiskRemote(disk_name_, hdfs_root_path_, metadata_path_, "DiskHDFS")
     , config(config_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
     , hdfs_builder(createHDFSBuilder(hdfs_root_path_, config))
     , hdfs_fs(createHDFSFS(hdfs_builder.get()))
 {
@@ -41,7 +44,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    return std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, "", metadata, buf_size);
+    auto reader = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, "", metadata, buf_size);
+    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
 }
 
 
@@ -99,7 +103,7 @@ void DiskHDFS::removeFromRemoteFS(const Metadata & metadata)
 
         const String hdfs_path = remote_fs_root_path.substr(begin_of_path) + hdfs_object_path;
 
-        LOG_DEBUG(log, "Removing file by path: {}", hdfs_path);
+        LOG_DEBUG(log, "Remove file by path: {}, hdfs object path {}", hdfs_path, hdfs_object_path);
         int res = hdfsDelete(hdfs_fs.get(), hdfs_path.c_str(), 0);
         if (res == -1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);
@@ -124,7 +128,9 @@ void registerDiskHDFS(DiskFactory & factory)
 
         String metadata_path = context_->getPath() + "disks/" + name + "/";
 
-        return std::make_shared<DiskHDFS>(name, uri, metadata_path, config);
+        return std::make_shared<DiskHDFS>(
+            name, uri, metadata_path, config,
+            config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024));
     };
 
     factory.registerDiskType("hdfs", creator);

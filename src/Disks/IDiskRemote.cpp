@@ -153,8 +153,6 @@ IDiskRemote::Metadata IDiskRemote::createMeta(const String & path) const
 
 void IDiskRemote::removeMeta(const String & path, bool keep_in_remote_fs)
 {
-    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_path + path));
-
     Poco::File file(metadata_path + path);
 
     if (!file.isFile())

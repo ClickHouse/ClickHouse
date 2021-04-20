@@ -25,7 +25,8 @@ public:
         const String & disk_name_,
         const String & hdfs_root_path_,
         const String & metadata_path_,
-        const Poco::Util::AbstractConfiguration & config);
+        const Poco::Util::AbstractConfiguration & config_,
+        size_t min_bytes_for_seek_);
 
     DiskType::Type getType() const override { return DiskType::Type::HDFS; }
 
@@ -45,6 +46,8 @@ private:
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }
 
     const Poco::Util::AbstractConfiguration & config;
+    size_t min_bytes_for_seek;
+
     HDFSBuilderWrapper hdfs_builder;
     HDFSFSPtr hdfs_fs;
 

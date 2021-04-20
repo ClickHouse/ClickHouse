@@ -38,7 +38,6 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
-    extern const int INCORRECT_DISK_INDEX;
     extern const int BAD_ARGUMENTS;
     extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_DELETE_DIRECTORY;
