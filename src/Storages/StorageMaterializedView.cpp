@@ -99,6 +99,12 @@ StorageMaterializedView::StorageMaterializedView(
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
 
+        if (query.storage->engine && query.storage->engine->name == "AggregatingMemory")
+        {
+            /// AggregatingMemory requires SELECT to know how to do aggregation.
+            manual_create_query->set(manual_create_query->select, query.select->clone());
+        }
+
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
         manual_create_query->set(manual_create_query->storage, query.storage->ptr());
 

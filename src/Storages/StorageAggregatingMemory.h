@@ -78,7 +78,7 @@ private:
     std::shared_ptr<ManyAggregatedData> many_data;
 
 protected:
-    StorageAggregatingMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_, const ASTCreateQuery & query, ContextPtr context_);
+    StorageAggregatingMemory(const StorageID & table_id_, ConstraintsDescription constraints_, const ASTCreateQuery & query, ContextPtr context_);
 };
 
 }

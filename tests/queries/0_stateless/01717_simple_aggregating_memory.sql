@@ -16,9 +16,7 @@ INSERT INTO visits_data VALUES (1, 'Moscow', 2, 30, 2);
 INSERT INTO visits_data VALUES (3, 'Moscow', 2, 22, 1);
 
 
-CREATE TABLE aggr_memory
-( `UserID` UInt32, `Region` String, `Day` UInt8, `Age` UInt8, `Sex` UInt8 ) 
-ENGINE = AggregatingMemory()
+CREATE TABLE aggr_memory ENGINE = AggregatingMemory()
 AS SELECT
     Region,
     Day,

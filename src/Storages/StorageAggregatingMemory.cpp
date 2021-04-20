@@ -12,6 +12,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/JoinedTables.h>
 #include <Storages/StorageAggregatingMemory.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
@@ -163,7 +164,6 @@ private:
 
 StorageAggregatingMemory::StorageAggregatingMemory(
     const StorageID & table_id_,
-    ColumnsDescription columns_description_,
     ConstraintsDescription constraints_,
     const ASTCreateQuery & query,
     ContextPtr context_)
@@ -180,6 +180,18 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     ASTPtr select_ptr = select.inner_query;
 
     auto select_context = std::make_unique<ContextPtr>(context_);
+
+    /// Get info about source table.
+    JoinedTables joined_tables(context_, select_ptr->as<ASTSelectQuery &>());
+    StoragePtr source_storage = joined_tables.getLeftTableStorage();
+    auto source_columns = source_storage->getInMemoryMetadata().getColumns().getAll();
+
+    ColumnsDescription columns_before_aggr;
+    for (const auto & column : source_columns)
+    {
+        ColumnDescription column_description(column.name, column.type);
+        columns_before_aggr.add(column_description);
+    }
 
     /// Get list of columns we get from select query.
     auto header = InterpreterSelectQuery(select_ptr, *select_context, SelectQueryOptions().analyze()).getSampleBlock();
@@ -200,7 +212,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     setInMemoryMetadata(storage_metadata);
 
     StorageInMemoryMetadata src_metadata;
-    src_metadata.setColumns(std::move(columns_description_));
+    src_metadata.setColumns(std::move(columns_before_aggr));
     src_sample_block = src_metadata.getSampleBlock();
 
     auto src_metadata_snapshot = std::make_shared<StorageInMemoryMetadata>(src_metadata);
@@ -411,7 +423,7 @@ void registerStorageAggregatingMemory(StorageFactory & factory)
                 "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return StorageAggregatingMemory::create(args.table_id, args.columns, args.constraints, args.query, args.getLocalContext());
+        return StorageAggregatingMemory::create(args.table_id, args.constraints, args.query, args.getLocalContext());
     },
     {
         .supports_parallel_insert = true, // TODO: not sure

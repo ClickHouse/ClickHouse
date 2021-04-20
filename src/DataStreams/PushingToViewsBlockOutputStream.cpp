@@ -17,6 +17,7 @@
 #include <Storages/StorageValues.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageAggregatingMemory.h>
 #include <common/logger_useful.h>
 
 
@@ -90,29 +91,37 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
 
-            std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-            insert->table_id = inner_table_id;
-
-            /// Get list of columns we get from select query.
-            auto header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
-                .getSampleBlock();
-
-            /// Insert only columns returned by select.
-            auto list = std::make_shared<ASTExpressionList>();
-            const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
-            for (const auto & column : header)
+            if (dynamic_cast<StorageAggregatingMemory *>(inner_table.get()))
             {
-                /// But skip columns which storage doesn't have.
-                if (inner_table_columns.hasPhysical(column.name))
-                    list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                query = nullptr;
+                out = std::make_shared<PushingToViewsBlockOutputStream>(inner_table, dependent_metadata_snapshot, insert_context, ASTPtr());
             }
+            else
+            {
+                std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
+                insert->table_id = inner_table_id;
 
-            insert->columns = std::move(list);
+                /// Get list of columns we get from select query.
+                auto header = InterpreterSelectQuery(query, select_context, SelectQueryOptions().analyze())
+                    .getSampleBlock();
 
-            ASTPtr insert_query_ptr(insert.release());
-            InterpreterInsertQuery interpreter(insert_query_ptr, insert_context);
-            BlockIO io = interpreter.execute();
-            out = io.out;
+                /// Insert only columns returned by select.
+                auto list = std::make_shared<ASTExpressionList>();
+                const auto & inner_table_columns = inner_metadata_snapshot->getColumns();
+                for (const auto & column : header)
+                {
+                    /// But skip columns which storage doesn't have.
+                    if (inner_table_columns.hasPhysical(column.name))
+                        list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                }
+
+                insert->columns = std::move(list);
+
+                ASTPtr insert_query_ptr(insert.release());
+                InterpreterInsertQuery interpreter(insert_query_ptr, insert_context);
+                BlockIO io = interpreter.execute();
+                out = io.out;
+            }
         }
         else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
             out = std::make_shared<PushingToViewsBlockOutputStream>(
