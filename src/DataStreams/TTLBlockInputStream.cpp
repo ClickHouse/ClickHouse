@@ -104,6 +104,9 @@ Block TTLBlockInputStream::readImpl()
         return {};
 
     auto block = children.at(0)->read();
+    for (auto & column : block)
+        column.column = recursiveRemoveSparse(column.column);
+
     for (const auto & algorithm : algorithms)
         algorithm->execute(block);
 
