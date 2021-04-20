@@ -26,7 +26,6 @@ static constexpr char const * TABLE_WITH_UUID_NAME_PLACEHOLDER = "_";
 
 class ASTQueryWithTableAndOutput;
 class ASTIdentifier;
-class Context;
 
 // TODO(ilezhankin): refactor and merge |ASTTableIdentifier|
 struct StorageID

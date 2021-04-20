@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 /** Implements `zookeeper` system table, which allows you to view the data in ZooKeeper for debugging purposes.

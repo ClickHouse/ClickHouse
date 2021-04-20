@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 /** implements system table "merge_tree_settings" and "replicated_merge_tree_settings",

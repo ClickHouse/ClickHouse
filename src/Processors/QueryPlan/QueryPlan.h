@@ -84,7 +84,7 @@ public:
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
     size_t getMaxThreads() const { return max_threads; }
 
-    void addInterpreterContext(std::shared_ptr<Context> context);
+    void addInterpreterContext(ContextPtr context);
 
     /// Tree node. Step and it's children.
     struct Node
@@ -104,7 +104,7 @@ private:
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
-    std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::vector<ContextPtr> interpreter_context;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

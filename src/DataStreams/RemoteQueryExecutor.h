@@ -13,8 +13,6 @@
 namespace DB
 {
 
-class Context;
-
 class Throttler;
 using ThrottlerPtr = std::shared_ptr<Throttler>;
 

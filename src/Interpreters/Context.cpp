@@ -538,11 +538,6 @@ ContextPtr Context::createCopy(const ContextPtr & other)
     return createCopy(std::const_pointer_cast<const Context>(other));
 }
 
-void Context::copyFrom(const ContextPtr & other)
-{
-    *this = *other;
-}
-
 Context::~Context() = default;
 
 

@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class Context;
+
 
 /* url(source, format, structure) - creates a temporary storage from url
  */

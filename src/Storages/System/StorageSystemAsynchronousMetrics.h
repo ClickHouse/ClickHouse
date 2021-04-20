@@ -7,7 +7,6 @@ namespace DB
 {
 
 class AsynchronousMetrics;
-class Context;
 
 
 /** Implements system table asynchronous_metrics, which allows to get values of periodically (asynchronously) updated metrics.

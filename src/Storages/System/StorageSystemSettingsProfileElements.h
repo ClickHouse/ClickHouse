@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 
 /// Implements `settings_profile_elements` system table, which allows you to get information about elements of settings profiles.
 class StorageSystemSettingsProfileElements final : public ext::shared_ptr_helper<StorageSystemSettingsProfileElements>, public IStorageSystemOneBlock<StorageSystemSettingsProfileElements>

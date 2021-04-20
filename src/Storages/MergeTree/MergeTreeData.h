@@ -38,7 +38,6 @@ namespace DB
 class AlterCommands;
 class MergeTreePartsMover;
 class MutationCommands;
-class Context;
 struct JobAndPool;
 
 /// Auxiliary struct holding information about the future merged or mutated part.

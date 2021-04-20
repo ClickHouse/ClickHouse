@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 /** Implements `events` system table, which allows you to obtain information for profiling.

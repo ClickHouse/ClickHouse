@@ -18,7 +18,6 @@
 namespace DB
 {
 
-class Context;
 class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;

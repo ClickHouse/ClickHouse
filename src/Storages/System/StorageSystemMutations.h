@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 /// Implements the `mutations` system table, which provides information about the status of mutations

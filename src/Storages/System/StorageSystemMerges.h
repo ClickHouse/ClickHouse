@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 class StorageSystemMerges final : public ext::shared_ptr_helper<StorageSystemMerges>, public IStorageSystemOneBlock<StorageSystemMerges>

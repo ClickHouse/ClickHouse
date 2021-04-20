@@ -15,8 +15,6 @@
 namespace DB
 {
 
-class Context;
-
 
 /** Real-time access to table list and table structure from remote PostgreSQL.
  *  All tables are created after pull-out structure from remote PostgreSQL.

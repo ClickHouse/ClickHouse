@@ -8,7 +8,6 @@
 namespace DB
 {
 class AccessControlManager;
-class Context;
 class AccessRightsElements;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;

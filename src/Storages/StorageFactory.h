@@ -13,7 +13,6 @@
 namespace DB
 {
 
-class Context;
 class ASTCreateQuery;
 class ASTStorage;
 struct StorageID;

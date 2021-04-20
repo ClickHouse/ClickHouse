@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class Context;
+
 
 /// system.replicated_fetches table. Takes data from context.getReplicatedFetchList()
 class StorageSystemReplicatedFetches final : public ext::shared_ptr_helper<StorageSystemReplicatedFetches>, public IStorageSystemOneBlock<StorageSystemReplicatedFetches >

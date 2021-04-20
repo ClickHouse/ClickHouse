@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class Context;
+
 
 struct StoragesInfo
 {

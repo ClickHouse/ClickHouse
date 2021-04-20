@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 
 
 /** System table "licenses" with list of licenses of 3rd party libraries

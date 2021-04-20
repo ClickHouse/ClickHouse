@@ -8,7 +8,7 @@
 
 namespace DB
 {
-class Context;
+
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 class AccessRightsElements;
 

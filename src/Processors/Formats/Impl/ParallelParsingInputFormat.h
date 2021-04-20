@@ -21,8 +21,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class Context;
-
 /**
  * ORDER-PRESERVING parallel parsing of data formats.
  * It splits original data into chunks. Then each chunk is parsed by different thread.

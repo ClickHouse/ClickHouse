@@ -302,8 +302,6 @@ public:
     static ContextPtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
 
-    void copyFrom(const ContextPtr & other);
-
     ~Context();
 
     String getPath() const;

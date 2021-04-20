@@ -9,8 +9,6 @@
 namespace DB
 {
 
-class Context;
-
 
 /** Base class for system tables whose all columns have String type.
   */

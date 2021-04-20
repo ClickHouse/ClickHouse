@@ -18,8 +18,6 @@
 namespace DB
 {
 
-class Context;
-
 struct ClientAuthentificationBuilder
 {
     String access_key_id;

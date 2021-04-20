@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 /** Implements a table engine for the system table "numbers".
