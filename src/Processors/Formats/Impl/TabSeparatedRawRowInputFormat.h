@@ -31,7 +31,7 @@ public:
 
     String getName() const override { return "TabSeparatedRawRowInputFormat"; }
 
-    bool readField(IColumn & column, const DataTypePtr &, const SerializationPtr & serialization, bool) override
+    bool readField(IColumn & column, const DataTypePtr & type, bool) override
     {
         String tmp;
 
@@ -49,7 +49,8 @@ public:
         }
 
         ReadBufferFromString cell(tmp);
-        serialization->deserializeWholeText(column, cell, format_settings);
+
+        type->deserializeAsWholeText(column, cell, format_settings);
 
         return true;
     }

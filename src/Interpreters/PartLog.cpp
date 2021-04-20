@@ -71,7 +71,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(query_id);
     columns[i++]->insert(event_type);
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
     columns[i++]->insert(duration_ms);
@@ -103,7 +103,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
 
 
 bool PartLog::addNewPart(
-    ContextPtr current_context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
+    Context & current_context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
 {
     return addNewParts(current_context, {part}, elapsed_ns, execution_status);
 }
@@ -120,7 +120,7 @@ inline UInt64 time_in_seconds(std::chrono::time_point<std::chrono::system_clock>
 }
 
 bool PartLog::addNewParts(
-    ContextPtr current_context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
+    Context & current_context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
 {
     if (parts.empty())
         return true;
@@ -130,7 +130,7 @@ bool PartLog::addNewParts(
     try
     {
         auto table_id = parts.front()->storage.getStorageID();
-        part_log = current_context->getPartLog(table_id.database_name); // assume parts belong to the same table
+        part_log = current_context.getPartLog(table_id.database_name); // assume parts belong to the same table
         if (!part_log)
             return false;
 

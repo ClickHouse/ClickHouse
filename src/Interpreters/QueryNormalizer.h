@@ -4,7 +4,6 @@
 
 #include <Parsers/IAST.h>
 #include <Interpreters/Aliases.h>
-#include <Core/Names.h>
 
 namespace DB
 {
@@ -22,15 +21,12 @@ class QueryNormalizer
     {
         const UInt64 max_ast_depth;
         const UInt64 max_expanded_ast_elements;
-        bool prefer_column_name_to_alias;
 
         template <typename T>
         ExtractedSettings(const T & settings)
-            : max_ast_depth(settings.max_ast_depth)
-            , max_expanded_ast_elements(settings.max_expanded_ast_elements)
-            , prefer_column_name_to_alias(settings.prefer_column_name_to_alias)
-        {
-        }
+        :   max_ast_depth(settings.max_ast_depth),
+            max_expanded_ast_elements(settings.max_expanded_ast_elements)
+        {}
     };
 
 public:
@@ -40,8 +36,7 @@ public:
         using MapOfASTs = std::map<ASTPtr, ASTPtr>;
 
         const Aliases & aliases;
-        const NameSet & source_columns_set;
-        ExtractedSettings settings;
+        const ExtractedSettings settings;
 
         /// tmp data
         size_t level;
@@ -49,9 +44,8 @@ public:
         SetOfASTs current_asts;     /// vertices in the current call stack of this method
         std::string current_alias;  /// the alias referencing to the ancestor of ast (the deepest ancestor with aliases)
 
-        Data(const Aliases & aliases_, const NameSet & source_columns_set_, ExtractedSettings && settings_)
+        Data(const Aliases & aliases_, ExtractedSettings && settings_)
             : aliases(aliases_)
-            , source_columns_set(source_columns_set_)
             , settings(settings_)
             , level(0)
         {}

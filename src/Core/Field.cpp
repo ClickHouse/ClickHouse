@@ -452,7 +452,7 @@ template <> bool decimalLessOrEqual(DateTime64 x, DateTime64 y, UInt32 x_scale, 
 
 inline void writeText(const Null &, WriteBuffer & buf)
 {
-    writeText(std::string("NULL"), buf);
+    writeText(std::string("Null"), buf);
 }
 
 String toString(const Field & x)

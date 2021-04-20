@@ -73,7 +73,7 @@ public:
 
 private:
     /** Returns unique x coordinates among all points */
-    static std::vector<Coord> uniqueX(const std::vector<Polygon> & polygons);
+    std::vector<Coord> uniqueX(const std::vector<Polygon> & polygons);
 
     /** Builds index described above */
     void indexBuild(const std::vector<Polygon> & polygons);
