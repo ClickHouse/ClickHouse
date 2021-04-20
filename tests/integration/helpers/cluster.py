@@ -126,7 +126,7 @@ class ClickHouseCluster:
     """
 
     def __init__(self, base_path, name=None, base_config_dir=None, server_bin_path=None, client_bin_path=None,
-                 odbc_bridge_bin_path=None, library_bridge_bin_path=None, zookeeper_config_path=None, 
+                 odbc_bridge_bin_path=None, library_bridge_bin_path=None, zookeeper_config_path=None,
                  custom_dockerd_host=None):
         for param in list(os.environ.keys()):
             print("ENV %40s %s" % (param, os.environ[param]))
@@ -1524,7 +1524,7 @@ class ClickHouseInstance:
 
         if self.stay_alive:
             entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND.replace("{main_config_file}", self.main_config_name)
-        
+
         print("Entrypoint cmd: {}".format(entrypoint_cmd))
 
         networks = app_net = ipv4_address = ipv6_address = net_aliases = net_alias1 = ""
@@ -1547,6 +1547,7 @@ class ClickHouseInstance:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
             library_bridge_volume = "- " + self.library_bridge_bin_path + ":/usr/share/clickhouse-library-bridge_fresh"
+
 
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
