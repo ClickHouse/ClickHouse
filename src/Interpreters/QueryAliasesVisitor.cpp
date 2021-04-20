@@ -146,7 +146,8 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
         by default is false.
 
         It is imporant that subquery can be converted to literal during ExecuteScalarSubqueriesVisitor.
-        And code below check if we previously set for subquery alias as _subquery, and if it is true then set prefer_alias_to_column_name = true.
+        And code below check if we previously set for subquery alias as _subquery, and if it is true
+        then set prefer_alias_to_column_name = true for node that was optimized during ExecuteScalarSubqueriesVisitor.
      */
 
     if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
