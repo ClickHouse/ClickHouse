@@ -160,7 +160,6 @@ public:
     const IColumn & getOffsetsColumn() const { return *offsets; }
     IColumn & getOffsetsColumn() { return *offsets; }
 
-private:
     class Iterator
     {
     public:
@@ -200,6 +199,7 @@ private:
     Iterator begin() const { return Iterator(getOffsetsData(), _size, 0, 0); }
     Iterator end() const { return Iterator(getOffsetsData(), _size, getOffsetsData().size(), _size); }
 
+private:
     WrappedPtr values;
     WrappedPtr offsets;
     size_t _size;
