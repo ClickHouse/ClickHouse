@@ -607,7 +607,6 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, size_t sh
 
 void DistributedBlockOutputStream::writeToLocal(const Block & block, size_t repeats)
 {
-    /// Async insert does not support settings forwarding yet whereas sync one supports
     InterpreterInsertQuery interp(query_ast, context);
 
     auto block_io = interp.execute();
