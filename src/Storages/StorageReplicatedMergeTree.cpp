@@ -4777,8 +4777,19 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
     return true;
 }
 
+void StorageReplicatedMergeTree::dropPart(const String & name)
+{
+    assertNotReadonly();
+    if (!is_leader)
+        throw Exception("DROP PART cannot be done on this replica because it is not a leader", ErrorCodes::NOT_A_LEADER);
 
-void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr query_context, bool throw_if_noop)
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+    LogEntry entry;
+
+    dropPart(zookeeper, name, entry, false, false);
+}
+
+void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr query_context)
 {
     assertNotReadonly();
     if (!is_leader)
@@ -4792,7 +4803,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & partition, bool de
     if (drop_part)
     {
         String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
-        did_drop = dropPart(zookeeper, part_name, entry, detach, throw_if_noop);
+        did_drop = dropPart(zookeeper, part_name, entry, detach, true);
     }
     else
     {
