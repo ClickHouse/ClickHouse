@@ -6,6 +6,7 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <hdfs/hdfs.h> // Y_IGNORE
 #include <Core/UUID.h>
+#include <memory>
 
 
 namespace DB
@@ -31,18 +32,6 @@ public:
 
     DiskType::Type getType() const override { return DiskType::Type::HDFS; }
 
-    void moveFile(const String & from_path, const String & to_path) override;
-
-    void removeFile(const String & path) override;
-
-    void removeFileIfExists(const String & path) override;
-
-    void removeRecursive(const String & path) override;
-
-    ReservationPtr reserve(UInt64 bytes) override;
-
-    void createHardLink(const String & src_path, const String & dst_path) override;
-
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         size_t buf_size,
@@ -51,10 +40,11 @@ public:
         size_t mmap_threshold,
         MMappedFileCache * mmap_cache) const override;
 
-    std::unique_ptr<WriteBufferFromFileBase> writeFile(
-        const String & path,
-        size_t buf_size,
-        WriteMode mode) override;
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+
+    void removeFromRemoteFS(const Metadata & metadata) override;
+
+    RemoteDiskPtr getDiskPtr() override { return std::static_pointer_cast<DiskHDFS>(shared_from_this()); }
 
 private:
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }

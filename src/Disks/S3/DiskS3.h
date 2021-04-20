@@ -14,6 +14,7 @@
 #include <re2/re2.h>
 #include <Disks/IDiskRemote.h>
 #include <common/logger_useful.h>
+#include <utility>
 
 
 namespace DB
@@ -49,8 +50,6 @@ public:
         int thread_pool_size_,
         int list_object_keys_size_);
 
-    ReservationPtr reserve(UInt64 bytes) override;
-
     void moveFile(const String & from_path, const String & to_path) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
@@ -66,7 +65,6 @@ public:
         size_t buf_size,
         WriteMode mode) override;
 
-    void removeFile(const String & path) override { removeSharedFile(path, false); }
     void removeFileIfExists(const String & path) override;
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
 
@@ -95,6 +93,8 @@ public:
 
     /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
+
+    RemoteDiskPtr getDiskPtr() override { return std::static_pointer_cast<IDiskRemote>(shared_from_this()); }
 
 private:
     void removeMeta(const String & path, AwsS3KeyKeeper & keys);
