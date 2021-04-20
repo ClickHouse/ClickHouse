@@ -71,7 +71,7 @@ Pipe StorageMySQL::read(
     SelectQueryInfo & query_info_,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size_,
+    size_t /*max_block_size*/,
     unsigned)
 {
     metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
@@ -95,8 +95,10 @@ Pipe StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
+
+    StreamSettings mysql_input_stream_settings(context_->getSettingsRef(), true, false);
     return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MySQLWithFailoverBlockInputStream>(pool, query, sample_block, max_block_size_, /* auto_close = */ true)));
+            std::make_shared<MySQLWithFailoverBlockInputStream>(pool, query, sample_block, mysql_input_stream_settings)));
 }
 
 

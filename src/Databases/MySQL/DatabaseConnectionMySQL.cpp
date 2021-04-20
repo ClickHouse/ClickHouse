@@ -198,7 +198,7 @@ ASTPtr DatabaseConnectionMySQL::getCreateDatabaseQuery() const
 
 void DatabaseConnectionMySQL::fetchTablesIntoLocalCache(ContextPtr local_context) const
 {
-    const auto & tables_with_modification_time = fetchTablesWithModificationTime();
+    const auto & tables_with_modification_time = fetchTablesWithModificationTime(local_context);
 
     destroyLocalCacheExtraTables(tables_with_modification_time);
     fetchLatestTablesStructureIntoCache(tables_with_modification_time, local_context);
@@ -252,7 +252,7 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
     }
 }
 
-std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTime() const
+std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTime(ContextPtr local_context) const
 {
     Block tables_status_sample_block
     {
@@ -268,7 +268,8 @@ std::map<String, UInt64> DatabaseConnectionMySQL::fetchTablesWithModificationTim
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
+    StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
+    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
 
     while (Block block = result.read())
     {
@@ -292,7 +293,7 @@ DatabaseConnectionMySQL::fetchTablesColumnsList(const std::vector<String> & tabl
             mysql_pool,
             database_name_in_mysql,
             tables_name,
-            settings.external_table_functions_use_nulls,
+            settings,
             database_settings->mysql_datatypes_support_level);
 }
 
