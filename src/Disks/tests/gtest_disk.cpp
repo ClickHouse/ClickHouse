@@ -2,8 +2,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include "gtest_disk.h"
-#include <Disks/HDFS/DiskHDFS.cpp>
-#include <Poco/Util/XMLConfiguration.h>
 
 
 #if !defined(__clang__)

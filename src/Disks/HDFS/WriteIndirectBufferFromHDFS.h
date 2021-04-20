@@ -8,6 +8,7 @@ namespace DB
 {
 
 /// Stores data in HDFS and adds the object key (HDFS path) and object size to metadata file on local FS.
+/// If the file does not exist, it will be created before writing.
 class WriteIndirectBufferFromHDFS final : public WriteBufferFromFileBase
 {
 public:
