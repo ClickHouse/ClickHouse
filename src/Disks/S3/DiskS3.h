@@ -21,16 +21,18 @@ struct DiskS3Settings
 {
     DiskS3Settings(
         const std::shared_ptr<Aws::S3::S3Client> & client_,
-        size_t min_upload_part_size_,
-        size_t max_single_part_upload_size_,
+        size_t s3_max_single_read_retries_,
+        size_t s3_min_upload_part_size_,
+        size_t s3_max_single_part_upload_size_,
         size_t min_bytes_for_seek_,
         bool send_metadata_,
         int thread_pool_size_,
         int list_object_keys_size_);
 
     std::shared_ptr<Aws::S3::S3Client> client;
-    size_t min_upload_part_size;
-    size_t max_single_part_upload_size;
+    size_t s3_max_single_read_retries;
+    size_t s3_min_upload_part_size;
+    size_t s3_max_single_part_upload_size;
     size_t min_bytes_for_seek;
     bool send_metadata;
     int thread_pool_size;
@@ -201,9 +203,9 @@ private:
     const String s3_root_path;
     const String metadata_path;
     std::shared_ptr<Aws::S3::S3Client> client;
-    UInt64 s3_max_single_read_retries;
-    size_t min_upload_part_size;
-    size_t max_single_part_upload_size;
+    size_t s3_max_single_read_retries;
+    size_t s3_min_upload_part_size;
+    size_t s3_max_single_part_upload_size;
     size_t min_bytes_for_seek;
     bool send_metadata;
     /// The number of keys listed in one request (1000 is max value)

@@ -134,22 +134,23 @@ getClient(const Poco::Util::AbstractConfiguration & config, const String & confi
     client_configuration.retryStrategy
         = std::make_shared<Aws::Client::DefaultRetryStrategy>(config.getUInt(config_prefix + ".retry_attempts", 10));
 
-        auto client = S3::ClientFactory::instance().create(
-            client_configuration,
-            uri.is_virtual_hosted_style,
-            config.getString(config_prefix + ".access_key_id", ""),
-            config.getString(config_prefix + ".secret_access_key", ""),
-            config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
-            {},
-            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
-            config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false))
-        );
+    return S3::ClientFactory::instance().create(
+        client_configuration,
+        uri.is_virtual_hosted_style,
+        config.getString(config_prefix + ".access_key_id", ""),
+        config.getString(config_prefix + ".secret_access_key", ""),
+        config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
+        {},
+        config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
+        config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
+}
 
 DiskS3Settings getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context)
 {
     return DiskS3Settings(
         getClient(config, config_prefix, context),
-        context->getSettingsRef().s3_max_single_read_retries,context->getSettingsRef().s3_min_upload_part_size,
+        context->getSettingsRef().s3_max_single_read_retries,
+        context->getSettingsRef().s3_min_upload_part_size,
         context->getSettingsRef().s3_max_single_part_upload_size,
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getBool(config_prefix + ".send_metadata", false),

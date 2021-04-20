@@ -184,6 +184,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::RESTART_DISK:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->disk = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
+
+            break;
+        }
+
         case Type::STOP_TTL_MERGES:
         case Type::START_TTL_MERGES:
         case Type::STOP_MOVES:
