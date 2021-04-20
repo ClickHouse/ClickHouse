@@ -1,5 +1,6 @@
 #include <Interpreters/ActionsDAG.h>
 
+#include <Columns/ColumnFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
@@ -173,7 +174,8 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::strin
 const ActionsDAG::Node & ActionsDAG::addFunction(
         const FunctionOverloadResolverPtr & function,
         NodeRawConstPtrs children,
-        std::string result_name)
+        std::string result_name,
+        bool use_short_circuit_function_evaluation)
 {
     size_t num_arguments = children.size();
 
@@ -248,7 +250,34 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 
     node.result_name = std::move(result_name);
 
+    if (node.function_base->isShortCircuit() && use_short_circuit_function_evaluation)
+        rewriteShortCircuitArguments(node.children, 1);
+
     return addNode(std::move(node));
+}
+
+void ActionsDAG::rewriteShortCircuitArguments(const NodeRawConstPtrs & children, size_t start)
+{
+    for (size_t i = start; i < children.size(); ++i)
+    {
+        switch (children[i]->type)
+        {
+            case ActionType::FUNCTION:
+            {
+                Node * node = const_cast<Node *>(children[i]);
+                node->type = ActionType::COLUMN_FUNCTION;
+                rewriteShortCircuitArguments(node->children);
+                break;
+            }
+            case ActionType::ALIAS:
+            {
+                rewriteShortCircuitArguments(children[i]->children);
+                break;
+            }
+            default:
+                break;
+        }
+    }
 }
 
 const ActionsDAG::Node & ActionsDAG::findInIndex(const std::string & name) const
@@ -933,6 +962,10 @@ std::string ActionsDAG::dumpDAG() const
 
             case ActionsDAG::ActionType::INPUT:
                 out << "INPUT ";
+                break;
+
+            case ActionsDAG::ActionType::COLUMN_FUNCTION:
+                out << "COLUMN FUNCTION";
                 break;
         }
 

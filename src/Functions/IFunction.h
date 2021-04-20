@@ -211,6 +211,8 @@ public:
       */
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
+    virtual bool isShortCircuit() const { return false; }
+
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
@@ -267,6 +269,8 @@ public:
 
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
+
+    virtual bool isShortCircuit() const { return false; }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).

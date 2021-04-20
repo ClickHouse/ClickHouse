@@ -5,6 +5,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -245,6 +246,18 @@ std::string ExpressionActions::Action::toString() const
             out << ")";
             break;
 
+        case ActionsDAG::ActionType::COLUMN_FUNCTION:
+            out << "COLUMN FUNCTION " << (node->is_function_compiled ? "[compiled] " : "")
+                << (node->function_base ? node->function_base->getName() : "(no function)") << "(";
+            for (size_t i = 0; i < node->children.size(); ++i)
+            {
+                if (i)
+                    out << ", ";
+                out << node->children[i]->result_name << " " << arguments[i];
+            }
+            out << ")";
+            break;
+
         case ActionsDAG::ActionType::ARRAY_JOIN:
             out << "ARRAY JOIN " << node->children.front()->result_name << " " << arguments.front();
             break;
@@ -345,10 +358,18 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             ColumnsWithTypeAndName arguments(action.arguments.size());
             for (size_t i = 0; i < arguments.size(); ++i)
             {
+                auto & column = columns[action.arguments[i].pos];
+                if (action.node->children[i]->type == ActionsDAG::ActionType::COLUMN_FUNCTION)
+                {
+                    const ColumnFunction * column_function = typeid_cast<const ColumnFunction *>(column.column.get());
+                    if (column_function && (!action.node->function_base->isShortCircuit() || action.arguments[i].needed_later))
+                        column.column = column_function->reduce(true).column;
+                }
+
                 if (!action.arguments[i].needed_later)
-                    arguments[i] = std::move(columns[action.arguments[i].pos]);
+                    arguments[i] = std::move(column);
                 else
-                    arguments[i] = columns[action.arguments[i].pos];
+                    arguments[i] = column;
             }
 
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
@@ -356,6 +377,28 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
             res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+            break;
+        }
+
+        case ActionsDAG::ActionType::COLUMN_FUNCTION:
+        {
+            auto & res_column = columns[action.result_position];
+            if (res_column.type || res_column.column)
+                throw Exception("Result column is not empty", ErrorCodes::LOGICAL_ERROR);
+
+            res_column.type = action.node->result_type;
+            res_column.name = action.node->result_name;
+
+            ColumnsWithTypeAndName arguments(action.arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                if (!action.arguments[i].needed_later)
+                    arguments[i] = std::move(columns[action.arguments[i].pos]);
+                else
+                    arguments[i] = columns[action.arguments[i].pos];
+            }
+
+            res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments));
             break;
         }
 
@@ -406,8 +449,16 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             const auto & arg = action.arguments.front();
             if (action.result_position != arg.pos)
             {
-                columns[action.result_position].column = columns[arg.pos].column;
-                columns[action.result_position].type = columns[arg.pos].type;
+                auto & column = columns[arg.pos];
+                if (action.node->children.back()->type == ActionsDAG::ActionType::COLUMN_FUNCTION)
+                {
+                    const ColumnFunction * column_function = typeid_cast<const ColumnFunction *>(column.column.get());
+                    if (column_function)
+                        column.column = column_function->reduce(true).column;
+                }
+
+                columns[action.result_position].column = column.column;
+                columns[action.result_position].type = column.type;
 
                 if (!arg.needed_later)
                     columns[arg.pos] = {};
@@ -431,7 +482,13 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                                     action.node->result_name);
             }
             else
-                columns[action.result_position] = std::move(inputs[pos]);
+            {
+                auto & column = inputs[pos];
+                if (const auto * col = typeid_cast<const ColumnFunction *>(inputs[pos].column.get()))
+                    column.column = col->reduce(true).column;
+
+                columns[action.result_position] = std::move(column);
+            }
 
             break;
         }

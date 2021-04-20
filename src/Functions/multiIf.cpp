@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Common/MasksOperation.h>
 
 
 namespace DB
@@ -39,6 +40,7 @@ public:
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
+    bool isShortCircuit() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
@@ -106,8 +108,30 @@ public:
         return getLeastSupertype(types_of_branches);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnsWithTypeAndName checkForLazyArgumentsExecution(const ColumnsWithTypeAndName & args) const
     {
+        ColumnsWithTypeAndName arguments;
+        arguments.push_back(args[0]);
+        IColumn::Filter mask = getMaskFromColumn(args[0].column);
+        Field default_value = 0;
+        size_t i = 1;
+        while (i < args.size())
+        {
+            IColumn::Filter cond_mask = getMaskFromColumn(arguments[i - 1].column);
+            arguments.push_back(maskedExecute(args[i], cond_mask));
+            ++i;
+
+            arguments.push_back(maskedExecute(args[i], reverseMask(mask), &default_value));
+            if (i != args.size() - 1)
+                disjunctionMasks(mask, getMaskFromColumn(arguments.back().column));
+            ++i;
+        }
+        return arguments;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        ColumnsWithTypeAndName args = checkForLazyArgumentsExecution(arguments);
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
         */
