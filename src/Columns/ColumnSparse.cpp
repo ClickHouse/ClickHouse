@@ -558,10 +558,7 @@ void ColumnSparse::updateWeakHash32(WeakHash32 & hash) const
     auto & hash_data = hash.getData();
     for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
-        size_t value_index = 0;
-        if (!offset_it.isDefault())
-            value_index = offset_it.getValueIndex();
-
+        size_t value_index = offset_it.getValueIndex();
         auto data_ref = values->getDataAt(value_index);
         hash_data[i] = ::updateWeakHash32(reinterpret_cast<const UInt8 *>(data_ref.data), data_ref.size, hash_data[i]);
     }

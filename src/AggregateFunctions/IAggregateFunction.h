@@ -306,22 +306,9 @@ public:
     {
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto * values = &column_sparse.getValuesColumn();
-        const auto & offsets_data = column_sparse.getOffsetsData();
 
-        size_t offset_pos = 0;
-        size_t offsets_size = offsets_data.size();
-        for (size_t i = 0; i < column_sparse.size(); ++i)
-        {
-            if (offset_pos < offsets_size && i == offsets_data[offset_pos])
-            {
-                static_cast<const Derived *>(this)->add(places[i] + place_offset, &values, offset_pos + 1, arena);
-                ++offset_pos;
-            }
-            else
-            {
-                static_cast<const Derived *>(this)->add(places[i] + place_offset, &values, 0, arena);
-            }
-        }
+        for (auto it = column_sparse.begin(); it != column_sparse.end(); ++it)
+            static_cast<const Derived *>(this)->add(places[it.getCurrentRow()] + place_offset, &values, it.getValueIndex(), arena);
     }
 
     void addBatchSinglePlace(
@@ -346,14 +333,12 @@ public:
     void addBatchSparseSinglePlace(
         AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
+        /// TODO: add values and defaults separately if order of adding isn't important.
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto * values = &column_sparse.getValuesColumn();
 
-        for (size_t i = 1; i < values->size(); ++i)
-            static_cast<const Derived *>(this)->add(place, &values, i, arena);
-
-        for (size_t i = 0; i < column_sparse.getNumberOfDefaults(); ++i)
-            static_cast<const Derived *>(this)->add(place, &values, 0, arena);
+        for (auto it = column_sparse.begin(); it != column_sparse.end(); ++it)
+            static_cast<const Derived *>(this)->add(place, &values, it.getValueIndex(), arena);
     }
 
     void addBatchSinglePlaceNotNull(
