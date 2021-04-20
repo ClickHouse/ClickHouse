@@ -13,6 +13,7 @@ namespace ErrorCodes
     extern const int MISMATCH_REPLICAS_DATA_SOURCES;
     extern const int NO_AVAILABLE_REPLICA;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
 
@@ -283,12 +284,15 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
         {
             packet = current_connection->receivePacket();
         }
-        catch (...)
+        catch (Exception & e)
         {
-            /// Exception may happen when packet is received, e.g. when got unknown packet.
-            /// In this case, invalidate replica, so that we would not read from it anymore.
-            current_connection->disconnect();
-            invalidateReplica(state);
+            if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
+            {
+                /// Exception may happen when packet is received, e.g. when got unknown packet.
+                /// In this case, invalidate replica, so that we would not read from it anymore.
+                current_connection->disconnect();
+                invalidateReplica(state);
+            }
             throw;
         }
     }
