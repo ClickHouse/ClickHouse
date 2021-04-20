@@ -571,7 +571,7 @@ namespace
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 {
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
-    bool save_key_columns = !(table_join->forceHashJoin() || table_join->dictionary_reader) || isRightOrFull(kind);
+    bool save_key_columns = !table_join->forceHashJoin() || isRightOrFull(kind);
     if (save_key_columns)
     {
         saved_block_sample = right_table_keys.cloneEmpty();
