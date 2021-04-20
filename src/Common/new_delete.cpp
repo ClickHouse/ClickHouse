@@ -1,5 +1,5 @@
 #include <common/memory.h>
-#include <Common/CurrentMemoryTracker.h>
+#include <Common/ThreadStatus.h>
 
 #include <iostream>
 #include <new>
@@ -38,8 +38,12 @@ struct InitializeJemallocZoneAllocatorForOSX
 /// @sa https://en.cppreference.com/w/cpp/memory/new/operator_new
 ///     https://en.cppreference.com/w/cpp/memory/new/operator_delete
 
+
 namespace Memory
 {
+
+using namespace DB;
+
 
 inline ALWAYS_INLINE void trackMemory(std::size_t size)
 {
@@ -52,46 +56,29 @@ inline ALWAYS_INLINE void trackMemory(std::size_t size)
         actual_size = nallocx(size, 0);
 #endif
 
-    CurrentMemoryTracker::alloc(actual_size);
+    if (current_thread)
+        current_thread->untracked_memory += actual_size;
 }
 
-inline ALWAYS_INLINE bool trackMemoryNoExcept(std::size_t size) noexcept
-{
-    try
-    {
-        trackMemory(size);
-    }
-    catch (...)
-    {
-        return false;
-    }
 
-    return true;
-}
-
-inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]] = 0) noexcept
+inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size = 0) noexcept
 {
-    try
-    {
+    std::size_t actual_size = size;
+
 #if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 5
-        /// @note It's also possible to use je_malloc_usable_size() here.
-        if (likely(ptr != nullptr))
-            CurrentMemoryTracker::free(sallocx(ptr, 0));
-#else
-        if (size)
-            CurrentMemoryTracker::free(size);
-#    if defined(_GNU_SOURCE)
-        /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
-        else
-            CurrentMemoryTracker::free(malloc_usable_size(ptr));
-#    endif
+    actual_size = sallocx(ptr, 0);
+#elif defined(_GNU_SOURCE)
+    /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
+    if (!actual_size)
+        actual_size = malloc_usable_size(ptr);
 #endif
-    }
-    catch (...)
-    {}
+
+    if (current_thread)
+        current_thread->untracked_memory -= actual_size;
 }
 
 }
+
 
 /// new
 
@@ -109,17 +96,16 @@ void * operator new[](std::size_t size)
 
 void * operator new(std::size_t size, const std::nothrow_t &) noexcept
 {
-    if (likely(Memory::trackMemoryNoExcept(size)))
-        return Memory::newNoExept(size);
-    return nullptr;
+    Memory::trackMemory(size);
+    return Memory::newNoExept(size);
 }
 
 void * operator new[](std::size_t size, const std::nothrow_t &) noexcept
 {
-    if (likely(Memory::trackMemoryNoExcept(size)))
-        return Memory::newNoExept(size);
-    return nullptr;
+    Memory::trackMemory(size);
+    return Memory::newNoExept(size);
 }
+
 
 /// delete
 

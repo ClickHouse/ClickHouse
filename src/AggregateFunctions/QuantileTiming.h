@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Common/HashTable/Hash.h>
+#include <Common/MemoryTracker.h>
+#include <Common/PODArray.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -514,6 +517,8 @@ private:
 
     void mediumToLarge()
     {
+        CurrentMemoryTracker::alloc(sizeof(detail::QuantileTimingLarge));
+
         /// While the data is copied from medium, it is not possible to set `large` value (otherwise it will overwrite some data).
         detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
@@ -527,6 +532,8 @@ private:
 
     void tinyToLarge()
     {
+        CurrentMemoryTracker::alloc(sizeof(detail::QuantileTimingLarge));
+
         /// While the data is copied from `medium` it is not possible to set `large` value (otherwise it will overwrite some data).
         detail::QuantileTimingLarge * tmp_large = new detail::QuantileTimingLarge;
 
@@ -559,6 +566,8 @@ public:
         else if (kind == Kind::Large)
         {
             delete large;
+
+            CurrentMemoryTracker::free(sizeof(detail::QuantileTimingLarge));
         }
     }
 

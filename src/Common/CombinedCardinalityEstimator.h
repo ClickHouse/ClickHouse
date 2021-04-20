@@ -3,6 +3,7 @@
 #include <Common/HashTable/SmallTable.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogCounter.h>
+#include <Common/MemoryTracker.h>
 #include <Core/Defines.h>
 
 
@@ -233,6 +234,7 @@ private:
         if (getContainerType() != details::ContainerType::SMALL)
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 
+        CurrentMemoryTracker::alloc(sizeof(Medium));
         auto tmp_medium = std::make_unique<Medium>();
 
         for (const auto & x : small)
@@ -249,6 +251,7 @@ private:
         if ((container_type != details::ContainerType::SMALL) && (container_type != details::ContainerType::MEDIUM))
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 
+        CurrentMemoryTracker::alloc(sizeof(Large));
         auto tmp_large = std::make_unique<Large>();
 
         if (container_type == details::ContainerType::SMALL)
@@ -278,11 +281,15 @@ private:
         {
             delete medium;
             medium = nullptr;
+
+            CurrentMemoryTracker::free(sizeof(Medium));
         }
         else if (container_type == details::ContainerType::LARGE)
         {
             delete large;
             large = nullptr;
+
+            CurrentMemoryTracker::free(sizeof(Large));
         }
     }
 
