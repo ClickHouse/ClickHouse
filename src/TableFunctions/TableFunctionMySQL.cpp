@@ -83,12 +83,17 @@ ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr contex
 
     const auto columns = tables_and_columns.find(remote_table_name);
     if (columns == tables_and_columns.end())
-        throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        throw Exception("MySQL table " + (remote_database_name.empty() ? "" : (backQuote(remote_database_name) + "."))
+            + backQuote(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     return ColumnsDescription{columns->second};
 }
 
-StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+StoragePtr TableFunctionMySQL::executeImpl(
+    const ASTPtr & /*ast_function*/,
+    ContextPtr context,
+    const std::string & table_name,
+    ColumnsDescription /*cached_columns*/) const
 {
     auto columns = getActualTableStructure(context);
 
