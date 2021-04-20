@@ -19,15 +19,16 @@ class ReadIndirectBufferFromHDFS final : public ReadBufferFromFileBase
 public:
     ReadIndirectBufferFromHDFS(
             const Poco::Util::AbstractConfiguration & config_,
-            const String & hdfs_name_,
-            const String & /* bucket */,
+            const String & hdfs_uri_,
             DiskHDFS::Metadata metadata_,
             size_t buf_size_)
         : config(config_)
-        , hdfs_name(hdfs_name_)
         , metadata(std::move(metadata_))
         , buf_size(buf_size_)
     {
+        const size_t begin_of_path = hdfs_uri_.find('/', hdfs_uri_.find("//") + 2);
+        hdfs_directory = hdfs_uri_.substr(begin_of_path);
+        hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
     }
 
     off_t seek(off_t offset_, int whence) override
@@ -81,11 +82,11 @@ private:
         for (size_t i = 0; i < metadata.remote_fs_objects.size(); ++i)
         {
             current_buf_idx = i;
-            const auto & [path, size] = metadata.remote_fs_objects[i];
+            const auto & [file_name, size] = metadata.remote_fs_objects[i];
 
             if (size > offset)
             {
-                auto buf = std::make_unique<ReadBufferFromHDFS>(hdfs_name + path, config, buf_size);
+                auto buf = std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_directory + file_name, config, buf_size);
                 buf->seek(offset, SEEK_SET);
                 return buf;
             }
@@ -115,8 +116,10 @@ private:
             return false;
 
         ++current_buf_idx;
-        const auto & path = metadata.remote_fs_objects[current_buf_idx].first;
-        current_buf = std::make_unique<ReadBufferFromHDFS>(hdfs_name + path, config, buf_size);
+
+        const auto & file_name = metadata.remote_fs_objects[current_buf_idx].first;
+        current_buf = std::make_unique<ReadBufferFromHDFS>(hdfs_uri, hdfs_directory + file_name, config, buf_size);
+
         current_buf->next();
         working_buffer = current_buf->buffer();
         absolute_position += working_buffer.size();
@@ -125,7 +128,9 @@ private:
     }
 
     const Poco::Util::AbstractConfiguration & config;
-    const String & hdfs_name;
+    String hdfs_uri;
+    String hdfs_directory;
+
     DiskHDFS::Metadata metadata;
     size_t buf_size;
 

@@ -843,6 +843,17 @@ def system_tables_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("CREATE DATABASE system_tables_test ENGINE = MaterializeMySQL('{}:3306', 'system_tables_test', 'root', 'clickhouse')".format(service_name))
     check_query(clickhouse_node, "SELECT partition_key, sorting_key, primary_key FROM system.tables WHERE database = 'system_tables_test' AND name = 'test'", "intDiv(id, 4294967)\tid\tid\n")
 
+def move_to_prewhere_and_column_filtering(clickhouse_node, mysql_node, service_name):
+    clickhouse_node.query("DROP DATABASE IF EXISTS cond_on_key_col")
+    mysql_node.query("DROP DATABASE IF EXISTS cond_on_key_col")
+    mysql_node.query("CREATE DATABASE cond_on_key_col")
+    clickhouse_node.query("CREATE DATABASE cond_on_key_col ENGINE = MaterializeMySQL('{}:3306', 'cond_on_key_col', 'root', 'clickhouse')".format(service_name))
+    mysql_node.query("create table cond_on_key_col.products (id int primary key, product_id int not null, catalog_id int not null, brand_id int not null, name text)")
+    mysql_node.query("insert into cond_on_key_col.products (id, name, catalog_id, brand_id, product_id) values (915, 'ertyui', 5287, 15837, 0), (990, 'wer', 1053, 24390, 1), (781, 'qwerty', 1041, 1176, 2);")
+    check_query(clickhouse_node, "SELECT DISTINCT P.id, P.name, P.catalog_id FROM cond_on_key_col.products P WHERE P.name ILIKE '%e%' and P.catalog_id=5287", '915\tertyui\t5287\n')
+    clickhouse_node.query("DROP DATABASE cond_on_key_col")
+    mysql_node.query("DROP DATABASE cond_on_key_col")
+
 def mysql_settings_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS test_database")
     clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
@@ -858,3 +869,4 @@ def mysql_settings_test(clickhouse_node, mysql_node, service_name):
 
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
+

@@ -44,7 +44,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto reader = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, "", metadata, buf_size);
+    auto reader = std::make_unique<ReadIndirectBufferFromHDFS>(config, remote_fs_root_path, metadata, buf_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
 }
 
@@ -93,17 +93,10 @@ void DiskHDFS::removeFromRemoteFS(const Metadata & metadata)
 {
     for (const auto & [hdfs_object_path, _] : metadata.remote_fs_objects)
     {
-        size_t begin_of_path;
-        auto two_slash = remote_fs_root_path.find("//");
-
-        if (two_slash == std::string::npos)
-            begin_of_path = remote_fs_root_path.find('/');
-        else
-            begin_of_path = remote_fs_root_path.find('/', two_slash + 2);
-
+        /// Add path from root to file name
+        const size_t begin_of_path = remote_fs_root_path.find('/', remote_fs_root_path.find("//") + 2);
         const String hdfs_path = remote_fs_root_path.substr(begin_of_path) + hdfs_object_path;
 
-        LOG_DEBUG(log, "Remove file by path: {}, hdfs object path {}", hdfs_path, hdfs_object_path);
         int res = hdfsDelete(hdfs_fs.get(), hdfs_path.c_str(), 0);
         if (res == -1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "HDFSDelete failed with path: " + hdfs_path);

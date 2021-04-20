@@ -21,9 +21,11 @@ namespace DB
  */
 class ReadBufferFromHDFS : public BufferWithOwnMemory<SeekableReadBuffer>
 {
+struct ReadBufferFromHDFSImpl;
 
 public:
-    ReadBufferFromHDFS(const std::string & hdfs_name_, const Poco::Util::AbstractConfiguration &, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+    ReadBufferFromHDFS(const String & hdfs_uri_, const String & hdfs_file_path_,
+        const Poco::Util::AbstractConfiguration & config_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~ReadBufferFromHDFS() override;
 
@@ -34,8 +36,8 @@ public:
     off_t getPosition() override;
 
 private:
-    struct ReadBufferFromHDFSImpl;
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
 };
 }
+
 #endif
