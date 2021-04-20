@@ -94,6 +94,7 @@ private:
     size_t inserted_rows = 0;
 
     bool insert_sync;
+    bool allow_materialized;
 
     /// Sync-related stuff
     UInt64 insert_timeout; // in seconds

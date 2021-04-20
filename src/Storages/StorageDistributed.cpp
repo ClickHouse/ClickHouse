@@ -158,7 +158,7 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 /// The columns list in the original INSERT query is incorrect because inserted blocks are transformed
 /// to the form of the sample block of the Distributed table. So we rewrite it and add all columns from
 /// the sample block instead.
-ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
+ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block)
 {
     auto query = std::make_shared<ASTInsertQuery>();
     query->table_id = StorageID(database, table);
@@ -166,7 +166,7 @@ ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::s
     auto columns = std::make_shared<ASTExpressionList>();
     query->columns = columns;
     query->children.push_back(columns);
-    for (const auto & col : sample_block_non_materialized)
+    for (const auto & col : sample_block)
         columns->children.push_back(std::make_shared<ASTIdentifier>(col.name));
 
     return query;
@@ -646,11 +646,16 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
     bool insert_sync = settings.insert_distributed_sync || settings.insert_shard_id || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
+    Block sample_block;
+    if (!settings.insert_allow_materialized_columns)
+        sample_block = metadata_snapshot->getSampleBlockNonMaterialized();
+    else
+        sample_block = metadata_snapshot->getSampleBlock();
+
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
         local_context, *this, metadata_snapshot,
-        createInsertToRemoteTableQuery(
-            remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
+        createInsertToRemoteTableQuery(remote_database, remote_table, sample_block),
         cluster, insert_sync, timeout, StorageID{remote_database, remote_table});
 }
 
