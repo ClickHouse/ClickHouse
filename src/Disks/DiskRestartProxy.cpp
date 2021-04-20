@@ -7,7 +7,7 @@ namespace DB
 {
 
 /// Holds restart read lock till finalize.
-class RestartAwareReadBuffer : ReadBufferFromFileDecorator
+class RestartAwareReadBuffer : public ReadBufferFromFileDecorator
 {
 public:
     RestartAwareReadBuffer(const DiskRestartProxy & disk, std::unique_ptr<ReadBufferFromFileBase> impl_)
@@ -18,7 +18,7 @@ private:
 };
 
 /// Holds restart write lock till finalize.
-class RestartAwareWriteBuffer : WriteBufferFromFileDecorator
+class RestartAwareWriteBuffer : public WriteBufferFromFileDecorator
 {
 public:
     RestartAwareWriteBuffer(const DiskRestartProxy & disk, std::unique_ptr<WriteBuffer> impl_)
