@@ -32,14 +32,13 @@ enum class AttributeUnderlyingType
     utDecimal32,
     utDecimal64,
     utDecimal128,
-    utDecimal256,
     utString
 };
 
 
 AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type);
 
-std::string toString(AttributeUnderlyingType type);
+std::string toString(const AttributeUnderlyingType type);
 
 /// Min and max lifetimes for a dictionary or it's entry
 using DictionaryLifetime = ExternalLoadableLifetime;
@@ -125,9 +124,6 @@ void callOnDictionaryAttributeType(AttributeUnderlyingType type, F&& func)
             break;
         case AttributeUnderlyingType::utDecimal128:
             func(DictionaryAttributeType<Decimal128>());
-            break;
-        case AttributeUnderlyingType::utDecimal256:
-            func(DictionaryAttributeType<Decimal256>());
             break;
     }
 };

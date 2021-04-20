@@ -156,7 +156,7 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
 
 const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const
 {
-    ContextPtr query_context;
+    const Context * query_context = nullptr;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 

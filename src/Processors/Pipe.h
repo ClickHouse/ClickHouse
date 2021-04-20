@@ -1,9 +1,8 @@
 #pragma once
-
 #include <Processors/IProcessor.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sources/SourceWithProgress.h>
 
 namespace DB
 {
@@ -156,7 +155,7 @@ private:
     /// This methods are for QueryPipeline. It is allowed to complete graph only there.
     /// So, we may be sure that Pipe always has output port if not empty.
     bool isCompleted() const { return !empty() && output_ports.empty(); }
-    static Pipe unitePipes(Pipes pipes, Processors * collected_processors, bool allow_empty_header);
+    static Pipe unitePipes(Pipes pipes, Processors * collected_processors);
     void setSinks(const Pipe::ProcessorGetterWithStreamKind & getter);
     void setOutputFormat(ProcessorPtr output);
 

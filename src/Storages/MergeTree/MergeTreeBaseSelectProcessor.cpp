@@ -30,7 +30,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
     const Names & virt_column_names_)
-    : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, virt_column_names_))
+    : SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -370,7 +370,7 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
     }
 }
 
-Block MergeTreeBaseSelectProcessor::transformHeader(
+Block MergeTreeBaseSelectProcessor::getHeader(
     Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns)
 {
     executePrewhereActions(block, prewhere_info);

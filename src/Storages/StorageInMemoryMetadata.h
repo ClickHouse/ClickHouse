@@ -85,10 +85,9 @@ struct StorageInMemoryMetadata
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
-
     /// Returns secondary indices
-    const IndicesDescription & getSecondaryIndices() const;
 
+    const IndicesDescription & getSecondaryIndices() const;
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
 
@@ -147,7 +146,8 @@ struct StorageInMemoryMetadata
     /// Storage metadata. StorageID required only for more clear exception
     /// message.
     Block getSampleBlockForColumns(
-        const Names & column_names, const NamesAndTypesList & virtuals = {}, const StorageID & storage_id = StorageID::createEmpty()) const;
+        const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
+
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.

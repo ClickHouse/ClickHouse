@@ -5,7 +5,6 @@
 #include <Poco/Net/NetException.h>
 #include <common/logger_useful.h>
 #include <Server/IServer.h>
-#include <string>
 
 namespace DB
 {
@@ -22,9 +21,9 @@ private:
         void run() override {}
     };
 public:
-    KeeperTCPHandlerFactory(IServer & server_, bool secure)
+    KeeperTCPHandlerFactory(IServer & server_)
         : server(server_)
-        , log(&Poco::Logger::get(std::string{"KeeperTCP"} + (secure ? "S" : "") + "HandlerFactory"))
+        , log(&Poco::Logger::get("KeeperTCPHandlerFactory"))
     {
     }
 

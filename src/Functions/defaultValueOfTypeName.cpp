@@ -21,7 +21,7 @@ class FunctionDefaultValueOfTypeName : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfTypeName";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionDefaultValueOfTypeName>();
     }

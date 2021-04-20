@@ -42,16 +42,16 @@ namespace
 BlockIO InterpreterCreateSettingsProfileQuery::execute()
 {
     auto & query = query_ptr->as<ASTCreateSettingsProfileQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = context.getAccessControlManager();
     if (query.alter)
-        getContext()->checkAccess(AccessType::ALTER_SETTINGS_PROFILE);
+        context.checkAccess(AccessType::ALTER_SETTINGS_PROFILE);
     else
-        getContext()->checkAccess(AccessType::CREATE_SETTINGS_PROFILE);
+        context.checkAccess(AccessType::CREATE_SETTINGS_PROFILE);
 
     if (!query.cluster.empty())
     {
-        query.replaceCurrentUserTag(getContext()->getUserName());
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        query.replaceCurrentUserTag(context.getUserName());
+        return executeDDLQueryOnCluster(query_ptr, context);
     }
 
     std::optional<SettingsProfileElements> settings_from_query;
@@ -60,7 +60,7 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.to_roles)
-        roles_from_query = RolesOrUsersSet{*query.to_roles, access_control, getContext()->getUserID()};
+        roles_from_query = RolesOrUsersSet{*query.to_roles, access_control, context.getUserID()};
 
     if (query.alter)
     {

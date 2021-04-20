@@ -609,13 +609,9 @@ void IMergeTreeDataPart::loadIndex()
 
         size_t marks_count = index_granularity.getMarksCount();
 
-        Serializations serializations(key_size);
-        for (size_t j = 0; j < key_size; ++j)
-            serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
-
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                serializations[j]->deserializeBinary(*loaded_index[j], *index_file);
+                primary_key.data_types[j]->getDefaultSerialization()->deserializeBinary(*loaded_index[j], *index_file);
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -1107,13 +1103,13 @@ void IMergeTreeDataPart::remove(bool keep_s3) const
         {
             /// Remove each expected file in directory, then remove directory itself.
 
-    #if !defined(__clang__)
+    #if !__clang__
     #    pragma GCC diagnostic push
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
                 volume->getDisk()->removeSharedFile(to + "/" + file, keep_s3);
-    #if !defined(__clang__)
+    #if !__clang__
     #    pragma GCC diagnostic pop
     #endif
 
@@ -1356,24 +1352,6 @@ String IMergeTreeDataPart::getUniqueId() const
     return id;
 }
 
-
-String IMergeTreeDataPart::getZeroLevelPartBlockID() const
-{
-    if (info.level != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
-
-    SipHash hash;
-    checksums.computeTotalChecksumDataOnly(hash);
-    union
-    {
-        char bytes[16];
-        UInt64 words[2];
-    } hash_value;
-    hash.get128(hash_value.bytes);
-
-    return info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
-}
-
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {
     return (data_part && data_part->getType() == MergeTreeDataPartType::COMPACT);
@@ -1390,3 +1368,4 @@ bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
 }
 
 }
+

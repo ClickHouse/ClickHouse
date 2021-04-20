@@ -26,7 +26,6 @@
                         <disk>s31</disk>
                     </external>
                 </volumes>
-                <move_factor>0.0</move_factor>
             </hybrid>
         </policies>
     </storage_configuration>

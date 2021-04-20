@@ -1,16 +1,15 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-
-#include <memory>
-#include <string>
 #include <unordered_map>
+#include <string>
+#include <memory>
 
 
 namespace DB
 {
 
 class Block;
+class Context;
 class NamesAndTypesList;
 class ColumnsDescription;
 
@@ -23,9 +22,10 @@ ActionsDAGPtr evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
-    ContextPtr context, bool save_unneeded_columns = true);
+    const Context & context, bool save_unneeded_columns = true);
 
 /// Tries to convert columns in block to required_columns
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context);
-
+void performRequiredConversions(Block & block,
+    const NamesAndTypesList & required_columns,
+    const Context & context);
 }

@@ -122,8 +122,8 @@ def test_attach_without_fetching(start_cluster):
 
     with PartitionManager() as pm:
         # If something goes wrong and replica 2 wants to fetch data, the test will fail.
-        pm.partition_instances(node_2, node_1, action='REJECT --reject-with tcp-reset')
-        pm.partition_instances(node_1, node_3, action='REJECT --reject-with tcp-reset')
+        pm.partition_instances(node_2, node_1)
+        pm.partition_instances(node_1, node_3)
 
         node_1.query("ALTER TABLE test ATTACH PART '0_0_0_0'")
 
