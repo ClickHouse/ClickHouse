@@ -272,7 +272,7 @@ of the fetched commands.
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
 Provides possibility to reinitialize Zookeeper sessions state for `ReplicatedMergeTree` table, will compare current state with Zookeeper as source of true and add tasks to Zookeeper queue if needed
-Initialization replication quene based on ZooKeeper date happens in the same way as `ATTACH TABLE` statement. For a short time the table will be unavailable for any operations.
+Initialization replication queue based on ZooKeeper date happens in the same way as `ATTACH TABLE` statement. For a short time the table will be unavailable for any operations.
 
 ``` sql
 SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
@@ -280,15 +280,35 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 
 ### RESTORE REPLICA {#query_language-system-restore-replica}
 
-Restores a ZooKeeper replica if the data is present but the ZooKeeper metadata is lost.
-TODO
+Restores a replica if data is [possibly] present but Zookeeper metadata is lost.
+Works when:
+ - Zookeeper root `/` is removed. In that case replica attaches locally found parts and sends info about them to Zookeeper.
+ - Zookeeper replica path `/replicas/replica_name` is removed (but there exists at least one replica with valid metadata).
+   In that case target replica is simply `RESTART`ed (which in turn triggers Zookeeper path restoration on table attach).
 
+Parts present in replica before metadata loss are not re-fetched from other replicas if not being outdated
+(so the replica restoration does not mean re-downloading all data over the network).
+
+#### Syntax
 
 ``` sql
 SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
+#### Example
 
+```sql
+CREATE TABLE test(n UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
+ORDER BY n PARTITION BY n % 10;
+
+INSERT INTO test SELECT * FROM numbers(1000);
+
+-- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- root loss.
+
+SYSTEM RESTART REPLICA test; -- The table will attach as readonly as the metadata is missing.
+SYSTEM RESTORE REPLICA test;
+```
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 

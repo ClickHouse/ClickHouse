@@ -351,19 +351,19 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         return;
     }
 
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
     /// May it be ZK lost not the whole root, so the upper check passed, but only the /replicas/replica
     /// folder.
     if (attach && !current_zookeeper->exists(replica_path))
     {
         LOG_WARNING(log, "No metadata in ZooKeeper for {}, will try to restore", replica_path);
 
-        createReplica(getInMemoryMetadataPtr(), true);
-        cloneReplicaIfNeeded(current_zookeeper);
-
-        return;
+        skip_sanity_checks = true; // Otherwise we'll get an exception that local_parts > parts in ZK.
+        createReplica(metadata_snapshot); // The replica is not the only one left so it'll be marked "lost".
+        // TODO As for now, there is no data for parts in ZK, so they are removed and re-downloaded, should fix.
+        cloneReplicaIfNeeded(current_zookeeper); // and restored here
     }
-
-    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     if (!attach)
     {
@@ -444,8 +444,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
             metadata_version = metadata_stat.version;
         }
-        /// Temporary directories contain untinalized results of Merges or Fetches (after forced restart)
-        ///  and don't allow to reinitialize them, so delete each of them immediately
+        /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
+        /// don't allow to reinitialize them, delete each of them immediately.
         clearOldTemporaryDirectories(0);
         clearOldWriteAheadLogs();
     }
@@ -713,7 +713,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
                     "or because of logical error", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
 }
 
-void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot, bool always_mark_as_lost)
+void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot)
 {
     auto zookeeper = getZooKeeper();
 
@@ -733,7 +733,7 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
 
         /// It is not the first replica, we will mark it as "lost", to immediately repair (clone) from existing replica.
         /// By the way, it's possible that the replica will be first, if all previous replicas were removed concurrently.
-        const String is_lost_value = (always_mark_as_lost || replicas_stat.numChildren) ? "1" : "0";
+        const String is_lost_value = replicas_stat.numChildren ? "1" : "0";
 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "",

@@ -63,10 +63,8 @@ namespace DB
   * Despite the name of the "queue", execution can be reordered, if necessary (shouldExecuteLogEntry, executeLogEntry).
   * In addition, the records in the queue can be generated independently (not from the log), in the following cases:
   * - when creating a new replica, actions are put on GET from other replicas (createReplica);
-  * - if the part is corrupt (removePartAndEnqueueFetch) or absent during the check (at start - checkParts, while running - searchForMissingPart),
-  *   actions are put on GET from other replicas;
-  *
-  * TODO Update the GET part after rewriting the code (search locally).
+  * - if the part is corrupt (removePartAndEnqueueFetch) or absent during the check
+  *   (at start - checkParts, while running - searchForMissingPart), actions are put on GET from other replicas;
   *
   * The replica to which INSERT was made in the queue will also have an entry of the GET of this data.
   * Such an entry is considered to be executed as soon as the queue handler sees it.
@@ -367,9 +365,8 @@ private:
 
     /**
      * Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
-     * Second flag needed for internal use.
      */
-    void createReplica(const StorageMetadataPtr & metadata_snapshot, bool always_mark_as_lost = false);
+    void createReplica(const StorageMetadataPtr & metadata_snapshot);
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
       */

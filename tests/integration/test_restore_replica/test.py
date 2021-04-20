@@ -72,20 +72,24 @@ def test_restore_replica(start_cluster):
     print("Deleting replica2 path, trying to restore replica1")
     zk.delete("/clickhouse/tables/test/replicas/replica2", recursive=True)
     assert zk.exists("/clickhouse/tables/test/replicas/replica2") is None
-    out, err = node_1.query_and_get_answer_with_error("SYSTEM RESTORE REPLICA test")
-    print("Got an exception (expected 'nothing to restore'):", out, "\n".join(err.split("\n")[:3]))
+    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
 
     print("Deleting replica1 path, trying to restore replica1")
     zk.delete("/clickhouse/tables/test/replicas/replica1", recursive=True)
     assert zk.exists("/clickhouse/tables/test/replicas/replica1") is None
 
-    node_1.query("SYSTEM RESTART REPLICA test")
-    node_1.query("SYSTEM RESTORE REPLICA test") # Should restore by detaching and attaching the table
+    node_1.query("SYSTEM RESTART REPLICA test") # will restore the table
+    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
     node_2.query("SYSTEM RESTART REPLICA test")
-    node_2.query("SYSTEM RESTORE REPLICA test") # Same
+    node_2.query_and_get_error("SYSTEM RESTORE REPLICA test")
 
-    node_1.query("INSERT INTO test SELECT * FROM numbers(1000)") # assert all the tables are working
-    check_data(2 * 499500, 2000)
+    check_data(499500, 1000)
+
+    node_1.query("INSERT INTO test SELECT number + 1000 FROM numbers(1000)") # assert all the tables are working
+
+    node_2.query("SYSTEM SYNC REPLICA test")
+    node_3.query("SYSTEM SYNC REPLICA test")
+    check_data(1999000, 2000)
 
     # 2. Delete metadata for the root zk path (emulating a Zookeeper error)
     print("Deleting root ZK path metadata")
@@ -99,15 +103,17 @@ def test_restore_replica(start_cluster):
     print("Restoring replica1")
     node_1.query("SYSTEM RESTORE REPLICA test")
     assert zk.exists("/clickhouse/tables/test")
-    check_data(2 * 499500, 2000)
+    check_data(1999000, 2000)
 
-    node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
+    node_1.query("INSERT INTO test SELECT number + 2000 FROM numbers(1000)")
 
     print("Restoring other replicas")
-    node_2.query("SYSTEM RESTORE REPLICA test"); # should detach and attach the table
-    node_3.query("SYSTEM RESTORE REPLICA test");
+    node_1.query("SYSTEM RESTART REPLICA test") # will restore the table
+    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
+    node_2.query("SYSTEM RESTART REPLICA test")
+    node_2.query_and_get_error("SYSTEM RESTORE REPLICA test")
 
-    check_data(3 * 499500, 3000)
+    check_data(4498500, 3000)
 
     # 7. check we cannot restore the already restored replica
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")

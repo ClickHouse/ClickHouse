@@ -416,7 +416,7 @@ BlockIO InterpreterSystemQuery::execute()
                     query.database, query.table);
             break;
         case Type::RESTORE_REPLICA:
-            restoreReplica();
+            restoreReplica(system_context);
             break;
         case Type::FLUSH_LOGS:
         {
@@ -509,7 +509,7 @@ InterpreterSystemQuery::ReplicaAndZK InterpreterSystemQuery::checkTablesAndSwapI
     return {replica_name, status.zookeeper_path};
 }
 
-void InterpreterSystemQuery::restoreReplica()
+void InterpreterSystemQuery::restoreReplica(ContextPtr system_context)
 {
     /**
      * This query should be:
@@ -552,11 +552,7 @@ void InterpreterSystemQuery::restoreReplica()
         if (!replicas_present.empty()) // at least one table has valid metadata in zk
         {
             LOG_DEBUG(log, "At least one replica is present, restoring state from it");
-
-            executeQuery(fmt::format("DETACH TABLE IF EXISTS {0}.{1}", db_name, old_table_name), getContext(), true);
-
-            // Attach will restore the replica's paths in ZK.
-            executeQuery(fmt::format("ATTACH TABLE IF NOT EXISTS {0}.{1}", db_name, old_table_name), getContext(), true);
+            tryRestartReplica(table_id, system_context); // Runs table attach which will auto restore the ZK metadata.
             return;
         }
 
