@@ -312,8 +312,6 @@ function run_tests
         01533_collate_in_nullable
         01542_collate_in_array
         01543_collate_in_tuple
-        01798_uniq_theta_sketch
-        01799_long_uniq_theta_sketch
         _orc_
         arrow
         avro
