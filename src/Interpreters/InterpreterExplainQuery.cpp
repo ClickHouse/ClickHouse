@@ -270,7 +270,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
             auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
             plan_array->add(std::move(plan_map));
 
-            auto format_settings = getFormatSettings(context);
+            auto format_settings = getFormatSettings(getContext());
             format_settings.json.quote_64bit_integers = false;
 
             JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
