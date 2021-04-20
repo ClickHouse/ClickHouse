@@ -554,6 +554,8 @@ void InterpreterSystemQuery::restoreReplica()
             LOG_DEBUG(log, "At least one replica is present, restoring state from it");
 
             executeQuery(fmt::format("DETACH TABLE IF EXISTS {0}.{1}", db_name, old_table_name), getContext(), true);
+
+            // Attach will restore the replica's paths in ZK.
             executeQuery(fmt::format("ATTACH TABLE IF NOT EXISTS {0}.{1}", db_name, old_table_name), getContext(), true);
             return;
         }

@@ -365,9 +365,11 @@ private:
       */
     bool createTableIfNotExists(const StorageMetadataPtr & metadata_snapshot);
 
-    /** Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
-      */
-    void createReplica(const StorageMetadataPtr & metadata_snapshot);
+    /**
+     * Creates a replica in ZooKeeper and adds to the queue all that it takes to catch up with the rest of the replicas.
+     * Second flag needed for internal use.
+     */
+    void createReplica(const StorageMetadataPtr & metadata_snapshot, bool always_mark_as_lost = false);
 
     /** Create nodes in the ZK, which must always be, but which might not exist when older versions of the server are running.
       */

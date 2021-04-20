@@ -345,9 +345,21 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     if (attach && !current_zookeeper->exists(zookeeper_path + "/metadata"))
     {
-        LOG_WARNING(log, "No metadata in ZooKeeper: table will be in readonly mode.");
+        LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will be in readonly mode.", zookeeper_path);
         is_readonly = true;
         has_metadata_in_zookeeper = false;
+        return;
+    }
+
+    /// May it be ZK lost not the whole root, so the upper check passed, but only the /replicas/replica
+    /// folder.
+    if (attach && !current_zookeeper->exists(replica_path))
+    {
+        LOG_WARNING(log, "No metadata in ZooKeeper for {}, will try to restore", replica_path);
+
+        createReplica(getInMemoryMetadataPtr(), true);
+        cloneReplicaIfNeeded(current_zookeeper);
+
         return;
     }
 
@@ -405,20 +417,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         if (!replica_metadata_exists || replica_metadata.empty())
         {
-            /// Either the table version is old or we lost the replica metadata.
-            /// May it be the ZK lost not the whole root, so the upper checks passed, but only the /replicas/replica
-            /// folder.
-            if (!current_zookeeper->exists(replica_path))
-            {
-                LOG_WARNING(log, "No metadata in ZooKeeper: table will be in readonly mode.");
-                is_readonly = true;
-                return;
-            }
-
             /// We have to check shared node granularity before we create ours.
             other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+
             ReplicatedMergeTreeTableMetadata current_metadata(*this, metadata_snapshot);
-            current_zookeeper->createOrUpdate(replica_path + "/metadata", current_metadata.toString(), zkutil::CreateMode::Persistent);
+
+            current_zookeeper->createOrUpdate(replica_path + "/metadata", current_metadata.toString(),
+                zkutil::CreateMode::Persistent);
         }
 
         checkTableStructure(replica_path, metadata_snapshot);
@@ -708,7 +713,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
                     "or because of logical error", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
 }
 
-void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot)
+void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metadata_snapshot, bool always_mark_as_lost)
 {
     auto zookeeper = getZooKeeper();
 
@@ -722,12 +727,13 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
         String replicas_value;
 
         if (!zookeeper->tryGet(zookeeper_path + "/replicas", replicas_value, &replicas_stat))
-            throw Exception(fmt::format("Cannot create a replica of the table {}, because the last replica of the table was dropped right now",
-                zookeeper_path), ErrorCodes::ALL_REPLICAS_LOST);
+            throw Exception(ErrorCodes::ALL_REPLICAS_LOST,
+                "Cannot create a replica of the table {}, because the last replica of the table was dropped right now",
+                zookeeper_path);
 
         /// It is not the first replica, we will mark it as "lost", to immediately repair (clone) from existing replica.
         /// By the way, it's possible that the replica will be first, if all previous replicas were removed concurrently.
-        String is_lost_value = replicas_stat.numChildren ? "1" : "0";
+        const String is_lost_value = (always_mark_as_lost || replicas_stat.numChildren) ? "1" : "0";
 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "",
@@ -756,21 +762,18 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
 
         Coordination::Responses responses;
         code = zookeeper->tryMulti(ops, responses);
-        if (code == Coordination::Error::ZNODEEXISTS)
+
+        switch(code)
         {
-            throw Exception("Replica " + replica_path + " already exists.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
-        }
-        else if (code == Coordination::Error::ZBADVERSION)
-        {
-            LOG_ERROR(log, "Retrying createReplica(), because some other replicas were created at the same time");
-        }
-        else if (code == Coordination::Error::ZNONODE)
-        {
-            throw Exception("Table " + zookeeper_path + " was suddenly removed.", ErrorCodes::ALL_REPLICAS_LOST);
-        }
-        else
-        {
-            zkutil::KeeperMultiException::check(code, ops, responses);
+            case Coordination::Error::ZNODEEXISTS:
+                throw Exception(ErrorCodes::REPLICA_IS_ALREADY_EXIST, "Replica {} already exists", replica_path);
+            case Coordination::Error::ZBADVERSION:
+                LOG_ERROR(log, "Retrying createReplica(), because some other replicas were created at the same time");
+                break;
+            case Coordination::Error::ZNONODE:
+                throw Exception(ErrorCodes::ALL_REPLICAS_LOST, "Table {} was suddenly removed", zookeeper_path);
+            default:
+                zkutil::KeeperMultiException::check(code, ops, responses);
         }
     } while (code == Coordination::Error::ZBADVERSION);
 }
