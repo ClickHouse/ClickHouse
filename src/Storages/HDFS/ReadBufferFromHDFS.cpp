@@ -8,6 +8,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
@@ -21,8 +22,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     /// HDFS create/open functions are not thread safe
     static std::mutex hdfs_init_mutex;
 
-    std::string hdfs_uri;
-    std::string hdfs_file_path;
+    String hdfs_uri;
+    String hdfs_file_path;
+
     hdfsFile fin;
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
@@ -66,16 +68,14 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 
 std::mutex ReadBufferFromHDFS::ReadBufferFromHDFSImpl::hdfs_init_mutex;
 
-ReadBufferFromHDFS::ReadBufferFromHDFS(const std::string & hdfs_name_,
-    const Poco::Util::AbstractConfiguration & config_,
-    size_t buf_size_)
+ReadBufferFromHDFS::ReadBufferFromHDFS(
+        const String & hdfs_uri_,
+        const String & hdfs_file_path_,
+        const Poco::Util::AbstractConfiguration & config_,
+        size_t buf_size_)
     : BufferWithOwnMemory<ReadBuffer>(buf_size_)
+    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_))
 {
-    const size_t begin_of_path = hdfs_name_.find('/', hdfs_name_.find("//") + 2);
-    const String hdfs_file_path = hdfs_name_.substr(begin_of_path);
-    const String hdfs_uri = hdfs_name_.substr(0, begin_of_path) + "/";
-
-    impl = std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri, hdfs_file_path, config_);
 }
 
 
