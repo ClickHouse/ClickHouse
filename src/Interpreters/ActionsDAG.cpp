@@ -63,7 +63,7 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
     if (function_base)
         map.add("Function", function_base->getName());
     else if (function_builder)
-        map.add("Function", function_base->getName());
+        map.add("Function", function_builder->getName());
 
     if (type == ActionType::FUNCTION)
         map.add("Compiled", is_function_compiled);
