@@ -367,6 +367,9 @@ function run_tests
         # JSON functions
         01666_blns
 
+        # Requires postgresql-client
+        01802_test_postgresql_protocol_with_row_policy
+
         # Depends on AWS
         01801_s3_cluster
     )

@@ -44,7 +44,7 @@ std::map<String, NamesAndTypesList> fetchTablesColumnsList(
         mysqlxx::PoolWithFailover & pool,
         const String & database_name,
         const std::vector<String> & tables_name,
-        bool external_table_functions_use_nulls,
+        const Settings & settings,
         MultiEnum<MySQLDataTypesSupport> type_support)
 {
     std::map<String, NamesAndTypesList> tables_and_columns;
@@ -78,7 +78,8 @@ std::map<String, NamesAndTypesList> fetchTablesColumnsList(
              " WHERE TABLE_SCHEMA = " << quote << database_name
           << " AND TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
 
-    MySQLBlockInputStream result(pool.get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
+    StreamSettings mysql_input_stream_settings(settings);
+    MySQLBlockInputStream result(pool.get(), query.str(), tables_columns_sample_block, mysql_input_stream_settings);
     while (Block block = result.read())
     {
         const auto & table_name_col = *block.getByPosition(0).column;
@@ -99,7 +100,7 @@ std::map<String, NamesAndTypesList> fetchTablesColumnsList(
                     convertMySQLDataType(
                             type_support,
                             column_type_col[i].safeGet<String>(),
-                            external_table_functions_use_nulls && is_nullable_col[i].safeGet<UInt64>(),
+                            settings.external_table_functions_use_nulls && is_nullable_col[i].safeGet<UInt64>(),
                             is_unsigned_col[i].safeGet<UInt64>(),
                             char_max_length_col[i].safeGet<UInt64>(),
                             precision_col[i].safeGet<UInt64>(),
