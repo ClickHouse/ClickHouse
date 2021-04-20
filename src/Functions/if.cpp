@@ -15,6 +15,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Functions/IFunction.h>
@@ -24,6 +25,8 @@
 #include <Functions/FunctionIfBase.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/castColumn.h>
+
+#include <Common/MasksOperation.h>
 
 
 namespace DB
@@ -897,6 +900,7 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool isShortCircuit() const override { return true; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
@@ -916,8 +920,19 @@ public:
         return getLeastSupertype({arguments[1], arguments[2]});
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnsWithTypeAndName checkForLazyArgumentsExecution(const ColumnsWithTypeAndName & args) const
     {
+        ColumnsWithTypeAndName executed_arguments;
+        IColumn::Filter mask = getMaskFromColumn(args[0].column);
+        executed_arguments.push_back(args[0]);
+        executed_arguments.push_back(maskedExecute(args[1], mask));
+        executed_arguments.push_back(maskedExecute(args[2], reverseMask(mask)));
+        return executed_arguments;
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        ColumnsWithTypeAndName arguments = checkForLazyArgumentsExecution(args);
         ColumnPtr res;
         if (   (res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count))
             || (res = executeForNullThenElse(arguments, result_type, input_rows_count))

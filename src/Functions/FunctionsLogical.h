@@ -29,6 +29,11 @@
   * Functions AND and OR provide their own special implementations for ternary logic
   */
 
+struct NameAnd { static constexpr auto name = "and"; };
+struct NameOr { static constexpr auto name = "or"; };
+struct NameXor { static constexpr auto name = "xor"; };
+struct NameNot { static constexpr auto name = "not"; };
+
 namespace DB
 {
 namespace FunctionsLogicalDetail
@@ -148,6 +153,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isShortCircuit() const override { return name == NameAnd::name || name == NameOr::name; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
@@ -198,6 +204,9 @@ public:
         return phi;
     }
 #endif
+
+private:
+    ColumnsWithTypeAndName checkForLazyArgumentsExecution(const ColumnsWithTypeAndName & args) const;
 };
 
 
@@ -234,11 +243,6 @@ public:
 };
 
 }
-
-struct NameAnd { static constexpr auto name = "and"; };
-struct NameOr { static constexpr auto name = "or"; };
-struct NameXor { static constexpr auto name = "xor"; };
-struct NameNot { static constexpr auto name = "not"; };
 
 using FunctionAnd = FunctionsLogicalDetail::FunctionAnyArityLogical<FunctionsLogicalDetail::AndImpl, NameAnd>;
 using FunctionOr = FunctionsLogicalDetail::FunctionAnyArityLogical<FunctionsLogicalDetail::OrImpl, NameOr>;

@@ -59,6 +59,7 @@ public:
         /// Function arrayJoin. Specially separated because it changes the number of rows.
         ARRAY_JOIN,
         FUNCTION,
+        COLUMN_FUNCTION,
     };
 
     static const char * typeToString(ActionType type);
@@ -135,7 +136,8 @@ public:
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
-            std::string result_name);
+            std::string result_name,
+            bool use_short_circuit_function_evaluation = false);
 
     /// Index can contain any column returned from DAG.
     /// You may manually change it if needed.
@@ -274,6 +276,8 @@ private:
     Node & addNode(Node node);
 
     void removeUnusedActions(bool allow_remove_inputs = true);
+
+    void rewriteShortCircuitArguments(const NodeRawConstPtrs & children, size_t start = 0);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression);

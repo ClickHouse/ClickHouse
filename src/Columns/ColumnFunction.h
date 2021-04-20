@@ -51,7 +51,7 @@ public:
     size_t allocatedBytes() const override;
 
     void appendArguments(const ColumnsWithTypeAndName & columns);
-    ColumnWithTypeAndName reduce() const;
+    ColumnWithTypeAndName reduce(bool reduce_arguments = false) const;
 
     Field operator[](size_t) const override
     {

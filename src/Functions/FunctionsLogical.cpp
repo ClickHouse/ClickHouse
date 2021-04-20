@@ -14,6 +14,8 @@
 
 #include <algorithm>
 
+#include <Common/MasksOperation.h>
+
 
 namespace DB
 {
@@ -508,9 +510,31 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
 }
 
 template <typename Impl, typename Name>
-ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+ColumnsWithTypeAndName FunctionAnyArityLogical<Impl, Name>::checkForLazyArgumentsExecution(const ColumnsWithTypeAndName & args) const
 {
+    if (Name::name != NameAnd::name && Name::name != NameOr::name)
+        return args;
+
+    ColumnsWithTypeAndName executed_arguments;
+    Field default_value = Name::name == NameAnd::name ? 0 : 1;
+    bool reverse = Name::name == NameAnd::name ? false : true;
+    UInt8 null_value = Name::name == NameAnd::name ? 1 : 0;
+    executed_arguments.push_back(args[0]);
+    for (size_t i = 1; i < args.size(); ++i)
+    {
+        const IColumn::Filter & mask = getMaskFromColumn(executed_arguments[i - 1].column, reverse, nullptr, null_value);
+        auto column = maskedExecute(args[i], mask, &default_value);
+        executed_arguments.push_back(std::move(column));
+    }
+
+    return executed_arguments;
+}
+
+template <typename Impl, typename Name>
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    ColumnsWithTypeAndName arguments = checkForLazyArgumentsExecution(args);
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
         args_in.push_back(arg_index.column.get());

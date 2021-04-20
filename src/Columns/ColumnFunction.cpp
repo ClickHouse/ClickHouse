@@ -187,7 +187,7 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
     captured_columns.push_back(column);
 }
 
-ColumnWithTypeAndName ColumnFunction::reduce() const
+ColumnWithTypeAndName ColumnFunction::reduce(bool reduce_arguments) const
 {
     auto args = function->getArgumentTypes().size();
     auto captured = captured_columns.size();
@@ -196,7 +196,21 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         throw Exception("Cannot call function " + function->getName() + " because is has " + toString(args) +
                         "arguments but " + toString(captured) + " columns were captured.", ErrorCodes::LOGICAL_ERROR);
 
-    auto columns = captured_columns;
+    ColumnsWithTypeAndName columns;
+    if (reduce_arguments)
+    {
+        columns.reserve(captured_columns.size());
+        for (const auto & col : captured_columns)
+        {
+            if (const auto * column_function = typeid_cast<const ColumnFunction *>(col.column.get()))
+                columns.push_back(column_function->reduce(true));
+            else
+                columns.push_back(col);
+        }
+    }
+    else
+        columns = captured_columns;
+
     ColumnWithTypeAndName res{nullptr, function->getResultType(), ""};
 
     res.column = function->execute(columns, res.type, size_);
