@@ -29,7 +29,7 @@ toc_title: "Комбинаторы агрегатных функций"
 
 ## -SimpleState {#agg-functions-combinator-simplestate}
 
-В случае применения этого комбинатора, агрегатная функция возвращает тоже значение, но типа [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md). Текущее значение функции может храниться в таблице для последующей работы с движками таблиц семейства [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md).
+При использовании этого комбинатора агрегатная функция возвращает то же значение, но типа [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md). Текущее значение функции может храниться в таблице для последующей работы с таблицами семейства [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md).
 
 **Синтаксис**
 
@@ -281,4 +281,3 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
-
