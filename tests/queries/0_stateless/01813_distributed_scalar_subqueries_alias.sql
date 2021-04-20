@@ -2,7 +2,7 @@ DROP TABLE IF EXISTS data;
 CREATE TABLE data (a Int64, b Int64) ENGINE = TinyLog();
 
 DROP TABLE IF EXISTS data_distributed;
-CREATE TABLE data_distributed (a Int64, b Int64) ENGINE = Distributed(test_shard_localhost, '', data);
+CREATE TABLE data_distributed (a Int64, b Int64) ENGINE = Distributed(test_shard_localhost, currentDatabase(), 'data');
 
 INSERT INTO data VALUES (0, 0);
 
