@@ -251,7 +251,7 @@ static Pipes removeEmptyPipes(Pipes pipes)
     return res;
 }
 
-/// Calculate comon header for pipes.
+/// Calculate common header for pipes.
 /// This function is needed only to remove ColumnConst from common header in case if some columns are const, and some not.
 /// E.g. if the first header is `x, const y, const z` and the second is `const x, y, const z`, the common header will be `x, y, const z`.
 static Block getCommonHeader(const Pipes & pipes)
