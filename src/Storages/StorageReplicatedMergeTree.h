@@ -643,7 +643,7 @@ private:
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
-    void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, const Context & query_context) override;
+    void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;
     void fetchPartition(
         const ASTPtr & partition,
         const StorageMetadataPtr & metadata_snapshot,

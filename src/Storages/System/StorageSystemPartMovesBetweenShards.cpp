@@ -40,9 +40,9 @@ NamesAndTypesList StorageSystemPartMovesBetweenShards::getNamesAndTypes()
 }
 
 
-void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
+void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
-    const auto access = context.getAccess();
+    const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> replicated_tables;

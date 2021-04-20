@@ -64,12 +64,6 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << "part_checksum: " << part_checksum;
             break;
 
-        case CLONE_PART_FROM_SHARD:
-            out << "clone_part_from_shard\n"
-                << new_part_name << "\n"
-                << "source_shard: " << source_shard;
-            break;
-
         case MERGE_PARTS:
             out << "merge\n";
             for (const String & s : source_parts)

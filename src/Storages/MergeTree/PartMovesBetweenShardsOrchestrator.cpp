@@ -15,11 +15,14 @@ PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageRe
     , log(&Poco::Logger::get(logger_name))
     , entries_znode_path(zookeeper_path + "/part_moves_shard")
 {
-    task = storage.global_context.getSchedulePool().createTask(logger_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(logger_name, [this]{ run(); });
 }
 
 void PartMovesBetweenShardsOrchestrator::run()
 {
+    if (!storage.getSettings()->part_moves_between_shards_enable)
+        return;
+
     if (need_stop)
         return;
 

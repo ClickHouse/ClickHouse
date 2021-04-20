@@ -978,14 +978,14 @@ protected:
     virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) = 0;
     virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) = 0;
 
-    /// Makes sense only for replicated tables
-    virtual void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, const Context & query_context);
     virtual void fetchPartition(
         const ASTPtr & partition,
         const StorageMetadataPtr & metadata_snapshot,
         const String & from,
         bool fetch_part,
         ContextPtr query_context);
+
+    virtual void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context);
 
     void writePartLog(
         PartLogElement::Type type,

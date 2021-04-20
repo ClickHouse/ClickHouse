@@ -2921,7 +2921,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
-void MergeTreeData::movePartitionToShard(const ASTPtr & /*partition*/, bool /*move_part*/, const String & /*to*/, const Context & /*query_context*/)
+void MergeTreeData::movePartitionToShard(const ASTPtr & /*partition*/, bool /*move_part*/, const String & /*to*/, ContextPtr /*query_context*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MOVE PARTITION TO SHARD is not supported by storage {}", getName());
 }
@@ -2984,8 +2984,14 @@ Pipe MergeTreeData::alterPartition(
                     break;
 
                     case PartitionCommand::MoveDestinationType::SHARD:
+                    {
+                        if (!getSettings()->part_moves_between_shards_enable)
+                            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                            "Moving parts between shards is experimental and work in progress"
+                                            ", see part_moves_between_shards_enable setting");
                         movePartitionToShard(command.partition, command.part, command.move_destination_name, query_context);
-                        break;
+                    }
+                    break;
                 }
             }
             break;
