@@ -274,7 +274,11 @@ class ReadIndirectBufferFromS3 final : public ReadBufferFromFileBase
 {
 public:
     ReadIndirectBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, DiskS3::Metadata metadata_, UInt64 s3_max_single_read_retries_, size_t buf_size_)
+        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+        const String & bucket_,
+        DiskS3::Metadata metadata_,
+        size_t s3_max_single_read_retries_,
+        size_t buf_size_)
         : client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
         , metadata(std::move(metadata_))
@@ -375,7 +379,7 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     const String & bucket;
     DiskS3::Metadata metadata;
-    UInt64 s3_max_single_read_retries;
+    size_t s3_max_single_read_retries;
     size_t buf_size;
 
     size_t absolute_position = 0;
@@ -556,8 +560,9 @@ DiskS3::DiskS3(
     , s3_root_path(std::move(s3_root_path_))
     , metadata_path(std::move(metadata_path_))
     , client(std::move(settings.client))
-    , min_upload_part_size(settings.min_upload_part_size)
-    , max_single_part_upload_size(settings.max_single_part_upload_size)
+    , s3_max_single_read_retries(settings.s3_max_single_read_retries)
+    , s3_min_upload_part_size(settings.s3_min_upload_part_size)
+    , s3_max_single_part_upload_size(settings.s3_max_single_part_upload_size)
     , min_bytes_for_seek(settings.min_bytes_for_seek)
     , send_metadata(settings.send_metadata)
     , list_object_keys_size(settings.list_object_keys_size)
@@ -690,8 +695,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         client,
         bucket,
         metadata.s3_root_path + s3_path,
-        min_upload_part_size,
-        max_single_part_upload_size,
+        s3_min_upload_part_size,
+        s3_max_single_part_upload_size,
         std::move(object_metadata),
         buf_size);
 
@@ -900,7 +905,7 @@ void DiskS3::shutdown()
 void DiskS3::createFileOperationObject(const String & operation_name, UInt64 revision, const DiskS3::ObjectMetadata & metadata)
 {
     const String key = "operations/r" + revisionToString(revision) + "-" + operation_name;
-    WriteBufferFromS3 buffer(client, bucket, s3_root_path + key, min_upload_part_size, max_single_part_upload_size, metadata);
+    WriteBufferFromS3 buffer(client, bucket, s3_root_path + key, s3_min_upload_part_size, s3_max_single_part_upload_size, metadata);
     buffer.write('0');
     buffer.finalize();
 }
@@ -958,7 +963,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
 
 void DiskS3::saveSchemaVersion(const int & version)
 {
-    WriteBufferFromS3 buffer (client, bucket, s3_root_path + SCHEMA_VERSION_OBJECT, min_upload_part_size, max_single_part_upload_size);
+    WriteBufferFromS3 buffer (client, bucket, s3_root_path + SCHEMA_VERSION_OBJECT, s3_min_upload_part_size, s3_max_single_part_upload_size);
     writeIntText(version, buffer);
     buffer.finalize();
 }
@@ -1487,8 +1492,9 @@ void DiskS3::applyNewSettings(ContextConstPtr context)
     auto new_settings = disk_settings_getter(context->getConfigRef(), "storage_configuration.disks." + name, context);
 
     client = new_settings.client;
-    min_upload_part_size = new_settings.min_upload_part_size;
-    max_single_part_upload_size = new_settings.max_single_part_upload_size;
+    s3_max_single_read_retries = new_settings.s3_max_single_read_retries;
+    s3_min_upload_part_size = new_settings.s3_min_upload_part_size;
+    s3_max_single_part_upload_size = new_settings.s3_max_single_part_upload_size;
     min_bytes_for_seek = new_settings.min_bytes_for_seek;
     send_metadata = new_settings.send_metadata;
     list_object_keys_size = new_settings.list_object_keys_size;
@@ -1499,15 +1505,17 @@ void DiskS3::applyNewSettings(ContextConstPtr context)
 
 DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
-    size_t min_upload_part_size_,
-    size_t max_single_part_upload_size_,
+    size_t s3_max_single_read_retries_,
+    size_t s3_min_upload_part_size_,
+    size_t s3_max_single_part_upload_size_,
     size_t min_bytes_for_seek_,
     bool send_metadata_,
     int thread_pool_size_,
     int list_object_keys_size_)
     : client(client_)
-    , min_upload_part_size(min_upload_part_size_)
-    , max_single_part_upload_size(max_single_part_upload_size_)
+    , s3_max_single_read_retries(s3_max_single_read_retries_)
+    , s3_min_upload_part_size(s3_min_upload_part_size_)
+    , s3_max_single_part_upload_size(s3_max_single_part_upload_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
     , send_metadata(send_metadata_)
     , thread_pool_size(thread_pool_size_)
