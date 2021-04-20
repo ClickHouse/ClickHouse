@@ -14,6 +14,7 @@ namespace DB
 
 void ClusterCopierApp::initialize(Poco::Util::Application & self)
 {
+    std::cout << "CopierApp::initialize" << std::endl;
     is_help = config().has("help");
     if (is_help)
         return;
@@ -104,6 +105,7 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 
 void ClusterCopierApp::mainImpl()
 {
+    std::cout << "ClusterCopierApp::mainImpl()" << std::endl;
     StatusFile status_file(process_path + "/status", StatusFile::write_full_info);
     ThreadStatus thread_status;
 
@@ -134,6 +136,7 @@ void ClusterCopierApp::mainImpl()
     /// Initialize query scope just in case.
     CurrentThread::QueryScope query_scope(context);
 
+    std::cout << "Will construct copier" << std::endl;
     auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
