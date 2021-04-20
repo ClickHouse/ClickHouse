@@ -295,7 +295,7 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
             }
 
             if (!stat.condition.empty())
-                index_map->add("Condition",  stat.condition);
+                index_map->add("Condition", stat.condition);
 
             if (i)
                 index_map->add("Initial Parts", (*index_stats)[i - 1].num_parts_after);

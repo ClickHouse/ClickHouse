@@ -22,8 +22,6 @@
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <IO/Operators.h>
 
-#include <Common/JSONBuilder.h>
-
 
 namespace ProfileEvents
 {
