@@ -2530,11 +2530,11 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         auto metadata_snapshot = getInMemoryMetadataPtr();
         String source_replica_path = entry.source_shard + "/replicas/" + replica;
         ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
-        auto user_password = global_context.getInterserverCredentials();
-        String interserver_scheme = global_context.getInterserverScheme();
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(getContext());
+        auto credentials = getContext()->getInterserverCredentials();
+        String interserver_scheme = getContext()->getInterserverScheme();
 
-        auto get_part = [&, address, timeouts, user_password, interserver_scheme]()
+        auto get_part = [&, address, timeouts, credentials, interserver_scheme]()
         {
             if (interserver_scheme != address.scheme)
                 throw Exception("Interserver schemes are different: '" + interserver_scheme
@@ -2544,7 +2544,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
             return fetcher.fetchPart(
                 metadata_snapshot, entry.new_part_name, source_replica_path,
                 address.host, address.replication_port,
-                timeouts, user_password.first, user_password.second, interserver_scheme, true);
+                timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme, true);
         };
 
         part = get_part();
@@ -6517,7 +6517,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 }
 
 void StorageReplicatedMergeTree::movePartitionToShard(
-    const ASTPtr & partition, bool move_part, const String & to, const Context & /*query_context*/)
+    const ASTPtr & partition, bool move_part, const String & to, ContextPtr /*query_context*/)
 {
     /// This is a lightweight operation that only optimistically checks if it could succeed and queues tasks.
 

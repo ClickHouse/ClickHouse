@@ -1937,7 +1937,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     ContextPtr query_context,
     PartFilterCounters & counters) const
 {
-    const Settings & settings = query_context.getSettings();
+    const Settings & settings = query_context->getSettings();
 
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
