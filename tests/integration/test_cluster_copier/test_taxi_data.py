@@ -88,13 +88,16 @@ DATA_COMMANDS = [
 
 
 class Task:
-    def __init__(self, cluster, use_sample_offset):
+    def __init__(self, cluster):
         self.cluster = cluster
-        if use_sample_offset:
-            self.zk_task_path = "/clickhouse-copier/task"
-        else:
-            self.zk_task_path = "/clickhouse-copier/task"
-        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_taxi_data.xml'), 'r').read()
+        self.zk_task_path = '/clickhouse-copier/task'
+        self.container_task_file = "/task_taxi_data.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_taxi_data.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
+        
 
     def start(self):
         instance = cluster.instances['first']
@@ -137,7 +140,12 @@ class Task:
     
 
     def check(self):
-        pass
+        for instance_name, instance in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            a = instance.query("SELECT count() from dailyhistory.yellow_tripdata_staging")
+            b = instance.query("SELECT count() from monthlyhistory.yellow_tripdata_staging")
+            print(a, b)
+            assert a == b
 
 
 def execute_task(task, cmd_options):
@@ -153,8 +161,8 @@ def execute_task(task, cmd_options):
     cmd = ['/usr/bin/clickhouse', 'copier',
            '--config', '/etc/clickhouse-server/config-copier.xml',
            '--task-path', task.zk_task_path,
-           '--task-file', os.path.join(CURRENT_TEST_DIR, 'task_taxi_data.py'),
-           '--task-upload-force', ' ',
+           '--task-file', task.container_task_file,
+           '--task-upload-force', 'true',
            '--base-dir', '/var/log/clickhouse-server/copier']
     cmd += cmd_options
 
@@ -190,7 +198,7 @@ def execute_task(task, cmd_options):
 
 
 # Tests
-
+@pytest.mark.timeout(1200)
 def test1(started_cluster):
-    execute_task(Task(started_cluster, False))
+    execute_task(Task(started_cluster), [])
 
