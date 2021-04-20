@@ -1,10 +1,7 @@
 #pragma once
 
-#include <Disks/DiskFactory.h>
 #include <Disks/IDiskRemote.h>
-#include <Poco/DirectoryIterator.h>
 #include <Storages/HDFS/HDFSCommon.h>
-#include <hdfs/hdfs.h> // Y_IGNORE
 #include <Core/UUID.h>
 #include <memory>
 
@@ -44,8 +41,6 @@ public:
 
     void removeFromRemoteFS(const Metadata & metadata) override;
 
-    RemoteDiskPtr getDiskPtr() override { return std::static_pointer_cast<DiskHDFS>(shared_from_this()); }
-
 private:
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }
 
@@ -55,7 +50,5 @@ private:
 
     std::mutex copying_mutex;
 };
-
-using DiskHDFSPtr = std::shared_ptr<DiskHDFS>;
 
 }

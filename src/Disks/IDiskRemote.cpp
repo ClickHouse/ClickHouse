@@ -1,14 +1,8 @@
 #include <Disks/IDiskRemote.h>
 
 #include "Disks/DiskFactory.h"
-
-#include <random>
-#include <utility>
-#include <optional>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
-#include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -16,8 +10,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
-#include <Common/thread_local_rng.h>
-#include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
 #include <boost/algorithm/string.hpp>
 
@@ -454,7 +446,7 @@ ReservationPtr IDiskRemote::reserve(UInt64 bytes)
     if (!tryReserve(bytes))
         return {};
 
-    return std::make_unique<DiskRemoteReservation>(getDiskPtr(), bytes);
+    return std::make_unique<DiskRemoteReservation>(std::static_pointer_cast<IDiskRemote>(shared_from_this()), bytes);
 }
 
 

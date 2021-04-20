@@ -13,8 +13,6 @@
 #include <Poco/DirectoryIterator.h>
 #include <re2/re2.h>
 #include <Disks/IDiskRemote.h>
-#include <common/logger_useful.h>
-#include <utility>
 
 
 namespace DB
@@ -93,8 +91,6 @@ public:
 
     /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
-
-    RemoteDiskPtr getDiskPtr() override { return std::static_pointer_cast<IDiskRemote>(shared_from_this()); }
 
 private:
     void removeMeta(const String & path, AwsS3KeyKeeper & keys);

@@ -90,8 +90,6 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    virtual std::shared_ptr<IDiskRemote> getDiskPtr() = 0;
-
     virtual void removeFromRemoteFS(const Metadata & /* metadata */) {}
 
 protected:
