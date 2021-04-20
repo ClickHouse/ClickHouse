@@ -1213,55 +1213,69 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, boo
     }
 }
 
-void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr local_context, bool throw_if_noop)
+void StorageMergeTree::dropPart(const String & name)
 {
+    auto part = outdatePart(name, false);
+    /// Nothing to do, part was removed in some different way
+    if (!part)
+        return;
+
+    dropPartsImpl({part}, false);
+}
+
+void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr local_context)
+{
+    DataPartsVector parts_to_remove;
+
+    if (drop_part)
     {
-        MergeTreeData::DataPartsVector parts_to_remove;
-        auto metadata_snapshot = getInMemoryMetadataPtr();
+        auto part = outdatePart(partition->as<ASTLiteral &>().value.safeGet<String>(), true);
+        /// Nothing to do, part was removed in some different way
+        if (!part)
+            return;
 
-        if (drop_part)
-        {
-            auto part = outdatePart(partition->as<ASTLiteral &>().value.safeGet<String>(), throw_if_noop);
-            /// Nothing to do, part was removed in some different way
-            if (!part)
-                return;
-
-            parts_to_remove.push_back(part);
-        }
-        else
-        {
-            /// Asks to complete merges and does not allow them to start.
-            /// This protects against "revival" of data for a removed partition after completion of merge.
-            auto merge_blocker = stopMergesAndWait();
-            String partition_id = getPartitionIDFromQuery(partition, local_context);
-            parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
-
-            /// TODO should we throw an exception if parts_to_remove is empty?
-            removePartsFromWorkingSet(parts_to_remove, true);
-        }
-
-        if (detach)
-        {
-            /// If DETACH clone parts to detached/ directory
-            /// NOTE: no race with background cleanup until we hold pointers to parts
-            for (const auto & part : parts_to_remove)
-            {
-                LOG_INFO(log, "Detaching {}", part->relative_path);
-                part->makeCloneInDetached("", metadata_snapshot);
-            }
-        }
-
-        if (deduplication_log)
-        {
-            for (const auto & part : parts_to_remove)
-                deduplication_log->dropPart(part->info);
-        }
-
-        if (detach)
-            LOG_INFO(log, "Detached {} parts.", parts_to_remove.size());
-        else
-            LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
+        parts_to_remove.push_back(part);
     }
+    else
+    {
+        /// Asks to complete merges and does not allow them to start.
+        /// This protects against "revival" of data for a removed partition after completion of merge.
+        auto merge_blocker = stopMergesAndWait();
+        String partition_id = getPartitionIDFromQuery(partition, local_context);
+        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+
+        /// TODO should we throw an exception if parts_to_remove is empty?
+        removePartsFromWorkingSet(parts_to_remove, true);
+    }
+
+    dropPartsImpl(parts_to_remove, detach);
+}
+
+void StorageMergeTree::dropPartsImpl(const DataPartsVector & parts_to_remove, bool detach)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    if (detach)
+    {
+        /// If DETACH clone parts to detached/ directory
+        /// NOTE: no race with background cleanup until we hold pointers to parts
+        for (const auto & part : parts_to_remove)
+        {
+            LOG_INFO(log, "Detaching {}", part->relative_path);
+            part->makeCloneInDetached("", metadata_snapshot);
+        }
+    }
+
+    if (deduplication_log)
+    {
+        for (const auto & part : parts_to_remove)
+            deduplication_log->dropPart(part->info);
+    }
+
+    if (detach)
+        LOG_INFO(log, "Detached {} parts.", parts_to_remove.size());
+    else
+        LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
 
     clearOldPartsFromFilesystem();
 }
