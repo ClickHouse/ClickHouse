@@ -89,7 +89,7 @@
     <!-- Compatibility with PostgreSQL protocol.
          ClickHouse will pretend to be PostgreSQL for applications connecting to this port.
     -->
-    <!-- <postgresql_port>9005</postgresql_port> -->
+    <postgresql_port>9005</postgresql_port>
 
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.

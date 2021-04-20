@@ -37,7 +37,7 @@ class IXDBCBridgeHelper : public IBridgeHelper
 public:
     explicit IXDBCBridgeHelper(ContextPtr context_) : IBridgeHelper(context_) {}
 
-    virtual std::vector<std::pair<std::string, std::string>> getURLParams(const std::string & cols, UInt64 max_block_size) const = 0;
+    virtual std::vector<std::pair<std::string, std::string>> getURLParams(UInt64 max_block_size) const = 0;
 
     virtual Poco::URI getColumnsInfoURI() const = 0;
 
@@ -138,12 +138,11 @@ protected:
         return uri;
     }
 
-    URLParams getURLParams(const std::string & cols, UInt64 max_block_size) const override
+    URLParams getURLParams(UInt64 max_block_size) const override
     {
         std::vector<std::pair<std::string, std::string>> result;
 
         result.emplace_back("connection_string", connection_string); /// already validated
-        result.emplace_back("columns", cols);
         result.emplace_back("max_block_size", std::to_string(max_block_size));
 
         return result;

@@ -214,8 +214,8 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         {
             output.push(std::move(to_push_chunk));
             output.finish();
-            LOG_TRACE(log, "Aggregated. {} to {} rows (from {})", src_rows, res_rows,
-                                        formatReadableSizeWithBinarySuffix(src_bytes));
+            LOG_DEBUG(log, "Aggregated. {} to {} rows (from {})",
+                src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
             return Status::Finished;
         }
         if (input.isFinished())
