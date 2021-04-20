@@ -15,7 +15,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int CANNOT_TELL_THROUGH_FILE;
 }
 
 ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
