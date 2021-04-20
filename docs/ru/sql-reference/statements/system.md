@@ -261,7 +261,7 @@ SYSTEM START REPLICATION QUEUES [[db.]replicated_merge_tree_family_table_name]
 SYSTEM SYNC REPLICA [db.]replicated_merge_tree_family_table_name
 ```
 
-Таблица `[db.]replicated_merge_tree_family_table_name` синхронизирует команды из общего реплицированного лога в свою собственную очередь репликации. Затем запрос ждет, пока реплика не обработает все синхронизированные команды.
+После выполнения этого запроса таблица `[db.]replicated_merge_tree_family_table_name` синхронизирует команды из общего реплицированного лога в свою собственную очередь репликации. Затем запрос ждет, пока реплика не обработает все синхронизированные команды.
 
 ### RESTART REPLICA {#query_language-system-restart-replica}
 
@@ -275,4 +275,3 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 
 Реинициализация состояния Zookeeper сессий для всех `ReplicatedMergeTree` таблиц, сравнивает текущее состояние с тем что хранится в Zookeeper как источник правды и добавляет задачи Zookeeper очередь если необходимо
-
