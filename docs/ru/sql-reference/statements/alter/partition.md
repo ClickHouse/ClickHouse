@@ -89,7 +89,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 Если не инициаторная реплика, получив команду присоединения, находит кусок с правильными контрольными суммами в своей собственной папке `detached`, она присоединяет данные, не извлекая их из других реплик.
 Если нет куска с правильными контрольными суммами, данные загружаются из любой реплики, имеющей этот кусок.
 
-Вы можете разместить данные в директории `detached` на одной реплике и с помощью запроса `ALTER ... ATTACH` добавить их в таблицу на всех репликах.
+Вы можете поместить данные в директорию `detached` на одной реплике и с помощью запроса `ALTER ... ATTACH` добавить их в таблицу на всех репликах.
 
 ## ATTACH PARTITION FROM {#alter_attach-partition-from}
 
@@ -310,4 +310,3 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 `IN PARTITION` указывает на партицию, для которой применяются выражения [UPDATE](../../../sql-reference/statements/alter/update.md#alter-table-update-statements) или [DELETE](../../../sql-reference/statements/alter/delete.md#alter-mutations) в результате запроса `ALTER TABLE`. Новые куски создаются только в указанной партиции. Таким образом, `IN PARTITION` помогает снизить нагрузку, когда таблица разбита на множество партиций, а вам нужно обновить данные лишь точечно.
 
 Примеры запросов `ALTER ... PARTITION` можно посмотреть в тестах: [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) и [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
-
