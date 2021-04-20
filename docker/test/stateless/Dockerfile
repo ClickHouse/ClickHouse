@@ -28,7 +28,8 @@ RUN apt-get update -y \
             tree \
             unixodbc \
             wget \
-            mysql-client=5.7*
+            mysql-client=5.7* \
+            postgresql-client
 
 RUN pip3 install numpy scipy pandas
 
