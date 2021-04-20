@@ -384,13 +384,13 @@ private:
 };
 
 /// Stores data in S3 and adds the object key (S3 path) and object size to metadata file on local FS.
-class WriteIndirectBufferFromS3 final : public WriteBufferFromFileDecorator<WriteBufferFromS3>
+class WriteIndirectBufferFromS3 final : public WriteBufferFromFileDecorator
 {
 public:
     WriteIndirectBufferFromS3(
         std::unique_ptr<WriteBufferFromS3> impl_,
         DiskS3::Metadata metadata_,
-        const String & s3_path_)
+        String & s3_path_)
         : WriteBufferFromFileDecorator(std::move(impl_))
         , metadata(std::move(metadata_))
         , s3_path(s3_path_)
@@ -695,7 +695,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         std::move(object_metadata),
         buf_size);
 
-    return std::make_unique<WriteIndirectBufferFromS3>(std::move(s3_buffer), std::move(metadata), std::move(s3_path));
+    return std::make_unique<WriteIndirectBufferFromS3>(std::move(s3_buffer), std::move(metadata), s3_path);
 }
 
 void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
