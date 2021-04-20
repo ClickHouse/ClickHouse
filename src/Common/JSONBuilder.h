@@ -46,7 +46,7 @@ class JSONNumber : public IItem
 public:
     explicit JSONNumber(T value_) : value(value_)
     {
-        static_assert(std::is_arithmetic_v<T>, "JSONNumber support only numberic types");
+        static_assert(std::is_arithmetic_v<T>, "JSONNumber support only numeric types");
     }
 
     void format(const FormatSettings & settings, FormatContext & context) override
