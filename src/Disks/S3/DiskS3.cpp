@@ -7,11 +7,13 @@
 #include <optional>
 #include <utility>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
@@ -235,6 +237,28 @@ struct DiskS3::Metadata
     }
 };
 
+DiskS3::Metadata DiskS3::readOrCreateMetaForWriting(const String & path, WriteMode mode)
+{
+    bool exist = exists(path);
+    if (exist)
+    {
+        auto metadata = readMeta(path);
+        if (metadata.read_only)
+            throw Exception("File is read-only: " + path, ErrorCodes::PATH_ACCESS_DENIED);
+
+        if (mode == WriteMode::Rewrite)
+            removeFile(path); /// Remove for re-write.
+        else
+            return metadata;
+    }
+
+    auto metadata = createMeta(path);
+    /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
+    metadata.save();
+
+    return metadata;
+}
+
 DiskS3::Metadata DiskS3::readMeta(const String & path) const
 {
     return Metadata(s3_root_path, metadata_path, path);
@@ -360,50 +384,17 @@ private:
 };
 
 /// Stores data in S3 and adds the object key (S3 path) and object size to metadata file on local FS.
-class WriteIndirectBufferFromS3 final : public WriteBufferFromFileBase
+class WriteIndirectBufferFromS3 final : public WriteBufferFromFileDecorator<WriteBufferFromS3>
 {
 public:
     WriteIndirectBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> & client_ptr_,
-        const String & bucket_,
+        std::unique_ptr<WriteBufferFromS3> impl_,
         DiskS3::Metadata metadata_,
-        const String & s3_path_,
-        std::optional<DiskS3::ObjectMetadata> object_metadata_,
-        size_t min_upload_part_size,
-        size_t max_single_part_upload_size,
-        size_t buf_size_)
-        : WriteBufferFromFileBase(buf_size_, nullptr, 0)
-        , impl(WriteBufferFromS3(client_ptr_, bucket_, metadata_.s3_root_path + s3_path_, min_upload_part_size, max_single_part_upload_size,std::move(object_metadata_), buf_size_))
+        const String & s3_path_)
+        : WriteBufferFromFileDecorator(std::move(impl_))
         , metadata(std::move(metadata_))
         , s3_path(s3_path_)
-    {
-    }
-
-    ~WriteIndirectBufferFromS3() override
-    {
-        try
-        {
-            finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-
-    void finalize() override
-    {
-        if (finalized)
-            return;
-
-        next();
-        impl.finalize();
-
-        metadata.addObject(s3_path, count());
-        metadata.save();
-
-        finalized = true;
-    }
+    { }
 
     void sync() override
     {
@@ -414,20 +405,11 @@ public:
     std::string getFileName() const override { return metadata.metadata_file_path; }
 
 private:
-    void nextImpl() override
-    {
-        /// Transfer current working buffer to WriteBufferFromS3.
-        impl.swap(*this);
-
-        /// Write actual data to S3.
-        impl.next();
-
-        /// Return back working buffer.
-        impl.swap(*this);
+    void finalizeImpl() override {
+        metadata.addObject(s3_path, count());
+        metadata.save();
     }
 
-    WriteBufferFromS3 impl;
-    bool finalized = false;
     DiskS3::Metadata metadata;
     String s3_path;
 };
@@ -530,7 +512,6 @@ public:
     std::future<void> execute(std::function<void()> task) override
     {
         auto promise = std::make_shared<std::promise<void>>();
-
         pool.scheduleOrThrowOnError(
             [promise, task]()
             {
@@ -553,6 +534,10 @@ public:
         return promise->get_future();
     }
 
+    void setMaxThreads(size_t threads)
+    {
+        pool.setMaxThreads(threads);
+    }
 private:
     ThreadPool pool;
 };
@@ -560,32 +545,23 @@ private:
 
 DiskS3::DiskS3(
     String name_,
-    std::shared_ptr<Aws::S3::S3Client> client_,
-    std::shared_ptr<S3::ProxyConfiguration> proxy_configuration_,
     String bucket_,
     String s3_root_path_,
     String metadata_path_,
-    UInt64 s3_max_single_read_retries_,
-    size_t min_upload_part_size_,
-    size_t max_single_part_upload_size_,
-    size_t min_bytes_for_seek_,
-    bool send_metadata_,
-    int thread_pool_size_,
-    int list_object_keys_size_)
-    : IDisk(std::make_unique<AsyncExecutor>(thread_pool_size_))
+    DiskS3Settings settings,
+    GetDiskSettings settings_getter)
+    : IDisk(std::make_unique<AsyncExecutor>(settings.thread_pool_size))
     , name(std::move(name_))
-    , client(std::move(client_))
-    , proxy_configuration(std::move(proxy_configuration_))
     , bucket(std::move(bucket_))
     , s3_root_path(std::move(s3_root_path_))
     , metadata_path(std::move(metadata_path_))
-    , s3_max_single_read_retries(s3_max_single_read_retries_)
-    , min_upload_part_size(min_upload_part_size_)
-    , max_single_part_upload_size(max_single_part_upload_size_)
-    , min_bytes_for_seek(min_bytes_for_seek_)
-    , send_metadata(send_metadata_)
-    , revision_counter(0)
-    , list_object_keys_size(list_object_keys_size_)
+    , client(std::move(settings.client))
+    , min_upload_part_size(settings.min_upload_part_size)
+    , max_single_part_upload_size(settings.max_single_part_upload_size)
+    , min_bytes_for_seek(settings.min_bytes_for_seek)
+    , send_metadata(settings.send_metadata)
+    , list_object_keys_size(settings.list_object_keys_size)
+    , disk_settings_getter(settings_getter)
 {
 }
 
@@ -692,9 +668,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
 
 std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
-    bool exist = exists(path);
-    if (exist && readMeta(path).read_only)
-        throw Exception("File is read-only: " + path, ErrorCodes::PATH_ACCESS_DENIED);
+    auto metadata = readOrCreateMetaForWriting(path, mode);
 
     /// Path to store new S3 object.
     auto s3_path = getRandomName();
@@ -709,31 +683,19 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         s3_path = "r" + revisionToString(revision) + "-file-" + s3_path;
     }
 
-    if (!exist || mode == WriteMode::Rewrite)
-    {
-        /// If metadata file exists - remove and create new.
-        if (exist)
-            removeFile(path);
+    LOG_DEBUG(log, "{} to file by path: {}. S3 path: {}",
+              mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_path + path), s3_root_path + s3_path);
 
-        auto metadata = createMeta(path);
-        /// Save empty metadata to disk to have ability to get file size while buffer is not finalized.
-        metadata.save();
+    auto s3_buffer = std::make_unique<WriteBufferFromS3>(
+        client,
+        bucket,
+        metadata.s3_root_path + s3_path,
+        min_upload_part_size,
+        max_single_part_upload_size,
+        std::move(object_metadata),
+        buf_size);
 
-        LOG_DEBUG(log, "Write to file by path: {}. New S3 path: {}", backQuote(metadata_path + path), s3_root_path + s3_path);
-
-        return std::make_unique<WriteIndirectBufferFromS3>(
-            client, bucket, metadata, s3_path, object_metadata, min_upload_part_size, max_single_part_upload_size, buf_size);
-    }
-    else
-    {
-        auto metadata = readMeta(path);
-
-        LOG_DEBUG(log, "Append to file by path: {}. New S3 path: {}. Existing S3 objects: {}.",
-            backQuote(metadata_path + path), s3_root_path + s3_path, metadata.s3_objects.size());
-
-        return std::make_unique<WriteIndirectBufferFromS3>(
-            client, bucket, metadata, s3_path, object_metadata, min_upload_part_size, max_single_part_upload_size, buf_size);
-    }
+    return std::make_unique<WriteIndirectBufferFromS3>(std::move(s3_buffer), std::move(metadata), std::move(s3_path));
 }
 
 void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
@@ -1518,6 +1480,39 @@ void DiskS3::onFreeze(const String & path)
     WriteBufferFromFile revision_file_buf(metadata_path + path + "revision.txt", 32);
     writeIntText(revision_counter.load(), revision_file_buf);
     revision_file_buf.finalize();
+}
+
+void DiskS3::applyNewSettings(ContextConstPtr context)
+{
+    auto new_settings = disk_settings_getter(context->getConfigRef(), "storage_configuration.disks." + name, context);
+
+    client = new_settings.client;
+    min_upload_part_size = new_settings.min_upload_part_size;
+    max_single_part_upload_size = new_settings.max_single_part_upload_size;
+    min_bytes_for_seek = new_settings.min_bytes_for_seek;
+    send_metadata = new_settings.send_metadata;
+    list_object_keys_size = new_settings.list_object_keys_size;
+
+    if (AsyncExecutor * executor = dynamic_cast<AsyncExecutor*>(&getExecutor()))
+        executor->setMaxThreads(new_settings.thread_pool_size);
+}
+
+DiskS3Settings::DiskS3Settings(
+    const std::shared_ptr<Aws::S3::S3Client> & client_,
+    size_t min_upload_part_size_,
+    size_t max_single_part_upload_size_,
+    size_t min_bytes_for_seek_,
+    bool send_metadata_,
+    int thread_pool_size_,
+    int list_object_keys_size_)
+    : client(client_)
+    , min_upload_part_size(min_upload_part_size_)
+    , max_single_part_upload_size(max_single_part_upload_size_)
+    , min_bytes_for_seek(min_bytes_for_seek_)
+    , send_metadata(send_metadata_)
+    , thread_pool_size(thread_pool_size_)
+    , list_object_keys_size(list_object_keys_size_)
+{
 }
 
 }

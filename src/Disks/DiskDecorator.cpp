@@ -196,4 +196,19 @@ void DiskDecorator::onFreeze(const String & path)
     delegate->onFreeze(path);
 }
 
+void DiskDecorator::shutdown()
+{
+    delegate->shutdown();
+}
+
+void DiskDecorator::startup()
+{
+    delegate->startup();
+}
+
+void DiskDecorator::applyNewSettings(ContextConstPtr context)
+{
+    delegate->applyNewSettings(context);
+}
+
 }

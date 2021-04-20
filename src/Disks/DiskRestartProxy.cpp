@@ -1,7 +1,37 @@
 #include "DiskRestartProxy.h"
 
+#include <IO/ReadBufferFromFileDecorator.h>
+#include <IO/WriteBufferFromFileDecorator.h>
+
 namespace DB
 {
+
+/// Holds restart read lock till finalize.
+class RestartAwareReadBuffer : ReadBufferFromFileDecorator
+{
+public:
+    RestartAwareReadBuffer(const DiskRestartProxy & disk, std::unique_ptr<ReadBufferFromFileBase> impl_)
+        : ReadBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
+
+private:
+    ReadLock lock;
+};
+
+/// Holds restart write lock till finalize.
+class RestartAwareWriteBuffer : WriteBufferFromFileDecorator
+{
+public:
+    RestartAwareWriteBuffer(const DiskRestartProxy & disk, std::unique_ptr<WriteBuffer> impl_)
+        : WriteBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
+
+private:
+    void finalizeImpl() override
+    {
+        lock.unlock();
+    }
+
+    ReadLock lock;
+};
 
 DiskRestartProxy::DiskRestartProxy(DiskPtr & delegate_)
     : DiskDecorator(delegate_) { }
@@ -9,7 +39,13 @@ DiskRestartProxy::DiskRestartProxy(DiskPtr & delegate_)
 ReservationPtr DiskRestartProxy::reserve(UInt64 bytes)
 {
     ReadLock lock (mutex);
-    return DiskDecorator::reserve(bytes);
+    auto ptr = DiskDecorator::reserve(bytes);
+    if (ptr)
+    {
+        auto disk_ptr = std::static_pointer_cast<DiskRestartProxy>(shared_from_this());
+        return std::make_unique<ReservationDelegate>(std::move(ptr), disk_ptr);
+    }
+    return ptr;
 }
 
 const String & DiskRestartProxy::getPath() const
@@ -23,56 +59,67 @@ UInt64 DiskRestartProxy::getTotalSpace() const
     ReadLock lock (mutex);
     return DiskDecorator::getTotalSpace();
 }
+
 UInt64 DiskRestartProxy::getAvailableSpace() const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getAvailableSpace();
 }
+
 UInt64 DiskRestartProxy::getUnreservedSpace() const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getUnreservedSpace();
 }
+
 UInt64 DiskRestartProxy::getKeepingFreeSpace() const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getKeepingFreeSpace();
 }
+
 bool DiskRestartProxy::exists(const String & path) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::exists(path);
 }
+
 bool DiskRestartProxy::isFile(const String & path) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::isFile(path);
 }
+
 bool DiskRestartProxy::isDirectory(const String & path) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::isDirectory(path);
 }
+
 size_t DiskRestartProxy::getFileSize(const String & path) const
 {
     ReadLock lock (mutex);
     return DiskDecorator::getFileSize(path);
 }
+
 void DiskRestartProxy::createDirectory(const String & path)
 {
     ReadLock lock (mutex);
     DiskDecorator::createDirectory(path);
 }
+
 void DiskRestartProxy::createDirectories(const String & path)
 {
     ReadLock lock (mutex);
     DiskDecorator::createDirectories(path);
 }
+
 void DiskRestartProxy::clearDirectory(const String & path)
 {
     ReadLock lock (mutex);
     DiskDecorator::clearDirectory(path);
 }
+
 void DiskRestartProxy::moveDirectory(const String & from_path, const String & to_path)
 {
     ReadLock lock (mutex);
@@ -120,13 +167,15 @@ std::unique_ptr<ReadBufferFromFileBase> DiskRestartProxy::readFile(
     const
 {
     ReadLock lock (mutex);
-    return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+    auto delegate = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+    return std::make_unique<RestartAwareReadBuffer>(*this, std::move(delegate));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskRestartProxy::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     ReadLock lock (mutex);
-    return DiskDecorator::writeFile(path, buf_size, mode);
+    auto delegate = DiskDecorator::writeFile(path, buf_size, mode);
+    return std::make_unique<RestartAwareWriteBuffer>(*this, std::move(delegate));
 }
 
 void DiskRestartProxy::removeFile(const String & path)
@@ -218,7 +267,10 @@ void DiskRestartProxy::restart(ContextConstPtr context)
 
     lock.lock();
 
-    LOG_INFO(log, "Restart disk {}", DiskDecorator::getName());
+    LOG_INFO(log, "Restarting disk {}", DiskDecorator::getName());
+
+    DiskDecorator::applyNewSettings(context);
+    DiskDecorator::startup();
 }
 
 }
