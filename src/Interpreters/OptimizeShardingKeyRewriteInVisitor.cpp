@@ -4,7 +4,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 #include <DataTypes/FieldToDataType.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 
 namespace
@@ -14,7 +13,7 @@ using namespace DB;
 
 Field executeFunctionOnField(
     const Field & field, const std::string & name,
-    const ExpressionActionsPtr & sharding_expr,
+    const ExpressionActionsPtr & expr,
     const std::string & sharding_key_column_name)
 {
     DataTypePtr type = applyVisitor(FieldToDataType{}, field);
@@ -26,23 +25,17 @@ Field executeFunctionOnField(
 
     Block block{column};
     size_t num_rows = 1;
-    sharding_expr->execute(block, num_rows);
+    expr->execute(block, num_rows);
 
     ColumnWithTypeAndName & ret = block.getByName(sharding_key_column_name);
     return (*ret.column)[0];
 }
 
-/// @param sharding_column_value - one of values from IN
-/// @param sharding_column_name - name of that column
-/// @param sharding_expr - expression of sharding_key for the Distributed() table
-/// @param sharding_key_column_name - name of the column for sharding_expr
-/// @param shard_info - info for the current shard (to compare shard_num with calculated)
-/// @param slots - weight -> shard mapping
-/// @return true if shard may contain such value (or it is unknown), otherwise false.
+/// Return true if shard may contain such value (or it is unknown), otherwise false.
 bool shardContains(
     const Field & sharding_column_value,
     const std::string & sharding_column_name,
-    const ExpressionActionsPtr & sharding_expr,
+    const ExpressionActionsPtr & expr,
     const std::string & sharding_key_column_name,
     const Cluster::ShardInfo & shard_info,
     const Cluster::SlotToShard & slots)
@@ -52,14 +45,7 @@ bool shardContains(
     if (sharding_column_value.isNull())
         return false;
 
-    Field sharding_value = executeFunctionOnField(sharding_column_value, sharding_column_name, sharding_expr, sharding_key_column_name);
-    /// The value from IN can be non-numeric,
-    /// but in this case it should be convertible to numeric type, let's try.
-    sharding_value = convertFieldToType(sharding_value, DataTypeUInt64());
-    /// In case of conversion is not possible (NULL), shard cannot contain the value anyway.
-    if (sharding_value.isNull())
-        return false;
-
+    Field sharding_value = executeFunctionOnField(sharding_column_value, sharding_column_name, expr, sharding_key_column_name);
     UInt64 value = sharding_value.get<UInt64>();
     const auto shard_num = slots[value % slots.size()] + 1;
     return shard_info.shard_num == shard_num;
@@ -92,10 +78,10 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
     if (!identifier)
         return;
 
-    const auto & sharding_expr = data.sharding_key_expr;
+    const auto & expr = data.sharding_key_expr;
     const auto & sharding_key_column_name = data.sharding_key_column_name;
 
-    if (!sharding_expr->getRequiredColumnsWithTypes().contains(identifier->name()))
+    if (!expr->getRequiredColumnsWithTypes().contains(identifier->name()))
         return;
 
     /// NOTE: that we should not take care about empty tuple,
@@ -107,7 +93,7 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
         std::erase_if(tuple_elements->children, [&](auto & child)
         {
             auto * literal = child->template as<ASTLiteral>();
-            return literal && !shardContains(literal->value, identifier->name(), sharding_expr, sharding_key_column_name, data.shard_info, data.slots);
+            return literal && !shardContains(literal->value, identifier->name(), expr, sharding_key_column_name, data.shard_info, data.slots);
         });
     }
     else if (auto * tuple_literal = right->as<ASTLiteral>();
@@ -116,7 +102,7 @@ void OptimizeShardingKeyRewriteInMatcher::visit(ASTFunction & function, Data & d
         auto & tuple = tuple_literal->value.get<Tuple &>();
         std::erase_if(tuple, [&](auto & child)
         {
-            return !shardContains(child, identifier->name(), sharding_expr, sharding_key_column_name, data.shard_info, data.slots);
+            return !shardContains(child, identifier->name(), expr, sharding_key_column_name, data.shard_info, data.slots);
         });
     }
 }

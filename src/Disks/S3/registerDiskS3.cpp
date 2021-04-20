@@ -148,8 +148,7 @@ void registerDiskS3(DiskFactory & factory)
             config.getString(config_prefix + ".secret_access_key", ""),
             config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
             {},
-            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
-            config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false))
+            config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false))
         );
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
@@ -161,7 +160,6 @@ void registerDiskS3(DiskFactory & factory)
             uri.bucket,
             uri.key,
             metadata_path,
-            context->getSettingsRef().s3_max_single_read_retries,
             context->getSettingsRef().s3_min_upload_part_size,
             context->getSettingsRef().s3_max_single_part_upload_size,
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),

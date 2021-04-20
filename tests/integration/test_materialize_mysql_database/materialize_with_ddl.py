@@ -853,20 +853,3 @@ def move_to_prewhere_and_column_filtering(clickhouse_node, mysql_node, service_n
     check_query(clickhouse_node, "SELECT DISTINCT P.id, P.name, P.catalog_id FROM cond_on_key_col.products P WHERE P.name ILIKE '%e%' and P.catalog_id=5287", '915\tertyui\t5287\n')
     clickhouse_node.query("DROP DATABASE cond_on_key_col")
     mysql_node.query("DROP DATABASE cond_on_key_col")
-
-def mysql_settings_test(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS test_database")
-    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-    mysql_node.query("CREATE DATABASE test_database")
-    mysql_node.query("CREATE TABLE test_database.a (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))")
-    mysql_node.query("INSERT INTO test_database.a VALUES(1, 'foo')")
-    mysql_node.query("INSERT INTO test_database.a VALUES(2, 'bar')")
-
-    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
-    check_query(clickhouse_node, "SELECT COUNT() FROM test_database.a FORMAT TSV", "2\n")
-
-    assert clickhouse_node.query("SELECT COUNT(DISTINCT  blockNumber()) FROM test_database.a FORMAT TSV") == "2\n"
-
-    clickhouse_node.query("DROP DATABASE test_database")
-    mysql_node.query("DROP DATABASE test_database")
-

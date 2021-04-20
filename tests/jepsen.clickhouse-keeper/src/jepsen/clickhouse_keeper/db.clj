@@ -19,17 +19,12 @@
   [url]
   (non-precise-cached-wget! url))
 
-(defn get-clickhouse-scp
-  [path]
-  (c/upload path (str common-prefix "/clickhouse")))
-
 (defn download-clickhouse
   [source]
   (info "Downloading clickhouse from" source)
   (cond
     (clojure.string/starts-with? source "rbtorrent:") (get-clickhouse-sky source)
     (clojure.string/starts-with? source "http") (get-clickhouse-url source)
-    (.exists (io/file source)) (get-clickhouse-scp source)
     :else (throw (Exception. (str "Don't know how to download clickhouse from" source)))))
 
 (defn unpack-deb
@@ -133,11 +128,11 @@
     db/LogFiles
     (log-files [_ test node]
       (c/su
-       ;(if (cu/exists? pid-file-path)
-         ;(do
-         ;  (info node "Collecting traces")
-         ;  (collect-traces test node))
-         ;(info node "Pid files doesn't exists"))
+       (if (cu/exists? pid-file-path)
+         (do
+           (info node "Collecting traces")
+           (collect-traces test node))
+         (info node "Pid files doesn't exists"))
        (kill-clickhouse! node test)
        (if (cu/exists? coordination-data-dir)
          (do
