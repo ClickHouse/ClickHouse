@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 
 /// Implements `grants` system table, which allows you to get information about grants.
 class StorageSystemGrants final : public ext::shared_ptr_helper<StorageSystemGrants>, public IStorageSystemOneBlock<StorageSystemGrants>

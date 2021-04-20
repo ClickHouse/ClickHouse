@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 /** Implements the system table `storage`, which allows you to get information about all disks.

@@ -19,7 +19,7 @@ public:
     KafkaBlockInputStream(
         StorageKafka & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const std::shared_ptr<Context> & context_,
+        const ContextPtr & context_,
         const Names & columns,
         Poco::Logger * log_,
         size_t max_block_size_,

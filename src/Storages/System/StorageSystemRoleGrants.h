@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 
 /// Implements `role_grants` system table, which allows you to get information about granted roles.
 class StorageSystemRoleGrants final : public ext::shared_ptr_helper<StorageSystemRoleGrants>, public IStorageSystemOneBlock<StorageSystemRoleGrants>

@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 
 
 /** System table "time_zones" with list of timezones pulled from /contrib/cctz/testdata/zoneinfo

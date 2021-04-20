@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 /** Implements `metrics` system table, which provides information about the operation of the server.

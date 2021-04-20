@@ -10,7 +10,7 @@
 
 namespace DB
 {
-class Context;
+
 
 
 /** System table "distributed_ddl_queue" with list of queries that are currently in the DDL worker queue.

@@ -9,7 +9,6 @@ namespace DB
 {
 
 class WriteBuffer;
-class Context;
 
 
 /** Prints the result in the form of beautiful tables.

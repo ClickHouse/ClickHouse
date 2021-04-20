@@ -11,7 +11,7 @@
 namespace DB
 {
 
-class Context;
+
 
 /** Interface for table functions.
   *

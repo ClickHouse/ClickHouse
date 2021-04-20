@@ -14,7 +14,7 @@ class Logger;
 namespace DB
 {
 
-class Context;
+
 
 
 /// Allows to introspect stack trace of all server threads.

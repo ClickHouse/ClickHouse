@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 /** Implements the `distribution_queue` system table, which allows you to view the INSERT queues for the Distributed tables.

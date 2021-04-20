@@ -15,8 +15,6 @@
 namespace DB
 {
 
-class Context;
-
 /** This class allows one to launch queries on remote replicas of one shard and get results
   */
 class RemoteBlockInputStream : public IBlockInputStream

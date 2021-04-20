@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class Context;
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;

@@ -12,7 +12,6 @@ namespace DB
  *   common prefix, which is needed for
  *   performing reading in order of PK.
  */
-class Context;
 
 class ReadInOrderOptimizer
 {

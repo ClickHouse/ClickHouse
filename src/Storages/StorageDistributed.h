@@ -19,7 +19,6 @@ namespace DB
 {
 
 struct Settings;
-class Context;
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;

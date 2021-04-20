@@ -18,11 +18,6 @@ namespace Aws::Http::Standard
 class StandardHttpResponse;
 }
 
-namespace DB
-{
-class Context;
-}
-
 namespace DB::S3
 {
 class ClientFactory;

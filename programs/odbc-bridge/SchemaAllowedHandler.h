@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class Context;
-
 /// This handler establishes connection to database, and retrieves whether schema is allowed.
 class SchemaAllowedHandler : public HTTPRequestHandler, WithContext
 {

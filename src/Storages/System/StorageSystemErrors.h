@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 /**

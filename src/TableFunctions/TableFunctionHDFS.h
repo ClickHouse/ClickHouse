@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class Context;
+
 
 /* hdfs(name_node_ip:name_node_port, format, structure) - creates a temporary storage from hdfs file
  *

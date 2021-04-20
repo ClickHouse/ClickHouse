@@ -15,7 +15,7 @@
 namespace DB
 {
 
-class Context;
+
 
 using TableFunctionCreator = std::function<TableFunctionPtr()>;
 

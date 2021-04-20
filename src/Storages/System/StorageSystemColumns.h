@@ -7,8 +7,6 @@
 namespace DB
 {
 
-class Context;
-
 /** Implements system table 'columns', that allows to get information about columns for every table.
   */
 class StorageSystemColumns final : public ext::shared_ptr_helper<StorageSystemColumns>, public IStorage

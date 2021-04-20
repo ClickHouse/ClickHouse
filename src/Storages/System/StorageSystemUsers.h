@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 
 /// Implements `users` system table, which allows you to get information about users.
 class StorageSystemUsers final : public ext::shared_ptr_helper<StorageSystemUsers>, public IStorageSystemOneBlock<StorageSystemUsers>

@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class Context;
+
 
 
 /** Implements storage for the system table One.

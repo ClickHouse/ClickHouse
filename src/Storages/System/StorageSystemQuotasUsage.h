@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 
 /** Implements the `quotas_usage` system table, which allows you to get information about
   * how all users use the quotas.

@@ -136,7 +136,7 @@ private:
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    std::shared_ptr<Context> addSettings(ContextPtr context) const;
+    ContextPtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 

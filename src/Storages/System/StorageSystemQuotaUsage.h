@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 struct QuotaUsage;
 
 

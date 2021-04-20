@@ -12,7 +12,6 @@
 namespace DB
 {
 
-class Context;
 class QueryPlan;
 
 class QueryPipeline;

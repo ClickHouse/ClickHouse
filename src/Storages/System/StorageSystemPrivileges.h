@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 
 /// Implements `privileges` system table, which allows you to get information about access types.
 class StorageSystemPrivileges final : public ext::shared_ptr_helper<StorageSystemPrivileges>, public IStorageSystemOneBlock<StorageSystemPrivileges>

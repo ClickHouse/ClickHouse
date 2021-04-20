@@ -11,8 +11,6 @@
 namespace DB
 {
 
-class Context;
-
 class HTTPServer : public Poco::Net::TCPServer
 {
 public:

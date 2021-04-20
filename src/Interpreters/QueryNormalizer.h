@@ -12,7 +12,6 @@ namespace DB
 class ASTSelectQuery;
 class ASTIdentifier;
 struct ASTTablesInSelectQueryElement;
-class Context;
 
 
 class QueryNormalizer

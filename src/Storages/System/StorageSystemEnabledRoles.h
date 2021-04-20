@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class Context;
+
 
 /// Implements `enabled_roles` system table, which allows you to get information about enabled roles.
 class StorageSystemEnabledRoles final : public ext::shared_ptr_helper<StorageSystemEnabledRoles>, public IStorageSystemOneBlock<StorageSystemEnabledRoles>
