@@ -27,7 +27,7 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘a
 
 ## -SimpleState {#agg-functions-combinator-simplestate}
 
-If you apply this combinator, the aggregate function returns the same value but with a different type. This is a [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md) that can be stored in a table to work with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engines.
+If you apply this combinator, the aggregate function returns the same value but with a different type. This is a [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md) that can be stored in a table to work with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) tables.
 
 **Syntax**
 
@@ -278,5 +278,4 @@ FROM people
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘
 ```
-
 
