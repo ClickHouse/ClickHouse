@@ -348,13 +348,6 @@ DiskS3::DiskS3(
 {
 }
 
-ReservationPtr DiskS3::reserve(UInt64 bytes)
-{
-    if (!tryReserve(bytes))
-        return {};
-    return std::make_unique<DiskRemoteReservation>(std::static_pointer_cast<DiskS3>(shared_from_this()), bytes);
-}
-
 String DiskS3::getUniqueId(const String & path) const
 {
     Metadata metadata(remote_fs_root_path, metadata_path, path);

@@ -48,7 +48,19 @@ public:
 
     void createFile(const String & path) override;
 
+    void removeFile(const String & path) override { removeSharedFile(path, false); }
+
+    void removeSharedFile(const String & path, bool keep_in_remote_fs) override;
+
+    void removeSharedRecursive(const String & path, bool) override;
+
+    void removeFileIfExists(const String & path) override;
+
+    void removeRecursive(const String & path) override;
+
     size_t getFileSize(const String & path) const override;
+
+    void moveFile(const String & from_path, const String & to_path) override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
@@ -74,20 +86,33 @@ public:
 
     Poco::Timestamp getLastModified(const String & path) override;
 
+    void createHardLink(const String & src_path, const String & dst_path) override;
+
+    ReservationPtr reserve(UInt64 bytes) override;
+
+    virtual std::shared_ptr<IDiskRemote> getDiskPtr() = 0;
+
+    virtual void removeFromRemoteFS(const Metadata & /* metadata */) {}
+
 protected:
-    bool tryReserve(UInt64 bytes);
+    void removeMetaRecursive(const String & path, bool keep_in_remote_fs);
+
+    void removeMeta(const String & path, bool keep_in_remote_fs);
 
     const String disk_name;
     const String remote_fs_root_path;
     const String metadata_path;
     Poco::Logger * log;
 
+private:
+    bool tryReserve(UInt64 bytes);
+
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
     std::mutex reservation_mutex;
 };
 
-using DiskRemotePtr = std::shared_ptr<IDiskRemote>;
+using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
 
 /// Remote FS (S3, HDFS) metadata file layout:
 /// Number of FS objects, Total size of all FS objects.
@@ -165,7 +190,7 @@ private:
 class DiskRemoteReservation final : public IReservation
 {
 public:
-    DiskRemoteReservation(const DiskRemotePtr & disk_, UInt64 size_)
+    DiskRemoteReservation(const RemoteDiskPtr & disk_, UInt64 size_)
         : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
     {
     }
@@ -181,7 +206,7 @@ public:
     ~DiskRemoteReservation() override;
 
 private:
-    DiskRemotePtr disk;
+    RemoteDiskPtr disk;
     UInt64 size;
     CurrentMetrics::Increment metric_increment;
 };

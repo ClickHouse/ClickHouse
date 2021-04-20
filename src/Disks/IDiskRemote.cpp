@@ -29,6 +29,8 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT;
     extern const int INCORRECT_DISK_INDEX;
+    extern const int FILE_ALREADY_EXISTS;
+    extern const int CANNOT_DELETE_DIRECTORY;
 }
 
 
@@ -150,9 +152,75 @@ IDiskRemote::Metadata IDiskRemote::readMeta(const String & path) const
     return Metadata(remote_fs_root_path, metadata_path, path);
 }
 
+
 IDiskRemote::Metadata IDiskRemote::createMeta(const String & path) const
 {
     return Metadata(remote_fs_root_path, metadata_path, path, true);
+}
+
+
+void IDiskRemote::removeMeta(const String & path, bool keep_in_remote_fs)
+{
+    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_path + path));
+
+    Poco::File file(metadata_path + path);
+
+    if (!file.isFile())
+        throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
+
+    try
+    {
+        auto metadata = readMeta(path);
+
+        /// If there is no references - delete content from S3.
+        if (metadata.ref_count == 0)
+        {
+            file.remove();
+
+            if (!keep_in_remote_fs)
+                removeFromRemoteFS(metadata);
+        }
+        else /// In other case decrement number of references, save metadata and delete file.
+        {
+            --metadata.ref_count;
+            metadata.save();
+            file.remove();
+        }
+    }
+    catch (const Exception & e)
+    {
+        /// If it's impossible to read meta - just remove it from FS.
+        if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
+        {
+            LOG_WARNING(
+                log,
+                "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
+                backQuote(path),
+                e.nested() ? e.nested()->message() : e.message());
+
+            file.remove();
+        }
+        else
+            throw;
+    }
+}
+
+
+void IDiskRemote::removeMetaRecursive(const String & path, bool keep_in_remote_fs)
+{
+    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
+
+    Poco::File file(metadata_path + path);
+    if (file.isFile())
+    {
+        removeMeta(path, keep_in_remote_fs);
+    }
+    else
+    {
+        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
+            removeMetaRecursive(it->path(), keep_in_remote_fs);
+        file.remove();
+    }
 }
 
 
@@ -242,6 +310,15 @@ size_t IDiskRemote::getFileSize(const String & path) const
 }
 
 
+void IDiskRemote::moveFile(const String & from_path, const String & to_path)
+{
+    if (exists(to_path))
+        throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
+
+    Poco::File(metadata_path + from_path).renameTo(metadata_path + to_path);
+}
+
+
 void IDiskRemote::replaceFile(const String & from_path, const String & to_path)
 {
     if (exists(to_path))
@@ -253,6 +330,43 @@ void IDiskRemote::replaceFile(const String & from_path, const String & to_path)
     }
     else
         moveFile(from_path, to_path);
+}
+
+
+void IDiskRemote::removeSharedFile(const String & path, bool keep_in_remote_fs)
+{
+    removeMeta(path, keep_in_remote_fs);
+}
+
+
+void IDiskRemote::removeSharedRecursive(const String & path, bool keep_in_remote_fs)
+{
+    removeMetaRecursive(path, keep_in_remote_fs);
+}
+
+
+void IDiskRemote::removeFileIfExists(const String & path)
+{
+    if (Poco::File(metadata_path + path).exists())
+        removeMeta(path, /* keep_in_remote_fs */ false);
+}
+
+
+void IDiskRemote::removeRecursive(const String & path)
+{
+    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
+
+    Poco::File file(metadata_path + path);
+    if (file.isFile())
+    {
+        removeFile(path);
+    }
+    else
+    {
+        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
+            removeRecursive(it->path());
+        file.remove();
+    }
 }
 
 
@@ -320,6 +434,27 @@ void IDiskRemote::setLastModified(const String & path, const Poco::Timestamp & t
 Poco::Timestamp IDiskRemote::getLastModified(const String & path)
 {
     return Poco::File(metadata_path + path).getLastModified();
+}
+
+
+void IDiskRemote::createHardLink(const String & src_path, const String & dst_path)
+{
+    /// Increment number of references.
+    auto src = readMeta(src_path);
+    ++src.ref_count;
+    src.save();
+
+    /// Create FS hardlink to metadata file.
+    DB::createHardLink(metadata_path + src_path, metadata_path + dst_path);
+}
+
+
+ReservationPtr IDiskRemote::reserve(UInt64 bytes)
+{
+    if (!tryReserve(bytes))
+        return {};
+
+    return std::make_unique<DiskRemoteReservation>(getDiskPtr(), bytes);
 }
 
 
