@@ -419,9 +419,10 @@ public:
         new (place) Data;
     }
 
-    void create(AggregateDataPtr __restrict place) const override { new (place) Data; }
-
-    void destroy(AggregateDataPtr __restrict place) const noexcept override { data(place).~Data(); }
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        data(place).~Data();
+    }
 
     bool hasTrivialDestructor() const override
     {

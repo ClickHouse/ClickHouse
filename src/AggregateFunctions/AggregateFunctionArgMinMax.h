@@ -56,7 +56,10 @@ public:
                 + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    String getName() const override { return StringRef(Data::ValueData_t::name()) == StringRef("min") ? "argMin" : "argMax"; }
+    String getName() const override
+    {
+        return StringRef(Data::ValueData_t::name()) == StringRef("min") ? "argMin" : "argMax";
+    }
 
     DataTypePtr getReturnType() const override
     {
