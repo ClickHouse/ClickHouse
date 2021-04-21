@@ -58,14 +58,7 @@ BlockIO InterpreterDropQuery::execute()
         drop.no_delay = true;
 
     if (!drop.table.empty())
-    {
-        if (!drop.is_dictionary)
-            return executeToTable(drop);
-        else if (drop.permanently && drop.kind == ASTDropQuery::Kind::Detach)
-            throw Exception("DETACH PERMANENTLY is not implemented for dictionaries", ErrorCodes::NOT_IMPLEMENTED);
-        else
-            return executeToDictionary(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
-    }
+        return executeToTable(drop);
     else if (!drop.database.empty())
         return executeToDatabase(drop);
     else
@@ -133,14 +126,26 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
                                        getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY &&
                                        !is_drop_or_detach_database;
+
+        /// TODO: Add comments for dictionary
+
+        AccessFlags drop_storage;
+
+        if (table->isView())
+            drop_storage = AccessType::DROP_VIEW;
+        else if (table->isDictionary())
+            drop_storage = AccessType::DROP_DICTIONARY;
+        else
+            drop_storage = AccessType::DROP_TABLE;
+
         if (is_replicated_ddl_query)
         {
             if (query.kind == ASTDropQuery::Kind::Detach)
-                getContext()->checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
+                getContext()->checkAccess(drop_storage, table_id);
             else if (query.kind == ASTDropQuery::Kind::Truncate)
                 getContext()->checkAccess(AccessType::TRUNCATE, table_id);
             else if (query.kind == ASTDropQuery::Kind::Drop)
-                getContext()->checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
+                getContext()->checkAccess(drop_storage, table_id);
 
             ddl_guard->releaseTableLock();
             table.reset();
@@ -149,8 +154,11 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
 
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
-            getContext()->checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
-            table->checkTableCanBeDetached();
+            getContext()->checkAccess(drop_storage, table_id);
+
+            if (!table->isDictionary() || !query.is_dictionary)
+                table->checkTableCanBeDetached();
+
             table->shutdown();
             TableExclusiveLockHolder table_lock;
 
@@ -159,6 +167,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
 
             if (query.permanently)
             {
+                if (table->isDictionary())
+                    throw Exception("DETACH PERMANENTLY is not implemented for dictionaries", ErrorCodes::NOT_IMPLEMENTED);
+
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(getContext(), table_id.table_name);
             }
@@ -170,8 +181,13 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
+            if (table->isDictionary())
+                throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
+
             getContext()->checkAccess(AccessType::TRUNCATE, table_id);
-            table->checkTableCanBeDropped();
+
+            if (!table->isDictionary() || !query.is_dictionary)
+                table->checkTableCanBeDropped();
 
             auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -180,8 +196,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
-            getContext()->checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
-            table->checkTableCanBeDropped();
+            getContext()->checkAccess(drop_storage, table_id);
+
+            if (!table->isDictionary() || !query.is_dictionary)
+                table->checkTableCanBeDropped();
 
             table->shutdown();
 
@@ -196,67 +214,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         uuid_to_wait = table_id.uuid;
     }
 
-    return {};
-}
-
-
-BlockIO InterpreterDropQuery::executeToDictionary(
-    const String & database_name_,
-    const String & dictionary_name,
-    ASTDropQuery::Kind kind,
-    bool if_exists,
-    bool is_temporary,
-    bool no_ddl_lock)
-{
-    if (is_temporary)
-        throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
-
-    String database_name = getContext()->resolveDatabase(database_name_);
-
-    auto ddl_guard = (!no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name) : nullptr);
-    query_ptr->as<ASTDropQuery>()->database = database_name;
-    DatabasePtr database = tryGetDatabase(database_name, if_exists);
-
-    bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->table.empty();
-    bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
-                                   getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY &&
-                                   !is_drop_or_detach_database;
-    if (is_replicated_ddl_query)
-    {
-        if (kind == ASTDropQuery::Kind::Detach)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "DETACH DICTIONARY is not allowed for Replicated databases.");
-
-        getContext()->checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
-
-        ddl_guard->releaseTableLock();
-        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
-    }
-
-    if (!database || !database->isDictionaryExist(dictionary_name))
-    {
-        if (!if_exists)
-            throw Exception(
-                "Dictionary " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(dictionary_name) + " doesn't exist.",
-                ErrorCodes::UNKNOWN_DICTIONARY);
-        else
-            return {};
-    }
-
-    if (kind == ASTDropQuery::Kind::Detach)
-    {
-        /// Drop dictionary from memory, don't touch data and metadata
-        getContext()->checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
-        database->detachDictionary(dictionary_name);
-    }
-    else if (kind == ASTDropQuery::Kind::Truncate)
-    {
-        throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
-    }
-    else if (kind == ASTDropQuery::Kind::Drop)
-    {
-        getContext()->checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
-        database->removeDictionary(getContext(), dictionary_name);
-    }
     return {};
 }
 
@@ -351,14 +308,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             if (database->shouldBeEmptyOnDetach())
             {
-                /// DETACH or DROP all tables and dictionaries inside database.
-                /// First we should DETACH or DROP dictionaries because StorageDictionary
-                /// must be detached only by detaching corresponding dictionary.
-                for (auto iterator = database->getDictionariesIterator(); iterator->isValid(); iterator->next())
-                {
-                    String current_dictionary = iterator->name();
-                    executeToDictionary(database_name, current_dictionary, query.kind, false, false, false);
-                }
+                /// TODO: Check if dictionarise should be removed first
 
                 ASTDropQuery query_for_table;
                 query_for_table.kind = query.kind;
@@ -371,6 +321,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     DatabasePtr db;
                     UUID table_to_wait = UUIDHelpers::Nil;
                     query_for_table.table = iterator->name();
+                    query_for_table.is_dictionary = iterator->table()->isDictionary();
                     executeToTableImpl(query_for_table, db, table_to_wait);
                     uuids_to_wait.push_back(table_to_wait);
                 }

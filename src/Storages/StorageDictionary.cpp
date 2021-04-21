@@ -5,11 +5,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
 #include <IO/Operators.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -93,8 +96,10 @@ StorageDictionary::StorageDictionary(
     const StorageID & table_id_,
     const String & dictionary_name_,
     const ColumnsDescription & columns_,
-    Location location_)
+    Location location_,
+    ContextPtr context_)
     : IStorage(table_id_)
+    , WithContext(context_->getGlobalContext())
     , dictionary_name(dictionary_name_)
     , location(location_)
 {
@@ -105,11 +110,38 @@ StorageDictionary::StorageDictionary(
 
 
 StorageDictionary::StorageDictionary(
-    const StorageID & table_id_, const String & dictionary_name_, const DictionaryStructure & dictionary_structure_, Location location_)
-    : StorageDictionary(table_id_, dictionary_name_, ColumnsDescription{getNamesAndTypes(dictionary_structure_)}, location_)
+    const StorageID & table_id_,
+    const String & dictionary_name_,
+    const DictionaryStructure & dictionary_structure_,
+    Location location_,
+    ContextPtr context_)
+    : StorageDictionary(
+        table_id_,
+        dictionary_name_,
+        ColumnsDescription{getNamesAndTypes(dictionary_structure_)},
+        location_,
+        context_)
 {
 }
 
+StorageDictionary::StorageDictionary(
+    const StorageID & table_id,
+    LoadablesConfigurationPtr dictionary_configuration,
+    ContextPtr context_)
+    : StorageDictionary(
+        table_id,
+        table_id.getInternalDictionaryName(),
+        context_->getExternalDictionariesLoader().getDictionaryStructure(*dictionary_configuration),
+        Location::SameDatabaseAndNameAsDictionary,
+        context_)
+{
+    update_time = Poco::Timestamp(time(nullptr));
+    configuration = dictionary_configuration;
+
+    /// TODO: Check if it is safe
+    auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
+    remove_repository_callback = context_->getExternalDictionariesLoader().addConfigRepository(std::move(repository));
+}
 
 void StorageDictionary::checkTableCanBeDropped() const
 {
@@ -128,37 +160,85 @@ Pipe StorageDictionary::read(
     const Names & column_names,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
+    auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, local_context);
     auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
     /// TODO: update dictionary interface for processors.
     return Pipe(std::make_shared<SourceFromInputStream>(stream));
 }
 
+void StorageDictionary::drop()
+{
+    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    remove_repository_callback.reset();
+}
+
+void StorageDictionary::shutdown()
+{
+    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    remove_repository_callback.reset();
+}
+
+void StorageDictionary::renameInMemory(const StorageID & new_table_id)
+{
+    if (configuration)
+    {
+        configuration->setString("dictionary.database", new_table_id.database_name);
+        configuration->setString("dictionary.name", new_table_id.table_name);
+
+        auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
+        external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
+
+        auto result = external_dictionaries_loader.getLoadResult(getStorageID().getInternalDictionaryName());
+        if (!result.object)
+            return;
+
+        const auto dictionary = std::static_pointer_cast<const IDictionary>(result.object);
+        dictionary->updateDictionaryName(new_table_id);
+    }
+
+    IStorage::renameInMemory(new_table_id);
+}
 
 void registerStorageDictionary(StorageFactory & factory)
 {
     factory.registerStorage("Dictionary", [](const StorageFactory::Arguments & args)
     {
-        if (args.engine_args.size() != 1)
-            throw Exception("Storage Dictionary requires single parameter: name of dictionary",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        auto query = args.query;
 
-        args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.getLocalContext());
-        String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        auto context = args.getContext();
 
-        if (!args.attach)
+        if (query.is_dictionary)
         {
-            const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
-            const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-            checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
-        }
+            /// Create dictionary storage that owns underlying dictionary
+            auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, context);
 
-        return StorageDictionary::create(args.table_id, dictionary_name, args.columns, StorageDictionary::Location::Custom);
+            return StorageDictionary::create(args.table_id, abstract_dictionary_configuration, context);
+        }
+        else
+        {
+            /// Create dictionary storage that is view of underlying dictionary
+
+            if (args.engine_args.size() != 1)
+                throw Exception("Storage Dictionary requires single parameter: name of dictionary",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.getLocalContext());
+            String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+
+            if (!args.attach)
+            {
+                const auto & dictionary = args.getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, args.getContext());
+                const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+                checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
+            }
+
+            return StorageDictionary::create(args.table_id, dictionary_name, args.columns, StorageDictionary::Location::Custom, context);
+        }
     });
 }
 

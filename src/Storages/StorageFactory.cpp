@@ -79,11 +79,17 @@ StoragePtr StorageFactory::get(
     }
     else if (query.is_live_view)
     {
-
         if (query.storage)
             throw Exception("Specifying ENGINE is not allowed for a LiveView", ErrorCodes::INCORRECT_QUERY);
 
         name = "LiveView";
+    }
+    else if (query.is_dictionary)
+    {
+        if (query.storage)
+            throw Exception("Specifying ENGINE is not allowed for a Dictionary", ErrorCodes::INCORRECT_QUERY);
+
+        name = "Dictionary";
     }
     else
     {

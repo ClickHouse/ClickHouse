@@ -2,6 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <ext/shared_ptr_helper.h>
+#include <Interpreters/IExternalLoaderConfigRepository.h>
 
 
 namespace DB
@@ -9,7 +10,7 @@ namespace DB
 struct DictionaryStructure;
 class TableFunctionDictionary;
 
-class StorageDictionary final : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
+class StorageDictionary final : public ext::shared_ptr_helper<StorageDictionary>, public IStorage, public WithContext
 {
     friend struct ext::shared_ptr_helper<StorageDictionary>;
     friend class TableFunctionDictionary;
@@ -31,7 +32,16 @@ public:
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
     static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
+    bool isDictionary() const override { return true; }
+    void drop() override;
+    void shutdown()  override;
+
+    void renameInMemory(const StorageID & new_table_id) override;
+
     const String & dictionaryName() const { return dictionary_name; }
+
+    Poco::Timestamp getUpdateTime() const { return update_time; }
+    LoadablesConfigurationPtr getConfiguration() const { return configuration; }
 
     /// Specifies where the table is located relative to the dictionary.
     enum class Location
@@ -55,18 +65,30 @@ private:
     const String dictionary_name;
     const Location location;
 
+    std::mutex dictionary_config_mutex;
+    Poco::Timestamp update_time;
+    LoadablesConfigurationPtr configuration;
+    ext::scope_guard remove_repository_callback;
+
 protected:
     StorageDictionary(
         const StorageID & table_id_,
         const String & dictionary_name_,
         const ColumnsDescription & columns_,
-        Location location_);
+        Location location_,
+        ContextPtr context_);
 
     StorageDictionary(
         const StorageID & table_id_,
         const String & dictionary_name_,
         const DictionaryStructure & dictionary_structure,
-        Location location_);
+        Location location_,
+        ContextPtr context_);
+
+    StorageDictionary(
+        const StorageID & table_id_,
+        LoadablesConfigurationPtr dictionary_configuration_,
+        ContextPtr context_);
 };
 
 }
