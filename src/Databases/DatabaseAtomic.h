@@ -58,6 +58,7 @@ public:
     void tryRemoveSymlink(const String & table_name);
 
     void waitDetachedTableNotInUse(const UUID & uuid) override;
+    void checkDetachedTableNotInUse(const UUID & uuid) override;
     void setDetachedTableNotInUseForce(const UUID & uuid);
 
 protected:
