@@ -2517,14 +2517,17 @@ private:
             from_nested_type = from_type->getNestedType();
             to_nested_type = to_type->getNestedType();
 
-            from_type = checkAndGetDataType<DataTypeArray>(from_nested_type.get());
-            to_type = checkAndGetDataType<DataTypeArray>(to_nested_type.get());
-        }
+            if (from_type->getNumberOfDimensions() != to_type->getNumberOfDimensions())
+            {
+                WhichDataType from_nested_data_type(from_nested_type);
 
-        /// both from_type and to_type should be nullptr now is array types had same dimensions
-        if ((from_type == nullptr) != (to_type == nullptr))
-            throw Exception{"CAST AS Array can only be performed between same-dimensional array types or from String",
-                ErrorCodes::TYPE_MISMATCH};
+                /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
+                bool is_empty_array = from_nested_data_type.isNothing();
+                if (!is_empty_array)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH,
+                        "CAST AS Array can only be performed between same-dimensional array types or from String");
+            }
+        }
 
         /// Prepare nested type conversion
         const auto nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type);
