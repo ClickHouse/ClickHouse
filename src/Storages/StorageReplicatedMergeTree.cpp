@@ -567,42 +567,24 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
             /// This is Ok because another replica is definitely going to drop the table.
 
             LOG_WARNING(log, "Removing leftovers from table {} (this might take several minutes)", zookeeper_path);
+            String drop_lock_path = zookeeper_path + "/dropped/lock";
+            Coordination::Error code = zookeeper->tryCreate(drop_lock_path, "", zkutil::CreateMode::Ephemeral);
 
-            Strings children;
-            Coordination::Error code = zookeeper->tryGetChildren(zookeeper_path, children);
-            if (code == Coordination::Error::ZNONODE)
+            if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
             {
-                LOG_WARNING(log, "Table {} is already finished removing by another replica right now", replica_path);
+                LOG_WARNING(log, "The leftovers from table {} were removed by another replica", zookeeper_path);
+            }
+            else if (code != Coordination::Error::ZOK)
+            {
+                throw Coordination::Exception(code, drop_lock_path);
             }
             else
             {
-                for (const auto & child : children)
-                    if (child != "dropped")
-                        zookeeper->tryRemoveRecursive(zookeeper_path + "/" + child);
-
-                Coordination::Requests ops;
-                Coordination::Responses responses;
-                ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
-                ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path, -1));
-                code = zookeeper->tryMulti(ops, responses);
-
-                if (code == Coordination::Error::ZNONODE)
+                auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zookeeper);
+                if (!removeTableNodesFromZooKeeper(zookeeper, zookeeper_path, metadata_drop_lock, log))
                 {
-                    LOG_WARNING(log, "Table {} is already finished removing by another replica right now", replica_path);
-                }
-                else if (code == Coordination::Error::ZNOTEMPTY)
-                {
-                    throw Exception(fmt::format(
-                        "The old table was not completely removed from ZooKeeper, {} still exists and may contain some garbage. But it should never happen according to the logic of operations (it's a bug).", zookeeper_path), ErrorCodes::LOGICAL_ERROR);
-                }
-                else if (code != Coordination::Error::ZOK)
-                {
-                    /// It is still possible that ZooKeeper session is expired or server is killed in the middle of the delete operation.
-                    zkutil::KeeperMultiException::check(code, ops, responses);
-                }
-                else
-                {
-                    LOG_WARNING(log, "The leftovers from table {} was successfully removed from ZooKeeper", zookeeper_path);
+                    /// Someone is recursively removing table right now, we cannot create new table until old one is removed
+                    continue;
                 }
             }
         }
@@ -614,10 +596,6 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
-
-        /// Check that the table is not being dropped right now.
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/dropped", "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata_str,
             zkutil::CreateMode::Persistent));
@@ -806,10 +784,18 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
       * because table creation is executed in single transaction that will conflict with remaining nodes.
       */
 
+    /// Node /dropped works like a lock that protects from concurrent removal of old table and creation of new table.
+    /// But recursive removal may fail in the middle of operation leaving some garbage in zookeeper_path, so
+    /// we remove it on table creation if there is /dropped node. Creating thread may remove /dropped node created by
+    /// removing thread, and it causes race condition if removing thread is not finished yet.
+    /// To avoid this we also create ephemeral child before starting recursive removal.
+    /// (The existence of child node does not allow to remove parent node).
     Coordination::Requests ops;
     Coordination::Responses responses;
+    String drop_lock_path = zookeeper_path + "/dropped/lock";
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/replicas", -1));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/dropped", "", zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
 
     if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
@@ -826,46 +812,55 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
     }
     else
     {
+        auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zookeeper);
         LOG_INFO(logger, "Removing table {} (this might take several minutes)", zookeeper_path);
-
-        Strings children;
-        code = zookeeper->tryGetChildren(zookeeper_path, children);
-        if (code == Coordination::Error::ZNONODE)
-        {
-            LOG_WARNING(logger, "Table {} is already finished removing by another replica right now", remote_replica_path);
-        }
-        else
-        {
-            for (const auto & child : children)
-                if (child != "dropped")
-                    zookeeper->tryRemoveRecursive(zookeeper_path + "/" + child);
-
-            ops.clear();
-            responses.clear();
-            ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
-            ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path, -1));
-            code = zookeeper->tryMulti(ops, responses);
-
-            if (code == Coordination::Error::ZNONODE)
-            {
-                LOG_WARNING(logger, "Table {} is already finished removing by another replica right now", remote_replica_path);
-            }
-            else if (code == Coordination::Error::ZNOTEMPTY)
-            {
-                LOG_ERROR(logger, "Table was not completely removed from ZooKeeper, {} still exists and may contain some garbage.",
-                          zookeeper_path);
-            }
-            else if (code != Coordination::Error::ZOK)
-            {
-                /// It is still possible that ZooKeeper session is expired or server is killed in the middle of the delete operation.
-                zkutil::KeeperMultiException::check(code, ops, responses);
-            }
-            else
-            {
-                LOG_INFO(logger, "Table {} was successfully removed from ZooKeeper", zookeeper_path);
-            }
-        }
+        removeTableNodesFromZooKeeper(zookeeper, zookeeper_path, metadata_drop_lock, logger);
     }
+}
+
+bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper,
+        const String & zookeeper_path, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger)
+{
+    bool completely_removed = false;
+    Strings children;
+    Coordination::Error code = zookeeper->tryGetChildren(zookeeper_path, children);
+    if (code == Coordination::Error::ZNONODE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
+
+
+    for (const auto & child : children)
+        if (child != "dropped")
+            zookeeper->tryRemoveRecursive(zookeeper_path + "/" + child);
+
+    Coordination::Requests ops;
+    Coordination::Responses responses;
+    ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path, -1));
+    code = zookeeper->tryMulti(ops, responses);
+
+    if (code == Coordination::Error::ZNONODE)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
+    }
+    else if (code == Coordination::Error::ZNOTEMPTY)
+    {
+        LOG_ERROR(logger, "Table was not completely removed from ZooKeeper, {} still exists and may contain some garbage,"
+                          "but someone is removing it right now.", zookeeper_path);
+    }
+    else if (code != Coordination::Error::ZOK)
+    {
+        /// It is still possible that ZooKeeper session is expired or server is killed in the middle of the delete operation.
+        zkutil::KeeperMultiException::check(code, ops, responses);
+    }
+    else
+    {
+        metadata_drop_lock->setAlreadyRemoved();
+        completely_removed = true;
+        LOG_INFO(logger, "Table {} was successfully removed from ZooKeeper", zookeeper_path);
+    }
+
+    return completely_removed;
 }
 
 
