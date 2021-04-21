@@ -532,6 +532,7 @@ SRCS(
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
+    validateNestedArraySizes.cpp
     version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp

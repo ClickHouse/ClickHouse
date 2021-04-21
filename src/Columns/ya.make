@@ -29,6 +29,7 @@ SRCS(
     ColumnLowCardinality.cpp
     ColumnMap.cpp
     ColumnNullable.cpp
+    ColumnSparse.cpp
     ColumnString.cpp
     ColumnTuple.cpp
     ColumnVector.cpp

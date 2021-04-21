@@ -348,8 +348,11 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
 
-        while (const auto block = stream->read())
+        while (auto block = stream->read())
         {
+            for (auto & column : block)
+                column.column = recursiveRemoveSparse(column.column);
+
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!previously_loaded_block)
                 previously_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());

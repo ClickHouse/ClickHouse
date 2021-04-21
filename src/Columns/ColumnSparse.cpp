@@ -242,7 +242,7 @@ void ColumnSparse::popBack(size_t n)
     size_t new_size = _size - n;
 
     size_t removed_values = 0;
-    while(!offsets_data.empty() && offsets_data.back() >= new_size)
+    while (!offsets_data.empty() && offsets_data.back() >= new_size)
     {
         offsets_data.pop_back();
         ++removed_values;
@@ -309,18 +309,52 @@ ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
     if (perm.size() < limit)
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
+    if (offsets->empty())
+    {
+        auto res = cloneEmpty();
+        res->insertManyDefaults(limit);
+        return res;
+    }
+
     auto res_offsets = offsets->cloneEmpty();
     auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
     auto res_values = values->cloneEmpty();
     res_values->insertDefault();
 
-    for (size_t i = 0; i < limit; ++i)
+    /// If we need to permute full column, or if limit is large enough,
+    /// it's better to save indexes of values in O(size)
+    /// and avoid binary search for obtaining every index.
+    /// 3 is just a guess for overhead on copying indexes.
+    bool execute_linear =
+        limit == _size || limit * log2(offsets->size() + 1) > _size * 3;
+
+    if (execute_linear)
     {
-        size_t index = getValueIndex(perm[i]);
-        if (index != 0)
+        PaddedPODArray<UInt64> indexes(_size);
+        auto offset_it = begin();
+        for (size_t i = 0; i < _size; ++i, ++offset_it)
+            indexes[i] = offset_it.getValueIndex();
+
+        for (size_t i = 0; i < limit; ++i)
         {
-            res_values->insertFrom(*values, index);
-            res_offsets_data.push_back(i);
+            size_t index = indexes[perm[i]];
+            if (index != 0)
+            {
+                res_values->insertFrom(*values, index);
+                res_offsets_data.push_back(i);
+            }
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < limit; ++i)
+        {
+            size_t index = getValueIndex(perm[i]);
+            if (index != 0)
+            {
+                res_values->insertFrom(*values, index);
+                res_offsets_data.push_back(i);
+            }
         }
     }
 
