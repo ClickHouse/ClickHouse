@@ -168,9 +168,9 @@ public:
         {
         }
 
-        bool isDefault() const { return current_offset == offsets.size() || current_row != offsets[current_offset]; }
-        size_t getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
-        size_t getCurrentRow() const { return current_row; }
+        bool ALWAYS_INLINE isDefault() const { return current_offset == offsets.size() || current_row != offsets[current_offset]; }
+        size_t ALWAYS_INLINE getValueIndex() const { return isDefault() ? 0 : current_offset + 1; }
+        size_t ALWAYS_INLINE getCurrentRow() const { return current_row; }
 
         bool operator==(const Iterator & other) const
         {

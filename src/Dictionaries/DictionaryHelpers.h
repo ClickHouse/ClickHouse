@@ -483,6 +483,9 @@ void mergeBlockWithStream(
 
     while (Block block = stream->read())
     {
+        for (auto & column : block)
+            column.column = recursiveRemoveSparse(column.column);
+
         Columns block_key_columns;
         block_key_columns.reserve(key_column_size);
 

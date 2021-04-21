@@ -306,9 +306,12 @@ public:
     {
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto * values = &column_sparse.getValuesColumn();
+        size_t batch_size = column_sparse.size();
+        auto offset_it = column_sparse.begin();
 
-        for (auto it = column_sparse.begin(); it != column_sparse.end(); ++it)
-            static_cast<const Derived *>(this)->add(places[it.getCurrentRow()] + place_offset, &values, it.getValueIndex(), arena);
+        for (size_t i = 0; i < batch_size; ++i, ++offset_it)
+            static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
+                                                    &values, offset_it.getValueIndex(), arena);
     }
 
     void addBatchSinglePlace(
@@ -336,9 +339,11 @@ public:
         /// TODO: add values and defaults separately if order of adding isn't important.
         const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
         const auto * values = &column_sparse.getValuesColumn();
+        size_t batch_size = column_sparse.size();
+        auto offset_it = column_sparse.begin();
 
-        for (auto it = column_sparse.begin(); it != column_sparse.end(); ++it)
-            static_cast<const Derived *>(this)->add(place, &values, it.getValueIndex(), arena);
+        for (size_t i = 0; i < batch_size; ++i, ++offset_it)
+            static_cast<const Derived *>(this)->add(place, &values, offset_it.getValueIndex(), arena);
     }
 
     void addBatchSinglePlaceNotNull(
