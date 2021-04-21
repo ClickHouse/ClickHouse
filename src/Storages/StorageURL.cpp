@@ -22,7 +22,6 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 #include <common/logger_useful.h>
-#include <Common/parseRemoteDescription.h>
 #include <algorithm>
 
 
