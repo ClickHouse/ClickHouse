@@ -274,4 +274,4 @@ SYSTEM RESTART REPLICA [db.]replicated_merge_tree_family_table_name
 
 ### RESTART REPLICAS {#query_language-system-restart-replicas}
 
-Реинициализация состояния Zookeeper сессий для всех `ReplicatedMergeTree` таблиц, сравнивает текущее состояние с тем что хранится в Zookeeper как источник правды и добавляет задачи Zookeeper очередь если необходимо
+Реинициализация состояния ZooKeeper-сессий для всех `ReplicatedMergeTree` таблиц. Сравнивает текущее состояние реплики с тем, что хранится в ZooKeeper, как c источником правды, и добавляет задачи в очередь репликации в  ZooKeeper если необходимо
