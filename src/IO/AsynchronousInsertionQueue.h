@@ -70,7 +70,7 @@ class AsynchronousInsertQueue
         ThreadPool pool;  /// dump the data only inside this pool.
         ThreadFromGlobalPool dump_by_first_update_thread;  /// uses busy_timeout and busyCheck()
         ThreadFromGlobalPool dump_by_last_update_thread;   /// uses stale_timeout and staleCheck()
-        /// TODO: ThreadFromGlobalPool remove_empty_thread, check_access_thread;
+        /// TODO: ThreadFromGlobalPool check_access_thread;
 
         void busyCheck();
         void staleCheck();

@@ -2,17 +2,16 @@
 
 #include <Core/Settings.h>
 #include <DataStreams/BlockIO.h>
-#include <DataStreams/copyData.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
+#include <DataStreams/copyData.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/copyData.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/formatAST.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include "IO/WriteBufferFromOStream.h"
-#include "Parsers/formatAST.h"
 
 
 namespace DB
@@ -168,7 +167,7 @@ void AsynchronousInsertQueue::busyCheck()
 
 void AsynchronousInsertQueue::staleCheck()
 {
-    while(!shutdown)
+    while (!shutdown)
     {
         std::this_thread::sleep_for(stale_timeout);
 
@@ -242,6 +241,7 @@ void AsynchronousInsertQueue::processData(std::shared_ptr<InsertData> data)
         in->appendBuffer(std::make_unique<ReadBufferFromString>(datum));
     copyData(*in, *data->io.out, [] {return false;}, log_progress);
 
+    data->io = BlockIO();  /// Release all potential table locks
     data->reset = true;
 }
 
