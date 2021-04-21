@@ -132,6 +132,7 @@ class QuantileTDigest
         if (unmerged > params.max_unmerged)
             compress();
     }
+
     void compressBrute()
     {
         if (centroids.size() <= params.max_centroids)
@@ -195,6 +196,13 @@ public:
             BetterFloat l_count = l->count;
             while (r != centroids.end())
             {
+                /// N.B. Piece of logic which compresses the same singleton centroids into one centroid is removed
+                /// because: 1) singleton centroids are being processed in unusual way in recent version of algorithm
+                /// and such compression would break this logic;
+                /// 2) we shall not compress centroids further than `max_centroids` parameter requires because
+                /// this will lead to uneven compression.
+                /// For more information see: https://arxiv.org/abs/1902.04023 .
+
                 /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
                 BetterFloat ql = (sum + l_count * 0.5) / count;
                 BetterFloat err = ql * (1 - ql);
