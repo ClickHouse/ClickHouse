@@ -807,6 +807,7 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
     /// we remove it on table creation if there is /dropped node. Creating thread may remove /dropped node created by
     /// removing thread, and it causes race condition if removing thread is not finished yet.
     /// To avoid this we also create ephemeral child before starting recursive removal.
+    /// (The existence of child node does not allow to remove parent node).
     Coordination::Requests ops;
     Coordination::Responses responses;
     String drop_lock_path = zookeeper_path + "/dropped/lock";
