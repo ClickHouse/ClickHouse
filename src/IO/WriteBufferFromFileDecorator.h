@@ -21,7 +21,7 @@ public:
 
 protected:
     std::unique_ptr<WriteBuffer> impl;
-    bool finalized;
+    bool finalized = false;
 
 private:
     void nextImpl() override;

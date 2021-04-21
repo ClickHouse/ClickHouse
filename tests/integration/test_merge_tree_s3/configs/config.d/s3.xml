@@ -1,0 +1,7 @@
+<yandex>
+    <profiles>
+        <default>
+            <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+        </default>
+    </profiles>
+</yandex>

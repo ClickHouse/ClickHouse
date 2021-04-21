@@ -134,6 +134,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
 
+        case Type::RESTART_DISK:
+        {
+            ASTPtr ast;
+            if (ParserIdentifier{}.parse(pos, ast, expected))
+                res->disk = ast->as<ASTIdentifier &>().name();
+            else
+                return false;
+
+            break;
+        }
+
         case Type::STOP_DISTRIBUTED_SENDS:
         case Type::START_DISTRIBUTED_SENDS:
         case Type::FLUSH_DISTRIBUTED:
@@ -181,17 +192,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->volume = volume_str;
             if (res->volume.empty() && res->storage_policy.empty())
                 parseDatabaseAndTableName(pos, expected, res->database, res->table);
-            break;
-        }
-
-        case Type::RESTART_DISK:
-        {
-            ASTPtr ast;
-            if (ParserIdentifier{}.parse(pos, ast, expected))
-                res->disk = ast->as<ASTIdentifier &>().name();
-            else
-                return false;
-
             break;
         }
 

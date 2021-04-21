@@ -5,6 +5,13 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int DEADLOCK_AVOIDED;
+}
+
+using Millis = std::chrono::milliseconds;
+using Seconds = std::chrono::seconds;
 
 /// Holds restart read lock till finalize.
 class RestartAwareReadBuffer : public ReadBufferFromFileDecorator
@@ -23,6 +30,18 @@ class RestartAwareWriteBuffer : public WriteBufferFromFileDecorator
 public:
     RestartAwareWriteBuffer(const DiskRestartProxy & disk, std::unique_ptr<WriteBuffer> impl_)
         : WriteBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
+
+    virtual ~RestartAwareWriteBuffer() override
+    {
+        try
+        {
+            finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__ );
+        }
+    }
 
 private:
     void finalizeImpl() override
@@ -265,12 +284,24 @@ void DiskRestartProxy::restart(ContextConstPtr context)
 
     LOG_INFO(log, "Acquiring lock to restart disk {}", DiskDecorator::getName());
 
-    lock.lock();
+    auto start_time = std::chrono::steady_clock::now();
+    auto lock_timeout = Seconds(120);
+    do
+    {
+        /// Use a small timeout to not block read operations for a long time.
+        if (lock.try_lock_for(Millis(10)))
+            break;
+    } while (std::chrono::steady_clock::now() - start_time < lock_timeout);
 
-    LOG_INFO(log, "Restarting disk {}", DiskDecorator::getName());
+    if (!lock.owns_lock())
+        throw Exception("Failed to acquire restart lock within timeout. Client should retry.", ErrorCodes::DEADLOCK_AVOIDED);
+
+    LOG_INFO(log, "Restart lock acquired. Restarting disk {}", DiskDecorator::getName());
 
     DiskDecorator::applyNewSettings(context);
     DiskDecorator::startup();
+
+    LOG_INFO(log, "Disk restarted {}", DiskDecorator::getName());
 }
 
 }
