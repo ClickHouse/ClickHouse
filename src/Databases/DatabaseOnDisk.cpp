@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
 
@@ -63,8 +64,20 @@ std::pair<String, StoragePtr> createTableFromAST(
         return {ast_create_query.table, storage};
     }
 
-    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, false);
-    ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
+    ColumnsDescription columns;
+    ConstraintsDescription constraints;
+
+    if (!ast_create_query.is_dictionary)
+    {
+        /// We do not directly use `InterpreterCreateQuery::execute`, because
+        /// - the database has not been loaded yet;
+        /// - the code is simpler, since the query is already brought to a suitable form.
+        if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
+            throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+
+        columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
+        constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
+    }
 
     return
     {
