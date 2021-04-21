@@ -564,11 +564,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
         }
 
+        auto * queue = context->getAsynchronousInsertQueue();
         const bool async_insert
-            = insert_query && !insert_query->select && (insert_query->data || insert_query->tail) && settings.async_insert_mode;
-        auto & queue = context->getAsynchronousInsertQueue();
+            = queue && insert_query && !insert_query->select && (insert_query->data || insert_query->tail) && settings.async_insert_mode;
 
-        if (async_insert && queue.push(insert_query, settings))
+        if (async_insert && queue->push(insert_query, settings))
         {
             /// Shortcut for already processed similar insert-queries.
             /// Similarity is defined by hashing query text and some settings.
@@ -911,7 +911,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (async_insert)
         {
-            queue.push(insert_query, std::move(res), settings);
+            queue->push(insert_query, std::move(res), settings);
             return std::make_tuple(ast, BlockIO());
         }
         else if (insert_query && res.in)

@@ -847,10 +847,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setDefaultProfiles(config());
     const Settings & settings = global_context->getSettingsRef();
 
-    global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
-        settings.async_insert_threads,
-        settings.async_insert_max_data_size,
-        AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout, .stale = settings.async_insert_stale_timeout}));
+    if (settings.async_insert_threads)
+        global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
+            settings.async_insert_threads,
+            settings.async_insert_max_data_size,
+            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout, .stale = settings.async_insert_stale_timeout}));
 
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
