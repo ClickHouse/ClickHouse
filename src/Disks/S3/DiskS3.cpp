@@ -407,7 +407,7 @@ public:
         }
         catch (...)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__ );
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
