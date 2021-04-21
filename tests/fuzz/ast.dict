@@ -156,7 +156,6 @@
 "extractURLParameterNames"
 "extractURLParameters"
 "FETCH PARTITION"
-"FETCH PART"
 "FINAL"
 "FIRST"
 "firstSignificantSubdomain"

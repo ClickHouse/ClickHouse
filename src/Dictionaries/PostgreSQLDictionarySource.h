@@ -11,7 +11,7 @@
 #include <Core/Block.h>
 #include <common/LocalDateTime.h>
 #include <common/logger_useful.h>
-#include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
+#include <Storages/PostgreSQL/PostgreSQLReplicaConnection.h>
 #include <pqxx/pqxx>
 
 
@@ -51,7 +51,7 @@ private:
 
     const DictionaryStructure dict_struct;
     Block sample_block;
-    postgres::PoolWithFailoverPtr connection;
+    PostgreSQLReplicaConnectionPtr connection;
     Poco::Logger * log;
 
     const std::string db;

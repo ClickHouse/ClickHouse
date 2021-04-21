@@ -54,10 +54,6 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RELOAD DICTIONARY";
         case Type::RELOAD_DICTIONARIES:
             return "RELOAD DICTIONARIES";
-        case Type::RELOAD_MODEL:
-            return "RELOAD MODEL";
-        case Type::RELOAD_MODELS:
-            return "RELOAD MODELS";
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             return "RELOAD EMBEDDED DICTIONARIES";
         case Type::RELOAD_CONFIG:

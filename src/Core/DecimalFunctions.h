@@ -103,10 +103,7 @@ inline DecimalType decimalFromComponentsWithMultiplier(
     if (common::mulOverflow(whole, scale_multiplier, whole_scaled))
         throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
-    T value;
-    if (common::addOverflow(whole_scaled, fractional_sign * (fractional % scale_multiplier), value))
-        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-
+    const T value = whole_scaled + fractional_sign * (fractional % scale_multiplier);
     return DecimalType(value);
 }
 

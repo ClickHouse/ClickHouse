@@ -6,9 +6,7 @@
     <substitutions>
         <substitution>
             <name>group_scale</name>
-            <values>
-                <value>1000000</value>
-            </values>
+            <value>1000000</value>
         </substitution>
     </substitutions>
 

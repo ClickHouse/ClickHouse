@@ -50,8 +50,6 @@ public:
         return std::make_shared<DataTypeArray>(this->argument_types[0]);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & set = this->data(place).value;

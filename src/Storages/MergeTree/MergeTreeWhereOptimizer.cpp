@@ -29,7 +29,7 @@ static constexpr auto threshold = 2;
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
