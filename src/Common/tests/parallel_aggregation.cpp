@@ -69,7 +69,7 @@ static void aggregate1(Map & map, Source::const_iterator begin, Source::const_it
         ++map[*it];
 }
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -122,7 +122,7 @@ static void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source:
     }
 }
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 

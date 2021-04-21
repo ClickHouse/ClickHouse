@@ -1,3 +1,7 @@
+if (NOT USE_INTERNAL_NANODBC_LIBRARY)
+    return ()
+endif ()
+
 set (LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/nanodbc)
 
 if (NOT TARGET unixodbc)
