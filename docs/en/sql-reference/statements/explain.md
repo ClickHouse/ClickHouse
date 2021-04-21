@@ -123,7 +123,7 @@ Union
 Settings:
 
 -   `header` — Prints header for each output port. Default: 0.
--   `graph` — Use DOT graph description language. Default: 0.
+-   `graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
 -   `compact` — Prints graph in compact mode if graph is enabled. Default: 1.
 -   `indexes` — Shows used indexes, the number of filtered parts, and granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
