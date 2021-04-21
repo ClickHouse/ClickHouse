@@ -1,5 +1,5 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 #include <optional>
 #include <unordered_set>
 
@@ -28,7 +28,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/QueryPlan/ReverseRowsStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/MergingFinal.h>
@@ -39,6 +39,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <DataStreams/materializeBlock.h>
 
 namespace ProfileEvents
 {
@@ -71,28 +72,30 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
 }
 
 
-/// Construct a block consisting only of possible values of virtual columns
-static Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool with_uuid)
+Block MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns()
 {
-    auto part_column = ColumnString::create();
-    auto part_uuid_column = ColumnUUID::create();
+    return Block(std::initializer_list<ColumnWithTypeAndName>{
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
+        ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid")});
+}
+
+void MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, Block & block)
+{
+    MutableColumns columns = block.mutateColumns();
+
+    auto & part_column = columns[0];
+    auto & partition_id_column = columns[1];
+    auto & part_uuid_column = columns[2];
 
     for (const auto & part : parts)
     {
         part_column->insert(part->name);
-        if (with_uuid)
-            part_uuid_column->insert(part->uuid);
+        partition_id_column->insert(part->info.partition_id);
+        part_uuid_column->insert(part->uuid);
     }
 
-    if (with_uuid)
-    {
-        return Block(std::initializer_list<ColumnWithTypeAndName>{
-            ColumnWithTypeAndName(std::move(part_column), std::make_shared<DataTypeString>(), "_part"),
-            ColumnWithTypeAndName(std::move(part_uuid_column), std::make_shared<DataTypeUUID>(), "_part_uuid"),
-        });
-    }
-
-    return Block{ColumnWithTypeAndName(std::move(part_column), std::make_shared<DataTypeString>(), "_part")};
+    block.setColumns(std::move(columns));
 }
 
 
@@ -149,7 +152,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
@@ -165,7 +168,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
@@ -176,8 +179,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     Names real_column_names;
 
     size_t total_parts = parts.size();
-    bool part_column_queried = false;
-    bool part_uuid_column_queried = false;
 
     bool sample_factor_column_queried = false;
     Float64 used_sample_factor = 1;
@@ -186,7 +187,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         if (name == "_part")
         {
-            part_column_queried = true;
             virt_column_names.push_back(name);
         }
         else if (name == "_part_index")
@@ -199,7 +199,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         }
         else if (name == "_part_uuid")
         {
-            part_uuid_column_queried = true;
             virt_column_names.push_back(name);
         }
         else if (name == "_sample_factor")
@@ -219,16 +218,27 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     if (real_column_names.empty())
         real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
 
-    /// If `_part` or `_part_uuid` virtual columns are requested, we try to filter out data by them.
-    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, part_uuid_column_queried);
-    if (part_column_queried || part_uuid_column_queried)
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context);
+    std::unordered_set<String> part_values;
+    ASTPtr expression_ast;
+    auto virtual_columns_block = getSampleBlockWithVirtualPartColumns();
 
-    auto part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+    // Generate valid expressions for filtering
+    VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, context, virtual_columns_block, expression_ast);
+
+    // If there is still something left, fill the virtual block and do the filtering.
+    if (expression_ast)
+    {
+        fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context, expression_ast);
+        part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+        if (part_values.empty())
+            return std::make_unique<QueryPlan>();
+    }
+    // At this point, empty `part_values` means all parts.
 
     metadata_snapshot->check(real_column_names, data.getVirtuals(), data.getStorageID());
 
-    const Settings & settings = context.getSettingsRef();
+    const Settings & settings = context->getSettingsRef();
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     Names primary_key_columns = primary_key.column_names;
 
@@ -270,13 +280,42 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
-    const Context & query_context = context.hasQueryContext() ? context.getQueryContext() : context;
+    auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
 
-    if (query_context.getSettingsRef().allow_experimental_query_deduplication)
-        selectPartsToReadWithUUIDFilter(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, query_context);
+    PartFilterCounters part_filter_counters;
+    auto index_stats = std::make_unique<ReadFromMergeTree::IndexStats>();
+
+    if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+        selectPartsToReadWithUUIDFilter(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, query_context, part_filter_counters);
     else
-        selectPartsToRead(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read);
+        selectPartsToRead(parts, part_values, minmax_idx_condition, minmax_columns_types, partition_pruner, max_block_numbers_to_read, part_filter_counters);
 
+    index_stats->emplace_back(ReadFromMergeTree::IndexStat{
+        .type = ReadFromMergeTree::IndexType::None,
+        .num_parts_after = part_filter_counters.num_initial_selected_parts,
+        .num_granules_after = part_filter_counters.num_initial_selected_granules});
+
+    if (minmax_idx_condition)
+    {
+        auto description = minmax_idx_condition->getDescription();
+        index_stats->emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::MinMax,
+            .condition = std::move(description.condition),
+            .used_keys = std::move(description.used_keys),
+            .num_parts_after = part_filter_counters.num_parts_after_minmax,
+            .num_granules_after = part_filter_counters.num_granules_after_minmax});
+    }
+
+    if (partition_pruner)
+    {
+        auto description = partition_pruner->getKeyCondition().getDescription();
+        index_stats->emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Partition,
+            .condition = std::move(description.condition),
+            .used_keys = std::move(description.used_keys),
+            .num_parts_after = part_filter_counters.num_parts_after_partition_pruner,
+            .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
+    }
 
     /// Sampling.
     Names column_names_to_read = real_column_names;
@@ -373,7 +412,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         LOG_DEBUG(log, "Will use no data on this replica because parallel replicas processing has been requested"
             " (the setting 'max_parallel_replicas') but the table does not support sampling and this replica is not the first.");
-        return {};
+        return std::make_unique<QueryPlan>();
     }
 
     bool use_sampling = relative_sample_size > 0 || (settings.parallel_replicas_count > 1 && data.supportsSampling());
@@ -546,29 +585,26 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         .min_bytes_to_use_direct_io = settings.min_bytes_to_use_direct_io,
         .min_bytes_to_use_mmap_io = settings.min_bytes_to_use_mmap_io,
+        .mmap_cache = context->getMMappedFileCache(),
         .max_read_buffer_size = settings.max_read_buffer_size,
         .save_marks_in_cache = true,
         .checksum_on_read = settings.checksum_on_read,
     };
 
-    /// PREWHERE
-    String prewhere_column;
-    if (select.prewhere())
-        prewhere_column = select.prewhere()->getColumnName();
-
     struct DataSkippingIndexAndCondition
     {
         MergeTreeIndexPtr index;
         MergeTreeIndexConditionPtr condition;
-        std::atomic<size_t> total_granules;
-        std::atomic<size_t> granules_dropped;
+        std::atomic<size_t> total_granules{0};
+        std::atomic<size_t> granules_dropped{0};
+        std::atomic<size_t> total_parts{0};
+        std::atomic<size_t> parts_dropped{0};
 
         DataSkippingIndexAndCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
             : index(index_)
             , condition(condition_)
-            , total_granules(0)
-            , granules_dropped(0)
-        {}
+        {
+        }
     };
     std::list<DataSkippingIndexAndCondition> useful_indices;
 
@@ -615,6 +651,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     RangesInDataParts parts_with_ranges(parts.size());
     size_t sum_marks = 0;
     std::atomic<size_t> sum_marks_pk = 0;
+    std::atomic<size_t> sum_parts_pk = 0;
     std::atomic<size_t> total_marks_pk = 0;
 
     size_t sum_ranges = 0;
@@ -637,25 +674,29 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
             RangesInDataPart ranges(part, part_index);
 
-            total_marks_pk.fetch_add(part->index_granularity.getMarksCount(), std::memory_order_relaxed);
+            size_t total_marks_count = part->getMarksCount();
+            if (total_marks_count && part->index_granularity.hasFinalMark())
+                --total_marks_count;
+
+            total_marks_pk.fetch_add(total_marks_count, std::memory_order_relaxed);
 
             if (metadata_snapshot->hasPrimaryKey())
                 ranges.ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, settings, log);
-            else
-            {
-                size_t total_marks_count = part->getMarksCount();
-                if (total_marks_count)
-                {
-                    if (part->index_granularity.hasFinalMark())
-                        --total_marks_count;
-                    ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
-                }
-            }
+            else if (total_marks_count)
+                ranges.ranges = MarkRanges{MarkRange{0, total_marks_count}};
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
 
+            if (!ranges.ranges.empty())
+                sum_parts_pk.fetch_add(1, std::memory_order_relaxed);
+
             for (auto & index_and_condition : useful_indices)
             {
+                if (ranges.ranges.empty())
+                    break;
+
+                index_and_condition.total_parts.fetch_add(1, std::memory_order_relaxed);
+
                 size_t total_granules = 0;
                 size_t granules_dropped = 0;
                 ranges.ranges = filterMarksUsingIndex(
@@ -667,6 +708,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
                 index_and_condition.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
                 index_and_condition.granules_dropped.fetch_add(granules_dropped, std::memory_order_relaxed);
+
+                if (ranges.ranges.empty())
+                    index_and_condition.parts_dropped.fetch_add(1, std::memory_order_relaxed);
             }
 
             if (!ranges.ranges.empty())
@@ -699,7 +743,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
             for (size_t part_index = 0; part_index < parts.size(); ++part_index)
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()] {
-                    SCOPE_EXIT(
+                    SCOPE_EXIT_SAFE(
                         if (thread_group)
                             CurrentThread::detachQueryIfNotDetached();
                     );
@@ -732,12 +776,34 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         parts_with_ranges.resize(next_part);
     }
 
+    if (metadata_snapshot->hasPrimaryKey())
+    {
+        auto description = key_condition.getDescription();
+
+        index_stats->emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::PrimaryKey,
+            .condition = std::move(description.condition),
+            .used_keys = std::move(description.used_keys),
+            .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
+            .num_granules_after = sum_marks_pk.load(std::memory_order_relaxed)});
+    }
+
     for (const auto & index_and_condition : useful_indices)
     {
         const auto & index_name = index_and_condition.index->index.name;
         LOG_DEBUG(log, "Index {} has dropped {}/{} granules.",
             backQuote(index_name),
             index_and_condition.granules_dropped, index_and_condition.total_granules);
+
+        std::string description = index_and_condition.index->index.type
+            + " GRANULARITY " + std::to_string(index_and_condition.index->index.granularity);
+
+        index_stats->emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Skip,
+            .name = index_name,
+            .description = std::move(description),
+            .num_parts_after = index_and_condition.total_parts - index_and_condition.parts_dropped,
+            .num_granules_after = index_and_condition.total_granules - index_and_condition.granules_dropped});
     }
 
     LOG_DEBUG(log, "Selected {}/{} parts by partition key, {} parts by primary key, {}/{} marks by primary key, {} marks to read from {} ranges",
@@ -771,7 +837,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         if (data_settings->min_marks_to_honor_max_concurrent_queries > 0
             && sum_marks >= data_settings->min_marks_to_honor_max_concurrent_queries)
         {
-            query_id = context.getCurrentQueryId();
+            query_id = context->getCurrentQueryId();
             if (!query_id.empty())
                 data.insertQueryIdOrThrow(query_id, data_settings->max_concurrent_queries);
         }
@@ -804,6 +870,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
         plan = spreadMarkRangesAmongStreamsFinal(
             std::move(parts_with_ranges),
+            std::move(index_stats),
             num_streams,
             column_names_to_read,
             metadata_snapshot,
@@ -827,6 +894,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
         plan = spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges),
+            std::move(index_stats),
             num_streams,
             column_names_to_read,
             metadata_snapshot,
@@ -844,6 +912,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     {
         plan = spreadMarkRangesAmongStreams(
             std::move(parts_with_ranges),
+            std::move(index_stats),
             num_streams,
             column_names_to_read,
             metadata_snapshot,
@@ -955,25 +1024,9 @@ size_t minMarksForConcurrentRead(
 
 }
 
-static QueryPlanPtr createPlanFromPipe(Pipe pipe, const String & query_id, const MergeTreeData & data, const std::string & description = "")
-{
-    auto plan = std::make_unique<QueryPlan>();
-
-    std::string storage_name = "MergeTree";
-    if (!description.empty())
-        storage_name += ' ' + description;
-
-    // Attach QueryIdHolder if needed
-    if (!query_id.empty())
-        pipe.addQueryIdHolder(std::make_shared<QueryIdHolder>(query_id, data));
-
-    auto step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name);
-    plan->addStep(std::move(step));
-    return plan;
-}
-
 QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts,
+    ReadFromMergeTree::IndexStatPtr index_stats,
     size_t num_streams,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1025,75 +1078,32 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     if (0 == sum_marks)
         return {};
 
+    ReadFromMergeTree::Settings step_settings
+    {
+        .max_block_size = max_block_size,
+        .preferred_block_size_bytes = settings.preferred_block_size_bytes,
+        .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
+        .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+        .use_uncompressed_cache = use_uncompressed_cache,
+        .reader_settings = reader_settings,
+        .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
+    };
+
     if (num_streams > 1)
     {
-        /// Parallel query execution.
-        Pipes res;
-
         /// Reduce the number of num_streams if the data is small.
         if (sum_marks < num_streams * min_marks_for_concurrent_read && parts.size() < num_streams)
             num_streams = std::max((sum_marks + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, parts.size());
-
-        MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
-            num_streams,
-            sum_marks,
-            min_marks_for_concurrent_read,
-            std::move(parts),
-            data,
-            metadata_snapshot,
-            query_info.prewhere_info,
-            true,
-            column_names,
-            MergeTreeReadPool::BackoffSettings(settings),
-            settings.preferred_block_size_bytes,
-            false);
-
-        /// Let's estimate total number of rows for progress bar.
-        LOG_TRACE(log, "Reading approx. {} rows with {} streams", total_rows, num_streams);
-
-        for (size_t i = 0; i < num_streams; ++i)
-        {
-            auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
-                i, pool, min_marks_for_concurrent_read, max_block_size,
-                settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
-                data, metadata_snapshot, use_uncompressed_cache,
-                query_info.prewhere_info, reader_settings, virt_columns);
-
-            if (i == 0)
-            {
-                /// Set the approximate number of rows for the first source only
-                source->addTotalRowsApprox(total_rows);
-            }
-
-            res.emplace_back(std::move(source));
-        }
-
-        return createPlanFromPipe(Pipe::unitePipes(std::move(res)), query_id, data);
     }
-    else
-    {
-        /// Sequential query execution.
-        Pipes res;
 
-        for (const auto & part : parts)
-        {
-            auto source = std::make_shared<MergeTreeSelectProcessor>(
-                data, metadata_snapshot, part.data_part, max_block_size, settings.preferred_block_size_bytes,
-                settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
-                query_info.prewhere_info, true, reader_settings, virt_columns, part.part_index_in_query);
+    auto plan = std::make_unique<QueryPlan>();
+    auto step = std::make_unique<ReadFromMergeTree>(
+        data, metadata_snapshot, query_id,
+        column_names, std::move(parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
+        step_settings, num_streams, ReadFromMergeTree::ReadType::Default);
 
-            res.emplace_back(std::move(source));
-        }
-
-        auto pipe = Pipe::unitePipes(std::move(res));
-
-        /// Use ConcatProcessor to concat sources together.
-        /// It is needed to read in parts order (and so in PK order) if single thread is used.
-        if (pipe.numOutputPorts() > 1)
-            pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
-
-        return createPlanFromPipe(std::move(pipe), query_id, data);
-    }
+    plan->addStep(std::move(step));
+    return plan;
 }
 
 static ActionsDAGPtr createProjection(const Block & header)
@@ -1106,6 +1116,7 @@ static ActionsDAGPtr createProjection(const Block & header)
 
 QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     RangesInDataParts && parts,
+    ReadFromMergeTree::IndexStatPtr index_stats,
     size_t num_streams,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1213,8 +1224,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     for (size_t i = 0; i < num_streams && !parts.empty(); ++i)
     {
         size_t need_marks = min_marks_per_stream;
-
-        Pipes pipes;
+        RangesInDataParts new_parts;
 
         /// Loop over parts.
         /// We will iteratively take part or some subrange of a part from the back
@@ -1269,53 +1279,31 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
                 parts.emplace_back(part);
             }
             ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
-
-            if (input_order_info->direction == 1)
-            {
-                pipes.emplace_back(std::make_shared<MergeTreeSelectProcessor>(
-                    data,
-                    metadata_snapshot,
-                    part.data_part,
-                    max_block_size,
-                    settings.preferred_block_size_bytes,
-                    settings.preferred_max_column_in_block_size_bytes,
-                    column_names,
-                    ranges_to_get_from_part,
-                    use_uncompressed_cache,
-                    query_info.prewhere_info,
-                    true,
-                    reader_settings,
-                    virt_columns,
-                    part.part_index_in_query));
-            }
-            else
-            {
-                pipes.emplace_back(std::make_shared<MergeTreeReverseSelectProcessor>(
-                    data,
-                    metadata_snapshot,
-                    part.data_part,
-                    max_block_size,
-                    settings.preferred_block_size_bytes,
-                    settings.preferred_max_column_in_block_size_bytes,
-                    column_names,
-                    ranges_to_get_from_part,
-                    use_uncompressed_cache,
-                    query_info.prewhere_info,
-                    true,
-                    reader_settings,
-                    virt_columns,
-                    part.part_index_in_query));
-            }
+            new_parts.emplace_back(part.data_part, part.part_index_in_query, std::move(ranges_to_get_from_part));
         }
 
-        auto plan = createPlanFromPipe(Pipe::unitePipes(std::move(pipes)), query_id, data, "with order");
-
-        if (input_order_info->direction != 1)
+        ReadFromMergeTree::Settings step_settings
         {
-            auto reverse_step = std::make_unique<ReverseRowsStep>(plan->getCurrentDataStream());
-            plan->addStep(std::move(reverse_step));
-        }
+            .max_block_size = max_block_size,
+            .preferred_block_size_bytes = settings.preferred_block_size_bytes,
+            .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
+            .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+            .use_uncompressed_cache = use_uncompressed_cache,
+            .reader_settings = reader_settings,
+            .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
+        };
 
+        auto read_type = input_order_info->direction == 1
+                       ? ReadFromMergeTree::ReadType::InOrder
+                       : ReadFromMergeTree::ReadType::InReverseOrder;
+
+        auto plan = std::make_unique<QueryPlan>();
+        auto step = std::make_unique<ReadFromMergeTree>(
+            data, metadata_snapshot, query_id,
+            column_names, std::move(new_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
+            step_settings, num_streams, read_type);
+
+        plan->addStep(std::move(step));
         plans.emplace_back(std::move(plan));
     }
 
@@ -1355,8 +1343,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
     for (const auto & plan : plans)
         input_streams.emplace_back(plan->getCurrentDataStream());
 
-    const auto & common_header = plans.front()->getCurrentDataStream().header;
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), common_header);
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
 
     auto plan = std::make_unique<QueryPlan>();
     plan->unitePlans(std::move(union_step), std::move(plans));
@@ -1367,6 +1354,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
 
 QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts,
+    ReadFromMergeTree::IndexStatPtr index_stats,
     size_t num_streams,
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -1408,7 +1396,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         num_streams = settings.max_final_threads;
 
     /// If setting do_not_merge_across_partitions_select_final is true than we won't merge parts from different partitions.
-    /// We have all parts in parts vector, where parts with same partition are nerby.
+    /// We have all parts in parts vector, where parts with same partition are nearby.
     /// So we will store iterators pointed to the beginning of each partition range (and parts.end()),
     /// then we will create a pipe for each partition that will run selecting processor and merging processor
     /// for the parts with this partition. In the end we will unite all the pipes.
@@ -1447,7 +1435,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         QueryPlanPtr plan;
 
         {
-            Pipes pipes;
+            RangesInDataParts new_parts;
 
             /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
             /// with level > 0 then we won't postprocess this part and if num_streams > 1 we
@@ -1466,36 +1454,35 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             {
                 for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
                 {
-                    auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
-                        data,
-                        metadata_snapshot,
-                        part_it->data_part,
-                        max_block_size,
-                        settings.preferred_block_size_bytes,
-                        settings.preferred_max_column_in_block_size_bytes,
-                        column_names,
-                        part_it->ranges,
-                        use_uncompressed_cache,
-                        query_info.prewhere_info,
-                        true,
-                        reader_settings,
-                        virt_columns,
-                        part_it->part_index_in_query);
-
-                    pipes.emplace_back(std::move(source_processor));
+                    new_parts.emplace_back(part_it->data_part, part_it->part_index_in_query, part_it->ranges);
                 }
             }
 
-            if (pipes.empty())
+            if (new_parts.empty())
                 continue;
 
-            auto pipe = Pipe::unitePipes(std::move(pipes));
+            ReadFromMergeTree::Settings step_settings
+            {
+                .max_block_size = max_block_size,
+                .preferred_block_size_bytes = settings.preferred_block_size_bytes,
+                .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
+                .min_marks_for_concurrent_read = 0, /// this setting is not used for reading in order
+                .use_uncompressed_cache = use_uncompressed_cache,
+                .reader_settings = reader_settings,
+                .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
+            };
+
+            plan = std::make_unique<QueryPlan>();
+            auto step = std::make_unique<ReadFromMergeTree>(
+                data, metadata_snapshot, query_id,
+                column_names, std::move(new_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
+                step_settings, num_streams, ReadFromMergeTree::ReadType::InOrder);
+
+            plan->addStep(std::move(step));
 
             /// Drop temporary columns, added by 'sorting_key_expr'
             if (!out_projection)
-                out_projection = createProjection(pipe.getHeader());
-
-            plan = createPlanFromPipe(std::move(pipe), query_id, data, "with final");
+                out_projection = createProjection(plan->getCurrentDataStream().header);
         }
 
         auto expression_step = std::make_unique<ExpressionStep>(
@@ -1542,7 +1529,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
     if (!lonely_parts.empty())
     {
-        Pipes pipes;
+        RangesInDataParts new_parts;
 
         size_t num_streams_for_lonely_parts = num_streams * lonely_parts.size();
 
@@ -1557,41 +1544,28 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         if (sum_marks_in_lonely_parts < num_streams_for_lonely_parts * min_marks_for_concurrent_read && lonely_parts.size() < num_streams_for_lonely_parts)
             num_streams_for_lonely_parts = std::max((sum_marks_in_lonely_parts + min_marks_for_concurrent_read - 1) / min_marks_for_concurrent_read, lonely_parts.size());
 
-
-        MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
-            num_streams_for_lonely_parts,
-            sum_marks_in_lonely_parts,
-            min_marks_for_concurrent_read,
-            std::move(lonely_parts),
-            data,
-            metadata_snapshot,
-            query_info.prewhere_info,
-            true,
-            column_names,
-            MergeTreeReadPool::BackoffSettings(settings),
-            settings.preferred_block_size_bytes,
-            false);
-
-        LOG_TRACE(log, "Reading approx. {} rows with {} streams", total_rows_in_lonely_parts, num_streams_for_lonely_parts);
-
-        for (size_t i = 0; i < num_streams_for_lonely_parts; ++i)
+        ReadFromMergeTree::Settings step_settings
         {
-            auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
-                i, pool, min_marks_for_concurrent_read, max_block_size,
-                settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
-                data, metadata_snapshot, use_uncompressed_cache,
-                query_info.prewhere_info, reader_settings, virt_columns);
+            .max_block_size = max_block_size,
+            .preferred_block_size_bytes = settings.preferred_block_size_bytes,
+            .preferred_max_column_in_block_size_bytes = settings.preferred_max_column_in_block_size_bytes,
+            .min_marks_for_concurrent_read = min_marks_for_concurrent_read,
+            .use_uncompressed_cache = use_uncompressed_cache,
+            .reader_settings = reader_settings,
+            .backoff_settings = MergeTreeReadPool::BackoffSettings(settings),
+        };
 
-            pipes.emplace_back(std::move(source));
-        }
+        auto plan = std::make_unique<QueryPlan>();
+        auto step = std::make_unique<ReadFromMergeTree>(
+            data, metadata_snapshot, query_id,
+            column_names, std::move(lonely_parts), std::move(index_stats), query_info.prewhere_info, virt_columns,
+            step_settings, num_streams_for_lonely_parts, ReadFromMergeTree::ReadType::Default);
 
-        auto pipe = Pipe::unitePipes(std::move(pipes));
+        plan->addStep(std::move(step));
 
         /// Drop temporary columns, added by 'sorting_key_expr'
         if (!out_projection)
-            out_projection = createProjection(pipe.getHeader());
-
-        QueryPlanPtr plan = createPlanFromPipe(std::move(pipe), query_id, data, "with final");
+            out_projection = createProjection(plan->getCurrentDataStream().header);
 
         auto expression_step = std::make_unique<ExpressionStep>(
             plan->getCurrentDataStream(),
@@ -1892,28 +1866,19 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     std::optional<PartitionPruner> & partition_pruner,
-    const PartitionIdToMaxBlock * max_block_numbers_to_read)
+    const PartitionIdToMaxBlock * max_block_numbers_to_read,
+    PartFilterCounters & counters)
 {
     auto prev_parts = parts;
     parts.clear();
 
     for (const auto & part : prev_parts)
     {
-        if (part_values.find(part->name) == part_values.end())
+        if (!part_values.empty() && part_values.find(part->name) == part_values.end())
             continue;
 
         if (part->isEmpty())
             continue;
-
-        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
-                part->minmax_idx.hyperrectangle, minmax_columns_types).can_be_true)
-            continue;
-
-        if (partition_pruner)
-        {
-            if (partition_pruner->canBePruned(part))
-                continue;
-        }
 
         if (max_block_numbers_to_read)
         {
@@ -1921,6 +1886,29 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
             if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
                 continue;
         }
+
+        size_t num_granules = part->getMarksCount();
+        if (num_granules && part->index_granularity.hasFinalMark())
+            --num_granules;
+
+        counters.num_initial_selected_parts += 1;
+        counters.num_initial_selected_granules += num_granules;
+
+        if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
+                part->minmax_idx.hyperrectangle, minmax_columns_types).can_be_true)
+            continue;
+
+        counters.num_parts_after_minmax += 1;
+        counters.num_granules_after_minmax += num_granules;
+
+        if (partition_pruner)
+        {
+            if (partition_pruner->canBePruned(part))
+                continue;
+        }
+
+        counters.num_parts_after_partition_pruner += 1;
+        counters.num_granules_after_partition_pruner += num_granules;
 
         parts.push_back(part);
     }
@@ -1933,16 +1921,14 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     const DataTypes & minmax_columns_types,
     std::optional<PartitionPruner> & partition_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    const Context & query_context) const
+    ContextPtr query_context,
+    PartFilterCounters & counters) const
 {
-    /// const_cast to add UUIDs to context. Bad practice.
-    Context & non_const_context = const_cast<Context &>(query_context);
-
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
     auto select_parts = [&] (MergeTreeData::DataPartsVector & selected_parts) -> bool
     {
-        auto ignored_part_uuids = non_const_context.getIgnoredPartUUIDs();
+        auto ignored_part_uuids = query_context->getIgnoredPartUUIDs();
         std::unordered_set<UUID> temp_part_uuids;
 
         auto prev_parts = selected_parts;
@@ -1950,22 +1936,11 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
         for (const auto & part : prev_parts)
         {
-            if (part_values.find(part->name) == part_values.end())
+            if (!part_values.empty() && part_values.find(part->name) == part_values.end())
                 continue;
 
             if (part->isEmpty())
                 continue;
-
-            if (minmax_idx_condition
-                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx.hyperrectangle, minmax_columns_types)
-                        .can_be_true)
-                continue;
-
-            if (partition_pruner)
-            {
-                if (partition_pruner->canBePruned(part))
-                    continue;
-            }
 
             if (max_block_numbers_to_read)
             {
@@ -1974,13 +1949,37 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
                     continue;
             }
 
+            /// Skip the part if its uuid is meant to be excluded
+            if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
+                continue;
+
+            size_t num_granules = part->getMarksCount();
+            if (num_granules && part->index_granularity.hasFinalMark())
+                --num_granules;
+
+            counters.num_initial_selected_parts += 1;
+            counters.num_initial_selected_granules += num_granules;
+
+            if (minmax_idx_condition
+                && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx.hyperrectangle, minmax_columns_types)
+                        .can_be_true)
+                continue;
+
+            counters.num_parts_after_minmax += 1;
+            counters.num_granules_after_minmax += num_granules;
+
+            if (partition_pruner)
+            {
+                if (partition_pruner->canBePruned(part))
+                    continue;
+            }
+
+            counters.num_parts_after_partition_pruner += 1;
+            counters.num_granules_after_partition_pruner += num_granules;
+
             /// populate UUIDs and exclude ignored parts if enabled
             if (part->uuid != UUIDHelpers::Nil)
             {
-                /// Skip the part if its uuid is meant to be excluded
-                if (ignored_part_uuids->has(part->uuid))
-                    continue;
-
                 auto result = temp_part_uuids.insert(part->uuid);
                 if (!result.second)
                     throw Exception("Found a part with the same UUID on the same replica.", ErrorCodes::LOGICAL_ERROR);
@@ -1991,12 +1990,12 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
         if (!temp_part_uuids.empty())
         {
-            auto duplicates = non_const_context.getPartUUIDs()->add(std::vector<UUID>{temp_part_uuids.begin(), temp_part_uuids.end()});
+            auto duplicates = query_context->getPartUUIDs()->add(std::vector<UUID>{temp_part_uuids.begin(), temp_part_uuids.end()});
             if (!duplicates.empty())
             {
                 /// on a local replica with prefer_localhost_replica=1 if any duplicates appeared during the first pass,
                 /// adding them to the exclusion, so they will be skipped on second pass
-                non_const_context.getIgnoredPartUUIDs()->add(duplicates);
+                query_context->getIgnoredPartUUIDs()->add(duplicates);
                 return false;
             }
         }
@@ -2011,6 +2010,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     if (needs_retry)
     {
         LOG_DEBUG(log, "Found duplicate uuids locally, will retry part selection without them");
+
+        counters = PartFilterCounters();
 
         /// Second attempt didn't help, throw an exception
         if (!select_parts(parts))

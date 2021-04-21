@@ -585,3 +585,15 @@ SEMI LEFT JOIN
 ) AS r USING (id)
 WHERE r.id = 1
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
+SELECT value + t1.value AS expr
+FROM 
+(
+    SELECT
+        value,
+        t1.value
+    FROM test_00597 AS t0
+    ALL FULL OUTER JOIN test_00597 AS t1 USING (date)
+    WHERE (value + `t1.value`) < 3
+)
+WHERE expr < 3
+2

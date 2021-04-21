@@ -9,7 +9,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Common/Arena.h>
 
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 
 
 namespace DB
@@ -29,7 +29,7 @@ class FunctionInitializeAggregation : public IFunction
 {
 public:
     static constexpr auto name = "initializeAggregation";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionInitializeAggregation>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionInitializeAggregation>(); }
 
     String getName() const override { return name; }
 
@@ -132,7 +132,7 @@ ColumnPtr FunctionInitializeAggregation::executeImpl(const ColumnsWithTypeAndNam
         }
     }
 
-    SCOPE_EXIT({
+    SCOPE_EXIT_MEMORY_SAFE({
         for (size_t i = 0; i < input_rows_count; ++i)
             agg_func.destroy(places[i]);
     });

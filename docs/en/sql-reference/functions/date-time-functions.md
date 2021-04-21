@@ -147,6 +147,9 @@ Result:
 └────────────────┘
 ```
 
+!!! attention "Attention"
+    The return type `toStartOf*` functions described below is `Date` or `DateTime`. Though these functions can take `DateTime64` as an argument, passing them a `DateTime64` that is out of normal range (years 1970 - 2105) will give incorrect result.
+
 ## toStartOfYear {#tostartofyear}
 
 Rounds down a date or date with time to the first day of the year.
@@ -388,13 +391,13 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 Truncates date and time data to the specified part of date.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 date_trunc(unit, value[, timezone])
 ```
 
-Alias: `dateTrunc`. 
+Alias: `dateTrunc`.
 
 **Arguments**
 
@@ -457,13 +460,13 @@ Result:
 
 Adds the time interval or date interval to the provided date or date with time.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 date_add(unit, value, date)
 ```
 
-Aliases: `dateAdd`, `DATE_ADD`. 
+Aliases: `dateAdd`, `DATE_ADD`.
 
 **Arguments**
 
@@ -478,7 +481,7 @@ Aliases: `dateAdd`, `DATE_ADD`.
     - `month`
     - `quarter`
     - `year`
-	
+
 -   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).  
 -   `date` — The date or date with time to which `value` is added. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -583,7 +586,7 @@ Aliases: `dateSub`, `DATE_SUB`.
     - `month`
     - `quarter`
     - `year`
-	
+
 -   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).    
 -   `date` — The date or date with time from which `value` is subtracted. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -613,16 +616,16 @@ Result:
 
 Adds the specified time value with the provided date or date time value.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 timestamp_add(date, INTERVAL value unit)
 ```
 
-Aliases: `timeStampAdd`, `TIMESTAMP_ADD`. 
+Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 
 **Arguments**
-    
+
 -   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 -   `value` — Value of interval to add. [Int](../../sql-reference/data-types/int-uint.md).
 -   `unit` — The type of interval to add. [String](../../sql-reference/data-types/string.md).
@@ -642,7 +645,7 @@ Aliases: `timeStampAdd`, `TIMESTAMP_ADD`.
 Date or date with time with the specified `value` expressed in `unit` added to `date`.
 
 Type: [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
-    
+
 **Example**
 
 Query:
@@ -663,13 +666,13 @@ Result:
 
 Subtracts the time interval from the provided date or date with time.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 timestamp_sub(unit, value, date)
 ```
 
-Aliases: `timeStampSub`, `TIMESTAMP_SUB`. 
+Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
 
 **Arguments**
 
@@ -684,7 +687,7 @@ Aliases: `timeStampSub`, `TIMESTAMP_SUB`.
     - `month`
     - `quarter`
     - `year`
-	
+
 -   `value` — Value of interval to subtract. [Int](../../sql-reference/data-types/int-uint.md).   
 -   `date` — Date or date with time. [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -709,12 +712,12 @@ Result:
 │                                          2018-07-18 01:02:03 │
 └──────────────────────────────────────────────────────────────┘
 ```
-    
+
 ## now {#now}
 
-Returns the current date and time. 
+Returns the current date and time.
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 now([timezone])
@@ -1069,4 +1072,3 @@ Result:
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
-

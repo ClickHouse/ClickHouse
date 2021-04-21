@@ -14,10 +14,14 @@ class Block;
 struct ExtraBlock;
 using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
+class TableJoin;
+
 class IJoin
 {
 public:
     virtual ~IJoin() = default;
+
+    virtual const TableJoin & getTableJoin() const = 0;
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.

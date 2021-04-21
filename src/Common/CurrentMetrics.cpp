@@ -66,6 +66,8 @@
     M(PartsWide, "Wide parts.") \
     M(PartsCompact, "Compact parts.") \
     M(PartsInMemory, "In-memory parts.") \
+    M(MMappedFiles, "Total number of mmapped files.") \
+    M(MMappedFileBytes, "Sum size of mmapped file regions.") \
 
 namespace CurrentMetrics
 {

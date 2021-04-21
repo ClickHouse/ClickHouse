@@ -66,7 +66,12 @@ reportStageEnd('parse')
 subst_elems = root.findall('substitutions/substitution')
 available_parameters = {} # { 'table': ['hits_10m', 'hits_100m'], ... }
 for e in subst_elems:
-    available_parameters[e.find('name').text] = [v.text for v in e.findall('values/value')]
+    name = e.find('name').text
+    values = [v.text for v in e.findall('values/value')]
+    if not values:
+        raise Exception(f'No values given for substitution {{{name}}}')
+
+    available_parameters[name] = values
 
 # Takes parallel lists of templates, substitutes them with all combos of
 # parameters. The set of parameters is determined based on the first list.
@@ -266,13 +271,12 @@ for query_index in queries_to_run:
 
             try:
                 # Will also detect too long queries during warmup stage
-                res = c.execute(q, query_id = prewarm_id, settings = {'max_execution_time': 10})
+                res = c.execute(q, query_id = prewarm_id, settings = {'max_execution_time': args.max_query_seconds})
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (prewarm_id, *e.args)
                 e.message = prewarm_id + ': ' + e.message
                 raise
-
 
             print(f'prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{c.last_query.elapsed}')
         except KeyboardInterrupt:
@@ -320,7 +324,7 @@ for query_index in queries_to_run:
 
         for conn_index, c in enumerate(this_query_connections):
             try:
-                res = c.execute(q, query_id = run_id)
+                res = c.execute(q, query_id = run_id, settings = {'max_execution_time': args.max_query_seconds})
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (run_id, *e.args)

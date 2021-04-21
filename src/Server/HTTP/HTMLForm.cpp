@@ -71,23 +71,6 @@ HTMLForm::HTMLForm(const Poco::URI & uri) : field_limit(DFL_FIELD_LIMIT), value_
 }
 
 
-void HTMLForm::setEncoding(const std::string & encoding_)
-{
-    encoding = encoding_;
-}
-
-
-void HTMLForm::addPart(const std::string & name, Poco::Net::PartSource * source)
-{
-    poco_check_ptr(source);
-
-    Part part;
-    part.name = name;
-    part.source = std::unique_ptr<Poco::Net::PartSource>(source);
-    parts.push_back(std::move(part));
-}
-
-
 void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & requestBody, PartHandler & handler)
 {
     clear();
@@ -126,33 +109,9 @@ void HTMLForm::load(const Poco::Net::HTTPRequest & request, ReadBuffer & request
 }
 
 
-void HTMLForm::load(const Poco::Net::HTTPRequest & request)
-{
-    NullPartHandler nah;
-    EmptyReadBuffer nis;
-    load(request, nis, nah);
-}
-
-
-void HTMLForm::read(ReadBuffer & in, PartHandler & handler)
-{
-    if (encoding == ENCODING_URL)
-        readQuery(in);
-    else
-        readMultipart(in, handler);
-}
-
-
 void HTMLForm::read(ReadBuffer & in)
 {
     readQuery(in);
-}
-
-
-void HTMLForm::read(const std::string & queryString)
-{
-    ReadBufferFromString istr(queryString);
-    readQuery(istr);
 }
 
 
@@ -269,22 +228,6 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
 }
 
 
-void HTMLForm::setFieldLimit(int limit)
-{
-    poco_assert(limit >= 0);
-
-    field_limit = limit;
-}
-
-
-void HTMLForm::setValueLengthLimit(int limit)
-{
-    poco_assert(limit >= 0);
-
-    value_length_limit = limit;
-}
-
-
 HTMLForm::MultipartReadBuffer::MultipartReadBuffer(ReadBuffer & in_, const std::string & boundary_)
     : ReadBuffer(nullptr, 0), in(in_), boundary("--" + boundary_)
 {
@@ -368,6 +311,11 @@ bool HTMLForm::MultipartReadBuffer::nextImpl()
     }
     else
         boundary_hit = startsWith(line, boundary);
+
+    if (!line.empty())
+        /// If we don't make sure that memory is contiguous then situation may happen, when part of the line is inside internal memory
+        /// and other part is inside sub-buffer, thus we'll be unable to setup our working buffer properly.
+        in.makeContinuousMemoryFromCheckpointToPos();
 
     in.rollbackToCheckpoint(true);
 
