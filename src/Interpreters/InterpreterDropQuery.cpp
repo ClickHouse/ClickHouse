@@ -31,9 +31,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_DICTIONARY;
     extern const int NOT_IMPLEMENTED;
-    extern const int INCORRECT_QUERY;
 }
 
 
@@ -89,6 +87,10 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 
 BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
+    /// TODO: Throw dictionary exception
+    /// TODO: Check permamently detach dictionary
+    /// TODO: Check detach dictionary for replicated database
+
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
     if (query.temporary || table_id.database_name.empty())

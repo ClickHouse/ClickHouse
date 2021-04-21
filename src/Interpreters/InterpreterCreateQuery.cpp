@@ -79,7 +79,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
-    extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
@@ -949,6 +948,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         database = DatabaseCatalog::instance().getDatabase(create.database);
         assertOrSetUUID(create, database);
+
+        /// TODO: Throw dictionary exists error
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
         if (database->isTableExist(create.table, getContext()))
