@@ -551,6 +551,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         properties.columns = table_function->getActualTableStructure(getContext());
         assert(!properties.columns.empty());
     }
+    else if (create.is_dictionary)
+    {
+        return {};
+    }
     else
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
@@ -838,10 +842,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         // Table SQL definition is available even if the table is detached (even permanently)
         auto query = database->getCreateTableQuery(create.table, getContext());
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
-        if (create.is_dictionary)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Cannot ATTACH TABLE {}.{}, it is a Dictionary",
-                            backQuoteIfNeed(database_name), backQuoteIfNeed(create.table));
+
+        /// TODO: Check if dictionary
+
         create.attach = true;
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
@@ -1123,56 +1126,6 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     return {};
 }
 
-BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
-{
-    String dictionary_name = create.table;
-
-    create.database = getContext()->resolveDatabase(create.database);
-    const String & database_name = create.database;
-
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name);
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    if (typeid_cast<DatabaseReplicated *>(database.get())
-        && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        if (!create.attach)
-            assertOrSetUUID(create, database);
-        guard->releaseTableLock();
-        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
-    }
-
-    if (database->isDictionaryExist(dictionary_name))
-    {
-        /// TODO Check structure of dictionary
-        if (create.if_not_exists)
-            return {};
-        else
-            throw Exception(
-                "Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
-    }
-
-    if (create.attach)
-    {
-        auto query = DatabaseCatalog::instance().getDatabase(database_name)->getCreateDictionaryQuery(dictionary_name);
-        create = query->as<ASTCreateQuery &>();
-        create.attach = true;
-    }
-
-    assertOrSetUUID(create, database);
-
-    if (create.attach)
-    {
-        auto config = getDictionaryConfigurationFromAST(create, getContext());
-        auto modification_time = database->getObjectMetadataModificationTime(dictionary_name);
-        database->attachDictionary(dictionary_name, DictionaryAttachInfo{query_ptr, config, modification_time});
-    }
-    else
-        database->createDictionary(getContext(), dictionary_name, query_ptr);
-
-    return {};
-}
-
 void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr local_context, const String & cluster_name)
 {
     if (create.attach)
@@ -1237,10 +1190,8 @@ BlockIO InterpreterCreateQuery::execute()
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
         return createDatabase(create);
-    else if (!create.is_dictionary)
-        return createTable(create);
     else
-        return createDictionary(create);
+        return createTable(create);
 }
 
 

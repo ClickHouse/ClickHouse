@@ -63,13 +63,8 @@ std::pair<String, StoragePtr> createTableFromAST(
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.table, storage};
     }
-    /// We do not directly use `InterpreterCreateQuery::execute`, because
-    /// - the database has not been loaded yet;
-    /// - the code is simpler, since the query is already brought to a suitable form.
-    if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
-        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
+    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, false);
     ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
 
     return
@@ -331,6 +326,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr, const String & table_nam
 
 void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*no_delay*/)
 {
+    // std::cerr << "DatabaseOnDisk::dropTable" << std::endl;
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
     String table_data_path_relative = getTableDataPath(table_name);
