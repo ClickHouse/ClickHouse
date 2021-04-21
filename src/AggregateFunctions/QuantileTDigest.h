@@ -320,8 +320,8 @@ public:
             if (current_x >= x)
             {
                 /// Special handling of singletons.
-                Float64 left = prev_x + 0.5*(prev_count == 1);
-                Float64 right = current_x - 0.5*(c.count == 1);
+                Float64 left = prev_x + 0.5 * (prev_count == 1);
+                Float64 right = current_x - 0.5 * (c.count == 1);
 
                 if (x <= left)
                     return prev_mean;
@@ -378,8 +378,8 @@ public:
             if (current_x >= x)
             {
                 /// Special handling of singletons.
-                Float64 left = prev_x + 0.5*(prev_count == 1);
-                Float64 right = current_x - 0.5*(c.count == 1);
+                Float64 left = prev_x + 0.5 * (prev_count == 1);
+                Float64 right = current_x - 0.5 * (c.count == 1);
 
                 while (current_x >= x)
                 {
