@@ -126,22 +126,41 @@ StorageExternalDistributed::StorageExternalDistributed(
     setInMemoryMetadata(storage_metadata);
 
     size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-    std::vector<String> shards_descriptions = parseRemoteDescription(addresses_description, 0, addresses_description.size(), '|', max_addresses);
-    std::vector<std::pair<std::string, UInt16>> addresses;
+    /// Generate addresses without splitting for failover options
+    std::vector<String> url_descriptions = parseRemoteDescription(addresses_description, 0, addresses_description.size(), ',', max_addresses);
+    std::vector<String> uri_options;
 
-    for (const auto & shard_description : shards_descriptions)
+    for (const auto & url_description : url_descriptions)
     {
-        Poco::URI uri(shard_description);
-        auto shard = StorageURL::create(
-            uri,
-            table_id,
-            format_name,
-            format_settings,
-            columns, constraints, context,
-            compression_method);
+        /// For each uri (which acts like shard) check if it has failover options
+        uri_options = parseRemoteDescription(url_description, 0, url_description.size(), '|', max_addresses);
+        StoragePtr shard;
+
+        if (uri_options.size() > 1)
+        {
+            shard = std::make_shared<StorageURLWithFailover>(
+                uri_options,
+                table_id,
+                format_name,
+                format_settings,
+                columns, constraints, context,
+                compression_method);
+        }
+        else
+        {
+            Poco::URI uri(url_description);
+            shard = std::make_shared<StorageURL>(
+                uri,
+                table_id,
+                format_name,
+                format_settings,
+                columns, constraints, context,
+                compression_method);
+
+            LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL: {}", url_description);
+        }
 
         shards.emplace(std::move(shard));
-        LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL: {}", shard_description);
     }
 }
 
