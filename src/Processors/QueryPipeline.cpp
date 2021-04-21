@@ -211,14 +211,10 @@ void QueryPipeline::setOutputFormat(ProcessorPtr output)
 
 QueryPipeline QueryPipeline::unitePipelines(
     std::vector<std::unique_ptr<QueryPipeline>> pipelines,
+    const Block & common_header,
     size_t max_threads_limit,
     Processors * collected_processors)
 {
-    if (pipelines.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite an empty set of pipelines");
-
-    Block common_header = pipelines.front()->getHeader();
-
     /// Should we limit the number of threads for united pipeline. True if all pipelines have max_threads != 0.
     /// If true, result max_threads will be sum(max_threads).
     /// Note: it may be > than settings.max_threads, so we should apply this limit again.
@@ -232,6 +228,20 @@ QueryPipeline QueryPipeline::unitePipelines(
         pipeline.checkInitialized();
         pipeline.pipe.collected_processors = collected_processors;
 
+        if (!pipeline.isCompleted())
+        {
+            auto actions_dag = ActionsDAG::makeConvertingActions(
+                    pipeline.getHeader().getColumnsWithTypeAndName(),
+                    common_header.getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Position);
+            auto actions = std::make_shared<ExpressionActions>(actions_dag);
+
+            pipeline.addSimpleTransform([&](const Block & header)
+            {
+               return std::make_shared<ExpressionTransform>(header, actions);
+            });
+        }
+
         pipes.emplace_back(std::move(pipeline.pipe));
 
         max_threads += pipeline.max_threads;
@@ -244,7 +254,7 @@ QueryPipeline QueryPipeline::unitePipelines(
     }
 
     QueryPipeline pipeline;
-    pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors, false));
+    pipeline.init(Pipe::unitePipes(std::move(pipes), collected_processors));
 
     if (will_limit_max_threads)
     {
@@ -256,7 +266,7 @@ QueryPipeline QueryPipeline::unitePipelines(
 }
 
 
-void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, ContextPtr context)
+void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryForSet subquery_for_set, const SizeLimits & limits, const Context & context)
 {
     resize(1);
 
@@ -278,9 +288,7 @@ void QueryPipeline::addCreatingSetsTransform(const Block & res_header, SubqueryF
 void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
 {
     checkInitializedAndNotCompleted();
-    if (pipeline.getHeader())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for CreatingSets should have empty header. Got: {}",
-                        pipeline.getHeader().dumpStructure());
+    assertBlocksHaveEqualStructure(getHeader(), pipeline.getHeader(), "QueryPipeline");
 
     IProcessor::PortNumbers delayed_streams(pipe.numOutputPorts());
     for (size_t i = 0; i < delayed_streams.size(); ++i)
@@ -291,7 +299,7 @@ void QueryPipeline::addPipelineBefore(QueryPipeline pipeline)
     Pipes pipes;
     pipes.emplace_back(std::move(pipe));
     pipes.emplace_back(QueryPipeline::getPipe(std::move(pipeline)));
-    pipe = Pipe::unitePipes(std::move(pipes), collected_processors, true);
+    pipe = Pipe::unitePipes(std::move(pipes), collected_processors);
 
     auto processor = std::make_shared<DelayedPortsProcessor>(getHeader(), pipe.numOutputPorts(), delayed_streams, true);
     addTransform(std::move(processor));

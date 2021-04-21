@@ -32,6 +32,7 @@ public:
 
         return date_lut.getImplementation(time_zone);
     }
+
     static void setDefaultTimezone(const std::string & time_zone)
     {
         auto & date_lut = getInstance();

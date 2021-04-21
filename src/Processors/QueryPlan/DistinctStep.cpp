@@ -62,7 +62,7 @@ DistinctStep::DistinctStep(
     }
 }
 
-void DistinctStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void DistinctStep::transformPipeline(QueryPipeline & pipeline)
 {
     if (checkColumnsAlreadyDistinct(columns, input_streams.front().distinct_columns))
         return;

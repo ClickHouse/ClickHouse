@@ -154,8 +154,6 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
-
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -261,7 +259,7 @@ public:
 
     void insert(const Field & x) override
     {
-        data.push_back(DB::get<T>(x));
+        data.push_back(DB::get<NearestFieldType<T>>(x));
     }
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;

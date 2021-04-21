@@ -47,20 +47,18 @@ public:
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
 
-    virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
+    virtual void parseArguments(const ASTPtr & /*ast_function*/, const Context & /*context*/) {}
 
     /// Returns actual table structure probably requested from remote server, may fail
-    virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/) const = 0;
+    virtual ColumnsDescription getActualTableStructure(const Context & /*context*/) const = 0;
 
     /// Create storage according to the query.
-    StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}) const;
+    StoragePtr execute(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns_ = {}) const;
 
-    virtual ~ITableFunction() = default;
+    virtual ~ITableFunction() {}
 
 private:
-    virtual StoragePtr executeImpl(
-        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const = 0;
+    virtual StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context, const std::string & table_name, ColumnsDescription cached_columns) const = 0;
     virtual const char * getStorageTypeName() const = 0;
 };
 

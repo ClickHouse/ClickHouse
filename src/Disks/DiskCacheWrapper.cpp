@@ -1,6 +1,7 @@
 #include "DiskCacheWrapper.h"
 #include <IO/copyData.h>
 #include <Common/quoteString.h>
+#include <common/logger_useful.h>
 #include <condition_variable>
 
 namespace DB
@@ -102,21 +103,15 @@ std::shared_ptr<FileDownloadMetadata> DiskCacheWrapper::acquireDownloadMetadata(
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
-DiskCacheWrapper::readFile(
-    const String & path,
-    size_t buf_size,
-    size_t estimated_size,
-    size_t aio_threshold,
-    size_t mmap_threshold,
-    MMappedFileCache * mmap_cache) const
+DiskCacheWrapper::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+        return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
 
-    LOG_DEBUG(log, "Read file {} from cache", backQuote(path));
+    LOG_DEBUG(&Poco::Logger::get("DiskCache"), "Read file {} from cache", backQuote(path));
 
     if (cache_disk->exists(path))
-        return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+        return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
 
     auto metadata = acquireDownloadMetadata(path);
 
@@ -127,11 +122,11 @@ DiskCacheWrapper::readFile(
         {
             /// This thread will responsible for file downloading to cache.
             metadata->status = DOWNLOADING;
-            LOG_DEBUG(log, "File {} doesn't exist in cache. Will download it", backQuote(path));
+            LOG_DEBUG(&Poco::Logger::get("DiskCache"), "File {} doesn't exist in cache. Will download it", backQuote(path));
         }
         else if (metadata->status == DOWNLOADING)
         {
-            LOG_DEBUG(log, "Waiting for file {} download to cache", backQuote(path));
+            LOG_DEBUG(&Poco::Logger::get("DiskCache"), "Waiting for file {} download to cache", backQuote(path));
             metadata->condition.wait(lock, [metadata] { return metadata->status == DOWNLOADED || metadata->status == ERROR; });
         }
     }
@@ -150,13 +145,13 @@ DiskCacheWrapper::readFile(
 
                 auto tmp_path = path + ".tmp";
                 {
-                    auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+                    auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
                     auto dst_buffer = cache_disk->writeFile(tmp_path, buf_size, WriteMode::Rewrite);
                     copyData(*src_buffer, *dst_buffer);
                 }
                 cache_disk->moveFile(tmp_path, path);
 
-                LOG_DEBUG(log, "File {} downloaded to cache", backQuote(path));
+                LOG_DEBUG(&Poco::Logger::get("DiskCache"), "File {} downloaded to cache", backQuote(path));
             }
             catch (...)
             {
@@ -174,9 +169,9 @@ DiskCacheWrapper::readFile(
     }
 
     if (metadata->status == DOWNLOADED)
-        return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+        return cache_disk->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
 
-    return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+    return DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -185,7 +180,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
     if (!cache_file_predicate(path))
         return DiskDecorator::writeFile(path, buf_size, mode);
 
-    LOG_DEBUG(log, "Write file {} to cache", backQuote(path));
+    LOG_DEBUG(&Poco::Logger::get("DiskCache"), "Write file {} to cache", backQuote(path));
 
     auto dir_path = directoryPath(path);
     if (!cache_disk->exists(dir_path))
@@ -196,7 +191,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         [this, path, buf_size, mode]()
         {
             /// Copy file from cache to actual disk when cached buffer is finalized.
-            auto src_buffer = cache_disk->readFile(path, buf_size, 0, 0, 0, nullptr);
+            auto src_buffer = cache_disk->readFile(path, buf_size, 0, 0, 0);
             auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode);
             copyData(*src_buffer, *dst_buffer);
             dst_buffer->finalize();
@@ -214,13 +209,7 @@ void DiskCacheWrapper::clearDirectory(const String & path)
 void DiskCacheWrapper::moveDirectory(const String & from_path, const String & to_path)
 {
     if (cache_disk->exists(from_path))
-    {
-        /// Destination directory may not be empty if previous directory move attempt was failed.
-        if (cache_disk->exists(to_path) && cache_disk->isDirectory(to_path))
-            cache_disk->clearDirectory(to_path);
-
         cache_disk->moveDirectory(from_path, to_path);
-    }
     DiskDecorator::moveDirectory(from_path, to_path);
 }
 
@@ -274,20 +263,6 @@ void DiskCacheWrapper::removeRecursive(const String & path)
     if (cache_disk->exists(path))
         cache_disk->removeRecursive(path);
     DiskDecorator::removeRecursive(path);
-}
-
-void DiskCacheWrapper::removeSharedFile(const String & path, bool keep_s3)
-{
-    if (cache_disk->exists(path))
-        cache_disk->removeSharedFile(path, keep_s3);
-    DiskDecorator::removeSharedFile(path, keep_s3);
-}
-
-void DiskCacheWrapper::removeSharedRecursive(const String & path, bool keep_s3)
-{
-    if (cache_disk->exists(path))
-        cache_disk->removeSharedRecursive(path, keep_s3);
-    DiskDecorator::removeSharedRecursive(path, keep_s3);
 }
 
 void DiskCacheWrapper::createHardLink(const String & src_path, const String & dst_path)
