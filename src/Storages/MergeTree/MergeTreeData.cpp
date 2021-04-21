@@ -1391,12 +1391,19 @@ void MergeTreeData::dropIfEmpty()
     if (!data_parts_by_info.empty())
         return;
 
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    try
     {
-        /// Non recursive, exception is thrown if there are more files.
-        disk->removeFile(path + MergeTreeData::FORMAT_VERSION_FILE_NAME);
-        disk->removeDirectory(path + MergeTreeData::DETACHED_DIR_NAME);
-        disk->removeDirectory(path);
+        for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+        {
+            /// Non recursive, exception is thrown if there are more files.
+            disk->removeFileIfExists(path + MergeTreeData::FORMAT_VERSION_FILE_NAME);
+            disk->removeDirectory(path + MergeTreeData::DETACHED_DIR_NAME);
+            disk->removeDirectory(path);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
