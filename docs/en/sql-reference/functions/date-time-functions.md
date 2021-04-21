@@ -105,12 +105,6 @@ Result:
 └────────────────┴──────────────┘
 ```
 
-**See Also** (Optional)
-
--   [List of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) on Wikipedia.
-
-
-
 ## toYear {#toyear}
 
 Converts a date or date with time to a UInt16 number containing the year number (AD).
