@@ -26,44 +26,7 @@ def test_url_without_redirect(started_cluster):
     assert node1.query("select * from WebHDFSStorage") == "1\tMark\t72.53\n"
 
 
-def test_url_with_globs_1(started_cluster):
-    query = "SELECT DISTINCT(users) FROM ("
-    for i in range (10, 20):
-        query += """
-        SELECT DISTINCT(users) FROM
-        (
-            SELECT JSONExtractString(data, 'actor', 'login') AS users,
-                   JSONExtractString(data, 'payload', 'comment', 'body') AS body
-        FROM url('https://data.gharchive.org/2020-11-11-{}.json.gz', TSV, 'data String')
-        )
-        UNION ALL
-        """.format(i)
-
-    query += """
-    SELECT DISTINCT(users) FROM
-    (
-        SELECT JSONExtractString(data, 'actor', 'login') AS users,
-               JSONExtractString(data, 'payload', 'comment', 'body') AS body
-    FROM url('https://data.gharchive.org/2020-11-11-20.json.gz', TSV, 'data String')
-    )) ORDER BY users"""
-
-    expected = node1.query(query)
-
-    result = node1.query("""
-                SELECT DISTINCT(users) FROM
-                (
-                    SELECT JSONExtractString(data, 'actor', 'login') AS users,
-                           JSONExtractString(data, 'payload', 'comment', 'body') AS body
-                    FROM url('https://data.gharchive.org/2020-11-11-{10..20}.json.gz', TSV, 'data String')
-                )
-                ORDER BY users;
-            """)
-
-    assert(result == expected)
-
-
-def test_url_with_globs_2(started_cluster):
-    # 6 addresses
+def test_url_with_globs(started_cluster):
     started_cluster.hdfs_api.write_data("/simple_storage_1_1", "1\n")
     started_cluster.hdfs_api.write_data("/simple_storage_1_2", "2\n")
     started_cluster.hdfs_api.write_data("/simple_storage_1_3", "3\n")

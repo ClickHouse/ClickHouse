@@ -53,7 +53,7 @@ protected:
         ContextPtr context_);
 
     StorageExternalDistributed(
-        const String & uri,
+        const String & addresses_description,
         const StorageID & table_id,
         const String & format_name,
         const std::optional<FormatSettings> & format_settings,

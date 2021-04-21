@@ -271,7 +271,7 @@ Pipe StorageURLWithFailover::read(
                 ConnectionTimeouts::getHTTPTimeouts(local_context),
                 chooseCompressionMethod(request_uri.getPath(), compression_method));
 
-            std::shuffle(uri_options.begin(), uri_options.begin(), thread_local_rng);
+            std::shuffle(uri_options.begin(), uri_options.end(), thread_local_rng);
 
             return Pipe(url_source);
         }
@@ -321,9 +321,9 @@ StorageURLWithFailover::StorageURLWithFailover(
 {
     for (const auto & uri_option : uri_options_)
     {
-        Poco::URI uri(uri_option);
-        context_->getRemoteHostFilter().checkURL(uri);
-        uri_options.emplace_back(std::move(uri));
+        Poco::URI uri_(uri_option);
+        context_->getRemoteHostFilter().checkURL(uri_);
+        uri_options.emplace_back(std::move(uri_));
         LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL option: {}", uri_option);
     }
 }
