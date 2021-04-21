@@ -78,6 +78,8 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(size_t pool_size, size_t max_da
 {
     using namespace std::chrono;
 
+    assert(pool_size);
+
     if (stale_timeout > 0s)
         dump_by_last_update_thread = ThreadFromGlobalPool(&AsynchronousInsertQueue::staleCheck, this);
 }

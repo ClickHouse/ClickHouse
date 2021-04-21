@@ -776,7 +776,7 @@ public:
     PartUUIDsPtr getPartUUIDs();
     PartUUIDsPtr getIgnoredPartUUIDs();
 
-    AsynchronousInsertQueue & getAsynchronousInsertQueue() const;
+    AsynchronousInsertQueue * getAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 
     ReadTaskCallback getReadTaskCallback() const;

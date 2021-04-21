@@ -2645,10 +2645,9 @@ PartUUIDsPtr Context::getIgnoredPartUUIDs()
     return ignored_part_uuids;
 }
 
-AsynchronousInsertQueue & Context::getAsynchronousInsertQueue() const
+AsynchronousInsertQueue * Context::getAsynchronousInsertQueue() const
 {
-    /// Assume that dereference of shared_ptr will assert on uninitialized object.
-    return *shared->async_insert_queue;
+    return shared->async_insert_queue.get();
 }
 
 void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
