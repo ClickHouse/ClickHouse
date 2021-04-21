@@ -196,6 +196,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             rows_without_projection,
             rows_with_projection);
 
+    std::cerr << "========== Normal parts " << normal_parts.size() << std::endl;
+    std::cerr << "========== Projec parts " << projection_parts.size() << std::endl;
+
+    Pipe projection_pipe;
+    Pipe ordinary_pipe;
+
     const auto & given_select = query_info.query->as<const ASTSelectQuery &>();
     if (!projection_parts.empty())
     {
@@ -209,10 +215,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             num_streams,
             max_block_numbers_to_read);
 
-        auto pipe = plan
-            ? plan->convertToPipe(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))
-            : Pipe();
-        if (!pipe.empty())
+        if (plan)
+            projection_pipe = plan->convertToPipe(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+
+        if (!projection_pipe.empty())
         {
             // If `key_actions` is not empty, transform input blocks by adding needed columns
             // originated from key columns. We already project the block at the end, using
@@ -229,7 +235,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
                 auto syntax_result = TreeRewriter(context).analyze(expr, columns);
                 auto expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
-                pipe.addSimpleTransform([&expression](const Block & header)
+                projection_pipe.addSimpleTransform([&expression](const Block & header)
                 {
                     return std::make_shared<ExpressionTransform>(header, expression);
                 });
@@ -238,7 +244,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             /// In sample block we use just key columns
             if (given_select.where())
             {
-                Block filter_block = pipe.getHeader(); // we can use the previous pipeline's sample block here
+                Block filter_block = projection_pipe.getHeader(); // we can use the previous pipeline's sample block here
 
                 ASTPtr where = given_select.where()->clone();
                 ProjectionCondition projection_condition(filter_block.getNames(), {});
@@ -247,7 +253,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 auto syntax_result = TreeRewriter(context).analyze(where, filter_block.getNamesAndTypesList());
                 const auto actions = ExpressionAnalyzer(where, syntax_result, context).getActions(false);
 
-                pipe.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType)
+                projection_pipe.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType)
                 {
                     return std::make_shared<FilterTransform>(header, actions, where_column_name, true);
                 });
@@ -255,12 +261,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
             // Project columns and set bucket number to -1
             // optionally holds the reference of parent parts
-            pipe.addSimpleTransform([&](const Block & header)
+            projection_pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<ProjectionPartTransform>(header, query_info.projection_block, std::move(parent_parts));
             });
-
-            pipes.push_back(std::move(pipe));
         }
     }
 
@@ -272,23 +276,131 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         if (given_select.where())
             select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
         // After overriding the group by clause, we finish the possible aggregations directly
-        if (given_select.groupBy())
+        if (processed_stage >= QueryProcessingStage::Enum::WithMergeableState && given_select.groupBy())
             select.setExpression(ASTSelectQuery::Expression::GROUP_BY, given_select.groupBy()->clone());
-        auto interpreter = InterpreterSelectQuery(ast, context, storage_from_source_part, nullptr, {processed_stage});
-        auto pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
+        auto interpreter = InterpreterSelectQuery(ast, context, storage_from_source_part, nullptr, SelectQueryOptions{processed_stage}.ignoreProjections());
+        ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
 
-        if (!pipe.empty())
+        std::cerr << "========= Ord pipe size " << ordinary_pipe.numOutputPorts() << std::endl;
+        if (!ordinary_pipe.empty() && processed_stage < QueryProcessingStage::Enum::WithMergeableState)
         {
             // projection and set bucket number to -1
-            pipe.addSimpleTransform([&](const Block & header)
+            ordinary_pipe.addSimpleTransform([&](const Block & header)
             {
                 return std::make_shared<ProjectionPartTransform>(header, query_info.projection_block);
             });
-            pipes.push_back(std::move(pipe));
         }
     }
 
-    auto step = std::make_unique<ReadFromStorageStep>(Pipe::unitePipes(std::move(pipes)), "MergeTree(with projection)");
+    if (processed_stage >= QueryProcessingStage::WithMergeableState)
+    {
+        auto many_data = std::make_shared<ManyAggregatedData>(projection_pipe.numOutputPorts() + ordinary_pipe.numOutputPorts());
+        size_t counter = 0;
+
+        bool overflow_row =
+            given_select.group_by_with_totals &&
+            settings.max_rows_to_group_by &&
+            settings.group_by_overflow_mode == OverflowMode::ANY &&
+            settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
+
+        if (!projection_pipe.empty())
+        {
+            const auto & header_before_merge = projection_pipe.getHeader();
+            std::cerr << "============ header_before_merge\n";
+            std::cerr << header_before_merge.dumpStructure() << std::endl;
+            ColumnNumbers keys;
+            for (const auto & key : query_info.aggregation_keys)
+                keys.push_back(header_before_merge.getPositionByName(key.name));
+
+            AggregateDescriptions aggregates = query_info.aggregate_descriptions;
+            // for (auto & descr : aggregates)
+            //     if (descr.arguments.empty())
+            //         for (const auto & name : descr.argument_names)
+            //             descr.arguments.push_back(header_before_merge.getPositionByName(name));
+
+            /// Aggregator::Params params(header_before_merge, keys, query_info.aggregate_descriptions, overflow_row, settings.max_threads);
+            Aggregator::Params params(header_before_merge, keys, aggregates,
+                                    overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
+                                    settings.group_by_two_level_threshold,
+                                    settings.group_by_two_level_threshold_bytes,
+                                    settings.max_bytes_before_external_group_by,
+                                    settings.empty_result_for_aggregation_by_empty_set,
+                                    context->getTemporaryVolume(),
+                                    settings.max_threads,
+                                    settings.min_free_disk_space_for_temporary_data);
+
+            //params.intermediate_header = header_before_merge;
+
+            auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), /*final*/ true);
+            transform_params->only_merge = true;
+
+            projection_pipe.resize(projection_pipe.numOutputPorts(), true, true);
+
+            auto merge_threads = num_streams;
+            auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
+                                        ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                                        : static_cast<size_t>(settings.max_threads);
+
+            projection_pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+            });
+
+            std::cerr << "========== header after merge " << projection_pipe.getHeader().dumpStructure() << std::endl;
+        }
+
+        if (!ordinary_pipe.empty())
+        {
+            const auto & header_before_aggregation = ordinary_pipe.getHeader();
+
+            std::cerr << "============ header_before_aggregation\n";
+            std::cerr << header_before_aggregation.dumpStructure() << std::endl;
+
+            ColumnNumbers keys;
+            for (const auto & key : query_info.aggregation_keys)
+                keys.push_back(header_before_aggregation.getPositionByName(key.name));
+
+            AggregateDescriptions aggregates = query_info.aggregate_descriptions;
+            for (auto & descr : aggregates)
+                if (descr.arguments.empty())
+                    for (const auto & name : descr.argument_names)
+                        descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
+
+            Aggregator::Params params(header_before_aggregation, keys, aggregates,
+                                    overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
+                                    settings.group_by_two_level_threshold,
+                                    settings.group_by_two_level_threshold_bytes,
+                                    settings.max_bytes_before_external_group_by,
+                                    settings.empty_result_for_aggregation_by_empty_set,
+                                    context->getTemporaryVolume(),
+                                    settings.max_threads,
+                                    settings.min_free_disk_space_for_temporary_data);
+
+            auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), /*final*/ true);
+
+            ordinary_pipe.resize(ordinary_pipe.numOutputPorts(), true, true);
+
+            auto merge_threads = num_streams;
+            auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
+                                        ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                                        : static_cast<size_t>(settings.max_threads);
+
+            ordinary_pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+            });
+
+            std::cerr << "============ header after aggregation\n";
+            std::cerr << ordinary_pipe.getHeader().dumpStructure() << std::endl;
+        }
+    }
+
+    pipes.emplace_back(std::move(projection_pipe));
+    pipes.emplace_back(std::move(ordinary_pipe));
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    pipe.resize(1);
+
+    auto step = std::make_unique<ReadFromStorageStep>(std::move(pipe), "MergeTree(with projection)");
     auto plan = std::make_unique<QueryPlan>();
     plan->addStep(std::move(step));
     return plan;

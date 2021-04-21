@@ -358,7 +358,7 @@ Pipe StorageMerge::createSources(
     }
 
     auto storage_stage
-        = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, false, metadata_snapshot, modified_query_info);
+        = storage->getQueryProcessingStage(modified_context, QueryProcessingStage::Complete, metadata_snapshot, modified_query_info);
     if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.

@@ -6,6 +6,7 @@
 #include <Core/Names.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/ProjectionKeyActions.h>
+#include <Interpreters/AggregateDescription.h>
 
 #include <memory>
 
@@ -151,8 +152,11 @@ struct SelectQueryInfo
     ProjectionKeyActions key_actions;
     Names projection_names;
     Block projection_block;
+    NamesAndTypesList aggregation_keys;
+    AggregateDescriptions aggregate_descriptions;
+    bool ignore_projections = false;
 
-    /// Store to-be-scanned data parts if some aggregate projection is used
+    /// TODO Store to-be-scanned data parts if some aggregate projection is used
     using DataPart = IMergeTreeDataPart;
     using DataPartPtr = std::shared_ptr<const DataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;

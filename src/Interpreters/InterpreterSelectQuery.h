@@ -91,6 +91,8 @@ public:
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
+    const SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
+
     const Names & getRequiredColumns() const { return required_columns; }
 
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }
