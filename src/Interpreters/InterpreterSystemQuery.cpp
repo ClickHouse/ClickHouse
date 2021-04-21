@@ -443,14 +443,16 @@ BlockIO InterpreterSystemQuery::execute()
     return BlockIO();
 }
 
-Strings InterpreterSystemQuery::movePartsToNewTableDetachedFolder(const String& db_name, const String& new_table_name)
+Strings InterpreterSystemQuery::movePartsToNewTableDetachedFolder(
+    const String& db_name, const String& old_table_name, const String& new_table_name) const
 {
     Strings parts_names;
 
-    auto new_table_ptr = DatabaseCatalog::instance().getTable({db_name, new_table_name}, getContext());
+    StoragePtr new_table_ptr = DatabaseCatalog::instance().getTable({db_name, new_table_name}, getContext());
     auto& storage = *static_cast<StorageReplicatedMergeTree*>(new_table_ptr.get());
 
-    const auto active_parts = storage.getDataPartsVector();
+    const StoragePtr old_table_ptr = DatabaseCatalog::instance().getTable({db_name, old_table_name}, getContext());
+    const auto active_parts = static_cast<StorageReplicatedMergeTree *>(old_table_ptr.get())->getDataPartsVector();
     parts_names.reserve(active_parts.size());
 
     for (const auto& part : active_parts)
@@ -467,6 +469,8 @@ Strings InterpreterSystemQuery::movePartsToNewTableDetachedFolder(const String& 
 
         parts_names.emplace_back(part->name);
     }
+
+    LOG_DEBUG(log, "Found {} parts", parts_names.size());
 
     return parts_names;
 }
@@ -574,7 +578,7 @@ void InterpreterSystemQuery::restoreReplica(ContextPtr system_context)
     LOG_DEBUG(log, "Stopped replica fetches for {}.{}", db_name, old_table_name);
 
     /// 3. Register parts in new table and send data to ZooKeeper.
-    for (const String& part_name : movePartsToNewTableDetachedFolder(db_name, new_table_name))
+    for (const String& part_name : movePartsToNewTableDetachedFolder(db_name, old_table_name, new_table_name))
         executeQuery(fmt::format("ALTER TABLE {}.{} ATTACH PART '{}'", db_name, new_table_name, part_name),
             getContext(), true);
 

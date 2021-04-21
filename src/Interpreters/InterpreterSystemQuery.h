@@ -51,7 +51,8 @@ private:
     void syncReplica(ASTSystemQuery & query);
 
     /// Helper, moves all active parts from this table to new_table_name detached/ folder
-    Strings movePartsToNewTableDetachedFolder(const String& db_name, const String& new_table_name);
+    Strings movePartsToNewTableDetachedFolder(
+        const String& db_name, const String& old_table_name, const String& new_table_name) const;
 
     struct ReplicaAndZK { std::string replica_name; std::string zk_root_path; };
 
