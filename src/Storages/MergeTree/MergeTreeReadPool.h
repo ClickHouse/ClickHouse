@@ -100,7 +100,7 @@ private:
 
     const MergeTreeData & data;
     StorageMetadataPtr metadata_snapshot;
-    Names column_names;
+    const Names column_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
     std::vector<NameSet> per_part_column_name_set;
