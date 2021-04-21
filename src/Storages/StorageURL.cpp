@@ -254,7 +254,7 @@ Pipe StorageURLWithFailover::read(
             request_uri.addQueryParameter(param, value);
         try
         {
-            /// Chech for uri accessibility is done in constructor of ReadWriteBufferFromHTTP while creating StorageURLSource.
+            /// Check for uri accessibility is done in constructor of ReadWriteBufferFromHTTP while creating StorageURLSource.
             auto url_source =  std::make_shared<StorageURLSource>(
                 request_uri,
                 getReadMethod(),
