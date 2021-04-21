@@ -304,9 +304,10 @@ Pipe StorageAggregatingMemory::read(
         = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
 
     Pipe pipe(std::move(processor));
-    executeExpression(pipe, analysis_result.before_window);
+    executeExpression(pipe, analysis_result.before_window); // TODO: add window
     executeExpression(pipe, analysis_result.before_order_by);
     executeExpression(pipe, analysis_result.final_projection);
+    // TODO: implement ORDER BY? (quite hard)
 
     return pipe;
 }
