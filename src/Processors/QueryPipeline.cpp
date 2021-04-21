@@ -232,8 +232,6 @@ QueryPipeline QueryPipeline::unitePipelines(
         pipeline.checkInitialized();
         pipeline.pipe.collected_processors = collected_processors;
 
-        assertBlocksHaveEqualStructure(pipeline.getHeader(), common_header, "QueryPipeline::unitePipelines");
-
         pipes.emplace_back(std::move(pipeline.pipe));
 
         max_threads += pipeline.max_threads;
