@@ -69,7 +69,7 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 - MySQL `INSERT` query is converted into `INSERT` with `_sign=1`.
 
-- MySQl `DELETE` query is converted into `INSERT` with `_sign=-1`. 
+- MySQL `DELETE` query is converted into `INSERT` with `_sign=-1`. 
 
 - MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1`.
 

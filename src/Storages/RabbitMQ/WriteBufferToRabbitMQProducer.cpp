@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         std::pair<String, UInt16> & parsed_address_,
-        const Context & global_context,
+        ContextPtr global_context,
         const std::pair<String, String> & login_password_,
         const String & vhost_,
         const Names & routing_keys_,
@@ -57,9 +57,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
 {
-    loop = std::make_unique<uv_loop_t>();
-    uv_loop_init(loop.get());
-    event_handler = std::make_unique<RabbitMQHandler>(loop.get(), log);
+    event_handler = std::make_unique<RabbitMQHandler>(loop.getLoop(), log);
 
     if (setupConnection(false))
     {
@@ -74,7 +72,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
                 ErrorCodes::CANNOT_CONNECT_RABBITMQ);
     }
 
-    writing_task = global_context.getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
+    writing_task = global_context->getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
     writing_task->deactivate();
 
     if (exchange_type == AMQP::ExchangeType::headers)
@@ -97,7 +95,7 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
     connection->close();
 
     size_t cnt_retries = 0;
-    while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
+    while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
     {
         event_handler->iterateLoop();
         std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
@@ -189,11 +187,12 @@ void WriteBufferToRabbitMQProducer::setupChannel()
         /// Delivery tags are scoped per channel.
         delivery_record.clear();
         delivery_tag = 0;
+        producer_ready = false;
     });
 
     producer_channel->onReady([&]()
     {
-        channel_id = channel_id_base + std::to_string(channel_id_counter++);
+        channel_id = channel_id_base + "_" + std::to_string(channel_id_counter++);
         LOG_DEBUG(log, "Producer's channel {} is ready", channel_id);
 
         /* if persistent == true, onAck is received when message is persisted to disk or when it is consumed on every queue. If fails,
@@ -211,6 +210,7 @@ void WriteBufferToRabbitMQProducer::setupChannel()
         {
             removeRecord(nacked_delivery_tag, multiple, true);
         });
+        producer_ready = true;
     });
 }
 
@@ -218,30 +218,27 @@ void WriteBufferToRabbitMQProducer::setupChannel()
 void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish)
 {
     auto record_iter = delivery_record.find(received_delivery_tag);
+    assert(record_iter != delivery_record.end());
 
-    if (record_iter != delivery_record.end())
+    if (multiple)
     {
-        if (multiple)
-        {
-            /// If multiple is true, then all delivery tags up to and including current are confirmed (with ack or nack).
-            ++record_iter;
+        /// If multiple is true, then all delivery tags up to and including current are confirmed (with ack or nack).
+        ++record_iter;
 
-            if (republish)
-                for (auto record = delivery_record.begin(); record != record_iter; ++record)
-                    returned.tryPush(record->second);
+        if (republish)
+            for (auto record = delivery_record.begin(); record != record_iter; ++record)
+                returned.tryPush(record->second);
 
-            /// Delete the records even in case when republished because new delivery tags will be assigned by the server.
-            delivery_record.erase(delivery_record.begin(), record_iter);
-        }
-        else
-        {
-            if (republish)
-                returned.tryPush(record_iter->second);
-
-            delivery_record.erase(record_iter);
-        }
+        /// Delete the records even in case when republished because new delivery tags will be assigned by the server.
+        delivery_record.erase(delivery_record.begin(), record_iter);
     }
-    /// else is theoretically not possible
+    else
+    {
+        if (republish)
+            returned.tryPush(record_iter->second);
+
+        delivery_record.erase(record_iter);
+    }
 }
 
 
@@ -308,13 +305,18 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 {
     while ((!payloads.empty() || wait_all) && wait_confirm.load())
     {
-        /* Publish main paylods only when there are no returned messages. This way it is ensured that returned messages are republished
-         * as fast as possible and no new publishes are made before returned messages are handled
-         */
-        if (!returned.empty() && producer_channel->usable())
-            publish(returned, true);
-        else if (!payloads.empty() && producer_channel->usable())
-            publish(payloads, false);
+        /// If onReady callback is not received, producer->usable() will anyway return true,
+        /// but must publish only after onReady callback.
+        if (producer_ready)
+        {
+            /* Publish main paylods only when there are no returned messages. This way it is ensured that returned messages are republished
+             * as fast as possible and no new publishes are made before returned messages are handled
+             */
+            if (!returned.empty() && producer_channel->usable())
+                publish(returned, true);
+            else if (!payloads.empty() && producer_channel->usable())
+                publish(payloads, false);
+        }
 
         iterateEventLoop();
 

@@ -237,6 +237,12 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
     return pos + string_size;
 }
 
+const char * ColumnString::skipSerializedInArena(const char * pos) const
+{
+    const size_t string_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size);
+    return pos + string_size;
+}
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
@@ -285,6 +291,11 @@ void ColumnString::compareColumn(
 {
     return doCompareColumn<ColumnString>(assert_cast<const ColumnString &>(rhs), rhs_row_num, row_indexes,
                                          compare_results, direction, nan_direction_hint);
+}
+
+bool ColumnString::hasEqualValues() const
+{
+    return hasEqualValuesImpl<ColumnString>();
 }
 
 template <bool positive>
@@ -524,7 +535,6 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(min_idx, min);
     get(max_idx, max);
 }
-
 
 ColumnPtr ColumnString::compress() const
 {

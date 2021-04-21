@@ -43,6 +43,8 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];

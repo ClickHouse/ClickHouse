@@ -1156,9 +1156,9 @@ static bool run()
 
 TestResult check(const TestEntry & entry)
 {
-    static DB::SharedContextHolder shared_context = DB::Context::createShared();
-    static DB::Context context = DB::Context::createGlobal(shared_context.get());
-    context.makeGlobalContext();
+    static auto shared_context = DB::Context::createShared();
+    static auto context = DB::Context::createGlobal(shared_context.get());
+    context->makeGlobalContext();
 
     try
     {
@@ -1170,8 +1170,8 @@ TestResult check(const TestEntry & entry)
         DB::DatabaseCatalog::instance().attachDatabase("test", database);
         database->attachTable("visits_all", storage_distributed_visits);
         database->attachTable("hits_all", storage_distributed_hits);
-        context.setCurrentDatabase("test");
-        context.setSetting("distributed_product_mode", entry.mode);
+        context->setCurrentDatabase("test");
+        context->setSetting("distributed_product_mode", entry.mode);
 
         /// Parse and process the incoming query.
         DB::ASTPtr ast_input;

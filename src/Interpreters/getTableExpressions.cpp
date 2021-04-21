@@ -75,7 +75,7 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
 
 static NamesAndTypesList getColumnsFromTableExpression(
     const ASTTableExpression & table_expression,
-    const Context & context,
+    ContextPtr context,
     NamesAndTypesList & materialized,
     NamesAndTypesList & aliases,
     NamesAndTypesList & virtuals)
@@ -89,7 +89,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
     else if (table_expression.table_function)
     {
         const auto table_function = table_expression.table_function;
-        auto * query_context = const_cast<Context *>(&context.getQueryContext());
+        auto query_context = context->getQueryContext();
         const auto & function_storage = query_context->executeTableFunction(table_function);
         auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr();
         const auto & columns = function_metadata_snapshot->getColumns();
@@ -100,7 +100,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
     }
     else if (table_expression.database_and_table_name)
     {
-        auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
+        auto table_id = context->resolveStorageID(table_expression.database_and_table_name);
         const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
         auto table_metadata_snapshot = table->getInMemoryMetadataPtr();
         const auto & columns = table_metadata_snapshot->getColumns();
@@ -113,7 +113,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
     return names_and_type_list;
 }
 
-NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
+NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table_expression, ContextPtr context)
 {
     NamesAndTypesList materialized;
     NamesAndTypesList aliases;
@@ -121,15 +121,15 @@ NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression & table
     return getColumnsFromTableExpression(table_expression, context, materialized, aliases, virtuals);
 }
 
-TablesWithColumns getDatabaseAndTablesWithColumns(const std::vector<const ASTTableExpression *> & table_expressions, const Context & context)
+TablesWithColumns getDatabaseAndTablesWithColumns(const std::vector<const ASTTableExpression *> & table_expressions, ContextPtr context)
 {
     TablesWithColumns tables_with_columns;
 
     if (!table_expressions.empty())
     {
-        String current_database = context.getCurrentDatabase();
-        bool include_alias_cols = context.getSettingsRef().asterisk_include_alias_columns;
-        bool include_materialized_cols = context.getSettingsRef().asterisk_include_materialized_columns;
+        String current_database = context->getCurrentDatabase();
+        bool include_alias_cols = context->getSettingsRef().asterisk_include_alias_columns;
+        bool include_materialized_cols = context->getSettingsRef().asterisk_include_materialized_columns;
 
         for (const ASTTableExpression * table_expression : table_expressions)
         {

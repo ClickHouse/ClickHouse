@@ -50,7 +50,7 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
 
     finish();
     lzma_end(&lstr);
@@ -64,27 +64,36 @@ void LZMADeflatingWriteBuffer::nextImpl()
     lstr.next_in = reinterpret_cast<unsigned char *>(working_buffer.begin());
     lstr.avail_in = offset();
 
-    lzma_action action = LZMA_RUN;
-    do
+    try
     {
-        out->nextIfAtEnd();
-        lstr.next_out = reinterpret_cast<unsigned char *>(out->position());
-        lstr.avail_out = out->buffer().end() - out->position();
+        lzma_action action = LZMA_RUN;
+        do
+        {
+            out->nextIfAtEnd();
+            lstr.next_out = reinterpret_cast<unsigned char *>(out->position());
+            lstr.avail_out = out->buffer().end() - out->position();
 
-        lzma_ret ret = lzma_code(&lstr, action);
-        out->position() = out->buffer().end() - lstr.avail_out;
+            lzma_ret ret = lzma_code(&lstr, action);
+            out->position() = out->buffer().end() - lstr.avail_out;
 
-        if (ret == LZMA_STREAM_END)
-            return;
+            if (ret == LZMA_STREAM_END)
+                return;
 
-        if (ret != LZMA_OK)
-            throw Exception(
-                ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
-                "lzma stream encoding failed: error code: {}; lzma_version: {}",
-                ret,
-                LZMA_VERSION_STRING);
+            if (ret != LZMA_OK)
+                throw Exception(
+                    ErrorCodes::LZMA_STREAM_ENCODER_FAILED,
+                    "lzma stream encoding failed: error code: {}; lzma_version: {}",
+                    ret,
+                    LZMA_VERSION_STRING);
 
-    } while (lstr.avail_in > 0 || lstr.avail_out == 0);
+        } while (lstr.avail_in > 0 || lstr.avail_out == 0);
+    }
+    catch (...)
+    {
+        /// Do not try to write next time after exception.
+        out->position() = out->buffer().begin();
+        throw;
+    }
 }
 
 
@@ -93,6 +102,23 @@ void LZMADeflatingWriteBuffer::finish()
     if (finished)
         return;
 
+    try
+    {
+        finishImpl();
+        out->finalize();
+        finished = true;
+    }
+    catch (...)
+    {
+        /// Do not try to flush next time after exception.
+        out->position() = out->buffer().begin();
+        finished = true;
+        throw;
+    }
+}
+
+void LZMADeflatingWriteBuffer::finishImpl()
+{
     next();
 
     do
@@ -106,7 +132,6 @@ void LZMADeflatingWriteBuffer::finish()
 
         if (ret == LZMA_STREAM_END)
         {
-            finished = true;
             return;
         }
 

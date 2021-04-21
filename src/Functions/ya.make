@@ -210,6 +210,7 @@ SRCS(
     cbrt.cpp
     coalesce.cpp
     concat.cpp
+    connectionId.cpp
     convertCharset.cpp
     cos.cpp
     cosh.cpp
@@ -228,6 +229,8 @@ SRCS(
     defaultValueOfTypeName.cpp
     demange.cpp
     divide.cpp
+    divide/divide.cpp
+    divide/divideImpl.cpp
     dumpColumnStructure.cpp
     e.cpp
     empty.cpp
@@ -246,6 +249,7 @@ SRCS(
     extractAllGroupsHorizontal.cpp
     extractAllGroupsVertical.cpp
     extractGroups.cpp
+    extractTextFromHTML.cpp
     extractTimeZoneFromFunctionArguments.cpp
     filesystem.cpp
     finalizeAggregation.cpp
@@ -291,7 +295,6 @@ SRCS(
     hasToken.cpp
     hasTokenCaseInsensitive.cpp
     hostName.cpp
-    htmlOrXmlCoarseParse.cpp
     hypot.cpp
     identity.cpp
     if.cpp
@@ -300,6 +303,7 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
+    indexHint.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -308,6 +312,7 @@ SRCS(
     isConstant.cpp
     isDecimalOverflow.cpp
     isFinite.cpp
+    isIPAddressContainedIn.cpp
     isInfinite.cpp
     isNaN.cpp
     isNotNull.cpp
@@ -372,10 +377,20 @@ SRCS(
     now.cpp
     now64.cpp
     nullIf.cpp
+    partitionId.cpp
     pi.cpp
     plus.cpp
     pointInEllipses.cpp
     pointInPolygon.cpp
+    polygonArea.cpp
+    polygonConvexHull.cpp
+    polygonPerimeter.cpp
+    polygonsDistance.cpp
+    polygonsEquals.cpp
+    polygonsIntersection.cpp
+    polygonsSymDifference.cpp
+    polygonsUnion.cpp
+    polygonsWithin.cpp
     position.cpp
     positionCaseInsensitive.cpp
     positionCaseInsensitiveUTF8.cpp
@@ -388,6 +403,7 @@ SRCS(
     randomPrintableASCII.cpp
     randomString.cpp
     randomStringUTF8.cpp
+    readWkt.cpp
     regexpQuoteMeta.cpp
     registerFunctions.cpp
     registerFunctionsArithmetic.cpp
@@ -446,6 +462,7 @@ SRCS(
     subtractSeconds.cpp
     subtractWeeks.cpp
     subtractYears.cpp
+    svg.cpp
     tan.cpp
     tanh.cpp
     tcpPort.cpp
@@ -455,6 +472,7 @@ SRCS(
     timeSlot.cpp
     timeSlots.cpp
     timezone.cpp
+    timezoneOf.cpp
     timezoneOffset.cpp
     toColumnTypeName.cpp
     toCustomWeek.cpp
@@ -494,7 +512,7 @@ SRCS(
     toStartOfTenMinutes.cpp
     toStartOfYear.cpp
     toTime.cpp
-    toTimeZone.cpp
+    toTimezone.cpp
     toTypeName.cpp
     toUnixTimestamp64Micro.cpp
     toUnixTimestamp64Milli.cpp
@@ -515,6 +533,7 @@ SRCS(
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
+    validateNestedArraySizes.cpp
     version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp
@@ -524,6 +543,7 @@ SRCS(
     visitParamExtractString.cpp
     visitParamExtractUInt.cpp
     visitParamHas.cpp
+    wkt.cpp
     yandexConsistentHash.cpp
     yesterday.cpp
 

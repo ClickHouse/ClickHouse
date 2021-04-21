@@ -1,6 +1,6 @@
 ---
 toc_priority: 27
-toc_title: "\u0411\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u0434\u043b\u044f\u0020\u0438\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438\u0020\u043e\u0442\u0020\u0441\u0442\u043e\u0440\u043e\u043d\u043d\u0438\u0445\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
+toc_title: "Библиотеки для интеграции от сторонних разработчиков"
 ---
 
 # Библиотеки для интеграции от сторонних разработчиков {#biblioteki-dlia-integratsii-ot-storonnikh-razrabotchikov}
@@ -69,6 +69,9 @@ toc_title: "\u0411\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u
 -   Гео
     -   [MaxMind](https://dev.maxmind.com/geoip/)
         -   [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
+-   AutoML
+    -   [MindsDB](https://mindsdb.com/)
+        -   [MindsDB](https://github.com/mindsdb/mindsdb) - Слой предиктивной аналитики и искусственного интеллекта для СУБД ClickHouse.
 
 ## Экосистемы вокруг языков программирования {#ekosistemy-vokrug-iazykov-programmirovaniia}
 
@@ -105,4 +108,3 @@ toc_title: "\u0411\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
         
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/integrations/) <!--hide-->

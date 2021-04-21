@@ -30,7 +30,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
     const Names & virt_column_names_)
-    : SourceWithProgress(getHeader(std::move(header), prewhere_info_, virt_column_names_))
+    : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, virt_column_names_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , prewhere_info(prewhere_info_)
@@ -337,12 +337,28 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
         if (prewhere_info->alias_actions)
             prewhere_info->alias_actions->execute(block);
 
-        prewhere_info->prewhere_actions->execute(block);
-        auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
+        if (prewhere_info->row_level_filter)
+        {
+            prewhere_info->row_level_filter->execute(block);
+            auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
+            if (!row_level_column.type->canBeUsedInBooleanContext())
+            {
+                throw Exception("Invalid type for filter in PREWHERE: " + row_level_column.type->getName(),
+                    ErrorCodes::LOGICAL_ERROR);
+            }
 
+            block.erase(prewhere_info->row_level_column_name);
+        }
+
+        if (prewhere_info->prewhere_actions)
+            prewhere_info->prewhere_actions->execute(block);
+
+        auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
         if (!prewhere_column.type->canBeUsedInBooleanContext())
+        {
             throw Exception("Invalid type for filter in PREWHERE: " + prewhere_column.type->getName(),
-                            ErrorCodes::LOGICAL_ERROR);
+                ErrorCodes::LOGICAL_ERROR);
+        }
 
         if (prewhere_info->remove_prewhere_column)
             block.erase(prewhere_info->prewhere_column_name);
@@ -354,7 +370,7 @@ void MergeTreeBaseSelectProcessor::executePrewhereActions(Block & block, const P
     }
 }
 
-Block MergeTreeBaseSelectProcessor::getHeader(
+Block MergeTreeBaseSelectProcessor::transformHeader(
     Block block, const PrewhereInfoPtr & prewhere_info, const Names & virtual_columns)
 {
     executePrewhereActions(block, prewhere_info);

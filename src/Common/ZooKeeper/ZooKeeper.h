@@ -50,7 +50,14 @@ class ZooKeeper
 public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
-    ZooKeeper(const std::string & hosts_, const std::string & identity_ = "",
+    /// hosts_string -- comma separated [secure://]host:port list
+    ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
+              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
+              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
+              const std::string & chroot_ = "",
+              const std::string & implementation_ = "zookeeper");
+
+    ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
               int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
               const std::string & chroot_ = "",
@@ -247,10 +254,12 @@ public:
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureMulti tryAsyncMulti(const Coordination::Requests & ops);
 
+    void finalize();
+
 private:
     friend class EphemeralNodeHolder;
 
-    void init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
+    void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
               int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
 
     /// The following methods don't throw exceptions but return error codes.
@@ -266,7 +275,7 @@ private:
 
     std::unique_ptr<Coordination::IKeeper> impl;
 
-    std::string hosts;
+    Strings hosts;
     std::string identity;
     int32_t session_timeout_ms;
     int32_t operation_timeout_ms;

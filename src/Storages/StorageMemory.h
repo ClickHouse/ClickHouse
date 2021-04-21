@@ -34,7 +34,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -47,13 +47,14 @@ public:
 
     bool hasEvenlyDistributedRead() const override { return true; }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const Context & context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void drop() override;
 
-    void mutate(const MutationCommands & commands, const Context & context) override;
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
+    void mutate(const MutationCommands & commands, ContextPtr context) override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
@@ -96,7 +97,7 @@ public:
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
 private:
-    /// MultiVersion data storage, so that we can copy the list of blocks to readers.
+    /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
 
     MultiVersion<Blocks> data;
 

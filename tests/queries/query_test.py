@@ -1,11 +1,11 @@
-import pytest
-
 import difflib
 import os
 import random
 import string
 import subprocess
 import sys
+
+import pytest
 
 
 SKIP_LIST = [
@@ -14,44 +14,63 @@ SKIP_LIST = [
     "00987_distributed_stack_overflow",
 
     # just fail
+    "00133_long_shard_memory_tracker_and_exception_safety",
     "00505_secure",
     "00505_shard_secure",
     "00646_url_engine",
     "00725_memory_tracking",  # BROKEN
+    "00738_lock_for_inner_table",
+    "00821_distributed_storage_with_join_on",
+    "00825_protobuf_format_array_3dim",
+    "00825_protobuf_format_array_of_arrays",
+    "00825_protobuf_format_enum_mapping",
+    "00825_protobuf_format_nested_in_nested",
+    "00825_protobuf_format_nested_optional",
+    "00825_protobuf_format_no_length_delimiter",
+    "00825_protobuf_format_persons",
+    "00825_protobuf_format_squares",
+    "00825_protobuf_format_table_default",
     "00834_cancel_http_readonly_queries_on_client_close",
+    "00877_memory_limit_for_new_delete",
+    "00900_parquet_load",
     "00933_test_fix_extra_seek_on_compressed_cache",
     "00965_logs_level_bugfix",
     "00965_send_logs_level_concurrent_queries",
+    "00974_query_profiler",
     "00990_hasToken",
     "00990_metric_log_table_not_empty",
     "01014_lazy_database_concurrent_recreate_reattach_and_show_tables",
+    "01017_uniqCombined_memory_usage",
     "01018_Distributed__shard_num",
-    "01018_ip_dictionary",
+    "01018_ip_dictionary_long",
+    "01035_lc_empty_part_bug",  # FLAKY
     "01050_clickhouse_dict_source_with_subquery",
     "01053_ssd_dictionary",
     "01054_cache_dictionary_overflow_cell",
     "01057_http_compression_prefer_brotli",
     "01080_check_for_error_incorrect_size_of_nested_column",
     "01083_expressions_in_engine_arguments",
-    # "01086_odbc_roundtrip",
+    "01086_odbc_roundtrip",
     "01088_benchmark_query_id",
+    "01092_memory_profiler",
     "01098_temporary_and_external_tables",
     "01099_parallel_distributed_insert_select",
     "01103_check_cpu_instructions_at_startup",
     "01114_database_atomic",
     "01148_zookeeper_path_macros_unfolding",
+    "01175_distributed_ddl_output_mode_long",
     "01181_db_atomic_drop_on_cluster",  # tcp port in reference
     "01280_ssd_complex_key_dictionary",
     "01293_client_interactive_vertical_multiline",  # expect-test
     "01293_client_interactive_vertical_singleline",  # expect-test
-    "01293_system_distribution_queue",  # FLAKY
     "01293_show_clusters",
-    "01294_lazy_database_concurrent_recreate_reattach_and_show_tables",
+    "01293_show_settings",
+    "01293_system_distribution_queue",  # FLAKY
+    "01294_lazy_database_concurrent_recreate_reattach_and_show_tables_long",
     "01294_system_distributed_on_cluster",
     "01300_client_save_history_when_terminated",  # expect-test
     "01304_direct_io",
     "01306_benchmark_json",
-    "01035_lc_empty_part_bug",  # FLAKY
     "01320_create_sync_race_condition_zookeeper",
     "01355_CSV_input_format_allow_errors",
     "01370_client_autocomplete_word_break_characters",  # expect-test
@@ -66,18 +85,33 @@ SKIP_LIST = [
     "01514_distributed_cancel_query_on_error",
     "01520_client_print_query_id",  # expect-test
     "01526_client_start_and_exit",  # expect-test
+    "01526_max_untracked_memory",
     "01527_dist_sharding_key_dictGet_reload",
+    "01528_play",
     "01545_url_file_format_settings",
     "01553_datetime64_comparison",
     "01555_system_distribution_queue_mask",
     "01558_ttest_scipy",
     "01561_mann_whitney_scipy",
     "01582_distinct_optimization",
+    "01591_window_functions",
     "01599_multiline_input_and_singleline_comments",  # expect-test
     "01601_custom_tld",
+    "01606_git_import",
     "01610_client_spawn_editor",  # expect-test
+    "01658_read_file_to_stringcolumn",
+    "01666_merge_tree_max_query_limit",
+    "01674_unicode_asan",
     "01676_clickhouse_client_autocomplete",  # expect-test (partially)
     "01683_text_log_deadlock",  # secure tcp
+    "01684_ssd_cache_dictionary_simple_key",
+    "01685_ssd_cache_dictionary_complex_key",
+    "01746_executable_pool_dictionary",
+    "01747_executable_pool_dictionary_implicit_key",
+    "01747_join_view_filter_dictionary",
+    "01748_dictionary_table_dot",
+    "01754_cluster_all_replicas_shard_num",
+    "01759_optimize_skip_unused_shards_zero_shards",
 ]
 
 
