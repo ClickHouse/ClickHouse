@@ -48,6 +48,8 @@ StorageExternalDistributed::StorageExternalDistributed(
     std::vector<String> shards_descriptions = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
     std::vector<std::pair<std::string, UInt16>> addresses;
 
+#if USE_MYSQL || USE_LIBPQXX
+
     /// For each shard pass replicas description into storage, replicas are managed by storage's PoolWithFailover.
     for (const auto & shard_description : shards_descriptions)
     {
@@ -100,12 +102,24 @@ StorageExternalDistributed::StorageExternalDistributed(
             }
 #endif
             default:
+            {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Unsupported table engine. Supported engines are: MySQL, PostgreSQL, URL");
+            }
         }
 
         shards.emplace(std::move(shard));
     }
+
+#else
+    (void)table_engine;
+    (void)remote_database;
+    (void)remote_table;
+    (void)username;
+    (void)password;
+    (void)shards_descriptions;
+    (void)addresses;
+#endif
 }
 
 
