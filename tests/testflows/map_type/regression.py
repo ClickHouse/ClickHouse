@@ -26,7 +26,15 @@ xfails = {
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21029")],
     "tests/mapcontains/null key in map":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21028")],
+    "tests/mapcontains/null key not in map":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21028")],
+    "tests/mapkeys/null key not in map":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21028")],
+    "tests/mapkeys/null key in map":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21028")],
     "tests/mapcontains/select nullable key":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21026")],
+    "tests/mapkeys/select keys from column":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21026")],
     "tests/table map select key with value string/LowCardinality:":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21406")],
@@ -45,7 +53,41 @@ xfails = {
     "tests/table map select key with key integer/toNullable":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21406")],
     "tests/table map select key with key integer/toNullable(NULL)":
-        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21026")]
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/21026")],
+    "tests/select map with key integer/Int128":
+        [(Fail, "large Int128 as key not supported")],
+    "tests/select map with key integer/Int256":
+        [(Fail, "large Int256 as key not supported")],
+    "tests/select map with key integer/UInt256":
+        [(Fail, "large UInt256 as key not supported")],
+    "tests/select map with key integer/toNullable":
+        [(Fail, "Nullable type as key not supported")],
+    "tests/select map with key integer/toNullable(NULL)":
+        [(Fail, "Nullable type as key not supported")],
+    "tests/select map with key string/Nullable":
+        [(Fail, "Nullable type as key not supported")],   
+    "tests/select map with key string/Nullable(NULL)":
+        [(Fail, "Nullable type as key not supported")],
+    "tests/table map queries/select map with nullable value":
+        [(Fail, "Nullable value not supported")],
+    "tests/table map with key integer/toNullable":
+        [(Fail, "Nullable type as key not supported")],
+    "tests/table map with key integer/toNullable(NULL)":
+        [(Fail, "Nullable type as key not supported")],
+    "tests/table map with key string/Nullable":
+        [(Fail, "Nullable type as key not supported")],
+    "tests/table map with key string/Nullable(NULL)":
+        [(Fail, "Nullable type as key not supported")],
+    "tests/table map with key string/LowCardinality(String)":
+        [(Fail, "LowCardinality(String) as key not supported")],
+    "tests/table map with key string/LowCardinality(String) cast from String":
+        [(Fail, "LowCardinality(String) as key not supported")],
+    "tests/table map with key string/LowCardinality(String) for key and value":
+        [(Fail, "LowCardinality(String) as key not supported")],
+    "tests/table map with key string/LowCardinality(FixedString)":
+        [(Fail, "LowCardinality(FixedString) as key not supported")],
+    "tests/table map with value string/LowCardinality(String) for key and value":
+        [(Fail, "LowCardinality(String) as key not supported")],
 }
 
 xflags = {

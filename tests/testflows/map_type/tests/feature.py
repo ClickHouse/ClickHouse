@@ -408,7 +408,7 @@ def select_map_with_invalid_number_of_arguments(self):
     """
     node = self.context.node
     exitcode = 42
-    message = "DB::Exception: Function map even number of arguments"
+    message = "DB::Exception: Function map requires even number of arguments"
 
     with When("I create a map using SELECT with invalid number of arguments"):
         node.query("SELECT map(1,2,3)", exitcode=exitcode, message=message)
@@ -616,7 +616,7 @@ def table_map_invalid_key(self, type, data, select, exitcode, message, order_by=
         Name("filter rows by map having different pair order")),
     ("Map(String, String)", "(map('a','b')),(map('c','d','e','f')),(map('e','f'))", "m", "m = map('c','d','e','f')", 0, '{"m":{"c":"d","e":"f"}}', None,
         Name("filter rows by map having the same pair order")),
-    ("Map(String, String)", "(map('a','b')),(map('e','f'))", "m", "m = map()", 43, 'DB::Exception: Illegal types of arguments ', None,
+    ("Map(String, String)", "(map('a','b')),(map('e','f'))", "m", "m = map()", 0, '', None,
         Name("filter rows by empty map")),
     ("Map(String, Int8)", "(map('a',1,'b',2)),(map('a',2)),(map('b',3))", "m", "m['a'] = 1", 0, '{"m":{"a":1,"b":2}}', None,
         Name("filter rows by map key value")),
@@ -720,7 +720,7 @@ def cast_tuple_of_two_arrays_to_map(self, tuple, type, exitcode, message):
     ("(([1, 2, 3], ['Ready', 'Steady', 'Go']))", "Map(String, String)",
         0, '{"m":{"1":"Ready","2":"Steady","3":"Go"}}', False, Name("int -> string")),
     ("((['1', '2', '3'], ['Ready', 'Steady', 'Go']))", "Map(UInt8, String)",
-        176, 'DB::Exception: Unknown codec family code', True, Name("string -> int")),
+        0, '', True, Name("string -> int")),
     ("(([],[]))", "Map(String, String)",
          0, '{"m":{}}', False, Name("empty arrays to map str:str")),
     ("(([],[]))", "Map(UInt8, Array(Int8))",
