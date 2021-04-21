@@ -57,6 +57,60 @@ int32samoa: 1546300800
 
 `toTimeZone(time_utc, 'Asia/Yekaterinburg')` changes the `DateTime('UTC')` type to `DateTime('Asia/Yekaterinburg')`. The value (Unixtimestamp) 1546300800 stays the same, but the string representation (the result of the toString() function) changes from `time_utc:   2019-01-01 00:00:00` to `time_yekat: 2019-01-01 05:00:00`.
 
+## timezoneOffset {#timezoneoffset}
+
+Returns the offset from [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time) at the passed date and time. [Daylight saving time](https://en.wikipedia.org/wiki/Daylight_saving_time) and historical timezone changes are taken into account. Note that leap seconds are not considered. 
+The function uses [IANA timezone database](https://www.iana.org/time-zones) to get the result.
+
+**Syntax**
+
+``` sql
+timezoneOffset(datetime)
+```
+
+**Arguments**
+
+-   `datetime` — date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+
+**Returned value**
+
+-   offset from UTC in seconds. 
+
+Type: [Int32](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT timezoneOffset(toDateTime('2021-04-21 10:20:30', 'Europe/Moscow')) AS Offset_seconds, 
+        (Offset_seconds / 3600) AS Offset_hours;
+SELECT timezoneOffset(toDateTime('2021-11-07 00:00:00', 'America/New_York')) AS Offset_seconds, 
+        (Offset_seconds / 3600) AS Offset_hours;
+SELECT timezoneOffset(toDateTime('2021-11-07 03:00:00', 'America/New_York')) AS Offset_seconds, 
+        (Offset_seconds / 3600) AS Offset_hours;
+```
+
+Result:
+
+``` text
+┌─Offset_seconds─┬─Offset_hours─┐
+│          10800 │            3 │
+└────────────────┴──────────────┘
+┌─Offset_seconds─┬─Offset_hours─┐
+│         -14400 │           -4 │
+└────────────────┴──────────────┘
+┌─Offset_seconds─┬─Offset_hours─┐
+│         -18000 │           -5 │
+└────────────────┴──────────────┘
+```
+
+**See Also** (Optional)
+
+-   [List of timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) on Wikipedia.
+
+
+
 ## toYear {#toyear}
 
 Converts a date or date with time to a UInt16 number containing the year number (AD).
@@ -386,52 +440,6 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 │ 2016-12-27 │    201652 │    201652 │    201701 │
 └────────────┴───────────┴───────────┴───────────┘
 ```
-
-## timezoneOffset {#timezoneoffset}
-
-Returns the offset from UTC in seconds. The function supports daylight saving time.
-*Describe DST in more details?*
-*Remark that leap seconds are not considered by the function*
-
-
-**Syntax**
-
-``` sql
-timezoneOffset(datetime)
-```
-
-**Arguments**
-
--   `datetime` — date time object. [DateTime](../../sql-reference/data-types/datetime.md) *or [DateTime64](../../sql-reference/data-types/datetime64.md)*. 
-
-**Returned value(s)**
-
--   Returned values list. 
-
-Type: [Float64](../../sql-reference/data-types/float.md#float32-float64). *Really?*
-
-**Example**
-
-Query:
-
-``` sql
-SELECT timezoneOffset(toDateTime('2020-01-01 01:02:03', 'Europe/Moscow')) AS Offset_seconds, 
-       (Offset_seconds / 3600) AS Offset_hours;
-```
-
-Result:
-
-``` text
-┌─Offset_seconds─┬─Offset_hours─┐
-│          10800 │            3 │
-└────────────────┴──────────────┘
-```
-
-**See Also** (Optional)
-
--   [link](#) ~List of timezones~  *- link is in DateTime type desctiption.*
--   *Daylight saving info*
-
 
 ## date\_trunc {#date_trunc}
 
