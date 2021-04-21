@@ -23,6 +23,7 @@
 #include <Processors/Pipe.h>
 #include <common/logger_useful.h>
 #include <Common/parseRemoteDescription.h>
+#include <algorithm>
 
 
 namespace DB
@@ -30,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NETWORK_ERROR;
 }
 
 IStorageURLBase::IStorageURLBase(
@@ -235,6 +237,55 @@ Pipe IStorageURLBase::read(
         chooseCompressionMethod(request_uri.getPath(), compression_method)));
 }
 
+
+Pipe StorageURLWithFailover::read(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    unsigned /*num_streams*/)
+{
+    auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
+    for (const auto & uri_option : uri_options)
+    {
+        auto request_uri = uri_option;
+        for (const auto & [param, value] : params)
+            request_uri.addQueryParameter(param, value);
+        try
+        {
+            /// Chech for uri accessibility is done in constructor of ReadWriteBufferFromHTTP while creating StorageURLSource.
+            auto url_source =  std::make_shared<StorageURLSource>(
+                request_uri,
+                getReadMethod(),
+                getReadPOSTDataCallback(
+                    column_names, metadata_snapshot, query_info,
+                    local_context, processed_stage, max_block_size),
+                format_name,
+                format_settings,
+                getName(),
+                getHeaderBlock(column_names, metadata_snapshot),
+                local_context,
+                metadata_snapshot->getColumns(),
+                max_block_size,
+                ConnectionTimeouts::getHTTPTimeouts(local_context),
+                chooseCompressionMethod(request_uri.getPath(), compression_method));
+
+            std::shuffle(uri_options.begin(), uri_options.begin(), thread_local_rng);
+
+            return Pipe(url_source);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    throw Exception(ErrorCodes::NETWORK_ERROR, "All uri options are unreachable");
+}
+
+
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
     return std::make_shared<StorageURLBlockOutputStream>(uri, format_name,
@@ -255,6 +306,27 @@ StorageURL::StorageURL(const Poco::URI & uri_,
                       format_settings_, columns_, constraints_, compression_method_)
 {
     context_->getRemoteHostFilter().checkURL(uri);
+}
+
+
+StorageURLWithFailover::StorageURLWithFailover(
+        const std::vector<String> & uri_options_,
+        const StorageID & table_id_,
+        const String & format_name_,
+        const std::optional<FormatSettings> & format_settings_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
+        ContextPtr context_,
+        const String & compression_method_)
+    : StorageURL(Poco::URI(), table_id_, format_name_, format_settings_, columns_, constraints_, context_, compression_method_)
+{
+    for (const auto & uri_option : uri_options_)
+    {
+        Poco::URI uri(uri_option);
+        context_->getRemoteHostFilter().checkURL(uri);
+        uri_options.emplace_back(std::move(uri));
+        LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL option: {}", uri_option);
+    }
 }
 
 
