@@ -24,7 +24,6 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int NOT_IMPLEMENTED;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int INCORRECT_QUERY;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
