@@ -11,7 +11,7 @@ class Context;
 class InterpreterShowPrivilegesQuery : public IInterpreter
 {
 public:
-    InterpreterShowPrivilegesQuery(const ASTPtr & query_ptr_, Context & context_);
+    InterpreterShowPrivilegesQuery(const ASTPtr & query_ptr_, ContextPtr context_);
 
     BlockIO execute() override;
 
@@ -20,7 +20,7 @@ public:
 
 private:
     ASTPtr query_ptr;
-    Context & context;
+    ContextPtr context;
 };
 
 }

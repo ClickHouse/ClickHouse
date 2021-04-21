@@ -40,6 +40,11 @@ namespace ProfileEvents
     extern const Event StorageBufferPassedTimeMaxThreshold;
     extern const Event StorageBufferPassedRowsMaxThreshold;
     extern const Event StorageBufferPassedBytesMaxThreshold;
+    extern const Event StorageBufferPassedTimeFlushThreshold;
+    extern const Event StorageBufferPassedRowsFlushThreshold;
+    extern const Event StorageBufferPassedBytesFlushThreshold;
+    extern const Event StorageBufferLayerLockReadersWaitMilliseconds;
+    extern const Event StorageBufferLayerLockWritersWaitMilliseconds;
 }
 
 namespace CurrentMetrics
@@ -63,25 +68,57 @@ namespace ErrorCodes
 }
 
 
+std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
+{
+    return lockImpl(/* read= */true);
+}
+std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForWriting() const
+{
+    return lockImpl(/* read= */false);
+}
+std::unique_lock<std::mutex> StorageBuffer::Buffer::tryLock() const
+{
+    std::unique_lock lock(mutex, std::try_to_lock);
+    return lock;
+}
+std::unique_lock<std::mutex> StorageBuffer::Buffer::lockImpl(bool read) const
+{
+    std::unique_lock lock(mutex, std::defer_lock);
+
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    lock.lock();
+    UInt64 elapsed = watch.elapsedMilliseconds();
+
+    if (read)
+        ProfileEvents::increment(ProfileEvents::StorageBufferLayerLockReadersWaitMilliseconds, elapsed);
+    else
+        ProfileEvents::increment(ProfileEvents::StorageBufferLayerLockWritersWaitMilliseconds, elapsed);
+
+    return lock;
+}
+
+
 StorageBuffer::StorageBuffer(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const Context & context_,
+    ContextPtr context_,
     size_t num_shards_,
     const Thresholds & min_thresholds_,
     const Thresholds & max_thresholds_,
+    const Thresholds & flush_thresholds_,
     const StorageID & destination_id_,
     bool allow_materialized_)
     : IStorage(table_id_)
-    , buffer_context(context_.getBufferContext())
+    , WithContext(context_->getBufferContext())
     , num_shards(num_shards_), buffers(num_shards_)
     , min_thresholds(min_thresholds_)
     , max_thresholds(max_thresholds_)
+    , flush_thresholds(flush_thresholds_)
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
     , log(&Poco::Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
-    , bg_pool(buffer_context.getBufferFlushSchedulePool())
+    , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -111,7 +148,7 @@ protected:
             return res;
         has_been_read = true;
 
-        std::lock_guard lock(buffer.mutex);
+        std::unique_lock lock(buffer.lockForReading());
 
         if (!buffer.data.rows())
             return res;
@@ -141,16 +178,16 @@ private:
 };
 
 
-QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
+QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(ContextPtr local_context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & query_info) const
 {
     if (destination_id)
     {
-        auto destination = DatabaseCatalog::instance().getTable(destination_id, context);
+        auto destination = DatabaseCatalog::instance().getTable(destination_id, local_context);
 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        return destination->getQueryProcessingStage(context, to_stage, query_info);
+        return destination->getQueryProcessingStage(local_context, to_stage, query_info);
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -161,16 +198,16 @@ Pipe StorageBuffer::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
     QueryPlan plan;
-    read(plan, column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    read(plan, column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
     return plan.convertToPipe(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
+        QueryPlanOptimizationSettings::fromContext(local_context),
+        BuildQueryPipelineSettings::fromContext(local_context));
 }
 
 void StorageBuffer::read(
@@ -178,19 +215,19 @@ void StorageBuffer::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
     if (destination_id)
     {
-        auto destination = DatabaseCatalog::instance().getTable(destination_id, context);
+        auto destination = DatabaseCatalog::instance().getTable(destination_id, local_context);
 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        auto destination_lock = destination->lockForShare(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+        auto destination_lock = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
 
@@ -205,12 +242,12 @@ void StorageBuffer::read(
         if (dst_has_same_structure)
         {
             if (query_info.order_optimizer)
-                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot, context);
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(destination_metadata_snapshot, local_context);
 
             /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
             destination->read(
                 query_plan, column_names, destination_metadata_snapshot, query_info,
-                context, processed_stage, max_block_size, num_streams);
+                local_context, processed_stage, max_block_size, num_streams);
         }
         else
         {
@@ -245,7 +282,7 @@ void StorageBuffer::read(
             {
                 destination->read(
                         query_plan, columns_intersection, destination_metadata_snapshot, query_info,
-                        context, processed_stage, max_block_size, num_streams);
+                        local_context, processed_stage, max_block_size, num_streams);
 
                 if (query_plan.isInitialized())
                 {
@@ -254,7 +291,7 @@ void StorageBuffer::read(
                             query_plan.getCurrentDataStream().header,
                             header_after_adding_defaults.getNamesAndTypesList(),
                             metadata_snapshot->getColumns(),
-                            context);
+                            local_context);
 
                     auto adding_missed = std::make_unique<ExpressionStep>(
                             query_plan.getCurrentDataStream(),
@@ -317,7 +354,7 @@ void StorageBuffer::read(
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
         auto interpreter = InterpreterSelectQuery(
-                query_info.query, context, std::move(pipe_from_buffers),
+                query_info.query, local_context, std::move(pipe_from_buffers),
                 SelectQueryOptions(processed_stage));
         interpreter.buildQueryPlan(buffers_plan);
     }
@@ -391,7 +428,7 @@ void StorageBuffer::read(
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_streams), result_header);
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
     union_step->setStepDescription("Unite sources from Buffer table");
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
@@ -495,7 +532,7 @@ public:
         StoragePtr destination;
         if (storage.destination_id)
         {
-            destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.buffer_context);
+            destination = DatabaseCatalog::instance().tryGetTable(storage.destination_id, storage.getContext());
             if (destination.get() == &storage)
                 throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
         }
@@ -510,7 +547,7 @@ public:
         {
             if (storage.destination_id)
             {
-                LOG_TRACE(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
+                LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
                 storage.writeBlockToDestination(block, destination);
             }
             return;
@@ -528,7 +565,7 @@ public:
 
         for (size_t try_no = 0; try_no < storage.num_shards; ++try_no)
         {
-            std::unique_lock lock(storage.buffers[shard_num].mutex, std::try_to_lock);
+            std::unique_lock lock(storage.buffers[shard_num].tryLock());
 
             if (lock.owns_lock())
             {
@@ -548,7 +585,7 @@ public:
         if (!least_busy_buffer)
         {
             least_busy_buffer = &storage.buffers[start_shard_num];
-            least_busy_lock = std::unique_lock(least_busy_buffer->mutex);
+            least_busy_lock = least_busy_buffer->lockForWriting();
         }
         insertIntoBuffer(block, *least_busy_buffer);
         least_busy_lock.unlock();
@@ -570,7 +607,7 @@ private:
         {
             buffer.data = sorted_block.cloneEmpty();
         }
-        else if (storage.checkThresholds(buffer, current_time, sorted_block.rows(), sorted_block.bytes()))
+        else if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()))
         {
             /** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
               * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
@@ -588,14 +625,14 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     return std::make_shared<BufferBlockOutputStream>(*this, metadata_snapshot);
 }
 
 
 bool StorageBuffer::mayBenefitFromIndexForIn(
-    const ASTPtr & left_in_operand, const Context & query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
+    const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     if (!destination_id)
         return false;
@@ -611,7 +648,7 @@ bool StorageBuffer::mayBenefitFromIndexForIn(
 
 void StorageBuffer::startup()
 {
-    if (buffer_context.getSettingsRef().readonly)
+    if (getContext()->getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate buffer_profile to fix this.", getName());
     }
@@ -630,7 +667,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, buffer_context);
+        optimize(nullptr /*query*/, getInMemoryMetadataPtr(), {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, getContext());
     }
     catch (...)
     {
@@ -656,7 +693,7 @@ bool StorageBuffer::optimize(
     bool final,
     bool deduplicate,
     const Names & /* deduplicate_by_columns */,
-    const Context & /*context*/)
+    ContextPtr /*context*/)
 {
     if (partition)
         throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
@@ -675,13 +712,13 @@ bool StorageBuffer::supportsPrewhere() const
 {
     if (!destination_id)
         return false;
-    auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, buffer_context);
+    auto dest = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
     if (dest && dest.get() != this)
         return dest->supportsPrewhere();
     return false;
 }
 
-bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, size_t additional_rows, size_t additional_bytes) const
+bool StorageBuffer::checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows, size_t additional_bytes) const
 {
     time_t time_passed = 0;
     if (buffer.first_write_time)
@@ -690,11 +727,11 @@ bool StorageBuffer::checkThresholds(const Buffer & buffer, time_t current_time, 
     size_t rows = buffer.data.rows() + additional_rows;
     size_t bytes = buffer.data.bytes() + additional_bytes;
 
-    return checkThresholdsImpl(rows, bytes, time_passed);
+    return checkThresholdsImpl(direct, rows, bytes, time_passed);
 }
 
 
-bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const
+bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const
 {
     if (time_passed > min_thresholds.time && rows > min_thresholds.rows && bytes > min_thresholds.bytes)
     {
@@ -720,6 +757,27 @@ bool StorageBuffer::checkThresholdsImpl(size_t rows, size_t bytes, time_t time_p
         return true;
     }
 
+    if (!direct)
+    {
+        if (flush_thresholds.time && time_passed > flush_thresholds.time)
+        {
+            ProfileEvents::increment(ProfileEvents::StorageBufferPassedTimeFlushThreshold);
+            return true;
+        }
+
+        if (flush_thresholds.rows && rows > flush_thresholds.rows)
+        {
+            ProfileEvents::increment(ProfileEvents::StorageBufferPassedRowsFlushThreshold);
+            return true;
+        }
+
+        if (flush_thresholds.bytes && bytes > flush_thresholds.bytes)
+        {
+            ProfileEvents::increment(ProfileEvents::StorageBufferPassedBytesFlushThreshold);
+            return true;
+        }
+    }
+
     return false;
 }
 
@@ -740,9 +798,9 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     size_t bytes = 0;
     time_t time_passed = 0;
 
-    std::unique_lock lock(buffer.mutex, std::defer_lock);
+    std::optional<std::unique_lock<std::mutex>> lock;
     if (!locked)
-        lock.lock();
+        lock.emplace(buffer.lockForReading());
 
     block_to_write = buffer.data.cloneEmpty();
 
@@ -753,7 +811,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     if (check_thresholds)
     {
-        if (!checkThresholdsImpl(rows, bytes, time_passed))
+        if (!checkThresholdsImpl(/* direct= */false, rows, bytes, time_passed))
             return;
     }
     else
@@ -772,7 +830,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     if (!destination_id)
     {
-        LOG_TRACE(log, "Flushing buffer with {} rows (discarded), {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
+        LOG_DEBUG(log, "Flushing buffer with {} rows (discarded), {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
         return;
     }
 
@@ -786,7 +844,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     Stopwatch watch;
     try
     {
-        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, buffer_context));
+        writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, getContext()));
         if (reset_block_structure)
             buffer.data.clear();
     }
@@ -809,7 +867,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     }
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
-    LOG_TRACE(log, "Flushing buffer with {} rows, {} bytes, age {} seconds, took {} ms {}.", rows, bytes, time_passed, milliseconds, (check_thresholds ? "(bg)" : "(direct)"));
+    LOG_DEBUG(log, "Flushing buffer with {} rows, {} bytes, age {} seconds, took {} ms {}.", rows, bytes, time_passed, milliseconds, (check_thresholds ? "(bg)" : "(direct)"));
 }
 
 
@@ -868,8 +926,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     for (const auto & column : block_to_write)
         list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
-    auto insert_context = Context(buffer_context);
-    insert_context.makeQueryContext();
+    auto insert_context = Context::createCopy(getContext());
+    insert_context->makeQueryContext();
 
     InterpreterInsertQuery interpreter{insert, insert_context, allow_materialized};
 
@@ -910,7 +968,7 @@ void StorageBuffer::reschedule()
         /// try_to_lock is also ok for background flush, since if there is
         /// INSERT contended, then the reschedule will be done after
         /// INSERT will be done.
-        std::unique_lock lock(buffer.mutex, std::try_to_lock);
+        std::unique_lock lock(buffer.tryLock());
         if (lock.owns_lock())
         {
             min_first_write_time = buffer.first_write_time;
@@ -930,9 +988,9 @@ void StorageBuffer::reschedule()
     flush_handle->scheduleAfter(std::min(min, max) * 1000);
 }
 
-void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Context & context) const
+void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
-    auto name_deps = getDependentViewsByColumn(context);
+    auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
@@ -957,7 +1015,7 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const C
 std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
 {
     std::optional<UInt64> underlying_rows;
-    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, buffer_context);
+    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id, getContext());
 
     if (underlying)
         underlying_rows = underlying->totalRows(settings);
@@ -967,7 +1025,7 @@ std::optional<UInt64> StorageBuffer::totalRows(const Settings & settings) const
     UInt64 rows = 0;
     for (const auto & buffer : buffers)
     {
-        std::lock_guard lock(buffer.mutex);
+        const auto lock(buffer.lockForReading());
         rows += buffer.data.rows();
     }
     return rows + *underlying_rows;
@@ -978,26 +1036,26 @@ std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) c
     UInt64 bytes = 0;
     for (const auto & buffer : buffers)
     {
-        std::lock_guard lock(buffer.mutex);
+        const auto lock(buffer.lockForReading());
         bytes += buffer.data.allocatedBytes();
     }
     return bytes;
 }
 
-void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableLockHolder &)
+void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, TableLockHolder &)
 {
     auto table_id = getStorageID();
-    checkAlterIsPossible(params, context);
+    checkAlterIsPossible(params, local_context);
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
     /// Flush all buffers to storages, so that no non-empty blocks of the old
     /// structure remain. Structure of empty blocks will be updated during first
     /// insert.
-    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, context);
+    optimize({} /*query*/, metadata_snapshot, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, {}, local_context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
-    params.apply(new_metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
+    params.apply(new_metadata, local_context);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -1008,25 +1066,26 @@ void registerStorageBuffer(StorageFactory & factory)
       *
       * db, table - in which table to put data from buffer.
       * num_buckets - level of parallelism.
-      * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer.
+      * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer,
+      * flush_time, flush_rows, flush_bytes - conditions for flushing.
       */
 
     factory.registerStorage("Buffer", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 9)
-            throw Exception("Storage Buffer requires 9 parameters: "
-                " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
+        if (engine_args.size() < 9 || engine_args.size() > 12)
+            throw Exception("Storage Buffer requires from 9 to 12 parameters: "
+                " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes].",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         // Table and database name arguments accept expressions, evaluate them.
-        engine_args[0] = evaluateConstantExpressionForDatabaseName(engine_args[0], args.local_context);
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
+        engine_args[0] = evaluateConstantExpressionForDatabaseName(engine_args[0], args.getLocalContext());
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
 
         // After we evaluated all expressions, check that all arguments are
         // literals.
-        for (size_t i = 0; i < 9; i++)
+        for (size_t i = 0; i < engine_args.size(); i++)
         {
             if (!typeid_cast<ASTLiteral *>(engine_args[i].get()))
             {
@@ -1036,23 +1095,35 @@ void registerStorageBuffer(StorageFactory & factory)
             }
         }
 
-        String destination_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        String destination_table = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        size_t i = 0;
 
-        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[2]->as<ASTLiteral &>().value);
+        String destination_database = engine_args[i++]->as<ASTLiteral &>().value.safeGet<String>();
+        String destination_table = engine_args[i++]->as<ASTLiteral &>().value.safeGet<String>();
 
-        Int64 min_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), engine_args[3]->as<ASTLiteral &>().value);
-        Int64 max_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), engine_args[4]->as<ASTLiteral &>().value);
-        UInt64 min_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[5]->as<ASTLiteral &>().value);
-        UInt64 max_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[6]->as<ASTLiteral &>().value);
-        UInt64 min_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[7]->as<ASTLiteral &>().value);
-        UInt64 max_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[8]->as<ASTLiteral &>().value);
+        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+
+        StorageBuffer::Thresholds min;
+        StorageBuffer::Thresholds max;
+        StorageBuffer::Thresholds flush;
+
+        min.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        max.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        min.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        max.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        min.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        max.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        if (engine_args.size() > i)
+            flush.time = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        if (engine_args.size() > i)
+            flush.rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
+        if (engine_args.size() > i)
+            flush.bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), engine_args[i++]->as<ASTLiteral &>().value);
 
         /// If destination_id is not set, do not write data from the buffer, but simply empty the buffer.
         StorageID destination_id = StorageID::createEmpty();
         if (!destination_table.empty())
         {
-            destination_id.database_name = args.context.resolveDatabase(destination_database);
+            destination_id.database_name = args.getContext()->resolveDatabase(destination_database);
             destination_id.table_name = destination_table;
         }
 
@@ -1060,12 +1131,11 @@ void registerStorageBuffer(StorageFactory & factory)
             args.table_id,
             args.columns,
             args.constraints,
-            args.context,
+            args.getContext(),
             num_buckets,
-            StorageBuffer::Thresholds{min_time, min_rows, min_bytes},
-            StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
+            min, max, flush,
             destination_id,
-            static_cast<bool>(args.local_context.getSettingsRef().insert_allow_materialized_columns));
+            static_cast<bool>(args.getLocalContext()->getSettingsRef().insert_allow_materialized_columns));
     },
     {
         .supports_parallel_insert = true,

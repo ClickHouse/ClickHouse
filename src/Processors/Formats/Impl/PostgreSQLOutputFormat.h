@@ -27,7 +27,7 @@ private:
 
     FormatSettings format_settings;
     PostgreSQLProtocol::Messaging::MessageTransport message_transport;
-    DataTypes data_types;
+    Serializations serializations;
 };
 
 }
