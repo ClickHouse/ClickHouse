@@ -14,9 +14,19 @@ class CompletionAwareWriteBuffer : public WriteBufferFromFileDecorator
 {
 public:
     CompletionAwareWriteBuffer(std::unique_ptr<WriteBufferFromFileBase> impl_, std::function<void()> completion_callback_)
-        : WriteBufferFromFileDecorator(std::move(impl_)), completion_callback(completion_callback_)
-    { }
+        : WriteBufferFromFileDecorator(std::move(impl_)), completion_callback(completion_callback_) { }
 
+    virtual ~CompletionAwareWriteBuffer() override
+    {
+        try
+        {
+            finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__ );
+        }
+    }
 private:
     void finalizeImpl() override
     {

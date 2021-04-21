@@ -397,8 +397,19 @@ public:
         String & s3_path_)
         : WriteBufferFromFileDecorator(std::move(impl_))
         , metadata(std::move(metadata_))
-        , s3_path(s3_path_)
-    { }
+        , s3_path(s3_path_) { }
+
+    virtual ~WriteIndirectBufferFromS3() override
+    {
+        try
+        {
+            finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__ );
+        }
+    }
 
     void sync() override
     {
@@ -409,7 +420,8 @@ public:
     std::string getFileName() const override { return metadata.metadata_file_path; }
 
 private:
-    void finalizeImpl() override {
+    void finalizeImpl() override
+    {
         metadata.addObject(s3_path, count());
         metadata.save();
     }
