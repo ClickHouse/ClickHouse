@@ -304,7 +304,22 @@ void buildPrimaryKeyConfiguration(
         AutoPtr<Element> name_element(doc->createElement("name"));
         id_element->appendChild(name_element);
 
-        const ASTDictionaryAttributeDeclaration * dict_attr = children.front()->as<const ASTDictionaryAttributeDeclaration>();
+        auto identifier_name = key_names.front();
+
+        auto it = std::find_if(children.begin(), children.end(), [&](const ASTPtr & node)
+        {
+            const ASTDictionaryAttributeDeclaration * dict_attr = node->as<const ASTDictionaryAttributeDeclaration>();
+            return dict_attr->name == identifier_name;
+        });
+
+        if (it == children.end())
+        {
+            throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                "Primary key field '{}' not found among attributes",
+                identifier_name);
+        }
+
+        const ASTDictionaryAttributeDeclaration * dict_attr = (*it)->as<const ASTDictionaryAttributeDeclaration>();
 
         AutoPtr<Text> name(doc->createTextNode(dict_attr->name));
         name_element->appendChild(name);
