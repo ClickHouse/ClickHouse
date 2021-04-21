@@ -1,6 +1,5 @@
 #include "StorageExternalDistributed.h"
 
-#if USE_MYSQL || USE_LIBPQXX
 
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -14,6 +13,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/StorageURL.h>
 #include <common/logger_useful.h>
 
 
@@ -101,10 +101,47 @@ StorageExternalDistributed::StorageExternalDistributed(
 #endif
             default:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Unsupported table engine. Supported engines are: MySQL, PostgreSQL");
+                    "Unsupported table engine. Supported engines are: MySQL, PostgreSQL, URL");
         }
 
         shards.emplace(std::move(shard));
+    }
+}
+
+
+StorageExternalDistributed::StorageExternalDistributed(
+            const String & addresses_description,
+            const StorageID & table_id,
+            const String & format_name,
+            const std::optional<FormatSettings> & format_settings,
+            const String & compression_method,
+            const ColumnsDescription & columns,
+            const ConstraintsDescription & constraints,
+            ContextPtr context)
+        : IStorage(table_id)
+{
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(columns);
+    storage_metadata.setConstraints(constraints);
+    setInMemoryMetadata(storage_metadata);
+
+    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
+    std::vector<String> shards_descriptions = parseRemoteDescription(addresses_description, 0, addresses_description.size(), '|', max_addresses);
+    std::vector<std::pair<std::string, UInt16>> addresses;
+
+    for (const auto & shard_description : shards_descriptions)
+    {
+        Poco::URI uri(shard_description);
+        auto shard = StorageURL::create(
+            uri,
+            table_id,
+            format_name,
+            format_settings,
+            columns, constraints, context,
+            compression_method);
+
+        shards.emplace(std::move(shard));
+        LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL: {}", shard_description);
     }
 }
 
@@ -151,39 +188,62 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
         const String & engine_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        const String & cluster_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        const String & remote_database = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        const String & remote_table = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        const String & username = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-        const String & password = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & addresses_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         StorageExternalDistributed::ExternalStorageEngine table_engine;
-        if (engine_name == "MySQL")
-            table_engine = StorageExternalDistributed::ExternalStorageEngine::MySQL;
-        else if (engine_name == "PostgreSQL")
-            table_engine = StorageExternalDistributed::ExternalStorageEngine::PostgreSQL;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL",
-                engine_name);
+        if (engine_name == "URL")
+        {
+            table_engine = StorageExternalDistributed::ExternalStorageEngine::URL;
 
-        return StorageExternalDistributed::create(
-            args.table_id,
-            table_engine,
-            cluster_description,
-            remote_database,
-            remote_table,
-            username,
-            password,
-            args.columns,
-            args.constraints,
-            args.getContext());
+            const String & format_name = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            String compression_method = "auto";
+            if (engine_args.size() == 4)
+                compression_method = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+
+            auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
+
+            return StorageExternalDistributed::create(
+                addresses_description,
+                args.table_id,
+                format_name,
+                format_settings,
+                compression_method,
+                args.columns,
+                args.constraints,
+                args.getContext());
+        }
+        else
+        {
+            if (engine_name == "MySQL")
+                table_engine = StorageExternalDistributed::ExternalStorageEngine::MySQL;
+            else if (engine_name == "PostgreSQL")
+                table_engine = StorageExternalDistributed::ExternalStorageEngine::PostgreSQL;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL, URL",
+                    engine_name);
+
+            const String & remote_database = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            const String & remote_table = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+            const String & username = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+            const String & password = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
+
+            return StorageExternalDistributed::create(
+                args.table_id,
+                table_engine,
+                addresses_description,
+                remote_database,
+                remote_table,
+                username,
+                password,
+                args.columns,
+                args.constraints,
+                args.getContext());
+        }
     },
     {
-        .source_access_type = AccessType::MYSQL,
+        .source_access_type = AccessType::SOURCES,
     });
 }
 
 }
-
-#endif
