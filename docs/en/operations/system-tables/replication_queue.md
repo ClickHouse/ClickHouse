@@ -22,7 +22,7 @@ Columns:
     -   `DROP_RANGE` — Delete the parts in the specified partition in the specified number range.
     -   `CLEAR_COLUMN` — NOTE: Deprecated. Drop specific column from specified partition.
     -   `CLEAR_INDEX` — NOTE: Deprecated. Drop specific index from specified partition.
-    -   `REPLACE_RANGE` — Drop a certain range of partitions and replace them with new ones.
+    -   `REPLACE_RANGE` — Drop a certain range of parts and replace them with new ones.
     -   `MUTATE_PART` — Apply one or several mutations to the part.
     -   `ALTER_METADATA` — Apply alter modification according to global /metadata and /columns paths.
 
