@@ -3628,14 +3628,16 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
 
 bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     const Context & context,
-    const SelectQueryOptions & option,
-    const ASTPtr & query_ptr,
+    //const SelectQueryOptions & option,
+    //const ASTPtr & query_ptr,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info)
 {
     const auto & settings = context.getSettingsRef();
-    if (!settings.allow_experimental_projection_optimization || option.ignore_projections)
+    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections)
         return false;
+
+    const auto & query_ptr = query_info.query;
 
     InterpreterSelectQuery select(
         query_ptr, context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
@@ -3708,6 +3710,8 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             {
                 query_info.projection_names = projection_condition.getRequiredColumns();
                 query_info.projection_block = query_block;
+                query_info.aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
+                query_info.aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
             }
         }
     }

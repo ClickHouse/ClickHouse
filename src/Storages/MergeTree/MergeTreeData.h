@@ -359,8 +359,8 @@ public:
 
     static bool getQueryProcessingStageWithAggregateProjection(
         const Context & context,
-        const SelectQueryOptions & option,
-        const ASTPtr & query_ptr,
+        //const SelectQueryOptions & option,
+        // const ASTPtr & query_ptr,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info);
 

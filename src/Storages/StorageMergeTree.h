@@ -36,6 +36,8 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, SelectQueryInfo & info) const override;
+
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,

@@ -173,6 +173,21 @@ StorageMergeTree::~StorageMergeTree()
     shutdown();
 }
 
+QueryProcessingStage::Enum StorageMergeTree::getQueryProcessingStage(
+    const Context & context,
+    QueryProcessingStage::Enum to_stage,
+    SelectQueryInfo & query_info) const
+{
+    if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
+    {
+        /// TODO: pass metadata snapshot
+        if (getQueryProcessingStageWithAggregateProjection(context, getInMemoryMetadataPtr(), query_info))
+            return QueryProcessingStage::Enum::WithMergeableState;
+    }
+
+    return QueryProcessingStage::Enum::FetchColumns;
+}
+
 void StorageMergeTree::read(
     QueryPlan & query_plan,
     const Names & column_names,

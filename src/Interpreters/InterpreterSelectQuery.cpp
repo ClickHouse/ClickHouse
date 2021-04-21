@@ -282,6 +282,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 {
     checkStackSize();
 
+    query_info.ignore_projections = options.ignore_projections;
+
     initSettings();
     const Settings & settings = context->getSettingsRef();
 
@@ -393,19 +395,19 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        bool use_projection = false;
-        if (storage && !options.only_analyze)
-        {
-            if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
-            {
-                if (syntax_analyzer_result->can_use_projection)
-                    use_projection = merge_tree->getQueryProcessingStageWithAggregateProjection(
-                        *context, options, query_ptr, metadata_snapshot, query_info);
-            }
-        }
+        // bool use_projection = false;
+        // if (storage && !options.only_analyze)
+        // {
+        //     if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+        //     {
+        //         if (syntax_analyzer_result->can_use_projection)
+        //             use_projection = merge_tree->getQueryProcessingStageWithAggregateProjection(
+        //                 *context, options, query_ptr, metadata_snapshot, query_info);
+        //     }
+        // }
 
         // TODO Check if we can have prewhere work for projections, also need to allow it in TreeRewriter
-        if (try_move_to_prewhere && storage && !use_projection && query.where() && !query.prewhere() && !query.final())
+        if (try_move_to_prewhere && storage /*&& !use_projection*/ && query.where() && !query.prewhere() && !query.final())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
@@ -423,9 +425,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             }
         }
 
-        if (use_projection)
-            // ugly but works
-            metadata_snapshot->selected_projection = query_info.aggregate_projection;
+        // if (use_projection)
+        //     // ugly but works
+        //     metadata_snapshot->selected_projection = query_info.aggregate_projection;
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, *context, metadata_snapshot,
@@ -557,7 +559,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     executeImpl(query_plan, input, std::move(input_pipe));
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
-    if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+    if (!options.ignore_projections && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
@@ -589,10 +591,13 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     if (storage && !options.only_analyze)
     {
-        if (query_info.aggregate_projection)
-            from_stage = QueryProcessingStage::WithMergeableState;
-        else
-            from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_info);
+        // if (query_info.aggregate_projection)
+        //     from_stage = QueryProcessingStage::WithMergeableState;
+        // else
+
+        from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_info);
+
+        metadata_snapshot->selected_projection = query_info.aggregate_projection;
     }
 
     /// Do I need to perform the first part of the pipeline?
@@ -1830,6 +1835,9 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     expression_before_aggregation->setStepDescription("Before GROUP BY");
     query_plan.addStep(std::move(expression_before_aggregation));
 
+    if (options.ignore_projections)
+        return;
+
     const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
     ColumnNumbers keys;
     for (const auto & key : query_analyzer->aggregationKeys())
@@ -1884,6 +1892,9 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final)
 {
     const auto & header_before_merge = query_plan.getCurrentDataStream().header;
+
+    if (query_info.aggregate_projection)
+        return;
 
     ColumnNumbers keys;
     for (const auto & key : query_analyzer->aggregationKeys())
