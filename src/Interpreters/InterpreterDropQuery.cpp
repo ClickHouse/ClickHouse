@@ -169,9 +169,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
 
             if (query.permanently)
             {
-                if (table->isDictionary())
-                    throw Exception("DETACH PERMANENTLY is not implemented for dictionaries", ErrorCodes::NOT_IMPLEMENTED);
-
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(getContext(), table_id.table_name);
             }
