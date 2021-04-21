@@ -6,6 +6,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
+#include <Storages/StorageFactory.h>
 
 
 namespace DB
@@ -124,5 +125,7 @@ public:
     {
         return metadata_snapshot->getSampleBlock();
     }
+
+    static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
 };
 }

@@ -1,4 +1,3 @@
-#include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
 
 #include <Interpreters/Context.h>
@@ -22,6 +21,8 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
+#include <common/logger_useful.h>
+#include <Common/parseRemoteDescription.h>
 
 
 namespace DB
@@ -256,6 +257,43 @@ StorageURL::StorageURL(const Poco::URI & uri_,
     context_->getRemoteHostFilter().checkURL(uri);
 }
 
+
+FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Arguments & args)
+{
+    // Use format settings from global server context + settings from
+    // the SETTINGS clause of the create query. Settings from current
+    // session and user are ignored.
+    FormatSettings format_settings;
+    if (args.storage_def->settings)
+    {
+        FormatFactorySettings user_format_settings;
+
+        // Apply changed settings from global context, but ignore the
+        // unknown ones, because we only have the format settings here.
+        const auto & changes = args.getContext()->getSettingsRef().changes();
+        for (const auto & change : changes)
+        {
+            if (user_format_settings.has(change.name))
+            {
+                user_format_settings.set(change.name, change.value);
+            }
+        }
+
+        // Apply changes from SETTINGS clause, with validation.
+        user_format_settings.applyChanges(args.storage_def->settings->changes);
+
+        format_settings = getFormatSettings(args.getContext(),
+            user_format_settings);
+    }
+    else
+    {
+        format_settings = getFormatSettings(args.getContext());
+    }
+
+    return format_settings;
+}
+
+
 void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage("URL", [](const StorageFactory::Arguments & args)
@@ -268,53 +306,21 @@ void registerStorageURL(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 
-        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         Poco::URI uri(url);
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
 
-        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
-        String compression_method;
+        String compression_method = "auto";
         if (engine_args.size() == 3)
         {
             engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         }
-        else
-        {
-            compression_method = "auto";
-        }
 
-        // Use format settings from global server context + settings from
-        // the SETTINGS clause of the create query. Settings from current
-        // session and user are ignored.
-        FormatSettings format_settings;
-        if (args.storage_def->settings)
-        {
-            FormatFactorySettings user_format_settings;
-
-            // Apply changed settings from global context, but ignore the
-            // unknown ones, because we only have the format settings here.
-            const auto & changes = args.getContext()->getSettingsRef().changes();
-            for (const auto & change : changes)
-            {
-                if (user_format_settings.has(change.name))
-                {
-                    user_format_settings.set(change.name, change.value);
-                }
-            }
-
-            // Apply changes from SETTINGS clause, with validation.
-            user_format_settings.applyChanges(args.storage_def->settings->changes);
-
-            format_settings = getFormatSettings(args.getContext(),
-                user_format_settings);
-        }
-        else
-        {
-            format_settings = getFormatSettings(args.getContext());
-        }
+        auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
 
         return StorageURL::create(
             uri,
