@@ -34,6 +34,21 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
+void executeExpression(Pipe & pipe, const ActionsDAGPtr & expression)
+{
+    if (!expression)
+    {
+        return;
+    }
+
+    auto expression_actions = std::make_shared<ExpressionActions>(expression);
+
+    pipe.addSimpleTransform([expression_actions](const Block & header)
+    {
+        return std::make_shared<ExpressionTransform>(header, expression_actions);
+    });
+}
+
 /// AggregatingOutputStream is used to feed data into Aggregator.
 class AggregatingOutputStream : public IBlockOutputStream
 {
@@ -48,7 +63,7 @@ public:
 
     void write(const Block & block) override
     {
-        // writeForDebug(block);
+        writeForDebug(block);
 
         // TODO: metadata_snapshot->check
         // TODO: update storage.total_size_bytes
@@ -105,6 +120,7 @@ public:
 
             auto select_query = query.inner_query->as<ASTSelectQuery &>();
 
+            LOG_DEBUG(&Poco::Logger::get("Arthur"), "executing debug select query");
             select.emplace(query.inner_query, local_context, SelectQueryOptions());
             auto select_result = select->execute();
 
@@ -287,21 +303,13 @@ Pipe StorageAggregatingMemory::read(
     auto processor
         = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
 
-    Pipes pipes;
-    pipes.emplace_back(processor);
-
-    auto final_projection = analysis_result.final_projection;
-    auto expression_actions = std::make_shared<ExpressionActions>(final_projection);
-
-    auto pipe = Pipe::unitePipes(std::move(pipes));
-    pipe.addSimpleTransform([expression_actions](const Block & header)
-    {
-        return std::make_shared<ExpressionTransform>(header, expression_actions);
-    });
+    Pipe pipe(std::move(processor));
+    executeExpression(pipe, analysis_result.before_window);
+    executeExpression(pipe, analysis_result.before_order_by);
+    executeExpression(pipe, analysis_result.final_projection);
 
     return pipe;
 }
-
 
 BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
