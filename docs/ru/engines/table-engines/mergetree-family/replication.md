@@ -1,6 +1,6 @@
 ---
 toc_priority: 31
-toc_title: "\u0420\u0435\u043f\u043b\u0438\u043a\u0430\u0446\u0438\u044f\u0020\u0434\u0430\u043d\u043d\u044b\u0445"
+toc_title: "Репликация данных"
 ---
 
 # Репликация данных {#table_engines-replication}
@@ -153,7 +153,7 @@ CREATE TABLE table_name
 
 ```xml
 <default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
-<default_replica_name>{replica}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
 ```
 
 В этом случае можно опустить аргументы при создании таблиц:
@@ -246,4 +246,8 @@ $ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Если данные в ZooKeeper оказались утеряны или повреждены, то вы можете сохранить данные, переместив их в нереплицируемую таблицу, как описано в пункте выше.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/replication/) <!--hide-->
+**Смотрите также**
+
+-   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
+-   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
+

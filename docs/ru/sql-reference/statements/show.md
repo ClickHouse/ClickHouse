@@ -249,10 +249,8 @@ SHOW GRANTS [FOR user]
 ### Синтаксис {#show-create-user-syntax}
 
 ``` sql
-SHOW CREATE USER [name | CURRENT_USER]
+SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 ```
-
-
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
 
@@ -261,10 +259,8 @@ SHOW CREATE USER [name | CURRENT_USER]
 ### Синтаксис {#show-create-role-syntax}
 
 ``` sql
-SHOW CREATE ROLE name
+SHOW CREATE ROLE name1 [, name2 ...]
 ```
-
-
 
 ## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
 
@@ -273,9 +269,8 @@ SHOW CREATE ROLE name
 ### Синтаксис {#show-create-row-policy-syntax}
 
 ```sql
-SHOW CREATE [ROW] POLICY name ON [database.]table
+SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 ```
-
 
 ## SHOW CREATE QUOTA {#show-create-quota-statement}
 
@@ -284,9 +279,8 @@ SHOW CREATE [ROW] POLICY name ON [database.]table
 ### Синтаксис {#show-create-row-policy-syntax}
 
 ```sql
-SHOW CREATE QUOTA [name | CURRENT]
+SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 ```
-
 
 ## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
 
@@ -295,9 +289,8 @@ SHOW CREATE QUOTA [name | CURRENT]
 ### Синтаксис {#show-create-row-policy-syntax}
 
 ```sql
-SHOW CREATE [SETTINGS] PROFILE name
+SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ```
-
 
 ## SHOW USERS {#show-users-statement}
 
@@ -359,4 +352,78 @@ SHOW QUOTAS
 SHOW [CURRENT] QUOTA
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/show/) <!--hide-->
+## SHOW ACCESS {#show-access-statement}
+
+Выводит список всех [пользователей](../../operations/access-rights.md#user-account-management), [ролей](../../operations/access-rights.md#role-management), [профилей](../../operations/access-rights.md#settings-profiles-management) и пр., а также все [привилегии](../../sql-reference/statements/grant.md#grant-privileges).
+
+### Синтаксис {#show-access-syntax}
+
+``` sql
+SHOW ACCESS
+```
+
+## SHOW SETTINGS {#show-settings}
+
+Возвращает список системных настроек и их значений. Использует данные из таблицы [system.settings](../../operations/system-tables/settings.md).
+
+**Синтаксис**
+
+```sql
+SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
+```
+
+**Секции**
+
+При использовании `LIKE|ILIKE` можно задавать шаблон для имени настройки. Этот шаблон может содержать символы подстановки, такие как `%` или `_`. При использовании `LIKE` шаблон чувствителен к регистру, а при использовании `ILIKE` — не чувствителен.
+
+Если используется `CHANGED`, запрос вернет только те настройки, значения которых были изменены, т.е. отличны от значений по умолчанию.
+
+**Примеры**
+
+Запрос с использованием `LIKE`:
+
+```sql
+SHOW SETTINGS LIKE 'send_timeout';
+```
+Результат:
+
+```text
+┌─name─────────┬─type────┬─value─┐
+│ send_timeout │ Seconds │ 300   │
+└──────────────┴─────────┴───────┘
+```
+
+Запрос с использованием `ILIKE`:
+
+```sql
+SHOW SETTINGS ILIKE '%CONNECT_timeout%'
+```
+
+Результат:
+
+```text
+┌─name────────────────────────────────────┬─type─────────┬─value─┐
+│ connect_timeout                         │ Seconds      │ 10    │
+│ connect_timeout_with_failover_ms        │ Milliseconds │ 50    │
+│ connect_timeout_with_failover_secure_ms │ Milliseconds │ 100   │
+└─────────────────────────────────────────┴──────────────┴───────┘
+```
+
+Запрос с использованием `CHANGED`:
+
+```sql
+SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
+```
+
+Результат:
+
+```text
+┌─name─────────────┬─type───┬─value───────┐
+│ max_memory_usage │ UInt64 │ 10000000000 │
+└──────────────────┴────────┴─────────────┘
+```
+
+**См. также**
+
+-   Таблица [system.settings](../../operations/system-tables/settings.md)
+

@@ -17,8 +17,16 @@ namespace DB
 {
 
 PredicateRewriteVisitorData::PredicateRewriteVisitorData(
-    const Context & context_, const ASTs & predicates_, Names && column_names_, bool optimize_final_, bool optimize_with_)
-    : context(context_), predicates(predicates_), column_names(column_names_), optimize_final(optimize_final_), optimize_with(optimize_with_)
+    ContextPtr context_,
+    const ASTs & predicates_,
+    const TableWithColumnNamesAndTypes & table_columns_,
+    bool optimize_final_,
+    bool optimize_with_)
+    : WithContext(context_)
+    , predicates(predicates_)
+    , table_columns(table_columns_)
+    , optimize_final(optimize_final_)
+    , optimize_with(optimize_with_)
 {
 }
 
@@ -26,16 +34,24 @@ void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_q
 {
     auto & internal_select_list = union_select_query.list_of_selects->children;
 
-    if (!internal_select_list.empty())
-        visitFirstInternalSelect(*internal_select_list[0]->as<ASTSelectQuery>(), internal_select_list[0]);
-
-    for (size_t index = 1; index < internal_select_list.size(); ++index)
-        visitOtherInternalSelect(*internal_select_list[index]->as<ASTSelectQuery>(), internal_select_list[index]);
+    for (size_t index = 0; index < internal_select_list.size(); ++index)
+    {
+        if (auto * child_union = internal_select_list[index]->as<ASTSelectWithUnionQuery>())
+            visit(*child_union, internal_select_list[index]);
+        else
+        {
+            if (index == 0)
+                visitFirstInternalSelect(*internal_select_list[0]->as<ASTSelectQuery>(), internal_select_list[0]);
+            else
+                visitOtherInternalSelect(*internal_select_list[index]->as<ASTSelectQuery>(), internal_select_list[index]);
+        }
+    }
 }
 
 void PredicateRewriteVisitorData::visitFirstInternalSelect(ASTSelectQuery & select_query, ASTPtr &)
 {
-    is_rewrite |= rewriteSubquery(select_query, column_names, column_names);
+    /// In this case inner_columns same as outer_columns from table_columns
+    is_rewrite |= rewriteSubquery(select_query, table_columns.columns.getNames());
 }
 
 void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & select_query, ASTPtr &)
@@ -56,9 +72,9 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
     }
 
     const Names & internal_columns = InterpreterSelectQuery(
-        temp_internal_select, context, SelectQueryOptions().analyze()).getSampleBlock().getNames();
+        temp_internal_select, getContext(), SelectQueryOptions().analyze()).getSampleBlock().getNames();
 
-    if (rewriteSubquery(*temp_select_query, column_names, internal_columns))
+    if (rewriteSubquery(*temp_select_query, internal_columns))
     {
         is_rewrite |= true;
         select_query.setExpression(ASTSelectQuery::Expression::SELECT, std::move(temp_select_query->refSelect()));
@@ -82,15 +98,16 @@ static void cleanAliasAndCollectIdentifiers(ASTPtr & predicate, std::vector<ASTI
         identifiers.emplace_back(identifier);
 }
 
-bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, const Names & outer_columns, const Names & inner_columns)
+bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns)
 {
     if ((!optimize_final && subquery.final())
         || (!optimize_with && subquery.with())
         || subquery.withFill()
         || subquery.limitBy() || subquery.limitLength()
-        || hasStatefulFunction(subquery.select(), context))
+        || hasNonRewritableFunction(subquery.select(), getContext()))
         return false;
 
+    Names outer_columns = table_columns.columns.getNames();
     for (const auto & predicate : predicates)
     {
         std::vector<ASTIdentifier *> identifiers;
@@ -99,13 +116,16 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
 
         for (const auto & identifier : identifiers)
         {
-            const auto & column_name = identifier->shortName();
-            const auto & outer_column_iterator = std::find(outer_columns.begin(), outer_columns.end(), column_name);
+            IdentifierSemantic::setColumnShortName(*identifier, table_columns.table);
+            const auto & column_name = identifier->name();
 
             /// For lambda functions, we can't always find them in the list of columns
             /// For example: SELECT * FROM system.one WHERE arrayMap(x -> x, [dummy]) = [0]
+            const auto & outer_column_iterator = std::find(outer_columns.begin(), outer_columns.end(), column_name);
             if (outer_column_iterator != outer_columns.end())
+            {
                 identifier->setShortName(inner_columns[outer_column_iterator - outer_columns.begin()]);
+            }
         }
 
         /// We only need to push all the predicates to subquery having

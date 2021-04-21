@@ -35,7 +35,7 @@ The function returns the nearest number of the specified order. In case when giv
 round(expression [, decimal_places])
 ```
 
-**Parameters:**
+**Arguments**
 
 -   `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
 -   `decimal-places` — An integer value.
@@ -114,7 +114,7 @@ For example, sum numbers 1.5, 2.5, 3.5, 4.5 with different rounding:
 roundBankers(expression [, decimal_places])
 ```
 
-**Parameters**
+**Arguments**
 
 -   `expression` — A number to be rounded. Can be any [expression](../../sql-reference/syntax.md#syntax-expressions) returning the numeric [data type](../../sql-reference/data-types/index.md#data_types).
 -   `decimal-places` — Decimal places. An integer number.
@@ -185,4 +185,3 @@ Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rou
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/rounding_functions/) <!--hide-->

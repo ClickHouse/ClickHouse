@@ -61,13 +61,13 @@ struct StorageInMemoryMetadata
     /// Sets constraints
     void setConstraints(ConstraintsDescription constraints_);
 
-    /// Set partition key for storage (methods bellow, are just wrappers for this struct).
+    /// Set partition key for storage (methods below, are just wrappers for this struct).
     void setPartitionKey(const KeyDescription & partition_key_);
-    /// Set sorting key for storage (methods bellow, are just wrappers for this struct).
+    /// Set sorting key for storage (methods below, are just wrappers for this struct).
     void setSortingKey(const KeyDescription & sorting_key_);
-    /// Set primary key for storage (methods bellow, are just wrappers for this struct).
+    /// Set primary key for storage (methods below, are just wrappers for this struct).
     void setPrimaryKey(const KeyDescription & primary_key_);
-    /// Set sampling key for storage (methods bellow, are just wrappers for this struct).
+    /// Set sampling key for storage (methods below, are just wrappers for this struct).
     void setSamplingKey(const KeyDescription & sampling_key_);
 
     /// Set common table TTLs
@@ -85,9 +85,10 @@ struct StorageInMemoryMetadata
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
-    /// Returns secondary indices
 
+    /// Returns secondary indices
     const IndicesDescription & getSecondaryIndices() const;
+
     /// Has at least one non primary index
     bool hasSecondaryIndices() const;
 
@@ -109,6 +110,9 @@ struct StorageInMemoryMetadata
     TTLDescription getRowsTTL() const;
     bool hasRowsTTL() const;
 
+    TTLDescriptions getRowsWhereTTLs() const;
+    bool hasAnyRowsWhereTTL() const;
+
     /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
     /// table TTL.
     TTLDescriptions getMoveTTLs() const;
@@ -117,6 +121,10 @@ struct StorageInMemoryMetadata
     // Just wrapper for table TTLs, return info about recompression ttl
     TTLDescriptions getRecompressionTTLs() const;
     bool hasAnyRecompressionTTL() const;
+
+    // Just wrapper for table TTLs, return info about recompression ttl
+    TTLDescriptions getGroupByTTLs() const;
+    bool hasAnyGroupByTTL() const;
 
     /// Returns columns, which will be needed to calculate dependencies (skip
     /// indices, TTL expressions) if we update @updated_columns set of columns.
@@ -139,8 +147,7 @@ struct StorageInMemoryMetadata
     /// Storage metadata. StorageID required only for more clear exception
     /// message.
     Block getSampleBlockForColumns(
-        const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
-
+        const Names & column_names, const NamesAndTypesList & virtuals = {}, const StorageID & storage_id = StorageID::createEmpty()) const;
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.

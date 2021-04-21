@@ -72,6 +72,12 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     if (!IdentifierSemantic::getColumnName(node))
         return;
 
+    if (data.settings.prefer_column_name_to_alias)
+    {
+        if (data.source_columns_set.find(node.name()) != data.source_columns_set.end())
+            return;
+    }
+
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
     auto it_alias = data.aliases.find(node.name());
     if (it_alias != data.aliases.end() && current_alias != node.name())
@@ -131,8 +137,20 @@ static bool needVisitChild(const ASTPtr & child)
 void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
     for (auto & child : select.children)
-        if (needVisitChild(child))
+    {
+        if (child == select.groupBy() || child == select.orderBy() || child == select.having())
+        {
+            bool old_setting = data.settings.prefer_column_name_to_alias;
+            data.settings.prefer_column_name_to_alias = false;
             visit(child, data);
+            data.settings.prefer_column_name_to_alias = old_setting;
+        }
+        else
+        {
+            if (needVisitChild(child))
+                visit(child, data);
+        }
+    }
 
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
     /// but also in where_expression and having_expression.
@@ -148,9 +166,9 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
 /// Don't go into select query. It processes children itself.
 /// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
-void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
+void QueryNormalizer::visitChildren(IAST * node, Data & data)
 {
-    if (const auto * func_node = node->as<ASTFunction>())
+    if (auto * func_node = node->as<ASTFunction>())
     {
         if (func_node->tryGetQueryArgument())
         {
@@ -175,6 +193,11 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
                 if (needVisitChild(child))
                     visit(child, data);
             }
+        }
+
+        if (func_node->window_definition)
+        {
+            visitChildren(func_node->window_definition.get(), data);
         }
     }
     else if (!node->as<ASTSelectQuery>())
@@ -221,7 +244,7 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     if (ast.get() != initial_ast.get())
         visit(ast, data);
     else
-        visitChildren(ast, data);
+        visitChildren(ast.get(), data);
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());

@@ -54,6 +54,8 @@ public:
         FETCH_PARTITION,
         FREEZE_PARTITION,
         FREEZE_ALL,
+        UNFREEZE_PARTITION,
+        UNFREEZE_ALL,
 
         DELETE,
         UPDATE,
@@ -153,7 +155,9 @@ public:
      */
     String from;
 
-    /** For FREEZE PARTITION - place local backup to directory with specified name.
+    /**
+     * For FREEZE PARTITION - place local backup to directory with specified name.
+     * For UNFREEZE - delete local backup at directory with specified name.
      */
     String with_name;
 
@@ -187,6 +191,10 @@ public:
 
     ASTExpressionList * command_list = nullptr;
 
+    bool isSettingsAlter() const;
+
+    bool isFreezeAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;
@@ -198,6 +206,8 @@ public:
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+    bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 };
 
 }

@@ -10,7 +10,6 @@
 #include <Access/AccessFlags.h>
 #include <Common/typeid_cast.h>
 
-
 namespace DB
 {
 
@@ -40,25 +39,39 @@ BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
 {
     ASTQueryWithTableAndOutput * exists_query;
     bool result = false;
+
     if ((exists_query = query_ptr->as<ASTExistsTableQuery>()))
     {
         if (exists_query->temporary)
         {
-            result = context.tryResolveStorageID({"", exists_query->table}, Context::ResolveExternal);
+            result = getContext()->tryResolveStorageID({"", exists_query->table}, Context::ResolveExternal);
         }
         else
         {
-            String database = context.resolveDatabase(exists_query->database);
-            context.checkAccess(AccessType::SHOW_TABLES, database, exists_query->table);
-            result = DatabaseCatalog::instance().isTableExist({database, exists_query->table}, context);
+            String database = getContext()->resolveDatabase(exists_query->database);
+            getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->table);
+            result = DatabaseCatalog::instance().isTableExist({database, exists_query->table}, getContext());
         }
+    }
+    else if ((exists_query = query_ptr->as<ASTExistsViewQuery>()))
+    {
+        String database = getContext()->resolveDatabase(exists_query->database);
+        getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->table);
+        auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->table}, getContext());
+        result = table && table->isView();
+    }
+    else if ((exists_query = query_ptr->as<ASTExistsDatabaseQuery>()))
+    {
+        String database = getContext()->resolveDatabase(exists_query->database);
+        getContext()->checkAccess(AccessType::SHOW_DATABASES, database);
+        result = DatabaseCatalog::instance().isDatabaseExist(database);
     }
     else if ((exists_query = query_ptr->as<ASTExistsDictionaryQuery>()))
     {
         if (exists_query->temporary)
             throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
-        String database = context.resolveDatabase(exists_query->database);
-        context.checkAccess(AccessType::SHOW_DICTIONARIES, database, exists_query->table);
+        String database = getContext()->resolveDatabase(exists_query->database);
+        getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, exists_query->table);
         result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->table});
     }
 

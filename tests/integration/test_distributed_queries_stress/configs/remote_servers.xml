@@ -1,0 +1,42 @@
+<yandex>
+    <max_concurrent_queries>1000</max_concurrent_queries>
+
+    <remote_servers>
+        <one_shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1_r1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node1_r2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </one_shard>
+        <two_shards>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>node1_r1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node1_r2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node2_r1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2_r2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </two_shards>
+    </remote_servers>
+</yandex>

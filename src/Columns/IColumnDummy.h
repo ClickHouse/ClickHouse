@@ -4,6 +4,7 @@
 #include <Common/PODArray.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsCommon.h>
+#include <Core/Field.h>
 
 
 namespace DB
@@ -33,11 +34,14 @@ public:
     void insertDefault() override { ++s; }
     void popBack(size_t n) override { s -= n; }
     size_t byteSize() const override { return 0; }
+    size_t byteSizeAt(size_t) const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
     }
+
+    bool hasEqualValues() const override { return true; }
 
     Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
     void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
@@ -55,12 +59,20 @@ public:
 
     StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override
     {
-        return { arena.allocContinue(0, begin), 0 };
+        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
+        char * res = arena.allocContinue(1, begin);
+        *res = 0;
+        return { res, 1 };
     }
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
         ++s;
+        return pos + 1;
+    }
+
+    const char * skipSerializedInArena(const char * pos) const override
+    {
         return pos;
     }
 

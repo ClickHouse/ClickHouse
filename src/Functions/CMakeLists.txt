@@ -1,5 +1,7 @@
 configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
 
+add_subdirectory(divide)
+
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(clickhouse_functions .)
 
@@ -18,7 +20,6 @@ target_link_libraries(clickhouse_functions
         clickhouse_dictionaries_embedded
         clickhouse_parsers
         consistent-hashing
-        consistent-hashing-sumbur
         dbms
         metrohash
         murmurhash
@@ -26,7 +27,7 @@ target_link_libraries(clickhouse_functions
     PRIVATE
         ${ZLIB_LIBRARIES}
         boost::filesystem
-        libdivide
+        divide_impl
 )
 
 if (OPENSSL_CRYPTO_LIBRARY)
@@ -118,3 +119,6 @@ target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_array)
 if (USE_STATS)
     target_link_libraries(clickhouse_functions PRIVATE stats)
 endif()
+
+# Signed integer overflow on user-provided data inside boost::geometry - ignore.
+set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)

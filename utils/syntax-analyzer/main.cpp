@@ -36,7 +36,7 @@ int main(int argc, const char **)
             ASTPtr orig_ast = parseQuery(parser, q, 10000000, 10000);
 
             std::cout << std::endl << "New AST:" << std::endl;
-            auto new_ast = parseQuery(q);
+            auto new_ast = parseQuery(q, "");
             new_ast->dump();
 
             auto old_ast = new_ast->convertToOld();

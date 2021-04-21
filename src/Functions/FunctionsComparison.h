@@ -81,8 +81,8 @@ namespace ErrorCodes
 template <typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
-    using ContainerA = std::conditional_t<!is_big_int_v<A>, PaddedPODArray<A>, std::vector<A>>;
-    using ContainerB = std::conditional_t<!is_big_int_v<B>, PaddedPODArray<B>, std::vector<B>>;
+    using ContainerA = PaddedPODArray<A>;
+    using ContainerB = PaddedPODArray<B>;
 
     /// If you don't specify NO_INLINE, the compiler will inline this function, but we don't need this as this function contains tight loop inside.
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
@@ -552,22 +552,18 @@ struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
 struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
 
-template <
-    template <typename, typename> class Op,
-    typename Name>
+template <template <typename, typename> class Op, typename Name>
 class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context); }
 
-    explicit FunctionComparison(const Context & context_)
-    :   context(context_),
-        check_decimal_overflow(decimalCheckComparisonOverflow(context))
-    {}
+    explicit FunctionComparison(ContextPtr context_)
+        : context(context_), check_decimal_overflow(decimalCheckComparisonOverflow(context)) {}
 
 private:
-    const Context & context;
+    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
@@ -1216,7 +1212,10 @@ public:
         {
             return res;
         }
-        else if (isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
+        else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
+                 // Comparing Date and DateTime64 requires implicit conversion,
+                 // otherwise Date is treated as number.
+                 && !(date_and_datetime && (isDate(left_type) || isDate(right_type))))
         {
             // compare
             if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)

@@ -208,8 +208,8 @@ This function returns the value for the specified `id`s and the date range that 
 Details of the algorithm:
 
 -   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
--   If there are overlapping ranges, you can use any.
--   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01 or 2039-01-01), the range is left open. The range can be open on both sides.
+-   If there are overlapping ranges, it returns value for any (random) range.
+-   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01), the range is open. The range can be open on both sides.
 
 Configuration example:
 
@@ -320,8 +320,6 @@ Similar to `cache`, but stores data on SSD and index in RAM.
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
         <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
-        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
-        <max_stored_keys>1048576</max_stored_keys>
     </ssd_cache>
 </layout>
 ```
@@ -329,8 +327,8 @@ Similar to `cache`, but stores data on SSD and index in RAM.
 or
 
 ``` sql
-LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}
@@ -406,6 +404,14 @@ Example:
             <null_value>??</null_value>
     </attribute>
     ...
+</structure>
+<layout>
+    <ip_trie>
+        <!-- Key attribute `prefix` can be retrieved via dictGetString. -->
+        <!-- This option increases memory usage. -->
+        <access_to_key_from_attributes>true</access_to_key_from_attributes>
+    </ip_trie>
+</layout>
 ```
 
 or
@@ -435,6 +441,5 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
-Data is stored in a `trie`. It must completely fit into RAM.
+Data must completely fit into RAM.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

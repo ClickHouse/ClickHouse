@@ -42,7 +42,7 @@ void LimitStep::updateInputStream(DataStream input_stream)
     output_stream = createOutputStream(input_streams.front(), output_stream->header, getDataStreamTraits());
 }
 
-void LimitStep::transformPipeline(QueryPipeline & pipeline)
+void LimitStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     auto transform = std::make_shared<LimitTransform>(
         pipeline.getHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description);

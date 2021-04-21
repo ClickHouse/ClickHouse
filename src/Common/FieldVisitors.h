@@ -185,12 +185,20 @@ public:
                 /// Conversion of infinite values to integer is undefined.
                 throw Exception("Cannot convert infinite value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
+            else if (x > std::numeric_limits<T>::max() || x < std::numeric_limits<T>::lowest())
+            {
+                throw Exception("Cannot convert out of range floating point value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
+            }
         }
 
         if constexpr (std::is_same_v<Decimal256, T>)
+        {
             return Int256(x);
+        }
         else
+        {
             return T(x);
+        }
     }
 
     T operator() (const UInt128 &) const
@@ -235,7 +243,7 @@ public:
         else if constexpr (std::is_same_v<T, UInt128>)
             throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
         else
-            return bigint_cast<T>(x);
+            return static_cast<T>(x);
     }
 };
 

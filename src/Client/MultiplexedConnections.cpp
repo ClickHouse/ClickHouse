@@ -140,10 +140,34 @@ void MultiplexedConnections::sendQuery(
     sent_query = true;
 }
 
+void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (sent_query)
+        throw Exception("Cannot send uuids after query is sent.", ErrorCodes::LOGICAL_ERROR);
+
+    for (ReplicaState & state : replica_states)
+    {
+        Connection * connection = state.connection;
+        if (connection != nullptr)
+            connection->sendIgnoredPartUUIDs(uuids);
+    }
+}
+
+
+void MultiplexedConnections::sendReadTaskResponse(const String & response)
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+    current_connection->sendReadTaskResponse(response);
+}
+
 Packet MultiplexedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
-    Packet packet = receivePacketUnlocked();
+    Packet packet = receivePacketUnlocked({});
     return packet;
 }
 
@@ -191,10 +215,12 @@ Packet MultiplexedConnections::drain()
 
     while (hasActiveConnections())
     {
-        Packet packet = receivePacketUnlocked();
+        Packet packet = receivePacketUnlocked({});
 
         switch (packet.type)
         {
+            case Protocol::Server::ReadTaskRequest:
+            case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
             case Protocol::Server::Progress:
             case Protocol::Server::ProfileInfo:
@@ -237,7 +263,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return buf.str();
 }
 
-Packet MultiplexedConnections::receivePacketUnlocked()
+Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
     if (!sent_query)
         throw Exception("Cannot receive packets: no query sent.", ErrorCodes::LOGICAL_ERROR);
@@ -249,10 +275,16 @@ Packet MultiplexedConnections::receivePacketUnlocked()
     if (current_connection == nullptr)
         throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
-    Packet packet = current_connection->receivePacket();
+    Packet packet;
+    {
+        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
+        packet = current_connection->receivePacket();
+    }
 
     switch (packet.type)
     {
+        case Protocol::Server::ReadTaskRequest:
+        case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:
         case Protocol::Server::Progress:
         case Protocol::Server::ProfileInfo:

@@ -14,7 +14,7 @@ PEERDIR(
     clickhouse/base/common
     clickhouse/base/pcg-random
     clickhouse/base/widechar_width
-    contrib/libs/libcpuid/libcpuid
+    contrib/libs/libcpuid
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
@@ -33,11 +33,13 @@ SRCS(
     Config/ConfigProcessor.cpp
     Config/ConfigReloader.cpp
     Config/configReadClient.cpp
+    CurrentMemoryTracker.cpp
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
     Dwarf.cpp
     Elf.cpp
+    Epoll.cpp
     ErrorCodes.cpp
     Exception.cpp
     ExternalLoaderStatus.cpp
@@ -75,13 +77,13 @@ SRCS(
     ThreadPool.cpp
     ThreadProfileEvents.cpp
     ThreadStatus.cpp
+    TimerDescriptor.cpp
     TraceCollector.cpp
     UTF8Helpers.cpp
     UnicodeBar.cpp
     WeakHash.cpp
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
-    ZooKeeper/TestKeeperStorage.cpp
     ZooKeeper/ZooKeeper.cpp
     ZooKeeper/ZooKeeperCommon.cpp
     ZooKeeper/ZooKeeperConstants.cpp
@@ -96,6 +98,7 @@ SRCS(
     formatIPv6.cpp
     formatReadable.cpp
     getExecutablePath.cpp
+    getHashOfLoadedBinary.cpp
     getMappedArea.cpp
     getMultipleKeysFromConfig.cpp
     getNumberOfPhysicalCPUCores.cpp

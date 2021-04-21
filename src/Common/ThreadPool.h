@@ -13,7 +13,6 @@
 #include <Common/ThreadStatus.h>
 #include <ext/scope_guard.h>
 
-
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
   * - catches exceptions and rethrows on wait.
@@ -71,6 +70,7 @@ public:
     void setMaxThreads(size_t value);
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
+    size_t getMaxThreads() const;
 
 private:
     mutable std::mutex mutex;
@@ -187,7 +187,7 @@ public:
     ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
     {
         if (joinable())
-            std::terminate();
+            abort();
         state = std::move(rhs.state);
         return *this;
     }
@@ -195,13 +195,13 @@ public:
     ~ThreadFromGlobalPool()
     {
         if (joinable())
-            std::terminate();
+            abort();
     }
 
     void join()
     {
         if (!joinable())
-            std::terminate();
+            abort();
 
         state->wait();
         state.reset();
@@ -210,7 +210,7 @@ public:
     void detach()
     {
         if (!joinable())
-            std::terminate();
+            abort();
         state.reset();
     }
 

@@ -1,20 +1,22 @@
 #pragma once
 
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Common/HashTable/HashMap.h>
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-
 #include <atomic>
 #include <memory>
 #include <variant>
+#include <optional>
 
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
-class RangeHashedDictionary final : public IDictionaryBase
+class RangeHashedDictionary final : public IDictionary
 {
 public:
     RangeHashedDictionary(
@@ -52,38 +54,18 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    typedef Int64 RangeStorageType;
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::range; }
 
-    template <typename T>
-    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+    ColumnPtr getColumn(
+        const std::string& attribute_name,
+        const DataTypePtr & result_type,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const ColumnPtr & default_values_column) const override;
 
-#define DECLARE_MULTIPLE_GETTER(TYPE) \
-    void get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<RangeStorageType> & dates, \
-        ResultArrayType<TYPE> & out) const;
-    DECLARE_MULTIPLE_GETTER(UInt8)
-    DECLARE_MULTIPLE_GETTER(UInt16)
-    DECLARE_MULTIPLE_GETTER(UInt32)
-    DECLARE_MULTIPLE_GETTER(UInt64)
-    DECLARE_MULTIPLE_GETTER(UInt128)
-    DECLARE_MULTIPLE_GETTER(Int8)
-    DECLARE_MULTIPLE_GETTER(Int16)
-    DECLARE_MULTIPLE_GETTER(Int32)
-    DECLARE_MULTIPLE_GETTER(Int64)
-    DECLARE_MULTIPLE_GETTER(Float32)
-    DECLARE_MULTIPLE_GETTER(Float64)
-    DECLARE_MULTIPLE_GETTER(Decimal32)
-    DECLARE_MULTIPLE_GETTER(Decimal64)
-    DECLARE_MULTIPLE_GETTER(Decimal128)
-#undef DECLARE_MULTIPLE_GETTER
+    ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    void getString(
-        const std::string & attribute_name,
-        const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<RangeStorageType> & dates,
-        ColumnString * out) const;
+    using RangeStorageType = Int64;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
@@ -101,7 +83,7 @@ private:
     struct Value final
     {
         Range range;
-        T value;
+        std::optional<T> value;
     };
 
     template <typename T>
@@ -115,6 +97,8 @@ private:
     {
     public:
         AttributeUnderlyingType type;
+        bool is_nullable;
+
         std::variant<
             UInt8,
             UInt16,
@@ -128,9 +112,10 @@ private:
             Decimal32,
             Decimal64,
             Decimal128,
+            Decimal256,
             Float32,
             Float64,
-            String>
+            StringRef>
             null_values;
         std::variant<
             Ptr<UInt8>,
@@ -145,6 +130,7 @@ private:
             Ptr<Decimal32>,
             Ptr<Decimal64>,
             Ptr<Decimal128>,
+            Ptr<Decimal256>,
             Ptr<Float32>,
             Ptr<Float64>,
             Ptr<StringRef>>
@@ -162,49 +148,46 @@ private:
     void calculateBytesAllocated();
 
     template <typename T>
-    void createAttributeImpl(Attribute & attribute, const Field & null_value);
+    static void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
-    Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
+    static Attribute createAttribute(const DictionaryAttribute& attribute, const Field & null_value);
 
-
-    template <typename OutputType>
-    void getItems(
-        const Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<RangeStorageType> & dates,
-        PaddedPODArray<OutputType> & out) const;
-
-    template <typename AttributeType, typename OutputType>
+    template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<RangeStorageType> & dates,
-        PaddedPODArray<OutputType> & out) const;
+        const Columns & key_columns,
+        ValueSetter && set_value,
+        DefaultValueExtractor & default_value_extractor) const;
 
+    template <typename AttributeType>
+    ColumnUInt8::Ptr hasKeysImpl(
+        const Attribute & attribute,
+        const PaddedPODArray<UInt64> & ids,
+        const PaddedPODArray<RangeStorageType> & dates) const;
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const T value);
+    static void setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
 
-    void setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value);
+    static void setAttributeValue(Attribute & attribute, const UInt64 id, const Range & range, const Field & value);
 
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
     template <typename RangeType>
-    void getIdsAndDates(PaddedPODArray<Key> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
+    void getIdsAndDates(PaddedPODArray<UInt64> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename T, typename RangeType>
     void getIdsAndDates(
         const Attribute & attribute,
-        PaddedPODArray<Key> & ids,
+        PaddedPODArray<UInt64> & ids,
         PaddedPODArray<RangeType> & start_dates,
         PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename RangeType>
     BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
 
-    friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
+    friend struct RangeHashedDictionaryCallGetBlockInputStreamImpl;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

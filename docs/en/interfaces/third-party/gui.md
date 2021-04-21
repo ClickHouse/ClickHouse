@@ -107,6 +107,10 @@ Features:
 
 [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) is a Jupyter kernal for ClickHouse, which supports query CH data using SQL in Jupyter.
 
+### MindsDB Studio {#mindsdb}
+
+[MindsDB](https://mindsdb.com/) is an open-source AI layer for databases including ClickHouse that allows you to effortlessly develop, train and deploy state-of-the-art machine learning models. MindsDB Studio(GUI) allows you to train new models from database, interpret predictions made by the model, identify potential data biases, and evaluate and visualize model accuracy using the Explainable AI function to adapt and tune your Machine Learning models faster.
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}
@@ -163,4 +167,23 @@ Features:
 
 [How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->
+### SeekTable {#seektable}
+
+[SeekTable](https://www.seektable.com) is a self-service BI tool for data exploration and operational reporting. It is available both as a cloud service and a self-hosted version. Reports from SeekTable may be embedded into any web-app.
+
+Features:
+
+-   Business users-friendly reports builder.
+-   Powerful report parameters for SQL filtering and report-specific query customizations.
+-   Can connect to ClickHouse both with a native TCP/IP endpoint and a HTTP(S) interface (2 different drivers).
+-   It is possible to use all power of ClickHouse SQL dialect in dimensions/measures definitions.
+-   [Web API](https://www.seektable.com/help/web-api-integration) for automated reports generation.
+-   Supports reports development flow with account data [backup/restore](https://www.seektable.com/help/self-hosted-backup-restore); data models (cubes) / reports configuration is a human-readable XML and can be stored under version control system.
+
+SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/individual usage.
+
+[How to configure ClickHouse connection in SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
+
+### Chadmin {#chadmin}
+
+[Chadmin](https://github.com/bun4uk/chadmin) is a simple UI where you can visualize your currently running queries on your ClickHouse cluster and info about them and kill them if you want.

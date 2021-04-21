@@ -32,16 +32,16 @@ namespace ErrorCodes
 class FunctionTrap : public IFunction
 {
 private:
-    const Context & context;
+    ContextPtr context;
 
 public:
     static constexpr auto name = "trap";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionTrap>(context);
     }
 
-    FunctionTrap(const Context & context_) : context(context_) {}
+    FunctionTrap(ContextPtr context_) : context(context_) {}
 
     String getName() const override
     {
@@ -139,6 +139,11 @@ public:
             else if (mode == "stack overflow")
             {
                 executeImpl(block, result_type, input_rows_count);
+            }
+            else if (mode == "harmful function")
+            {
+                double res = drand48();
+                (void)res;
             }
             else if (mode == "mmap many")
             {

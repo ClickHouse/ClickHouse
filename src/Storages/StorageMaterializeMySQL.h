@@ -1,6 +1,8 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
+#endif
 
 #if USE_MYSQL
 
@@ -24,9 +26,9 @@ public:
 
     Pipe read(
         const Names & column_names, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info,
-        const Context & context, QueryProcessingStage::Enum processed_stage, size_t max_block_size, unsigned num_streams) override;
+        ContextPtr context, QueryProcessingStage::Enum processed_stage, size_t max_block_size, unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr &, const Context &) override { throwNotAllowed(); }
+    BlockOutputStreamPtr write(const ASTPtr &, const StorageMetadataPtr &, ContextPtr) override { throwNotAllowed(); }
 
     NamesAndTypesList getVirtuals() const override;
     ColumnSizeByName getColumnSizes() const override;

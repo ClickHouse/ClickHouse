@@ -151,6 +151,15 @@ String Elf::getBuildID(const char * nhdr_pos, size_t size)
 }
 
 
+String Elf::getBinaryHash() const
+{
+    if (auto section = findSectionByName(".note.ClickHouse.hash"))
+        return {section->begin(), section->end()};
+    else
+        return {};
+}
+
+
 const char * Elf::Section::name() const
 {
     if (!elf.section_names)

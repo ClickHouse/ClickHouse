@@ -31,6 +31,23 @@ static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_t
 }
 
 
+ContextPtr StorageFactory::Arguments::getContext() const
+{
+    auto ptr = context.lock();
+    if (!ptr)
+        throw Exception("Context has expired", ErrorCodes::LOGICAL_ERROR);
+    return ptr;
+}
+
+ContextPtr StorageFactory::Arguments::getLocalContext() const
+{
+    auto ptr = local_context.lock();
+    if (!ptr)
+        throw Exception("Context has expired", ErrorCodes::LOGICAL_ERROR);
+    return ptr;
+}
+
+
 void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features)
 {
     if (!storages.emplace(name, Creator{std::move(creator_fn), features}).second)
@@ -42,8 +59,8 @@ void StorageFactory::registerStorage(const std::string & name, CreatorFn creator
 StoragePtr StorageFactory::get(
     const ASTCreateQuery & query,
     const String & relative_data_path,
-    Context & local_context,
-    Context & context,
+    ContextPtr local_context,
+    ContextPtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     bool has_force_restore_data_flag) const
@@ -53,7 +70,7 @@ StoragePtr StorageFactory::get(
 
     bool has_engine_args = false;
 
-    if (query.is_view)
+    if (query.is_ordinary_view)
     {
         if (query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
@@ -179,6 +196,7 @@ StoragePtr StorageFactory::get(
         .attach = query.attach,
         .has_force_restore_data_flag = has_force_restore_data_flag
     };
+    assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
     auto res = storages.at(name).creator_fn(arguments);
     if (!empty_engine_args.empty())
@@ -189,6 +207,10 @@ StoragePtr StorageFactory::get(
         storage_def->engine->children.push_back(storage_def->engine->arguments);
         storage_def->engine->arguments->children = empty_engine_args;
     }
+
+    if (local_context->hasQueryContext() && context->getSettingsRef().log_queries)
+        local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
+
     return res;
 }
 

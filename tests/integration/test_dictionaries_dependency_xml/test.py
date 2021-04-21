@@ -65,7 +65,7 @@ def test_get_data(started_cluster):
     assert query("SELECT dictGetString('dep_y', 'a', toUInt64(3))") == "fire\n"
     assert query("SELECT dictGetString('dep_z', 'a', toUInt64(3))") == "ZZ\n"
 
-    # dep_x and dep_z are updated only when there `intDiv(count(), 4)`  is changed.
+    # dep_x and dep_z are updated only when there `intDiv(count(), 5)`  is changed.
     query("INSERT INTO test.elements VALUES (4, 'ether', 404, 0.001)")
     assert_eq_with_retry(instance, "SELECT dictHas('dep_x', toUInt64(4))", "1", sleep_time=2, retry_count=10)
     assert query("SELECT dictGetString('dep_x', 'a', toUInt64(3))") == "fire\n"

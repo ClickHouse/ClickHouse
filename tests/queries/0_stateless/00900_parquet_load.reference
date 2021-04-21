@@ -13,134 +13,220 @@
 === Try load data from alltypes_plain.snappy.parquet
 6	1	0	0	0	0	0	0	04/01/09	0	1238544000
 7	0	1	1	1	10	1.1	10.1	04/01/09	1	1238544060
+=== Try load data from binary.parquet
+\0
+
+
+
+
+
+
+
+\b
+\t
+\n
+
 === Try load data from byte_array_decimal.parquet
-1.0
-2.0
-3.0
-4.0
-5.0
-6.0
-7.0
-8.0
-9.0
-10.0
-11.0
-12.0
-13.0
-14.0
-15.0
-16.0
-17.0
-18.0
-19.0
-20.0
-21.0
-22.0
-23.0
-24.0
+1.00
+2.00
+3.00
+4.00
+5.00
+6.00
+7.00
+8.00
+9.00
+10.00
+11.00
+12.00
+13.00
+14.00
+15.00
+16.00
+17.00
+18.00
+19.00
+20.00
+21.00
+22.00
+23.00
+24.00
 === Try load data from datapage_v2.snappy.parquet
-Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Not yet implemented: Unsupported encoding.: data for INSERT was parsed from stdin
+Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Not yet implemented: Unsupported encoding.: data for INSERT was parsed from stdin
 
+=== Try load data from dict-page-offset-zero.parquet
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+1552
+=== Try load data from fixed_length_decimal.parquet
+1.00
+2.00
+3.00
+4.00
+5.00
+6.00
+7.00
+8.00
+9.00
+10.00
+11.00
+12.00
+13.00
+14.00
+15.00
+16.00
+17.00
+18.00
+19.00
+20.00
+21.00
+22.00
+23.00
+24.00
 === Try load data from fixed_length_decimal_1.parquet
-1.0
-2.0
-3.0
-4.0
-5.0
-6.0
-7.0
-8.0
-9.0
-10.0
-11.0
-12.0
-13.0
-14.0
-15.0
-16.0
-17.0
-18.0
-19.0
-20.0
-21.0
-22.0
-23.0
-24.0
+1.00
+2.00
+3.00
+4.00
+5.00
+6.00
+7.00
+8.00
+9.00
+10.00
+11.00
+12.00
+13.00
+14.00
+15.00
+16.00
+17.00
+18.00
+19.00
+20.00
+21.00
+22.00
+23.00
+24.00
 === Try load data from fixed_length_decimal_legacy.parquet
-1.0
-2.0
-3.0
-4.0
-5.0
-6.0
-7.0
-8.0
-9.0
-10.0
-11.0
-12.0
-13.0
-14.0
-15.0
-16.0
-17.0
-18.0
-19.0
-20.0
-21.0
-22.0
-23.0
-24.0
+1.00
+2.00
+3.00
+4.00
+5.00
+6.00
+7.00
+8.00
+9.00
+10.00
+11.00
+12.00
+13.00
+14.00
+15.00
+16.00
+17.00
+18.00
+19.00
+20.00
+21.00
+22.00
+23.00
+24.00
+=== Try load data from hadoop_lz4_compressed.parquet
+1593604800	abc	42
+1593604800	def	7.7
+1593604801	abc	42.125
+1593604801	def	7.7
 === Try load data from int32_decimal.parquet
-1.0
-2.0
-3.0
-4.0
-5.0
-6.0
-7.0
-8.0
-9.0
-10.0
-11.0
-12.0
-13.0
-14.0
-15.0
-16.0
-17.0
-18.0
-19.0
-20.0
-21.0
-22.0
-23.0
-24.0
+1.00
+2.00
+3.00
+4.00
+5.00
+6.00
+7.00
+8.00
+9.00
+10.00
+11.00
+12.00
+13.00
+14.00
+15.00
+16.00
+17.00
+18.00
+19.00
+20.00
+21.00
+22.00
+23.00
+24.00
 === Try load data from int64_decimal.parquet
-1.0
-2.0
-3.0
-4.0
-5.0
-6.0
-7.0
-8.0
-9.0
-10.0
-11.0
-12.0
-13.0
-14.0
-15.0
-16.0
-17.0
-18.0
-19.0
-20.0
-21.0
-22.0
-23.0
-24.0
+1.00
+2.00
+3.00
+4.00
+5.00
+6.00
+7.00
+8.00
+9.00
+10.00
+11.00
+12.00
+13.00
+14.00
+15.00
+16.00
+17.00
+18.00
+19.00
+20.00
+21.00
+22.00
+23.00
+24.00
+=== Try load data from list_columns.parquet
+Code: 70. DB::Ex---tion: The type "list" of an input column "int64_list" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
+
 === Try load data from nation.dict-malformed.parquet
 0	ALGERIA	0	 haggle. carefully final deposits detect slyly agai
 1	ARGENTINA	1	al foxes promise slyly according to the regular accounts. bold requests alon
@@ -168,23 +254,25 @@ Code: 33. DB::Ex---tion: Error while reading Parquet data: IOError: Not yet impl
 23	UNITED KINGDOM	3	eans boost carefully special requests. accounts are. carefull
 24	UNITED STATES	1	y final packages. slow foxes cajole quickly. quickly silent platelets breach ironic accounts. unusual pinto be
 === Try load data from nested_lists.snappy.parquet
-Code: 8. DB::Ex---tion: Column "element" is not presented in input data: data for INSERT was parsed from stdin
+Code: 70. DB::Ex---tion: The type "list" of an input column "a" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
 
 === Try load data from nested_maps.snappy.parquet
-Code: 33. DB::Ex---tion: Error while reading Parquet data: NotImplemented: Reading lists of structs from Parquet files not yet supported: key_value: list<key_value: struct<key: string not null, value: struct<key_value: list<key_value: struct<key: int32 not null, value: bool not null> not null> not null>> not null> not null: data for INSERT was parsed from stdin
+Code: 70. DB::Ex---tion: The type "map" of an input column "a" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
 
+=== Try load data from non_hadoop_lz4_compressed.parquet
+1593604800	abc	42
+1593604800	def	7.7
+1593604801	abc	42.125
+1593604801	def	7.7
 === Try load data from nonnullable.impala.parquet
-Code: 8. DB::Ex---tion: Column "element" is not presented in input data: data for INSERT was parsed from stdin
-
+../contrib/arrow/cpp/src/arrow/array/array_nested.cc:192:  Check failed: (self->list_type_->value_type()->id()) == (data->child_data[0]->type->id()) 
 === Try load data from nullable.impala.parquet
-Code: 8. DB::Ex---tion: Column "element" is not presented in input data: data for INSERT was parsed from stdin
-
+../contrib/arrow/cpp/src/arrow/array/array_nested.cc:192:  Check failed: (self->list_type_->value_type()->id()) == (data->child_data[0]->type->id()) 
 === Try load data from nulls.snappy.parquet
-Code: 8. DB::Ex---tion: Column "b_c_int" is not presented in input data: data for INSERT was parsed from stdin
+Code: 70. DB::Ex---tion: The type "struct" of an input column "b_struct" is not supported for conversion from a Parquet data format: data for INSERT was parsed from stdin
 
-=== Try load data from repeated_no_annotation.parquet
-Code: 8. DB::Ex---tion: Column "number" is not presented in input data: data for INSERT was parsed from stdin
-
+=== Try load data from single_nan.parquet
+\N
 === Try load data from userdata1.parquet
 1454486129	1	Amanda	Jordan	ajordan0@com.com	Female	1.197.201.2	6759521864920116	Indonesia	3/8/1971	49756.53	Internal Auditor	1E+02
 1454519043	2	Albert	Freeman	afreeman1@is.gd	Male	218.111.175.34		Canada	1/16/1968	150280.17	Accountant IV	

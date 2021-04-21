@@ -1,27 +1,29 @@
 #pragma once
 
-#include <Common/hex.h>
-#include <Common/formatIPv6.h>
-#include <Common/typeid_cast.h>
-#include <IO/WriteHelpers.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnDecimal.h>
-#include <Functions/IFunctionImpl.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunctionImpl.h>
+#include <Interpreters/Context_fwd.h>
+#include <IO/WriteHelpers.h>
+#include <Common/IPv6ToBinary.h>
+#include <Common/formatIPv6.h>
+#include <Common/hex.h>
+#include <Common/typeid_cast.h>
 
 #include <arpa/inet.h>
 #include <ext/range.h>
@@ -67,7 +69,7 @@ class FunctionIPv6NumToString : public IFunction
 {
 public:
     static constexpr auto name = "IPv6NumToString";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv6NumToString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv6NumToString>(); }
 
     String getName() const override { return name; }
 
@@ -137,7 +139,7 @@ class FunctionCutIPv6 : public IFunction
 {
 public:
     static constexpr auto name = "cutIPv6";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionCutIPv6>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionCutIPv6>(); }
 
     String getName() const override { return name; }
 
@@ -260,7 +262,13 @@ class FunctionIPv6StringToNum : public IFunction
 {
 public:
     static constexpr auto name = "IPv6StringToNum";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv6StringToNum>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv6StringToNum>(); }
+
+    static inline bool tryParseIPv4(const char * pos)
+    {
+        UInt32 result = 0;
+        return DB::parseIPv4(pos, reinterpret_cast<unsigned char *>(&result));
+    }
 
     String getName() const override { return name; }
 
@@ -269,8 +277,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
     }
@@ -291,13 +299,27 @@ public:
             const ColumnString::Chars & vec_src = col_in->getChars();
             const ColumnString::Offsets & offsets_src = col_in->getOffsets();
             size_t src_offset = 0;
+            char src_ipv4_buf[sizeof("::ffff:") + IPV4_MAX_TEXT_LENGTH + 1] = "::ffff:";
 
-            for (size_t out_offset = 0, i = 0;
-                 out_offset < vec_res.size();
-                 out_offset += IPV6_BINARY_LENGTH, ++i)
+            for (size_t out_offset = 0, i = 0; out_offset < vec_res.size(); out_offset += IPV6_BINARY_LENGTH, ++i)
             {
-                /// In case of failure, the function fills vec_res with zero bytes.
-                parseIPv6(reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
+                /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zero bytes.
+
+                /// If the source IP address is parsable as an IPv4 address, then transform it into a valid IPv6 address.
+                /// Keeping it simple by just prefixing `::ffff:` to the IPv4 address to represent it as a valid IPv6 address.
+                if (tryParseIPv4(reinterpret_cast<const char *>(&vec_src[src_offset])))
+                {
+                    std::memcpy(
+                        src_ipv4_buf + std::strlen("::ffff:"),
+                        reinterpret_cast<const char *>(&vec_src[src_offset]),
+                        std::min<UInt64>(offsets_src[i] - src_offset, IPV4_MAX_TEXT_LENGTH + 1));
+                    parseIPv6(src_ipv4_buf, reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
+                }
+                else
+                {
+                    parseIPv6(
+                        reinterpret_cast<const char *>(&vec_src[src_offset]), reinterpret_cast<unsigned char *>(&vec_res[out_offset]));
+                }
                 src_offset = offsets_src[i];
             }
 
@@ -318,7 +340,7 @@ class FunctionIPv4NumToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv4NumToString<mask_tail_octets, Name>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4NumToString<mask_tail_octets, Name>>(); }
 
     String getName() const override
     {
@@ -379,7 +401,7 @@ class FunctionIPv4StringToNum : public IFunction
 {
 public:
     static constexpr auto name = "IPv4StringToNum";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv4StringToNum>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4StringToNum>(); }
 
     String getName() const override
     {
@@ -442,7 +464,7 @@ class FunctionIPv4ToIPv6 : public IFunction
 {
 public:
      static constexpr auto name = "IPv4ToIPv6";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv4ToIPv6>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4ToIPv6>(); }
 
     String getName() const override { return name; }
 
@@ -497,7 +519,7 @@ class FunctionToIPv4 : public FunctionIPv4StringToNum
 {
 public:
     static constexpr auto name = "toIPv4";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToIPv4>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToIPv4>(); }
 
     String getName() const override
     {
@@ -520,7 +542,7 @@ class FunctionToIPv6 : public FunctionIPv6StringToNum
 {
 public:
     static constexpr auto name = "toIPv6";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToIPv6>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToIPv6>(); }
 
     String getName() const override { return name; }
 
@@ -538,7 +560,7 @@ class FunctionMACNumToString : public IFunction
 {
 public:
     static constexpr auto name = "MACNumToString";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMACNumToString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMACNumToString>(); }
 
     String getName() const override
     {
@@ -668,7 +690,7 @@ class FunctionMACStringTo : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMACStringTo<Impl>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMACStringTo<Impl>>(); }
 
     String getName() const override
     {
@@ -731,7 +753,7 @@ class FunctionUUIDNumToString : public IFunction
 
 public:
     static constexpr auto name = "UUIDNumToString";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUUIDNumToString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDNumToString>(); }
 
     String getName() const override
     {
@@ -829,7 +851,7 @@ private:
 
 public:
     static constexpr auto name = "UUIDStringToNum";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUUIDStringToNum>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUUIDStringToNum>(); }
 
     String getName() const override
     {
@@ -933,7 +955,7 @@ class FunctionHex : public IFunction
 {
 public:
     static constexpr auto name = "hex";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionHex>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHex>(); }
 
     String getName() const override
     {
@@ -1216,7 +1238,7 @@ class FunctionUnhex : public IFunction
 {
 public:
     static constexpr auto name = "unhex";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnhex>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnhex>(); }
 
     String getName() const override
     {
@@ -1305,7 +1327,7 @@ class FunctionChar : public IFunction
 {
 public:
     static constexpr auto name = "char";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionChar>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionChar>(); }
 
     String getName() const override
     {
@@ -1400,7 +1422,7 @@ class FunctionBitmaskToArray : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToArray";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmaskToArray>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitmaskToArray>(); }
 
     String getName() const override
     {
@@ -1486,7 +1508,7 @@ class FunctionToStringCutToZero : public IFunction
 {
 public:
     static constexpr auto name = "toStringCutToZero";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToStringCutToZero>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToStringCutToZero>(); }
 
     String getName() const override
     {
@@ -1617,20 +1639,28 @@ public:
 class FunctionIPv6CIDRToRange : public IFunction
 {
 private:
-    /// TODO Inefficient.
+
+#if defined(__SSE2__)
+
+    #include <emmintrin.h>
+
+    static inline void applyCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst_lower, UInt8 * __restrict dst_upper, UInt8 bits_to_keep)
+    {
+        __m128i mask = _mm_loadu_si128(reinterpret_cast<const __m128i *>(getCIDRMaskIPv6(bits_to_keep).data()));
+        __m128i lower = _mm_and_si128(_mm_loadu_si128(reinterpret_cast<const __m128i *>(src)), mask);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst_lower), lower);
+
+        __m128i inv_mask = _mm_xor_si128(mask, _mm_cmpeq_epi32(_mm_setzero_si128(), _mm_setzero_si128()));
+        __m128i upper = _mm_or_si128(lower, inv_mask);
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst_upper), upper);
+    }
+
+#else
+
     /// NOTE IPv6 is stored in memory in big endian format that makes some difficulties.
     static void applyCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst_lower, UInt8 * __restrict dst_upper, UInt8 bits_to_keep)
     {
-        UInt8 mask[16]{};
-
-        UInt8 bytes_to_keep = bits_to_keep / 8;
-        UInt8 bits_to_keep_in_last_byte = bits_to_keep % 8;
-
-        for (size_t i = 0; i < bits_to_keep / 8; ++i)
-            mask[i] = 0xFFU;
-
-        if (bits_to_keep_in_last_byte)
-            mask[bytes_to_keep] = 0xFFU << (8 - bits_to_keep_in_last_byte);
+        const auto & mask = getCIDRMaskIPv6(bits_to_keep);
 
         for (size_t i = 0; i < 16; ++i)
         {
@@ -1639,9 +1669,11 @@ private:
         }
     }
 
+#endif
+
 public:
     static constexpr auto name = "IPv6CIDRToRange";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv6CIDRToRange>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv6CIDRToRange>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -1755,7 +1787,7 @@ private:
 
 public:
     static constexpr auto name = "IPv4CIDRToRange";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv4CIDRToRange>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIPv4CIDRToRange>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -1831,5 +1863,98 @@ public:
     }
 };
 
+class FunctionIsIPv4String : public FunctionIPv4StringToNum
+{
+public:
+    static constexpr auto name = "isIPv4String";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPv4String>(); }
+
+    String getName() const override { return name; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        const ColumnPtr & column = arguments[0].column;
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
+        {
+            auto col_res = ColumnUInt8::create();
+
+            ColumnUInt8::Container & vec_res = col_res->getData();
+            vec_res.resize(col->size());
+
+            const ColumnString::Chars & vec_src = col->getChars();
+            const ColumnString::Offsets & offsets_src = col->getOffsets();
+            size_t prev_offset = 0;
+            UInt32 result = 0;
+
+            for (size_t i = 0; i < vec_res.size(); ++i)
+            {
+                vec_res[i] = DB::parseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char*>(&result));
+                prev_offset = offsets_src[i];
+            }
+            return col_res;
+        }
+        else
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+class FunctionIsIPv6String : public FunctionIPv6StringToNum
+{
+public:
+    static constexpr auto name = "isIPv6String";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPv6String>(); }
+
+    String getName() const override { return name; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        const ColumnPtr & column = arguments[0].column;
+
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
+        {
+            auto col_res = ColumnUInt8::create();
+
+            ColumnUInt8::Container & vec_res = col_res->getData();
+            vec_res.resize(col->size());
+
+            const ColumnString::Chars & vec_src = col->getChars();
+            const ColumnString::Offsets & offsets_src = col->getOffsets();
+            size_t prev_offset = 0;
+            char v[IPV6_BINARY_LENGTH];
+
+            for (size_t i = 0; i < vec_res.size(); ++i)
+            {
+                vec_res[i] = DB::parseIPv6(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char*>(v));
+                prev_offset = offsets_src[i];
+            }
+            return col_res;
+        }
+        else
+            throw Exception("Illegal column " + arguments[0].column->getName()
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
 
 }

@@ -10,7 +10,7 @@ Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
 skewPop(expr)
 ```
 
-**Parameters**
+**Arguments**
 
 `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
 
@@ -21,5 +21,5 @@ The skewness of the given distribution. Type — [Float64](../../../sql-referenc
 **Example**
 
 ``` sql
-SELECT skewPop(value) FROM series_with_value_column
+SELECT skewPop(value) FROM series_with_value_column;
 ```

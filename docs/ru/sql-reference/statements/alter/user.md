@@ -5,20 +5,18 @@ toc_title: USER
 
 # ALTER USER {#alter-user-statement}
 
-Изменяет аккаунт пользователя ClickHouse.
+Изменяет аккаунты пользователей ClickHouse.
 
-## Синтаксис {#alter-user-syntax}
+Синтаксис:
 
 ``` sql
-ALTER USER [IF EXISTS] name [ON CLUSTER cluster_name]
-    [RENAME TO new_name]
-    [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
-    [[ADD|DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+ALTER USER [IF EXISTS] name1 [ON CLUSTER cluster_name1] [RENAME TO new_name1] 
+        [, name2 [ON CLUSTER cluster_name2] [RENAME TO new_name2] ...]
+    [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']}]
+    [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
 ```  
-
-## Описание {#alter-user-dscr}
 
 Для выполнения `ALTER USER` необходима привилегия [ALTER USER](../grant.md#grant-access-management).
 
@@ -46,4 +44,3 @@ ALTER USER user DEFAULT ROLE ALL
 ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/alter/user/) <!--hide-->

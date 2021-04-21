@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Functions/IFunctionImpl.h>
 
 namespace DB
@@ -129,6 +130,8 @@ public:
         return impl->getArgumentsThatDontImplyNullableReturnType(number_of_arguments);
     }
 
+    using DefaultReturnTypeGetter = std::function<DataTypePtr(const ColumnsWithTypeAndName &)>;
+    static DataTypePtr getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments, const DefaultReturnTypeGetter & getter);
 private:
     FunctionOverloadResolverImplPtr impl;
 
