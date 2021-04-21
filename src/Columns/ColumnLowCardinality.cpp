@@ -122,7 +122,7 @@ namespace
         else if (auto * data_uint64 = getIndexesData<UInt64>(column))
             return mapUniqueIndexImpl(*data_uint64);
         else
-            throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got" + column.getName(),
+            throw Exception("Indexes column for getUniqueIndex must be ColumnUInt, got " + column.getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
 }
@@ -151,7 +151,7 @@ void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
     const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     size_t position = low_cardinality_src->getIndexes().getUInt(n);
 
@@ -247,6 +247,11 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
     return new_pos;
 }
 
+const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
+{
+    return getDictionary().skipSerializedInArena(pos);
+}
+
 void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
 {
     auto s = size();
@@ -309,6 +314,13 @@ void ColumnLowCardinality::compareColumn(const IColumn & rhs, size_t rhs_row_num
     return doCompareColumn<ColumnLowCardinality>(
             assert_cast<const ColumnLowCardinality &>(rhs), rhs_row_num, row_indexes,
             compare_results, direction, nan_direction_hint);
+}
+
+bool ColumnLowCardinality::hasEqualValues() const
+{
+    if (getDictionary().size() <= 1)
+        return true;
+    return getIndexes().hasEqualValues();
 }
 
 void ColumnLowCardinality::getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator) const

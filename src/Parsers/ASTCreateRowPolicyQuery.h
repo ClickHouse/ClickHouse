@@ -49,7 +49,7 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateRowPolicyQuery>(clone()); }
 
-    void replaceCurrentUserTagWithName(const String & current_user_name) const;
-    void replaceEmptyDatabaseWithCurrent(const String & current_database) const;
+    void replaceCurrentUserTag(const String & current_user_name) const;
+    void replaceEmptyDatabase(const String & current_database) const;
 };
 }

@@ -17,7 +17,7 @@
 #include <IO/WriteHelpers.h>
 
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
@@ -184,6 +184,8 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -247,6 +249,8 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
@@ -276,7 +280,7 @@ public:
 
 }
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 

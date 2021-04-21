@@ -9,6 +9,7 @@
 #include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
+#include <Storages/RabbitMQ/UVLoop.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -18,11 +19,9 @@
 namespace DB
 {
 
-class Context;
-
 using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
-class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage
+class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
 {
     friend struct ext::shared_ptr_helper<StorageRabbitMQ>;
 
@@ -39,7 +38,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -47,7 +46,7 @@ public:
     BlockOutputStreamPtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
-        const Context & context) override;
+        ContextPtr context) override;
 
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();
@@ -58,7 +57,7 @@ public:
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
 
-    const String getExchange() const { return exchange_name; }
+    String getExchange() const { return exchange_name; }
     void unbindExchange();
     bool exchangeRemoved() { return exchange_removed.load(); }
 
@@ -68,13 +67,12 @@ public:
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
-            const Context & context_,
+            ContextPtr context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
 
 private:
-    const Context & global_context;
-    std::shared_ptr<Context> rabbitmq_context;
+    ContextPtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
     const String exchange_name;
@@ -96,7 +94,7 @@ private:
     std::pair<String, String> login_password;
     String vhost;
 
-    std::unique_ptr<uv_loop_t> loop;
+    UVLoop loop;
     std::shared_ptr<RabbitMQHandler> event_handler;
     std::unique_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
 
@@ -138,7 +136,7 @@ private:
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    std::shared_ptr<Context> addSettings(const Context & context) const;
+    std::shared_ptr<Context> addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 

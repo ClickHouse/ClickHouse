@@ -7,10 +7,12 @@
 namespace DB
 {
 struct DictionaryStructure;
+class TableFunctionDictionary;
 
 class StorageDictionary final : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageDictionary>;
+    friend class TableFunctionDictionary;
 public:
     std::string getName() const override { return "Dictionary"; }
 
@@ -21,7 +23,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned threads) override;
@@ -30,7 +32,6 @@ public:
     static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
     const String & dictionaryName() const { return dictionary_name; }
-    String resolvedDictionaryName() const;
 
     /// Specifies where the table is located relative to the dictionary.
     enum class Location

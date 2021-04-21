@@ -25,29 +25,26 @@ namespace ErrorCodes
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
-    const auto & config = server.config();
-
-    if (config.has("interserver_http_credentials.user"))
+    auto server_credentials = server.context()->getInterserverCredentials();
+    if (server_credentials)
     {
         if (!request.hasCredentials())
-            return {"Server requires HTTP Basic authentication, but client doesn't provide it", false};
+            return server_credentials->isValidUser("", "");
+
         String scheme, info;
         request.getCredentials(scheme, info);
 
         if (scheme != "Basic")
             return {"Server requires HTTP Basic authentication but client provides another method", false};
 
-        String user = config.getString("interserver_http_credentials.user");
-        String password = config.getString("interserver_http_credentials.password", "");
-
         Poco::Net::HTTPBasicCredentials credentials(info);
-        if (std::make_pair(user, password) != std::make_pair(credentials.getUsername(), credentials.getPassword()))
-            return {"Incorrect user or password in HTTP Basic authentication", false};
+        return server_credentials->isValidUser(credentials.getUsername(), credentials.getPassword());
     }
     else if (request.hasCredentials())
     {
         return {"Client requires HTTP Basic authentication, but server doesn't provide it", false};
     }
+
     return {"", true};
 }
 
@@ -62,7 +59,7 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
 
     auto & body = request.getStream();
 
-    auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
+    auto endpoint = server.context()->getInterserverIOHandler().getEndpoint(endpoint_name);
     /// Locked for read while query processing
     std::shared_lock lock(endpoint->rwlock);
     if (endpoint->blocker.isCancelled())
@@ -107,6 +104,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         }
         catch (...)
         {
+            tryLogCurrentException(log);
             out.finalize();
         }
     };
@@ -116,6 +114,7 @@ void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPSe
         if (auto [message, success] = checkAuthentication(request); success)
         {
             processQuery(request, response, used_output);
+            used_output.out->finalize();
             LOG_DEBUG(log, "Done processing query");
         }
         else

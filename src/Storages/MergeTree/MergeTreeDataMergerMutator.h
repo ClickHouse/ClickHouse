@@ -125,7 +125,7 @@ public:
         MergeListEntry & merge_entry,
         TableLockHolder & table_lock_holder,
         time_t time_of_merge,
-        const Context & context,
+        ContextPtr context,
         const ReservationPtr & space_reservation,
         bool deduplicate,
         const Names & deduplicate_by_columns);
@@ -137,7 +137,7 @@ public:
         const MutationCommands & commands,
         MergeListEntry & merge_entry,
         time_t time_of_mutation,
-        const Context & context,
+        ContextPtr context,
         const ReservationPtr & space_reservation,
         TableLockHolder & table_lock_holder);
 
@@ -199,7 +199,7 @@ private:
         BlockInputStreamPtr & input_stream,
         const NamesAndTypesList & updated_columns,
         const StorageMetadataPtr & metadata_snapshot,
-        const Context & context);
+        ContextPtr context);
 
     /// Override all columns of new part using mutating_stream
     void mutateAllPartColumns(

@@ -50,7 +50,7 @@ BrotliWriteBuffer::BrotliWriteBuffer(std::unique_ptr<WriteBuffer> out_, int comp
 BrotliWriteBuffer::~BrotliWriteBuffer()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     finish();
 }
 
@@ -64,29 +64,38 @@ void BrotliWriteBuffer::nextImpl()
     in_data = reinterpret_cast<unsigned char *>(working_buffer.begin());
     in_available = offset();
 
-    do
+    try
     {
-        out->nextIfAtEnd();
-        out_data = reinterpret_cast<unsigned char *>(out->position());
-        out_capacity = out->buffer().end() - out->position();
-
-        int result = BrotliEncoderCompressStream(
-                brotli->state,
-                in_available ? BROTLI_OPERATION_PROCESS : BROTLI_OPERATION_FINISH,
-                &in_available,
-                &in_data,
-                &out_capacity,
-                &out_data,
-                nullptr);
-
-        out->position() = out->buffer().end() - out_capacity;
-
-        if (result == 0)
+        do
         {
-            throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
+            out->nextIfAtEnd();
+            out_data = reinterpret_cast<unsigned char *>(out->position());
+            out_capacity = out->buffer().end() - out->position();
+
+            int result = BrotliEncoderCompressStream(
+                    brotli->state,
+                    in_available ? BROTLI_OPERATION_PROCESS : BROTLI_OPERATION_FINISH,
+                    &in_available,
+                    &in_data,
+                    &out_capacity,
+                    &out_data,
+                    nullptr);
+
+            out->position() = out->buffer().end() - out_capacity;
+
+            if (result == 0)
+            {
+                throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
+            }
         }
+        while (in_available > 0);
     }
-    while (in_available > 0 || out_capacity == 0);
+    catch (...)
+    {
+        /// Do not try to write next time after exception.
+        out->position() = out->buffer().begin();
+        throw;
+    }
 }
 
 void BrotliWriteBuffer::finish()
@@ -94,6 +103,23 @@ void BrotliWriteBuffer::finish()
     if (finished)
         return;
 
+    try
+    {
+        finishImpl();
+        out->finalize();
+        finished = true;
+    }
+    catch (...)
+    {
+        /// Do not try to flush next time after exception.
+        out->position() = out->buffer().begin();
+        finished = true;
+        throw;
+    }
+}
+
+void BrotliWriteBuffer::finishImpl()
+{
     next();
 
     while (true)
@@ -115,7 +141,6 @@ void BrotliWriteBuffer::finish()
 
         if (BrotliEncoderIsFinished(brotli->state))
         {
-            finished = true;
             return;
         }
 

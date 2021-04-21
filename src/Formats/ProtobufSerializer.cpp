@@ -24,6 +24,8 @@
 #   include <DataTypes/DataTypeMap.h>
 #   include <DataTypes/DataTypeNullable.h>
 #   include <DataTypes/DataTypeTuple.h>
+#   include <DataTypes/Serializations/SerializationDecimal.h>
+#   include <DataTypes/Serializations/SerializationFixedString.h>
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufWriter.h>
 #   include <IO/ReadBufferFromString.h>
@@ -525,16 +527,16 @@ namespace
     {
     public:
         using ColumnType = std::conditional_t<is_fixed_string, ColumnFixedString, ColumnString>;
-        using StringDataType = std::conditional_t<is_fixed_string, DataTypeFixedString, DataTypeString>;
 
         ProtobufSerializerString(
-            const StringDataType & string_data_type_,
+            const std::shared_ptr<const DataTypeFixedString> & fixed_string_data_type_,
             const google::protobuf::FieldDescriptor & field_descriptor_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : ProtobufSerializerSingleValue(field_descriptor_, reader_or_writer_)
+            , fixed_string_data_type(fixed_string_data_type_)
+            , n(fixed_string_data_type->getN())
         {
             static_assert(is_fixed_string, "This constructor for FixedString only");
-            n = string_data_type_.getN();
             setFunctions();
             prepareEnumMapping();
         }
@@ -583,11 +585,11 @@ namespace
             {
                 if (row_num < old_size)
                 {
-                    ColumnFixedString::alignStringLength(text_buffer, n, 0);
+                    SerializationFixedString::alignStringLength(n, text_buffer, 0);
                     memcpy(data.data() + row_num * n, text_buffer.data(), n);
                 }
                 else
-                    ColumnFixedString::alignStringLength(data, n, old_data_size);
+                    SerializationFixedString::alignStringLength(n, data, old_data_size);
             }
             else
             {
@@ -817,7 +819,7 @@ namespace
                 auto str = default_function();
                 arr.insert(str.data(), str.data() + str.size());
                 if constexpr (is_fixed_string)
-                    ColumnFixedString::alignStringLength(arr, n, 0);
+                    SerializationFixedString::alignStringLength(n, arr, 0);
                 default_string = std::move(arr);
             }
             return *default_string;
@@ -865,7 +867,8 @@ namespace
             str.insert(name.data(), name.data() + name.length());
         }
 
-        size_t n = 0;
+        const std::shared_ptr<const DataTypeFixedString> fixed_string_data_type;
+        const size_t n = 0;
         std::function<void(const std::string_view &)> write_function;
         std::function<void(PaddedPODArray<UInt8> &)> read_function;
         std::function<String()> default_function;
@@ -1325,7 +1328,7 @@ namespace
             if constexpr (std::is_same_v<DecimalType, DateTime64>)
                 readDateTime64Text(decimal, scale, buf);
             else
-                DataTypeDecimal<DecimalType>::readText(decimal, buf, precision, scale);
+                SerializationDecimal<DecimalType>::readText(decimal, buf, precision, scale);
             return decimal;
         }
 
@@ -1485,6 +1488,8 @@ namespace
             ReadBufferFromString buf{str};
             time_t tm = 0;
             readDateTimeText(tm, buf);
+            if (tm < 0)
+                tm = 0;
             return tm;
         }
 
@@ -2765,7 +2770,7 @@ namespace
                 case TypeIndex::DateTime: return std::make_unique<ProtobufSerializerDateTime>(field_descriptor, reader_or_writer);
                 case TypeIndex::DateTime64: return std::make_unique<ProtobufSerializerDateTime64>(assert_cast<const DataTypeDateTime64 &>(*data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::String: return std::make_unique<ProtobufSerializerString<false>>(field_descriptor, reader_or_writer);
-                case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(assert_cast<const DataTypeFixedString &>(*data_type), field_descriptor, reader_or_writer);
+                case TypeIndex::FixedString: return std::make_unique<ProtobufSerializerString<true>>(typeid_cast<std::shared_ptr<const DataTypeFixedString>>(data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Enum8: return std::make_unique<ProtobufSerializerEnum<Int8>>(typeid_cast<std::shared_ptr<const DataTypeEnum8>>(data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Enum16: return std::make_unique<ProtobufSerializerEnum<Int16>>(typeid_cast<std::shared_ptr<const DataTypeEnum16>>(data_type), field_descriptor, reader_or_writer);
                 case TypeIndex::Decimal32: return std::make_unique<ProtobufSerializerDecimal<Decimal32>>(assert_cast<const DataTypeDecimal<Decimal32> &>(*data_type), field_descriptor, reader_or_writer);
@@ -2810,12 +2815,7 @@ namespace
                     const auto & array_data_type = assert_cast<const DataTypeArray &>(*data_type);
 
                     if (!allow_repeat)
-                    {
-                        throw Exception(
-                            "The field " + quoteString(field_descriptor.full_name())
-                                + " must be repeated in the protobuf schema to match the column " + backQuote(StringRef{column_name}),
-                            ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
-                    }
+                        throwFieldNotRepeated(field_descriptor, column_name);
 
                     auto nested_serializer = buildFieldSerializer(column_name, array_data_type.getNestedType(), field_descriptor,
                                                                   /* allow_repeat = */ false); // We do our repeating now, so for nested type we forget about the repeating.
@@ -2860,12 +2860,7 @@ namespace
 
                     /// Serialize as a repeated field.
                     if (!allow_repeat && (size_of_tuple > 1))
-                    {
-                        throw Exception(
-                            "The field " + quoteString(field_descriptor.full_name())
-                                + " must be repeated in the protobuf schema to match the column " + backQuote(StringRef{column_name}),
-                            ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
-                    }
+                        throwFieldNotRepeated(field_descriptor, column_name);
 
                     std::vector<std::unique_ptr<ProtobufSerializer>> nested_serializers;
                     for (const auto & nested_data_type : tuple_data_type.getElements())
@@ -2889,6 +2884,21 @@ namespace
                 default:
                     throw Exception("Unknown data type: " + data_type->getName(), ErrorCodes::LOGICAL_ERROR);
             }
+        }
+
+        [[noreturn]] static void throwFieldNotRepeated(const FieldDescriptor & field_descriptor, const std::string_view & column_name)
+        {
+            if (!field_descriptor.is_repeated())
+                throw Exception(
+                    "The field " + quoteString(field_descriptor.full_name())
+                        + " must be repeated in the protobuf schema to match the column " + backQuote(StringRef{column_name}),
+                    ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
+
+            throw Exception(
+                "The field " + quoteString(field_descriptor.full_name())
+                    + " is repeated but the level of repeatedness is not enough to serialize a multidimensional array from the column "
+                    + backQuote(StringRef{column_name}) + ". It's recommended to make the parent field repeated as well.",
+                ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
         }
 
         const ProtobufReaderOrWriter reader_or_writer;
