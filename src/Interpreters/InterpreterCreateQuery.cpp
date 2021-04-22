@@ -996,6 +996,19 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         create.attach_from_path = std::nullopt;
     }
 
+    if (create.attach)
+    {
+        /// If table was detached it's not possible to attach it back while some threads are using
+        /// old instance of the storage. For example, AsynchronousMetrics may cause ATTACH to fail,
+        /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
+        /// and old storage instance still exists it will throw exception.
+        bool throw_if_table_in_use = getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously;
+        if (throw_if_table_in_use)
+            database->checkDetachedTableNotInUse(create.uuid);
+        else
+            database->waitDetachedTableNotInUse(create.uuid);
+    }
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
