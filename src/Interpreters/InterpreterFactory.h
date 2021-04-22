@@ -9,6 +9,8 @@
 namespace DB
 {
 
+class Context;
+
 class InterpreterFactory
 {
 public:

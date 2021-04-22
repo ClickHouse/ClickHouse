@@ -7,7 +7,7 @@
 namespace DB
 {
 
-
+class Context;
 
 
 /** Implements the `replication_queue` system table, which allows you to view the replication queues for the replicated tables.

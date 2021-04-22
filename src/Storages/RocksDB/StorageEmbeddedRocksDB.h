@@ -14,6 +14,8 @@ namespace rocksdb
 namespace DB
 {
 
+class Context;
+
 class StorageEmbeddedRocksDB final : public ext::shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageEmbeddedRocksDB>;

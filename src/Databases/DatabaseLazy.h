@@ -9,6 +9,7 @@ namespace DB
 
 
 class DatabaseLazyIterator;
+class Context;
 
 /** Lazy engine of databases.
   * Works like DatabaseOrdinary, but stores in memory only cache.

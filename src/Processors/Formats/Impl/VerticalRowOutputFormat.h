@@ -9,6 +9,7 @@ namespace DB
 {
 
 class WriteBuffer;
+class Context;
 
 
 /** Stream to output data in format "each value in separate row".

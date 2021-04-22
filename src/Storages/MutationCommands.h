@@ -12,6 +12,7 @@
 namespace DB
 {
 
+class Context;
 class WriteBuffer;
 class ReadBuffer;
 

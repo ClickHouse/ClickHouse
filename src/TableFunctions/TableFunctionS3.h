@@ -10,7 +10,7 @@
 namespace DB
 {
 
-
+class Context;
 
 /* s3(source, [access_key_id, secret_access_key,] format, structure) - creates a temporary storage for a file in S3
  */

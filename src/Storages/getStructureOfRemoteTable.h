@@ -8,7 +8,7 @@
 
 namespace DB
 {
-
+class Context;
 struct StorageID;
 
 /// Find the names and types of the table columns on any server in the cluster.

@@ -22,6 +22,7 @@ namespace DB
 
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
+class Context;
 class QueryPlan;
 
 struct TreeRewriterResult;

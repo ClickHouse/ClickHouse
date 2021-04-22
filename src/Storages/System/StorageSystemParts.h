@@ -7,7 +7,7 @@
 namespace DB
 {
 
-
+class Context;
 
 
 /** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.

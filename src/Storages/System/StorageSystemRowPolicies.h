@@ -7,7 +7,7 @@
 namespace DB
 {
 
-
+class Context;
 
 
 /// Implements `row_policies` system table, which allows you to get information about row policies.

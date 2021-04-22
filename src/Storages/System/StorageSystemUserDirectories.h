@@ -6,7 +6,7 @@
 
 namespace DB
 {
-
+class Context;
 
 /// Implements `users_directories` system table, which allows you to get information about user directories.
 class StorageSystemUserDirectories final : public ext::shared_ptr_helper<StorageSystemUserDirectories>, public IStorageSystemOneBlock<StorageSystemUserDirectories>

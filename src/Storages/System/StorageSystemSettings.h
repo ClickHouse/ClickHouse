@@ -7,7 +7,7 @@
 namespace DB
 {
 
-
+class Context;
 
 
 /** implements system table "settings", which allows to get information about the current settings.

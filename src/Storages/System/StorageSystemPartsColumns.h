@@ -7,7 +7,7 @@
 namespace DB
 {
 
-
+class Context;
 
 
 /** Implements system table 'parts_columns' which allows to get information about

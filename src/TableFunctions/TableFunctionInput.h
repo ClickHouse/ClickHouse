@@ -6,7 +6,7 @@
 namespace DB
 {
 
-
+class Context;
 
 /* input(structure) - allows to make INSERT SELECT from incoming stream of data
  */

@@ -16,6 +16,7 @@ namespace DB
 
 struct Range;
 
+class Context;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
