@@ -31,6 +31,8 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 
 
 namespace DB
@@ -232,6 +234,30 @@ BlockIO InterpreterInsertQuery::execute()
                 out_streams_size = std::min(size_t(settings.max_insert_threads), res.pipeline.getNumStreams());
 
             res.pipeline.resize(out_streams_size);
+
+            auto query_columns_names_and_types = query_sample_block.getNamesAndTypesList();
+
+            auto input_columns = res.pipeline.getHeader().getColumns();
+            auto query_columns = query_sample_block.getColumns();
+
+            size_t col_idx = 0;
+            ColumnsWithTypeAndName new_query_sample_block;
+            for (const auto & column : query_columns_names_and_types)
+            {
+                if (input_columns[col_idx]->isNullable() && !query_columns[col_idx]->isNullable())
+                {
+                    auto nullable_column = ColumnNullable::create(query_columns[col_idx], ColumnUInt8::create(query_columns[col_idx]->size(), 0));
+                    new_query_sample_block.emplace_back(nullable_column, std::make_shared<DataTypeNullable>(column.type), column.name);
+                }
+                else
+                {
+                    new_query_sample_block.emplace_back(query_columns[col_idx], column.type, column.name);
+                }
+                col_idx++;
+            }
+
+            Block new_block(new_query_sample_block);
+            query_sample_block.swap(new_block);
         }
         else if (query.watch)
         {
@@ -295,6 +321,7 @@ BlockIO InterpreterInsertQuery::execute()
     else if (query.select || query.watch)
     {
         const auto & header = out_streams.at(0)->getHeader();
+        LOG_TRACE(&Poco::Logger::get("kssenii"), "Make converring actions");
         auto actions_dag = ActionsDAG::makeConvertingActions(
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
                 header.getColumnsWithTypeAndName(),
