@@ -120,7 +120,7 @@ protected:
     TaskStatus tryMoveAllPiecesToDestinationTable(const TaskTable & task_table, const String & partition_name);
 
     /// Removes MATERIALIZED and ALIAS columns from create table query
-    static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
+    static ASTPtr removeAliasMaterializedAndTTLColumnsFromCreateQuery(const ASTPtr & query_ast, bool allow_to_copy_alias_and_materialized_columns);
 
     bool tryDropPartitionPiece(ShardPartition & task_partition, size_t current_piece_number,
             const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);

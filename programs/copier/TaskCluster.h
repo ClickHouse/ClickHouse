@@ -92,7 +92,7 @@ inline void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfigurat
 
     /// Override important settings
     settings_pull.readonly = 1;
-    settings_push.insert_distributed_sync = 1;
+    settings_push.insert_distributed_sync = true;
     set_default_value(settings_pull.load_balancing, LoadBalancing::NEAREST_HOSTNAME);
     set_default_value(settings_pull.max_threads, 1);
     set_default_value(settings_pull.max_block_size, 8192UL);
