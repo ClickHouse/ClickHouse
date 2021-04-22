@@ -224,71 +224,17 @@ def check_wrong_config(self, node, client, config_path, modify_file, log_error="
 
 
 @TestStep(Given)
-def instrument_clickhouse_server_log(self, node=None, clickhouse_server_log="/var/log/clickhouse-server/clickhouse-server.log"):
+def instrument_clickhouse_server_log(self, clickhouse_server_log="/var/log/clickhouse-server/clickhouse-server.log"):
     """Instrument clickhouse-server.log for the current test
     by adding start and end messages that include
     current test name to the clickhouse-server.log of the specified node and
     if the test fails then dump the messages from
     the clickhouse-server.log for this test.
     """
-    if node is None:
-        node = self.context.node
+    all_nodes = self.context.ch_nodes + [self.context.krb_server]
 
-    with By("getting current log size"):
-        cmd =  node.command(f"stat --format=%s {clickhouse_server_log}")
-        logsize = cmd.output.split(" ")[0].strip()
-
-    try:
-        with And("adding test name start message to the clickhouse-server.log"):
-            node.command(f"echo -e \"\\n-- start: {current().name} --\\n\" >> {clickhouse_server_log}")
-        with And("dump memory info"):
+    for node in all_nodes:
+        with When(f"output stats for {node.repr()}"):
             node.command(f"echo -e \"\\n-- {current().name} -- top --\\n\" && top -bn1")
             node.command(f"echo -e \"\\n-- {current().name} -- df --\\n\" && df -h")
             node.command(f"echo -e \"\\n-- {current().name} -- free --\\n\" && free -mh")
-        yield
-
-    finally:
-        if self.context.cluster.terminating is True:
-            return
-
-        with Finally("adding test name end message to the clickhouse-server.log", flags=TE):
-           node.command(f"echo -e \"\\n-- end: {current().name} --\\n\" >> {clickhouse_server_log}")
-
-        with And("checking if test has failing result"):
-            if not self.parent.result:
-                with Then("dumping clickhouse-server.log for this test"):
-                    node.command(f"tail -c +{logsize} {clickhouse_server_log}")
-
-
-@TestStep(Given)
-def current_hw_state(self, node=None, clickhouse_server_log="/var/log/clickhouse-server/clickhouse-server.log"):
-    """Instrument clickhouse-server.log for the current test
-    by adding start and end messages that include
-    current test name to the clickhouse-server.log of the specified node and
-    if the test fails then dump the messages from
-    the clickhouse-server.log for this test.
-    """
-    if node is None:
-        node = self.context.node
-
-    with By("getting current log size"):
-        cmd =  node.command(f"stat --format=%s {clickhouse_server_log}")
-        logsize = cmd.output.split(" ")[0].strip()
-
-    try:
-        with And("adding test name start message to the clickhouse-server.log"):
-            node.command(f"echo -e \"\\n-- start: {current().name} --\\n\" >> {clickhouse_server_log}")
-        with And("dump memory info"):
-            node.command(f"echo -e \"\\n-- {current().name} -- top --\\n\" && top -bn1")
-            node.command(f"echo -e \"\\n-- {current().name} -- df --\\n\" && df -h")
-            node.command(f"echo -e \"\\n-- {current().name} -- free --\\n\" && free -mh")
-        yield
-
-    finally:
-        if self.context.cluster.terminating is True:
-            return
-
-        with Finally("adding test name end message to the clickhouse-server.log", flags=TE):
-           node.command(f"echo -e \"\\n-- end: {current().name} --\\n\" >> {clickhouse_server_log}")
-
-        node.command(f"tail -c +{logsize} {clickhouse_server_log}")

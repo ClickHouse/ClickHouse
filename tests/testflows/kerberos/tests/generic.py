@@ -347,4 +347,4 @@ def generic(self):
     self.context.clients = [self.context.cluster.node(f"krb-client{i}") for i in range(1, 6)]
 
     for scenario in loads(current_module(), Scenario, Suite):
-        Scenario(run=scenario, flags=TE)
+        Scenario(run=scenario, flags=TE, setup=instrument_clickhouse_server_log)
