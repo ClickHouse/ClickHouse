@@ -2469,7 +2469,7 @@ private:
         }
     }
 
-    WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type) const
+    WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const
     {
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
@@ -2480,24 +2480,23 @@ private:
             };
         }
 
-        DataTypePtr from_nested_type;
-        DataTypePtr to_nested_type;
         const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
-
-        /// get the most nested type
-        if (from_type && to_type)
+        if (!from_type)
         {
-            from_nested_type = from_type->getNestedType();
-            to_nested_type = to_type->getNestedType();
-
-            from_type = checkAndGetDataType<DataTypeArray>(from_nested_type.get());
-            to_type = checkAndGetDataType<DataTypeArray>(to_nested_type.get());
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "CAST AS Array can only be perforamed between same-dimensional Array or String types");
         }
 
-        /// both from_type and to_type should be nullptr now is array types had same dimensions
-        if ((from_type == nullptr) != (to_type == nullptr))
-            throw Exception{"CAST AS Array can only be performed between same-dimensional array types or from String",
-                ErrorCodes::TYPE_MISMATCH};
+        DataTypePtr from_nested_type = from_type->getNestedType();
+
+        /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
+        bool from_empty_array = isNothing(from_nested_type);
+
+        if (from_type->getNumberOfDimensions() != to_type.getNumberOfDimensions() && !from_empty_array)
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "CAST AS Array can only be perforamed between same-dimensional array types");
+
+        const DataTypePtr & to_nested_type = to_type.getNestedType();
 
         /// Prepare nested type conversion
         const auto nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type);
@@ -3059,14 +3058,12 @@ private:
                 return createStringWrapper(from_type);
             case TypeIndex::FixedString:
                 return createFixedStringWrapper(from_type, checkAndGetDataType<DataTypeFixedString>(to_type.get())->getN());
-
             case TypeIndex::Array:
-                return createArrayWrapper(from_type, checkAndGetDataType<DataTypeArray>(to_type.get()));
+                return createArrayWrapper(from_type, static_cast<const DataTypeArray &>(*to_type));
             case TypeIndex::Tuple:
                 return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
             case TypeIndex::Map:
                 return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
-
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
             default:
