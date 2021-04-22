@@ -74,16 +74,13 @@ public:
             }
         }
 
-        struct AlwaysAddColumnPredicate
-        {
-            bool operator()(const String & column_name [[maybe_unused]])
-            {
-                return true;
-            }
-        };
+        using ShouldAddColumnPredicate = std::function<bool (const String&)>;
 
-        template <typename Predicate = AlwaysAddColumnPredicate>
-        void addTableColumns(const String & table_name, Predicate && should_add_column_predicate = Predicate())
+        /// Add columns from table with table_name into select expression list
+        /// Use should_add_column_predicate for check if column name should be added
+        void addTableColumns(
+            const String & table_name,
+            std::function<bool (const String&)> should_add_column_predicate = [](const String &){ return true; } )
         {
             auto it = table_columns.find(table_name);
             if (it == table_columns.end())
@@ -91,7 +88,7 @@ public:
 
             for (const auto & column : it->second)
             {
-                if (std::forward<Predicate>(should_add_column_predicate)(column.name))
+                if (should_add_column_predicate(column.name))
                 {
                     auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name});
                     new_select_expression_list->children.emplace_back(std::move(identifier));
