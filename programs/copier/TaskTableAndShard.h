@@ -50,7 +50,6 @@ struct TaskTable
 
     String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const;
 
-
     bool isReplicatedTable() const { return is_replicated_table; }
 
     /// Partitions will be split into number-of-splits pieces.
@@ -181,6 +180,7 @@ struct TaskShard
 
     /// Last CREATE TABLE query of the table of the shard
     ASTPtr current_pull_table_create_query;
+    ASTPtr current_push_table_create_query;
 
     /// Internal distributed tables
     DatabaseAndTableName table_read_shard;

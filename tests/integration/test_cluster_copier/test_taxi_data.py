@@ -114,7 +114,7 @@ class Task:
             junk1 String,  junk2 String
         )
         Engine = ReplacingMergeTree() PRIMARY KEY (tpep_pickup_datetime, id) ORDER BY (tpep_pickup_datetime, id) PARTITION BY (toYYYYMMDD(tpep_pickup_datetime))""")
-        instance.query("CREATE TABLE dailyhistory.yellow_tripdata ON CLUSTER events AS dailyhistory.yellow_tripdata_staging ENGINE = Distributed('events', 'dailyhistory', yellow_tripdata_staging, rand());")
+        instance.query("CREATE TABLE dailyhistory.yellow_tripdata ON CLUSTER events AS dailyhistory.yellow_tripdata_staging ENGINE = Distributed('events', 'dailyhistory', yellow_tripdata_staging, sipHash64(id) % 3);")
 
         # monthly partition database
         instance.query("create database monthlyhistory on cluster events;")
@@ -127,25 +127,38 @@ class Task:
             pickup_location_id String,  dropoff_location_id String,  congestion_surcharge String,  junk1 String,  junk2 String
         ) 
         Engine = ReplacingMergeTree() PRIMARY KEY (tpep_pickup_datetime, id) ORDER BY (tpep_pickup_datetime, id) PARTITION BY (pickup_location_id, toYYYYMM(tpep_pickup_datetime))""")
-        instance.query("CREATE TABLE monthlyhistory.yellow_tripdata ON CLUSTER events AS monthlyhistory.yellow_tripdata_staging ENGINE = Distributed('events', 'monthlyhistory', yellow_tripdata_staging, rand());")
+        instance.query("CREATE TABLE monthlyhistory.yellow_tripdata ON CLUSTER events AS monthlyhistory.yellow_tripdata_staging ENGINE = Distributed('events', 'monthlyhistory', yellow_tripdata_staging, sipHash64(id) % 3);")
 
 
-        logging.info("Inserting in container")
+        print("Inserting in container")
+    
         first_query = """INSERT INTO dailyhistory.yellow_tripdata(
             vendor_id,tpep_pickup_datetime,tpep_dropoff_datetime,passenger_count,trip_distance,
             rate_code_id,store_and_fwd_flag,pickup_location_id,dropoff_location_id,payment_type,
             fare_amount,extra,mta_tax,tip_amount,tolls_amount,improvement_surcharge,total_amount,congestion_surcharge) FORMAT CSV"""
         instance.exec_in_container(['bash', '-c', 'cat /usr/share/clickhouse-external-data/first.csv | /usr/bin/clickhouse client --query="{}"'.format(first_query)], privileged=True)
-        logging.info("Insert completed")
+        
+        print("Insert completed")
     
 
     def check(self):
+        instance = cluster.instances["first"]
+        a = TSV(instance.query("SELECT count() from dailyhistory.yellow_tripdata"))
+        b = TSV(instance.query("SELECT count() from monthlyhistory.yellow_tripdata"))
+        assert a == b, "Distributed tables"
+
         for instance_name, instance in cluster.instances.items():
             instance = cluster.instances[instance_name]
             a = instance.query("SELECT count() from dailyhistory.yellow_tripdata_staging")
             b = instance.query("SELECT count() from monthlyhistory.yellow_tripdata_staging")
-            print(a, b)
-            assert a == b
+            assert a == b, "MergeTree tables on each shard"
+
+            a = TSV(instance.query("SELECT sipHash64(*) from dailyhistory.yellow_tripdata_staging ORDER BY id"))
+            b = TSV(instance.query("SELECT sipHash64(*) from monthlyhistory.yellow_tripdata_staging ORDER BY id"))
+
+            assert a == b, "Data on each shard"
+
+            
 
 
 def execute_task(task, cmd_options):
