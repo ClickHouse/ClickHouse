@@ -78,9 +78,10 @@ public:
 
         /// Add columns from table with table_name into select expression list
         /// Use should_add_column_predicate for check if column name should be added
+        /// By default should_add_column_predicate returns true for any column name
         void addTableColumns(
             const String & table_name,
-            std::function<bool (const String&)> should_add_column_predicate = [](const String &){ return true; } )
+            ShouldAddColumnPredicate should_add_column_predicate = [](const String &) { return true; })
         {
             auto it = table_columns.find(table_name);
             if (it == table_columns.end())
