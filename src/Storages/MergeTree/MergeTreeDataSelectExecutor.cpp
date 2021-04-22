@@ -205,9 +205,31 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const auto & given_select = query_info.query->as<const ASTSelectQuery &>();
     if (!projection_parts.empty())
     {
+        auto projection_names = query_info.projection_names;
+
+        if (query_info.prewhere_info)
+        {
+            const auto prewhere_columns =
+                (query_info.prewhere_info->alias_actions ?
+                 query_info.prewhere_info->alias_actions :
+                 (query_info.prewhere_info->row_level_filter ?
+                  query_info.prewhere_info->row_level_filter :
+                  query_info.prewhere_info->prewhere_actions))->getRequiredColumns();
+
+            NameSet added_column(projection_names.begin(), projection_names.end());
+            for (const auto & col : prewhere_columns)
+            {
+                if (added_column.count(col) == 0)
+                {
+                    added_column.insert(col);
+                    projection_names.push_back(col);
+                }
+            }
+        }
+
         auto plan = readFromParts(
             std::move(projection_parts),
-            query_info.projection_names, // raw columns without key transformation
+            projection_names, // raw columns without key transformation
             query_info.aggregate_projection->metadata,
             query_info,
             context,
@@ -222,7 +244,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         {
             // If `key_actions` is not empty, transform input blocks by adding needed columns
             // originated from key columns. We already project the block at the end, using
-            // projection_block, so we can just add more colunms here without worrying
+            // projection_block, so we can just add more columns here without worrying
             if (!query_info.key_actions.func_map.empty())
             {
                 ASTPtr expr = std::make_shared<ASTExpressionList>();
