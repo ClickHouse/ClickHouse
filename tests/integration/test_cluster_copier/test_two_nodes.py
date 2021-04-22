@@ -184,6 +184,71 @@ class TaskTTL:
         assert a == b, "Data"
 
 
+class TaskSkipIndex:
+    def __init__(self, cluster):
+        self.cluster = cluster
+        self.zk_task_path = '/clickhouse-copier/task_skip_index'
+        self.container_task_file = "/task_skip_index.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_skip_index.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
+
+    def start(self):
+        first = cluster.instances["first"]
+        first.query("CREATE DATABASE db_skip_index;")
+        first.query("""CREATE TABLE db_skip_index.source
+        (
+            Column1 UInt64,
+            Column2 Int32,
+            Column3 Date,
+            Column4 DateTime,
+            Column5 String,
+            INDEX a (Column1 * Column2, Column5) TYPE minmax GRANULARITY 3,
+            INDEX b (Column1 * length(Column5)) TYPE set(1000) GRANULARITY 4
+        )
+        ENGINE = MergeTree()
+        PARTITION BY (toYYYYMMDD(Column3), Column3)
+        PRIMARY KEY (Column1, Column2, Column3)
+        ORDER BY (Column1, Column2, Column3)
+        SETTINGS index_granularity = 8192""")
+
+        first.query("""INSERT INTO db_skip_index.source SELECT * FROM generateRandom(
+            'Column1 UInt64, Column2 Int32, Column3 Date, Column4 DateTime, Column5 String', 1, 10, 2) LIMIT 100;""")
+
+        second = cluster.instances["second"]
+        second.query("CREATE DATABASE db_skip_index;")
+        second.query("""CREATE TABLE db_skip_index.destination
+        (
+            Column1 UInt64,
+            Column2 Int32,
+            Column3 Date,
+            Column4 DateTime,
+            Column5 String,
+            INDEX a (Column1 * Column2, Column5) TYPE minmax GRANULARITY 3,
+            INDEX b (Column1 * length(Column5)) TYPE set(1000) GRANULARITY 4
+        ) ENGINE = MergeTree()
+        PARTITION BY toYYYYMMDD(Column3)
+        ORDER BY (Column3, Column2, Column1);""")
+        
+        print("Preparation completed")
+
+    def check(self):
+        first = cluster.instances["first"]
+        second = cluster.instances["second"]
+
+        a = first.query("SELECT count() from db_skip_index.source")
+        b = second.query("SELECT count() from db_skip_index.destination")
+        assert a == b, "Count"
+
+        a = TSV(first.query("""SELECT sipHash64(*) from db_skip_index.source
+            ORDER BY (Column1, Column2, Column3, Column4, Column5)"""))
+        b = TSV(second.query("""SELECT sipHash64(*) from db_skip_index.destination
+            ORDER BY (Column1, Column2, Column3, Column4, Column5)"""))
+        assert a == b, "Data"
+
+
 def execute_task(task, cmd_options):
     task.start()
 
@@ -242,3 +307,8 @@ def test_different_schema(started_cluster):
 @pytest.mark.timeout(600)
 def test_ttl_columns(started_cluster):
     execute_task(TaskTTL(started_cluster), [])
+
+
+@pytest.mark.timeout(600)
+def test_skip_index(started_cluster):
+    execute_task(TaskSkipIndex(started_cluster), [])
