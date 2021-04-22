@@ -114,7 +114,8 @@ public:
             // This state came before the rhs state
 
             if (rhs_data->first > place_data->last)
-                place_data->sum += rhs_data->sum + (rhs_data->first - place_data->last);
+                place_data->sum += (rhs_data->first - place_data->last);
+            place_data->sum += rhs_data->sum;
             place_data->last = rhs_data->last;
             place_data->last_ts = rhs_data->last_ts;
         }
@@ -123,7 +124,8 @@ public:
             // This state came after the rhs state
 
             if (place_data->first > rhs_data->last)
-                place_data->sum += rhs_data->sum + (place_data->first - rhs_data->last);
+                place_data->sum += (place_data->first - rhs_data->last);
+            place_data->sum += rhs_data->sum;
             place_data->first = rhs_data->first;
             place_data->first_ts = rhs_data->first_ts;
         }
