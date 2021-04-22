@@ -34,7 +34,7 @@ class FunctionArraySlice : public IFunction
 {
 public:
     static constexpr auto name = "arraySlice";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArraySlice>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArraySlice>(); }
 
     String getName() const override { return name; }
 

@@ -1,5 +1,7 @@
 #pragma once
+
 #include <Functions/IFunctionImpl.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 #include <Core/Block.h>
@@ -7,7 +9,6 @@
 namespace DB
 {
 
-class Context;
 class HashJoin;
 class StorageJoin;
 using StorageJoinPtr = std::shared_ptr<StorageJoin>;
@@ -73,13 +74,13 @@ private:
 };
 
 template <bool or_null>
-class JoinGetOverloadResolver final : public IFunctionOverloadResolverImpl
+class JoinGetOverloadResolver final : public IFunctionOverloadResolverImpl, WithContext
 {
 public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
-    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<JoinGetOverloadResolver>(context); }
+    static FunctionOverloadResolverImplPtr create(ContextPtr context_) { return std::make_unique<JoinGetOverloadResolver>(context_); }
 
-    explicit JoinGetOverloadResolver(const Context & context_) : context(context_) {}
+    explicit JoinGetOverloadResolver(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
@@ -92,9 +93,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
-
-private:
-    const Context & context;
 };
 
 }

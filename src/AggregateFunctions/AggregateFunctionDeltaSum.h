@@ -43,6 +43,8 @@ public:
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<T>>(); }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto value = assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
@@ -77,7 +79,7 @@ public:
             place_data->sum += rhs_data->sum + (rhs_data->first - place_data->last);
             place_data->last = rhs_data->last;
         }
-        else if ((rhs_data->last < place_data->first && rhs_data->seen_last && place_data->seen_first))
+        else if ((rhs_data->first < place_data->last && rhs_data->seen_last && place_data->seen_first))
         {
             // In the opposite scenario, the lhs comes after the rhs, e.g. [4, 6] [1, 2]. Since we
             // assume the input interval states are sorted by time, we assume this is a counter
@@ -85,9 +87,9 @@ public:
             // rhs last value.
 
             place_data->sum += rhs_data->sum;
-            place_data->first = rhs_data->first;
+            place_data->last = rhs_data->last;
         }
-        else if (rhs_data->seen_first)
+        else if (rhs_data->seen_first && !place_data->seen_first)
         {
             // If we're here then the lhs is an empty state and the rhs does have some state, so
             // we'll just take that state.

@@ -3,6 +3,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -220,7 +221,7 @@ public:
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
     /// Otherwise, return actions which inputs are from available_inputs.
-    /// Returned actions add single column which may be used for filter.
+    /// Returned actions add single column which may be used for filter. Added column will be the first one.
     /// Also, replace some nodes of current inputs to constant 1 in case they are filtered.
     ///
     /// @param all_inputs should contain inputs from previous step, which will be used for result actions.
@@ -231,9 +232,9 @@ public:
     /// Pushed condition: z > 0
     /// GROUP BY step will transform columns `x, y, z` -> `sum(x), y, z`
     /// If we just add filter step with actions `z -> z > 0` before GROUP BY,
-    /// columns will be transformed like `x, y, z` -> `z, z > 0, x, y` -(remove filter)-> `z, x, y`.
+    /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
-    /// so actions `x, y, z -> x, y, z, z > 0` -(remove filter)-> `x, y, z` will not change columns order.
+    /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
     ActionsDAGPtr cloneActionsForFilterPushDown(
         const std::string & filter_name,
         bool can_remove_filter,

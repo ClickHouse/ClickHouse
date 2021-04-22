@@ -1295,14 +1295,18 @@ protected:
         AggregateFunctionInstructions & instructions,
         NestedColumnsHolder & nested_columns_holder);
 
-    void fillAggregateColumnsWithSingleKey(
-        AggregatedDataVariants & data_variants,
-        MutableColumns & final_aggregate_columns);
+    void addSingleKeyToAggregateColumns(
+        const AggregatedDataVariants & data_variants,
+        MutableColumns & aggregate_columns) const;
+
+    void addArenasToAggregateColumns(
+        const AggregatedDataVariants & data_variants,
+        MutableColumns & aggregate_columns) const;
 
     void createStatesAndFillKeyColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
-        MutableColumns & final_key_columns);
+        MutableColumns & final_key_columns) const;
 };
 
 

@@ -66,6 +66,13 @@ public:
 
     DictionaryKeyType getKeyType() const override { return dictionary_key_type; }
 
+    Columns getColumns(
+        const Strings & attribute_names,
+        const DataTypes & result_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const Columns & default_values_columns) const override;
+
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,

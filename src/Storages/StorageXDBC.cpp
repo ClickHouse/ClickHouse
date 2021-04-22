@@ -14,6 +14,8 @@
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <common/logger_useful.h>
+#include <Common/escapeForFileName.h>
+
 
 namespace DB
 {
@@ -28,7 +30,7 @@ StorageXDBC::StorageXDBC(
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
     const ColumnsDescription & columns_,
-    const Context & context_,
+    ContextPtr context_,
     const BridgeHelperPtr bridge_helper_)
     /// Please add support for constraints as soon as StorageODBC or JDBC will support insertion.
     : IStorageURLBase(Poco::URI(),
@@ -53,27 +55,21 @@ std::string StorageXDBC::getReadMethod() const
 }
 
 std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(
-    const Names & column_names,
-    const StorageMetadataPtr & metadata_snapshot,
+    const Names & /* column_names */,
+    const StorageMetadataPtr & /* metadata_snapshot */,
     const SelectQueryInfo & /*query_info*/,
-    const Context & /*context*/,
+    ContextPtr /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t max_block_size) const
 {
-    NamesAndTypesList cols;
-    for (const String & name : column_names)
-    {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(name);
-        cols.emplace_back(column_data.name, column_data.type);
-    }
-    return bridge_helper->getURLParams(cols.toString(), max_block_size);
+    return bridge_helper->getURLParams(max_block_size);
 }
 
 std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
-    const Names & /*column_names*/,
+    const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr local_context,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
@@ -82,16 +78,30 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         bridge_helper->getIdentifierQuotingStyle(),
         remote_database_name,
         remote_table_name,
-        context);
+        local_context);
 
-    return [query](std::ostream & os) { os << "query=" << query; };
+    NamesAndTypesList cols;
+    for (const String & name : column_names)
+    {
+        auto column_data = metadata_snapshot->getColumns().getPhysical(name);
+        cols.emplace_back(column_data.name, column_data.type);
+    }
+
+    auto write_body_callback = [query, cols](std::ostream & os)
+    {
+        os << "sample_block=" << escapeForFileName(cols.toString());
+        os << "&";
+        os << "query=" << escapeForFileName(query);
+    };
+
+    return write_body_callback;
 }
 
 Pipe StorageXDBC::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr local_context,
     QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
@@ -99,35 +109,32 @@ Pipe StorageXDBC::read(
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
     bridge_helper->startBridgeSync();
-    return IStorageURLBase::read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return IStorageURLBase::read(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & context)
+BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     bridge_helper->startBridgeSync();
 
-    NamesAndTypesList cols;
     Poco::URI request_uri = uri;
     request_uri.setPath("/write");
-    for (const String & name : metadata_snapshot->getSampleBlock().getNames())
-    {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(name);
-        cols.emplace_back(column_data.name, column_data.type);
-    }
-    auto url_params = bridge_helper->getURLParams(cols.toString(), 65536);
+
+    auto url_params = bridge_helper->getURLParams(65536);
     for (const auto & [param, value] : url_params)
         request_uri.addQueryParameter(param, value);
+
     request_uri.addQueryParameter("db_name", remote_database_name);
     request_uri.addQueryParameter("table_name", remote_table_name);
     request_uri.addQueryParameter("format_name", format_name);
+    request_uri.addQueryParameter("sample_block", metadata_snapshot->getSampleBlock().getNamesAndTypesList().toString());
 
     return std::make_shared<StorageURLBlockOutputStream>(
         request_uri,
         format_name,
-        getFormatSettings(context),
+        getFormatSettings(local_context),
         metadata_snapshot->getSampleBlock(),
-        context,
-        ConnectionTimeouts::getHTTPTimeouts(context),
+        local_context,
+        ConnectionTimeouts::getHTTPTimeouts(local_context),
         chooseCompressionMethod(uri.toString(), compression_method));
 }
 
@@ -155,16 +162,16 @@ namespace
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
             for (size_t i = 0; i < 3; ++i)
-                engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
+                engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.getLocalContext());
 
-            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.context,
-                args.context.getSettingsRef().http_receive_timeout.value,
+            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.getContext(),
+                args.getContext()->getSettingsRef().http_receive_timeout.value,
                 engine_args[0]->as<ASTLiteral &>().value.safeGet<String>());
             return std::make_shared<StorageXDBC>(args.table_id,
                 engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
                 engine_args[2]->as<ASTLiteral &>().value.safeGet<String>(),
                 args.columns,
-                args.context,
+                args.getContext(),
                 bridge_helper);
 
         },
