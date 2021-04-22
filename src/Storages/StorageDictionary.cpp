@@ -129,7 +129,7 @@ StorageDictionary::StorageDictionary(
     ContextPtr context_)
     : StorageDictionary(
         table_id,
-        table_id.getFullTableName(),
+        table_id.getFullNameNotQuoted(),
         context_->getExternalDictionariesLoader().getDictionaryStructure(*dictionary_configuration),
         Location::SameDatabaseAndNameAsDictionary,
         context_)
