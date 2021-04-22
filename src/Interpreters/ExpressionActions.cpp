@@ -367,6 +367,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                         column.column = column_function->reduce(true).column;
                 }
 
+
                 if (!action.arguments[i].needed_later)
                     arguments[i] = std::move(column);
                 else
@@ -487,12 +488,10 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             else
             {
                 auto & column = inputs[pos];
-                if (!action.node->children.empty() && action.node->children.back()->type == ActionsDAG::ActionType::COLUMN_FUNCTION)
-                {
-                    const ColumnFunction * column_function = typeid_cast<const ColumnFunction *>(column.column.get());
-                    if (column_function)
-                        column.column = column_function->reduce(true).column;
-                }
+
+                const ColumnFunction * column_function = typeid_cast<const ColumnFunction *>(column.column.get());
+                if (column_function && column.type->getTypeId() != TypeIndex::Function)
+                    column.column = column_function->reduce(true).column;
 
                 columns[action.result_position] = std::move(column);
             }

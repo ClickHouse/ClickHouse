@@ -175,7 +175,7 @@ public:
 
     void popBack(size_t n) override;
 
-    ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
+    ColumnPtr filter(const Filter & filter, ssize_t result_size_hint, bool reverse = false) const override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 

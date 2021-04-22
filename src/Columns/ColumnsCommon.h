@@ -32,14 +32,14 @@ template <typename T>
 void filterArraysImpl(
     const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
     PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
-    const IColumn::Filter & filt, ssize_t result_size_hint);
+    const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse = false);
 
 /// Same as above, but not fills res_offsets.
 template <typename T>
 void filterArraysImplOnlyData(
     const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
     PaddedPODArray<T> & res_elems,
-    const IColumn::Filter & filt, ssize_t result_size_hint);
+    const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse = false);
 
 namespace detail
 {
@@ -66,7 +66,7 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
     else if (auto * data_uint64 = detail::getIndexesData<UInt64>(indexes))
         return column.template indexImpl<UInt64>(*data_uint64, limit);
     else
-        throw Exception("Indexes column for IColumn::select must be ColumnUInt, got " + indexes.getName(),
+        throw Exception("Indexes column for IColumn::select must be ColumnUInt, got" + indexes.getName(),
                         ErrorCodes::LOGICAL_ERROR);
 }
 

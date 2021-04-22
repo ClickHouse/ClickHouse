@@ -98,9 +98,12 @@ public:
         s += length;
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
+    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/, bool reverse = false) const override
     {
-        return cloneDummy(countBytesInFilter(filt));
+        size_t bytes = countBytesInFilter(filt);
+        if (reverse)
+            bytes = filt.size() - bytes;
+        return cloneDummy(bytes);
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override

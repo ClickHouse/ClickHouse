@@ -145,7 +145,7 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse = false) const override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 

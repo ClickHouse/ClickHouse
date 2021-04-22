@@ -134,7 +134,7 @@ public:
         throw Exception("Method cut is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    ColumnPtr filter(const IColumn::Filter &, ssize_t) const override
+    ColumnPtr filter(const IColumn::Filter &, ssize_t, bool) const override
     {
         throw Exception("Method filter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }

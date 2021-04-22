@@ -344,7 +344,7 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse) const
 {
     size_t size = data.size();
     if (size != filt.size())
@@ -374,7 +374,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     while (filt_pos < filt_end_sse)
     {
         UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-        mask = ~mask;
+        mask = reverse ? mask : ~mask;
 
         if (0 == mask)
         {
@@ -387,7 +387,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         else
         {
             for (size_t i = 0; i < SIMD_BYTES; ++i)
-                if (filt_pos[i])
+                if (reverse ^ filt_pos[i])
                     res_data.push_back(data_pos[i]);
         }
 
@@ -398,7 +398,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 
     while (filt_pos < filt_end)
     {
-        if (*filt_pos)
+        if (reverse ^ *filt_pos)
             res_data.push_back(*data_pos);
 
         ++filt_pos;
