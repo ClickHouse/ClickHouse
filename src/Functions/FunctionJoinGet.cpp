@@ -90,11 +90,17 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     auto [storage_join, attr_name] = getJoin(arguments, getContext());
     DataTypes data_types(arguments.size() - 2);
-    for (size_t i = 2; i < arguments.size(); ++i)
-        data_types[i - 2] = arguments[i].type;
+    DataTypes argument_types(arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        if (i >= 2)
+            data_types[i - 2] = arguments[i].type;
+        argument_types[i] = arguments[i].type;
+    }
     auto return_type = storage_join->joinGetCheckAndGetReturnType(data_types, attr_name, or_null);
     auto table_lock = storage_join->lockForShare(getContext()->getInitialQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
-    return std::make_unique<FunctionJoinGet<or_null>>(table_lock, storage_join, attr_name, data_types, return_type);
+
+    return std::make_unique<FunctionJoinGet<or_null>>(table_lock, storage_join, attr_name, argument_types, return_type);
 }
 
 void registerFunctionJoinGet(FunctionFactory & factory)

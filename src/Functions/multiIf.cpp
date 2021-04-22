@@ -8,7 +8,7 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Common/MasksOperation.h>
+#include <Columns/MaskOperations.h>
 
 
 namespace DB
@@ -108,30 +108,31 @@ public:
         return getLeastSupertype(types_of_branches);
     }
 
-    ColumnsWithTypeAndName checkForLazyArgumentsExecution(const ColumnsWithTypeAndName & args) const
+    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override
     {
-        ColumnsWithTypeAndName arguments;
-        arguments.push_back(args[0]);
-        IColumn::Filter mask = getMaskFromColumn(args[0].column);
+        executeColumnIfNeeded(arguments[0]);
+        IColumn::Filter mask = getMaskFromColumn(arguments[0].column);
         Field default_value = 0;
         size_t i = 1;
-        while (i < args.size())
+        while (i < arguments.size())
         {
-            IColumn::Filter cond_mask = getMaskFromColumn(arguments[i - 1].column);
-            arguments.push_back(maskedExecute(args[i], cond_mask));
-            ++i;
+            if (isColumnFunction(*arguments[i].column))
+            {
+                IColumn::Filter cond_mask = getMaskFromColumn(arguments[i - 1].column);
+                maskedExecute(arguments[i], cond_mask);
+            }
 
-            arguments.push_back(maskedExecute(args[i], reverseMask(mask), &default_value));
-            if (i != args.size() - 1)
-                disjunctionMasks(mask, getMaskFromColumn(arguments.back().column));
+            ++i;
+            if (isColumnFunction(*arguments[i].column))
+                maskedExecute(arguments[i], reverseMask(mask), &default_value);
+            if (i != arguments.size() - 1)
+                disjunctionMasks(mask, getMaskFromColumn(arguments[i].column));
             ++i;
         }
-        return arguments;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName args = checkForLazyArgumentsExecution(arguments);
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
         */

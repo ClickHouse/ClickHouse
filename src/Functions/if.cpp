@@ -26,7 +26,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/castColumn.h>
 
-#include <Common/MasksOperation.h>
+#include <Columns/MaskOperations.h>
 
 
 namespace DB
@@ -920,19 +920,19 @@ public:
         return getLeastSupertype({arguments[1], arguments[2]});
     }
 
-    ColumnsWithTypeAndName checkForLazyArgumentsExecution(const ColumnsWithTypeAndName & args) const
+    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override
     {
-        ColumnsWithTypeAndName executed_arguments;
-        IColumn::Filter mask = getMaskFromColumn(args[0].column);
-        executed_arguments.push_back(args[0]);
-        executed_arguments.push_back(maskedExecute(args[1], mask));
-        executed_arguments.push_back(maskedExecute(args[2], reverseMask(mask)));
-        return executed_arguments;
+        executeColumnIfNeeded(arguments[0]);
+        if (isColumnFunction(*arguments[1].column) || isColumnFunction(*arguments[2].column))
+        {
+            IColumn::Filter mask = getMaskFromColumn(arguments[0].column);
+            maskedExecute(arguments[1], mask);
+            maskedExecute(arguments[2], reverseMask(mask));
+        }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        ColumnsWithTypeAndName arguments = checkForLazyArgumentsExecution(args);
         ColumnPtr res;
         if (   (res = executeForConstAndNullableCondition(arguments, result_type, input_rows_count))
             || (res = executeForNullThenElse(arguments, result_type, input_rows_count))

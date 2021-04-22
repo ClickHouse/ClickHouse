@@ -14,8 +14,8 @@
 
 #include <algorithm>
 
-#include <Common/MasksOperation.h>
-
+#include <Columns/MaskOperations.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -475,7 +475,7 @@ static ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_cou
 }
 
 template <typename Impl, typename Name>
-DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
+    DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments.size() < 2)
         throw Exception("Number of arguments for function \"" + getName() + "\" should be at least 2: passed "
@@ -510,31 +510,30 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
 }
 
 template <typename Impl, typename Name>
-ColumnsWithTypeAndName FunctionAnyArityLogical<Impl, Name>::checkForLazyArgumentsExecution(const ColumnsWithTypeAndName & args) const
+void FunctionAnyArityLogical<Impl, Name>::executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const
 {
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
-        return args;
+        throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    ColumnsWithTypeAndName executed_arguments;
     Field default_value = Name::name == NameAnd::name ? 0 : 1;
-    bool reverse = Name::name == NameAnd::name ? false : true;
+    bool reverse = Name::name != NameAnd::name;
     UInt8 null_value = Name::name == NameAnd::name ? 1 : 0;
-    executed_arguments.push_back(args[0]);
-    for (size_t i = 1; i < args.size(); ++i)
-    {
-        const IColumn::Filter & mask = getMaskFromColumn(executed_arguments[i - 1].column, reverse, nullptr, null_value);
-        auto column = maskedExecute(args[i], mask, &default_value);
-        executed_arguments.push_back(std::move(column));
-    }
+    executeColumnIfNeeded(arguments[0]);
 
-    return executed_arguments;
+    for (size_t i = 1; i < arguments.size(); ++i)
+    {
+        if (isColumnFunction(*arguments[i].column))
+        {
+            IColumn::Filter mask = getMaskFromColumn(arguments[i - 1].column, reverse, nullptr, null_value);
+            maskedExecute(arguments[i], mask, &default_value);
+        }
+    }
 }
 
 template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
-    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    ColumnsWithTypeAndName arguments = checkForLazyArgumentsExecution(args);
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
         args_in.push_back(arg_index.column.get());

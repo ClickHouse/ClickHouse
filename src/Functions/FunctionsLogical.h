@@ -154,6 +154,7 @@ public:
 
     bool isVariadic() const override { return true; }
     bool isShortCircuit() const override { return name == NameAnd::name || name == NameOr::name; }
+    void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override;
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
@@ -204,9 +205,6 @@ public:
         return phi;
     }
 #endif
-
-private:
-    ColumnsWithTypeAndName checkForLazyArgumentsExecution(const ColumnsWithTypeAndName & args) const;
 };
 
 

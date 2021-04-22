@@ -35,6 +35,7 @@ SRCS(
     ColumnsCommon.cpp
     FilterDescription.cpp
     IColumn.cpp
+    MaskOperations.cpp
     getLeastSuperColumn.cpp
 
 )

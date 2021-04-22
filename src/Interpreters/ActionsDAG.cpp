@@ -1578,6 +1578,9 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsForFilter(const std::string & co
                         "Index for ActionsDAG does not contain filter column name {}. DAG:\n{}",
                         column_name, dumpDAG());
 
+    if (node->type == ActionType::COLUMN_FUNCTION)
+        const_cast<Node *>(node)->type = ActionType::FUNCTION;
+
     std::unordered_set<const Node *> split_nodes = {node};
     auto res = split(split_nodes);
     res.second->project_input = project_input;

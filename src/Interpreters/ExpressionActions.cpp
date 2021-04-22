@@ -338,7 +338,7 @@ namespace
     };
 }
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run)
+static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool use_short_circuit_function_evaluation)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -359,6 +359,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             for (size_t i = 0; i < arguments.size(); ++i)
             {
                 auto & column = columns[action.arguments[i].pos];
+
                 if (action.node->children[i]->type == ActionsDAG::ActionType::COLUMN_FUNCTION)
                 {
                     const ColumnFunction * column_function = typeid_cast<const ColumnFunction *>(column.column.get());
@@ -376,6 +377,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             if (action.node->is_function_compiled)
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
+            if (action.node->function_base->isShortCircuit() && use_short_circuit_function_evaluation)
+                action.node->function_base->executeShortCircuitArguments(arguments);
             res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
             break;
         }
@@ -484,8 +487,12 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             else
             {
                 auto & column = inputs[pos];
-                if (const auto * col = typeid_cast<const ColumnFunction *>(inputs[pos].column.get()))
-                    column.column = col->reduce(true).column;
+                if (!action.node->children.empty() && action.node->children.back()->type == ActionsDAG::ActionType::COLUMN_FUNCTION)
+                {
+                    const ColumnFunction * column_function = typeid_cast<const ColumnFunction *>(column.column.get());
+                    if (column_function)
+                        column.column = column_function->reduce(true).column;
+                }
 
                 columns[action.result_position] = std::move(column);
             }
@@ -528,7 +535,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     {
         try
         {
-            executeAction(action, execution_context, dry_run);
+            executeAction(action, execution_context, dry_run, settings.use_short_circuit_function_evaluation);
             checkLimits(execution_context.columns);
 
             //std::cerr << "Action: " << action.toString() << std::endl;
