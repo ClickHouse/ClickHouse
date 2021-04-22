@@ -16,7 +16,7 @@ struct TypePair
 
 
 template <typename T, bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-auto callOnBasicType(TypeIndex number, F && f)
+bool callOnBasicType(TypeIndex number, F && f)
 {
     if constexpr (_int)
     {
@@ -84,7 +84,7 @@ auto callOnBasicType(TypeIndex number, F && f)
 
 /// Unroll template using TypeIndex
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
-inline auto callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
+inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
 {
     if constexpr (_int)
     {
@@ -208,14 +208,14 @@ bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... args)
 }
 
 template <typename F>
-static auto callOnTwoTypeIndexes(TypeIndex left_type, TypeIndex right_type, F && func)
+static bool callOnTwoTypeIndexes(TypeIndex left_type, TypeIndex right_type, F && func)
 {
     return callOnIndexAndDataType<void>(left_type, [&](const auto & left_types) -> bool
     {
         using LeftTypes = std::decay_t<decltype(left_types)>;
         using LeftType = typename LeftTypes::LeftType;
 
-        return callOnIndexAndDataType<void>(right_type, [&](const auto & right_types)
+        return callOnIndexAndDataType<void>(right_type, [&](const auto & right_types) -> bool
         {
             using RightTypes = std::decay_t<decltype(right_types)>;
             using RightType = typename RightTypes::LeftType;
