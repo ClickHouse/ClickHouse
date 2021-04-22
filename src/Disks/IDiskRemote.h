@@ -48,16 +48,6 @@ public:
 
     void createFile(const String & path) override;
 
-    void removeFile(const String & path) override { removeSharedFile(path, false); }
-
-    void removeSharedFile(const String & path, bool keep_in_remote_fs) override;
-
-    void removeSharedRecursive(const String & path, bool) override;
-
-    void removeFileIfExists(const String & path) override;
-
-    void removeRecursive(const String & path) override;
-
     size_t getFileSize(const String & path) const override;
 
     void moveFile(const String & from_path, const String & to_path) override;
@@ -90,13 +80,7 @@ public:
 
     ReservationPtr reserve(UInt64 bytes) override;
 
-    virtual void removeFromRemoteFS(const Metadata & /* metadata */) {}
-
 protected:
-    void removeMetaRecursive(const String & path, bool keep_in_remote_fs);
-
-    void removeMeta(const String & path, bool keep_in_remote_fs);
-
     const String disk_name;
     const String remote_fs_root_path;
     const String metadata_path;
