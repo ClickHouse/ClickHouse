@@ -596,8 +596,8 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
 }
 
 static LLVMFunction::CompileDAG getCompilableDAG(
-    const ActionsDAG::Node * root,
-    ActionsDAG::NodeRawConstPtrs & children,
+    ActionsDAG::Node * root,
+    std::vector<ActionsDAG::Node *> & children,
     const std::unordered_set<const ActionsDAG::Node *> & used_in_result)
 {
     LLVMFunction::CompileDAG dag;
@@ -605,7 +605,7 @@ static LLVMFunction::CompileDAG getCompilableDAG(
     std::unordered_map<const ActionsDAG::Node *, size_t> positions;
     struct Frame
     {
-        const ActionsDAG::Node * node;
+        ActionsDAG::Node * node;
         size_t next_child_to_visit = 0;
     };
 
@@ -621,7 +621,7 @@ static LLVMFunction::CompileDAG getCompilableDAG(
 
         while (is_compilable_function && frame.next_child_to_visit < frame.node->children.size())
         {
-            const auto * child = frame.node->children[frame.next_child_to_visit];
+            auto * child = frame.node->children[frame.next_child_to_visit];
 
             if (positions.count(child))
                 ++frame.next_child_to_visit;
@@ -743,7 +743,8 @@ UInt128 LLVMFunction::CompileDAG::hash() const
 
 static FunctionBasePtr compile(
     const LLVMFunction::CompileDAG & dag,
-    size_t min_count_to_compile_expression)
+    size_t min_count_to_compile_expression,
+    const std::shared_ptr<CompiledExpressionCache> & compilation_cache)
 {
     static std::unordered_map<UInt128, UInt32, UInt128Hash> counter;
     static std::mutex mutex;
@@ -768,7 +769,7 @@ static FunctionBasePtr compile(
     }
 
     FunctionBasePtr fn;
-    if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+    if (compilation_cache)
     {
         std::tie(fn, std::ignore) = compilation_cache->getOrSet(hash_key, [&dag] ()
         {
@@ -789,7 +790,7 @@ static FunctionBasePtr compile(
     return fn;
 }
 
-void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
+void ActionsDAG::compileFunctions()
 {
     struct Data
     {
@@ -814,7 +815,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
     struct Frame
     {
-        const Node * node;
+        Node * node;
         size_t next_child_to_visit = 0;
     };
 
@@ -833,7 +834,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
             while (frame.next_child_to_visit < frame.node->children.size())
             {
-                const auto * child = frame.node->children[frame.next_child_to_visit];
+                auto * child = frame.node->children[frame.next_child_to_visit];
 
                 if (visited.count(child))
                     ++frame.next_child_to_visit;
@@ -863,17 +864,17 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
                     if (!used_in_result.count(frame.node) && cur.all_parents_compilable)
                         should_compile = false;
 
-                    /// There is no reason to inline single node.
+                    /// There is not reason to inline single node.
                     /// The result of compiling function in isolation is pretty much the same as its `execute` method.
                     if (cur.num_inlineable_nodes <= 1)
                         should_compile = false;
 
                     if (should_compile)
                     {
-                        NodeRawConstPtrs new_children;
+                        std::vector<Node *> new_children;
                         auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
 
-                        if (auto fn = compile(dag, min_count_to_compile_expression))
+                        if (auto fn = compile(dag, settings.min_count_to_compile_expression, compilation_cache))
                         {
                             /// Replace current node to compilable function.
 
@@ -882,13 +883,12 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
                             for (const auto * child : new_children)
                                 arguments.emplace_back(child->column, child->result_type, child->result_name);
 
-                            auto * frame_node = const_cast<Node *>(frame.node);
-                            frame_node->type = ActionsDAG::ActionType::FUNCTION;
-                            frame_node->function_base = fn;
-                            frame_node->function = fn->prepare(arguments);
-                            frame_node->children.swap(new_children);
-                            frame_node->is_function_compiled = true;
-                            frame_node->column = nullptr; /// Just in case.
+                            frame.node->type = ActionsDAG::ActionType::FUNCTION;
+                            frame.node->function_base = fn;
+                            frame.node->function = fn->prepare(arguments);
+                            frame.node->children.swap(new_children);
+                            frame.node->is_function_compiled = true;
+                            frame.node->column = nullptr; /// Just in case.
                         }
                     }
                 }
@@ -898,25 +898,6 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
             }
         }
     }
-}
-
-CompiledExpressionCacheFactory & CompiledExpressionCacheFactory::instance()
-{
-    static CompiledExpressionCacheFactory factory;
-    return factory;
-}
-
-void CompiledExpressionCacheFactory::init(size_t cache_size)
-{
-    if (cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompiledExpressionCache was already initialized");
-
-    cache = std::make_unique<CompiledExpressionCache>(cache_size);
-}
-
-CompiledExpressionCache * CompiledExpressionCacheFactory::tryGetCache()
-{
-    return cache.get();
 }
 
 }

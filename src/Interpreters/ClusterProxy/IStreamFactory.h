@@ -8,6 +8,7 @@ namespace DB
 {
 
 struct Settings;
+class Context;
 class Cluster;
 class Throttler;
 struct SelectQueryInfo;
@@ -26,12 +27,12 @@ namespace ClusterProxy
 class IStreamFactory
 {
 public:
-    virtual ~IStreamFactory() = default;
+    virtual ~IStreamFactory() {}
 
     virtual void createForShard(
             const Cluster::ShardInfo & shard_info,
-            const ASTPtr & query_ast,
-            ContextPtr context, const ThrottlerPtr & throttler,
+            const String & query, const ASTPtr & query_ast,
+            const std::shared_ptr<Context> & context_ptr, const ThrottlerPtr & throttler,
             const SelectQueryInfo & query_info,
             std::vector<QueryPlanPtr> & res,
             Pipes & remote_pipes,

@@ -221,7 +221,7 @@ It also makes sense to specify a local table in the `GLOBAL IN` clause, in case 
 When max_parallel_replicas is greater than 1, distributed queries are further transformed. For example, the following:
 
 ```sql
-SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SEELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
 SETTINGS max_parallel_replicas=3
 ```
 

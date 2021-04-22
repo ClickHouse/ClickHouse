@@ -40,7 +40,7 @@ MergingAggregatedStep::MergingAggregatedStep(
         output_stream->distinct_columns.insert(params->params.intermediate_header.getByPosition(key).name);
 }
 
-void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
 {
     if (!memory_efficient_aggregation)
     {

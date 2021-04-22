@@ -24,7 +24,6 @@ public:
         DROP_DNS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
-        DROP_MMAP_CACHE,
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
 #endif
@@ -36,8 +35,6 @@ public:
         SYNC_REPLICA,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
-        RELOAD_MODEL,
-        RELOAD_MODELS,
         RELOAD_EMBEDDED_DICTIONARIES,
         RELOAD_CONFIG,
         RELOAD_SYMBOLS,
@@ -65,7 +62,6 @@ public:
     Type type = Type::UNKNOWN;
 
     String target_dictionary;
-    String target_model;
     String database;
     String table;
     String replica;
