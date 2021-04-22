@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import logging
-import subprocess
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -13,9 +12,6 @@ import docker
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 
-
-COPYING_FAIL_PROBABILITY = 0.33
-MOVING_FAIL_PROBABILITY = 0.1
 cluster = None
 
 
@@ -25,7 +21,7 @@ def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
 
-        for name in ["first", "second", "third"]:
+        for name in ["first", "second"]:
             cluster.add_instance(name,
                 main_configs=["configs_two_nodes/conf.d/clusters.xml", "configs_two_nodes/conf.d/ddl.xml"], user_configs=["configs_two_nodes/users.xml"],
                 with_zookeeper=True, external_data_path=os.path.join(CURRENT_TEST_DIR, "./data"))
@@ -34,7 +30,6 @@ def started_cluster():
         yield cluster
 
     finally:
-        pass
         cluster.shutdown()
 
 # Will copy table from `first` node to `second`
@@ -78,7 +73,7 @@ class TaskWithDifferentSchema:
         first.query("""INSERT INTO db_different_schema.source SELECT * FROM generateRandom(
             'Column1 String, Column2 UInt32, Column3 Date, Column4 DateTime, Column5 UInt16,
             Column6 String, Column7 String, Column8 String, Column9 String, Column10 String,
-            Column11 String, Column12 Decimal(3, 1), Column13 DateTime, Column14 UInt16', 1, 10, 2) LIMIT 100;""")
+            Column11 String, Column12 Decimal(3, 1), Column13 DateTime, Column14 UInt16', 1, 10, 2) LIMIT 50;""")
 
         second = cluster.instances["second"]
         second.query("CREATE DATABASE db_different_schema;")
@@ -154,7 +149,7 @@ class TaskTTL:
 
         first.query("""INSERT INTO db_ttl_columns.source SELECT * FROM generateRandom(
             'Column1 String, Column2 UInt32, Column3 Date, Column4 DateTime, Column5 UInt16,
-            Column6 String, Column7 Decimal(3, 1), Column8 Tuple(Float64, Float64)', 1, 10, 2) LIMIT 100;""")
+            Column6 String, Column7 Decimal(3, 1), Column8 Tuple(Float64, Float64)', 1, 10, 2) LIMIT 50;""")
 
         second = cluster.instances["second"]
         second.query("CREATE DATABASE db_ttl_columns;")
@@ -238,14 +233,12 @@ def execute_task(task, cmd_options):
         zk.delete(task.zk_task_path, recursive=True)
 
 
-
-
 # Tests
-@pytest.mark.timeout(1200)
+@pytest.mark.timeout(600)
 def test_different_schema(started_cluster):
     execute_task(TaskWithDifferentSchema(started_cluster), [])
 
 
-
+@pytest.mark.timeout(600)
 def test_ttl_columns(started_cluster):
     execute_task(TaskTTL(started_cluster), [])
