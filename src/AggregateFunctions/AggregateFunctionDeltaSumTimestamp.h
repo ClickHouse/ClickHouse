@@ -129,7 +129,7 @@ public:
         }
         else
         {
-            // If none of those conditions matched, it means both states we are merging have all 
+            // If none of those conditions matched, it means both states we are merging have all
             // same timestamps. We have to pick either the smaller or larger value so that the
             // result is deterministic.
 
