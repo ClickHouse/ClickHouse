@@ -29,7 +29,7 @@ static constexpr auto threshold = 2;
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
@@ -338,6 +338,10 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
         /// disallow GLOBAL IN, GLOBAL NOT IN
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
+            return true;
+
+        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
+        if ("indexHint" == function_ptr->name)
             return true;
     }
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))

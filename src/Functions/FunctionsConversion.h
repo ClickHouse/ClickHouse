@@ -1290,7 +1290,7 @@ public:
     static constexpr bool to_string_or_fixed_string = std::is_same_v<ToDataType, DataTypeFixedString> ||
                                                       std::is_same_v<ToDataType, DataTypeString>;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvert>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvert>(); }
     static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
 
     String getName() const override
@@ -1586,7 +1586,7 @@ public:
 
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertFromString>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvertFromString>(); }
     static FunctionPtr create() { return std::make_shared<FunctionConvertFromString>(); }
 
     String getName() const override
@@ -2275,7 +2275,7 @@ private:
     std::optional<Diagnostic> diagnostic;
     CastType cast_type;
 
-    WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type) const
+    static WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type)
     {
         auto function_adaptor = FunctionOverloadResolverAdaptor(std::make_unique<DefaultOverloadResolver>(function))
                                     .build({ColumnWithTypeAndName{nullptr, from_type, ""}});
@@ -2367,7 +2367,7 @@ private:
         };
     }
 
-    WrapperType createStringWrapper(const DataTypePtr & from_type) const
+    static WrapperType createStringWrapper(const DataTypePtr & from_type)
     {
         FunctionPtr function = FunctionToString::create();
         return createFunctionAdaptor(function, from_type);
@@ -2496,7 +2496,7 @@ private:
         }
     }
 
-    WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray * to_type) const
+    WrapperType createArrayWrapper(const DataTypePtr & from_type_untyped, const DataTypeArray & to_type) const
     {
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
@@ -2507,24 +2507,23 @@ private:
             };
         }
 
-        DataTypePtr from_nested_type;
-        DataTypePtr to_nested_type;
         const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
-
-        /// get the most nested type
-        if (from_type && to_type)
+        if (!from_type)
         {
-            from_nested_type = from_type->getNestedType();
-            to_nested_type = to_type->getNestedType();
-
-            from_type = checkAndGetDataType<DataTypeArray>(from_nested_type.get());
-            to_type = checkAndGetDataType<DataTypeArray>(to_nested_type.get());
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "CAST AS Array can only be perforamed between same-dimensional Array or String types");
         }
 
-        /// both from_type and to_type should be nullptr now is array types had same dimensions
-        if ((from_type == nullptr) != (to_type == nullptr))
-            throw Exception{"CAST AS Array can only be performed between same-dimensional array types or from String",
-                ErrorCodes::TYPE_MISMATCH};
+        DataTypePtr from_nested_type = from_type->getNestedType();
+
+        /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
+        bool from_empty_array = isNothing(from_nested_type);
+
+        if (from_type->getNumberOfDimensions() != to_type.getNumberOfDimensions() && !from_empty_array)
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "CAST AS Array can only be perforamed between same-dimensional array types");
+
+        const DataTypePtr & to_nested_type = to_type.getNestedType();
 
         /// Prepare nested type conversion
         const auto nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type);
@@ -2641,7 +2640,7 @@ private:
     WrapperType createMapToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
         {
             const auto * col = arguments.front().column.get();
             const auto & column_map = typeid_cast<const ColumnMap &>(*col);
@@ -2651,7 +2650,7 @@ private:
             for (size_t i = 0; i < 2; ++i)
             {
                 ColumnsWithTypeAndName element = {{nested_data.getColumnPtr(i), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
+                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, (element[0].column)->size());
             }
 
             return ColumnMap::create(converted_columns[0], converted_columns[1], column_map.getNestedColumn().getOffsetsPtr());
@@ -2662,7 +2661,7 @@ private:
     WrapperType createArrayToMapWrrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const
     {
         return [element_wrappers = getElementWrappers(from_kv_types, to_kv_types), from_kv_types, to_kv_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
+            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
         {
             const auto * col = arguments.front().column.get();
             const auto & column_array = typeid_cast<const ColumnArray &>(*col);
@@ -2672,7 +2671,7 @@ private:
             for (size_t i = 0; i < 2; ++i)
             {
                 ColumnsWithTypeAndName element = {{nested_data.getColumnPtr(i), from_kv_types[i], ""}};
-                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, input_rows_count);
+                converted_columns[i] = element_wrappers[i](element, to_kv_types[i], nullable_source, (element[0].column)->size());
             }
 
             return ColumnMap::create(converted_columns[0], converted_columns[1], column_array.getOffsetsPtr());
@@ -3090,14 +3089,12 @@ private:
                 return createStringWrapper(from_type);
             case TypeIndex::FixedString:
                 return createFixedStringWrapper(from_type, checkAndGetDataType<DataTypeFixedString>(to_type.get())->getN());
-
             case TypeIndex::Array:
-                return createArrayWrapper(from_type, checkAndGetDataType<DataTypeArray>(to_type.get()));
+                return createArrayWrapper(from_type, static_cast<const DataTypeArray &>(*to_type));
             case TypeIndex::Tuple:
                 return createTupleWrapper(from_type, checkAndGetDataType<DataTypeTuple>(to_type.get()));
             case TypeIndex::Map:
                 return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
-
             case TypeIndex::AggregateFunction:
                 return createAggregateFunctionWrapper(from_type, checkAndGetDataType<DataTypeAggregateFunction>(to_type.get()));
             default:
@@ -3125,43 +3122,43 @@ public:
 
     static MonotonicityForRange getMonotonicityInformation(const DataTypePtr & from_type, const IDataType * to_type)
     {
-        if (const auto type = checkAndGetDataType<DataTypeUInt8>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeUInt8>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeUInt16>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeUInt16>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeUInt32>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeUInt32>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeUInt64>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeUInt64>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeUInt256>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeUInt256>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeInt8>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeInt8>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeInt16>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeInt16>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeInt32>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeInt32>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeInt64>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeInt64>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeInt128>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeInt128>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeInt256>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeInt256>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeFloat32>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeFloat32>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeFloat64>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeFloat64>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeDate>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeDate>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeDateTime>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeDateTime>(to_type))
             return monotonicityForType(type);
-        if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
+        if (const auto *const type = checkAndGetDataType<DataTypeString>(to_type))
             return monotonicityForType(type);
         if (isEnum(from_type))
         {
-            if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
+            if (const auto *const type = checkAndGetDataType<DataTypeEnum8>(to_type))
                 return monotonicityForType(type);
-            if (const auto type = checkAndGetDataType<DataTypeEnum16>(to_type))
+            if (const auto *const type = checkAndGetDataType<DataTypeEnum16>(to_type))
                 return monotonicityForType(type);
         }
         /// other types like Null, FixedString, Array and Tuple have no monotonicity defined
@@ -3184,9 +3181,9 @@ public:
         ? accurate_cast_name
         : (cast_type == CastType::accurateOrNull ? accurate_cast_or_null_name : cast_name);
 
-    static FunctionOverloadResolverImplPtr create(const Context & context)
+    static FunctionOverloadResolverImplPtr create(ContextPtr context)
     {
-        return createImpl(context.getSettingsRef().cast_keep_nullable);
+        return createImpl(context->getSettingsRef().cast_keep_nullable);
     }
 
     static FunctionOverloadResolverImplPtr createImpl(bool keep_nullable, std::optional<Diagnostic> diagnostic = {})

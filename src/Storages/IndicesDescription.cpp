@@ -67,7 +67,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     return *this;
 }
 
-IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, const Context & context)
+IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
 {
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
@@ -118,7 +118,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     return result;
 }
 
-void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, const Context & context)
+void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
 {
     *this = getIndexFromAST(definition_ast, new_columns, context);
 }
@@ -144,7 +144,7 @@ String IndicesDescription::toString() const
 }
 
 
-IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDescription & columns, const Context & context)
+IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context)
 {
     IndicesDescription result;
     if (str.empty())
@@ -160,7 +160,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
 }
 
 
-ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const ColumnsDescription & columns, const Context & context) const
+ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const
 {
     ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & index : *this)

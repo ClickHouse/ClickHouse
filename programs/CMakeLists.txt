@@ -33,7 +33,14 @@ option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data t
     ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/odbc-bridge/
-option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
+if (ENABLE_ODBC)
+    option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
+        ${ENABLE_CLICKHOUSE_ALL})
+else ()
+    option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" OFF)
+endif ()
+
+option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source"
     ${ENABLE_CLICKHOUSE_ALL})
 
 # https://presentations.clickhouse.tech/matemarketing_2020/
@@ -107,6 +114,12 @@ if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     message(STATUS "ODBC bridge mode: ON")
 else()
     message(STATUS "ODBC bridge mode: OFF")
+endif()
+
+if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
+    message(STATUS "Library bridge mode: ON")
+else()
+    message(STATUS "Library bridge mode: OFF")
 endif()
 
 if (ENABLE_CLICKHOUSE_INSTALL)
@@ -194,6 +207,10 @@ if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
 endif ()
 
+if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
+    add_subdirectory (library-bridge)
+endif ()
+
 if (CLICKHOUSE_ONE_SHARED)
     add_library(clickhouse-lib SHARED ${CLICKHOUSE_SERVER_SOURCES} ${CLICKHOUSE_CLIENT_SOURCES} ${CLICKHOUSE_LOCAL_SOURCES} ${CLICKHOUSE_BENCHMARK_SOURCES} ${CLICKHOUSE_COPIER_SOURCES} ${CLICKHOUSE_EXTRACT_FROM_CONFIG_SOURCES} ${CLICKHOUSE_COMPRESSOR_SOURCES} ${CLICKHOUSE_FORMAT_SOURCES} ${CLICKHOUSE_OBFUSCATOR_SOURCES} ${CLICKHOUSE_GIT_IMPORT_SOURCES} ${CLICKHOUSE_ODBC_BRIDGE_SOURCES})
     target_link_libraries(clickhouse-lib ${CLICKHOUSE_SERVER_LINK} ${CLICKHOUSE_CLIENT_LINK} ${CLICKHOUSE_LOCAL_LINK} ${CLICKHOUSE_BENCHMARK_LINK} ${CLICKHOUSE_COPIER_LINK} ${CLICKHOUSE_EXTRACT_FROM_CONFIG_LINK} ${CLICKHOUSE_COMPRESSOR_LINK} ${CLICKHOUSE_FORMAT_LINK} ${CLICKHOUSE_OBFUSCATOR_LINK} ${CLICKHOUSE_GIT_IMPORT_LINK} ${CLICKHOUSE_ODBC_BRIDGE_LINK})
@@ -207,6 +224,10 @@ if (CLICKHOUSE_SPLIT_BINARY)
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
+    endif ()
+
+    if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
+        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-library-bridge)
     endif ()
 
     set_target_properties(${CLICKHOUSE_ALL_TARGETS} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
