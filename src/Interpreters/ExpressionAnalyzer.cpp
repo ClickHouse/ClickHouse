@@ -758,7 +758,8 @@ static bool allowDictJoin(StoragePtr joined_storage, ContextPtr context, String 
     if (!joined_storage->isDictionary())
         return false;
 
-    dict_name = joined_storage->getStorageID().getInternalDictionaryName();
+    StorageDictionary & storage_dictionary = static_cast<StorageDictionary &>(*joined_storage);
+    dict_name = storage_dictionary.getDictionaryName();
     auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
     if (!dictionary)
         return false;

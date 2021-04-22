@@ -87,10 +87,6 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 
 BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
-    /// TODO: Throw dictionary exception
-    /// TODO: Check permamently detach dictionary
-    /// TODO: Check detach dictionary for replicated database
-
     /// NOTE: it does not contain UUID, we will resolve it with locked DDLGuard
     auto table_id = StorageID(query);
     if (query.temporary || table_id.database_name.empty())
@@ -129,8 +125,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
                                        getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY &&
                                        !is_drop_or_detach_database;
 
-        /// TODO: Add comments for dictionary
-
         AccessFlags drop_storage;
 
         if (table->isView())
@@ -158,8 +152,13 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         {
             getContext()->checkAccess(drop_storage, table_id);
 
-            if (!table->isDictionary() || !query.is_dictionary)
-                table->checkTableCanBeDetached();
+            if (table->isDictionary())
+            {
+                if (!query.is_dictionary)
+                    table->checkTableCanBeDropped();
+            }
+            else
+                table->checkTableCanBeDropped();
 
             table->shutdown();
             TableExclusiveLockHolder table_lock;
@@ -185,8 +184,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
 
             getContext()->checkAccess(AccessType::TRUNCATE, table_id);
 
-            if (!table->isDictionary() || !query.is_dictionary)
-                table->checkTableCanBeDropped();
+            table->checkTableCanBeDropped();
 
             auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
             auto metadata_snapshot = table->getInMemoryMetadataPtr();
@@ -197,7 +195,12 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         {
             getContext()->checkAccess(drop_storage, table_id);
 
-            if (!table->isDictionary() || !query.is_dictionary)
+            if (table->isDictionary())
+            {
+                if (!query.is_dictionary)
+                    table->checkTableCanBeDropped();
+            }
+            else
                 table->checkTableCanBeDropped();
 
             table->shutdown();

@@ -12,7 +12,6 @@
 #include <Processors/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -130,7 +129,7 @@ StorageDictionary::StorageDictionary(
     ContextPtr context_)
     : StorageDictionary(
         table_id,
-        table_id.getInternalDictionaryName(),
+        table_id.getFullTableName(),
         context_->getExternalDictionariesLoader().getDictionaryStructure(*dictionary_configuration),
         Location::SameDatabaseAndNameAsDictionary,
         context_)
@@ -151,9 +150,13 @@ StorageDictionary::~StorageDictionary()
 void StorageDictionary::checkTableCanBeDropped() const
 {
     if (location == Location::SameDatabaseAndNameAsDictionary)
-        throw Exception("Cannot drop/detach dictionary " + backQuote(dictionary_name) + " as table, use DROP DICTIONARY or DETACH DICTIONARY query instead", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+        throw Exception(ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE,
+            "Cannot drop/detach dictionary {} as table, use DROP DICTIONARY or DETACH DICTIONARY query instead",
+            dictionary_name);
     if (location == Location::DictionaryDatabase)
-        throw Exception("Cannot drop/detach table " + getStorageID().getFullTableName() + " from a database with DICTIONARY engine", ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE);
+        throw Exception(ErrorCodes::CANNOT_DETACH_DICTIONARY_AS_TABLE,
+            "Cannot drop/detach table from a database with DICTIONARY engine",
+            dictionary_name);
 }
 
 void StorageDictionary::checkTableCanBeDetached() const
