@@ -432,6 +432,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             // ugly but works
             metadata_snapshot->selected_projection = query_info.aggregate_projection;
 
+        // TODO In expression analyzer we need to check if storage mayBenefitFromIndexForIn. In case
+        // we use some projection to execute the query, we need to provide what projection we are
+        // going to use here.
+        // It analyzes aggregation
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, context, metadata_snapshot,
                 NameSet(required_result_column_names.begin(), required_result_column_names.end()),

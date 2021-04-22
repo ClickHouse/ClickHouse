@@ -39,6 +39,7 @@ protected:
 
 private:
     Block projection;
+    // Hold projection's parent parts duration execution
     MergeTreeData::DataPartsVector parent_parts;
 };
 
