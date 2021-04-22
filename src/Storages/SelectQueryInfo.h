@@ -113,6 +113,8 @@ struct InputOrderInfo
     bool operator !=(const InputOrderInfo & other) const { return !(*this == other); }
 };
 
+class IMergeTreeDataPart;
+
 /** Query along with some additional data,
   *  that can be used during query processing
   *  inside storage engines.
@@ -144,10 +146,19 @@ struct SelectQueryInfo
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
+    /// If not null, it means we choose an aggregate projection to execute current query.
     const ProjectionDescription * aggregate_projection{};
     ProjectionKeyActions key_actions;
     Names projection_names;
     Block projection_block;
+
+    /// Store to-be-scanned data parts if some aggregate projection is used
+    using DataPart = IMergeTreeDataPart;
+    using DataPartPtr = std::shared_ptr<const DataPart>;
+    using DataPartsVector = std::vector<DataPartPtr>;
+    DataPartsVector projection_parts;
+    DataPartsVector parent_parts;
+    DataPartsVector normal_parts;
 };
 
 }
