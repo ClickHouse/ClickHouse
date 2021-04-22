@@ -181,7 +181,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         }
     }
 
-    /// Some functions like ignore() or getTypeName() always return constant result even if arguments are not constant.
+    /// Some functions like ignore(), indexHint() or getTypeName() always return constant result even if arguments are not constant.
     /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
     /// unnecessary materialization.
     if (!node.column && node.function_base->isSuitableForConstantFolding())
