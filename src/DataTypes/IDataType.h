@@ -590,7 +590,8 @@ inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_ty
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
 inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
-inline bool isMap(const DataTypePtr & data_type) {return WhichDataType(data_type).isMap(); }
+inline bool isMap(const DataTypePtr & data_type) { return WhichDataType(data_type).isMap(); }
+inline bool isNothing(const DataTypePtr & data_type) { return WhichDataType(data_type).isNothing(); }
 
 template <typename T>
 inline bool isUInt8(const T & data_type)
