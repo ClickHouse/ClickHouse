@@ -111,22 +111,23 @@ public:
     void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override
     {
         executeColumnIfNeeded(arguments[0]);
-        IColumn::Filter mask = getMaskFromColumn(arguments[0].column);
+        IColumn::Filter current_mask;
+        IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);
+
         Field default_value = 0;
         size_t i = 1;
         while (i < arguments.size())
         {
+            getMaskFromColumn(arguments[i - 1].column, current_mask);
+            disjunctionMasks(mask_disjunctions, current_mask);
             if (isColumnFunction(*arguments[i].column))
-            {
-                IColumn::Filter cond_mask = getMaskFromColumn(arguments[i - 1].column);
-                maskedExecute(arguments[i], cond_mask);
-            }
+                maskedExecute(arguments[i], current_mask);
 
             ++i;
+
             if (isColumnFunction(*arguments[i].column))
-                maskedExecute(arguments[i], reverseMask(mask), &default_value);
-            if (i != arguments.size() - 1)
-                disjunctionMasks(mask, getMaskFromColumn(arguments[i].column));
+                maskedExecute(arguments[i], mask_disjunctions, true, &default_value);
+
             ++i;
         }
     }

@@ -234,7 +234,7 @@ public:
       *  otherwise (i.e. < 0), makes reserve() using size of source column.
       */
     using Filter = PaddedPODArray<UInt8>;
-    virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
+    virtual Ptr filter(const Filter & filt, ssize_t result_size_hint, bool reverse = false) const = 0;
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.

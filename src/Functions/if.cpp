@@ -925,9 +925,10 @@ public:
         executeColumnIfNeeded(arguments[0]);
         if (isColumnFunction(*arguments[1].column) || isColumnFunction(*arguments[2].column))
         {
-            IColumn::Filter mask = getMaskFromColumn(arguments[0].column);
+            IColumn::Filter mask;
+            getMaskFromColumn(arguments[0].column, mask);
             maskedExecute(arguments[1], mask);
-            maskedExecute(arguments[2], reverseMask(mask));
+            maskedExecute(arguments[2], mask, /*reverse=*/true);
         }
     }
 

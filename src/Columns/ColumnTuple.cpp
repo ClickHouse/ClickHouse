@@ -221,13 +221,13 @@ void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t leng
             start, length);
 }
 
-ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint, bool reverse) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
-        new_columns[i] = columns[i]->filter(filt, result_size_hint);
+        new_columns[i] = columns[i]->filter(filt, result_size_hint, reverse);
 
     return ColumnTuple::create(new_columns);
 }

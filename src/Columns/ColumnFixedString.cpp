@@ -266,7 +266,7 @@ void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_
     memcpy(chars.data() + old_size, &src_concrete.chars[start * n], length * n);
 }
 
-ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse) const
 {
     size_t col_size = size();
     if (col_size != filt.size())
@@ -296,7 +296,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     while (filt_pos < filt_end_sse)
     {
         UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-        mask = ~mask;
+        mask = reverse ? mask : ~mask;
 
         if (0 == mask)
         {
@@ -313,7 +313,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
             size_t res_chars_size = res->chars.size();
             for (size_t i = 0; i < SIMD_BYTES; ++i)
             {
-                if (filt_pos[i])
+                if (reverse ^ filt_pos[i])
                 {
                     res->chars.resize(res_chars_size + n);
                     memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos, n);
@@ -330,7 +330,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     size_t res_chars_size = res->chars.size();
     while (filt_pos < filt_end)
     {
-        if (*filt_pos)
+        if (reverse ^ *filt_pos)
         {
             res->chars.resize(res_chars_size + n);
             memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos, n);

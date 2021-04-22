@@ -519,14 +519,14 @@ void FunctionAnyArityLogical<Impl, Name>::executeShortCircuitArguments(ColumnsWi
     bool reverse = Name::name != NameAnd::name;
     UInt8 null_value = Name::name == NameAnd::name ? 1 : 0;
     executeColumnIfNeeded(arguments[0]);
+    IColumn::Filter mask;
+    getMaskFromColumn(arguments[0].column, mask, reverse, nullptr, null_value);
 
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         if (isColumnFunction(*arguments[i].column))
-        {
-            IColumn::Filter mask = getMaskFromColumn(arguments[i - 1].column, reverse, nullptr, null_value);
-            maskedExecute(arguments[i], mask, &default_value);
-        }
+            maskedExecute(arguments[i], mask, false, &default_value);
+        getMaskFromColumn(arguments[i].column, mask, reverse, nullptr, null_value);
     }
 }
 

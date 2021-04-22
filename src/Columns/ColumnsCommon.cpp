@@ -192,7 +192,7 @@ namespace
     void filterArraysImplGeneric(
         const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
         PaddedPODArray<T> & res_elems, IColumn::Offsets * res_offsets,
-        const IColumn::Filter & filt, ssize_t result_size_hint)
+        const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse)
     {
         const size_t size = src_offsets.size();
         if (size != filt.size())
@@ -239,7 +239,7 @@ namespace
             UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
                 _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
                 zero_vec));
-            mask = ~mask;
+            mask = reverse ? mask : ~mask;
 
             if (mask == 0)
             {
@@ -263,7 +263,7 @@ namespace
             else
             {
                 for (size_t i = 0; i < SIMD_BYTES; ++i)
-                    if (filt_pos[i])
+                    if (reverse ^ filt_pos[i])
                         copy_array(offsets_pos + i);
             }
 
@@ -274,7 +274,7 @@ namespace
 
         while (filt_pos < filt_end)
         {
-            if (*filt_pos)
+            if (reverse ^ *filt_pos)
                 copy_array(offsets_pos);
 
             ++filt_pos;
@@ -288,18 +288,18 @@ template <typename T>
 void filterArraysImpl(
     const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
     PaddedPODArray<T> & res_elems, IColumn::Offsets & res_offsets,
-    const IColumn::Filter & filt, ssize_t result_size_hint)
+    const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse)
 {
-    return filterArraysImplGeneric<T, ResultOffsetsBuilder>(src_elems, src_offsets, res_elems, &res_offsets, filt, result_size_hint);
+    return filterArraysImplGeneric<T, ResultOffsetsBuilder>(src_elems, src_offsets, res_elems, &res_offsets, filt, result_size_hint, reverse);
 }
 
 template <typename T>
 void filterArraysImplOnlyData(
     const PaddedPODArray<T> & src_elems, const IColumn::Offsets & src_offsets,
     PaddedPODArray<T> & res_elems,
-    const IColumn::Filter & filt, ssize_t result_size_hint)
+    const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse)
 {
-    return filterArraysImplGeneric<T, NoResultOffsetsBuilder>(src_elems, src_offsets, res_elems, nullptr, filt, result_size_hint);
+    return filterArraysImplGeneric<T, NoResultOffsetsBuilder>(src_elems, src_offsets, res_elems, nullptr, filt, result_size_hint, reverse);
 }
 
 
@@ -308,11 +308,11 @@ void filterArraysImplOnlyData(
 template void filterArraysImpl<TYPE>( \
     const PaddedPODArray<TYPE> &, const IColumn::Offsets &, \
     PaddedPODArray<TYPE> &, IColumn::Offsets &, \
-    const IColumn::Filter &, ssize_t); \
+    const IColumn::Filter &, ssize_t, bool); \
 template void filterArraysImplOnlyData<TYPE>( \
     const PaddedPODArray<TYPE> &, const IColumn::Offsets &, \
     PaddedPODArray<TYPE> &, \
-    const IColumn::Filter &, ssize_t);
+    const IColumn::Filter &, ssize_t, bool);
 
 INSTANTIATE(UInt8)
 INSTANTIATE(UInt16)

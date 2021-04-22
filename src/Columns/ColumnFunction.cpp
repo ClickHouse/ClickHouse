@@ -54,7 +54,7 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture);
 }
 
-ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, bool reverse) const
 {
     if (size_ != filt.size())
         throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column ("
@@ -62,11 +62,15 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
-        column.column = column.column->filter(filt, result_size_hint);
+        column.column = column.column->filter(filt, result_size_hint, reverse);
 
     size_t filtered_size = 0;
     if (capture.empty())
+    {
         filtered_size = countBytesInFilter(filt);
+        if (reverse)
+            filtered_size = filt.size() - filtered_size;
+    }
     else
         filtered_size = capture.front().column->size();
 
@@ -203,6 +207,8 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool reduce_arguments) const
         columns.reserve(captured_columns.size());
         for (const auto & col : captured_columns)
         {
+            LOG_DEBUG(&Poco::Logger::get("ColumnFunction"), "Arg type: {}", col.type->getName());
+
             if (const auto * column_function = typeid_cast<const ColumnFunction *>(col.column.get()))
                 columns.push_back(column_function->reduce(true));
             else
