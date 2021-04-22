@@ -16,7 +16,7 @@ namespace DB
 RabbitMQBlockInputStream::RabbitMQBlockInputStream(
     StorageRabbitMQ & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    std::shared_ptr<Context> context_,
+    ContextPtr context_,
     const Names & columns,
     size_t max_block_size_,
     bool ack_in_suffix_)
@@ -91,7 +91,7 @@ Block RabbitMQBlockInputStream::readImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
     auto input_format = FormatFactory::instance().getInputFormat(
-            storage.getFormatName(), *buffer, non_virtual_header, *context, max_block_size);
+            storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size);
 
     InputPort port(input_format->getPort().getHeader(), input_format.get());
     connect(input_format->getPort(), port);

@@ -17,6 +17,16 @@
                     </main>
                 </volumes>
             </s3>
+            <hybrid>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                    </main>
+                    <external>
+                        <disk>s31</disk>
+                    </external>
+                </volumes>
+            </hybrid>
         </policies>
     </storage_configuration>
 

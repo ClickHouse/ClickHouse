@@ -648,7 +648,7 @@ void DiskS3::moveFile(const String & from_path, const String & to_path)
     if (send_metadata)
     {
         auto revision = ++revision_counter;
-        const DiskS3::ObjectMetadata object_metadata {
+        const ObjectMetadata object_metadata {
             {"from_path", from_path},
             {"to_path", to_path}
         };
@@ -671,7 +671,7 @@ void DiskS3::replaceFile(const String & from_path, const String & to_path)
         moveFile(from_path, to_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size, size_t, size_t, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, size_t buf_size, size_t, size_t, size_t, MMappedFileCache *) const
 {
     auto metadata = readMeta(path);
 
@@ -942,20 +942,32 @@ void DiskS3::startup()
 
     LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting up disk {}", name);
 
-    /// Find last revision.
+    if (readSchemaVersion(bucket, s3_root_path) < RESTORABLE_SCHEMA_VERSION)
+        migrateToRestorableSchema();
+
+    findLastRevision();
+
+    LOG_INFO(&Poco::Logger::get("DiskS3"), "Disk {} started up", name);
+}
+
+void DiskS3::findLastRevision()
+{
     UInt64 l = 0, r = LATEST_REVISION;
     while (l < r)
     {
         LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check revision in bounds {}-{}", l, r);
 
         auto revision = l + (r - l + 1) / 2;
+        if (revision == 0)
+            break;
+
         auto revision_str = revisionToString(revision);
 
         LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Check object with revision {}", revision);
 
         /// Check file or operation with such revision exists.
-        if (checkObjectExists(s3_root_path + "r" + revision_str)
-            || checkObjectExists(s3_root_path + "operations/r" + revision_str))
+        if (checkObjectExists(bucket, s3_root_path + "r" + revision_str)
+            || checkObjectExists(bucket, s3_root_path + "operations/r" + revision_str))
             l = revision;
         else
             r = revision - 1;
@@ -964,10 +976,127 @@ void DiskS3::startup()
     LOG_INFO(&Poco::Logger::get("DiskS3"), "Found last revision number {} for disk {}", revision_counter, name);
 }
 
-bool DiskS3::checkObjectExists(const String & prefix)
+int DiskS3::readSchemaVersion(const String & source_bucket, const String & source_path)
+{
+    int version = 0;
+    if (!checkObjectExists(source_bucket, source_path + SCHEMA_VERSION_OBJECT))
+        return version;
+
+    ReadBufferFromS3 buffer (client, source_bucket, source_path + SCHEMA_VERSION_OBJECT);
+    readIntText(version, buffer);
+
+    return version;
+}
+
+void DiskS3::saveSchemaVersion(const int & version)
+{
+    WriteBufferFromS3 buffer (client, bucket, s3_root_path + SCHEMA_VERSION_OBJECT, min_upload_part_size, max_single_part_upload_size);
+    writeIntText(version, buffer);
+    buffer.finalize();
+}
+
+void DiskS3::updateObjectMetadata(const String & key, const ObjectMetadata & metadata)
+{
+    Aws::S3::Model::CopyObjectRequest request;
+    request.SetCopySource(bucket + "/" + key);
+    request.SetBucket(bucket);
+    request.SetKey(key);
+    request.SetMetadata(metadata);
+    request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
+
+    auto outcome = client->CopyObject(request);
+    throwIfError(outcome);
+}
+
+void DiskS3::migrateFileToRestorableSchema(const String & path)
+{
+    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Migrate file {} to restorable schema", metadata_path + path);
+
+    auto meta = readMeta(path);
+
+    for (const auto & [key, _] : meta.s3_objects)
+    {
+        ObjectMetadata metadata {
+            {"path", path}
+        };
+        updateObjectMetadata(s3_root_path + key, metadata);
+    }
+}
+
+void DiskS3::migrateToRestorableSchemaRecursive(const String & path, Futures & results)
+{
+    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
+
+    LOG_DEBUG(&Poco::Logger::get("DiskS3"), "Migrate directory {} to restorable schema", metadata_path + path);
+
+    bool dir_contains_only_files = true;
+    for (auto it = iterateDirectory(path); it->isValid(); it->next())
+        if (isDirectory(it->path()))
+        {
+            dir_contains_only_files = false;
+            break;
+        }
+
+    /// The whole directory can be migrated asynchronously.
+    if (dir_contains_only_files)
+    {
+        auto result = getExecutor().execute([this, path]
+             {
+                 for (auto it = iterateDirectory(path); it->isValid(); it->next())
+                     migrateFileToRestorableSchema(it->path());
+             });
+
+        results.push_back(std::move(result));
+    }
+    else
+    {
+        for (auto it = iterateDirectory(path); it->isValid(); it->next())
+            if (!isDirectory(it->path()))
+            {
+                auto source_path = it->path();
+                auto result = getExecutor().execute([this, source_path]
+                    {
+                        migrateFileToRestorableSchema(source_path);
+                    });
+
+                results.push_back(std::move(result));
+            }
+            else
+                migrateToRestorableSchemaRecursive(it->path(), results);
+    }
+}
+
+void DiskS3::migrateToRestorableSchema()
+{
+    try
+    {
+        LOG_INFO(&Poco::Logger::get("DiskS3"), "Start migration to restorable schema for disk {}", name);
+
+        Futures results;
+
+        for (const auto & root : data_roots)
+            if (exists(root))
+                migrateToRestorableSchemaRecursive(root + '/', results);
+
+        for (auto & result : results)
+            result.wait();
+        for (auto & result : results)
+            result.get();
+
+        saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
+    }
+    catch (const Exception & e)
+    {
+        LOG_ERROR(&Poco::Logger::get("DiskS3"), "Failed to migrate to restorable schema. Code: {}, e.displayText() = {}, Stack trace:\n\n{}", e.code(), e.displayText(), e.getStackTraceString());
+
+        throw;
+    }
+}
+
+bool DiskS3::checkObjectExists(const String & source_bucket, const String & prefix)
 {
     Aws::S3::Model::ListObjectsV2Request request;
-    request.SetBucket(bucket);
+    request.SetBucket(source_bucket);
     request.SetPrefix(prefix);
     request.SetMaxKeys(1);
 
@@ -1048,7 +1177,7 @@ struct DiskS3::RestoreInformation
 
 void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_information)
 {
-    ReadBufferFromFile buffer(metadata_path + restore_file_name, 512);
+    ReadBufferFromFile buffer(metadata_path + RESTORE_FILE_NAME, 512);
     buffer.next();
 
     /// Empty file - just restore all metadata.
@@ -1083,7 +1212,7 @@ void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_informa
 
 void DiskS3::restore()
 {
-    if (!exists(restore_file_name))
+    if (!exists(RESTORE_FILE_NAME))
         return;
 
     try
@@ -1110,16 +1239,26 @@ void DiskS3::restore()
                 throw Exception("Restoring to the same bucket is allowed only if source path is not a sub-path of configured path in S3 disk", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        ///TODO: Cleanup FS and bucket if previous restore was failed.
+        if (readSchemaVersion(information.source_bucket, information.source_path) < RESTORABLE_SCHEMA_VERSION)
+            throw Exception("Source bucket doesn't have restorable schema.", ErrorCodes::BAD_ARGUMENTS);
 
         LOG_INFO(&Poco::Logger::get("DiskS3"), "Starting to restore disk {}. Revision: {}, Source bucket: {}, Source path: {}",
                  name, information.revision, information.source_bucket, information.source_path);
 
+        LOG_INFO(&Poco::Logger::get("DiskS3"), "Removing old metadata...");
+
+        bool cleanup_s3 = information.source_bucket != bucket || information.source_path != s3_root_path;
+        for (const auto & root : data_roots)
+            if (exists(root))
+                removeSharedRecursive(root + '/', !cleanup_s3);
+
         restoreFiles(information.source_bucket, information.source_path, information.revision);
         restoreFileOperations(information.source_bucket, information.source_path, information.revision);
 
-        Poco::File restore_file(metadata_path + restore_file_name);
+        Poco::File restore_file(metadata_path + RESTORE_FILE_NAME);
         restore_file.remove();
+
+        saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
 
         LOG_INFO(&Poco::Logger::get("DiskS3"), "Restore disk {} finished", name);
     }
@@ -1186,7 +1325,11 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
         /// Restore file if object has 'path' in metadata.
         auto path_entry = object_metadata.find("path");
         if (path_entry == object_metadata.end())
-            throw Exception("Failed to restore key " + key + " because it doesn't have 'path' in metadata", ErrorCodes::S3_ERROR);
+        {
+            /// Such keys can remain after migration, we can skip them.
+            LOG_WARNING(&Poco::Logger::get("DiskS3"), "Skip key {} because it doesn't have 'path' in metadata", key);
+            continue;
+        }
 
         const auto & path = path_entry->second;
 

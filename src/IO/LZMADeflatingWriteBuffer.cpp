@@ -105,7 +105,7 @@ void LZMADeflatingWriteBuffer::finish()
     try
     {
         finishImpl();
-        out->next();
+        out->finalize();
         finished = true;
     }
     catch (...)

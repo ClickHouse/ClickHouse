@@ -89,4 +89,3 @@ SELECT 0 / 0
 
 Смотрите правила сортировки `NaN` в разделе [Секция ORDER BY ](../../sql-reference/statements/select/order-by.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/float/) <!--hide-->

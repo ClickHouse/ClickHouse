@@ -21,7 +21,7 @@ public:
 
     String getName() const override { return "BinaryRowOutputFormat"; }
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writePrefix() override;
 
     String getContentType() const override { return "application/octet-stream"; }

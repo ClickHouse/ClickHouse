@@ -23,7 +23,7 @@ toc_title: "Функции для работы с URL"
 domain(url)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `url` — URL. Тип — [String](../../sql-reference/functions/url-functions.md).
 
@@ -53,7 +53,7 @@ yandex.com
 **Пример**
 
 ``` sql
-SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
+SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
 ```
 
 ``` text
@@ -74,7 +74,7 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk')
 topLevelDomain(url)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `url` — URL. Тип — [String](../../sql-reference/functions/url-functions.md).
 
@@ -96,7 +96,7 @@ https://yandex.com/time/
 **Пример**
 
 ``` sql
-SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
+SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
 ```
 
 ``` text
@@ -138,7 +138,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk')
 cutToFirstSignificantSubdomain(URL, TLD)
 ```
 
-**Parameters**
+**Аргументы**
 
 -   `URL` — URL. [String](../../sql-reference/data-types/string.md).
 -   `TLD` — имя пользовательского списка доменов верхнего уровня. [String](../../sql-reference/data-types/string.md).
@@ -192,7 +192,7 @@ SELECT cutToFirstSignificantSubdomainCustom('bar.foo.there-is-no-such-domain', '
 cutToFirstSignificantSubdomainCustomWithWWW(URL, TLD)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `URL` — URL. [String](../../sql-reference/data-types/string.md).
 -   `TLD` — имя пользовательского списка доменов верхнего уровня. [String](../../sql-reference/data-types/string.md).
@@ -246,7 +246,7 @@ SELECT cutToFirstSignificantSubdomainCustomWithWWW('www.foo', 'public_suffix_lis
 firstSignificantSubdomainCustom(URL, TLD)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `URL` — URL. [String](../../sql-reference/data-types/string.md).
 -   `TLD` — имя пользовательского списка доменов верхнего уровня. [String](../../sql-reference/data-types/string.md).
@@ -355,7 +355,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 netloc(URL)
 ```
 
-**Параметры**
+**Аргументы**
 
 -   `url` — URL. Тип — [String](../../sql-reference/data-types/string.md).
 
@@ -405,4 +405,3 @@ SELECT netloc('http://paul@www.example.com:80/');
 
 Удаляет параметр URL с именем name, если такой есть. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/url_functions/) <!--hide-->

@@ -15,4 +15,3 @@ toc_priority: 24
 !!! note "Примечание"
     С ClickHouse работают также универсальные инструменты, поддерживающие общий API, такие как [ODBC](../../interfaces/odbc.md) или [JDBC](../../interfaces/jdbc.md).
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/) <!--hide-->

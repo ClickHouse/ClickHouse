@@ -42,7 +42,7 @@ SELECT dictGetOrDefault('01685_database_for_cache_dictionary.cache_dictionary_co
 SELECT 'dictHas';
 SELECT dictHas('01685_database_for_cache_dictionary.cache_dictionary_complex_key_simple_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM 01685_database_for_cache_dictionary.cache_dictionary_complex_key_simple_attributes;
+SELECT * FROM 01685_database_for_cache_dictionary.cache_dictionary_complex_key_simple_attributes ORDER BY id;
 
 DROP DICTIONARY 01685_database_for_cache_dictionary.cache_dictionary_complex_key_simple_attributes;
 DROP TABLE 01685_database_for_cache_dictionary.complex_key_simple_attributes_source_table;
@@ -89,10 +89,10 @@ SELECT dictGetOrDefault('01685_database_for_cache_dictionary.cache_dictionary_co
 SELECT 'dictHas';
 SELECT dictHas('01685_database_for_cache_dictionary.cache_dictionary_complex_key_complex_attributes', (number, concat('id_key_', toString(number)))) FROM system.numbers LIMIT 4;
 SELECT 'select all values as input stream';
-SELECT * FROM 01685_database_for_cache_dictionary.cache_dictionary_complex_key_complex_attributes;
+SELECT * FROM 01685_database_for_cache_dictionary.cache_dictionary_complex_key_complex_attributes ORDER BY id;
 
 DROP DICTIONARY 01685_database_for_cache_dictionary.cache_dictionary_complex_key_complex_attributes;
 DROP TABLE 01685_database_for_cache_dictionary.complex_key_complex_attributes_source_table;
 
 DROP DATABASE 01685_database_for_cache_dictionary;
-                                                                                                                                          
+
