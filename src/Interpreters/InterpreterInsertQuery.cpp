@@ -318,7 +318,6 @@ BlockIO InterpreterInsertQuery::execute()
     else if (query.select || query.watch)
     {
         const auto & header = out_streams.at(0)->getHeader();
-        LOG_TRACE(&Poco::Logger::get("kssenii"), "Make converring actions");
         auto actions_dag = ActionsDAG::makeConvertingActions(
                 res.pipeline.getHeader().getColumnsWithTypeAndName(),
                 header.getColumnsWithTypeAndName(),
