@@ -19,7 +19,7 @@
 
 namespace DB
 {
-bool ParserClusterQuery::parse_server_port(Pos & pos, String & server, UInt16 & port, Expected & expected)
+bool ParserClusterQuery::parseServerPort(Pos & pos, String & server, UInt16 & port, Expected & expected)
 {
     String s;
     bool is_server = true;
@@ -69,16 +69,17 @@ bool ParserClusterQuery::parse_server_port(Pos & pos, String & server, UInt16 & 
     }
 }
 
-bool ParserClusterQuery::parse_server_port(Pos & pos, std::shared_ptr<ASTClusterQuery> & query, Expected & expected)
+bool ParserClusterQuery::parseServerPort(Pos & pos, std::shared_ptr<ASTClusterQuery> & query, Expected & expected)
 {
-    if (!parse_server_port(pos, query->server, query->port, expected))
+    Poco::Logger * log = &(Poco::Logger::get("ParserClusterQuery"));
+    if (!parseServerPort(pos, query->server, query->port, expected))
     {
         return false;
     }
 
     if (query->type == ASTClusterQuery::REPLACE_NODE)
     {
-        if (!parse_server_port(pos, query->new_server, query->new_port, expected))
+        if (!parseServerPort(pos, query->new_server, query->new_port, expected))
         {
             return false;
         }
@@ -154,9 +155,7 @@ bool ParserClusterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     else
         return false;
 
-    if (!parse_server_port(pos, query, expected))
-        return false;
-
-    return true;
+    return parseServerPort(pos, query, expected);
 }
+
 }

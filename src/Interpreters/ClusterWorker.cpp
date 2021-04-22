@@ -178,7 +178,7 @@ struct NodeInfo
         status = Type(st_int);
         host_id = HostID::fromString(host_str);
 
-        for (auto s : cluster_strings)
+        for (auto & s : cluster_strings)
         {
             clusters.insert(s);
         }
@@ -196,7 +196,7 @@ struct ClusterEntry
     String initiator; //optional
     static constexpr int CURRENT_VERSION = 1;
 
-    String toString()
+    String toString() const
     {
         WriteBufferFromOwnString wb;
         auto version = CURRENT_VERSION;
@@ -216,7 +216,6 @@ struct ClusterEntry
         rb >> "query: " >> escape >> query >> "\n";
     }
 };
-
 
 static void filterAndSortQueueNodes(Strings & all_nodes)
 {
@@ -248,7 +247,7 @@ public:
         {
             auto node_info = it->second;
             bool opted = false;
-            for (auto opt_node : entry.opt_node_vec)
+            for (auto & opt_node : entry.opt_node_vec)
             {
                 //Skip the operated node
                 if (node_info->host_id.toString() == opt_node->host_id.toString())
@@ -570,22 +569,20 @@ void ClusterWorker::getHostsFromClusters(HostMap & host_map, String cluster)
 {
     Clusters::Impl cluster_map = context->getClusters().getContainer();
 
-    for (auto it = cluster_map.begin(); it != cluster_map.end(); ++it)
+    for (auto & it : cluster_map)
     {
-        String cluster_name = it->first;
+        String cluster_name = it.first;
         //LOG_DEBUG(log, "cluster name {}, current cluster {}", cluster_name, cluster);
         if (!cluster.empty() && cluster_name != cluster)
         {
             LOG_DEBUG(log, "Skip cluster {}", cluster_name);
             continue;
         }
-        Cluster::AddressesWithFailover * shards = it->second->getClusterShardsAddresses();
-        for (size_t shard_num = 0; shard_num < shards->size(); ++shard_num)
+        Cluster::AddressesWithFailover * shards = it.second->getClusterShardsAddresses();
+        for (auto & address_vec : *shards)
         {
-            Cluster::Addresses & address_vec = shards->at(shard_num);
-            for (size_t replica_num = 0; replica_num < address_vec.size(); ++replica_num)
+            for (auto & address : address_vec)
             {
-                Cluster::Address & address = address_vec[replica_num];
                 HostIDPtr host = std::make_shared<HostID>();
                 host->host_name = address.host_name;
                 host->port = address.port;
@@ -605,7 +602,7 @@ void ClusterWorker::getHostsFromClusters(HostMap & host_map, String cluster)
                 {
                     NodeInfoPtr node_info = host_map.find(readable_str)->second;
                     node_info->address_vec.push_back(&address);
-                    if (node_info->clusters.find(it->first) == node_info->clusters.end())
+                    if (node_info->clusters.find(cluster_name) == node_info->clusters.end())
                     {
                         node_info->clusters.insert(cluster_name);
                     }
@@ -621,6 +618,7 @@ void ClusterWorker::registerNodes(const ZooKeeperPtr & zookeeper)
     LOG_DEBUG(log, "Register config nodes to zookeeper");
 
     HostMap host_map;
+
     getHostsFromClusters(host_map, "");
 
     auto lock = createSimpleZooKeeperLock(zookeeper, node_dir, "lock", local_host_id.toString());
@@ -631,9 +629,10 @@ void ClusterWorker::registerNodes(const ZooKeeperPtr & zookeeper)
     }
 
     String executed_by;
-    for (auto it = host_map.begin(); it != host_map.end(); ++it)
+    //for (auto it = host_map.begin(); it != host_map.end(); ++it)
+    for (auto & it : host_map)
     {
-        auto node_info = it->second;
+        auto node_info = it.second;
         String curr_node_dir = node_dir + "/" + node_info->host_id.readableString();
         if (!zookeeper->tryGet(curr_node_dir, executed_by))
         {
@@ -712,9 +711,8 @@ String ClusterWorker::alterNodes(ClusterEntry & entry, const ZooKeeperPtr & zook
     parseQuery(entry, *node);
 
     Strings entry_nodes;
-    for (auto it = cluster_nodes.begin(); it != cluster_nodes.end(); ++it)
+    for (auto & entry_name : cluster_nodes)
     {
-        String entry_name = *it;
         if (node->host_id.port == 0)
         {
             if (entry_name.find(node->host_id.host_name) != String::npos)
@@ -729,13 +727,13 @@ String ClusterWorker::alterNodes(ClusterEntry & entry, const ZooKeeperPtr & zook
         }
     }
 
-    if (entry_nodes.size() == 0 && entry.query_ptr->type != ASTClusterQuery::ADD_NODE)
+    if (entry_nodes.empty() && entry.query_ptr->type != ASTClusterQuery::ADD_NODE)
     {
         throw Exception("No corresponding node was found in the configuration file", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
     }
 
     String node_data, curr_node_dir;
-    for (auto entry_name : entry_nodes)
+    for (auto & entry_name : entry_nodes)
     {
         curr_node_dir = node_dir + "/" + entry_name;
 

@@ -22,8 +22,8 @@ public:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 private:
-    bool parse_server_port(Pos & pos, std::shared_ptr<ASTClusterQuery> & query, Expected & expected);
-    bool parse_server_port(Pos & pos, String & server, UInt16 & port, Expected & expected);
+    static bool parseServerPort(Pos & pos, std::shared_ptr<ASTClusterQuery> & query, Expected & expected);
+    static bool parseServerPort(Pos & pos, String & server, UInt16 & port, Expected & expected);
 
 private:
     Poco::Logger * log;

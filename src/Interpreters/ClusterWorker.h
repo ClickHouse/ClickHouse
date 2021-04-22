@@ -86,7 +86,7 @@ private:
     /// Alter node status
     String alterNodes(ClusterEntry & entry, const ZooKeeperPtr & zookeeper);
 
-    void parseQuery(ClusterEntry & entry, NodeInfo & node);
+    static void parseQuery(ClusterEntry & entry, NodeInfo & node);
 
     void runMainThread();
 

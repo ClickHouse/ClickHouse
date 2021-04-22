@@ -787,7 +787,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         main_config_reloader->reload();
         access_control.reloadUsersConfigs();
-        global_context->getClusterWorker().processCluster();
+        if (global_context->hasClusterWorker())
+            global_context->getClusterWorker().processCluster();
     });
 
     /// Limit on total number of concurrently executed queries.

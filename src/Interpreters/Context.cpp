@@ -1614,7 +1614,7 @@ void Context::setClusterWorker(std::unique_ptr<ClusterWorker> cluster_worker)
 ClusterWorker & Context::getClusterWorker() const
 {
     auto lock = getLock();
-    if (!shared->cluster_worker)
+    if (shared->cluster_worker == nullptr)
         throw Exception("Cluster background thread is not initialized.", ErrorCodes::LOGICAL_ERROR);
     return *shared->cluster_worker;
 }
