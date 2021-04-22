@@ -5,7 +5,7 @@
 #include "ReadIndirectBufferFromHDFS.h"
 #include "WriteIndirectBufferFromHDFS.h"
 #include <IO/SeekAvoidingReadBuffer.h>
-
+#include <Common/checkStackSize.h>
 #include <Common/quoteString.h>
 #include <common/logger_useful.h>
 
@@ -18,6 +18,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
+    extern const int CANNOT_DELETE_DIRECTORY;
+    extern const int UNKNOWN_FORMAT;
 }
 
 
@@ -104,6 +106,106 @@ void DiskHDFS::removeFromRemoteFS(const Metadata & metadata)
 }
 
 
+void DiskHDFS::removeSharedFile(const String & path, bool keep_in_remote_fs)
+{
+    removeMeta(path, keep_in_remote_fs);
+}
+
+
+void DiskHDFS::removeSharedRecursive(const String & path, bool keep_in_remote_fs)
+{
+    removeMetaRecursive(path, keep_in_remote_fs);
+}
+
+
+void DiskHDFS::removeFileIfExists(const String & path)
+{
+    if (Poco::File(metadata_path + path).exists())
+        removeMeta(path, /* keep_in_remote_fs */ false);
+}
+
+
+void DiskHDFS::removeRecursive(const String & path)
+{
+    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
+
+    Poco::File file(metadata_path + path);
+    if (file.isFile())
+    {
+        removeFile(path);
+    }
+    else
+    {
+        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
+            removeRecursive(it->path());
+        file.remove();
+    }
+}
+
+
+void DiskHDFS::removeMeta(const String & path, bool keep_in_remote_fs)
+{
+    Poco::File file(metadata_path + path);
+
+    if (!file.isFile())
+        throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
+
+    try
+    {
+        auto metadata = readMeta(path);
+
+        /// If there is no references - delete content from remote FS.
+        if (metadata.ref_count == 0)
+        {
+            file.remove();
+
+            if (!keep_in_remote_fs)
+                removeFromRemoteFS(metadata);
+        }
+        else /// In other case decrement number of references, save metadata and delete file.
+        {
+            --metadata.ref_count;
+            metadata.save();
+            file.remove();
+        }
+    }
+    catch (const Exception & e)
+    {
+        /// If it's impossible to read meta - just remove it from FS.
+        if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
+        {
+            LOG_WARNING(
+                log,
+                "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
+                backQuote(path),
+                e.nested() ? e.nested()->message() : e.message());
+
+            file.remove();
+        }
+        else
+            throw;
+    }
+}
+
+
+void DiskHDFS::removeMetaRecursive(const String & path, bool keep_in_remote_fs)
+{
+    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
+
+    Poco::File file(metadata_path + path);
+    if (file.isFile())
+    {
+        removeMeta(path, keep_in_remote_fs);
+    }
+    else
+    {
+        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
+            removeMetaRecursive(it->path(), keep_in_remote_fs);
+        file.remove();
+    }
+}
+
+
 void registerDiskHDFS(DiskFactory & factory)
 {
     auto creator = [](const String & name,
@@ -128,5 +230,6 @@ void registerDiskHDFS(DiskFactory & factory)
 
     factory.registerDiskType("hdfs", creator);
 }
+
 
 }

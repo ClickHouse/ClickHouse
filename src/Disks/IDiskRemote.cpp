@@ -7,7 +7,6 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
-#include <Common/checkStackSize.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <common/logger_useful.h>
@@ -19,10 +18,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_FORMAT;
     extern const int INCORRECT_DISK_INDEX;
+    extern const int UNKNOWN_FORMAT;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int CANNOT_DELETE_DIRECTORY;
 }
 
 
@@ -151,69 +149,6 @@ IDiskRemote::Metadata IDiskRemote::createMeta(const String & path) const
 }
 
 
-void IDiskRemote::removeMeta(const String & path, bool keep_in_remote_fs)
-{
-    Poco::File file(metadata_path + path);
-
-    if (!file.isFile())
-        throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
-
-    try
-    {
-        auto metadata = readMeta(path);
-
-        /// If there is no references - delete content from S3.
-        if (metadata.ref_count == 0)
-        {
-            file.remove();
-
-            if (!keep_in_remote_fs)
-                removeFromRemoteFS(metadata);
-        }
-        else /// In other case decrement number of references, save metadata and delete file.
-        {
-            --metadata.ref_count;
-            metadata.save();
-            file.remove();
-        }
-    }
-    catch (const Exception & e)
-    {
-        /// If it's impossible to read meta - just remove it from FS.
-        if (e.code() == ErrorCodes::UNKNOWN_FORMAT)
-        {
-            LOG_WARNING(
-                log,
-                "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
-                backQuote(path),
-                e.nested() ? e.nested()->message() : e.message());
-
-            file.remove();
-        }
-        else
-            throw;
-    }
-}
-
-
-void IDiskRemote::removeMetaRecursive(const String & path, bool keep_in_remote_fs)
-{
-    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
-
-    Poco::File file(metadata_path + path);
-    if (file.isFile())
-    {
-        removeMeta(path, keep_in_remote_fs);
-    }
-    else
-    {
-        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
-            removeMetaRecursive(it->path(), keep_in_remote_fs);
-        file.remove();
-    }
-}
-
-
 DiskPtr DiskRemoteReservation::getDisk(size_t i) const
 {
     if (i != 0)
@@ -320,43 +255,6 @@ void IDiskRemote::replaceFile(const String & from_path, const String & to_path)
     }
     else
         moveFile(from_path, to_path);
-}
-
-
-void IDiskRemote::removeSharedFile(const String & path, bool keep_in_remote_fs)
-{
-    removeMeta(path, keep_in_remote_fs);
-}
-
-
-void IDiskRemote::removeSharedRecursive(const String & path, bool keep_in_remote_fs)
-{
-    removeMetaRecursive(path, keep_in_remote_fs);
-}
-
-
-void IDiskRemote::removeFileIfExists(const String & path)
-{
-    if (Poco::File(metadata_path + path).exists())
-        removeMeta(path, /* keep_in_remote_fs */ false);
-}
-
-
-void IDiskRemote::removeRecursive(const String & path)
-{
-    checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
-
-    Poco::File file(metadata_path + path);
-    if (file.isFile())
-    {
-        removeFile(path);
-    }
-    else
-    {
-        for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
-            removeRecursive(it->path());
-        file.remove();
-    }
 }
 
 

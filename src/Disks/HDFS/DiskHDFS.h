@@ -40,9 +40,23 @@ public:
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 
-    void removeFromRemoteFS(const Metadata & metadata) override;
+    void removeSharedFile(const String & path, bool keep_in_remote_fs) override;
+
+    void removeSharedRecursive(const String & path, bool) override;
+
+    void removeFileIfExists(const String & path) override;
+
+    void removeRecursive(const String & path) override;
+
+    void removeFile(const String & path) override { removeSharedFile(path, false); }
 
 private:
+    void removeFromRemoteFS(const Metadata & metadata);
+
+    void removeMetaRecursive(const String & path, bool keep_in_remote_fs);
+
+    void removeMeta(const String & path, bool keep_in_remote_fs);
+
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }
 
     const Poco::Util::AbstractConfiguration & config;

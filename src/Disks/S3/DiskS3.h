@@ -64,6 +64,7 @@ public:
         size_t buf_size,
         WriteMode mode) override;
 
+    void removeFile(const String & path) override { removeSharedFile(path, false); }
     void removeFileIfExists(const String & path) override;
     void removeRecursive(const String & path) override { removeSharedRecursive(path, false); }
 
