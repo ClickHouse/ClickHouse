@@ -395,19 +395,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        // bool use_projection = false;
-        // if (storage && !options.only_analyze)
-        // {
-        //     if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
-        //     {
-        //         if (syntax_analyzer_result->can_use_projection)
-        //             use_projection = merge_tree->getQueryProcessingStageWithAggregateProjection(
-        //                 *context, options, query_ptr, metadata_snapshot, query_info);
-        //     }
-        // }
-
         // TODO Check if we can have prewhere work for projections, also need to allow it in TreeRewriter
-        if (try_move_to_prewhere && storage /*&& !use_projection*/ && query.where() && !query.prewhere() && !query.final())
+        if (try_move_to_prewhere && storage && query.where() && !query.prewhere() && !query.final())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
@@ -424,10 +413,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer{current_info, *context, std::move(column_compressed_sizes), metadata_snapshot, syntax_analyzer_result->requiredSourceColumns(), log};
             }
         }
-
-        // if (use_projection)
-        //     // ugly but works
-        //     metadata_snapshot->selected_projection = query_info.aggregate_projection;
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
                 query_ptr, syntax_analyzer_result, *context, metadata_snapshot,
@@ -559,7 +544,10 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
     executeImpl(query_plan, input, std::move(input_pipe));
 
     /// We must guarantee that result structure is the same as in getSampleBlock()
-    if (!options.ignore_projections && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
+    ///
+    /// But if we ignore aggregation, plan header does not match result_header.
+    /// TODO: add special stage for InterpreterSelectQuery?
+    if (!options.ignore_aggregation && !blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
@@ -1835,7 +1823,7 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     expression_before_aggregation->setStepDescription("Before GROUP BY");
     query_plan.addStep(std::move(expression_before_aggregation));
 
-    if (options.ignore_projections)
+    if (options.ignore_aggregation)
         return;
 
     const auto & header_before_aggregation = query_plan.getCurrentDataStream().header;
@@ -1891,10 +1879,14 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
 void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final)
 {
-    const auto & header_before_merge = query_plan.getCurrentDataStream().header;
-
+    /// If aggregate projection was chosen for table, avoid adding MergeAggregated.
+    /// It is already added by storage (because of performance issues).
+    /// TODO: We should probably add another one processing stage for storage?
+    ///       WithMergeableStateAfterAggregation is not ok because, e.g., it skips sorting after aggregation.
     if (query_info.aggregate_projection)
         return;
+
+    const auto & header_before_merge = query_plan.getCurrentDataStream().header;
 
     ColumnNumbers keys;
     for (const auto & key : query_analyzer->aggregationKeys())

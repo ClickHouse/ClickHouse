@@ -3628,8 +3628,6 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
 
 bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     const Context & context,
-    //const SelectQueryOptions & option,
-    //const ASTPtr & query_ptr,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info)
 {
