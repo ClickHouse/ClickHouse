@@ -143,6 +143,11 @@ StorageDictionary::StorageDictionary(
     remove_repository_callback = context_->getExternalDictionariesLoader().addConfigRepository(std::move(repository));
 }
 
+StorageDictionary::~StorageDictionary()
+{
+    drop();
+}
+
 void StorageDictionary::checkTableCanBeDropped() const
 {
     if (location == Location::SameDatabaseAndNameAsDictionary)
@@ -179,8 +184,19 @@ void StorageDictionary::drop()
 
 void StorageDictionary::shutdown()
 {
+    drop();
+}
+
+Poco::Timestamp StorageDictionary::getUpdateTime() const
+{
     std::lock_guard<std::mutex> lock(dictionary_config_mutex);
-    remove_repository_callback.reset();
+    return update_time;
+}
+
+LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
+{
+    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    return configuration;
 }
 
 void StorageDictionary::renameInMemory(const StorageID & new_table_id)
@@ -210,14 +226,13 @@ void registerStorageDictionary(StorageFactory & factory)
     {
         auto query = args.query;
 
-        auto context = args.getContext();
+        auto local_context = args.getLocalContext();
 
         if (query.is_dictionary)
         {
             /// Create dictionary storage that owns underlying dictionary
-            auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, context);
-
-            return StorageDictionary::create(args.table_id, abstract_dictionary_configuration, context);
+            auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, args.table_id.database_name);
+            return StorageDictionary::create(args.table_id, abstract_dictionary_configuration, local_context);
         }
         else
         {
@@ -227,7 +242,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 throw Exception("Storage Dictionary requires single parameter: name of dictionary",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.getLocalContext());
+            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
             String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
             if (!args.attach)
@@ -237,7 +252,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 checkNamesAndTypesCompatibleWithDictionary(dictionary_name, args.columns, dictionary_structure);
             }
 
-            return StorageDictionary::create(args.table_id, dictionary_name, args.columns, StorageDictionary::Location::Custom, context);
+            return StorageDictionary::create(args.table_id, dictionary_name, args.columns, StorageDictionary::Location::Custom, local_context);
         }
     });
 }

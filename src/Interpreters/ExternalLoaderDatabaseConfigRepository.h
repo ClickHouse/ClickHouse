@@ -3,17 +3,18 @@
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <Databases/IDatabase.h>
 
+
 namespace DB
 {
 
-class StorageDictionary;
-
-class ExternalLoaderDictionaryStorageConfigRepository : public IExternalLoaderConfigRepository
+/// Repository from database, which stores dictionary definitions on disk.
+/// Tracks update time and existence of .sql files through IDatabase.
+class ExternalLoaderDatabaseConfigRepository : public IExternalLoaderConfigRepository, WithContext
 {
 public:
-    explicit ExternalLoaderDictionaryStorageConfigRepository(const StorageDictionary & dictionary_storage_);
+    ExternalLoaderDatabaseConfigRepository(IDatabase & database_, ContextPtr global_context_);
 
-    std::string getName() const override;
+    std::string getName() const override { return database_name; }
 
     std::set<std::string> getAllLoadablesDefinitionNames() override;
 
@@ -24,7 +25,8 @@ public:
     LoadablesConfigurationPtr load(const std::string & loadable_definition_name) override;
 
 private:
-    const StorageDictionary & dictionary_storage;
+    const String database_name;
+    IDatabase & database;
 };
 
 }

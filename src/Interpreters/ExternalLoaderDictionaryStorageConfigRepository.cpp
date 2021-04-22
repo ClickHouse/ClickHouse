@@ -6,35 +6,34 @@
 namespace DB
 {
 
-ExternalLoaderDictionaryStorageConfigRepository::ExternalLoaderDictionaryStorageConfigRepository(const StorageDictionary & dictionary_)
-    : dictionary(dictionary_)
-    , internal_dictionary_name(dictionary.getStorageID().getInternalDictionaryName())
+ExternalLoaderDictionaryStorageConfigRepository::ExternalLoaderDictionaryStorageConfigRepository(const StorageDictionary & dictionary_storage_)
+    : dictionary_storage(dictionary_storage_)
 {
 }
 
-const std::string & ExternalLoaderDictionaryStorageConfigRepository::getName() const
+std::string ExternalLoaderDictionaryStorageConfigRepository::getName() const
 {
-    return internal_dictionary_name;
+    return dictionary_storage.getStorageID().getInternalDictionaryName();
 }
 
 std::set<std::string> ExternalLoaderDictionaryStorageConfigRepository::getAllLoadablesDefinitionNames()
 {
-    return { internal_dictionary_name };
+    return { getName() };
 }
 
 bool ExternalLoaderDictionaryStorageConfigRepository::exists(const std::string & loadable_definition_name)
 {
-    return internal_dictionary_name == loadable_definition_name;
+    return getName() == loadable_definition_name;
 }
 
 Poco::Timestamp ExternalLoaderDictionaryStorageConfigRepository::getUpdateTime(const std::string &)
 {
-    return dictionary.getUpdateTime();
+    return dictionary_storage.getUpdateTime();
 }
 
 LoadablesConfigurationPtr ExternalLoaderDictionaryStorageConfigRepository::load(const std::string &)
 {
-    return dictionary.getConfiguration();
+    return dictionary_storage.getConfiguration();
 }
 
 }
