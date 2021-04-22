@@ -235,29 +235,26 @@ BlockIO InterpreterInsertQuery::execute()
 
             res.pipeline.resize(out_streams_size);
 
-            auto query_columns_names_and_types = query_sample_block.getNamesAndTypesList();
-
-            auto input_columns = res.pipeline.getHeader().getColumns();
-            auto query_columns = query_sample_block.getColumns();
-
-            size_t col_idx = 0;
-            ColumnsWithTypeAndName new_query_sample_block;
-            for (const auto & column : query_columns_names_and_types)
+            /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
+            if (getContext()->getSettingsRef().input_format_null_as_default)
             {
-                if (input_columns[col_idx]->isNullable() && !query_columns[col_idx]->isNullable())
-                {
-                    auto nullable_column = ColumnNullable::create(query_columns[col_idx], ColumnUInt8::create(query_columns[col_idx]->size(), 0));
-                    new_query_sample_block.emplace_back(nullable_column, std::make_shared<DataTypeNullable>(column.type), column.name);
-                }
-                else
-                {
-                    new_query_sample_block.emplace_back(query_columns[col_idx], column.type, column.name);
-                }
-                col_idx++;
-            }
+                auto query_columns_names_and_types = query_sample_block.getNamesAndTypesList();
 
-            Block new_block(new_query_sample_block);
-            query_sample_block.swap(new_block);
+                const auto & input_columns = res.pipeline.getHeader().getColumns();
+                const auto & query_columns = query_sample_block.getColumns();
+
+                size_t col_idx = 0;
+                for (const auto & column : query_columns_names_and_types)
+                {
+                    if (input_columns[col_idx]->isNullable() && !query_columns[col_idx]->isNullable())
+                    {
+                        auto nullable_column = ColumnNullable::create(query_columns[col_idx], ColumnUInt8::create(query_columns[col_idx]->size(), 0));
+                        ColumnWithTypeAndName new_column(std::move(nullable_column), std::make_shared<DataTypeNullable>(column.type), column.name);
+                        query_sample_block.setColumn(col_idx, std::move(new_column));
+                    }
+                    col_idx++;
+                }
+            }
         }
         else if (query.watch)
         {
