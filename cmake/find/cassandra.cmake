@@ -1,3 +1,8 @@
+if (OS_DARWIN AND COMPILER_GCC)
+    # Cassandra requires libuv which cannot be built with GCC in macOS due to a bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=93082
+    set (ENABLE_CASSANDRA OFF CACHE INTERNAL "")
+endif()
+
 option(ENABLE_CASSANDRA "Enable Cassandra" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_CASSANDRA)

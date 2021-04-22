@@ -136,7 +136,7 @@ toUnixTimestamp(str, [timezone])
 Запрос:
 
 ``` sql
-SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
+SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp;
 ```
 
 Результат:
@@ -162,6 +162,7 @@ SELECT toUnixTimestamp('2017-11-05 08:07:47', 'Asia/Tokyo') AS unix_timestamp
 ```sql
 SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 ```
+
 ```text
 ┌─ISOYear20170101─┐
 │      2016-01-04 │
@@ -215,14 +216,14 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 toStartOfSecond(value[, timezone])
 ```
 
-**Параметры**
+**Аргументы**
 
--   `value` — Дата и время. [DateTime64](../data-types/datetime64.md).
--   `timezone` — [Часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../data-types/string.md). 
+-   `value` — дата и время. [DateTime64](../data-types/datetime64.md).
+-   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../data-types/string.md). 
 
 **Возвращаемое значение**
 
-- Входное значение с отсеченными долями секунды.
+-   Входное значение с отсеченными долями секунды.
 
 Тип: [DateTime64](../data-types/datetime64.md).
 
@@ -256,9 +257,9 @@ WITH toDateTime64('2020-01-01 10:20:30.999', 3) AS dt64 SELECT toStartOfSecond(d
 └────────────────────────────────────────┘
 ```
 
-**См. также**
+**Смотрите также**
 
-- Часовая зона сервера, конфигурационный параметр [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
+-   Часовая зона сервера, конфигурационный параметр [timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone).
 
 
 ## toStartOfFiveMinute {#tostartoffiveminute}
@@ -511,7 +512,7 @@ SELECT now(), date_trunc('hour', now(), 'Europe/Moscow');
 date_add(unit, value, date)
 ```
 
-Синонимы: `dateAdd`, `DATE_ADD`. 
+Синонимы: `dateAdd`, `DATE_ADD`.
 
 **Аргументы**
 
@@ -857,6 +858,7 @@ formatDateTime(Time, Format\[, Timezone\])
 Возвращает значение времени и даты в определенном вами формате.
 
 **Поля подстановки**
+
 Используйте поля подстановки для того, чтобы определить шаблон для выводимой строки. В колонке «Пример» результат работы функции для времени `2018-01-02 22:33:44`.
 
 | Поле        | Описание                                                             | Пример     |
@@ -864,7 +866,7 @@ formatDateTime(Time, Format\[, Timezone\])
 | %C          | номер года, поделённый на 100 (00-99)                                | 20         |
 | %d          | день месяца, с ведущим нулём (01-31)                                 | 02         |
 | %D          | короткая запись %m/%d/%y                                             | 01/02/18   |
-| %e          | день месяца, с ведущим пробелом ( 1-31)                              | 2          |
+| %e          | день месяца, с ведущим пробелом ( 1-31)                              | &nbsp; 2   |
 | %F          | короткая запись %Y-%m-%d                                             | 2018-01-02 |
 | %G          | четырехзначный формат вывода ISO-года, который основывается на особом подсчете номера недели согласно [стандарту ISO 8601](https://ru.wikipedia.org/wiki/ISO_8601), обычно используется вместе с %V   | 2018       |
 | %g          | двузначный формат вывода года по стандарту ISO 8601                  | 18         |
@@ -875,6 +877,7 @@ formatDateTime(Time, Format\[, Timezone\])
 | %M          | минуты, с ведущим нулём (00-59)                                      | 33         |
 | %n          | символ переноса строки (‘’)                                          |            |
 | %p          | обозначения AM или PM                                                | PM         |
+| %Q          | квартал (1-4)                                                        | 1          |
 | %R          | короткая запись %H:%M                                                | 22:33      |
 | %S          | секунды, с ведущими нулями (00-59)                                   | 44         |
 | %t          | символ табуляции (’)                                                 |            |
@@ -941,4 +944,3 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 └─────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/date_time_functions/) <!--hide-->

@@ -24,7 +24,7 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeCleanupThread)")
     , log(&Poco::Logger::get(log_name))
 {
-    task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeCleanupThread::run()

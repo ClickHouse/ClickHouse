@@ -279,7 +279,6 @@ public:
         return typeid(rhs) == typeid(ColumnString);
     }
 
-
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }
 

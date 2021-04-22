@@ -47,6 +47,10 @@ endif()
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
+if (OS_DARWIN AND NOT MAKE_STATIC_LIBRARIES)
+    target_link_libraries(common PUBLIC -Wl,-U,_inside_main)
+endif()
+
 # Allow explicit fallback to readline
 if (NOT ENABLE_REPLXX AND ENABLE_READLINE)
     message (STATUS "Attempt to fallback to readline explicitly")

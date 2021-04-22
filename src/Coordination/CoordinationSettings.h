@@ -31,6 +31,8 @@ struct Settings;
     M(UInt64, rotate_log_storage_interval, 10000, "How many records will be stored in one log storage file", 0) \
     M(UInt64, snapshots_to_keep, 3, "How many compressed snapshots to keep on disk", 0) \
     M(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
+    M(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
+    M(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
     M(Bool, force_sync, true, " Call fsync on each change in RAFT changelog", 0)
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)

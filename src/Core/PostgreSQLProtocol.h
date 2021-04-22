@@ -797,15 +797,15 @@ namespace PGAuthentication
 class AuthenticationMethod
 {
 protected:
-    void setPassword(
+    static void setPassword(
         const String & user_name,
         const String & password,
-        Context & context,
+        ContextPtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
         try {
-            context.setUser(user_name, password, address);
+            context->setUser(user_name, password, address);
         }
         catch (const Exception &)
         {
@@ -819,7 +819,7 @@ protected:
 public:
     virtual void authenticate(
         const String & user_name,
-        Context & context,
+        ContextPtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) = 0;
 
@@ -833,7 +833,7 @@ class NoPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & /* user_name */,
-        Context & /* context */,
+        ContextPtr /* context */,
         Messaging::MessageTransport & /* mt */,
         const Poco::Net::SocketAddress & /* address */) override {}
 
@@ -848,7 +848,7 @@ class CleartextPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        Context & context,
+        ContextPtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
@@ -891,11 +891,11 @@ public:
 
     void authenticate(
         const String & user_name,
-        Context & context,
+        ContextPtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        auto user = context.getAccessControlManager().read<User>(user_name);
+        auto user = context->getAccessControlManager().read<User>(user_name);
         Authentication::Type user_auth_type = user->authentication.getType();
 
         if (type_to_method.find(user_auth_type) != type_to_method.end())
