@@ -77,11 +77,7 @@ public:
             place_data->sum += rhs_data->sum + (rhs_data->first - place_data->last);
             place_data->last = rhs_data->last;
         }
-<<<<<<< HEAD
-        else if ((rhs_data->last < place_data->first && rhs_data->seen && place_data->seen))
-=======
-        else if ((rhs_data->first < place_data->last && rhs_data->seen_last && place_data->seen_first))
->>>>>>> f00f4728a6d2012621b07454eb688e3cb2e0acdb
+        else if ((rhs_data->first < place_data->last && rhs_data->seen && place_data->seen))
         {
             // In the opposite scenario, the lhs comes after the rhs, e.g. [4, 6] [1, 2]. Since we
             // assume the input interval states are sorted by time, we assume this is a counter
@@ -91,11 +87,7 @@ public:
             place_data->sum += rhs_data->sum;
             place_data->last = rhs_data->last;
         }
-<<<<<<< HEAD
-        else if (rhs_data->seen)
-=======
-        else if (rhs_data->seen_first && !place_data->seen_first)
->>>>>>> f00f4728a6d2012621b07454eb688e3cb2e0acdb
+        else if (rhs_data->seen && !place_data->seen)
         {
             // If we're here then the lhs is an empty state and the rhs does have some state, so
             // we'll just take that state.
