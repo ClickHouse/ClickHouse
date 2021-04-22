@@ -43,6 +43,8 @@ public:
     Poco::Timestamp getUpdateTime() const;
     LoadablesConfigurationPtr getConfiguration() const;
 
+    const String & getDictionaryName() const { return dictionary_name; }
+
     /// Specifies where the table is located relative to the dictionary.
     enum class Location
     {
