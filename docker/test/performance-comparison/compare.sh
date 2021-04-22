@@ -1191,7 +1191,11 @@ function upload_results
     # form that can be used for historical data when you only have compare.log.
     cat compare.log \
         | sed -n '
-            s/.*\(Model name:\)[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\2/p;
+            s/.*Model name:[[:space:]]\+\(.*\)$/metric	lscpu-model-name	\1/p;
+            s/.*L1d cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1d-cache	\1/p;
+            s/.*L1i cache:[[:space:]]\+\(.*\)$/metric	lscpu-l1i-cache	\1/p;
+            s/.*L2 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l2-cache	\1/p;
+            s/.*L3 cache:[[:space:]]\+\(.*\)$/metric	lscpu-l3-cache	\1/p;
             s/.*left_sha=\(.*\)$/old-sha	\1/p;
             s/.*right_sha=\(.*\)/new-sha	\1/p' \
         | awk '
