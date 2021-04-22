@@ -1,20 +1,18 @@
 #pragma once
 
-#include <Compression/CompressionFactory.h>
-#include <Core/Block.h>
-#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ColumnCodec.h>
-#include <Storages/ColumnDefault.h>
+#include <Core/Names.h>
+#include <Core/Block.h>
 #include <Common/Exception.h>
-
-#include <boost/multi_index/member.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index/sequenced_index.hpp>
-#include <boost/multi_index_container.hpp>
-
+#include <Storages/ColumnDefault.h>
+#include <Storages/ColumnCodec.h>
 #include <optional>
+#include <Compression/CompressionFactory.h>
+
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/sequenced_index.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/member.hpp>
 
 
 namespace DB
@@ -161,5 +159,5 @@ private:
 /// default expression result can be casted to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context);
 }

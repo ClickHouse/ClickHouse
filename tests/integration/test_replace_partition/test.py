@@ -1,8 +1,3 @@
-# pylint: disable=line-too-long
-# pylint: disable=unused-argument
-# pylint: disable=redefined-outer-name:
-
-import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -18,13 +13,13 @@ def _fill_nodes(nodes, shard):
         node.query(
             '''
                 CREATE DATABASE test;
-
+    
                 CREATE TABLE real_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = MergeTree(date, id, 8192);
-
+    
                 CREATE TABLE other_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = MergeTree(date, id, 8192);
-
+    
                 CREATE TABLE test_table(date Date, id UInt32, dummy UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test{shard}/replicated', '{replica}', date, id, 8192);
             '''.format(shard=shard, replica=node.name))
@@ -102,13 +97,12 @@ def test_drop_failover(drop_failover):
         # Drop partition on source node
         node3.query("ALTER TABLE test_table DROP PARTITION 201706")
 
-    # Wait few seconds for connection to zookeeper to be restored
-    time.sleep(5)
+    # connection restored
 
-    msg = node4.query_with_retry(
-        "select last_exception from system.replication_queue where type = 'REPLACE_RANGE'",
-        check_callback=lambda x: 'Not found part' not in x, sleep_time=1)
-    assert 'Not found part' not in msg
+    node4.query_with_retry("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'",
+                           check_callback=lambda x: 'Not found part' not in x, sleep_time=1)
+    assert 'Not found part' not in node4.query(
+        "select last_exception from system.replication_queue where type = 'REPLACE_RANGE'")
     assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", '')
 
 
@@ -157,11 +151,8 @@ def test_replace_after_replace_failover(replace_after_replace_failover):
 
         assert_eq_with_retry(node5, "SELECT id FROM test_table order by id", '333')
 
-    # Wait few seconds for connection to zookeeper to be restored
-    time.sleep(5)
-
-    msg = node6.query_with_retry(
-        "select last_exception from system.replication_queue where type = 'REPLACE_RANGE'",
-        check_callback=lambda x: 'Not found part' not in x, sleep_time=1)
-    assert 'Not found part' not in msg
+    node6.query_with_retry("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'",
+                           check_callback=lambda x: 'Not found part' not in x, sleep_time=1)
+    assert 'Not found part' not in node6.query(
+        "select last_exception from system.replication_queue where type = 'REPLACE_RANGE'")
     assert_eq_with_retry(node6, "SELECT id FROM test_table order by id", '333')

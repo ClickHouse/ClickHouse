@@ -13,7 +13,6 @@
 
 #include <IO/ConnectionTimeouts.h>
 
-
 namespace DB
 {
 
@@ -105,20 +104,15 @@ ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
     ConnectionPoolWithFailover::Status result;
     result.reserve(states.size());
     const time_t since_last_error_decrease = time(nullptr) - error_decrease_time;
-    /// Update error_count and slowdown_count in states to return actual information.
-    auto updated_states = states;
-    auto updated_error_decrease_time = error_decrease_time;
-    Base::updateErrorCounts(updated_states, updated_error_decrease_time);
+
     for (size_t i = 0; i < states.size(); ++i)
     {
         const auto rounds_to_zero_errors = states[i].error_count ? bitScanReverse(states[i].error_count) + 1 : 0;
-        const auto rounds_to_zero_slowdowns = states[i].slowdown_count ? bitScanReverse(states[i].slowdown_count) + 1 : 0;
-        const auto seconds_to_zero_errors = std::max(static_cast<time_t>(0), std::max(rounds_to_zero_errors, rounds_to_zero_slowdowns) * decrease_error_period - since_last_error_decrease);
+        const auto seconds_to_zero_errors = std::max(static_cast<time_t>(0), rounds_to_zero_errors * decrease_error_period - since_last_error_decrease);
 
         result.emplace_back(NestedPoolStatus{
             pools[i],
-            updated_states[i].error_count,
-            updated_states[i].slowdown_count,
+            states[i].error_count,
             std::chrono::seconds{seconds_to_zero_errors}
         });
     }

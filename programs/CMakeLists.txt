@@ -33,14 +33,7 @@ option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data t
     ${ENABLE_CLICKHOUSE_ALL})
 
 # https://clickhouse.tech/docs/en/operations/utilities/odbc-bridge/
-if (ENABLE_ODBC)
-    option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
-        ${ENABLE_CLICKHOUSE_ALL})
-else ()
-    option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" OFF)
-endif ()
-
-option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source"
+option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
     ${ENABLE_CLICKHOUSE_ALL})
 
 # https://presentations.clickhouse.tech/matemarketing_2020/
@@ -114,12 +107,6 @@ if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     message(STATUS "ODBC bridge mode: ON")
 else()
     message(STATUS "ODBC bridge mode: OFF")
-endif()
-
-if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
-    message(STATUS "Library bridge mode: ON")
-else()
-    message(STATUS "Library bridge mode: OFF")
 endif()
 
 if (ENABLE_CLICKHOUSE_INSTALL)
@@ -201,14 +188,9 @@ add_subdirectory (format)
 add_subdirectory (obfuscator)
 add_subdirectory (install)
 add_subdirectory (git-import)
-add_subdirectory (bash-completion)
 
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
-endif ()
-
-if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
-    add_subdirectory (library-bridge)
 endif ()
 
 if (CLICKHOUSE_ONE_SHARED)
@@ -224,10 +206,6 @@ if (CLICKHOUSE_SPLIT_BINARY)
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
-    endif ()
-
-    if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
-        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-library-bridge)
     endif ()
 
     set_target_properties(${CLICKHOUSE_ALL_TARGETS} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
@@ -347,7 +325,7 @@ else ()
 endif ()
 
 if (ENABLE_TESTS AND USE_GTEST)
-    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_dbms)
+    set (CLICKHOUSE_UNIT_TESTS_TARGETS unit_tests_libcommon unit_tests_dbms)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()

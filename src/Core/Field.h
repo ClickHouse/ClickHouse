@@ -8,7 +8,6 @@
 
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <Core/Defines.h>
 #include <Core/DecimalFunctions.h>
@@ -36,7 +35,7 @@ template <typename T>
 using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;
 
 class Field;
-using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
+using FieldVector = std::vector<Field>;
 
 /// Array and Tuple use the same storage type -- FieldVector, but we declare
 /// distinct types for them, so that the caller can choose whether it wants to
@@ -96,7 +95,7 @@ template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -159,7 +158,7 @@ private:
     T dec;
     UInt32 scale;
 };
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
@@ -400,10 +399,10 @@ public:
 
 
     template <typename T>
-    NearestFieldType<std::decay_t<T>> & get();
+    T & get();
 
     template <typename T>
-    const auto & get() const
+    const T & get() const
     {
         auto mutable_this = const_cast<std::decay_t<decltype(*this)> *>(this);
         return mutable_this->get<T>();
@@ -437,10 +436,21 @@ public:
         return true;
     }
 
-    template <typename T> auto & safeGet() const
-    { return const_cast<Field *>(this)->safeGet<T>(); }
+    template <typename T> T & safeGet()
+    {
+        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
+        if (which != requested)
+            throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
+        return get<T>();
+    }
 
-    template <typename T> auto & safeGet();
+    template <typename T> const T & safeGet() const
+    {
+        const Types::Which requested = TypeToEnum<std::decay_t<T>>::value;
+        if (which != requested)
+            throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
+        return get<T>();
+    }
 
     bool operator< (const Field & rhs) const
     {
@@ -563,7 +573,7 @@ public:
         {
             case Types::Null:    return f(field.template get<Null>());
 // gcc 8.2.1
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -583,7 +593,7 @@ public:
             case Types::Int128: return f(field.template get<Int128>());
             case Types::UInt256: return f(field.template get<UInt256>());
             case Types::Int256: return f(field.template get<Int256>());
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
         }
@@ -768,39 +778,21 @@ inline constexpr bool isInt64FieldType(Field::Types::Which t)
 
 // Field value getter with type checking in debug builds.
 template <typename T>
-NearestFieldType<std::decay_t<T>> & Field::get()
+T & Field::get()
 {
-    // Before storing the value in the Field, we static_cast it to the field
-    // storage type, so here we return the value of storage type as well.
-    // Otherwise, it is easy to make a mistake of reinterpret_casting the stored
-    // value to a different and incompatible type.
-    // For example, a Float32 value is stored as Float64, and it is incorrect to
-    // return a reference to this value as Float32.
-    using StoredType = NearestFieldType<std::decay_t<T>>;
+    using ValueType = std::decay_t<T>;
 
 #ifndef NDEBUG
     // Disregard signedness when converting between int64 types.
-    constexpr Field::Types::Which target = TypeToEnum<StoredType>::value;
+    constexpr Field::Types::Which target = TypeToEnum<NearestFieldType<ValueType>>::value;
     if (target != which
            && (!isInt64FieldType(target) || !isInt64FieldType(which)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Field get from type {} to type {}", Types::toString(which), Types::toString(target));
 #endif
 
-    StoredType * MAY_ALIAS ptr = reinterpret_cast<StoredType *>(&storage);
-
+    ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
     return *ptr;
 }
-
-
-template <typename T>
-auto & Field::safeGet()
-{
-    const Types::Which requested = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
-    if (which != requested)
-        throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
-    return get<T>();
-}
-
 
 template <typename T>
 T & Field::reinterpret()
@@ -954,26 +946,3 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 String toString(const Field & x);
 
 }
-
-template <>
-struct fmt::formatter<DB::Field>
-{
-    constexpr auto parse(format_parse_context & ctx)
-    {
-        auto it = ctx.begin();
-        auto end = ctx.end();
-
-        /// Only support {}.
-        if (it != end && *it != '}')
-            throw format_error("invalid format");
-
-        return it;
-    }
-
-    template <typename FormatContext>
-    auto format(const DB::Field & x, FormatContext & ctx)
-    {
-        return format_to(ctx.out(), "{}", toString(x));
-    }
-};
-

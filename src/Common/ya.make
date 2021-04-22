@@ -14,7 +14,7 @@ PEERDIR(
     clickhouse/base/common
     clickhouse/base/pcg-random
     clickhouse/base/widechar_width
-    contrib/libs/libcpuid
+    contrib/libs/libcpuid/libcpuid
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2

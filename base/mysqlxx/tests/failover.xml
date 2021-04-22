@@ -1,0 +1,21 @@
+<?xml version = '1.0' encoding = 'utf-8'?>
+<yandex>
+    <mysql_goals>
+        <port>3306</port>
+        <user>root</user>
+        <db>Metrica</db>
+        <password>qwerty</password>
+        <replica>
+            <host>example02t</host>
+            <priority>0</priority>
+        </replica>
+        <replica>
+            <host>example02t</host>
+            <port>3306</port>
+            <user>root</user>
+            <password>qwerty</password>
+            <db>Metrica</db>
+            <priority>1</priority>
+        </replica>
+    </mysql_goals>
+</yandex>
