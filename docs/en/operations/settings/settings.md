@@ -854,8 +854,6 @@ For example, when reading from a table, if it is possible to evaluate expression
 
 Default value: the number of physical CPU cores.
 
-If less than one SELECT query is normally run on a server at a time, set this parameter to a value slightly less than the actual number of processor cores.
-
 For queries that are completed quickly because of a LIMIT, you can set a lower ‘max_threads’. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 
 The smaller the `max_threads` value, the less memory is consumed.
