@@ -104,8 +104,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     if (!projection_definition->query)
         throw Exception("QUERY is required for projection", ErrorCodes::INCORRECT_QUERY);
 
-    if (projection_definition->type == "normal")
-        throw Exception("Normal projections are not supported for now", ErrorCodes::NOT_IMPLEMENTED);
+    // if (projection_definition->type == "normal")
+    //     throw Exception("Normal projections are not supported for now", ErrorCodes::NOT_IMPLEMENTED);
 
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();

@@ -313,7 +313,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         }
     }
 
-    if (processed_stage >= QueryProcessingStage::WithMergeableState)
+    if (query_info.aggregate_projection->type == "aggregate")
     {
         /// Here we create shared ManyAggregatedData for both projection and ordinary data.
         /// For ordinary data, AggregatedData is filled in a usual way.
