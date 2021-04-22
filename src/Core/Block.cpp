@@ -369,6 +369,14 @@ void Block::setColumns(const Columns & columns)
 }
 
 
+void Block::setColumn(size_t position, ColumnWithTypeAndName && column)
+{
+    data[position].name = std::move(column.name);
+    data[position].type = std::move(column.type);
+    data[position].column = std::move(column.column);
+}
+
+
 Block Block::cloneWithColumns(MutableColumns && columns) const
 {
     Block res;
