@@ -32,12 +32,12 @@
      <table_events>
          <cluster_pull>events</cluster_pull>
          <database_pull>dailyhistory</database_pull>
-         <table_pull>yellow_tripdata</table_pull>
+         <table_pull>yellow_tripdata_staging</table_pull>
          <cluster_push>events</cluster_push>
          <database_push>monthlyhistory</database_push>
-         <table_push>yellow_tripdata</table_push>
+         <table_push>yellow_tripdata_staging</table_push>
          <engine>Engine=ReplacingMergeTree() PRIMARY KEY (tpep_pickup_datetime, id) ORDER BY (tpep_pickup_datetime, id) PARTITION BY (pickup_location_id, toYYYYMM(tpep_pickup_datetime))</engine>
-         <sharding_key>rand()</sharding_key>
+         <sharding_key>sipHash64(id) % 3</sharding_key>
      </table_events>
    </tables>
  </yandex>

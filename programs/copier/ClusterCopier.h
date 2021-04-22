@@ -18,12 +18,15 @@ public:
     ClusterCopier(const String & task_path_,
                   const String & host_id_,
                   const String & proxy_database_name_,
-                  ContextPtr context_)
+                  ContextPtr context_,
+                  Poco::Logger * log_)
             : WithContext(context_),
             task_zookeeper_path(task_path_),
             host_id(host_id_),
             working_database_name(proxy_database_name_),
-            log(&Poco::Logger::get("ClusterCopier")) {}
+            log(log_) {
+                std::cout << "Level from constructor" << log->getLevel() << std::endl;
+            }
 
     void init();
 
@@ -159,6 +162,7 @@ protected:
     String getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings & settings);
 
     ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
+    ASTPtr getCreateTableForPushShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
 
     /// If it is implicitly asked to create split Distributed table for certain piece on current shard, we will do it.
     void createShardInternalTables(const ConnectionTimeouts & timeouts, TaskShard & task_shard, bool create_split = true);
@@ -189,9 +193,7 @@ protected:
             const ClusterPtr & cluster,
             const String & query,
             const Settings & current_settings,
-            PoolMode pool_mode = PoolMode::GET_ALL,
-            ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD,
-            UInt64 max_successful_executions_per_shard = 0) const;
+            ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD) const;
 
 private:
     String task_zookeeper_path;

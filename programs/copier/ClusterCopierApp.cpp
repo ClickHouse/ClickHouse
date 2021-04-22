@@ -21,7 +21,7 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
     config_xml_path = config().getString("config-file");
     task_path = config().getString("task-path");
-    log_level = config().getString("log-level", "trace");
+    log_level = config().getString("log-level", "info");
     is_safe_mode = config().has("safe-mode");
     if (config().has("copy-fault-probability"))
         copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
@@ -110,6 +110,8 @@ void ClusterCopierApp::mainImpl()
     ThreadStatus thread_status;
 
     auto * log = &logger();
+    log->setLevel(6); /// Information
+    std::cout << log->getLevel() << std::endl;
     LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::getVersionRevision());
 
     SharedContextHolder shared_context = Context::createShared();
@@ -137,7 +139,7 @@ void ClusterCopierApp::mainImpl()
     CurrentThread::QueryScope query_scope(context);
 
     std::cout << "Will construct copier" << std::endl;
-    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, context);
+    auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, context, log);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);
