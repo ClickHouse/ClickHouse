@@ -40,7 +40,8 @@ private:
 
     void visitOtherInternalSelect(ASTSelectQuery & select_query, ASTPtr &);
 
-    bool rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns);
+    bool rewriteSubquery(ASTSelectQuery & subquery);
+
 };
 
 using PredicateRewriteMatcher = OneTypeMatcher<PredicateRewriteVisitorData, PredicateRewriteVisitorData::needChild>;
