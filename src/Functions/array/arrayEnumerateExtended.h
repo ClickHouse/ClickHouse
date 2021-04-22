@@ -30,7 +30,7 @@ template <typename Derived>
 class FunctionArrayEnumerateExtended : public IFunction
 {
 public:
-    static FunctionPtr create(const Context &) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 

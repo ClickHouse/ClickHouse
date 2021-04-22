@@ -1,6 +1,6 @@
 ---
 toc_priority: 17
-toc_title: "\u041a\u043b\u0438\u0435\u043d\u0442\u0020\u043a\u043e\u043c\u0430\u043d\u0434\u043d\u043e\u0439\u0020\u0441\u0442\u0440\u043e\u043a\u0438"
+toc_title: "Клиент командной строки"
 ---
 
 # Клиент командной строки {#klient-komandnoi-stroki}
@@ -121,6 +121,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 -   `--user, -u` — имя пользователя, по умолчанию — ‘default’.
 -   `--password` — пароль, по умолчанию — пустая строка.
 -   `--query, -q` — запрос для выполнения, при использовании в неинтерактивном режиме.
+-   `--queries-file, -qf` - путь к файлу с запросами для выполнения. Необходимо указать только одну из опций: `query` или `queries-file`.
 -   `--database, -d` — выбрать текущую БД. Без указания значение берется из настроек сервера (по умолчанию — БД ‘default’).
 -   `--multiline, -m` — если указано — разрешить многострочные запросы, не отправлять запрос по нажатию Enter.
 -   `--multiquery, -n` — если указано — разрешить выполнять несколько запросов, разделённых точкой с запятой.
@@ -130,6 +131,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 -   `--stacktrace` — если указано, в случае исключения, выводить также его стек-трейс.
 -   `--config-file` — имя конфигурационного файла.
 -   `--secure` — если указано, будет использован безопасный канал.
+-   `--history_file` - путь к файлу с историей команд.
 -   `--param_<name>` — значение параметра для [запроса с параметрами](#cli-queries-with-parameters).
 
 Начиная с версии 20.5, в `clickhouse-client` есть автоматическая подсветка синтаксиса (включена всегда).
@@ -153,4 +155,3 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 </config>
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/cli/) <!--hide-->

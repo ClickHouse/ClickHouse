@@ -52,7 +52,7 @@ public:
     /// It is needed to perform type analysis without creation of set.
     static constexpr auto name = FunctionInName<negative, global, null_is_skipped, ignore_set>::name;
 
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionIn>();
     }

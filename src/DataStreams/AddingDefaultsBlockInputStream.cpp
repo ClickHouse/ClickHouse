@@ -130,7 +130,7 @@ static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
 AddingDefaultsBlockInputStream::AddingDefaultsBlockInputStream(
     const BlockInputStreamPtr & input,
     const ColumnsDescription & columns_,
-    const Context & context_)
+    ContextPtr context_)
     : columns(columns_)
     , column_defaults(columns.getDefaults())
     , context(context_)
@@ -174,7 +174,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
     auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
     if (dag)
     {
-        auto actions = std::make_shared<ExpressionActions>(std::move(dag));
+        auto actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context));
         actions->execute(evaluate_block);
     }
 

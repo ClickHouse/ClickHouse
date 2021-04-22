@@ -16,7 +16,7 @@ The following operations with [partitions](../../../engines/table-engines/merget
 -   [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) — Resets the value of a specified column in a partition.
 -   [CLEAR INDEX IN PARTITION](#alter_clear-index-partition) — Resets the specified secondary index in a partition.
 -   [FREEZE PARTITION](#alter_freeze-partition) — Creates a backup of a partition.
--   [FETCH PARTITION](#alter_fetch-partition) — Downloads a partition from another server.
+-   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
 -   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
 
 <!-- -->
@@ -40,7 +40,7 @@ Read about setting the partition expression in a section [How to specify the par
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
-This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
+This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../../../operations/system-tables/replicas.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
 
 ## DROP PARTITION\|PART {#alter_drop-partition}
 
@@ -85,9 +85,13 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table. All other replicas download the data from the replica-initiator.
+This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. 
+If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
 
-So you can put data to the `detached` directory on one replica, and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
+If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own `detached` folder, it attaches the data without fetching it from other replicas.
+If there is no part with the correct checksums, the data is downloaded from any replica having the part.
+
+You can put data to the `detached` directory on one replica and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
 
 ## ATTACH PARTITION FROM {#alter_attach-partition-from}
 
@@ -95,7 +99,8 @@ So you can put data to the `detached` directory on one replica, and use the `ALT
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2` adds data to exsisting in the `table2`. Note that data won’t be deleted from `table1`.
+This query copies the data partition from `table1` to `table2`.
+Note that data will be deleted neither from `table1` nor from `table2`.
 
 For the query to run successfully, the following conditions must be met:
 
@@ -191,29 +196,35 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 
 The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
 
-## FETCH PARTITION {#alter_fetch-partition}
+## FETCH PARTITION|PART {#alter_fetch-partition}
 
 ``` sql
-ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
+ALTER TABLE table_name FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
 ```
 
 Downloads a partition from another server. This query only works for the replicated tables.
 
 The query does the following:
 
-1.  Downloads the partition from the specified shard. In ‘path-in-zookeeper’ you must specify a path to the shard in ZooKeeper.
+1.  Downloads the partition|part from the specified shard. In ‘path-in-zookeeper’ you must specify a path to the shard in ZooKeeper.
 2.  Then the query puts the downloaded data to the `detached` directory of the `table_name` table. Use the [ATTACH PARTITION\|PART](#alter_attach-partition) query to add the data to the table.
 
 For example:
 
+1. FETCH PARTITION
 ``` sql
 ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
+2. FETCH PART
+``` sql
+ALTER TABLE users FETCH PART 201901_2_2_0 FROM '/clickhouse/tables/01-01/visits';
+ALTER TABLE users ATTACH PART 201901_2_2_0;
+```
 
 Note that:
 
--   The `ALTER ... FETCH PARTITION` query isn’t replicated. It places the partition to the `detached` directory only on the local server.
+-   The `ALTER ... FETCH PARTITION|PART` query isn’t replicated. It places the part or partition to the `detached` directory only on the local server.
 -   The `ALTER TABLE ... ATTACH` query is replicated. It adds the data to all replicas. The data is added to one of the replicas from the `detached` directory, and to the others - from neighboring replicas.
 
 Before downloading, the system checks if the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
