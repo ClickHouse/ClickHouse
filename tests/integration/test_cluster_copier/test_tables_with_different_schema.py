@@ -119,6 +119,76 @@ class TaskWithDifferentSchema:
         assert a == b, "Data"
 
 
+# Just simple copying, but table schema has TTL on columns
+# Also table will have slightly different schema
+class TaskTTL:
+    def __init__(self, cluster):
+        self.cluster = cluster
+        self.zk_task_path = '/clickhouse-copier/task_ttl_columns'
+        self.container_task_file = "/task_ttl_columns.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_ttl_columns.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
+
+    def start(self):
+        first = cluster.instances["first"]
+        first.query("CREATE DATABASE db_ttl_columns;")
+        first.query("""CREATE TABLE db_ttl_columns.source
+        (
+            Column1 String,
+            Column2 UInt32,
+            Column3 Date,
+            Column4 DateTime,
+            Column5 UInt16,
+            Column6 String TTL now() + INTERVAL 1 MONTH,
+            Column7 Decimal(3, 1) TTL now() + INTERVAL 1 MONTH,
+            Column8 Tuple(Float64, Float64) TTL now() + INTERVAL 1 MONTH
+        )
+        ENGINE = MergeTree()
+        PARTITION BY (toYYYYMMDD(Column3), Column3)
+        PRIMARY KEY (Column1, Column2, Column3)
+        ORDER BY (Column1, Column2, Column3)
+        SETTINGS index_granularity = 8192""")
+
+        first.query("""INSERT INTO db_ttl_columns.source SELECT * FROM generateRandom(
+            'Column1 String, Column2 UInt32, Column3 Date, Column4 DateTime, Column5 UInt16,
+            Column6 String, Column7 Decimal(3, 1), Column8 Tuple(Float64, Float64)', 1, 10, 2) LIMIT 100;""")
+
+        second = cluster.instances["second"]
+        second.query("CREATE DATABASE db_ttl_columns;")
+        second.query("""CREATE TABLE db_ttl_columns.destination
+        (
+            Column1 String,
+            Column2 UInt32,
+            Column3 Date,
+            Column4 DateTime TTL now() + INTERVAL 1 MONTH,
+            Column5 UInt16 TTL now() + INTERVAL 1 MONTH,
+            Column6 String TTL now() + INTERVAL 1 MONTH,
+            Column7 Decimal(3, 1) TTL now() + INTERVAL 1 MONTH,
+            Column8 Tuple(Float64, Float64)
+        ) ENGINE = MergeTree()
+        PARTITION BY toYYYYMMDD(Column3)
+        ORDER BY (Column3, Column2, Column1);""")
+        
+        print("Preparation completed")
+
+    def check(self):
+        first = cluster.instances["first"]
+        second = cluster.instances["second"]
+
+        a = first.query("SELECT count() from db_ttl_columns.source")
+        b = second.query("SELECT count() from db_ttl_columns.destination")
+        assert a == b, "Count"
+
+        a = TSV(first.query("""SELECT sipHash64(*) from db_ttl_columns.source
+            ORDER BY (Column1, Column2, Column3, Column4, Column5, Column6, Column7, Column8)"""))
+        b = TSV(second.query("""SELECT sipHash64(*) from db_ttl_columns.destination
+            ORDER BY (Column1, Column2, Column3, Column4, Column5, Column6, Column7, Column8)"""))
+        assert a == b, "Data"
+
+
 def execute_task(task, cmd_options):
     task.start()
 
@@ -168,8 +238,14 @@ def execute_task(task, cmd_options):
         zk.delete(task.zk_task_path, recursive=True)
 
 
+
+
 # Tests
 @pytest.mark.timeout(1200)
-def test1(started_cluster):
+def test_different_schema(started_cluster):
     execute_task(TaskWithDifferentSchema(started_cluster), [])
 
+
+
+def test_ttl_columns(started_cluster):
+    execute_task(TaskTTL(started_cluster), [])
