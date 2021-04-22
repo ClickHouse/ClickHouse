@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int NOT_IMPLEMENTED;
     extern const int FILE_ALREADY_EXISTS;
+    extern const int INCORRECT_QUERY;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -228,6 +229,11 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         other_db.checkMetadataFilenameAvailabilityUnlocked(to_table_name, inside_database ? db_lock : other_db_lock);
 
     StoragePtr table = getTableUnlocked(table_name, db_lock);
+
+    if (dictionary != table->isDictionary())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+                        "Use RENAME DICTIONARY for dictionaries and RENAME TABLE for tables.");
+
     table->checkTableCanBeRenamed();
     assert_can_move_mat_view(table);
     StoragePtr other_table;
