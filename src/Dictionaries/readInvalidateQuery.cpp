@@ -20,17 +20,17 @@ std::string readInvalidateQuery(IBlockInputStream & block_input_stream)
 
     Block block = block_input_stream.read();
     if (!block)
-        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Empty response");
+        throw Exception("Empty response", ErrorCodes::RECEIVED_EMPTY_DATA);
 
     auto columns = block.columns();
     if (columns > 1)
-        throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Expected single column in resultset, got {}", std::to_string(columns));
+        throw Exception("Expected single column in resultset, got " + std::to_string(columns), ErrorCodes::TOO_MANY_COLUMNS);
 
     auto rows = block.rows();
     if (rows == 0)
-        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Expected single row in resultset, got 0");
+        throw Exception("Expected single row in resultset, got 0", ErrorCodes::RECEIVED_EMPTY_DATA);
     if (rows > 1)
-        throw Exception(ErrorCodes::TOO_MANY_ROWS, "Expected single row in resultset, got at least {}", std::to_string(rows));
+        throw Exception("Expected single row in resultset, got at least " + std::to_string(rows), ErrorCodes::TOO_MANY_ROWS);
 
     WriteBufferFromOwnString out;
     auto & column_type = block.getByPosition(0);
@@ -38,7 +38,7 @@ std::string readInvalidateQuery(IBlockInputStream & block_input_stream)
 
     while ((block = block_input_stream.read()))
         if (block.rows() > 0)
-            throw Exception(ErrorCodes::TOO_MANY_ROWS, "Expected single row in resultset, got at least {}", std::to_string(rows + 1));
+            throw Exception("Expected single row in resultset, got at least " + std::to_string(rows + 1), ErrorCodes::TOO_MANY_ROWS);
 
     block_input_stream.readSuffix();
     return out.str();

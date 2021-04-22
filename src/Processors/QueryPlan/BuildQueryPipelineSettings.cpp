@@ -13,9 +13,9 @@ BuildQueryPipelineSettings BuildQueryPipelineSettings::fromSettings(const Settin
     return settings;
 }
 
-BuildQueryPipelineSettings BuildQueryPipelineSettings::fromContext(ContextPtr from)
+BuildQueryPipelineSettings BuildQueryPipelineSettings::fromContext(const Context & from)
 {
-    return fromSettings(from->getSettingsRef());
+    return fromSettings(from.getSettingsRef());
 }
 
 }

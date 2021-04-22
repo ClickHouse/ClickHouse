@@ -112,7 +112,6 @@ private:
             Decimal32,
             Decimal64,
             Decimal128,
-            Decimal256,
             Float32,
             Float64,
             StringRef>
@@ -130,7 +129,6 @@ private:
             Ptr<Decimal32>,
             Ptr<Decimal64>,
             Ptr<Decimal128>,
-            Ptr<Decimal256>,
             Ptr<Float32>,
             Ptr<Float64>,
             Ptr<StringRef>>

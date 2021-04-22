@@ -1,14 +1,11 @@
 #pragma once
 
 #include <Common/Arena.h>
-#include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Core/Block.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
 
@@ -63,11 +60,7 @@ private:
 class DictionaryStorageFetchRequest
 {
 public:
-    DictionaryStorageFetchRequest(
-        const DictionaryStructure & structure,
-        const Strings & attributes_names_to_fetch,
-        DataTypes attributes_to_fetch_result_types,
-        Columns attributes_default_values_columns)
+    DictionaryStorageFetchRequest(const DictionaryStructure & structure, const Strings & attributes_names_to_fetch, Columns attributes_default_values_columns)
         : attributes_to_fetch_names_set(attributes_names_to_fetch.begin(), attributes_names_to_fetch.end())
         , attributes_to_fetch_filter(structure.attributes.size(), false)
     {
@@ -80,7 +73,7 @@ public:
         dictionary_attributes_types.reserve(attributes_size);
         attributes_default_value_providers.reserve(attributes_to_fetch_names_set.size());
 
-        size_t attributes_to_fetch_index = 0;
+        size_t default_values_column_index = 0;
         for (size_t i = 0; i < attributes_size; ++i)
         {
             const auto & dictionary_attribute = structure.attributes[i];
@@ -91,16 +84,8 @@ public:
             if (attributes_to_fetch_names_set.find(name) != attributes_to_fetch_names_set.end())
             {
                 attributes_to_fetch_filter[i] = true;
-                auto & attribute_to_fetch_result_type = attributes_to_fetch_result_types[attributes_to_fetch_index];
-
-                if (!attribute_to_fetch_result_type->equals(*type))
-                    throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Attribute type does not match, expected ({}), found ({})",
-                    attribute_to_fetch_result_type->getName(),
-                    type->getName());
-
-                attributes_default_value_providers.emplace_back(dictionary_attribute.null_value, attributes_default_values_columns[attributes_to_fetch_index]);
-                ++attributes_to_fetch_index;
+                attributes_default_value_providers.emplace_back(dictionary_attribute.null_value, attributes_default_values_columns[default_values_column_index]);
+                ++default_values_column_index;
             }
             else
                 attributes_default_value_providers.emplace_back(dictionary_attribute.null_value);
@@ -251,7 +236,7 @@ public:
         else if constexpr (IsNumber<DictionaryAttributeType>)
             return ColumnType::create(size);
         else
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
+            throw Exception{"Unsupported attribute type.", ErrorCodes::TYPE_MISMATCH};
     }
 };
 
@@ -288,7 +273,7 @@ public:
                 use_default_value_from_column = false;
             }
             else
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type of default column is not the same as dictionary attribute type.");
+                throw Exception{"Type of default column is not the same as dictionary attribute type.", ErrorCodes::TYPE_MISMATCH};
         }
     }
 
@@ -431,105 +416,6 @@ private:
     Arena * complex_key_arena;
 };
 
-/** Merge block with blocks from stream. If there are duplicate keys in block they are filtered out.
-  * In result block_to_update will be merged with blocks from stream.
-  * Note: readPrefix readImpl readSuffix will be called on stream object during function execution.
-  */
-template <DictionaryKeyType dictionary_key_type>
-void mergeBlockWithStream(
-    size_t key_column_size [[maybe_unused]],
-    Block & block_to_update [[maybe_unused]],
-    BlockInputStreamPtr & stream [[maybe_unused]])
-{
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by updatePreviousyLoadedBlockWithStream");
-
-    Columns saved_block_key_columns;
-    saved_block_key_columns.reserve(key_column_size);
-
-    /// Split into keys columns and attribute columns
-    for (size_t i = 0; i < key_column_size; ++i)
-        saved_block_key_columns.emplace_back(block_to_update.safeGetByPosition(i).column);
-
-    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-    DictionaryKeysExtractor<dictionary_key_type> saved_keys_extractor(saved_block_key_columns, arena_holder.getComplexKeyArena());
-    auto saved_keys_extracted_from_block = saved_keys_extractor.extractAllKeys();
-
-    IColumn::Filter filter(saved_keys_extracted_from_block.size(), true);
-
-    HashMap<KeyType, size_t> saved_key_to_index;
-    saved_key_to_index.reserve(saved_keys_extracted_from_block.size());
-
-    size_t indexes_to_remove_count = 0;
-
-    for (size_t i = 0; i < saved_keys_extracted_from_block.size(); ++i)
-    {
-        auto saved_key = saved_keys_extracted_from_block[i];
-        auto [it, was_inserted] = saved_key_to_index.insert(makePairNoInit(saved_key, i));
-
-        if (!was_inserted)
-        {
-            size_t index_to_remove = it->getMapped();
-            filter[index_to_remove] = false;
-            it->getMapped() = i;
-            ++indexes_to_remove_count;
-        }
-    }
-
-    auto result_fetched_columns = block_to_update.cloneEmptyColumns();
-
-    stream->readPrefix();
-
-    while (Block block = stream->read())
-    {
-        Columns block_key_columns;
-        block_key_columns.reserve(key_column_size);
-
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < key_column_size; ++i)
-            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-        DictionaryKeysExtractor<dictionary_key_type> update_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
-        PaddedPODArray<KeyType> update_keys = update_keys_extractor.extractAllKeys();
-
-        for (auto update_key : update_keys)
-        {
-            const auto * it = saved_key_to_index.find(update_key);
-            if (it != nullptr)
-            {
-                size_t index_to_filter = it->getMapped();
-                filter[index_to_filter] = false;
-                ++indexes_to_remove_count;
-            }
-        }
-
-        size_t rows = block.rows();
-
-        for (size_t column_index = 0; column_index < block.columns(); ++column_index)
-        {
-            const auto update_column = block.safeGetByPosition(column_index).column;
-            MutableColumnPtr & result_fetched_column = result_fetched_columns[column_index];
-
-            result_fetched_column->insertRangeFrom(*update_column, 0, rows);
-        }
-    }
-
-    stream->readSuffix();
-
-    size_t result_fetched_rows = result_fetched_columns.front()->size();
-    size_t filter_hint = filter.size() - indexes_to_remove_count;
-
-    for (size_t column_index = 0; column_index < block_to_update.columns(); ++column_index)
-    {
-        auto & column = block_to_update.getByPosition(column_index).column;
-        column = column->filter(filter, filter_hint);
-
-        MutableColumnPtr mutable_column = column->assumeMutable();
-        const IColumn & fetched_column = *result_fetched_columns[column_index];
-        mutable_column->insertRangeFrom(fetched_column, 0, result_fetched_rows);
-    }
-}
-
 /**
  * Returns ColumnVector data as PaddedPodArray.
 
@@ -548,10 +434,10 @@ static const PaddedPODArray<T> & getColumnVectorData(
 
     if (!vector_col)
     {
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
+        throw Exception{ErrorCodes::TYPE_MISMATCH,
             "{}: type mismatch: column has wrong type expected {}",
             dictionary->getDictionaryID().getNameForLogs(),
-            TypeName<T>::get());
+            TypeName<T>::get()};
     }
 
     if (is_const_column)

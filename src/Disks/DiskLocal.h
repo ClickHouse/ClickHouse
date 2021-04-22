@@ -1,6 +1,5 @@
 #pragma once
 
-#include <common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -116,8 +115,6 @@ private:
     UInt64 reservation_count = 0;
 
     static std::mutex reservation_mutex;
-
-    Poco::Logger * log = &Poco::Logger::get("DiskLocal");
 };
 
 }

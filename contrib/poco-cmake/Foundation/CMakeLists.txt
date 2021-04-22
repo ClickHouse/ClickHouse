@@ -233,10 +233,3 @@ else ()
 
     message (STATUS "Using Poco::Foundation: ${LIBRARY_POCO_FOUNDATION} ${INCLUDE_POCO_FOUNDATION}")
 endif ()
-
-if(OS_DARWIN AND ARCH_AARCH64)
-    target_compile_definitions (_poco_foundation
-        PRIVATE
-            POCO_NO_STAT64
-    )
-endif()

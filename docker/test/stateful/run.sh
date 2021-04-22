@@ -21,14 +21,14 @@ function start()
         -- --path /var/lib/clickhouse1/ --logger.stderr /var/log/clickhouse-server/stderr1.log \
         --logger.log /var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server1.err.log \
         --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
-        --mysql_port 19004 --postgresql_port 19005 \
+        --mysql_port 19004 \
         --keeper_server.tcp_port 19181 --keeper_server.server_id 2
 
         sudo -E -u clickhouse /usr/bin/clickhouse server --config /etc/clickhouse-server2/config.xml --daemon \
         -- --path /var/lib/clickhouse2/ --logger.stderr /var/log/clickhouse-server/stderr2.log \
         --logger.log /var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server2.err.log \
         --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
-        --mysql_port 29004 --postgresql_port 29005 \
+        --mysql_port 29004 \
         --keeper_server.tcp_port 29181 --keeper_server.server_id 3
     fi
 

@@ -32,14 +32,12 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (db-generator)
     add_subdirectory (wal-dump)
     add_subdirectory (check-mysql-binlog)
-    add_subdirectory (keeper-bench)
 
     if (USE_NURAFT)
         add_subdirectory (keeper-data-dumper)
     endif ()
 
-    # memcpy_jart.S contains position dependent code
-    if (NOT CMAKE_POSITION_INDEPENDENT_CODE AND NOT OS_DARWIN)
+    if (NOT OS_DARWIN)
         add_subdirectory (memcpy-bench)
     endif ()
 endif ()
