@@ -22,7 +22,7 @@ struct DiskS3Settings
 {
     DiskS3Settings(
         const std::shared_ptr<Aws::S3::S3Client> & client_,
-        size_t s3_max_single_read_retries_,
+        std::shared_ptr<Aws::Client::RetryStrategy> single_read_retry_strategy_,
         size_t s3_min_upload_part_size_,
         size_t s3_max_single_part_upload_size_,
         size_t min_bytes_for_seek_,
@@ -32,7 +32,7 @@ struct DiskS3Settings
         int objects_chunk_size_to_delete_);
 
     std::shared_ptr<Aws::S3::S3Client> client;
-    size_t s3_max_single_read_retries;
+    std::shared_ptr<Aws::Client::RetryStrategy> single_read_retry_strategy;
     size_t s3_min_upload_part_size;
     size_t s3_max_single_part_upload_size;
     size_t min_bytes_for_seek;

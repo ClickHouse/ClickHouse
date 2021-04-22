@@ -150,7 +150,7 @@ std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfigurat
 {
     return std::make_unique<DiskS3Settings>(
         getClient(config, config_prefix, context),
-        config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries),
+        std::make_shared<Aws::Client::DefaultRetryStrategy>(config.getUInt(config_prefix + ".single_read_retry_attempts", context->getSettingsRef().s3_single_read_retry_attempts)),
         config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size),
         config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size),
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),

@@ -121,12 +121,12 @@ public:
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         DiskS3::Metadata metadata_,
-        size_t s3_max_single_read_retries_,
+        std::shared_ptr<Aws::Client::RetryStrategy> single_read_retry_strategy_,
         size_t buf_size_)
         : ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>(metadata_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
-        , s3_max_single_read_retries(s3_max_single_read_retries_)
+        , single_read_retry_strategy(std::move(single_read_retry_strategy_))
         , buf_size(buf_size_)
     {
     }
@@ -139,7 +139,7 @@ public:
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     const String & bucket;
-    size_t s3_max_single_read_retries;
+    std::shared_ptr<Aws::Client::RetryStrategy> single_read_retry_strategy;
     size_t buf_size;
 };
 
@@ -225,7 +225,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, si
     LOG_DEBUG(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto reader = std::make_unique<ReadIndirectBufferFromS3>(settings->client, bucket, metadata, settings->s3_max_single_read_retries, buf_size);
+    auto reader = std::make_unique<ReadIndirectBufferFromS3>(settings->client, bucket, metadata, settings->single_read_retry_strategy, buf_size);
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
 }
 
@@ -368,7 +368,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
         settings->client,
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
-        settings->s3_max_single_read_retries);
+        settings->single_read_retry_strategy);
 
     readIntText(version, buffer);
 
@@ -937,7 +937,7 @@ void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, 
 
 DiskS3Settings::DiskS3Settings(
     const std::shared_ptr<Aws::S3::S3Client> & client_,
-    size_t s3_max_single_read_retries_,
+    std::shared_ptr<Aws::Client::RetryStrategy> single_read_retry_strategy_,
     size_t s3_min_upload_part_size_,
     size_t s3_max_single_part_upload_size_,
     size_t min_bytes_for_seek_,
@@ -946,7 +946,7 @@ DiskS3Settings::DiskS3Settings(
     int list_object_keys_size_,
     int objects_chunk_size_to_delete_)
     : client(client_)
-    , s3_max_single_read_retries(s3_max_single_read_retries_)
+    , single_read_retry_strategy(single_read_retry_strategy_)
     , s3_min_upload_part_size(s3_min_upload_part_size_)
     , s3_max_single_part_upload_size(s3_max_single_part_upload_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
