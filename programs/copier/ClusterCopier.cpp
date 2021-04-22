@@ -694,9 +694,10 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
     return TaskStatus::Finished;
 }
 
-/// Remove column's TTL expression from `CREATE` query
-/// This is needed to create internal Distributed table 
-/// Also it removes MATEREALIZED or ALIAS columns not to copy additional and useless data over the network.
+/// This is needed to create internal Distributed table
+/// Removes column's TTL expression from `CREATE` query
+/// Removes MATEREALIZED or ALIAS columns not to copy additional and useless data over the network.
+/// Removes data skipping indices.
 ASTPtr ClusterCopier::removeAliasMaterializedAndTTLColumnsFromCreateQuery(const ASTPtr & query_ast, bool allow_to_copy_alias_and_materialized_columns)
 {
     const ASTs & column_asts = query_ast->as<ASTCreateQuery &>().columns_list->columns->children;
@@ -1279,6 +1280,8 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         if (!limit.empty())
             query += " LIMIT " + limit;
 
+        query += "FORMAT Native";
+
         ParserQuery p_query(query.data() + query.size());
 
         const auto & settings = getContext()->getSettingsRef();
@@ -1497,7 +1500,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         ASTPtr query_insert_ast;
         {
             String query;
-            query += "INSERT INTO " + getQuotedTable(split_table_for_current_piece) + " VALUES ";
+            query += "INSERT INTO " + getQuotedTable(split_table_for_current_piece) + " FORMAT Native  ";
 
             ParserQuery p_query(query.data() + query.size());
             const auto & settings = getContext()->getSettingsRef();
@@ -1772,7 +1775,7 @@ void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeout
     auto storage_shard_ast = createASTStorageDistributed(shard_read_cluster_name, task_table.table_pull.first, task_table.table_pull.second);
 
     auto create_query_ast = removeAliasMaterializedAndTTLColumnsFromCreateQuery(
-        task_shard.current_pull_table_create_query, 
+        task_shard.current_pull_table_create_query,
         task_table.allow_to_copy_alias_and_materialized_columns);
 
     auto create_table_pull_ast = rewriteCreateQueryStorage(create_query_ast, task_shard.table_read_shard, storage_shard_ast);
@@ -1876,7 +1879,7 @@ bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
     const auto & settings = getContext()->getSettingsRef();
     ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
 
-    LOG_INFO(log, "Checking shard {} for partition {} existence, executing query: \n {}", 
+    LOG_INFO(log, "Checking shard {} for partition {} existence, executing query: \n {}",
         task_shard.getDescription(), partition_quoted_name, query_ast->formatForErrorMessage());
 
     auto local_context = Context::createCopy(context);
