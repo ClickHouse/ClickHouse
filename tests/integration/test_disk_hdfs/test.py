@@ -49,13 +49,13 @@ def test_hdfs_disk_as_default(started_cluster):
         node2.query("INSERT INTO test_database.test_table SELECT number FROM numbers(100000)")
     assert int(node2.query("SELECT count() FROM test_database.test_table").rstrip()) == 5 * 100000
 
+    node2.query("RENAME TABLE test_database.test_table to test_database.test")
+    assert int(node2.query("SELECT count() FROM test_database.test").rstrip()) == 5 * 100000
+
+    node2.query("RENAME TABLE test_database.test to test_database.test_table")
+
     node2.query("TRUNCATE TABLE test_database.test_table")
     assert int(node2.query("SELECT count() FROM test_database.test_table").rstrip()) == 0
-
-    node2.query("RENAME TABLE test_database.test_table to test_database.test")
-    assert 'test' in node2.query('SHOW TABLES FROM test_database')
-    assert 'test_table' not in node2.query('SHOW TABLES FROM test_database')
-    node2.query("RENAME TABLE test_database.test to test_database.test_table")
 
     node2.query("INSERT INTO test_database.test_table SELECT number FROM numbers(100000)")
     assert int(node2.query("SELECT count() FROM test_database.test_table").rstrip()) == 100000
