@@ -63,7 +63,7 @@ public:
 
     void write(const Block & block) override
     {
-        writeForDebug(block);
+        // writeForDebug(block);
 
         // TODO: metadata_snapshot->check
         // TODO: update storage.total_size_bytes
@@ -278,8 +278,15 @@ StorageAggregatingMemory::StorageAggregatingMemory(
                               true);
 
     aggregator_transform = std::make_shared<AggregatingTransformParams>(params, true);
-
     many_data = std::make_shared<ManyAggregatedData>(1);
+
+    /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
+    /// To do this, we pass a block with zero rows to aggregate.
+    if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+    {
+        AggregatingOutputStream os(*this, getInMemoryMetadataPtr(), context_);
+        os.write(src_sample_block);
+    }
 }
 
 
