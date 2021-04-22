@@ -24,13 +24,20 @@ namespace
 {
 
 /// Add all required expressions for missing columns calculation
-void addDefaultRequiredExpressionsRecursively(const Block & block, const String & required_column, const ColumnsDescription & columns, ASTPtr default_expr_list_accum, NameSet & added_columns)
+void addDefaultRequiredExpressionsRecursively(const Block & block, const String & required_column_name, DataTypePtr required_column_type, const ColumnsDescription & columns, ASTPtr default_expr_list_accum, NameSet & added_columns)
 {
     checkStackSize();
-    if (block.has(required_column) || added_columns.count(required_column))
+
+    bool is_column_in_query = block.has(required_column_name);
+    bool from_nullable_to_non_nullable = false;
+
+    if (is_column_in_query)
+        from_nullable_to_non_nullable = block.findByName(required_column_name)->type->isNullable() && !required_column_type->isNullable();
+
+    if ((is_column_in_query && !from_nullable_to_non_nullable) || added_columns.count(required_column_name))
         return;
 
-    auto column_default = columns.getDefault(required_column);
+    auto column_default = columns.getDefault(required_column_name);
 
     if (column_default)
     {
@@ -43,12 +50,21 @@ void addDefaultRequiredExpressionsRecursively(const Block & block, const String 
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
 
-        auto cast_func = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column).type->getName()));
-        default_expr_list_accum->children.emplace_back(setAlias(cast_func, required_column));
-        added_columns.emplace(required_column);
+        if (is_column_in_query && from_nullable_to_non_nullable)
+        {
+            auto null_as_default_func = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), column_default_expr);
+            default_expr_list_accum->children.emplace_back(setAlias(null_as_default_func, required_column_name));
+        }
+        else
+        {
+            auto cast_func = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
+            default_expr_list_accum->children.emplace_back(setAlias(cast_func, required_column_name));
+        }
 
-        for (const auto & required_column_name : required_columns_names)
-            addDefaultRequiredExpressionsRecursively(block, required_column_name, columns, default_expr_list_accum, added_columns);
+        added_columns.emplace(required_column_name);
+
+        for (const auto & next_required_column_name : required_columns_names)
+            addDefaultRequiredExpressionsRecursively(block, next_required_column_name, required_column_type, columns, default_expr_list_accum, added_columns);
     }
 }
 
@@ -58,7 +74,7 @@ ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList &
 
     NameSet added_columns;
     for (const auto & column : required_columns)
-        addDefaultRequiredExpressionsRecursively(block, column.name, columns, default_expr_list, added_columns);
+        addDefaultRequiredExpressionsRecursively(block, column.name, column.type, columns, default_expr_list, added_columns);
 
     if (default_expr_list->children.empty())
         return nullptr;
