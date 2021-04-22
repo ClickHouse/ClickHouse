@@ -234,7 +234,8 @@ def instrument_clickhouse_server_log(self, clickhouse_server_log="/var/log/click
     all_nodes = self.context.ch_nodes + [self.context.krb_server]
 
     for node in all_nodes:
-        with When(f"output stats for {node.repr()}"):
-            node.command(f"echo -e \"\\n-- {current().name} -- top --\\n\" && top -bn1")
-            node.command(f"echo -e \"\\n-- {current().name} -- df --\\n\" && df -h")
-            node.command(f"echo -e \"\\n-- {current().name} -- free --\\n\" && free -mh")
+        if node.name != "kerberos":
+            with When(f"output stats for {node.repr()}"):
+                node.command(f"echo -e \"\\n-- {current().name} -- top --\\n\" && top -bn1")
+                node.command(f"echo -e \"\\n-- {current().name} -- df --\\n\" && df -h")
+                node.command(f"echo -e \"\\n-- {current().name} -- free --\\n\" && free -mh")
