@@ -6,6 +6,7 @@
 #    include <IO/ReadBufferFromS3.h>
 #    include <Common/Stopwatch.h>
 
+#    include <aws/core/client/RetryStrategy.h>
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/GetObjectRequest.h>
 #    include <common/logger_useful.h>
@@ -31,12 +32,12 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, UInt64 s3_max_single_read_retries_, size_t buffer_size_)
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_, std::shared_ptr<Aws::Client::RetryStrategy> retry_strategy_, size_t buffer_size_)
     : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
-    , s3_max_single_read_retries(s3_max_single_read_retries_)
+    , retry_strategy(std::move(retry_strategy_))
     , buffer_size(buffer_size_)
 {
 }
@@ -52,11 +53,10 @@ bool ReadBufferFromS3::nextImpl()
     Stopwatch watch;
     bool next_result = false;
 
-    for (Int64 attempt = static_cast<Int64>(s3_max_single_read_retries); attempt >= 0; --attempt)
-    {
-        if (!impl)
-            impl = initialize();
+    Aws::Client::AWSError<Aws::Client::CoreErrors> network_error;
 
+    for (int attempt = 1;; ++attempt)
+    {
         try
         {
             next_result = impl->next();
@@ -68,6 +68,8 @@ bool ReadBufferFromS3::nextImpl()
         }
         catch (const Exception & e)
         {
+            network_error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, e.name(), e.message(), true);
+
             ProfileEvents::increment(ProfileEvents::S3ReadRequestsErrors, 1);
 
             LOG_INFO(log, "Caught exception while reading S3 object. Bucket: {}, Key: {}, Offset: {}, Remaining attempts: {}, Message: {}",
@@ -75,9 +77,14 @@ bool ReadBufferFromS3::nextImpl()
 
             impl.reset();
 
-            if (!attempt)
+            if (!retry_strategy->ShouldRetry(network_error, attempt))
                 throw;
         }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(retry_strategy->CalculateDelayBeforeNextRetry(network_error, attempt)));
+
+        if (!impl)
+            impl = initialize();
     }
 
     watch.stop();
