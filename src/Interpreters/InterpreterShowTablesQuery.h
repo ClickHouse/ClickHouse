@@ -7,6 +7,9 @@
 namespace DB
 {
 
+class Context;
+
+
 /** Return a list of tables or databases meets specified conditions.
   * Interprets a query through replacing it to SELECT query from system.tables or system.databases.
   */

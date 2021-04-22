@@ -11,6 +11,8 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class Context;
+
 /** This stream adds three types of columns into block
   * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)
   * 2. Columns, that are missed inside request, but present in table with defaults (columns with default values)

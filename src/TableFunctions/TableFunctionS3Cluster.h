@@ -10,7 +10,7 @@
 namespace DB
 {
 
-
+class Context;
 
 /**
  * s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)

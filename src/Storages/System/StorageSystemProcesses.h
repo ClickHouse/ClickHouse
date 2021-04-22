@@ -7,7 +7,7 @@
 namespace DB
 {
 
-
+class Context;
 
 
 /** Implements `processes` system table, which allows you to get information about the queries that are currently executing.

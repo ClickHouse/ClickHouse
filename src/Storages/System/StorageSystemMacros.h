@@ -8,7 +8,7 @@
 namespace DB
 {
 
-
+class Context;
 
 
 /** Information about macros for introspection.

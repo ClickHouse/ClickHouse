@@ -13,6 +13,7 @@
 namespace DB
 {
 
+class Context;
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 class ExpressionActions;

@@ -7,7 +7,7 @@
 namespace DB
 {
 
-
+class Context;
 
 
 /** Implements `databases` system table, which allows you to get information about all databases.

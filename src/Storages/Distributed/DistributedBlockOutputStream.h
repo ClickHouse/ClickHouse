@@ -22,6 +22,7 @@ namespace Poco
 namespace DB
 {
 
+class Context;
 class StorageDistributed;
 
 /** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.

@@ -4,7 +4,7 @@
 
 namespace DB
 {
-
+class Context;
 
 /* file(path, format, structure) - creates a temporary storage from file
  *

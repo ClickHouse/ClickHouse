@@ -23,6 +23,8 @@
 namespace DB
 {
 
+class Context;
+
 enum class MySQLDataTypesSupport;
 
 /** Real-time access to table list and table structure from remote MySQL

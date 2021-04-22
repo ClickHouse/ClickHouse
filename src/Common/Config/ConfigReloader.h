@@ -17,6 +17,8 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class Context;
+
 /** Every two seconds checks configuration files for update.
   * If configuration is changed, then config will be reloaded by ConfigProcessor
   *  and the reloaded config will be applied via Updater functor.

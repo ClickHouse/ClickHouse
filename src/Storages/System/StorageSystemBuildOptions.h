@@ -7,6 +7,9 @@
 namespace DB
 {
 
+class Context;
+
+
 /** System table "build_options" with many params used for clickhouse building
   */
 class StorageSystemBuildOptions final : public ext::shared_ptr_helper<StorageSystemBuildOptions>, public IStorageSystemOneBlock<StorageSystemBuildOptions>

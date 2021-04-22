@@ -13,6 +13,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class Context;
 class AccessRightsElements;
 class ASTSystemQuery;
 

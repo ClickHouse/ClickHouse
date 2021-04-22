@@ -13,6 +13,8 @@
 namespace DB
 {
 
+class Context;
+
 /// A base class for databases that manage their own list of tables.
 class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
 {

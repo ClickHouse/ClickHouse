@@ -9,6 +9,7 @@
 namespace DB
 {
 
+class Context;
 class Cluster;
 
 /** Implements system table 'clusters'

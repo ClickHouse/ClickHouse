@@ -7,7 +7,7 @@
 namespace DB
 {
 
-
+class Context;
 
 
 class StorageSystemModels final : public ext::shared_ptr_helper<StorageSystemModels>, public IStorageSystemOneBlock<StorageSystemModels>

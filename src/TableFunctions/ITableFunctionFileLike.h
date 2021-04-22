@@ -5,7 +5,7 @@
 namespace DB
 {
 class ColumnsDescription;
-
+class Context;
 
 /*
  * function(source, format, structure) - creates a temporary storage from formatted source

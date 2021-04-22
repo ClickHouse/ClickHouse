@@ -6,6 +6,7 @@
 
 namespace DB
 {
+class Context;
 
 class InterpreterShowPrivilegesQuery : public IInterpreter
 {

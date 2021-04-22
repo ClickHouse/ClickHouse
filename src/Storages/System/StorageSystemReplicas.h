@@ -7,7 +7,7 @@
 namespace DB
 {
 
-
+class Context;
 
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.

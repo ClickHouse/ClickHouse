@@ -6,7 +6,7 @@
 
 namespace DB
 {
-
+class Context;
 
 /// Implements `quota_limits` system table, which allows you to get information about the limits set for quotas.
 class StorageSystemQuotaLimits final : public ext::shared_ptr_helper<StorageSystemQuotaLimits>, public IStorageSystemOneBlock<StorageSystemQuotaLimits>

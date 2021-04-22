@@ -6,6 +6,7 @@
 
 namespace DB
 {
+class Context;
 
 /// Implements `current_roles` system table, which allows you to get information about current roles.
 class StorageSystemCurrentRoles final : public ext::shared_ptr_helper<StorageSystemCurrentRoles>, public IStorageSystemOneBlock<StorageSystemCurrentRoles>
