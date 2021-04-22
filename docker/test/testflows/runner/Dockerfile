@@ -38,7 +38,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN pip3 install urllib3 testflows==1.6.74 docker-compose docker dicttoxml kazoo tzlocal python-dateutil
 
 ENV DOCKER_CHANNEL stable
-ENV DOCKER_VERSION 17.09.1-ce
+ENV DOCKER_VERSION 20.10.6
 
 RUN set -eux; \
   \
