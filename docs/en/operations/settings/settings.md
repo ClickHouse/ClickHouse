@@ -2861,8 +2861,41 @@ Enables or disables using of the original column names instead of [aliases](../.
 
 Possible values:
 
-- 0 — Disabled.
-- 1 — Enabled.
+- 0 — Setting disabled — alias overrides name of the column if they match.
+- 1 — Settnig enabled — name of the column is used, when it matches the alias.
+
+**Example**
+
+The difference between enabled and disabled:
+
+Query:
+
+```sql
+SET prefer_column_name_to_alias = 0;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Result:
+
+``` text
+Received exception from server (version 21.5.1):
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
+```
+
+Query:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Result:
+
+```text
+┌─number─┬─max(number)─┐
+│    4.5 │           9 │
+└────────┴─────────────┘
+```
 
 Default value: `0`.
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
