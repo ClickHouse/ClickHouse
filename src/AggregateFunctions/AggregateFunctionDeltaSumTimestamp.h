@@ -49,6 +49,8 @@ public:
         >{}
     {}
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     String getName() const override { return "deltaSumTimestamp"; }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeNumber<ValueType>>(); }
