@@ -236,7 +236,7 @@ BlockIO InterpreterInsertQuery::execute()
             res.pipeline.resize(out_streams_size);
 
             /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
-            if (getContext()->getSettingsRef().input_format_null_as_default)
+            if (getContext()->getSettingsRef().insert_null_as_default)
             {
                 auto query_columns_names_and_types = query_sample_block.getNamesAndTypesList();
 
