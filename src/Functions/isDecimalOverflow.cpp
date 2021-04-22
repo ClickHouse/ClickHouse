@@ -85,7 +85,7 @@ public:
 
         auto result_column = ColumnUInt8::create();
 
-        auto call = [&](const auto & types)
+        auto call = [&](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
@@ -96,19 +96,21 @@ public:
                 Type const_decimal = checkAndGetColumn<ColVecType>(const_column->getDataColumnPtr().get())->getData()[0];
                 UInt8 res_value = outOfDigits<Type>(const_decimal, precision);
                 result_column->getData().resize_fill(input_rows_count, res_value);
-                return;
+                return true;
             }
             else if (const ColVecType * col_vec = checkAndGetColumn<ColVecType>(src_column.column.get()))
             {
                 execute<Type>(*col_vec, *result_column, input_rows_count, precision);
-                return;
+                return true;
             }
 
             throw Exception("Illegal column while execute function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         };
 
         TypeIndex dec_type_idx = src_column.type->getTypeId();
-        callOnBasicType<void, false, false, true, false>(dec_type_idx, call);
+        if (!callOnBasicType<void, false, false, true, false>(dec_type_idx, call))
+            throw Exception("Wrong call for " + getName() + " with " + src_column.type->getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
 
         return result_column;
     }
