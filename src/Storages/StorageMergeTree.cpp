@@ -1248,10 +1248,10 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, bool
         removePartsFromWorkingSet(parts_to_remove, true);
     }
 
-    dropPartsImpl(parts_to_remove, detach);
+    dropPartsImpl(std::move(parts_to_remove), detach);
 }
 
-void StorageMergeTree::dropPartsImpl(const DataPartsVector & parts_to_remove, bool detach)
+void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
@@ -1277,6 +1277,8 @@ void StorageMergeTree::dropPartsImpl(const DataPartsVector & parts_to_remove, bo
     else
         LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
 
+    /// Need to destroy part objects before clearing them from filesystem.
+    parts_to_remove.clear();
     clearOldPartsFromFilesystem();
 }
 
