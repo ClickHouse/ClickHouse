@@ -11,6 +11,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -73,16 +74,31 @@ public:
             }
         }
 
-        void addTableColumns(const String & table_name)
+        struct AlwaysAddColumnPredicate
+        {
+            bool operator()(const String & column_name [[maybe_unused]])
+            {
+                return true;
+            }
+        };
+
+        template <typename Predicate = AlwaysAddColumnPredicate>
+        void addTableColumns(const String & table_name, Predicate && should_add_column_predicate = Predicate())
         {
             auto it = table_columns.find(table_name);
             if (it == table_columns.end())
                 throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
             for (const auto & column : it->second)
-                new_select_expression_list->children.push_back(
-                    std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name}));
+            {
+                if (std::forward<Predicate>(should_add_column_predicate)(column.name))
+                {
+                    auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name});
+                    new_select_expression_list->children.emplace_back(std::move(identifier));
+                }
+            }
         }
+
     };
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return false; }
@@ -118,6 +134,13 @@ private:
                 ASTIdentifier & identifier = child->children[0]->as<ASTIdentifier &>();
 
                 data.addTableColumns(identifier.name());
+            }
+            else if (auto * columns_matcher = child->as<ASTColumnsMatcher>())
+            {
+                has_asterisks = true;
+
+                for (auto & table_name : data.tables_order)
+                    data.addTableColumns(table_name, [&](const String & column_name) { return columns_matcher->isColumnMatching(column_name); });
             }
             else
                 data.new_select_expression_list->children.push_back(child);
@@ -225,7 +248,7 @@ struct CollectColumnIdentifiersMatcher
             : identifiers(identifiers_)
         {}
 
-        void addIdentirier(const ASTIdentifier & ident)
+        void addIdentifier(const ASTIdentifier & ident)
         {
             for (const auto & aliases : ignored)
                 if (aliases.count(ident.name()))
@@ -267,7 +290,7 @@ struct CollectColumnIdentifiersMatcher
 
     static void visit(const ASTIdentifier & ident, const ASTPtr &, Data & data)
     {
-        data.addIdentirier(ident);
+        data.addIdentifier(ident);
     }
 
     static void visit(const ASTFunction & func, const ASTPtr &, Data & data)
