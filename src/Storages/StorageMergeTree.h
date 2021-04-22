@@ -213,7 +213,7 @@ private:
     // Partition helpers
     void dropPart(const String & name) override;
     void dropPartition(const ASTPtr & partition, bool detach, bool drop_part, ContextPtr context) override;
-    void dropPartsImpl(const DataPartsVector & parts_to_remove, bool detach);
+    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
     PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
