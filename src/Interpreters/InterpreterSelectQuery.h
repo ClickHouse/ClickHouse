@@ -93,6 +93,8 @@ public:
 
     const SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
 
+    const ExpressionAnalysisResult & getAnalysisResult() const { return analysis_result; }
+
     const Names & getRequiredColumns() const { return required_columns; }
 
     bool hasAggregation() const { return query_analyzer->hasAggregation(); }

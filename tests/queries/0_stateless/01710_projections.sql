@@ -6,6 +6,9 @@ insert into projection_test with rowNumberInAllBlocks() as id select toDateTime(
 
 set allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
 
+select * from projection_test; -- { serverError 584 }
+select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) from projection_test join (select 1) x using (1) where domain = '1' group by dt_m order by dt_m; -- { serverError 584 }
+
 select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) / count(), avg((kbytes * 8) / duration) from projection_test where domain = '1' group by dt_m order by dt_m;
 
 select toStartOfMinute(datetime) dt_m, count(), sum(block_count) / sum(duration), avg(block_count / duration) from projection_test group by dt_m order by dt_m;

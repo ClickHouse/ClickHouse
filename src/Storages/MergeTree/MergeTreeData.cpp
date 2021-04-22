@@ -3815,10 +3815,24 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
     InterpreterSelectQuery select(
         query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
+    const auto & analysis_result = select.getAnalysisResult();
+    /// If first staging query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage, return false
+    if (analysis_result.join != nullptr || analysis_result.array_join != nullptr || analysis_result.before_aggregation == nullptr)
+        return false;
+
     auto query_block = select.getSampleBlock();
     auto required_query = select.getQuery();
 
-    // The ownership of ProjectionDescription is hold in metadata_snapshot which lives with InterpreterSelect
+    /// Check if all needed columns can be provided by some aggregate projection. Here we also try
+    /// to find expression matches. For example, suppose an aggregate projection contains a column
+    /// named sum(x) and the given query also has an expression called sum(x), it's a match. This is
+    /// why we need to ignore all aliases during projection creation and the above query planning.
+    /// It's also worth noting that, sqrt(sum(x)) will also work because we can treat sum(x) as a
+    /// required column.
+    /// TODO we can use ActionsDAG here to make proper check
+
+    /// The ownership of ProjectionDescription is hold in metadata_snapshot which lives along with
+    /// InterpreterSelect, thus we can store the raw pointer here.
     std::vector<std::pair<const ProjectionDescription *, ProjectionKeyActions>> candidates;
     ParserFunction parse_function;
     for (const auto & projection : metadata_snapshot->projections)
@@ -3845,17 +3859,20 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         /// Check if the missing columns can be produced by key columns in projection.
         for (const auto & expr_name : maybe_dimension_column_exprs)
         {
+            /// XXX We need AST out from string names. Have to resort to the parser here.
             Tokens tokens_number(expr_name.data(), expr_name.data() + expr_name.size());
             IParser::Pos pos(tokens_number, settings.max_parser_depth);
             Expected expected;
             ASTPtr ast;
-            // It should be a function call.
+
+            /// It should be a function call, or else we would match them already.
             if (!parse_function.parse(pos, ast, expected))
             {
                 covered = false;
                 break;
             }
-            // It should be a function call that only requires unused key columns.
+            // It should be a function call that only requires unused key columns, or else some key
+            // column might be transformed in different ways, which is not injective.
             if (!key_actions.add(ast, expr_name, key_block))
             {
                 covered = false;
@@ -3890,6 +3907,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         }
     }
 
+    // Let's select the best aggregate projection to execute the query.
     if (!candidates.empty())
     {
         size_t min_key_size = std::numeric_limits<size_t>::max();
