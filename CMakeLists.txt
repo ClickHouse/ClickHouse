@@ -516,9 +516,9 @@ include (cmake/find/fast_float.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
+include (cmake/find/nanodbc.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
-include (cmake/find/nanodbc.cmake)
 include (cmake/find/nuraft.cmake)
 
 
