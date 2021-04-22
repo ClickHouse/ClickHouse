@@ -213,6 +213,11 @@ public:
 
     virtual bool isShortCircuit() const { return false; }
 
+    virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
+    {
+        throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
@@ -271,6 +276,11 @@ public:
     virtual bool isVariadic() const { return false; }
 
     virtual bool isShortCircuit() const { return false; }
+
+    virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
+    {
+        throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).

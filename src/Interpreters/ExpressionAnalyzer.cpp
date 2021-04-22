@@ -88,7 +88,7 @@ bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & sett
 
     for (const auto & node : actions.getNodes())
     {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        if ((node.type == ActionsDAG::ActionType::FUNCTION || node.type == ActionsDAG::ActionType::COLUMN_FUNCTION) && node.function_base)
         {
             if (!node.function_base->isSuitableForConstantFolding())
                 return false;
@@ -1578,8 +1578,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         optimize_read_in_order =
             settings.optimize_read_in_order
-            && storage
-            && query.orderBy()
+            && storage && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query_analyzer.hasWindow()
             && !query.final()
