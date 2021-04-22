@@ -303,6 +303,7 @@ SRCS(
     ignore.cpp
     ilike.cpp
     in.cpp
+    indexHint.cpp
     initializeAggregation.cpp
     intDiv.cpp
     intDivOrZero.cpp
@@ -532,6 +533,7 @@ SRCS(
     upper.cpp
     upperUTF8.cpp
     uptime.cpp
+    validateNestedArraySizes.cpp
     version.cpp
     visibleWidth.cpp
     visitParamExtractBool.cpp
