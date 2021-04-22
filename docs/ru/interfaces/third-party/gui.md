@@ -180,9 +180,8 @@ toc_title: "\u0412\u0438\u0437\u0443\u0430\u043b\u044c\u043d\u044b\u0435\u0020\u
 
 [Как сконфигурировать соединение ClickHouse в SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
 
-
 ### Chadmin {#chadmin}
 
-[Chadmin](https://github.com/bun4uk/chadmin) — простой UI, в котором можно наглядно видеть запросы на вашем кластере ClickHouse во время их выполнения и информацию о них. Также доступна функция остановки запросов.
+[Chadmin](https://github.com/bun4uk/chadmin) — простой графический интерфейс для визуализации запущенных запросов на вашем кластере ClickHouse. Он отображает информацию о запросах и дает возможность их завершать.
 
 [Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->
