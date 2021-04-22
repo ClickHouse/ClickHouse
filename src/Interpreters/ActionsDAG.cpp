@@ -965,7 +965,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
     struct Frame
     {
-        const Node * node;
+        const Node * node = nullptr;
         size_t next_child_to_visit = 0;
     };
 

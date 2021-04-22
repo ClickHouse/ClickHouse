@@ -1498,7 +1498,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         IColumn & to = *current_block.output_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
-        int offset = 1;
+        int64_t offset = 1;
         if (argument_types.size() > 1)
         {
             offset = (*current_block.input_columns[
