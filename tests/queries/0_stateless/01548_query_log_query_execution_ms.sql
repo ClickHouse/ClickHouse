@@ -12,7 +12,7 @@ from system.query_log
 where
     query like '%01548_query_log_query_execution_ms%'
     and current_database = currentDatabase()
-    and query_duration_ms between 100 and 800
+    and query_duration_ms between 400 and 3000
     and event_date >= yesterday();
 
 -- at least two threads for processing
@@ -22,6 +22,6 @@ from system.query_thread_log
 where
     query like '%01548_query_log_query_execution_ms%'
     and current_database = currentDatabase()
-    and query_duration_ms between 100 and 800
+    and query_duration_ms between 400 and 3000
     and event_date = today()
     and event_time >= now() - interval 1 minute;
