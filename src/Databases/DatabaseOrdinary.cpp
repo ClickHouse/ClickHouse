@@ -154,24 +154,52 @@ void DatabaseOrdinary::loadStoredObjects(ContextPtr local_context, bool has_forc
     /// without having any tables attached. It is so because attaching of a dictionary means
     /// loading of its config only, it doesn't involve loading the dictionary itself.
 
+    /// Attach dictionaries.
+    for (const auto & name_with_query : file_names)
+    {
+        const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
+
+        if (create_query.is_dictionary)
+        {
+            pool.scheduleOrThrowOnError([&]()
+            {
+                tryAttachTable(
+                    local_context,
+                    create_query,
+                    *this,
+                    database_name,
+                    getMetadataPath() + name_with_query.first,
+                    has_force_restore_data_flag);
+
+                /// Messages, so that it's not boring to wait for the server to load for a long time.
+                logAboutProgress(log, ++tables_processed, total_tables, watch);
+            });
+        }
+    }
+
+    pool.wait();
+
     /// Attach tables.
     for (const auto & name_with_query : file_names)
     {
-
         const auto & create_query = name_with_query.second->as<const ASTCreateQuery &>();
-        pool.scheduleOrThrowOnError([&]()
-        {
-            tryAttachTable(
-                local_context,
-                create_query,
-                *this,
-                database_name,
-                getMetadataPath() + name_with_query.first,
-                has_force_restore_data_flag);
 
-            /// Messages, so that it's not boring to wait for the server to load for a long time.
-            logAboutProgress(log, ++tables_processed, total_tables, watch);
-        });
+        if (!create_query.is_dictionary)
+        {
+            pool.scheduleOrThrowOnError([&]()
+            {
+                tryAttachTable(
+                    local_context,
+                    create_query,
+                    *this,
+                    database_name,
+                    getMetadataPath() + name_with_query.first,
+                    has_force_restore_data_flag);
+
+                /// Messages, so that it's not boring to wait for the server to load for a long time.
+                logAboutProgress(log, ++tables_processed, total_tables, watch);
+            });
+        }
     }
 
     pool.wait();

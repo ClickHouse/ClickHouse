@@ -126,12 +126,6 @@ public:
     /// Check the existence of the table.
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
 
-    /// Check the existence of the dictionary
-    virtual bool isDictionaryExist(const String & /*name*/) const
-    {
-        return false;
-    }
-
     /// Get the table for work. Return nullptr if there is no table.
     virtual StoragePtr tryGetTable(const String & name, ContextPtr context) const = 0;
 

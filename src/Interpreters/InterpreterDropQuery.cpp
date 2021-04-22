@@ -32,6 +32,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -113,8 +114,17 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
 
     if (database && table)
     {
-        if (query.as<ASTDropQuery &>().is_view && !table->isView())
-            throw Exception("Table " + table_id.getNameForLogs() + " is not a View", ErrorCodes::LOGICAL_ERROR);
+        auto & ast_drop_query = query.as<ASTDropQuery &>();
+
+        if (ast_drop_query.is_view && !table->isView())
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Table {} is not a View",
+                table_id.getNameForLogs());
+
+        if (ast_drop_query.is_dictionary && !table->isDictionary())
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Table {} is not a Dictionary",
+                table_id.getNameForLogs());
 
         /// Now get UUID, so we can wait for table data to be finally dropped
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
