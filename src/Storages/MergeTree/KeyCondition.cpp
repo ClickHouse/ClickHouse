@@ -309,11 +309,11 @@ static const std::map<std::string, std::string> inverse_relations = {
 
 bool isLogicalOperator(const String & func_name)
 {
-    return (func_name == "and" || func_name == "or" || func_name == "not");
+    return (func_name == "and" || func_name == "or" || func_name == "not" || func_name == "indexHint");
 }
 
 /// The node can be one of:
-///   - Logical operator (AND, OR, NOT)
+///   - Logical operator (AND, OR, NOT and indexHint() - logical NOOP)
 ///   - An "atom" (relational operator, constant, expression)
 ///   - A logical constant expression
 ///   - Any other function
@@ -330,7 +330,8 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
 
         const auto result_node = makeASTFunction(func->name);
 
-        if (need_inversion)
+        /// indexHint() is a special case - logical NOOP function
+        if (result_node->name != "indexHint" && need_inversion)
         {
             result_node->name = (result_node->name == "and") ? "or" : "and";
         }
@@ -965,6 +966,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     {
         const auto & args = (*it)->arguments->children;
         auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
+        if (!func_builder)
+            return false;
         ColumnsWithTypeAndName arguments;
         ColumnWithTypeAndName const_arg;
         FunctionWithOptionalConstArg::Kind kind = FunctionWithOptionalConstArg::Kind::NO_CONST;
@@ -1277,6 +1280,8 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
 bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out)
 {
     /// Functions AND, OR, NOT.
+    /// Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
+    /// (or, the same thing - calling the function `and` from one argument).
     const ASTs & args = func->arguments->children;
 
     if (func->name == "not")
@@ -1288,7 +1293,7 @@ bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNE
     }
     else
     {
-        if (func->name == "and")
+        if (func->name == "and" || func->name == "indexHint")
             out.function = RPNElement::FUNCTION_AND;
         else if (func->name == "or")
             out.function = RPNElement::FUNCTION_OR;
