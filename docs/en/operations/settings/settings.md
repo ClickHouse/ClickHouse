@@ -2870,7 +2870,7 @@ Sets the number of rows to get from the query result. It adjust the limit previo
 
 Possible values:
 
--   0 — Limit is not set.
+-   0 — Disabled.
 -   Positive integer.
 
 Default value: `0`.
@@ -2881,7 +2881,7 @@ Sets the number of rows to skip before starting to return rows from the query. I
 
 Possible values:
 
--   0 — Offset is not set.
+-   0 — Disabled.
 -   Positive integer.
 
 Default value: `0`.
