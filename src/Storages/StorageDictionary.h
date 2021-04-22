@@ -17,6 +17,8 @@ class StorageDictionary final : public ext::shared_ptr_helper<StorageDictionary>
 public:
     std::string getName() const override { return "Dictionary"; }
 
+    ~StorageDictionary() override;
+
     void checkTableCanBeDropped() const override;
     void checkTableCanBeDetached() const override;
 
@@ -38,10 +40,8 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
-    const String & dictionaryName() const { return dictionary_name; }
-
-    Poco::Timestamp getUpdateTime() const { return update_time; }
-    LoadablesConfigurationPtr getConfiguration() const { return configuration; }
+    Poco::Timestamp getUpdateTime() const;
+    LoadablesConfigurationPtr getConfiguration() const;
 
     /// Specifies where the table is located relative to the dictionary.
     enum class Location
@@ -65,7 +65,7 @@ private:
     const String dictionary_name;
     const Location location;
 
-    std::mutex dictionary_config_mutex;
+    mutable std::mutex dictionary_config_mutex;
     Poco::Timestamp update_time;
     LoadablesConfigurationPtr configuration;
     ext::scope_guard remove_repository_callback;

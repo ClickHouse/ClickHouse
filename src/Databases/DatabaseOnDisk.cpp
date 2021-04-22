@@ -338,7 +338,6 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr, const String & table_nam
 
 void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_name, bool /*no_delay*/)
 {
-    // std::cerr << "DatabaseOnDisk::dropTable" << std::endl;
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_path_drop = table_metadata_path + drop_suffix;
     String table_data_path_relative = getTableDataPath(table_name);
