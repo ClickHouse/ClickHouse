@@ -90,7 +90,7 @@ MaterializeMySQLSyncThread::~MaterializeMySQLSyncThread()
     }
 }
 
-static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection)
+static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const Settings & settings)
 {
     Block variables_header{
         {std::make_shared<DataTypeString>(), "Variable_name"},
@@ -104,19 +104,19 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection)
          "OR (Variable_name = 'default_authentication_plugin' AND upper(Value) = 'MYSQL_NATIVE_PASSWORD') "
          "OR (Variable_name = 'log_bin_use_v1_row_events' AND upper(Value) = 'OFF');";
 
-    MySQLBlockInputStream variables_input(connection, check_query, variables_header, DEFAULT_BLOCK_SIZE, false, true);
+    StreamSettings mysql_input_stream_settings(settings, false, true);
+    MySQLBlockInputStream variables_input(connection, check_query, variables_header, mysql_input_stream_settings);
 
-    Block variables_block = variables_input.read();
-    if (!variables_block || variables_block.rows() != 5)
+    std::unordered_map<String, String> variables_error_message{
+        {"log_bin", "log_bin = 'ON'"},
+        {"binlog_format", "binlog_format='ROW'"},
+        {"binlog_row_image", "binlog_row_image='FULL'"},
+        {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"},
+        {"log_bin_use_v1_row_events", "log_bin_use_v1_row_events='OFF'"}
+    };
+
+    while (Block variables_block = variables_input.read())
     {
-        std::unordered_map<String, String> variables_error_message{
-            {"log_bin", "log_bin = 'ON'"},
-            {"binlog_format", "binlog_format='ROW'"},
-            {"binlog_row_image", "binlog_row_image='FULL'"},
-            {"default_authentication_plugin", "default_authentication_plugin='mysql_native_password'"},
-            {"log_bin_use_v1_row_events", "log_bin_use_v1_row_events='OFF'"}
-        };
-
         ColumnPtr variable_name_column = variables_block.getByName("Variable_name").column;
 
         for (size_t index = 0; index < variables_block.rows(); ++index)
@@ -126,7 +126,10 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection)
             if (error_message_it != variables_error_message.end())
                 variables_error_message.erase(error_message_it);
         }
+    }
 
+    if  (!variables_error_message.empty())
+    {
         bool first = true;
         WriteBufferFromOwnString error_message;
         error_message << "Illegal MySQL variables, the MaterializeMySQL engine requires ";
@@ -167,7 +170,7 @@ void MaterializeMySQLSyncThread::synchronization()
     try
     {
         MaterializeMetadata metadata(
-            DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata");
+            DatabaseCatalog::instance().getDatabase(database_name)->getMetadataPath() + "/.metadata", getContext()->getSettingsRef());
         bool need_reconnect = true;
 
         Stopwatch watch;
@@ -240,7 +243,7 @@ void MaterializeMySQLSyncThread::assertMySQLAvailable()
 {
     try
     {
-        checkMySQLVariables(pool.get());
+        checkMySQLVariables(pool.get(), getContext()->getSettingsRef());
     }
     catch (const mysqlxx::ConnectionFailed & e)
     {
@@ -326,9 +329,10 @@ static inline void dumpDataForTables(
             tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
 
             auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
+            StreamSettings mysql_input_stream_settings(context->getSettingsRef());
             MySQLBlockInputStream input(
                 connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
-                out->getHeader(), DEFAULT_BLOCK_SIZE);
+                out->getHeader(), mysql_input_stream_settings);
 
             Stopwatch watch;
             copyData(input, *out, is_cancelled);
@@ -375,7 +379,7 @@ bool MaterializeMySQLSyncThread::prepareSynchronized(MaterializeMetadata & metad
 
             opened_transaction = false;
 
-            checkMySQLVariables(connection);
+            checkMySQLVariables(connection, getContext()->getSettingsRef());
             std::unordered_map<String, String> need_dumping_tables;
             metadata.startReplication(connection, mysql_database_name, opened_transaction, need_dumping_tables);
 

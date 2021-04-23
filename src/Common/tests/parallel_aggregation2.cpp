@@ -62,7 +62,7 @@ struct AggregateIndependent
     }
 };
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -115,7 +115,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
     }
 };
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 
@@ -265,7 +265,7 @@ struct Creator
     void operator()(Value &) const {}
 };
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -275,7 +275,7 @@ struct Updater
     void operator()(Value & x) const { ++x; }
 };
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 
