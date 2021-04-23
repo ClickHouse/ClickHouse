@@ -196,7 +196,7 @@ void WriteBufferFromHTTPServerResponse::finalize()
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     finalize();
 }
 

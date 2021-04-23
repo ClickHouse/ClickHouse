@@ -1658,7 +1658,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
     {
         /// Table.
         if (max_streams == 0)
-            throw Exception("Logical error: zero number of streams requested", ErrorCodes::LOGICAL_ERROR);
+            max_streams = 1;
 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_remote)

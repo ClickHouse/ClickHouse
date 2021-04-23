@@ -99,6 +99,9 @@ public:
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
     virtual void describeActions(FormatSettings & /*settings*/) const {}
 
+    /// Get detailed description of read-from-storage step indexes (if any). Shown in with options `indexes = 1`.
+    virtual void describeIndexes(FormatSettings & /*settings*/) const {}
+
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 

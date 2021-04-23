@@ -243,6 +243,9 @@ static void explainStep(
 
     if (options.actions)
         step.describeActions(settings);
+
+    if (options.indexes)
+        step.describeIndexes(settings);
 }
 
 std::string debugExplainStep(const IQueryPlanStep & step)

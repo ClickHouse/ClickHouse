@@ -138,16 +138,19 @@ antlrcpp::Any ParseTreeVisitor::visitIdentifierOrNull(ClickHouseParser::Identifi
 
 antlrcpp::Any ParseTreeVisitor::visitInterval(ClickHouseParser::IntervalContext *)
 {
+    asm (""); // prevent symbol removal
     __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitKeyword(ClickHouseParser::KeywordContext *)
 {
+    asm (""); // prevent symbol removal
     __builtin_unreachable();
 }
 
 antlrcpp::Any ParseTreeVisitor::visitKeywordForAlias(ClickHouseParser::KeywordForAliasContext *)
 {
+    asm (""); // prevent symbol removal
     __builtin_unreachable();
 }
 
