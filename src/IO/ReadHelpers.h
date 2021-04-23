@@ -520,6 +520,9 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
     return readJSONStringInto<Vector, bool>(s, buf);
 }
 
+template <typename Vector, typename ReturnType = void>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf);
+
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
 

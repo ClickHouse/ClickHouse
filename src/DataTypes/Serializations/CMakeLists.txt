@@ -1,5 +1,3 @@
-add_subdirectory (Serializations)
-
 if (ENABLE_TESTS)
     add_subdirectory (tests)
 endif ()

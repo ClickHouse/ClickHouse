@@ -343,6 +343,14 @@ if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 endif()
 
+if(USE_SIMDJSON)
+    dbms_target_link_libraries(PUBLIC simdjson)
+endif()
+
+if(USE_RAPIDJSON)
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
 dbms_target_link_libraries (
     PRIVATE
         boost::filesystem
@@ -512,6 +520,14 @@ if (ENABLE_TESTS AND USE_GTEST)
     if (OS_DARWIN AND COMPILER_GCC)
         target_link_libraries(unit_tests_dbms PRIVATE gcc)
     endif ()
+
+    if(USE_SIMDJSON)
+        target_link_libraries(unit_tests_dbms PRIVATE simdjson)
+    endif()
+
+    if(USE_RAPIDJSON)
+        target_include_directories(unit_tests_dbms SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+    endif()
 
     add_check(unit_tests_dbms)
 endif ()
