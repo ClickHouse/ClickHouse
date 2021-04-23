@@ -34,8 +34,7 @@ ASTPtr ASTStorage::clone() const
 
     if (comment)
     {
-        res->comment = comment;
-        res->children.push_back(comment->clone());
+        res->comment = comment->clone();
     }
 
     return res;

@@ -358,7 +358,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->settings, settings);
 
     storage->comment = comment_expression;
-    storage->children.push_back(std::move(comment_expression));
 
     node = storage;
     return true;
