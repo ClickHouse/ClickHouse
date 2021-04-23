@@ -2881,7 +2881,7 @@ Sets the number of rows to skip before starting to return rows from the query. I
 
 Possible values:
 
--   0 — Disabled.
+-   0 — No rows are skipped .
 -   Positive integer.
 
 Default value: `0`.
