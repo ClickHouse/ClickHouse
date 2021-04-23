@@ -242,11 +242,12 @@ BlockIO InterpreterInsertQuery::execute()
 
                 const auto & input_columns = res.pipeline.getHeader().getColumns();
                 const auto & query_columns = query_sample_block.getColumns();
+                const auto & output_columns = metadata_snapshot->getColumns();
 
                 size_t col_idx = 0;
                 for (const auto & column : query_columns_names_and_types)
                 {
-                    if (input_columns[col_idx]->isNullable() && !query_columns[col_idx]->isNullable())
+                    if (input_columns[col_idx]->isNullable() && !query_columns[col_idx]->isNullable() && output_columns.hasDefault(column.name))
                     {
                         auto nullable_column = ColumnNullable::create(query_columns[col_idx], ColumnUInt8::create(query_columns[col_idx]->size(), 0));
                         ColumnWithTypeAndName new_column(std::move(nullable_column), std::make_shared<DataTypeNullable>(column.type), column.name);
@@ -282,10 +283,12 @@ BlockIO InterpreterInsertQuery::execute()
                 out = std::make_shared<CheckConstraintsBlockOutputStream>(
                     query.table_id, out, out->getHeader(), metadata_snapshot->getConstraints(), getContext());
 
+            bool null_as_default = query.select && getContext()->getSettingsRef().insert_null_as_default;
+
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
             out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, query_sample_block, metadata_snapshot->getColumns(), getContext());
+                out, query_sample_block, metadata_snapshot->getColumns(), getContext(), null_as_default);
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.

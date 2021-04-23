@@ -24,5 +24,6 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
   * All three types of columns are materialized (not constants).
   */
 ActionsDAGPtr addMissingDefaults(
-    const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, ContextPtr context);
+    const Block & header, const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns, ContextPtr context, bool null_as_default = false);
 }

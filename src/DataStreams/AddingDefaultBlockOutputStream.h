@@ -26,7 +26,8 @@ public:
         const BlockOutputStreamPtr & output_,
         const Block & header_,
         const ColumnsDescription & columns_,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool null_as_default_ = false);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;

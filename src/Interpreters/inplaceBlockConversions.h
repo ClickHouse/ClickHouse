@@ -23,7 +23,9 @@ ActionsDAGPtr evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
-    ContextPtr context, bool save_unneeded_columns = true);
+    ContextPtr context,
+    bool save_unneeded_columns = true,
+    bool null_as_default = false);
 
 /// Tries to convert columns in block to required_columns
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context);
