@@ -2861,8 +2861,10 @@ Enables or disables using of the original column names instead of [aliases](../.
 
 Possible values:
 
-- 0 — Setting disabled — alias overrides name of the column if they match.
-- 1 — Settnig enabled — name of the column is used, when it matches the alias.
+- 0 — The column name is substituted with the alias if they match.
+- 1 — The column name is used even when it matches the alias. 
+
+Default value: `0`.
 
 **Example**
 
