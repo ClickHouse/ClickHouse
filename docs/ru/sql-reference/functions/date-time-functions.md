@@ -59,8 +59,7 @@ toTimezone(value, timezone)
 Запрос:
 
 ```sql
-SELECT
-    toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
+SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
     toTypeName(time_utc) AS type_utc,
     toInt32(time_utc) AS int32utc,
     toTimeZone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
@@ -91,7 +90,7 @@ int32samoa: 1546300800
 
 ## timeZoneOf {#timezoneof}
 
-Возвращает название часового пояса для типов данных [DateTime](../../sql-reference/data-types/datetime.md) и [DateTime64](../../sql-reference/data-types/datetime64.md).
+Возвращает название часового пояса для значений типа [DateTime](../../sql-reference/data-types/datetime.md) и [DateTime64](../../sql-reference/data-types/datetime64.md).
 
 **Синтаксис** 
 
@@ -110,6 +109,20 @@ timeZoneOf(value)
 -   Название часового пояса. 
 
 Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+``` sql
+SELECT timezoneOf(now());
+```
+
+Результат:
+``` text
+┌─timezoneOf(now())─┐
+│ Etc/UTC           │
+└───────────────────┘
+```
 
 ## toYear {#toyear}
 
