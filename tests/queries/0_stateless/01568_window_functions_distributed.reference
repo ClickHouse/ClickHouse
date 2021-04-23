@@ -44,4 +44,9 @@ select distinct sum(number) over w, max(number) over w from remote('127.0.0.{1,2
 6	2
 24	5
 42	8
+-- window functions + aggregation w/shards
+select groupArray(groupArray(number)) over (rows unbounded preceding) from remote('127.0.0.{1,2}', '', t_01568) group by mod(number, 3);
+[[0,3,6,0,3,6]]
+[[0,3,6,0,3,6],[1,4,7,1,4,7]]
+[[0,3,6,0,3,6],[1,4,7,1,4,7],[2,5,8,2,5,8]]
 drop table t_01568;

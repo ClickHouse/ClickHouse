@@ -17,4 +17,7 @@ select sum(number) over w, max(number) over w from remote('127.0.0.{1,2}', '', t
 
 select distinct sum(number) over w, max(number) over w from remote('127.0.0.{1,2}', '', t_01568) window w as (partition by p);
 
+-- window functions + aggregation w/shards
+select groupArray(groupArray(number)) over (rows unbounded preceding) from remote('127.0.0.{1,2}', '', t_01568) group by mod(number, 3);
+
 drop table t_01568;
