@@ -289,6 +289,8 @@ void TCPHandler::runImpl()
             /// Processing Query
             state.io = executeQuery(state.query, *query_context, false, state.stage, may_have_embedded_data);
 
+            unknown_packet_in_send_data = query_context->getSettingsRef().unknown_packet_in_send_data;
+
             after_check_cancelled.restart();
             after_send_progress.restart();
 
@@ -1409,6 +1411,14 @@ bool TCPHandler::isQueryCancelled()
 void TCPHandler::sendData(const Block & block)
 {
     initBlockOutput(block);
+
+    /// For testing hedged requests
+    if (unknown_packet_in_send_data)
+    {
+        --unknown_packet_in_send_data;
+        if (unknown_packet_in_send_data == 0)
+            writeVarUInt(UInt64(-1), *out);
+    }
 
     writeVarUInt(Protocol::Server::Data, *out);
     /// Send external table name (empty name is the main table)

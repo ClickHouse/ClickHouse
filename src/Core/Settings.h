@@ -222,6 +222,7 @@ class IColumn;
     /** Settings for testing hedged requests */ \
     M(Int64, sleep_in_send_tables_status, 0, "Time to sleep in sending tables status response in TCPHandler", 0) \
     M(Int64, sleep_in_send_data, 0, "Time to sleep in sending data in TCPHandler", 0) \
+    M(UInt64, unknown_packet_in_send_data, 0, "Send unknown packet instead of data Nth data packet", 0) \
     \
     M(Bool, insert_allow_materialized_columns, 0, "If setting is enabled, Allow materialized columns in INSERT.", 0) \
     M(Seconds, http_connection_timeout, DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, "HTTP connection timeout.", 0) \
