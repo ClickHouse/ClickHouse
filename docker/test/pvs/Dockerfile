@@ -43,4 +43,3 @@ CMD echo "Running PVS version $PKG_VERSION" && cd /repo_folder && pvs-studio-ana
     && pvs-studio-analyzer analyze -o pvs-studio.log -e contrib -j 4 -l ./licence.lic; \
     plog-converter -a GA:1,2 -t fullhtml -o /test_output/pvs-studio-html-report pvs-studio.log; \
     plog-converter -a GA:1,2 -t tasklist -o /test_output/pvs-studio-task-report.txt pvs-studio.log
-

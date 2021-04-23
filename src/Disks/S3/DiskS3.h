@@ -41,6 +41,7 @@ public:
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
+        UInt64 s3_max_single_read_retries_,
         size_t min_upload_part_size_,
         size_t max_single_part_upload_size_,
         size_t min_bytes_for_seek_,
@@ -185,6 +186,7 @@ private:
     const String bucket;
     const String s3_root_path;
     String metadata_path;
+    UInt64 s3_max_single_read_retries;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
     size_t min_bytes_for_seek;
