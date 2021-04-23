@@ -348,6 +348,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
+//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute action FUNCTION: {}", action.node->function_base->getName());
+
             auto & res_column = columns[action.result_position];
             if (res_column.type || res_column.column)
                 throw Exception("Result column is not empty", ErrorCodes::LOGICAL_ERROR);
@@ -379,13 +381,21 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
             if (action.node->function_base->isShortCircuit() && use_short_circuit_function_evaluation)
+            {
+//                LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute Short Circuit Arguments");
                 action.node->function_base->executeShortCircuitArguments(arguments);
+            }
+
+//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute function");
+
             res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
             break;
         }
 
         case ActionsDAG::ActionType::COLUMN_FUNCTION:
         {
+//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute action COLUMN FUNCTION: {}", action.node->function_base->getName());
+
             auto & res_column = columns[action.result_position];
             if (res_column.type || res_column.column)
                 throw Exception("Result column is not empty", ErrorCodes::LOGICAL_ERROR);
@@ -402,7 +412,18 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     arguments[i] = columns[action.arguments[i].pos];
             }
 
-            res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments));
+            if (use_short_circuit_function_evaluation)
+                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments));
+            else
+            {
+//                LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute function");
+
+                ProfileEvents::increment(ProfileEvents::FunctionExecute);
+                if (action.node->is_function_compiled)
+                    ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+                res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+            }
+
             break;
         }
 
@@ -441,6 +462,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
         case ActionsDAG::ActionType::COLUMN:
         {
+//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute action COLUMN: {}", action.node->result_name);
+
             auto & res_column = columns[action.result_position];
             res_column.column = action.node->column->cloneResized(num_rows);
             res_column.type = action.node->result_type;
@@ -450,6 +473,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
         case ActionsDAG::ActionType::ALIAS:
         {
+//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute action ALIAS: {}", action.node->result_name);
+
             const auto & arg = action.arguments.front();
             if (action.result_position != arg.pos)
             {
@@ -475,6 +500,8 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
         case ActionsDAG::ActionType::INPUT:
         {
+//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute action INPUT: {}", action.node->result_name);
+
             auto pos = execution_context.inputs_pos[action.arguments.front().pos];
             if (pos < 0)
             {
