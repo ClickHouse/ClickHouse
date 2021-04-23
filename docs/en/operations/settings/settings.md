@@ -2870,7 +2870,7 @@ Sets the number of rows to get from the query result. It adjust the limit previo
 
 Possible values:
 
--   0 — Disabled.
+-   0 — The number of rows is not limited.
 -   Positive integer.
 
 Default value: `0`.
