@@ -627,6 +627,24 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         if (!analysis_result.need_aggregate)
         {
             // What's the difference with selected_columns?
+            // Here we calculate the header we want from remote server after it
+            // executes query up to WithMergeableState. When there is an ORDER BY,
+            // it is executed on remote server firstly, then we execute merge
+            // sort on initiator. To execute ORDER BY, we need to calculate the
+            // ORDER BY keys. These keys might be not present among the final
+            // SELECT columns given by the `selected_column`. This is why we have
+            // to use proper keys given by the result columns of the
+            // `before_order_by` expression actions.
+            // Another complication is window functions -- if we have them, they
+            // are calculated on initiator, before ORDER BY columns. In this case,
+            // the shard has to return columns required for window function
+            // calculation and further steps, given by the `before_window`
+            // expression actions.
+            // As of 21.6 this is broken: the actions in `before_window` might
+            // not contain everything required for the ORDER BY step, but this
+            // is a responsibility of ExpressionAnalyzer and is not a problem
+            // with this code. See
+            // https://github.com/ClickHouse/ClickHouse/issues/19857 for details.
             if (analysis_result.before_window)
             {
                 return analysis_result.before_window->getResultColumns();
@@ -658,7 +676,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     if (options.to_stage == QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
     {
-        // What's the difference with selected_columns?
+        // It's different from selected_columns, see the comment above for
+        // WithMergeableState stage.
         if (analysis_result.before_window)
         {
             return analysis_result.before_window->getResultColumns();
