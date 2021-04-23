@@ -2757,4 +2757,48 @@ SELECT * FROM test2;
 
 Значение по умолчанию: `0`.
 
+## prefer_column_name_to_alias {#prefer-column-name-to-alias}
+
+Включает или выключает возможность использование названий столбцов взамен синонимов, см. [Синонимы выражений](../../sql-reference/syntax.md#syntax-expression_aliases). Включите эту настройку, чтобы синтаксис синонимов в ClickHouse был более совместим с большинством других СУБД.
+
+Возможные значения:
+
+- 0 — синоним используется вместо имени столбца, если они совпадают.
+- 1 — имя столбца используется даже если оно совпадает с синонимом.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Какие изменения привносит включение и выключение настройки: 
+
+Запрос:
+
+```sql
+SET prefer_column_name_to_alias = 0;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Результат:
+
+``` text
+Received exception from server (version 21.5.1):
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
+```
+
+Запрос:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Результат:
+
+```text
+┌─number─┬─max(number)─┐
+│    4.5 │           9 │
+└────────┴─────────────┘
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
