@@ -12,7 +12,8 @@ toc_title: LIMIT
 
 If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) clause that explicitly sorts results, the choice of rows for the result may be arbitrary and non-deterministic.
 
-For adjusting existing `LIMIT` can used [limit](../../../operations/settings/settings.md#limit) setting.
+!!! note "Note"
+    The number of rows in the result set can also depend on the [limit](../../../operations/settings/settings.md#limit) setting.
 
 ## LIMIT … WITH TIES Modifier {#limit-with-ties}
 
