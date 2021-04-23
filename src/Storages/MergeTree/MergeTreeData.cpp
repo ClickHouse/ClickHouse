@@ -3817,7 +3817,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
     const auto & analysis_result = select.getAnalysisResult();
     /// If first staging query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage, return false
-    if (analysis_result.join != nullptr || analysis_result.array_join != nullptr || analysis_result.before_aggregation == nullptr)
+    if (analysis_result.join != nullptr || analysis_result.array_join != nullptr)
         return false;
 
     auto query_block = select.getSampleBlock();
@@ -3837,6 +3837,12 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     ParserFunction parse_function;
     for (const auto & projection : metadata_snapshot->projections)
     {
+        if (projection.type == "aggregate" && !analysis_result.need_aggregate)
+            continue;
+
+        if (projection.type == "normal" && !(analysis_result.hasWhere() || analysis_result.hasPrewhere()))
+            continue;
+
         bool covered = true;
         ASTs expr_names;
         Strings maybe_dimension_column_exprs;
@@ -3936,7 +3942,10 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
     {
         if (getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
-            return QueryProcessingStage::Enum::WithMergeableState;
+        {
+            if (query_info.aggregate_projection->type == "aggregate")
+                return QueryProcessingStage::Enum::WithMergeableState;
+        }
     }
 
     return QueryProcessingStage::Enum::FetchColumns;

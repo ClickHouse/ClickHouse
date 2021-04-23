@@ -159,6 +159,24 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_numbers_to_read);
     }
 
+    /// For normal projection, read anyway.
+    /// We will chose those which read less granules.
+    QueryPlanPtr plan_no_projections;
+    size_t no_projection_granules = 0;
+    size_t with_projection_granules = 0;
+
+    if (query_info.aggregate_projection->type == "normal")
+        plan_no_projections = readFromParts(
+            data.getDataPartsVector(),
+            column_names_to_return,
+            metadata_snapshot,
+            query_info,
+            context,
+            max_block_size,
+            num_streams,
+            max_block_numbers_to_read,
+            &no_projection_granules);
+
     LOG_DEBUG(log, "Choose projection {}", query_info.aggregate_projection->name);
 
     Pipes pipes;
@@ -235,7 +253,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             context,
             max_block_size,
             num_streams,
-            max_block_numbers_to_read);
+            max_block_numbers_to_read,
+            &with_projection_granules,
+            true);
 
         if (plan)
             projection_pipe = plan->convertToPipe(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
@@ -303,6 +323,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         auto interpreter = InterpreterSelectQuery(ast, context, storage_from_source_part, nullptr, SelectQueryOptions{processed_stage}.ignoreAggregation());
         ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
 
+        with_projection_granules += storage_from_source_part->getNumGranulesFromLastRead();
+
         if (!ordinary_pipe.empty() && processed_stage < QueryProcessingStage::Enum::WithMergeableState)
         {
             // projection and set bucket number to -1
@@ -312,6 +334,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             });
         }
     }
+
+    /// Use normal projection only if we read less granules then without it.
+    /// TODO: check if read-in-order optimization possible for normal projection.
+    if (query_info.aggregate_projection->type == "normal" && with_projection_granules > no_projection_granules)
+        return plan_no_projections;
 
     if (query_info.aggregate_projection->type == "aggregate")
     {
@@ -450,10 +477,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     ContextPtr context,
     const UInt64 max_block_size,
     const unsigned num_streams,
-    const PartitionIdToMaxBlock * max_block_numbers_to_read) const
+    const PartitionIdToMaxBlock * max_block_numbers_to_read,
+    size_t * num_granules_are_to_read,
+    bool use_projection_metadata) const
 {
     const StorageMetadataPtr & metadata_snapshot
-        = query_info.aggregate_projection ? query_info.aggregate_projection->metadata : metadata_snapshot_base;
+        = (query_info.aggregate_projection && use_projection_metadata) ? query_info.aggregate_projection->metadata : metadata_snapshot_base;
 
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
     /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
@@ -1110,6 +1139,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         sum_marks_pk.load(std::memory_order_relaxed),
         total_marks_pk.load(std::memory_order_relaxed),
         sum_marks, sum_ranges);
+
+    if (num_granules_are_to_read)
+        *num_granules_are_to_read = sum_marks_pk.load(std::memory_order_relaxed);
 
     if (parts_with_ranges.empty())
         return std::make_unique<QueryPlan>();
