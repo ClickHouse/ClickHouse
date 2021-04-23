@@ -371,7 +371,7 @@ void Block::setColumns(const Columns & columns)
 
 void Block::setColumn(size_t position, ColumnWithTypeAndName && column)
 {
-    if (position > data.size())
+    if (position >= data.size())
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position {} out of bound in Block::setColumn(), max position {}",
                         position, toString(data.size()));
 

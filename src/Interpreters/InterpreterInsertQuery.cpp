@@ -238,20 +238,16 @@ BlockIO InterpreterInsertQuery::execute()
             /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
             if (getContext()->getSettingsRef().insert_null_as_default)
             {
-                auto query_columns_names_and_types = query_sample_block.getNamesAndTypesList();
-
-                const auto & input_columns = res.pipeline.getHeader().getColumns();
-                const auto & query_columns = query_sample_block.getColumns();
+                const auto & input_columns = res.pipeline.getHeader().getColumnsWithTypeAndName();
+                const auto & query_columns = query_sample_block.getColumnsWithTypeAndName();
                 const auto & output_columns = metadata_snapshot->getColumns();
 
-                size_t col_idx = 0;
-                for (const auto & column : query_columns_names_and_types)
+                for (size_t col_idx = 0; col_idx < input_columns.size(); ++col_idx)
                 {
                     /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
                     /// default column values (in AddingDefaultBlockOutputStream), so all values will be cast correctly.
-                    if (input_columns[col_idx]->isNullable() && !query_columns[col_idx]->isNullable() && output_columns.hasDefault(column.name))
-                        query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullable(query_columns[col_idx]), makeNullable(column.type), column.name));
-                    col_idx++;
+                    if (input_columns[col_idx].type->isNullable() && !query_columns[col_idx].type->isNullable() && output_columns.hasDefault(query_columns[col_idx].name))
+                        query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullable(query_columns[col_idx].column), makeNullable(query_columns[col_idx].type), query_columns[col_idx].name));
                 }
             }
         }
