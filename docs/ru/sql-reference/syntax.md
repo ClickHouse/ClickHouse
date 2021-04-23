@@ -128,7 +128,7 @@ expr AS alias
 
         Например, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-        В функции [CAST](sql_reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
+        В функции [CAST](../sql_reference/syntax.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
 
 -   `expr` — любое выражение, которое поддерживает ClickHouse.
 
@@ -138,7 +138,7 @@ expr AS alias
 
         Например, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
-### Примечания по использованию {#primechaniia-po-ispolzovaniiu}
+### Примечания по использованию {#notes-on-usage}
 
 Синонимы являются глобальными для запроса или подзапроса, и вы можете определить синоним в любой части запроса для любого выражения. Например, `SELECT (1 AS n) + 2, n`.
 
@@ -171,7 +171,7 @@ Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 
 В этом примере мы объявили таблицу `t` со столбцом `b`. Затем, при выборе данных, мы определили синоним `sum(b) AS b`. Поскольку синонимы глобальные, то ClickHouse заменил литерал `b` в выражении `argMax(a, b)` выражением `sum(b)`. Эта замена вызвала исключение.
 
-## Звёздочка {#zviozdochka}
+## Звёздочка {#asterisk}
 
 В запросе `SELECT`, вместо выражения может стоять звёздочка. Подробнее смотрите раздел «SELECT».
 
