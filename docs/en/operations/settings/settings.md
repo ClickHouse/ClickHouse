@@ -854,8 +854,6 @@ For example, when reading from a table, if it is possible to evaluate expression
 
 Default value: the number of physical CPU cores.
 
-If less than one SELECT query is normally run on a server at a time, set this parameter to a value slightly less than the actual number of processor cores.
-
 For queries that are completed quickly because of a LIMIT, you can set a lower ‘max_threads’. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 
 The smaller the `max_threads` value, the less memory is consumed.
@@ -1564,6 +1562,17 @@ Possible values:
 -   1 — Enabled.
 
 Default value: 0
+
+## optimize_skip_unused_shards_rewrite_in {#optimize-skip-unused-shardslrewrite-in}
+
+Rewrite IN in query for remote shards to exclude values that does not belong to the shard (requires optimize_skip_unused_shards).
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1 (since it requires `optimize_skip_unused_shards` anyway, which `0` by default)
 
 ## allow_nondeterministic_optimize_skip_unused_shards {#allow-nondeterministic-optimize-skip-unused-shards}
 

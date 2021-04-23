@@ -251,7 +251,7 @@ public:
         else if constexpr (IsNumber<DictionaryAttributeType>)
             return ColumnType::create(size);
         else
-            throw Exception{"Unsupported attribute type.", ErrorCodes::TYPE_MISMATCH};
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
     }
 };
 
@@ -288,7 +288,7 @@ public:
                 use_default_value_from_column = false;
             }
             else
-                throw Exception{"Type of default column is not the same as dictionary attribute type.", ErrorCodes::TYPE_MISMATCH};
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type of default column is not the same as dictionary attribute type.");
         }
     }
 
@@ -548,10 +548,10 @@ static const PaddedPODArray<T> & getColumnVectorData(
 
     if (!vector_col)
     {
-        throw Exception{ErrorCodes::TYPE_MISMATCH,
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
             "{}: type mismatch: column has wrong type expected {}",
             dictionary->getDictionaryID().getNameForLogs(),
-            TypeName<T>::get()};
+            TypeName<T>::get());
     }
 
     if (is_const_column)
