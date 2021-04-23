@@ -242,12 +242,15 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & query_columns = query_sample_block.getColumnsWithTypeAndName();
                 const auto & output_columns = metadata_snapshot->getColumns();
 
-                for (size_t col_idx = 0; col_idx < input_columns.size(); ++col_idx)
+                if (input_columns.size() == query_columns.size())
                 {
-                    /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
-                    /// default column values (in AddingDefaultBlockOutputStream), so all values will be cast correctly.
-                    if (input_columns[col_idx].type->isNullable() && !query_columns[col_idx].type->isNullable() && output_columns.hasDefault(query_columns[col_idx].name))
-                        query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullable(query_columns[col_idx].column), makeNullable(query_columns[col_idx].type), query_columns[col_idx].name));
+                    for (size_t col_idx = 0; col_idx < query_columns.size(); ++col_idx)
+                    {
+                        /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
+                        /// default column values (in AddingDefaultBlockOutputStream), so all values will be cast correctly.
+                        if (input_columns[col_idx].type->isNullable() && !query_columns[col_idx].type->isNullable() && output_columns.hasDefault(query_columns[col_idx].name))
+                            query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullable(query_columns[col_idx].column), makeNullable(query_columns[col_idx].type), query_columns[col_idx].name));
+                    }
                 }
             }
         }
