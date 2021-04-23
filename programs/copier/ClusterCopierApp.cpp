@@ -14,7 +14,6 @@ namespace DB
 
 void ClusterCopierApp::initialize(Poco::Util::Application & self)
 {
-    std::cout << "CopierApp::initialize" << std::endl;
     is_help = config().has("help");
     if (is_help)
         return;
@@ -105,13 +104,10 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 
 void ClusterCopierApp::mainImpl()
 {
-    std::cout << "ClusterCopierApp::mainImpl()" << std::endl;
     StatusFile status_file(process_path + "/status", StatusFile::write_full_info);
     ThreadStatus thread_status;
 
     auto * log = &logger();
-    log->setLevel(6); /// Information
-    std::cout << log->getLevel() << std::endl;
     LOG_INFO(log, "Starting clickhouse-copier (id {}, host_id {}, path {}, revision {})", process_id, host_id, process_path, ClickHouseRevision::getVersionRevision());
 
     SharedContextHolder shared_context = Context::createShared();
@@ -138,7 +134,6 @@ void ClusterCopierApp::mainImpl()
     /// Initialize query scope just in case.
     CurrentThread::QueryScope query_scope(context);
 
-    std::cout << "Will construct copier" << std::endl;
     auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, context, log);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
