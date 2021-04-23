@@ -33,7 +33,8 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
 !!! note "Примечание"
     Секция `OFFSET` должна находиться перед секцией `FETCH`, если обе присутствуют.
 
-Для корректировки заданного `OFFSET` вы можете использовать настройку [offset](../../../operations/settings/settings.md#offset).
+!!! note "Примечание"
+    Общее количество пропущенных строк может зависеть также от настройки [offset](../../../operations/settings/settings.md#offset).
 	
 ### Примеры {#examples}
 
