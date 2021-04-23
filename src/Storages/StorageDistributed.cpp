@@ -553,6 +553,9 @@ void StorageDistributed::read(
     Block header =
         InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
+    fmt::print(stderr, "header in storage::read is '{}'\n",
+        header.dumpStructure());
+
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
     {
