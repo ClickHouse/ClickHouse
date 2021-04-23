@@ -928,7 +928,7 @@ public:
             IColumn::Filter mask;
             getMaskFromColumn(arguments[0].column, mask);
             maskedExecute(arguments[1], mask);
-            maskedExecute(arguments[2], mask, /*reverse=*/true);
+            maskedExecute(arguments[2], mask, nullptr, /*reverse=*/true);
         }
     }
 

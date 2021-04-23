@@ -525,7 +525,7 @@ void FunctionAnyArityLogical<Impl, Name>::executeShortCircuitArguments(ColumnsWi
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         if (isColumnFunction(*arguments[i].column))
-            maskedExecute(arguments[i], mask, false, &default_value);
+            maskedExecute(arguments[i], mask, &default_value, false);
         getMaskFromColumn(arguments[i].column, mask, reverse, nullptr, null_value);
     }
 }

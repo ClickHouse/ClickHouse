@@ -114,7 +114,7 @@ public:
         IColumn::Filter current_mask;
         IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);
 
-        Field default_value = 0;
+        auto default_value = std::make_unique<Field>(1);
         size_t i = 1;
         while (i < arguments.size())
         {
@@ -124,9 +124,11 @@ public:
                 maskedExecute(arguments[i], current_mask);
 
             ++i;
+            if (i == arguments.size() - 1)
+                default_value = nullptr;
 
             if (isColumnFunction(*arguments[i].column))
-                maskedExecute(arguments[i], mask_disjunctions, true, &default_value);
+                maskedExecute(arguments[i], mask_disjunctions, default_value.get(), true);
 
             ++i;
         }
