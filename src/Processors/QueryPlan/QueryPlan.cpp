@@ -136,6 +136,10 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings)
 {
+    WriteBufferFromOwnString ss;
+    explainPlan(ss, {true});
+    fmt::print(stderr, "plan at buildQueryPipeline:'\n{}'\n", ss.str());
+
     checkInitialized();
     optimize(optimization_settings);
 
