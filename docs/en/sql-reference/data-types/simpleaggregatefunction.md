@@ -18,8 +18,6 @@ The following aggregate functions are supported:
 -   [`sumMap`](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap)
 -   [`minMap`](../../sql-reference/aggregate-functions/reference/minmap.md#agg_functions-minmap)
 -   [`maxMap`](../../sql-reference/aggregate-functions/reference/maxmap.md#agg_functions-maxmap)
--   [`argMin`](../../sql-reference/aggregate-functions/reference/argmin.md)
--   [`argMax`](../../sql-reference/aggregate-functions/reference/argmax.md)
 
 
 !!! note "Note"
