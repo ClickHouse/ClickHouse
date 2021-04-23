@@ -410,7 +410,7 @@ def execute_task(task, cmd_options):
     for instance_name, instance in cluster.instances.items():
         instance = cluster.instances[instance_name]
         container = instance.get_docker_handle()
-        instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs_taxi/config-copier.xml"), "/etc/clickhouse-server/config-copier.xml")
+        instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, "configs_two_nodes/config-copier.xml"), "/etc/clickhouse-server/config-copier.xml")
         logging.info("Copied copier config to {}".format(instance.name))
         exec_id = docker_api.exec_create(container.id, cmd, stderr=True)
         output = docker_api.exec_start(exec_id).decode('utf8')
