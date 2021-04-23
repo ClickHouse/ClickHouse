@@ -132,7 +132,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
             return ''.join(random.choice(alphabet) for _ in range(length))
         database = 'test_{suffix}'.format(suffix=random_str())
 
-        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
         try:
             clickhouse_proc_create.communicate(("CREATE DATABASE " + database + get_db_engine(args, database)), timeout=args.timeout)
         except TimeoutExpired:
@@ -179,7 +179,7 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
         need_drop_database = not maybe_passed
 
     if need_drop_database:
-        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create = Popen(shlex.split(client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
         seconds_left = max(args.timeout - (datetime.now() - start_time).total_seconds(), 20)
         try:
             drop_database_query = "DROP DATABASE " + database
@@ -706,10 +706,10 @@ def main(args):
             args.shard = False
 
     if args.database and args.database != "test":
-        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
         clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + args.database + get_db_engine(args, args.database)))
 
-    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=None, universal_newlines=True)
     clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS test" + get_db_engine(args, 'test')))
 
     def is_test_from_dir(suite_dir, case):

@@ -159,9 +159,9 @@ public:
       */
     Pool(const std::string & db_,
          const std::string & server_,
-         const std::string & user_ = "",
-         const std::string & password_ = "",
-         unsigned port_ = 0,
+         const std::string & user_,
+         const std::string & password_,
+         unsigned port_,
          const std::string & socket_ = "",
          unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
