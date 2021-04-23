@@ -1,5 +1,6 @@
 add_library (daemon
     BaseDaemon.cpp
+    ../common/coverage/coverage.h
     GraphiteWriter.cpp
     SentryWriter.cpp
 )

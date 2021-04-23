@@ -1413,7 +1413,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
                 /// Dump coverage here, because std::atexit callback would not be called.
 #if WITH_COVERAGE
-                coverage::dumpReport();
+                ::detail::Writer::instance().dump();
 #endif
 
                 LOG_INFO(log, "Will shutdown forcefully.");

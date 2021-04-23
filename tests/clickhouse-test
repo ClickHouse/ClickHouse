@@ -29,10 +29,6 @@ import string
 import multiprocessing
 from contextlib import closing
 
-from ctypes import *
-from signal import SIGRTMIN
-
-
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
     "Coordination::Exception: Connection loss",
@@ -118,22 +114,10 @@ def get_db_engine(args, database_name):
         return " ENGINE=" + args.db_engine
     return ""   # Will use default engine
 
-def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir,
-        test_id: int):
+def run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file, suite_tmp_dir):
     client = f"{args.client} --log_comment='{case_file}'"
 
     start_time = datetime.now()
-
-    if args.coverage:
-        tmp_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-
-        try:
-            (server_port, _) = tmp_proc.communicate(("SELECT tcpPort() FORMAT TabSeparated"), timeout=args.timeout)
-        except TimeoutExpired:
-            total_time = (datetime.now() - start_time).total_seconds()
-            return tmp_proc, "", "Timeout getting server TCP port before test", total_time
-
-        send_coverage_signal(int(server_port), test_id)
 
     if args.database:
         database = args.database
@@ -302,18 +286,6 @@ SERVER_DIED = False
 exit_code = 0
 stop_time = None
 
-libc_ = None
-def send_coverage_signal(server_port: int, test_id: int):
-    global libc_
-
-    server_pid: int= get_server_pid(server_port)
-
-    if libc_ is None:
-        libc_ = cdll.LoadLibrary("libc.so.6")
-
-    libc_.sigqueue(server_pid, SIGRTMIN + 1, test_id)
-
-
 # def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
     all_tests, suite, suite_dir, suite_tmp_dir = all_tests_with_params
@@ -349,7 +321,7 @@ def run_tests_array(all_tests_with_params):
     if all_tests:
         print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
 
-    for test_id, case in enumerate(all_tests):
+    for case in all_tests:
         if SERVER_DIED:
             break
 
@@ -398,11 +370,13 @@ def run_tests_array(all_tests_with_params):
                     message = open(disabled_file, 'r').read()
                     status += MSG_SKIPPED + " - " + message + "\n"
                 else:
-                    if args.testname:
+                    def pre_run_check(query_to_run):
                         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+
                         failed_to_check = False
+
                         try:
-                            clickhouse_proc.communicate(("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite)), timeout=20)
+                            clickhouse_proc.communicate((query_to_run), timeout=20)
                         except:
                             failed_to_check = True
 
@@ -410,7 +384,16 @@ def run_tests_array(all_tests_with_params):
                             failures += 1
                             print("Server does not respond to health check")
                             SERVER_DIED = True
-                            break
+                            return False
+
+                        return True
+
+                    if args.testname and not pre_run_check("SELECT 'Running test {suite}/{case} from pid={pid}';"
+                        .format(pid = os.getpid(), case = case, suite = suite)):
+                        break
+
+                    if args.coverage and not pre_run_check("SET coverage_test_name='{}';".format(case)):
+                        break
 
                     file_suffix = ('.' + str(os.getpid())) if is_concurrent and args.test_runs > 1 else ''
                     reference_file = os.path.join(suite_dir, name) + '.reference'
@@ -419,7 +402,7 @@ def run_tests_array(all_tests_with_params):
 
                     proc, stdout, stderr, total_time = run_single_test(
                         args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file,
-                        suite_tmp_dir, test_id)
+                        suite_tmp_dir)
 
                     if proc.returncode is None:
                         try:
@@ -1023,17 +1006,10 @@ if __name__ == '__main__':
         help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
     group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
-    # TODO Why not using testname? Signals are faster, isolating the handler in server
     parser.add_argument('--coverage', action='store_true', default=False,
-        help="Send a signal to the server along with the test_id that is going to be run. "
-             "Do not use this option with the server built without WITH_COVERAGE option, "
-             "it will terminate upon signal receive");
+        help="Set internal coverage test name setting before test run, similar to --testname")
 
     args = parser.parse_args()
-
-    if args.coverage and (args.parallel != "1/1" or args.jobs != 1):
-        print("You can't run tests in parallel while tracking code coverage")
-        sys.exit(1)
 
     if args.queries and not os.path.isdir(args.queries):
         print("Cannot access the specified directory with queries (" + args.queries + ")", file=sys.stderr)

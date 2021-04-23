@@ -16,6 +16,7 @@
 
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 namespace detail
 {
@@ -37,9 +38,10 @@ public:
     {
         (void)start;
 
-        const struct sigaction sa = { .sa_handler=[](int) { Writer::instance().updateTest(); }};
-
-        sigaction(SIGRTMIN + 1, &sa, nullptr);
+        Context::setSettingHook("coverage_test_name", [this](const Field& value)
+        {
+            updateTest(value.get<std::string>());
+        });
 
         std::filesystem::remove_all(coverage_dir);
         std::filesystem::create_directory(coverage_dir);
@@ -50,15 +52,15 @@ public:
     void hit(uint32_t edge_index, void * addr)
     {
         (void)edge_index;
-        std::lock_guard _(edges_mutex);
+        auto lck = std::lock_guard(edges_mutex);
         edges.push_back(addr);
     }
 
-    void updateTest()
+    void updateTest(std::string_view new_test_name)
     {
         dump();
         auto lck = std::lock_guard(edges_mutex);
-        test = CurrentThread::get()->
+        test = new_test_name;
     }
 
     void dump()
@@ -99,6 +101,6 @@ private:
     //std::unordered_map<void *, std::string> symbolizer_cache;
     //std::shared_mutex symbolizer_cache_mutex;
 
-    FreeThreadPool pool;
+    FreeThreadPool pool(4);
 };
 }
