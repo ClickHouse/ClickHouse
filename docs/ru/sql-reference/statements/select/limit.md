@@ -12,7 +12,8 @@ toc_title: LIMIT
 
 При отсутствии секции [ORDER BY](order-by.md), однозначно сортирующей результат, результат может быть произвольным и может являться недетерминированным.
 
-Для корректировки заданного `LIMIT` вы можете использовать настройку [limit](../../../operations/settings/settings.md#limit).
+!!! note "Примечание" 
+    Количество возвращаемых строк может зависеть также от настройки [limit](../../../operations/settings/settings.md#limit).
 
 ## Модификатор LIMIT ... WITH TIES  {#limit-with-ties}
 
