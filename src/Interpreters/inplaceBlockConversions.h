@@ -17,7 +17,8 @@ class ColumnsDescription;
 class ActionsDAG;
 using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
-/// Create actions which adds missing defaults to block according to required_columns using columns description.
+/// Create actions which adds missing defaults to block according to required_columns using columns description
+/// or substitute NULL into DEFAULT value in case of INSERT SELECT query (null_as_default) if according setting is 1.
 /// Return nullptr if no actions required.
 ActionsDAGPtr evaluateMissingDefaults(
     const Block & header,

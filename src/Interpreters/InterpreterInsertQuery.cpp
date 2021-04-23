@@ -247,12 +247,10 @@ BlockIO InterpreterInsertQuery::execute()
                 size_t col_idx = 0;
                 for (const auto & column : query_columns_names_and_types)
                 {
+                    /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
+                    /// default column values (in AddingDefaultBlockOutputStream), so all values will be cast correctly.
                     if (input_columns[col_idx]->isNullable() && !query_columns[col_idx]->isNullable() && output_columns.hasDefault(column.name))
-                    {
-                        auto nullable_column = ColumnNullable::create(query_columns[col_idx], ColumnUInt8::create(query_columns[col_idx]->size(), 0));
-                        ColumnWithTypeAndName new_column(std::move(nullable_column), std::make_shared<DataTypeNullable>(column.type), column.name);
-                        query_sample_block.setColumn(col_idx, std::move(new_column));
-                    }
+                        query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullable(query_columns[col_idx]), makeNullable(column.type), column.name));
                     col_idx++;
                 }
             }

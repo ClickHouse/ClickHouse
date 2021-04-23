@@ -54,8 +54,9 @@ void addDefaultRequiredExpressionsRecursively(
 
         if (is_column_in_query && convert_null_to_default)
         {
-            auto null_as_default_expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), column_default_expr);
-            default_expr_list_accum->children.emplace_back(setAlias(null_as_default_expr, required_column_name));
+            auto expr = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
+            expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(expr));
+            default_expr_list_accum->children.emplace_back(setAlias(expr, required_column_name));
         }
         else
         {
