@@ -2877,7 +2877,7 @@ Default value: `0`.
 
 ## offset {#offset}
 
-Sets the number of rows to skip before starting to return rows from the query. It adjust the offset previously set by the [OFFSET](../../sql-reference/statements/select/offset.md#offset-fetch) clause.
+Sets the number of rows to skip before starting to return rows from the query. It adjusts the offset set by the [OFFSET](../../sql-reference/statements/select/offset.md#offset-fetch) clause, so that these two values are summarized.
 
 Possible values:
 
