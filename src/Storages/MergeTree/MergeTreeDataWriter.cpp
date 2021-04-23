@@ -9,6 +9,7 @@
 #include <IO/HashingWriteBuffer.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/ObjectUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
 #include <Common/typeid_cast.h>
@@ -261,6 +262,9 @@ Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_
 MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, bool optimize_on_insert)
 {
     Block & block = block_with_partition.block;
+    auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+
+    convertObjectsToTuples(columns, block);
 
     static const String TMP_PREFIX = "tmp_insert_";
 
@@ -337,7 +341,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     for (const auto & ttl_entry : move_ttl_entries)
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
-    NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
 
@@ -404,7 +407,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     serialization_info.add(block);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot,columns,
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
         index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
         compression_codec, serialization_info);
 

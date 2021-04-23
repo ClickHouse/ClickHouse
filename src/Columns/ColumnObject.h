@@ -23,6 +23,8 @@ public:
     ColumnObject(const SubcolumnsMap & subcolumns_);
     ColumnObject(const Names & keys, const Columns & subcolumns_);
 
+    void checkConsistency() const;
+
     bool hasSubcolumn(const String & key) const;
 
     const IColumn & getSubcolumn(const String & key) const;
@@ -33,7 +35,7 @@ public:
     const SubcolumnsMap & getSubcolumns() const { return subcolumns; }
     SubcolumnsMap & getSubcolumns() { return subcolumns; }
 
-    void checkConsistency() const;
+    Names getKeys() const;
 
     /// Part of interface
 
