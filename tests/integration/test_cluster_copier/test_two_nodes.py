@@ -324,6 +324,67 @@ class TaskTTLMoveToVolume:
         assert a == b, "Data"
 
 
+class TaskDropTargetPartition:
+    def __init__(self, cluster):
+        self.cluster = cluster
+        self.zk_task_path = '/clickhouse-copier/task_drop_target_partition'
+        self.container_task_file = "/task_drop_target_partition.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_drop_target_partition.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
+
+    def start(self):
+        first = cluster.instances["first"]
+        first.query("CREATE DATABASE db_drop_target_partition;")
+        first.query("""CREATE TABLE db_drop_target_partition.source
+        (
+            Column1 UInt64,
+            Column2 Int32,
+            Column3 Date,
+            Column4 DateTime,
+            Column5 String
+        )
+        ENGINE = MergeTree()
+        PARTITION BY (toYYYYMMDD(Column3), Column3)
+        PRIMARY KEY (Column1, Column2, Column3)
+        ORDER BY (Column1, Column2, Column3);""")
+
+        first.query("""INSERT INTO db_drop_target_partition.source SELECT * FROM generateRandom(
+            'Column1 UInt64, Column2 Int32, Column3 Date, Column4 DateTime, Column5 String', 1, 10, 2) LIMIT 100;""")
+
+        second = cluster.instances["second"]
+        second.query("CREATE DATABASE db_drop_target_partition;")
+        second.query("""CREATE TABLE db_drop_target_partition.destination
+        (
+            Column1 UInt64,
+            Column2 Int32,
+            Column3 Date,
+            Column4 DateTime,
+            Column5 String
+        ) ENGINE = MergeTree()
+        PARTITION BY toYYYYMMDD(Column3)
+        ORDER BY (Column3, Column2, Column1);""")
+
+        # Insert data in target too. It has to be dropped.
+        first.query("""INSERT INTO db_drop_target_partition.destination SELECT * FROM db_drop_target_partition.source;""")
+        
+        print("Preparation completed")
+
+    def check(self):
+        first = cluster.instances["first"]
+        second = cluster.instances["second"]
+
+        a = first.query("SELECT count() from db_drop_target_partition.source")
+        b = second.query("SELECT count() from db_drop_target_partition.destination")
+        assert a == b, "Count"
+
+        a = TSV(first.query("""SELECT sipHash64(*) from db_drop_target_partition.source
+            ORDER BY (Column1, Column2, Column3, Column4, Column5)"""))
+        b = TSV(second.query("""SELECT sipHash64(*) from db_drop_target_partition.destination
+            ORDER BY (Column1, Column2, Column3, Column4, Column5)"""))
+        assert a == b, "Data"
 
 
 def execute_task(task, cmd_options):

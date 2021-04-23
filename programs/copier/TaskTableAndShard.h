@@ -36,19 +36,19 @@ struct TaskTable
 
     String getPartitionAttachIsDonePath(const String & partition_name) const;
 
-    String getPartitionPiecePath(const String & partition_name, const size_t piece_number) const;
+    String getPartitionPiecePath(const String & partition_name, size_t piece_number) const;
 
     String getCertainPartitionIsDirtyPath(const String & partition_name) const;
 
-    String getCertainPartitionPieceIsDirtyPath(const String & partition_name, const size_t piece_number) const;
+    String getCertainPartitionPieceIsDirtyPath(const String & partition_name, size_t piece_number) const;
 
     String getCertainPartitionIsCleanedPath(const String & partition_name) const;
 
-    String getCertainPartitionPieceIsCleanedPath(const String & partition_name, const size_t piece_number) const;
+    String getCertainPartitionPieceIsCleanedPath(const String & partition_name, size_t piece_number) const;
 
     String getCertainPartitionTaskStatusPath(const String & partition_name) const;
 
-    String getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const;
+    String getCertainPartitionPieceTaskStatusPath(const String & partition_name, size_t piece_number) const;
 
     bool isReplicatedTable() const { return is_replicated_table; }
 
@@ -57,6 +57,7 @@ struct TaskTable
     size_t number_of_splits;
 
     bool allow_to_copy_alias_and_materialized_columns{false};
+    bool allow_to_drop_target_partitions{false};
 
     String name_in_config;
 
@@ -255,6 +256,7 @@ inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConf
     number_of_splits = config.getUInt64(table_prefix + "number_of_splits", 3);
 
     allow_to_copy_alias_and_materialized_columns = config.getBool(table_prefix + "allow_to_copy_alias_and_materialized_columns", false);
+    allow_to_drop_target_partitions = config.getBool(table_prefix + "allow_to_drop_target_partitions", false);
 
     cluster_pull_name = config.getString(table_prefix + "cluster_pull");
     cluster_push_name = config.getString(table_prefix + "cluster_push");

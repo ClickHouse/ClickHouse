@@ -594,6 +594,22 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         zookeeper->create(current_partition_attach_is_done, start_state, zkutil::CreateMode::Persistent);
     }
 
+
+    /// Try to drop destination partition in original table
+    DatabaseAndTableName original_table = task_table.table_push;
+
+    if (task_table.allow_to_drop_target_partitions)
+    {
+        WriteBufferFromOwnString ss;
+        ss << "ALTER TABLE " << getQuotedTable(original_table) << ((partition_name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ") << partition_name;
+
+        UInt64 num_shards_drop_partition = executeQueryOnCluster(task_table.cluster_push, ss.str(), task_cluster->settings_push, ClusterExecutionMode::ON_EACH_SHARD);
+
+        LOG_INFO(log, "Drop partiton {} in original table {} have been executed successfully on {} shards of {}",
+            partition_name, getQuotedTable(original_table), num_shards_drop_partition, task_table.cluster_push->getShardCount());
+    }
+
+
     /// Move partition to original destination table.
     for (size_t current_piece_number = 0; current_piece_number < task_table.number_of_splits; ++current_piece_number)
     {
@@ -602,7 +618,6 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         ASTPtr query_alter_ast;
         String query_alter_ast_string;
 
-        DatabaseAndTableName original_table = task_table.table_push;
         DatabaseAndTableName helping_table = DatabaseAndTableName(original_table.first,
                                                                   original_table.second + "_piece_" +
                                                                   toString(current_piece_number));
@@ -633,17 +648,11 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
 
             if (settings_push.replication_alter_partitions_sync == 1)
             {
-                LOG_INFO(
-                    log,
-                    "Destination tables {} have been executed alter query successfully on {} shards of {}",
-                    getQuotedTable(task_table.table_push),
-                    num_nodes,
-                    task_table.cluster_push->getShardCount());
+                LOG_INFO(log, "Destination tables {} have been executed alter query successfully on {} shards of {}",
+                    getQuotedTable(original_table), num_nodes, task_table.cluster_push->getShardCount());
 
                 if (num_nodes != task_table.cluster_push->getShardCount())
-                {
                     return TaskStatus::Error;
-                }
             }
             else
             {
@@ -851,9 +860,6 @@ bool ClusterCopier::tryDropPartitionPiece(
 
         String query = "ALTER TABLE " + getQuotedTable(helping_table);
         query += ((task_partition.name == "'all'") ? " DROP PARTITION ID " : " DROP PARTITION ")  + task_partition.name + "";
-
-        /// TODO: use this statement after servers will be updated up to 1.1.54310
-        // query += " DROP PARTITION ID '" + task_partition.name + "'";
 
         ClusterPtr & cluster_push = task_table.cluster_push;
         Settings settings_push = task_cluster->settings_push;
