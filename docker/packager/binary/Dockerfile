@@ -42,15 +42,12 @@ RUN apt-get update \
         clang-tidy-10 \
         clang-tidy-11 \
         cmake \
-        cmake \
         curl \
         g++-9 \
         gcc-9 \
         gdb \
         git \
         gperf \
-        gperf \
-        intel-opencl-icd \
         libicu-dev \
         libreadline-dev \
         lld-10 \
@@ -61,10 +58,7 @@ RUN apt-get update \
         llvm-11-dev \
         moreutils \
         ninja-build \
-        ocl-icd-libopencl1 \
-        opencl-headers \
         pigz \
-        pixz \
         rename \
         tzdata \
         --yes --no-install-recommends
