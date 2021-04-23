@@ -1205,6 +1205,12 @@ function upload_results
             /^metric/ { print old_sha, new_sha, $2, $3 }' \
         | "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV"
 
+    # Grepping numactl results from log is too crazy, I'll just call it again.
+    "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
+$left_sha	$right_sha	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+$left_sha	$right_sha	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+EOF
+
     set -x
 }
 
