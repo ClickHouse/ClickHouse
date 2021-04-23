@@ -17,9 +17,9 @@ class FunctionIfNotFinite : public IFunction
 public:
     static constexpr auto name = "ifNotFinite";
 
-    explicit FunctionIfNotFinite(const Context & context_) : context(context_) {}
+    explicit FunctionIfNotFinite(ContextPtr context_) : context(context_) {}
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionIfNotFinite>(context);
     }
@@ -59,7 +59,7 @@ public:
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 
 }

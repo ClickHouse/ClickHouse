@@ -1384,6 +1384,8 @@ struct WindowFunctionRank final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1404,6 +1406,8 @@ struct WindowFunctionDenseRank final : public WindowFunction
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
@@ -1423,6 +1427,8 @@ struct WindowFunctionRowNumber final : public WindowFunction
 
     DataTypePtr getReturnType() const override
     { return std::make_shared<DataTypeUInt64>(); }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
@@ -1489,6 +1495,8 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
 
     DataTypePtr getReturnType() const override
     { return argument_types[0]; }
+
+    bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override

@@ -50,12 +50,19 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
     };
 }
 
-void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & /*query_info*/) const
+NamesAndTypesList StorageSystemDictionaries::getVirtuals() const
 {
-    const auto access = context.getAccess();
+    return {
+        {"key", std::make_shared<DataTypeString>()}
+    };
+}
+
+void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & /*query_info*/) const
+{
+    const auto access = context->getAccess();
     const bool check_access_for_dictionaries = !access->isGranted(AccessType::SHOW_DICTIONARIES);
 
-    const auto & external_dictionaries = context.getExternalDictionariesLoader();
+    const auto & external_dictionaries = context->getExternalDictionariesLoader();
     for (const auto & load_result : external_dictionaries.getLoadResults())
     {
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionary>(load_result.object);
@@ -128,6 +135,9 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         else
             res_columns[i++]->insertDefault();
 
+        /// Start fill virtual columns
+
+        res_columns[i++]->insert(dictionary_structure.getKeyDescription());
     }
 }
 
