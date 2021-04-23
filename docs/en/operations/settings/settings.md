@@ -2866,7 +2866,7 @@ Default value: `0`.
 
 ## limit {#limit}
 
-Sets the number of rows to get from the query result. It adjust the limit previously set by the [LIMIT](../../sql-reference/statements/select/limit.md#limit-clause) clause.
+Sets the maximum number of rows to get from the query result. It adjusts the value set by the [LIMIT](../../sql-reference/statements/select/limit.md#limit-clause) clause, so that the limit, specified in the query, cannot exceed the limit, set by this setting.
 
 Possible values:
 
