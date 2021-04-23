@@ -16,9 +16,16 @@ StoragePtr TableFunctionURL::getStorage(
     const std::string & table_name, const String & compression_method_) const
 {
     Poco::URI uri(source);
-    return StorageURL::create(uri, StorageID(getDatabaseName(), table_name),
-        format_, std::nullopt /*format settings*/, columns,
-        ConstraintsDescription{}, global_context, compression_method_);
+    return StorageURL::create(
+        uri,
+        StorageID(getDatabaseName(), table_name),
+        format_,
+        std::nullopt /*format settings*/,
+        columns,
+        ConstraintsDescription{},
+        String{},
+        global_context,
+        compression_method_);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)

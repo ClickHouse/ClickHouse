@@ -46,6 +46,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     const String & remote_table_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context_,
     const String & remote_table_schema_)
     : IStorage(table_id_)
@@ -57,6 +58,7 @@ StoragePostgreSQL::StoragePostgreSQL(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -329,8 +331,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.getContext()->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
         return StoragePostgreSQL::create(
-            args.table_id, pool, remote_table,
-            args.columns, args.constraints, args.getContext(), remote_table_schema);
+            args.table_id, pool, remote_table, args.columns, args.constraints, args.comment, args.getContext(), remote_table_schema);
     },
     {
         .source_access_type = AccessType::POSTGRES,

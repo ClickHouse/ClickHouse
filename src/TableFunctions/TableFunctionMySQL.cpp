@@ -101,6 +101,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & /*ast_function*/, Cont
         on_duplicate_clause,
         columns,
         ConstraintsDescription{},
+        String{},
         context);
 
     pool.reset();

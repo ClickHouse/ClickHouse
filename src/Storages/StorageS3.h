@@ -95,7 +95,8 @@ private:
 class StorageS3 : public ext::shared_ptr_helper<StorageS3>, public IStorage, WithContext
 {
 public:
-    StorageS3(const S3::URI & uri,
+    StorageS3(
+        const S3::URI & uri,
         const String & access_key_id,
         const String & secret_access_key,
         const StorageID & table_id_,
@@ -105,6 +106,7 @@ public:
         UInt64 max_connections_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         ContextPtr context_,
         const String & compression_method_ = "",
         bool distributed_processing_ = false);

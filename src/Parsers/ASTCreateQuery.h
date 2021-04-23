@@ -25,6 +25,8 @@ public:
     IAST * ttl_table = nullptr;
     ASTSetQuery * settings = nullptr;
 
+    ASTPtr comment;
+
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;

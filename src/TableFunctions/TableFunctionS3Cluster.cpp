@@ -113,10 +113,20 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
         UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
         UInt64 max_connections = context->getSettingsRef().s3_max_connections;
         storage = StorageS3::create(
-            s3_uri, access_key_id, secret_access_key, StorageID(getDatabaseName(), table_name),
-            format, min_upload_part_size, max_single_part_upload_size, max_connections,
-            getActualTableStructure(context), ConstraintsDescription{},
-            context, compression_method, /*distributed_processing=*/true);
+            s3_uri,
+            access_key_id,
+            secret_access_key,
+            StorageID(getDatabaseName(), table_name),
+            format,
+            min_upload_part_size,
+            max_single_part_upload_size,
+            max_connections,
+            getActualTableStructure(context),
+            ConstraintsDescription{},
+            String{},
+            context,
+            compression_method,
+            /*distributed_processing=*/true);
     }
     else
     {

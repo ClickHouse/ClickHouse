@@ -180,6 +180,13 @@ StoragePtr StorageFactory::get(
         }
     }
 
+    String comment;
+
+    if (storage_def->comment)
+    {
+        comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
+    }
+
     ASTs empty_engine_args;
     Arguments arguments
     {
@@ -194,7 +201,8 @@ StoragePtr StorageFactory::get(
         .columns = columns,
         .constraints = constraints,
         .attach = query.attach,
-        .has_force_restore_data_flag = has_force_restore_data_flag
+        .has_force_restore_data_flag = has_force_restore_data_flag,
+        .comment = comment 
     };
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 

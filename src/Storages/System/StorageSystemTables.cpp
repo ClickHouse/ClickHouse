@@ -34,8 +34,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription(
-    {
+    storage_metadata.setColumns(ColumnsDescription({
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
         {"uuid", std::make_shared<DataTypeUUID>()},
@@ -57,6 +56,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"comment", std::make_shared<DataTypeString>()},
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -242,6 +242,9 @@ protected:
                             res_columns[res_index++]->insertDefault();
 
                         // lifetime_bytes
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
@@ -477,6 +480,12 @@ protected:
                         res_columns[res_index++]->insert(*lifetime_bytes);
                     else
                         res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    assert(metadata_snapshot != nullptr);
+                    res_columns[res_index++]->insert(metadata_snapshot->comment);
                 }
             }
         }
