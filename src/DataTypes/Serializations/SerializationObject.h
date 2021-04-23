@@ -12,13 +12,36 @@ public:
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
-    /** Format is platform-dependent. */
+    void serializeBinaryBulkStatePrefix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkStateSuffix(
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        ColumnPtr & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const override;
+
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
 private:
     mutable Parser parser;

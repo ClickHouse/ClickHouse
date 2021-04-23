@@ -48,6 +48,10 @@ String ISerialization::Substream::toString() const
             return "SparseElements";
         case SparseOffsets:
             return "SparseOffsets";
+        case ObjectStructure:
+            return "ObjectStructure";
+        case ObjectElement:
+            return "ObjectElement(" + object_key_name + ")";
     }
 
     __builtin_unreachable();
@@ -142,6 +146,10 @@ static String getNameForSubstreamPath(
             ///  and name is encoded as a whole.
             stream_name += (escape_tuple_delimiter && elem.escape_tuple_delimiter ?
                 escapeForFileName(".") : ".") + escapeForFileName(elem.tuple_element_name);
+        }
+        else if (elem.type == Substream::ObjectElement)
+        {
+            stream_name += escapeForFileName(".") + escapeForFileName(elem.object_key_name);
         }
     }
 

@@ -28,10 +28,14 @@ public:
     const IColumn & getSubcolumn(const String & key) const;
     IColumn & getSubcolumn(const String & key);
 
-    void addSubcolumn(const String & key, MutableColumnPtr && subcolumn, bool check_size = true);
+    void addSubcolumn(const String & key, MutableColumnPtr && subcolumn, bool check_size = false);
 
     const SubcolumnsMap & getSubcolumns() const { return subcolumns; }
     SubcolumnsMap & getSubcolumns() { return subcolumns; }
+
+    void checkConsistency() const;
+
+    /// Part of interface
 
     const char * getFamilyName() const override { return "Object"; }
 
@@ -86,8 +90,6 @@ private:
     {
         throw Exception("ColumnCompressed must be decompressed before use", ErrorCodes::LOGICAL_ERROR);
     }
-
-    void checkConsistency() const;
 };
 
 }
