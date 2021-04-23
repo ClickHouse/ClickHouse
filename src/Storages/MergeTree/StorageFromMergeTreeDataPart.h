@@ -33,7 +33,7 @@ public:
     {
         QueryPlan query_plan =
             std::move(*MergeTreeDataSelectExecutor(parts.front()->storage)
-                      .readFromParts(parts, column_names, metadata_snapshot, query_info, context, max_block_size, num_streams));
+                      .readFromParts(parts, column_names, metadata_snapshot, query_info, context, max_block_size, num_streams, nullptr, &num_granules_from_last_read));
 
         return query_plan.convertToPipe(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     }
@@ -62,6 +62,8 @@ public:
         return parts.front()->storage.getPartitionIDFromQuery(ast, context);
     }
 
+    size_t getNumGranulesFromLastRead() const { return num_granules_from_last_read; }
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
@@ -79,6 +81,8 @@ protected:
 
 private:
     MergeTreeData::DataPartsVector parts;
+
+    size_t num_granules_from_last_read = 0;
 
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {
