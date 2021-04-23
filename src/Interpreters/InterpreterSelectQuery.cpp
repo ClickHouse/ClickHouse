@@ -1822,7 +1822,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         /// Create optimizer with prepared actions.
         /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
-        if (analysis_result.optimize_read_in_order || analysis_result.optimize_aggregation_in_order)
+        if ((analysis_result.optimize_read_in_order || analysis_result.optimize_aggregation_in_order) && !query_info.aggregate_projection)
         {
             if (analysis_result.optimize_read_in_order)
                 query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
