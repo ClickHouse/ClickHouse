@@ -414,3 +414,9 @@ from (
 -- -INT_MIN row offset that can lead to problems with negation, found when fuzzing
 -- under UBSan. Should be limited to at most INT_MAX.
 select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
+
+-- Somehow in this case WindowTransform gets empty input chunks not marked as
+-- input end, and then two (!) empty input chunks marked as input end. Whatever.
+select count() over () from (select 1 a) l inner join (select 2 a) r using a;
+-- This case works as expected, one empty input chunk marked as input end.
+select count() over () where null;
