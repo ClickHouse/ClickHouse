@@ -22,11 +22,22 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
 
         for name in ["first", "second"]:
-            cluster.add_instance(name,
-                main_configs=["configs_two_nodes/conf.d/clusters.xml", "configs_two_nodes/conf.d/ddl.xml"], user_configs=["configs_two_nodes/users.xml"],
+            instance = cluster.add_instance(name,
+                main_configs=[
+                    "configs_two_nodes/conf.d/clusters.xml", 
+                    "configs_two_nodes/conf.d/ddl.xml",
+                    "configs_two_nodes/conf.d/storage_configuration.xml"],
+                user_configs=["configs_two_nodes/users.xml"],
                 with_zookeeper=True, external_data_path=os.path.join(CURRENT_TEST_DIR, "./data"))
 
         cluster.start()
+
+        for name in ["first", "second"]:
+            instance = cluster.instances[name]
+            instance.exec_in_container(['bash', '-c', 'mkdir /jbod1'])
+            instance.exec_in_container(['bash', '-c', 'mkdir /jbod2'])
+            instance.exec_in_container(['bash', '-c', 'mkdir /external'])
+
         yield cluster
 
     finally:
@@ -249,6 +260,72 @@ class TaskSkipIndex:
         assert a == b, "Data"
 
 
+class TaskTTLMoveToVolume:
+    def __init__(self, cluster):
+        self.cluster = cluster
+        self.zk_task_path = '/clickhouse-copier/task_ttl_move_to_volume'
+        self.container_task_file = "/task_ttl_move_to_volume.xml"
+
+        for instance_name, _ in cluster.instances.items():
+            instance = cluster.instances[instance_name]
+            instance.copy_file_to_container(os.path.join(CURRENT_TEST_DIR, './task_ttl_move_to_volume.xml'), self.container_task_file)
+            print("Copied task file to container of '{}' instance. Path {}".format(instance_name, self.container_task_file))
+
+    def start(self):
+        first = cluster.instances["first"]
+        first.query("CREATE DATABASE db_move_to_volume;")
+        first.query("""CREATE TABLE db_move_to_volume.source
+        (
+            Column1 UInt64,
+            Column2 Int32,
+            Column3 Date,
+            Column4 DateTime,
+            Column5 String
+        )
+        ENGINE = MergeTree()
+        PARTITION BY (toYYYYMMDD(Column3), Column3)
+        PRIMARY KEY (Column1, Column2, Column3)
+        ORDER BY (Column1, Column2, Column3)
+        TTL Column3 + INTERVAL 1 MONTH TO VOLUME 'external' 
+        SETTINGS storage_policy = 'external_with_jbods';""")
+
+        first.query("""INSERT INTO db_move_to_volume.source SELECT * FROM generateRandom(
+            'Column1 UInt64, Column2 Int32, Column3 Date, Column4 DateTime, Column5 String', 1, 10, 2) LIMIT 100;""")
+
+        second = cluster.instances["second"]
+        second.query("CREATE DATABASE db_move_to_volume;")
+        second.query("""CREATE TABLE db_move_to_volume.destination
+        (
+            Column1 UInt64,
+            Column2 Int32,
+            Column3 Date,
+            Column4 DateTime,
+            Column5 String
+        ) ENGINE = MergeTree()
+        PARTITION BY toYYYYMMDD(Column3)
+        ORDER BY (Column3, Column2, Column1)
+        TTL Column3 + INTERVAL 1 MONTH TO VOLUME 'external' 
+        SETTINGS storage_policy = 'external_with_jbods';""")
+        
+        print("Preparation completed")
+
+    def check(self):
+        first = cluster.instances["first"]
+        second = cluster.instances["second"]
+
+        a = first.query("SELECT count() from db_move_to_volume.source")
+        b = second.query("SELECT count() from db_move_to_volume.destination")
+        assert a == b, "Count"
+
+        a = TSV(first.query("""SELECT sipHash64(*) from db_move_to_volume.source
+            ORDER BY (Column1, Column2, Column3, Column4, Column5)"""))
+        b = TSV(second.query("""SELECT sipHash64(*) from db_move_to_volume.destination
+            ORDER BY (Column1, Column2, Column3, Column4, Column5)"""))
+        assert a == b, "Data"
+
+
+
+
 def execute_task(task, cmd_options):
     task.start()
 
@@ -312,3 +389,8 @@ def test_ttl_columns(started_cluster):
 @pytest.mark.timeout(600)
 def test_skip_index(started_cluster):
     execute_task(TaskSkipIndex(started_cluster), [])
+
+
+@pytest.mark.timeout(600)
+def test_ttl_move_to_volume(started_cluster):
+    execute_task(TaskTTLMoveToVolume(started_cluster), [])
