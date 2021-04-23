@@ -111,7 +111,7 @@ function restart
 
     # Change the jemalloc settings here.
     # https://github.com/jemalloc/jemalloc/wiki/Getting-Started
-    export MALLOC_CONF="confirm_conf:true"
+    export MALLOC_CONF="percpu_arena:disabled,confirm_conf:true"
 
     set -m # Spawn servers in their own process groups
 
