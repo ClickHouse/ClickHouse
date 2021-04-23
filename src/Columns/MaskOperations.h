@@ -13,7 +13,7 @@ void conjunctionMasks(PaddedPODArray<UInt8> & mask1, const PaddedPODArray<UInt8>
 
 void disjunctionMasks(PaddedPODArray<UInt8> & mask1, const PaddedPODArray<UInt8> & mask2);
 
-void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, bool reverse = false, Field * default_value = nullptr);
+void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, Field * default_value = nullptr, bool reverse = false);
 
 void executeColumnIfNeeded(ColumnWithTypeAndName & column);
 

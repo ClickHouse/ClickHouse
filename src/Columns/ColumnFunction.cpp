@@ -194,6 +194,8 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
 
 ColumnWithTypeAndName ColumnFunction::reduce(bool reduce_arguments) const
 {
+//    LOG_DEBUG(&Poco::Logger::get("ColumnFunction"), "Reduce function: {}", function->getName());
+
     auto args = function->getArgumentTypes().size();
     auto captured = captured_columns.size();
 
@@ -207,7 +209,7 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool reduce_arguments) const
         columns.reserve(captured_columns.size());
         for (const auto & col : captured_columns)
         {
-            LOG_DEBUG(&Poco::Logger::get("ColumnFunction"), "Arg type: {}", col.type->getName());
+//            LOG_DEBUG(&Poco::Logger::get("ColumnFunction"), "Arg type: {}", col.type->getName());
 
             if (const auto * column_function = typeid_cast<const ColumnFunction *>(col.column.get()))
                 columns.push_back(column_function->reduce(true));
