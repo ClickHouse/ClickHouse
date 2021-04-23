@@ -53,6 +53,7 @@ protected:
         const String & password,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         ContextPtr context_);
 
 private:

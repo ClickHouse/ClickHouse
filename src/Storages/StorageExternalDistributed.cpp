@@ -36,12 +36,14 @@ StorageExternalDistributed::StorageExternalDistributed(
     const String & password,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
+    const String & comment,
     ContextPtr context)
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
+    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 
     size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
@@ -72,7 +74,9 @@ StorageExternalDistributed::StorageExternalDistributed(
                     remote_table,
                     /* replace_query = */ false,
                     /* on_duplicate_clause = */ "",
-                    columns_, constraints_,
+                    columns_,
+                    constraints_,
+                    String{},
                     context);
                 break;
             }
@@ -90,12 +94,7 @@ StorageExternalDistributed::StorageExternalDistributed(
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = StoragePostgreSQL::create(
-                    table_id_,
-                    std::move(pool),
-                    remote_table,
-                    columns_, constraints_,
-                    context);
+                shard = StoragePostgreSQL::create(table_id_, std::move(pool), remote_table, columns_, constraints_, String{}, context);
                 break;
             }
 #endif
@@ -177,6 +176,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
             password,
             args.columns,
             args.constraints,
+            args.comment,
             args.getContext());
     },
     {

@@ -43,6 +43,8 @@ struct StorageInMemoryMetadata
     /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
 
+    String comment;
+
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
@@ -51,6 +53,8 @@ struct StorageInMemoryMetadata
     /// NOTE: Thread unsafe part. You should modify same StorageInMemoryMetadata
     /// structure from different threads. It should be used as MultiVersion
     /// object. See example in IStorage.
+
+    void setComment(const String & comment_);
 
     /// Sets only real columns, possibly overwrites virtual ones.
     void setColumns(ColumnsDescription columns_);

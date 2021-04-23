@@ -246,9 +246,19 @@ void DatabaseConnectionMySQL::fetchLatestTablesStructureIntoCache(
             local_tables_cache.erase(iterator);
         }
 
-        local_tables_cache[table_name] = std::make_pair(table_modification_time, StorageMySQL::create(
-            StorageID(database_name, table_name), std::move(mysql_pool), database_name_in_mysql, table_name,
-            false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, getContext()));
+        local_tables_cache[table_name] = std::make_pair(
+            table_modification_time,
+            StorageMySQL::create(
+                StorageID(database_name, table_name),
+                std::move(mysql_pool),
+                database_name_in_mysql,
+                table_name,
+                false,
+                "",
+                ColumnsDescription{columns_name_and_type},
+                ConstraintsDescription{},
+                String{},
+                getContext()));
     }
 }
 

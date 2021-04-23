@@ -32,6 +32,12 @@ ASTPtr ASTStorage::clone() const
     if (settings)
         res->set(res->settings, settings->clone());
 
+    if (comment)
+    {
+        res->comment = comment;
+        res->children.push_back(comment->clone());
+    }
+
     return res;
 }
 
@@ -71,6 +77,11 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings->formatImpl(s, state, frame);
+    }
+    if (comment)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "COMMENT " << (s.hilite ? hilite_none : "");
+        comment->formatImpl(s, state, frame);
     }
 
 }

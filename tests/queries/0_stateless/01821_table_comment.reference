@@ -1,0 +1,3 @@
+default	t1	this is a temtorary table
+default	t2	this is a MergeTree table
+default	t3	this is a Log table
