@@ -184,6 +184,10 @@ static void * getCallerAddress(const ucontext_t & context)
 #    else
     return reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
 #    endif
+
+#elif defined(__APPLE__) && defined(__aarch64__)
+    return reinterpret_cast<void *>(context.uc_mcontext->__ss.__pc);
+
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
 #elif defined(__powerpc64__)

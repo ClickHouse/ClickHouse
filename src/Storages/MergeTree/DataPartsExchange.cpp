@@ -481,7 +481,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     auto storage_id = data.getStorageID();
     String new_part_path = part_type == "InMemory" ? "memory" : data.getFullPathOnDisk(reservation->getDisk()) + part_name + "/";
-    auto entry = data.global_context.getReplicatedFetchList().insert(
+    auto entry = data.getContext()->getReplicatedFetchList().insert(
         storage_id.getDatabaseName(), storage_id.getTableName(),
         part_info.partition_id, part_name, new_part_path,
         replica_path, uri, to_detached, sum_files_size);
