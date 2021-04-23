@@ -5,7 +5,7 @@ toc_title: Dates and Times
 
 # Functions for Working with Dates and Times {#functions-for-working-with-dates-and-times}
 
-Support for time zones
+Support for time zones.
 
 All functions for working with the date and time that have a logical use for the time zone can accept a second optional time zone argument. Example: Asia/Yekaterinburg. In this case, they use the specified time zone instead of the local (default) one.
 
@@ -23,9 +23,40 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
+## timeZone {#timezone}
+
+Returns the timezone of the server.
+
+Alias: `timezone`. 
+
 ## toTimeZone {#totimezone}
 
-Convert time or date and time to the specified time zone. The time zone is an attribute of the Date/DateTime types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
+Convert time or date and time to the specified time zone.  
+
+**Syntax** 
+
+``` sql
+toTimezone(value, timezone)
+```
+
+Alias: `toTimezone`.
+
+The time zone is an attribute of the Date/DateTime types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
+
+**Arguments** 
+
+-   `value` — Time or date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — Timezone for the returned value. [String](../../sql-reference/data-types/string.md).
+
+**Returned value(s)**
+
+-   Date and time. 
+
+Type: [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Example**
+
+Query:
 
 ```sql
 SELECT
@@ -40,6 +71,7 @@ SELECT
     toInt32(time_samoa) AS int32samoa
 FORMAT Vertical;
 ```
+Result:
 
 ```text
 Row 1:
@@ -56,6 +88,28 @@ int32samoa: 1546300800
 ```
 
 `toTimeZone(time_utc, 'Asia/Yekaterinburg')` changes the `DateTime('UTC')` type to `DateTime('Asia/Yekaterinburg')`. The value (Unixtimestamp) 1546300800 stays the same, but the string representation (the result of the toString() function) changes from `time_utc:   2019-01-01 00:00:00` to `time_yekat: 2019-01-01 05:00:00`.
+
+## timeZoneOf {#timezoneof}
+
+Returns the timezone name of [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md) data types.
+
+**Syntax** 
+
+``` sql
+timeZoneOf(value)
+```
+
+Alias: `timezoneOf`. 
+
+**Arguments**
+
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+
+**Returned value(s)**
+
+-   Timezone name. 
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 ## toYear {#toyear}
 
