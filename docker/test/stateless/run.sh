@@ -119,7 +119,7 @@ do
                 arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
                 count(*) AS samples
             from system.trace_log
-            where trace_type = '"$trace_type"'
+            where trace_type = '$trace_type'
             group by trace
             order by samples desc
             settings allow_introspection_functions = 1
