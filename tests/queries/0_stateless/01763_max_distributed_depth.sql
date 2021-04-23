@@ -18,9 +18,9 @@ SELECT * FROM tt6; -- { serverError 581 }
 SET max_distributed_depth = 0;
 
 -- stack overflow
-INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError 306}
+INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError 269 }
 
 -- stack overflow
-SELECT * FROM tt6; -- { serverError 306 }
+SELECT * FROM tt6; -- { serverError 269 }
 
 DROP TABLE tt6;
