@@ -22,9 +22,6 @@ namespace detail
 {
 using namespace DB;
 
-constexpr const std::string_view genhtml_command =
-    "genhtml {} --output-directory {} --show-details --num-spaces 4 --legend";
-
 class Writer
 {
 public:
@@ -56,13 +53,6 @@ public:
         edges.push_back(addr);
     }
 
-    void updateTest(std::string_view new_test_name)
-    {
-        dump();
-        auto lck = std::lock_guard(edges_mutex);
-        test = new_test_name;
-    }
-
     void dump()
     {
         if (!test)
@@ -86,13 +76,13 @@ public:
     }
 
 private:
-    void convertToLCOVAndDumpToDisk(const std::vector<void*>& hits, std::string_view test_name)
-    {
-        (void)hits;
-        (void)test_name;
-    }
+    Writer()
+        : coverage_dir(std::filesystem::current_path() / "../../coverage"),
+          pool(4) {}
 
-    const std::filesystem::path coverage_dir { std::filesystem::current_path() / "../../coverage" };
+    const std::filesystem::path coverage_dir;
+
+    FreeThreadPool pool;
 
     std::optional<std::string> test;
     std::vector<void *> edges;
@@ -101,6 +91,17 @@ private:
     //std::unordered_map<void *, std::string> symbolizer_cache;
     //std::shared_mutex symbolizer_cache_mutex;
 
-    FreeThreadPool pool(4);
+    void updateTest(std::string_view new_test_name)
+    {
+        dump();
+        auto lck = std::lock_guard(edges_mutex);
+        test = new_test_name;
+    }
+
+    void convertToLCOVAndDumpToDisk(const std::vector<void*>& hits, std::string_view test_name)
+    {
+        (void)hits;
+        (void)test_name;
+    }
 };
 }

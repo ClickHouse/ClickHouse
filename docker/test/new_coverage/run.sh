@@ -1,6 +1,6 @@
 #!/bin/bash
 
-ASAN_OPTIONS=coverage=1:coverage_dir=/sancov
+export ASAN_OPTIONS=coverage=1 # TODO re-check if it's needed
 
 kill_clickhouse () {
     echo "clickhouse pids $(pgrep -u clickhouse)" | ts '%Y-%m-%d %H:%M:%S'
@@ -50,7 +50,6 @@ dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-client_*.deb; \
     dpkg -i package_folder/clickhouse-test_*.deb
 
-mkdir -p /sancov # reports will be stored there
 mkdir -p /var/lib/clickhouse
 mkdir -p /var/log/clickhouse-server
 chmod 777 -R /var/log/clickhouse-server/
@@ -69,21 +68,19 @@ fi
 
 chmod 777 -R /var/lib/clickhouse
 
-
+clickhouse-client --query "SET coverage_test_name='client_initial_1'"
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE test"
 
-kill_clickhouse
-start_clickhouse
-
+clickhouse-client --query "SET coverage_test_name='client_initial_2'"
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-clickhouse-test -j 8 --testname --shard --zookeeper --print-time --use-skip-list 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
+clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
 
 readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "/test_result.txt")
 
@@ -105,10 +102,5 @@ else
     echo "No failed tests"
 fi
 
-
-mkdir -p "$SOURCE_DIR"/obj-x86_64-linux-gnu
-cd "$SOURCE_DIR"/obj-x86_64-linux-gnu && CC=clang-11 CXX=clang++-11 cmake .. && cd /
-
-sancov-11 --symbolize /sancov/* -o clickhouse.symcov
-llvm-cov-11 export /usr/bin/clickhouse -instr-profile=clickhouse.profdata -j=16 -format=lcov -skip-functions -ignore-filename-regex "$IGNORE" > output.lcov
-genhtml output.lcov --ignore-errors source --output-directory "${OUTPUT_DIR}"
+cat coverage/*.info >> report.info # TODO Maybe should first pre-allocated space for the resulting file
+genhtml report.info --ignore-errors source --output-directory "${OUTPUT_DIR}" --num-spaces 4 --legend
