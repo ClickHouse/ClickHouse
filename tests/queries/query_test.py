@@ -58,6 +58,7 @@ SKIP_LIST = [
     "01103_check_cpu_instructions_at_startup",
     "01114_database_atomic",
     "01148_zookeeper_path_macros_unfolding",
+    "01152_cross_replication",  # tcp port in reference
     "01175_distributed_ddl_output_mode_long",
     "01181_db_atomic_drop_on_cluster",  # tcp port in reference
     "01280_ssd_complex_key_dictionary",
@@ -113,6 +114,8 @@ SKIP_LIST = [
     "01754_cluster_all_replicas_shard_num",
     "01759_optimize_skip_unused_shards_zero_shards",
     "01780_clickhouse_dictionary_source_loop",
+    "01801_s3_cluster",
+    "01804_dictionary_decimal256_type",  # hardcoded path
 ]
 
 
@@ -155,6 +158,7 @@ def run_shell(bin_prefix, server, database, path, reference, replace_map=None):
         'CLICKHOUSE_PORT_TCP_WITH_PROXY': str(server.proxy_port),
         'CLICKHOUSE_PORT_HTTP': str(server.http_port),
         'CLICKHOUSE_PORT_INTERSERVER': str(server.inter_port),
+        'CLICKHOUSE_PORT_POSTGRESQL': str(server.postgresql_port),
         'CLICKHOUSE_TMP': server.tmp_dir,
         'CLICKHOUSE_CONFIG_CLIENT': server.client_config
     }
