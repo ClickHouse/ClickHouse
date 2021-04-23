@@ -416,7 +416,7 @@ BlockIO InterpreterSystemQuery::execute()
                     query.database, query.table);
             break;
         case Type::RESTORE_REPLICA:
-            restoreReplica(system_context);
+            restoreReplica();
             break;
         case Type::FLUSH_LOGS:
         {
@@ -513,7 +513,7 @@ InterpreterSystemQuery::ReplicaAndZK InterpreterSystemQuery::checkTablesAndSwapI
     return {replica_name, status.zookeeper_path};
 }
 
-void InterpreterSystemQuery::restoreReplica(ContextPtr system_context)
+void InterpreterSystemQuery::restoreReplica()
 {
     /**
      * This query should be:
@@ -540,27 +540,13 @@ void InterpreterSystemQuery::restoreReplica(ContextPtr system_context)
     const String new_table_name = fmt::format("{}_tmp_{}", old_table_name, table_name_hash(old_table_name));
 
     const auto [replica_name, zk_root_path] = checkTablesAndSwapIfNeeded(db_name, old_table_name, new_table_name);
+    const String replica_zk_path = zk_root_path + "/replicas/" + replica_name;
 
-    if (const String replicas_zk_path = zk_root_path + "/replicas"; zookeeper->exists(replicas_zk_path))
+    if (zookeeper->exists(replica_zk_path))
     {
-        if (const String replica_zk_path = replicas_zk_path + "/" + replica_name; zookeeper->exists(replica_zk_path))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The metadata for {}.{} (replica {}) is present at {} -- nothing to restore",
-                db_name, old_table_name, replica_name, replica_zk_path);
-        }
-
-        Strings replicas_present;
-        zookeeper->tryGetChildren(replicas_zk_path, replicas_present);
-
-        if (!replicas_present.empty()) // at least one table has valid metadata in zk
-        {
-            LOG_DEBUG(log, "At least one replica is present, restoring state from it");
-            tryRestartReplica(table_id, system_context); // Runs table attach which will auto restore the ZK metadata.
-            return;
-        }
-
-        LOG_DEBUG(log, "Replicas path is empty");
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "The metadata for {}.{} (replica {}) is present at {} -- nothing to restore",
+            db_name, old_table_name, replica_name, replica_zk_path);
     }
 
     LOG_DEBUG(log, "Started restoring {}.{}, zk root path at {}", db_name, old_table_name, zk_root_path);
@@ -568,6 +554,16 @@ void InterpreterSystemQuery::restoreReplica(ContextPtr system_context)
     /// 1.
     /// If the server failed after this step, the old temporary table won't be lost in mem so the query re-run could
     /// succeed (need of IF NOT EXISTS).
+
+    // When restoring replica with root not being lost, the server creates new tables as "lost", we don't need that,
+    // so we create a special node which is removed in StorageReplicatedMergeTree::createReplica()
+    if (zookeeper->exists(zk_root_path))
+    {
+        const String path = replica_zk_path + "/is_restoring_replica";
+        zookeeper->createAncestors(path);
+        zookeeper->create(path, "", zkutil::CreateMode::Persistent);
+    }
+
     executeQuery(fmt::format("CREATE TABLE IF NOT EXISTS {0}.{1} AS {0}.{2}", db_name, new_table_name, old_table_name),
         getContext(), true);
 

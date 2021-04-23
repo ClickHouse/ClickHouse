@@ -22,10 +22,6 @@ This query is used when starting the server. The server stores table metadata as
 
 If the table was detached permanently, it won't be reattached at the server start, so you need to use `ATTACH` query explicitly.
 
-If the server, evaluating the `ATTACH` query for a replicated table, finds that replica metadata in Zookeeper is lost
-(but there exists at least one replica with valid metadata), it restores the metadata. Locally present paths are
-not re-downloaded if not outdated.
-
 ### Сreate New Table And Attach Data {#create-new-table-and-attach-data}
 
 **With specify path to table data**

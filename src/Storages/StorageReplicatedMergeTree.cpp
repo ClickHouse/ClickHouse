@@ -62,8 +62,10 @@
 #include <ext/range.h>
 #include <ext/scope_guard.h>
 #include <ext/scope_guard_safe.h>
+#include "Parsers/ASTPartition.h"
 
 #include <ctime>
+#include <numeric>
 #include <thread>
 #include <future>
 
@@ -357,18 +359,15 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     /// folder.
     if (attach && !current_zookeeper->exists(replica_path))
     {
-        LOG_WARNING(log, "No metadata in ZooKeeper for {}, will try to restore", replica_path);
-
-        skip_sanity_checks = true; // Otherwise we'll get an exception that local_parts > parts in ZK.
-        createReplica(metadata_snapshot); // The replica is not the only one left so it'll be marked "lost".
-        // TODO As for now, there is no data for parts in ZK, so they are removed and re-downloaded, should fix.
-        cloneReplicaIfNeeded(current_zookeeper); // and restored here
+        LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will be in readonly mode", replica_path);
+        is_readonly = true;
+        return;
     }
 
     if (!attach)
     {
         if (!getDataParts().empty())
-            throw Exception("Data directory for table already containing data parts"
+            throw Exception("Data directory for table already contains data parts"
                 " - probably it was unclean DROP table or manual intervention."
                 " You must either clear directory by hand or use ATTACH TABLE"
                 " instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
@@ -409,8 +408,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             dropIfEmpty();
             throw;
         }
-    }
-    else
+    } else
     {
         String replica_metadata;
         const bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
@@ -707,9 +705,15 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
                 "Cannot create a replica of the table {}, because the last replica of the table was dropped right now",
                 zookeeper_path);
 
+        // See InterpreterSystemQuery.cpp:560
+        const bool from_system_restore_replica = zookeeper->exists(replica_path + "/is_restoring_replica");
+
+        if (from_system_restore_replica)
+            zookeeper->removeRecursive(replica_path);
+
         /// It is not the first replica, we will mark it as "lost", to immediately repair (clone) from existing replica.
         /// By the way, it's possible that the replica will be first, if all previous replicas were removed concurrently.
-        const String is_lost_value = replicas_stat.numChildren ? "1" : "0";
+        const String is_lost_value = (!from_system_restore_replica && replicas_stat.numChildren) ? "1" : "0";
 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "",
@@ -739,7 +743,7 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
         Coordination::Responses responses;
         code = zookeeper->tryMulti(ops, responses);
 
-        switch(code)
+        switch (code)
         {
             case Coordination::Error::ZNODEEXISTS:
                 throw Exception(ErrorCodes::REPLICA_IS_ALREADY_EXIST, "Replica {} already exists", replica_path);
@@ -1094,6 +1098,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     size_t unexpected_parts_nonnew = 0;
     UInt64 unexpected_parts_nonnew_rows = 0;
     UInt64 unexpected_parts_rows = 0;
+
     for (const auto & part : unexpected_parts)
     {
         if (part->info.level > 0)
@@ -1105,20 +1110,17 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
         unexpected_parts_rows += part->rows_count;
     }
 
-    /// Additional helpful statistics
-    auto get_blocks_count_in_data_part = [&] (const String & part_name) -> UInt64
-    {
-        MergeTreePartInfo part_info;
-        if (MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
-            return part_info.getBlocksCount();
+    const UInt64 parts_to_fetch_blocks = std::accumulate(parts_to_fetch.cbegin(), parts_to_fetch.cend(), 0,
+        [&](UInt64 acc, const String& part_name)
+        {
+            MergeTreePartInfo part_info;
 
-        LOG_ERROR(log, "Unexpected part name: {}", part_name);
-        return 0;
-    };
+            if (MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
+                return acc + part_info.getBlocksCount();
 
-    UInt64 parts_to_fetch_blocks = 0;
-    for (const String & name : parts_to_fetch)
-        parts_to_fetch_blocks += get_blocks_count_in_data_part(name);
+            LOG_ERROR(log, "Unexpected part name: {}", part_name);
+            return acc;
+        });
 
     /** We can automatically synchronize data,
       *  if the ratio of the total number of errors to the total number of parts (minimum - on the local filesystem or in ZK)
@@ -2656,6 +2658,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     Coordination::Stat is_lost_stat;
     bool is_new_replica = true;
     String res;
+
     if (zookeeper->tryGet(replica_path + "/is_lost", res, &is_lost_stat))
     {
         if (res == "0")

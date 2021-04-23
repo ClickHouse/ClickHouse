@@ -61,7 +61,7 @@ private:
     ReplicaAndZK checkTablesAndSwapIfNeeded(
         const String& db_name, const String& old_table_name, const String& new_table_name) const;
 
-    void restoreReplica(ContextPtr system_context);
+    void restoreReplica();
 
     void dropReplica(ASTSystemQuery & query);
     bool dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table);

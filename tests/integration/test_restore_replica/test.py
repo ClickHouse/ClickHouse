@@ -45,24 +45,7 @@ def check_data(_sum: int, count: int):
     assert test_count == count
     assert test_sum == _sum
 
-query_steps_log = [
-    "Started restoring",
-    "Created a new replicated table",
-    "Stopped replica fetches for",
-    "Moved and attached all parts from",
-    "Renamed tables",
-    "Detached old table",
-    "Removed old table"
-]
-
-# def test_restore_replica_server_partial_failure(start_cluster):
-#     zk = cluster.get_kazoo_client('zoo1')
-#
-#     check_data(0, 0)
-#     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
-#     check_data(499500, 1000)
-#     pass
-
+# Check restoration of individual replicas and the whole root.
 def test_restore_replica(start_cluster):
     zk = cluster.get_kazoo_client('zoo1')
 
@@ -85,10 +68,11 @@ def test_restore_replica(start_cluster):
     zk.delete("/clickhouse/tables/test/replicas/replica1", recursive=True)
     assert zk.exists("/clickhouse/tables/test/replicas/replica1") is None
 
-    node_1.query("SYSTEM RESTART REPLICA test") # will restore the table
-    node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
+    node_1.query("SYSTEM RESTART REPLICA test")
+    node_1.query("SYSTEM RESTORE REPLICA test")
+
     node_2.query("SYSTEM RESTART REPLICA test")
-    node_2.query_and_get_error("SYSTEM RESTORE REPLICA test")
+    node_2.query("SYSTEM RESTORE REPLICA test")
 
     check_data(499500, 1000)
 
@@ -115,14 +99,40 @@ def test_restore_replica(start_cluster):
     node_1.query("INSERT INTO test SELECT number + 2000 FROM numbers(1000)")
 
     print("Restoring other replicas")
-    node_2.query("SYSTEM RESTART REPLICA test") # will restore the table
-    node_2.query_and_get_error("SYSTEM RESTORE REPLICA test")
+
+    node_2.query("SYSTEM RESTART REPLICA test")
+    node_2.query("SYSTEM RESTORE REPLICA test")
+
     node_3.query("SYSTEM RESTART REPLICA test")
-    node_3.query_and_get_error("SYSTEM RESTORE REPLICA test")
+    node_3.query("SYSTEM RESTORE REPLICA test")
 
     node_2.query("SYSTEM SYNC REPLICA test")
     node_3.query("SYSTEM SYNC REPLICA test")
+
     check_data(4498500, 3000)
 
     # 7. check we cannot restore the already restored replica
     node_1.query_and_get_error("SYSTEM RESTORE REPLICA test")
+
+query_steps_log = [
+    "Started restoring",
+    "Created a new replicated table",
+    "Stopped replica fetches for",
+    "Moved and attached all parts from",
+    "Renamed tables",
+    "Detached old table",
+    "Removed old table"
+]
+
+# Issue a query, kill server after some step, then issue another query and wait till full restoration.
+# def test_restore_replica_partial_execution_then_full_execution(start_cluster):
+#     zk = cluster.get_kazoo_client('zoo1')
+#
+#     check_data(0, 0)
+#     node_1.query("INSERT INTO test SELECT * FROM numbers(1000)")
+#     check_data(499500, 1000)
+#     pass
+
+# Issue a query, kill server on step i, then issue another and kill server on step i + 1.
+# def test_restore_replica_partial_cascade_execution(start_cluster):
+#   pass
