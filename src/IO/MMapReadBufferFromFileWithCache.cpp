@@ -1,5 +1,4 @@
 #include <IO/MMapReadBufferFromFileWithCache.h>
-#include <Common/CurrentMemoryTracker.h>
 
 
 namespace DB
@@ -73,18 +72,6 @@ off_t MMapReadBufferFromFileWithCache::seek(off_t offset, int whence)
 
     position() = working_buffer.begin() + new_pos;
     return new_pos;
-}
-
-void MMapReadBufferFromFileWithCache::track(size_t bytes_)
-{
-    CurrentMemoryTracker::alloc(bytes_);
-    tracked_bytes = bytes_;
-}
-
-MMapReadBufferFromFileWithCache::~MMapReadBufferFromFileWithCache()
-{
-    if (tracked_bytes)
-        CurrentMemoryTracker::free(tracked_bytes);
 }
 
 }

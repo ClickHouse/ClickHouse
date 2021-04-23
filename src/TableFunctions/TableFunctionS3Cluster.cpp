@@ -109,6 +109,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
         Poco::URI uri (filename);
         S3::URI s3_uri (uri);
         /// Actually this parameters are not used
+        UInt64 s3_max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
         UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
         UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
         UInt64 max_connections = context->getSettingsRef().s3_max_connections;
@@ -118,6 +119,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             secret_access_key,
             StorageID(getDatabaseName(), table_name),
             format,
+            s3_max_single_read_retries,
             min_upload_part_size,
             max_single_part_upload_size,
             max_connections,
