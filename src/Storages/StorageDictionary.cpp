@@ -181,7 +181,10 @@ Pipe StorageDictionary::read(
 
 void StorageDictionary::drop()
 {
-    std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+    if (is_dropped)
+        return;
+
+    is_dropped = true;
     remove_repository_callback.reset();
 }
 
