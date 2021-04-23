@@ -668,30 +668,6 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         if (inject_fault)
             throw Exception("Copy fault injection is activated", ErrorCodes::UNFINISHED);
 
-        try
-        {
-            String query_deduplicate_ast_string;
-            if (!task_table.isReplicatedTable())
-            {
-                query_deduplicate_ast_string += " OPTIMIZE TABLE " + getQuotedTable(original_table) +
-                                                ((partition_name == "'all'") ? " PARTITION ID " : " PARTITION ") + partition_name + " DEDUPLICATE;";
-
-                LOG_INFO(log, "Executing OPTIMIZE DEDUPLICATE query: {}", query_deduplicate_ast_string);
-
-                UInt64 num_nodes = executeQueryOnCluster(
-                        task_table.cluster_push,
-                        query_deduplicate_ast_string,
-                        task_cluster->settings_push,
-                        ClusterExecutionMode::ON_EACH_SHARD);
-
-                LOG_INFO(log, "Number of shard that executed OPTIMIZE DEDUPLICATE query successfully : {}", toString(num_nodes));
-            }
-        }
-        catch (...)
-        {
-            LOG_INFO(log, "Error while executing OPTIMIZE DEDUPLICATE partition {}in the original table", partition_name);
-            throw;
-        }
     }
 
     /// Create node to signal that we finished moving
