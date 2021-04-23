@@ -16,7 +16,7 @@ extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-ColumnPtr expandColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& mask, Field * field, bool reverse)
+void expandColumnByMask(ColumnPtr & column, const PaddedPODArray<UInt8>& mask, Field * field, bool reverse)
 {
     MutableColumnPtr res = column->cloneEmpty();
     res->reserve(mask.size());
@@ -39,8 +39,7 @@ ColumnPtr expandColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt
 
     if (index < column->size())
         throw Exception("Too less bits in mask", ErrorCodes::LOGICAL_ERROR);
-
-    return res;
+    column = std::move(res);
 }
 
 template <typename ValueType>
@@ -134,7 +133,7 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
 
     auto filtered = column_function->filter(mask, -1, reverse);
     auto result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce(true);
-    result.column = expandColumnByMask(result.column, mask, default_value, reverse);
+    expandColumnByMask(result.column, mask, default_value, reverse);
     column = std::move(result);
 }
 

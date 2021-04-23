@@ -114,7 +114,7 @@ public:
         IColumn::Filter current_mask;
         IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);
 
-        auto default_value = std::make_unique<Field>(1);
+        auto default_value = std::make_unique<Field>(0);
         size_t i = 1;
         while (i < arguments.size())
         {
