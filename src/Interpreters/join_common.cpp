@@ -284,6 +284,11 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const TableJ
         for (size_t i = 0; i < columns_to_add.columns(); ++i)
         {
             const auto & col = columns_to_add.getByPosition(i);
+            if (block.has(col.name))
+            {
+                /// For StorageJoin we discarded table qualifiers, so some names may clash
+                continue;
+            }
             block.insert({
                 col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(),
                 col.type,
