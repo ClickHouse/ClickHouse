@@ -1200,9 +1200,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::NOT_IMPLEMENTED);
 
             // Now we must execute:
-            // 1) expressions before window functions
-            // 2) window functions
-            // 3) expressions after window functions.
+            // 1) expressions before window functions,
+            // 2) window functions,
+            // 3) expressions after window functions,
+            // 4) preliminary distinct.
             // Some of these were already executed at the shards (first_stage),
             // see the counterpart code and comments there.
             if (expressions.need_aggregate)
@@ -1211,6 +1212,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                     "Before window functions");
                 executeWindow(query_plan);
                 executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
+                executeDistinct(query_plan, true, expressions.selected_columns, true);
             }
             else
             {
@@ -1218,6 +1220,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 {
                     executeWindow(query_plan);
                     executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
+                    executeDistinct(query_plan, true, expressions.selected_columns, true);
                 }
                 else
                 {
@@ -1225,8 +1228,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                     // ORDER BY executed on shards.
                 }
             }
-
-            executeDistinct(query_plan, true, expressions.selected_columns, true);
 
             if (expressions.has_order_by)
             {
