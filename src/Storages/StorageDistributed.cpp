@@ -497,14 +497,14 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         ClusterPtr optimized_cluster = getOptimizedCluster(local_context, metadata_snapshot, query_info.query);
         if (optimized_cluster)
         {
-            LOG_TRACE(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
+            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
                     makeFormattedListOfShards(optimized_cluster));
             cluster = optimized_cluster;
             query_info.optimized_cluster = cluster;
         }
         else
         {
-            LOG_TRACE(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
+            LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
                     has_sharding_key ? "" : " (no sharding key)");
         }
     }
@@ -536,7 +536,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         auto stage = getOptimizedQueryProcessingStage(query_info, settings.extremes, sharding_key_block);
         if (stage)
         {
-            LOG_TRACE(log, "Force processing stage to {}", QueryProcessingStage::toString(*stage));
+            LOG_DEBUG(log, "Force processing stage to {}", QueryProcessingStage::toString(*stage));
             return *stage;
         }
     }
@@ -789,7 +789,7 @@ void StorageDistributed::startup()
         if (inc > file_names_increment.value)
             file_names_increment.value.store(inc);
     }
-    LOG_TRACE(log, "Auto-increment is {}", file_names_increment.value);
+    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value);
 }
 
 
@@ -799,9 +799,9 @@ void StorageDistributed::shutdown()
 
     std::lock_guard lock(cluster_nodes_mutex);
 
-    LOG_TRACE(log, "Joining background threads for async INSERT");
+    LOG_DEBUG(log, "Joining background threads for async INSERT");
     cluster_nodes_data.clear();
-    LOG_TRACE(log, "Background threads for async INSERT joined");
+    LOG_DEBUG(log, "Background threads for async INSERT joined");
 }
 void StorageDistributed::drop()
 {
@@ -819,13 +819,13 @@ void StorageDistributed::drop()
     if (relative_data_path.empty())
         return;
 
-    LOG_TRACE(log, "Removing pending blocks for async INSERT from filesystem on DROP TABLE");
+    LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on DROP TABLE");
 
     auto disks = data_volume->getDisks();
     for (const auto & disk : disks)
         disk->removeRecursive(relative_data_path);
 
-    LOG_TRACE(log, "Removed");
+    LOG_DEBUG(log, "Removed");
 }
 
 Strings StorageDistributed::getDataPaths() const
@@ -845,7 +845,7 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
 {
     std::lock_guard lock(cluster_nodes_mutex);
 
-    LOG_TRACE(log, "Removing pending blocks for async INSERT from filesystem on TRUNCATE TABLE");
+    LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on TRUNCATE TABLE");
 
     for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end();)
     {
@@ -853,7 +853,7 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
         it = cluster_nodes_data.erase(it);
     }
 
-    LOG_TRACE(log, "Removed");
+    LOG_DEBUG(log, "Removed");
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
@@ -881,7 +881,7 @@ void StorageDistributed::createDirectoryMonitors(const DiskPtr & disk)
 
             if (std::filesystem::is_empty(dir_path))
             {
-                LOG_TRACE(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
+                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
                 /// Will be created by DistributedBlockOutputStream on demand.
                 std::filesystem::remove(dir_path);
             }
@@ -1040,7 +1040,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
 
     if (!limit)
     {
-        LOG_TRACE(log,
+        LOG_DEBUG(log,
             "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
             "try to increase it, but note that this may increase query processing time.",
             local_context->getSettingsRef().optimize_skip_unused_shards_limit);
@@ -1138,7 +1138,7 @@ void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
         disk->moveDirectory(relative_data_path, new_path_to_table_data);
 
         auto new_path = disk->getPath() + new_path_to_table_data;
-        LOG_TRACE(log, "Updating path to {}", new_path);
+        LOG_DEBUG(log, "Updating path to {}", new_path);
 
         std::lock_guard lock(cluster_nodes_mutex);
         for (auto & node : cluster_nodes_data)

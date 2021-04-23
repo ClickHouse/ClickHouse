@@ -22,12 +22,6 @@ namespace ErrorCodes
 }
 
 
-std::string wrapWithColor(const std::string & value)
-{
-    return "\u001b[36;1m" + value + "\u001b[0m";
-}
-
-
 void ClusterCopier::init()
 {
     auto zookeeper = getContext()->getZooKeeper();
@@ -200,7 +194,6 @@ void ClusterCopier::discoverTablePartitions(const ConnectionTimeouts & timeouts,
         LOG_INFO(log, "Waiting for {} setup jobs", thread_pool.active());
         thread_pool.wait();
     }
-    std::cout << "discoverTablePartitions  finished" << std::endl;
 }
 
 void ClusterCopier::uploadTaskDescription(const std::string & task_path, const std::string & task_file, const bool force)
@@ -624,12 +617,9 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
 
         Settings settings_push = task_cluster->settings_push;
         ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_NODE;
-        UInt64 max_successful_executions_per_shard = 0;
+
         if (settings_push.replication_alter_partitions_sync == 1)
-        {
             execution_mode = ClusterExecutionMode::ON_EACH_SHARD;
-            max_successful_executions_per_shard = 1;
-        }
 
         query_alter_ast_string += " ALTER TABLE " + getQuotedTable(original_table) +
                                   ((partition_name == "'all'") ? " ATTACH PARTITION ID " : " ATTACH PARTITION ") + partition_name +
@@ -1100,7 +1090,7 @@ TaskStatus ClusterCopier::tryCreateDestinationTable(const ConnectionTimeouts & t
         InterpreterCreateQuery::prepareOnClusterQuery(create, getContext(), task_table.cluster_push_name);
         String query = queryToString(create_query_push_ast);
 
-        LOG_INFO(log, "Create destination tables. Query: \n {}", wrapWithColor(query));
+        LOG_INFO(log, "Create destination tables. Query: \n {}", query);
         UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push,  ClusterExecutionMode::ON_EACH_NODE);
         LOG_INFO(
             log,
@@ -1375,7 +1365,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         auto create_query_push_ast = rewriteCreateQueryStorage(create_query_ast, database_and_table_for_current_piece, new_engine_push_ast);
         String query = queryToString(create_query_push_ast);
 
-        LOG_INFO(log, "Create destination tables. Query: \n {}", wrapWithColor(query));
+        LOG_INFO(log, "Create destination tables. Query: \n {}", query);
         UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push,  ClusterExecutionMode::ON_EACH_NODE);
         LOG_INFO(
             log,
@@ -1519,11 +1509,6 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                 auto actions = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings::fromContext(getContext()));
 
                 input = std::make_shared<ExpressionBlockInputStream>(pure_input, actions);
-
-                std::cout << "Input:" << std::endl;
-                std::cout << input->getHeader().dumpStructure() << std::endl;
-                std::cout << "Output:" << std::endl;
-                std::cout << output->getHeader().dumpStructure() << std::endl;
             }
 
             /// Fail-fast optimization to abort copying when the current clean state expires
@@ -1817,7 +1802,7 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
     const auto & settings = getContext()->getSettingsRef();
     ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
 
-    LOG_INFO(log, "Computing destination partition set, executing query: \n {}", wrapWithColor(query));
+    LOG_INFO(log, "Computing destination partition set, executing query: \n {}", query);
 
     auto local_context = Context::createCopy(context);
     local_context->setSettings(task_cluster->settings_pull);
@@ -1973,7 +1958,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         }
         catch (...)
         {
-            LOG_WARNING(log, "An error occured while processing query : \n {}", wrapWithColor(query));
+            LOG_WARNING(log, "An error occured while processing query : \n {}", query);
             tryLogCurrentException(log);
         }
     }

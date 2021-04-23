@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <yandex>
     <logger>
-        <level>fatal</level>
+        <level>information</level>
         <log>/var/log/clickhouse-server/copier/log.log</log>
         <errorlog>/var/log/clickhouse-server/copier/log.err.log</errorlog>
         <size>1000M</size>
