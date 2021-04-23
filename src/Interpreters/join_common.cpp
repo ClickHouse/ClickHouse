@@ -96,7 +96,7 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
     ColumnPtr dst_not_null = JoinCommon::emptyNotNullableClone(dst_column);
     bool lowcard_src = JoinCommon::emptyNotNullableClone(src_column)->lowCardinality();
     bool lowcard_dst = dst_not_null->lowCardinality();
-    bool change_lowcard = (!lowcard_src && lowcard_dst) || (lowcard_src && !lowcard_dst);
+    bool change_lowcard = lowcard_src != lowcard_dst;
 
     if (nullable_src && !nullable_dst)
     {
