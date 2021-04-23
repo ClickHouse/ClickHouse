@@ -243,7 +243,7 @@ function run_tests
     profile_seconds_left=600
 
     # Run the tests.
-    total_tests=$(echo "test_files" | wc -l)
+    total_tests=$(echo "test_files" | wc -w)
     current_test=0
     test_name="<none>"
     for test in $test_files
