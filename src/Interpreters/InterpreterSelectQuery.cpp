@@ -279,9 +279,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , log(&Poco::Logger::get("InterpreterSelectQuery"))
     , metadata_snapshot(metadata_snapshot_)
 {
-    fmt::print(stderr, "InterpreterSelectQuery @ {} created at \n{}\n",
-        static_cast<const void *>(this), StackTrace().toString());
-
     checkStackSize();
 
     initSettings();
@@ -1786,19 +1783,8 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (!options.ignore_quota && (options.to_stage == QueryProcessingStage::Complete))
             quota = context->getQuota();
 
-        fmt::print(stderr, "required columns for storage::read:\n");
-        for (const auto & c : required_columns)
-        {
-            fmt::print(stderr, "{}\n", c);
-        }
-        fmt::print(stderr, "processing stage for storage::read is {}\n",
-            processing_stage);
         storage->read(query_plan, required_columns, metadata_snapshot,
                       query_info, context, processing_stage, max_block_size, max_streams);
-
-        WriteBufferFromOwnString ss;
-        query_plan.explainPlan(ss, {true});
-        fmt::print(stderr, "query plan after storage::read:'\n{}'\n", ss.str());
 
         if (context->hasQueryContext() && !options.is_internal)
         {
