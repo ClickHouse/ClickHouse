@@ -975,7 +975,14 @@ void WindowTransform::appendChunk(Chunk & chunk)
     // have it if it's end of data, though.
     if (!input_is_finished)
     {
-        assert(chunk.hasRows());
+        if (!chunk.hasRows())
+        {
+            // Joins may generate empty input chunks when it's not yet end of
+            // input. Just ignore them. They probably shouldn't be sending empty
+            // chunks up the pipeline, but oh well.
+            return;
+        }
+
         blocks.push_back({});
         auto & block = blocks.back();
         // Use the number of rows from the Chunk, because it is correct even in
