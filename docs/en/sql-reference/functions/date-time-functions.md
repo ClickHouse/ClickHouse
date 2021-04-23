@@ -59,8 +59,7 @@ Type: [DateTime](../../sql-reference/data-types/datetime.md).
 Query:
 
 ```sql
-SELECT
-    toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
+SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
     toTypeName(time_utc) AS type_utc,
     toInt32(time_utc) AS int32utc,
     toTimeZone(time_utc, 'Asia/Yekaterinburg') AS time_yekat,
@@ -110,6 +109,20 @@ Alias: `timezoneOf`.
 -   Timezone name. 
 
 Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+``` sql
+SELECT timezoneOf(now());
+```
+
+Result:
+``` text
+┌─timezoneOf(now())─┐
+│ Etc/UTC           │
+└───────────────────┘
+```
 
 ## toYear {#toyear}
 
