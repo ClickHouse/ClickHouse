@@ -26,6 +26,7 @@
 #include <Parsers/formatAST.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
@@ -349,6 +350,35 @@ static void validateUpdateColumns(
     }
 }
 
+/// Returns ASTs of updated nested subcolumns, if all of subcolumns were updated.
+/// They are used to validate sizes of nested arrays.
+/// If some of subcolumns were updated and some weren't,
+/// it makes sense to validate only updated columns with their old versions,
+/// because their sizes couldn't change, since sizes of all nested subcolumns must be consistent.
+static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumns(
+    const String & column_name,
+    const NamesAndTypesList & all_columns,
+    const std::unordered_map<String, ASTPtr> & column_to_update_expression)
+{
+    std::vector<ASTPtr> res;
+    auto source_name = Nested::splitName(column_name).first;
+
+    /// Check this nested subcolumn
+    for (const auto & column : all_columns)
+    {
+        auto split = Nested::splitName(column.name);
+        if (isArray(column.type) && split.first == source_name && !split.second.empty())
+        {
+            auto it = column_to_update_expression.find(column.name);
+            if (it == column_to_update_expression.end())
+                return {};
+
+            res.push_back(it->second);
+        }
+    }
+
+    return res;
+}
 
 ASTPtr MutationsInterpreter::prepare(bool dry_run)
 {
@@ -398,7 +428,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
     auto dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns);
 
     /// First, break a sequence of commands into stages.
-    for (const auto & command : commands)
+    for (auto & command : commands)
     {
         if (command.type == MutationCommand::DELETE)
         {
@@ -438,12 +468,43 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 ///
                 /// Outer CAST is added just in case if we don't trust the returning type of 'if'.
 
-                auto type_literal = std::make_shared<ASTLiteral>(columns_desc.getPhysical(column).type->getName());
+                const auto & type = columns_desc.getPhysical(column).type;
+                auto type_literal = std::make_shared<ASTLiteral>(type->getName());
 
                 const auto & update_expr = kv.second;
+
+                ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command);
+
+                /// And new check validateNestedArraySizes for Nested subcolumns
+                if (isArray(type) && !Nested::splitName(column).second.empty())
+                {
+                    std::shared_ptr<ASTFunction> function = nullptr;
+
+                    auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column, all_columns, command.column_to_update_expression);
+                    if (!nested_update_exprs)
+                    {
+                        function = makeASTFunction("validateNestedArraySizes",
+                            condition,
+                            update_expr->clone(),
+                            std::make_shared<ASTIdentifier>(column));
+                        condition = makeASTFunction("and", condition, function);
+                    }
+                    else if (nested_update_exprs->size() > 1)
+                    {
+                        function = std::make_shared<ASTFunction>();
+                        function->name = "validateNestedArraySizes";
+                        function->arguments = std::make_shared<ASTExpressionList>();
+                        function->children.push_back(function->arguments);
+                        function->arguments->children.push_back(condition);
+                        for (const auto & it : *nested_update_exprs)
+                            function->arguments->children.push_back(it->clone());
+                        condition = makeASTFunction("and", condition, function);
+                    }
+                }
+
                 auto updated_column = makeASTFunction("CAST",
                     makeASTFunction("if",
-                        getPartitionAndPredicateExpressionForMutationCommand(command),
+                        condition,
                         makeASTFunction("CAST",
                             update_expr->clone(),
                             type_literal),

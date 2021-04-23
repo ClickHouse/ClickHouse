@@ -811,6 +811,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
+    /// A special function `indexHint`. Everything that is inside it is not calculated
+    if (node.name == "indexHint")
+    {
+        // Arguments are removed. We add function instead of constant column to avoid constant folding.
+        data.addFunction(FunctionFactory::instance().get("indexHint", data.getContext()), {}, column_name);
+        return;
+    }
+
     if (node.is_window_function)
     {
         // Also add columns from PARTITION BY and ORDER BY of window functions.
