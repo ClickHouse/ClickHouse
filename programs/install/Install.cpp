@@ -856,6 +856,10 @@ namespace
             {
                 fmt::print("The process with pid = {} is running.\n", pid);
             }
+            else
+            {
+                pid = 0;
+            }
         }
 
         if (!pid)
