@@ -15,3 +15,5 @@
 #cmakedefine01 USE_LIBPQXX
 #cmakedefine01 USE_NURAFT
 #cmakedefine01 USE_KRB5
+#cmakedefine01 USE_SIMDJSON
+#cmakedefine01 USE_RAPIDJSON

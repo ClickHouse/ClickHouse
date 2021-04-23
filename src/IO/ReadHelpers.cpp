@@ -755,6 +755,54 @@ template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UIn
 template void readJSONStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);
 template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 
+template <typename Vector, typename ReturnType>
+ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
+    {
+        if constexpr (throw_exception)
+            throw ParsingException(message, code);
+        return ReturnType(false);
+    };
+
+    if (buf.eof() || *buf.position() != '{')
+        return error("JSON should starts from opening curly bracket", ErrorCodes::INCORRECT_DATA);
+
+    s.push_back(*buf.position());
+    ++buf.position();
+    Int64 balance = 1;
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\\', '{', '}'>(buf.position(), buf.buffer().end());
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == '\\')
+        {
+            parseJSONEscapeSequence<Vector, ReturnType>(s, buf);
+            continue;
+        }
+
+        if (*buf.position() == '}')
+            --balance;
+        else if (*buf.position() == '{')
+            ++balance;
+
+        s.push_back(*buf.position());
+        ++buf.position();
+        if (balance == 0)
+            return ReturnType(true);
+    }
+
+    return error("JSON should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);
+}
+
+template void readJSONObjectPossiblyInvalid<String>(String & s, ReadBuffer & buf);
 
 template <typename ReturnType>
 ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)

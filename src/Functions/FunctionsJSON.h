@@ -2,9 +2,9 @@
 
 #include <Functions/IFunctionImpl.h>
 #include <Core/AccurateComparison.h>
-#include <Functions/DummyJSONParser.h>
-#include <Functions/SimdJSONParser.h>
-#include <Functions/RapidJSONParser.h>
+#include <Common/JSONParsers/DummyJSONParser.h>
+#include <Common/JSONParsers/SimdJSONParser.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/CpuId.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
