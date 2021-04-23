@@ -248,7 +248,7 @@ function run_tests
     test_name="<none>"
     for test in $test_files
     do
-        echo "$current_test/$total_tests tests complete..." > status.txt
+        echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
         clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
