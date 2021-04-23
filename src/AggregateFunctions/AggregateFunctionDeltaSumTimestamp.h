@@ -135,7 +135,8 @@ public:
             // same timestamps. We have to pick either the smaller or larger value so that the
             // result is deterministic.
 
-            if (place_data->first < rhs_data->first) {
+            if (place_data->first < rhs_data->first)
+            {
                 place_data->first = rhs_data->first;
                 place_data->last = rhs_data->last;
             }
