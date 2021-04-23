@@ -23,9 +23,40 @@ SELECT
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
 ```
 
+## timeZone {#timezone}
+
+Возвращает часовой пояс сервера.
+
+Псевдоним: `timezone`. 
+
 ## toTimeZone {#totimezone}
 
-Переводит дату или дату-с-временем в указанный часовой пояс. Часовой пояс (таймзона) это атрибут типов Date/DateTime, внутреннее значение (количество секунд) поля таблицы или колонки результата не изменяется, изменяется тип поля и автоматически его текстовое отображение.
+Переводит дату или дату с временем в указанный часовой пояс. 
+
+**Синтаксис** 
+
+``` sql
+toTimezone(value, timezone)
+```
+
+Псевдоним: `toTimezone`.
+
+Часовой пояс - это атрибут типов `Date` и `DateTime`. Внутреннее значение (количество секунд) поля таблицы или результирующего столбца не изменяется, изменяется тип поля и, соответственно, его текстовое отображение.
+
+**Аргументы** 
+
+-   `value` — Время или дата с временем. [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — Часовой пояс для возвращаемого значения. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Дата с временем. 
+
+Тип: [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Пример**
+
+Запрос:
 
 ```sql
 SELECT
@@ -40,6 +71,7 @@ SELECT
     toInt32(time_samoa) AS int32samoa
 FORMAT Vertical;
 ```
+Результат:
 
 ```text
 Row 1:
@@ -56,6 +88,28 @@ int32samoa: 1546300800
 ```
 
 `toTimeZone(time_utc, 'Asia/Yekaterinburg')` изменяет тип `DateTime('UTC')` в `DateTime('Asia/Yekaterinburg')`. Значение (unix-время) 1546300800 остается неизменным, но текстовое отображение (результат функции toString()) меняется `time_utc:   2019-01-01 00:00:00` в `time_yekat: 2019-01-01 05:00:00`.
+
+## timeZoneOf {#timezoneof}
+
+Возвращает название часового пояса для типов данных [DateTime](../../sql-reference/data-types/datetime.md) и [DateTime64](../../sql-reference/data-types/datetime64.md).
+
+**Синтаксис** 
+
+``` sql
+timeZoneOf(value)
+```
+
+Псевдоним: `timezoneOf`. 
+
+**Аргументы**
+
+-   `value` — Дата с временем. [DateTime](../../sql-reference/data-types/datetime.md) или [DateTime64](../../sql-reference/data-types/datetime64.md). 
+
+**Возвращаемое значение**
+
+-   Название часового пояса. 
+
+Тип: [String](../../sql-reference/data-types/string.md).
 
 ## toYear {#toyear}
 

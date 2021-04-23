@@ -41,7 +41,7 @@ toTimezone(value, timezone)
 
 Alias: `toTimezone`.
 
-The time zone is an attribute of the Date/DateTime types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
+The time zone is an attribute of the `Date` and `DateTime` data types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
 
 **Arguments** 
 
