@@ -20,7 +20,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         Block & sample_block_,
-        ContextPtr context_);
+        const Context & context_);
 
     ExecutableDictionarySource(const ExecutableDictionarySource & other);
     ExecutableDictionarySource & operator=(const ExecutableDictionarySource &) = delete;
@@ -47,8 +47,6 @@ public:
 
     std::string toString() const override;
 
-    BlockInputStreamPtr getStreamForBlock(const Block & block);
-
 private:
     Poco::Logger * log;
     time_t update_time = 0;
@@ -58,7 +56,7 @@ private:
     const std::string update_field;
     const std::string format;
     Block sample_block;
-    ContextPtr context;
+    Context context;
 };
 
 }

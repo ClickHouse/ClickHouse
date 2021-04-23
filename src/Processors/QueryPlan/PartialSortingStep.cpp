@@ -46,7 +46,7 @@ void PartialSortingStep::updateLimit(size_t limit_)
     }
 }
 
-void PartialSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void PartialSortingStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {

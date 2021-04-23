@@ -16,8 +16,6 @@ struct AccessRightsElement
     bool any_database = true;
     bool any_table = true;
     bool any_column = true;
-    bool grant_option = false;
-    bool is_partial_revoke = false;
 
     AccessRightsElement() = default;
     AccessRightsElement(const AccessRightsElement &) = default;
@@ -75,7 +73,7 @@ struct AccessRightsElement
 
     bool empty() const { return !access_flags || (!any_column && columns.empty()); }
 
-    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns, grant_option, is_partial_revoke); }
+    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns); }
     friend bool operator==(const AccessRightsElement & left, const AccessRightsElement & right) { return left.toTuple() == right.toTuple(); }
     friend bool operator!=(const AccessRightsElement & left, const AccessRightsElement & right) { return !(left == right); }
 
@@ -85,36 +83,44 @@ struct AccessRightsElement
             && (any_table == other.any_table);
     }
 
-    bool sameOptions(const AccessRightsElement & other) const
-    {
-        return (grant_option == other.grant_option) && (is_partial_revoke == other.is_partial_revoke);
-    }
-
-    /// Resets flags which cannot be granted.
-    void eraseNonGrantable()
-    {
-        if (!any_column)
-            access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
-        else if (!any_table)
-            access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
-        else if (!any_database)
-            access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
-        else
-            access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
-    }
-
     bool isEmptyDatabase() const { return !any_database && database.empty(); }
 
-    /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
-    void replaceEmptyDatabase(const String & current_database)
+    /// If the database is empty, replaces it with `new_database`. Otherwise does nothing.
+    void replaceEmptyDatabase(const String & new_database);
+
+    /// Resets flags which cannot be granted.
+    void removeNonGrantableFlags();
+
+    /// Returns a human-readable representation like "SELECT, UPDATE(x, y) ON db.table".
+    String toString() const;
+};
+
+
+struct AccessRightsElementWithOptions : public AccessRightsElement
+{
+    bool grant_option = false;
+
+    enum class Kind
     {
-        if (isEmptyDatabase())
-            database = current_database;
+        GRANT,
+        REVOKE,
+    };
+    Kind kind = Kind::GRANT;
+
+    bool sameOptions(const AccessRightsElementWithOptions & other) const
+    {
+        return (grant_option == other.grant_option) && (kind == other.kind);
     }
+
+    auto toTuple() const { return std::tie(access_flags, any_database, database, any_table, table, any_column, columns, grant_option, kind); }
+    friend bool operator==(const AccessRightsElementWithOptions & left, const AccessRightsElementWithOptions & right) { return left.toTuple() == right.toTuple(); }
+    friend bool operator!=(const AccessRightsElementWithOptions & left, const AccessRightsElementWithOptions & right) { return !(left == right); }
+
+    /// Resets flags which cannot be granted.
+    void removeNonGrantableFlags();
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
-    String toStringWithoutOptions() const;
 };
 
 
@@ -124,29 +130,77 @@ class AccessRightsElements : public std::vector<AccessRightsElement>
 public:
     bool empty() const { return std::all_of(begin(), end(), [](const AccessRightsElement & e) { return e.empty(); }); }
 
-    bool sameDatabaseAndTable() const
-    {
-        return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameDatabaseAndTable(front()); });
-    }
-
-    bool sameOptions() const
-    {
-        return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });
-    }
+    /// Replaces the empty database with `new_database`.
+    void replaceEmptyDatabase(const String & new_database);
 
     /// Resets flags which cannot be granted.
-    void eraseNonGrantable();
-
-    /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
-    void replaceEmptyDatabase(const String & current_database)
-    {
-        for (auto & element : *this)
-            element.replaceEmptyDatabase(current_database);
-    }
+    void removeNonGrantableFlags();
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
-    String toStringWithoutOptions() const;
 };
+
+
+class AccessRightsElementsWithOptions : public std::vector<AccessRightsElementWithOptions>
+{
+public:
+    /// Replaces the empty database with `new_database`.
+    void replaceEmptyDatabase(const String & new_database);
+
+    /// Resets flags which cannot be granted.
+    void removeNonGrantableFlags();
+
+    /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
+    String toString() const;
+};
+
+
+inline void AccessRightsElement::replaceEmptyDatabase(const String & new_database)
+{
+    if (isEmptyDatabase())
+        database = new_database;
+}
+
+inline void AccessRightsElements::replaceEmptyDatabase(const String & new_database)
+{
+    for (auto & element : *this)
+        element.replaceEmptyDatabase(new_database);
+}
+
+inline void AccessRightsElementsWithOptions::replaceEmptyDatabase(const String & new_database)
+{
+    for (auto & element : *this)
+        element.replaceEmptyDatabase(new_database);
+}
+
+inline void AccessRightsElement::removeNonGrantableFlags()
+{
+    if (!any_column)
+        access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
+    else if (!any_table)
+        access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
+    else if (!any_database)
+        access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
+    else
+        access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
+}
+
+inline void AccessRightsElementWithOptions::removeNonGrantableFlags()
+{
+    if (kind == Kind::GRANT)
+        AccessRightsElement::removeNonGrantableFlags();
+}
+
+inline void AccessRightsElements::removeNonGrantableFlags()
+{
+    for (auto & element : *this)
+        element.removeNonGrantableFlags();
+}
+
+inline void AccessRightsElementsWithOptions::removeNonGrantableFlags()
+{
+    for (auto & element : *this)
+        element.removeNonGrantableFlags();
+}
 
 }

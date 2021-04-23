@@ -12,27 +12,21 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-bool hasJoin(const ASTSelectQuery & select)
+/// Rewrite original query removing joined tables from it
+bool removeJoin(ASTSelectQuery & select)
 {
     const auto & tables = select.tables();
     if (!tables || tables->children.size() < 2)
         return false;
 
     const auto & joined_table = tables->children[1]->as<ASTTablesInSelectQueryElement &>();
-    return joined_table.table_join != nullptr;
-}
+    if (!joined_table.table_join)
+        return false;
 
-/// Rewrite original query removing joined tables from it
-bool removeJoin(ASTSelectQuery & select)
-{
-    if (hasJoin(select))
-    {
-        /// The most simple temporary solution: leave only the first table in query.
-        /// TODO: we also need to remove joined columns and related functions (taking in account aliases if any).
-        select.tables()->children.resize(1);
-        return true;
-    }
-    return false;
+    /// The most simple temporary solution: leave only the first table in query.
+    /// TODO: we also need to remove joined columns and related functions (taking in account aliases if any).
+    tables->children.resize(1);
+    return true;
 }
 
 Block getHeaderForProcessingStage(
@@ -40,7 +34,7 @@ Block getHeaderForProcessingStage(
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage)
 {
     switch (processed_stage)

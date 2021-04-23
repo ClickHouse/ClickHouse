@@ -44,9 +44,9 @@ std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndNam
 
         /// If time zone is attached to an argument of type DateTime.
         if (const auto * type = checkAndGetDataType<DataTypeDateTime>(arguments[datetime_arg_num].type.get()))
-            return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
+            return type->getTimeZone().getTimeZone();
         if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(arguments[datetime_arg_num].type.get()))
-            return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
+            return type->getTimeZone().getTimeZone();
 
         return {};
     }
@@ -66,11 +66,10 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
         if (arguments.empty())
             return DateLUT::instance();
 
-        const auto & dt_arg = arguments[datetime_arg_num].type.get();
         /// If time zone is attached to an argument of type DateTime.
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(dt_arg))
+        if (const auto * type = checkAndGetDataType<DataTypeDateTime>(arguments[datetime_arg_num].type.get()))
             return type->getTimeZone();
-        if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(dt_arg))
+        if (const auto * type = checkAndGetDataType<DataTypeDateTime64>(arguments[datetime_arg_num].type.get()))
             return type->getTimeZone();
 
         return DateLUT::instance();

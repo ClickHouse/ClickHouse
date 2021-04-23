@@ -73,15 +73,6 @@ namespace
                 query->settings = user.settings.toASTWithNames(*manager);
         }
 
-        if (user.grantees != RolesOrUsersSet::AllTag{})
-        {
-            if (attach_mode)
-                query->grantees = user.grantees.toAST();
-            else
-                query->grantees = user.grantees.toASTWithNames(*manager);
-            query->grantees->use_keyword_any = true;
-        }
-
         return query;
     }
 
@@ -225,8 +216,8 @@ namespace
 }
 
 
-InterpreterShowCreateAccessEntityQuery::InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, ContextPtr context_)
-    : WithContext(context_), query_ptr(query_ptr_)
+InterpreterShowCreateAccessEntityQuery::InterpreterShowCreateAccessEntityQuery(const ASTPtr & query_ptr_, const Context & context_)
+    : query_ptr(query_ptr_), context(context_)
 {
 }
 
@@ -270,9 +261,9 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities() const
 {
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
-    const auto & access_control = getContext()->getAccessControlManager();
-    getContext()->checkAccess(getRequiredAccess());
-    show_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    const auto & access_control = context.getAccessControlManager();
+    context.checkAccess(getRequiredAccess());
+    show_query.replaceEmptyDatabaseWithCurrent(context.getCurrentDatabase());
     std::vector<AccessEntityPtr> entities;
 
     if (show_query.all)
@@ -286,12 +277,12 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.current_user)
     {
-        if (auto user = getContext()->getUser())
+        if (auto user = context.getUser())
             entities.push_back(user);
     }
     else if (show_query.current_quota)
     {
-        auto usage = getContext()->getQuotaUsage();
+        auto usage = context.getQuotaUsage();
         if (usage)
             entities.push_back(access_control.read<Quota>(usage->quota_id));
     }
@@ -341,7 +332,7 @@ ASTs InterpreterShowCreateAccessEntityQuery::getCreateQueries() const
     auto entities = getEntities();
 
     ASTs list;
-    const auto & access_control = getContext()->getAccessControlManager();
+    const auto & access_control = context.getAccessControlManager();
     for (const auto & entity : entities)
         list.push_back(getCreateQuery(*entity, access_control));
 

@@ -33,19 +33,6 @@ TEST(Common, PODArrayInsert)
     EXPECT_EQ(str, std::string(chars.data(), chars.size()));
 }
 
-TEST(Common, PODArrayInsertFromItself)
-{
-    {
-        PaddedPODArray<UInt64> array { 1 };
-
-        for (size_t i = 0; i < 3; ++i)
-            array.insertFromItself(array.begin(), array.end());
-
-        PaddedPODArray<UInt64> expected {1,1,1,1,1,1,1,1};
-        ASSERT_EQ(array,expected);
-    }
-}
-
 TEST(Common, PODPushBackRawMany)
 {
     PODArray<char> chars;
@@ -104,58 +91,4 @@ TEST(Common, PODInsertElementSizeNotMultipleOfLeftPadding)
         arr2_initially_nonempty.emplace_back();
 
     EXPECT_EQ(arr1_initially_empty.size(), items_to_insert_size);
-}
-
-TEST(Common, PODErase)
-{
-    {
-        PaddedPODArray<UInt64> items {0,1,2,3,4,5,6,7,8,9};
-        PaddedPODArray<UInt64> expected;
-        expected = {0,1,2,3,4,5,6,7,8,9};
-
-        items.erase(items.begin(), items.begin());
-        EXPECT_EQ(items, expected);
-
-        items.erase(items.end(), items.end());
-        EXPECT_EQ(items, expected);
-    }
-    {
-        PaddedPODArray<UInt64> actual {0,1,2,3,4,5,6,7,8,9};
-        PaddedPODArray<UInt64> expected;
-
-        expected = {0,1,4,5,6,7,8,9};
-        actual.erase(actual.begin() + 2, actual.begin() + 4);
-        EXPECT_EQ(actual, expected);
-
-        expected = {0,1,4};
-        actual.erase(actual.begin() + 3, actual.end());
-        EXPECT_EQ(actual, expected);
-
-        expected = {};
-        actual.erase(actual.begin(), actual.end());
-        EXPECT_EQ(actual, expected);
-
-        for (size_t i = 0; i < 10; ++i)
-            actual.emplace_back(static_cast<UInt64>(i));
-
-        expected = {0,1,4,5,6,7,8,9};
-        actual.erase(actual.begin() + 2, actual.begin() + 4);
-        EXPECT_EQ(actual, expected);
-
-        expected = {0,1,4};
-        actual.erase(actual.begin() + 3, actual.end());
-        EXPECT_EQ(actual, expected);
-
-        expected = {};
-        actual.erase(actual.begin(), actual.end());
-        EXPECT_EQ(actual, expected);
-    }
-    {
-        PaddedPODArray<UInt64> actual {0,1,2,3,4,5,6,7,8,9};
-        PaddedPODArray<UInt64> expected;
-
-        expected = {1,2,3,4,5,6,7,8,9};
-        actual.erase(actual.begin());
-        EXPECT_EQ(actual, expected);
-    }
 }
