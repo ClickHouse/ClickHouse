@@ -10,7 +10,7 @@ toc_title: OFFSET
 OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 ```
 
-`offset_row_count` или `fetch_row_count` может быть числом или литеральной константой. Если вы не используете `fetch_row_count`, то его значение равно 1.
+`offset_row_count` или `fetch_row_count` может быть числом или литеральной константой. Если вы не задаете `fetch_row_count` явно, используется значение по умолчанию, равное 1.
 
 `OFFSET` указывает количество строк, которые необходимо пропустить перед началом возврата строк из запроса.
 
