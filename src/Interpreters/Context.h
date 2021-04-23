@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <Access/RowPolicy.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
@@ -181,7 +182,22 @@ private:
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
     String current_database;
+
     Settings settings;                                  /// Setting for query execution.
+
+    using SettingHook = std::function<void(const Field& /*new_value*/)>;
+    struct SettingsHooksHolder
+    {
+        /// name -> f(old_value, new_value).
+        std::unordered_multimap<std::string_view, SettingHook> hooks;
+    };
+
+    static SettingsHooksHolder& getHooksHolderInstance()
+    {
+        static SettingsHooksHolder h;
+        return h;
+    }
+
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
@@ -489,6 +505,11 @@ public:
     void setSetting(const StringRef & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
+
+    static inline void setSettingHook(std::string_view setting_name, SettingHook f)
+    {
+        getHooksHolderInstance().hooks.emplace(setting_name, std::move(f));
+    }
 
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change) const;

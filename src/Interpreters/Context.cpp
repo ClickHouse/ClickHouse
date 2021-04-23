@@ -1092,12 +1092,19 @@ void Context::setSettings(const Settings & settings_)
 void Context::setSetting(const StringRef & name, const String & value)
 {
     auto lock = getLock();
+
     if (name == "profile")
     {
         setProfile(value);
         return;
     }
-    settings.set(std::string_view{name}, value);
+
+    const std::string_view name_view {name};
+    settings.set(name_view, value);
+
+    const auto hooks = getHooksHolderInstance().hooks.equal_range(name_view);
+    for (auto it = hooks.first; it != hooks.second; ++it)
+        it->second(value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();
@@ -1112,7 +1119,13 @@ void Context::setSetting(const StringRef & name, const Field & value)
         setProfile(value.safeGet<String>());
         return;
     }
-    settings.set(std::string_view{name}, value);
+
+    const std::string_view name_view {name};
+    settings.set(name_view, value);
+
+    const auto hooks = getHooksHolderInstance().hooks.equal_range(name_view);
+    for (auto it = hooks.first; it != hooks.second; ++it)
+        it->second(value);
 
     if (name == "readonly" || name == "allow_ddl" || name == "allow_introspection_functions")
         calculateAccessRights();
