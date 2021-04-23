@@ -35,7 +35,7 @@ The `WITH TIES` option is used to return any additional rows that tie for the la
     
 For adjusting existing `OFFSET` can used [offset](../../../operations/settings/settings.md#offset) setting.
 	
-### Examples {#examples}
+## Examples {#examples}
 
 Input table:
 
