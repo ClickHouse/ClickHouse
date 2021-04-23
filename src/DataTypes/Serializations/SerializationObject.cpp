@@ -1,8 +1,8 @@
 #include <DataTypes/Serializations/SerializationObject.h>
-#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/Serializations/JSONDataParser.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/FieldVisitors.h>
@@ -80,14 +80,6 @@ struct DeserializeStateObject : public ISerialization::DeserializeBinaryBulkStat
 {
     std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> states;
 };
-
-DataTypePtr getDataTypeByColumn(const IColumn & column)
-{
-    if (column.empty())
-        return std::make_shared<DataTypeNothing>();
-
-    return applyVisitor(FieldToDataType(), column[0]);
-}
 
 }
 

@@ -114,4 +114,13 @@ void ColumnObject::addSubcolumn(const String & key, MutableColumnPtr && subcolum
     subcolumns[key] = std::move(subcolumn);
 }
 
+Names ColumnObject::getKeys() const
+{
+    Names keys;
+    keys.reserve(subcolumns.size());
+    for (const auto & [key, _] : subcolumns)
+        keys.emplace_back(key);
+    return keys;
+}
+
 }
