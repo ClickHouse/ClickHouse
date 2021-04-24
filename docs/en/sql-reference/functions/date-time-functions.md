@@ -59,8 +59,8 @@ int32samoa: 1546300800
 
 ## timezoneOffset {#timezoneoffset}
 
-Returns the offset from [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time) at the passed date and time. [Daylight saving time](https://en.wikipedia.org/wiki/Daylight_saving_time) and historical timezone changes are taken into account. Note that leap seconds are not considered. 
-The function uses [IANA timezone database](https://www.iana.org/time-zones) to get the result.
+Returns a timezone offset from [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time) in seconds. The function takes into account [Daylight saving time](https://en.wikipedia.org/wiki/Daylight_saving_time) and historical timezone changes at the specified date and time.
+[IANA timezone database](https://www.iana.org/time-zones) is used to calculate the offset.
 
 **Syntax**
 
@@ -83,26 +83,16 @@ Type: [Int32](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT timezoneOffset(toDateTime('2021-04-21 10:20:30', 'Europe/Moscow')) AS Offset_seconds, 
-        (Offset_seconds / 3600) AS Offset_hours;
-SELECT timezoneOffset(toDateTime('2021-11-07 00:00:00', 'America/New_York')) AS Offset_seconds, 
-        (Offset_seconds / 3600) AS Offset_hours;
-SELECT timezoneOffset(toDateTime('2021-11-07 03:00:00', 'America/New_York')) AS Offset_seconds, 
-        (Offset_seconds / 3600) AS Offset_hours;
+SELECT toDateTime('2021-04-21 10:20:30', 'America/New_York') AS Time, toTypeName(Time) AS Type,
+       timezoneOffset(Time) AS Offset_in_seconds, (Offset_in_seconds / 3600) AS Offset_in_hours;
 ```
 
 Result:
 
 ``` text
-┌─Offset_seconds─┬─Offset_hours─┐
-│          10800 │            3 │
-└────────────────┴──────────────┘
-┌─Offset_seconds─┬─Offset_hours─┐
-│         -14400 │           -4 │
-└────────────────┴──────────────┘
-┌─Offset_seconds─┬─Offset_hours─┐
-│         -18000 │           -5 │
-└────────────────┴──────────────┘
+┌────────────────Time─┬─Type─────────────────────────┬─Offset_in_seconds─┬─Offset_in_hours─┐
+│ 2021-04-21 10:20:30 │ DateTime('America/New_York') │            -14400 │              -4 │
+└─────────────────────┴──────────────────────────────┴───────────────────┴─────────────────┘
 ```
 
 ## toYear {#toyear}
