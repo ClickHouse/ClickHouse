@@ -47,7 +47,9 @@ Block getHeaderForProcessingStage(
     {
         case QueryProcessingStage::FetchColumns:
         {
-            Block header = metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID());
+            Block header = metadata_snapshot->getSampleBlockForColumns(
+                column_names, storage.getVirtuals(), storage.getStorageID(), storage.getExpandedObjects());
+
             if (query_info.prewhere_info)
             {
                 auto & prewhere_info = *query_info.prewhere_info;
@@ -75,7 +77,8 @@ Block getHeaderForProcessingStage(
             removeJoin(*query->as<ASTSelectQuery>());
 
             auto stream = std::make_shared<OneBlockInputStream>(
-                    metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID()));
+                    metadata_snapshot->getSampleBlockForColumns(
+                        column_names, storage.getVirtuals(), storage.getStorageID(), storage.getExpandedObjects()));
             return InterpreterSelectQuery(query, context, stream, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         }
     }

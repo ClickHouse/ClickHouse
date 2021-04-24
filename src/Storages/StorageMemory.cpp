@@ -183,7 +183,7 @@ Pipe StorageMemory::read(
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
 
     if (delay_read_for_global_subqueries)
     {

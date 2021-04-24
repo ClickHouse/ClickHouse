@@ -641,6 +641,12 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
         else
             columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
 
+        columns_from_storage = storage->expandObjectColumns(columns_from_storage, storage->supportsSubcolumns());
+
+        std::cerr << "columns_from_storage: ";
+        for (const auto & col : columns_from_storage)
+            std::cerr << col.dump() << "\n";
+
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);
         else

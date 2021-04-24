@@ -106,7 +106,7 @@ Pipe StorageXDBC::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
 
     bridge_helper->startBridgeSync();
     return IStorageURLBase::read(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);

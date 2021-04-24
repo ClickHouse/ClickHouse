@@ -99,7 +99,7 @@ Pipe StorageSystemZeros::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
 
     bool use_multiple_streams = multithreaded;
 

@@ -475,7 +475,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 }
             }
 
-            source_header = metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID());
+            source_header = metadata_snapshot->getSampleBlockForColumns(
+                required_columns, storage->getVirtuals(), storage->getStorageID(), storage->getExpandedObjects());
         }
 
         /// Calculate structure of the result.
@@ -1736,7 +1737,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (!query_plan.isInitialized())
         {
             auto header = metadata_snapshot->getSampleBlockForColumns(
-                    required_columns, storage->getVirtuals(), storage->getStorageID());
+                    required_columns, storage->getVirtuals(), storage->getStorageID(), storage->getExpandedObjects());
             addEmptySourceToQueryPlan(query_plan, header, query_info);
         }
 

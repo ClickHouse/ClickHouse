@@ -147,7 +147,9 @@ struct StorageInMemoryMetadata
     /// Storage metadata. StorageID required only for more clear exception
     /// message.
     Block getSampleBlockForColumns(
-        const Names & column_names, const NamesAndTypesList & virtuals = {}, const StorageID & storage_id = StorageID::createEmpty()) const;
+        const Names & column_names, const NamesAndTypesList & virtuals = {},
+        const StorageID & storage_id = StorageID::createEmpty(), const NamesAndTypesList & expanded_objects = {}) const;
+
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
@@ -212,7 +214,8 @@ struct StorageInMemoryMetadata
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const;
+    void check(const Names & column_names, const NamesAndTypesList & virtuals,
+        const StorageID & storage_id, const NamesAndTypesList & expanded_objects) const;
 
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;

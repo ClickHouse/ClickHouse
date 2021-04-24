@@ -617,6 +617,10 @@ public:
         return column_sizes;
     }
 
+    NamesAndTypesList expandObjectColumns(const NamesAndTypesList & columns_list, bool with_subcolumns) const override;
+    NamesAndTypesList expandObjectColumns(const DataPartsVector & parts, const NamesAndTypesList & columns_list, bool with_subcolumns) const;
+    NamesAndTypesList getExpandedObjects() const override;
+
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
 
