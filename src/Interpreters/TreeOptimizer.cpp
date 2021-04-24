@@ -4,6 +4,7 @@
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <Interpreters/WhereConstraintsOptimizer.h>
+#include <Storages/MergeTree/SubstituteColumnOptimizer.h>
 #include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
@@ -521,6 +522,14 @@ void optimizeWithConstraints(ASTSelectQuery * select_query, Aliases & aliases, c
         Poco::Logger::get("CNF").information("NO WHERE");
 }
 
+void optimizeSubstituteColumn(ASTSelectQuery * select_query, Aliases & aliases, const NameSet & source_columns_set,
+                              const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
+                              const StorageMetadataPtr & metadata_snapshot,
+                              const ConstStoragePtr & storage)
+{
+    SubstituteColumnOptimizer(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, storage).perform();
+}
+
 /// transform where to CNF for more convenient optimization
 void convertQueryToCNF(ASTSelectQuery * select_query)
 {
@@ -619,7 +628,7 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
 void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set,
                           const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
                           const Context & context, const StorageMetadataPtr & metadata_snapshot,
-                          bool & rewrite_subqueries)
+                          const ConstStoragePtr & storage, bool & rewrite_subqueries)
 {
     const auto & settings = context.getSettingsRef();
 
@@ -637,8 +646,10 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
         convertQueryToCNF(select_query);
 
     if (settings.convert_query_to_cnf && settings.optimize_using_constraints)
+    {
         optimizeWithConstraints(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot);
-
+        optimizeSubstituteColumn(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, storage);
+    }
     if (select_query->where())
     {
         Poco::Logger::get("&&&&&&&&&&&&&&& WHERE").information(select_query->where()->getColumnName());

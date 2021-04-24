@@ -3,6 +3,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Aliases.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -19,7 +20,7 @@ public:
     static void apply(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set,
                       const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
                       const Context & context, const StorageMetadataPtr & metadata_snapshot,
-                      bool & rewrite_subqueries);
+                      const ConstStoragePtr & storage, bool & rewrite_subqueries);
 
     static void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif);
 };

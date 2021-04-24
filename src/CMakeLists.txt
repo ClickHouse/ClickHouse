@@ -64,7 +64,7 @@ add_subdirectory (Coordination)
 
 
 set(dbms_headers)
-set(dbms_sources Interpreters/ConstraintMatcherVisitor.cpp Interpreters/ConstraintMatcherVisitor.h Interpreters/WhereConstraintsOptimizer.cpp Interpreters/WhereConstraintsOptimizer.h Interpreters/TreeCNFConverter.cpp Interpreters/TreeCNFConverter.h Interpreters/ComparisonGraph.cpp Interpreters/ComparisonGraph.h)
+set(dbms_sources Interpreters/ConstraintMatcherVisitor.cpp Interpreters/ConstraintMatcherVisitor.h Interpreters/WhereConstraintsOptimizer.cpp Interpreters/WhereConstraintsOptimizer.h Interpreters/TreeCNFConverter.cpp Interpreters/TreeCNFConverter.h Interpreters/ComparisonGraph.cpp Interpreters/ComparisonGraph.h Storages/MergeTree/SubstituteColumnOptimizer.cpp Storages/MergeTree/SubstituteColumnOptimizer.h)
 
 add_headers_and_sources(clickhouse_common_io Common)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)

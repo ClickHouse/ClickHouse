@@ -1461,6 +1461,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             {
                 for (auto part_it = parts_to_merge_ranges[range_index]; part_it != parts_to_merge_ranges[range_index + 1]; ++part_it)
                 {
+                    // TODO: Prepare columns and prewhere on part
                     auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
                         data,
                         metadata_snapshot,
@@ -1476,7 +1477,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
                         reader_settings,
                         virt_columns,
                         part_it->part_index_in_query);
-
+                    // TODO: Conversion
                     pipes.emplace_back(std::move(source_processor));
                 }
             }
@@ -1571,6 +1572,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
         for (size_t i = 0; i < num_streams_for_lonely_parts; ++i)
         {
+            // TODO: repl columns
             auto source = std::make_shared<MergeTreeThreadSelectBlockInputProcessor>(
                 i, pool, min_marks_for_concurrent_read, max_block_size,
                 settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
