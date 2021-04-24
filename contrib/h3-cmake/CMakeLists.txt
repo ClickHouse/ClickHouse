@@ -1,5 +1,5 @@
-set(H3_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/h3/src/h3lib)
-set(H3_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/h3/src/h3lib)
+set(H3_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/h3/src/h3lib")
+set(H3_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/h3/src/h3lib")
 
 set(SRCS
 ${H3_SOURCE_DIR}/lib/algos.c
@@ -20,11 +20,11 @@ ${H3_SOURCE_DIR}/lib/vertex.c
 ${H3_SOURCE_DIR}/lib/vertexGraph.c
 )
 
-configure_file(${H3_SOURCE_DIR}/include/h3api.h.in ${H3_BINARY_DIR}/include/h3api.h)
+configure_file("${H3_SOURCE_DIR}/include/h3api.h.in" "${H3_BINARY_DIR}/include/h3api.h")
 
 add_library(h3 ${SRCS})
-target_include_directories(h3 SYSTEM PUBLIC ${H3_SOURCE_DIR}/include)
-target_include_directories(h3 SYSTEM PUBLIC ${H3_BINARY_DIR}/include)
+target_include_directories(h3 SYSTEM PUBLIC "${H3_SOURCE_DIR}/include")
+target_include_directories(h3 SYSTEM PUBLIC "${H3_BINARY_DIR}/include")
 target_compile_definitions(h3 PRIVATE H3_HAVE_VLA)
 if(M_LIBRARY)
     target_link_libraries(h3 PRIVATE ${M_LIBRARY})
