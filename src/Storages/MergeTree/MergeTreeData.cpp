@@ -1334,12 +1334,20 @@ void MergeTreeData::dropIfEmpty()
     if (!data_parts_by_info.empty())
         return;
 
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    try
     {
-        /// Non recursive, exception is thrown if there are more files.
-        disk->removeFile(path + "format_version.txt");
-        disk->removeDirectory(path + "detached");
-        disk->removeDirectory(path);
+        for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+        {
+            /// Non recursive, exception is thrown if there are more files.
+            disk->removeFileIfExists(path + "format_version.txt");
+            disk->removeDirectory(path + "detached");
+            disk->removeDirectory(path);
+        }
+    }
+    catch (...)
+    {
+        // On unsuccessful creation of ReplicatedMergeTree table with multidisk configuration some files may not exist.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
