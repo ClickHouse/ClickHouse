@@ -37,7 +37,9 @@ public:
 
         Context::setSettingHook("coverage_test_name", [this](const Field& value)
         {
-            updateTest(value.get<std::string>());
+            dump();
+            auto lck = std::lock_guard(edges_mutex);
+            test = value.get<std::string>();
         });
 
         std::filesystem::remove_all(coverage_dir);
@@ -90,13 +92,6 @@ private:
 
     //std::unordered_map<void *, std::string> symbolizer_cache;
     //std::shared_mutex symbolizer_cache_mutex;
-
-    void updateTest(std::string_view new_test_name)
-    {
-        dump();
-        auto lck = std::lock_guard(edges_mutex);
-        test = new_test_name;
-    }
 
     void convertToLCOVAndDumpToDisk(const std::vector<void*>& hits, std::string_view test_name)
     {
