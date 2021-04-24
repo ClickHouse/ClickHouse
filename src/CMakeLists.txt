@@ -18,17 +18,17 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
-set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/Common/config_version.h)
-set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/Common/config.h)
+set (CONFIG_VERSION "${CMAKE_CURRENT_BINARY_DIR}/Common/config_version.h")
+set (CONFIG_COMMON "${CMAKE_CURRENT_BINARY_DIR}/Common/config.h")
 
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 configure_file (Common/config.h.in ${CONFIG_COMMON})
 configure_file (Common/config_version.h.in ${CONFIG_VERSION})
-configure_file (Core/config_core.h.in ${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h)
+configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
 
 if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/base -include ${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h")
+    set (INCLUDE_DEBUG_HELPERS "-I\"${ClickHouse_SOURCE_DIR}/base\" -include \"${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h\"")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
@@ -245,8 +245,8 @@ macro (dbms_target_link_libraries)
     endforeach ()
 endmacro ()
 
-dbms_target_include_directories (PUBLIC ${ClickHouse_SOURCE_DIR}/src ${ClickHouse_BINARY_DIR}/src)
-target_include_directories (clickhouse_common_io PUBLIC ${ClickHouse_SOURCE_DIR}/src ${ClickHouse_BINARY_DIR}/src)
+dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
+target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
 if (USE_EMBEDDED_COMPILER)
     dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
@@ -361,8 +361,8 @@ dbms_target_link_libraries (
         clickhouse_common_io
 )
 
-target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/Core/include) # uses some includes from core
-dbms_target_include_directories(PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/Core/include)
+target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
+dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
 
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
@@ -457,7 +457,7 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${FAST_FLO
 
 if (USE_ORC)
     dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
-    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} ${CMAKE_BINARY_DIR}/contrib/orc/c++/include)
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${CMAKE_BINARY_DIR}/contrib/orc/c++/include")
 endif ()
 
 if (USE_ROCKSDB)
@@ -476,7 +476,7 @@ endif ()
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 
-include (${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake)
+include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
@@ -485,7 +485,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     endmacro()
 
     # attach all dbms gtest sources
-    grep_gtest_sources(${ClickHouse_SOURCE_DIR}/src dbms_gtest_sources)
+    grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
 
     # gtest framework has substandard code
