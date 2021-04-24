@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Storages/IStorage.h>
+#include <atomic>
 #include <ext/shared_ptr_helper.h>
+
+#include <Storages/IStorage.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 
 
@@ -70,7 +72,11 @@ private:
     mutable std::mutex dictionary_config_mutex;
     Poco::Timestamp update_time;
     LoadablesConfigurationPtr configuration;
+
+    std::atomic<bool> remove_repository_callback_executed;
     ext::scope_guard remove_repository_callback;
+
+    void removeDictionaryConfigurationFromRepository();
 
 protected:
     StorageDictionary(
