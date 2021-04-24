@@ -1,4 +1,4 @@
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
+include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 
 add_headers_and_sources(clickhouse_common_zookeeper .)
 
