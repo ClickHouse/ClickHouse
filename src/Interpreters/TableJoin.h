@@ -105,7 +105,11 @@ public:
     bool allowDictJoin(const String & dict_key, const Block & sample_block, Names &, NamesAndTypesList &) const;
     bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
     bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
-    bool forceHashJoin() const { return join_algorithm == JoinAlgorithm::HASH; }
+    bool forceHashJoin() const
+    {
+        /// HashJoin always used for DictJoin
+        return dictionary_reader || join_algorithm == JoinAlgorithm::HASH;
+    }
 
     bool forceNullableRight() const { return join_use_nulls && isLeftOrFull(table_join.kind); }
     bool forceNullableLeft() const { return join_use_nulls && isRightOrFull(table_join.kind); }
