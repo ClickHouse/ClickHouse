@@ -858,8 +858,7 @@ namespace
             }
             else if (errno == ESRCH)
             {
-                // the process does not exists anymore,
-                // and returning pid of dead process has no sense.
+                fmt::print("The process with pid = {} does not exist.\n", pid);
                 pid = 0;
             }
         }
