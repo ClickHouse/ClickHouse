@@ -1493,7 +1493,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         optimize_read_in_order =
             settings.optimize_read_in_order
-            && storage && query.orderBy()
+            && storage
+            && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query_analyzer.hasWindow()
             && !query.final()
