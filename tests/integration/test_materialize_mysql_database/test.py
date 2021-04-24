@@ -125,7 +125,7 @@ mysql_5_7_docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mys
 mysql_5_7_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3308, mysql_5_7_docker_compose)
 
 mysql_8_0_docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_mysql_8_0_for_materialize_mysql.yml')
-mysql_8_0_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 33308, mysql_8_0_docker_compose)
+mysql_8_0_node = MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', 3309, mysql_8_0_docker_compose)
 
 
 @pytest.fixture(scope="module")
