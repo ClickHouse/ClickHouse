@@ -144,7 +144,7 @@ StorageDictionary::StorageDictionary(
 
 StorageDictionary::~StorageDictionary()
 {
-    drop();
+    removeDictionaryConfigurationFromRepository();
 }
 
 void StorageDictionary::checkTableCanBeDropped() const
@@ -181,16 +181,21 @@ Pipe StorageDictionary::read(
 
 void StorageDictionary::drop()
 {
-    if (is_dropped)
-        return;
-
-    is_dropped = true;
-    remove_repository_callback.reset();
+    removeDictionaryConfigurationFromRepository();
 }
 
 void StorageDictionary::shutdown()
 {
-    drop();
+    removeDictionaryConfigurationFromRepository();
+}
+
+void StorageDictionary::removeDictionaryConfigurationFromRepository()
+{
+    if (remove_repository_callback_executed)
+        return;
+
+    remove_repository_callback_executed = true;
+    remove_repository_callback.reset();
 }
 
 Poco::Timestamp StorageDictionary::getUpdateTime() const
