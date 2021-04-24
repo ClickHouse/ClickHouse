@@ -1403,6 +1403,7 @@ void MergeTreeData::dropIfEmpty()
     }
     catch (...)
     {
+        // On unsuccessful creation of ReplicatedMergeTree table with multidisk configuration some files may not exist.
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
