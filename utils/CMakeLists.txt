@@ -44,8 +44,4 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     endif ()
 endif ()
 
-if (ENABLE_CODE_QUALITY)
-    add_subdirectory (check-style)
-endif ()
-
 add_subdirectory (package)
