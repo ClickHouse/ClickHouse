@@ -1,5 +1,5 @@
-set(ICU_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/icu/icu4c/source)
-set(ICUDATA_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/icudata/)
+set(ICU_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/icu/icu4c/source")
+set(ICUDATA_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/icudata/")
 
 set (CMAKE_CXX_STANDARD 17)
 
@@ -437,11 +437,11 @@ ${ICU_SOURCE_DIR}/i18n/formattedval_iterimpl.cpp
 ${ICU_SOURCE_DIR}/i18n/formattedval_sbimpl.cpp
 ${ICU_SOURCE_DIR}/i18n/formatted_string_builder.cpp)
 
-file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp CONTENT " ")
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" CONTENT " ")
 enable_language(ASM)
 set(ICUDATA_SOURCES
-    ${ICUDATA_SOURCE_DIR}/icudt66l_dat.S
-    ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp # Without this cmake can incorrectly detects library type (OBJECT) instead of SHARED/STATIC
+    "${ICUDATA_SOURCE_DIR}/icudt66l_dat.S"
+    "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" # Without this cmake can incorrectly detects library type (OBJECT) instead of SHARED/STATIC
 )
 
 # Note that we don't like any kind of binary plugins (because of runtime dependencies, vulnerabilities, ABI incompatibilities).
@@ -454,8 +454,8 @@ add_library(icudata ${ICUDATA_SOURCES})
 target_link_libraries(icuuc PRIVATE icudata)
 target_link_libraries(icui18n PRIVATE icuuc)
 
-target_include_directories(icuuc SYSTEM PUBLIC ${ICU_SOURCE_DIR}/common/)
-target_include_directories(icui18n SYSTEM PUBLIC ${ICU_SOURCE_DIR}/i18n/)
+target_include_directories(icuuc SYSTEM PUBLIC "${ICU_SOURCE_DIR}/common/")
+target_include_directories(icui18n SYSTEM PUBLIC "${ICU_SOURCE_DIR}/i18n/")
 
 target_compile_definitions(icuuc PRIVATE -DU_COMMON_IMPLEMENTATION)
 target_compile_definitions(icui18n PRIVATE -DU_I18N_IMPLEMENTATION)
