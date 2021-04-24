@@ -1103,7 +1103,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
             /// insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
             /// select count() from test1 where p > toDateTime('2020-09-01 10:00:00');
             ///
-            /// toDate(DateTime) is always monotonic, but we cannot relaxing the predicates to be
+            /// toDate(DateTime) is always monotonic, but we cannot relax the predicates to be
             /// >= toDate(toDateTime('2020-09-01 10:00:00')), which returns 3 instead of the right count: 2.
             bool strict_condition = strict;
 
