@@ -1,6 +1,6 @@
 ---
 toc_priority: 41
-toc_title: "Хранение словарей в памяти"
+toc_title: "\u0425\u0440\u0430\u043d\u0435\u043d\u0438\u0435\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u0435\u0439\u0020\u0432\u0020\u043f\u0430\u043c\u044f\u0442\u0438"
 ---
 
 # Хранение словарей в памяти {#dicts-external-dicts-dict-layout}
@@ -9,7 +9,7 @@ toc_title: "Хранение словарей в памяти"
 
 Рекомендуем [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
 
-Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе [cache](#cache).
+Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе «[cache](#cache)».
 
 Повысить производительность словарей можно следующими способами:
 
@@ -48,7 +48,7 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-## Способы размещения словарей в памяти {#ways-to-store-dictionaries-in-memory}
+## Способы размещения словарей в памяти {#sposoby-razmeshcheniia-slovarei-v-pamiati}
 
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
@@ -65,11 +65,11 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 ### flat {#flat}
 
-Словарь полностью хранится в оперативной памяти в виде плоских массивов. Объём памяти, занимаемой словарём, пропорционален размеру самого большого ключа (по объему).
+Словарь полностью хранится в оперативной памяти в виде плоских массивов. Объём памяти, занимаемой словарём пропорционален размеру самого большого по размеру ключа.
 
-Ключ словаря имеет тип [UInt64](../../../sql-reference/data-types/int-uint.md) и его величина ограничена параметром `max_array_size` (значение по умолчанию — 500 000). Если при создании словаря обнаружен ключ больше, то ClickHouse бросает исключение и не создает словарь. Начальный размер плоских массивов словарей контролируется параметром initial_array_size (по умолчанию - 1024).
+Ключ словаря имеет тип `UInt64` и его величина ограничена 500 000. Если при создании словаря обнаружен ключ больше, то ClickHouse бросает исключение и не создает словарь.
 
-Поддерживаются все виды источников. При обновлении данные (из файла или из таблицы) считываются целиком.
+Поддерживаются все виды источников. При обновлении, данные (из файла, из таблицы) читаются целиком.
 
 Это метод обеспечивает максимальную производительность среди всех доступных способов размещения словаря.
 
@@ -77,24 +77,21 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 ``` xml
 <layout>
-  <flat>
-    <initial_array_size>50000</initial_array_size>
-    <max_array_size>5000000</max_array_size>
-  </flat>
+  <flat />
 </layout>
 ```
 
 или
 
 ``` sql
-LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+LAYOUT(FLAT())
 ```
 
 ### hashed {#dicts-external_dicts_dict_layout-hashed}
 
-Словарь полностью хранится в оперативной памяти в виде хэш-таблиц. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике количество ключей может достигать десятков миллионов элементов.
+Словарь полностью хранится в оперативной памяти в виде хэш-таблиц. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике, количество ключей может достигать десятков миллионов элементов.
 
-Поддерживаются все виды источников. При обновлении данные (из файла, из таблицы) читаются целиком.
+Поддерживаются все виды источников. При обновлении, данные (из файла, из таблицы) читаются целиком.
 
 Пример конфигурации:
 
@@ -321,6 +318,8 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
         <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
+        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
+        <max_stored_keys>1048576</max_stored_keys>
     </ssd_cache>
 </layout>
 ```
@@ -328,8 +327,8 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 или
 
 ``` sql
-LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict))
+LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}
@@ -444,3 +443,4 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 Данные должны полностью помещаться в оперативной памяти.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

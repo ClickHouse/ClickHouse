@@ -8,7 +8,7 @@ BASE_DIR=$(dirname $(readlink -f $0))
 function do_make_links()
 {
     set -x
-    langs=(en zh ru ja)
+    langs=(en es zh fr ru ja tr fa)
     src_file="$1"
     for lang in "${langs[@]}"
     do

@@ -106,3 +106,4 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table-functions/remote/) <!--hide-->

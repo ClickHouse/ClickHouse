@@ -35,6 +35,9 @@ RUN apt-get update \
         libjemalloc-dev \
         libmsgpack-dev \
         libcurl4-openssl-dev \
+        opencl-headers \
+        ocl-icd-libopencl1 \
+        intel-opencl-icd \
         unixodbc-dev \
         odbcinst \
         tzdata \

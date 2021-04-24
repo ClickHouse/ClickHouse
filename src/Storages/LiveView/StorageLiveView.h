@@ -49,7 +49,7 @@ class Pipe;
 using Pipes = std::vector<Pipe>;
 
 
-class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
+class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageLiveView>;
 friend class LiveViewBlockInputStream;
@@ -142,13 +142,13 @@ public:
     void startup() override;
     void shutdown() override;
 
-    void refresh(bool grab_lock = true);
+    void refresh(const bool grab_lock = true);
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -156,7 +156,7 @@ public:
     BlockInputStreams watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -165,7 +165,7 @@ public:
     MergeableBlocksPtr getMergeableBlocks() { return mergeable_blocks; }
 
     /// Collect mergeable blocks and their sample. Must be called holding mutex
-    MergeableBlocksPtr collectMergeableBlocks(ContextPtr context);
+    MergeableBlocksPtr collectMergeableBlocks(const Context & context);
     /// Complete query using input streams from mergeable blocks
     BlockInputStreamPtr completeQuery(Pipes pipes);
 
@@ -183,7 +183,7 @@ public:
     static void writeIntoLiveView(
         StorageLiveView & live_view,
         const Block & block,
-        ContextPtr context);
+        const Context & context);
 
 private:
     /// TODO move to common struct SelectQueryDescription
@@ -191,7 +191,8 @@ private:
     ASTPtr inner_query; /// stored query : SELECT * FROM ( SELECT a FROM A)
     ASTPtr inner_subquery; /// stored query's innermost subquery if any
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
-    ContextPtr live_view_context;
+    Context & global_context;
+    std::unique_ptr<Context> live_view_context;
 
     Poco::Logger * log;
 
@@ -230,7 +231,7 @@ private:
 
     StorageLiveView(
         const StorageID & table_id_,
-        ContextPtr context_,
+        Context & local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns
     );
