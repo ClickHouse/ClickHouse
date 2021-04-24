@@ -87,7 +87,7 @@ struct Bfloat16Histogram
         return array[array.size() - 1];
     }
 
-    // levels[indicies[i]] must be sorted
+    // levels[indices[i]] must be sorted
     template <typename T>
     void quantilesManySorted(const Float64 * levels, const size_t * indices, size_t size, T * result)
     {
@@ -136,15 +136,9 @@ private:
     size_t count = 0;
     bool sorted = false;
 
-    bfloat16 to_bfloat16(const Value & x) const
-    { 
-        return ext::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16; 
-    }
+    bfloat16 to_bfloat16(const Value & x) const { return ext::bit_cast<UInt32>(static_cast<Float32>(x)) >> 16; }
 
-    Float32 to_Float32(const bfloat16 & x) const
-    {
-        return ext::bit_cast<Float32>(x << 16);
-    }
+    Float32 to_Float32(const bfloat16 & x) const { return ext::bit_cast<Float32>(x << 16); }
 
     void sortIfNeeded()
     {
@@ -166,7 +160,7 @@ private:
     }
 
     template <typename ResultType>
-    ResultType onEmpty() const 
+    ResultType onEmpty() const
     {
         return std::numeric_limits<ResultType>::quiet_NaN();
     }
