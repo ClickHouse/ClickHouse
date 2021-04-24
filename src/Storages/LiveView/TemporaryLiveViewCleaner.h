@@ -1,20 +1,17 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <Common/ThreadPool.h>
-
 #include <chrono>
 
 
 namespace DB
 {
-
 class StorageLiveView;
 struct StorageID;
 
 /// This class removes temporary live views in the background thread when it's possible.
 /// There should only a single instance of this class.
-class TemporaryLiveViewCleaner : WithContext
+class TemporaryLiveViewCleaner
 {
 public:
     static TemporaryLiveViewCleaner & instance() { return *the_instance; }
@@ -23,19 +20,19 @@ public:
     void addView(const std::shared_ptr<StorageLiveView> & view);
 
     /// Should be called once.
-    static void init(ContextPtr global_context_);
+    static void init(Context & global_context_);
     static void shutdown();
 
-    void startup();
+    void startupIfNecessary();
+    void startupIfNecessaryImpl(const std::lock_guard<std::mutex> &);
 
 private:
     friend std::unique_ptr<TemporaryLiveViewCleaner>::deleter_type;
 
-    TemporaryLiveViewCleaner(ContextPtr global_context_);
+    TemporaryLiveViewCleaner(Context & global_context_);
     ~TemporaryLiveViewCleaner();
 
     void backgroundThreadFunc();
-    void startBackgroundThread();
     void stopBackgroundThread();
 
     struct StorageAndTimeOfCheck
@@ -46,10 +43,11 @@ private:
     };
 
     static std::unique_ptr<TemporaryLiveViewCleaner> the_instance;
+    Context & global_context;
     std::mutex mutex;
     std::vector<StorageAndTimeOfCheck> views;
     ThreadFromGlobalPool background_thread;
-    std::atomic<bool> background_thread_can_start = false;
+    bool can_start_background_thread = false;
     std::atomic<bool> background_thread_should_exit = false;
     std::condition_variable background_thread_wake_up;
 };

@@ -1,7 +1,6 @@
 
 
 import time
-import threading
 from os import path as p, unlink
 from tempfile import NamedTemporaryFile
 
@@ -174,20 +173,6 @@ def test_secure_connection():
 
         assert node1.query("SELECT count() FROM system.zookeeper WHERE path = '/'") == '2\n'
         assert node2.query("SELECT count() FROM system.zookeeper WHERE path = '/'") == '2\n'
-
-
-        kThreadsNumber = 16
-        kIterations = 100
-        threads = []
-        for _ in range(kThreadsNumber):
-            threads.append(threading.Thread(target=(lambda: 
-                [node1.query("SELECT count() FROM system.zookeeper WHERE path = '/'") for _ in range(kIterations)])))
-
-        for thread in threads:
-            thread.start()
-
-        for thread in threads:
-            thread.join()
 
     finally:
         cluster.shutdown()

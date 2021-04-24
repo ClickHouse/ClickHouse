@@ -35,7 +35,7 @@ class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMultiIf>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMultiIf>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }

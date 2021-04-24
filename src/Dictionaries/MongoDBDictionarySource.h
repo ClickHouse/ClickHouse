@@ -50,7 +50,7 @@ public:
 
     BlockInputStreamPtr loadUpdatedAll() override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for MongoDBDictionarySource");
+        throw Exception{"Method loadUpdatedAll is unsupported for MongoDBDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
     bool supportsSelectiveLoad() const override { return true; }

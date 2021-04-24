@@ -82,7 +82,6 @@ bool PeekableReadBuffer::peekNext()
         checkpoint.emplace(memory.data());
         checkpoint_in_own_memory = true;
     }
-
     if (currentlyReadFromOwnMemory())
     {
         /// Update buffer size
@@ -100,6 +99,7 @@ bool PeekableReadBuffer::peekNext()
                 pos_offset = 0;
         }
         BufferBase::set(memory.data(), peeked_size + bytes_to_copy, pos_offset);
+
     }
 
     peeked_size += bytes_to_copy;
@@ -113,21 +113,12 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
 {
     checkStateCorrect();
 
-    assert(checkpoint);
-
-    if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())
-    {
-        /// Both checkpoint and position are in the same buffer.
+    if (!checkpoint)
+        throw DB::Exception("There is no checkpoint", ErrorCodes::LOGICAL_ERROR);
+    else if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())
         pos = *checkpoint;
-    }
-    else
-    {
-        /// Checkpoint is in own memory and position is not.
-        assert(checkpointInOwnMemory());
-
-        /// Switch to reading from own memory.
+    else /// Checkpoint is in own memory and pos is not. Switch to reading from own memory
         BufferBase::set(memory.data(), peeked_size, *checkpoint - memory.data());
-    }
 
     if (drop)
         dropCheckpoint();
@@ -143,7 +134,6 @@ bool PeekableReadBuffer::nextImpl()
 
     checkStateCorrect();
     bool res;
-    bool checkpoint_at_end = checkpoint && *checkpoint == working_buffer.end() && currentlyReadFromOwnMemory();
 
     if (checkpoint)
     {
@@ -172,13 +162,6 @@ bool PeekableReadBuffer::nextImpl()
     Buffer & sub_working = sub_buf.buffer();
     BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
     nextimpl_working_buffer_offset = sub_buf.offset();
-
-    if (checkpoint_at_end)
-    {
-        checkpoint.emplace(position());
-        peeked_size = 0;
-        checkpoint_in_own_memory = false;
-    }
 
     checkStateCorrect();
     return res;

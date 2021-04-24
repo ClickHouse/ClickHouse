@@ -33,8 +33,6 @@ public:
         return "categoricalInformationValue";
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void create(AggregateDataPtr __restrict place) const override
     {
         memset(place, 0, sizeOfData());

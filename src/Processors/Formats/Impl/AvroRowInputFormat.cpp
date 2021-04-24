@@ -554,7 +554,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
 }
 
-AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema, const FormatSettings & format_settings)
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
@@ -565,7 +565,7 @@ AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schem
     column_found.resize(header.columns());
     row_action = createAction(header, schema_root);
     // fail on missing fields when allow_missing_fields = false
-    if (!allow_missing_fields)
+    if (!format_settings.avro.allow_missing_fields)
     {
         for (size_t i = 0; i < header.columns(); ++i)
         {
@@ -592,24 +592,19 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 
 
 AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, in_, params_),
-      allow_missing_fields(format_settings_.avro.allow_missing_fields)
+    : IRowInputFormat(header_, in_, params_)
+    , file_reader(std::make_unique<InputStreamReadBufferAdapter>(in_))
+    , deserializer(output.getHeader(), file_reader.dataSchema(), format_settings_)
 {
-}
-
-void AvroRowInputFormat::readPrefix()
-{
-    file_reader_ptr = std::make_unique<avro::DataFileReaderBase>(std::make_unique<InputStreamReadBufferAdapter>(in));
-    deserializer_ptr = std::make_unique<AvroDeserializer>(output.getHeader(), file_reader_ptr->dataSchema(), allow_missing_fields);
-    file_reader_ptr->init();
+    file_reader.init();
 }
 
 bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &ext)
 {
-    if (file_reader_ptr->hasMore())
+    if (file_reader.hasMore())
     {
-        file_reader_ptr->decr();
-        deserializer_ptr->deserializeRow(columns, file_reader_ptr->decoder(), ext);
+        file_reader.decr();
+        deserializer.deserializeRow(columns, file_reader.decoder(), ext);
         return true;
     }
     return false;
@@ -786,7 +781,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     if (it == deserializer_cache.end())
     {
         auto schema = schema_registry->getSchema(schema_id);
-        AvroDeserializer deserializer(output.getHeader(), schema, format_settings.avro.allow_missing_fields);
+        AvroDeserializer deserializer(output.getHeader(), schema, format_settings);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
     }
     return it->second;

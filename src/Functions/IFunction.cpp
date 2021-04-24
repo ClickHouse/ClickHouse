@@ -477,7 +477,7 @@ DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeDefaultImplementationF
     }
     if (null_presence.has_nullable)
     {
-        auto nested_columns = Block(createBlockWithNestedColumns(arguments));
+        Block nested_columns = createBlockWithNestedColumns(arguments);
         auto return_type = getter(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
         return makeNullable(return_type);
     }

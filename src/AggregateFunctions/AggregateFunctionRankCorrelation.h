@@ -58,8 +58,6 @@ public:
         return "rankCorr";
     }
 
-    bool allocatesMemoryInArena() const override { return true; }
-
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeNumber<Float64>>();

@@ -10,7 +10,7 @@
 namespace DB
 {
 
-struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleMinMax : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_);
     MergeTreeIndexGranuleMinMax(
@@ -31,7 +31,7 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
 };
 
 
-struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorMinMax : IMergeTreeIndexAggregator
 {
     MergeTreeIndexAggregatorMinMax(const String & index_name_, const Block & index_sample_block);
     ~MergeTreeIndexAggregatorMinMax() override = default;
@@ -46,13 +46,13 @@ struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
 };
 
 
-class MergeTreeIndexConditionMinMax final : public IMergeTreeIndexCondition
+class MergeTreeIndexConditionMinMax : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeIndexConditionMinMax(
         const IndexDescription & index,
         const SelectQueryInfo & query,
-        ContextPtr context);
+        const Context & context);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -78,7 +78,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query, ContextPtr context) const override;
+        const SelectQueryInfo & query, const Context & context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 };

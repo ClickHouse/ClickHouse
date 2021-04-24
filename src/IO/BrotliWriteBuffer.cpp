@@ -50,7 +50,7 @@ BrotliWriteBuffer::BrotliWriteBuffer(std::unique_ptr<WriteBuffer> out_, int comp
 BrotliWriteBuffer::~BrotliWriteBuffer()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    MemoryTracker::LockExceptionInThread lock;
     finish();
 }
 
@@ -106,7 +106,7 @@ void BrotliWriteBuffer::finish()
     try
     {
         finishImpl();
-        out->finalize();
+        out->next();
         finished = true;
     }
     catch (...)

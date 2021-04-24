@@ -21,7 +21,6 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Check),
     static_cast<int32_t>(OpNum::Multi),
     static_cast<int32_t>(OpNum::Auth),
-    static_cast<int32_t>(OpNum::SessionID),
 };
 
 std::string toString(OpNum op_num)
@@ -56,8 +55,6 @@ std::string toString(OpNum op_num)
             return "Heartbeat";
         case OpNum::Auth:
             return "Auth";
-        case OpNum::SessionID:
-            return "SessionID";
     }
     int32_t raw_op = static_cast<int32_t>(op_num);
     throw Exception("Operation " + std::to_string(raw_op) + " is unknown", Error::ZUNIMPLEMENTED);

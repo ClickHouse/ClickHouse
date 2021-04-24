@@ -412,7 +412,7 @@
             </retention>
             <retention>
                 <age>86400</age>
-                <precision>7200</precision>
+                <precision>60</precision>
             </retention>
         </pattern>
         <default>

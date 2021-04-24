@@ -15,8 +15,8 @@
 
 namespace DB
 {
-HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
-    : max_uri_size(context->getSettingsRef().http_max_uri_size)
+
+HTTPServerRequest::HTTPServerRequest(const Context & context, HTTPServerResponse & response, Poco::Net::HTTPServerSession & session)
 {
     response.attachRequest(this);
 
@@ -24,8 +24,9 @@ HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & re
     client_address = session.clientAddress();
     server_address = session.serverAddress();
 
-    auto receive_timeout = context->getSettingsRef().http_receive_timeout;
-    auto send_timeout = context->getSettingsRef().http_send_timeout;
+    auto receive_timeout = context.getSettingsRef().http_receive_timeout;
+    auto send_timeout = context.getSettingsRef().http_send_timeout;
+    auto max_query_size = context.getSettingsRef().max_query_size;
 
     session.socket().setReceiveTimeout(receive_timeout);
     session.socket().setSendTimeout(send_timeout);
@@ -36,7 +37,7 @@ HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & re
     readRequest(*in);  /// Try parse according to RFC7230
 
     if (getChunkedTransferEncoding())
-        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in));
+        stream = std::make_unique<HTTPChunkedReadBuffer>(std::move(in), max_query_size);
     else if (hasContentLength())
         stream = std::make_unique<LimitReadBuffer>(std::move(in), getContentLength(), false);
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
@@ -92,10 +93,10 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
 
     skipWhitespaceIfAny(in);
 
-    while (in.read(ch) && !Poco::Ascii::isSpace(ch) && uri.size() <= max_uri_size)
+    while (in.read(ch) && !Poco::Ascii::isSpace(ch) && uri.size() <= MAX_URI_LENGTH)
         uri += ch;
 
-    if (uri.size() > max_uri_size)
+    if (uri.size() > MAX_URI_LENGTH)
         throw Poco::Net::MessageException("HTTP request URI invalid or too long");
 
     skipWhitespaceIfAny(in);
