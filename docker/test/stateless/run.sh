@@ -104,6 +104,12 @@ clickhouse-client -q "system flush logs" ||:
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
 clickhouse-client -q "select * from system.query_log format TSVWithNamesAndTypes" | pigz > /test_output/query-log.tsv.gz &
 clickhouse-client -q "select * from system.query_thread_log format TSVWithNamesAndTypes" | pigz > /test_output/query-thread-log.tsv.gz &
+clickhouse-client --allow_introspection_functions=1 -q "
+    WITH
+        arrayMap(x -> concat(demangle(addressToSymbol(x)), ':', addressToLine(x)), trace) AS trace_array,
+        arrayStringConcat(trace_array, '\n') AS trace_string
+    SELECT * EXCEPT(trace), trace_string FROM system.trace_log FORMAT TSVWithNamesAndTypes
+" | pigz > /test_output/trace-log.tsv.gz &
 wait ||:
 
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
