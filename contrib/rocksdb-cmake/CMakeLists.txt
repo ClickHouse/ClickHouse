@@ -79,26 +79,9 @@ else()
   endif()
 endif()
 
-string(TIMESTAMP TS "%Y/%m/%d %H:%M:%S" UTC)
-set(GIT_DATE_TIME "${TS}" CACHE STRING "the time we first built rocksdb")
-
-find_package(Git)
-
-if(GIT_FOUND AND EXISTS "${ROCKSDB_SOURCE_DIR}/.git")
-  if(WIN32)
-    execute_process(COMMAND $ENV{COMSPEC} /C ${GIT_EXECUTABLE} -C ${ROCKSDB_SOURCE_DIR} rev-parse HEAD OUTPUT_VARIABLE GIT_SHA)
-  else()
-    execute_process(COMMAND ${GIT_EXECUTABLE} -C ${ROCKSDB_SOURCE_DIR} rev-parse HEAD OUTPUT_VARIABLE GIT_SHA)
-  endif()
-else()
-  set(GIT_SHA 0)
-endif()
-
-string(REGEX REPLACE "[^0-9a-f]+" "" GIT_SHA "${GIT_SHA}")
-
-set(BUILD_VERSION_CC ${CMAKE_BINARY_DIR}/rocksdb_build_version.cc)
-configure_file(${ROCKSDB_SOURCE_DIR}/util/build_version.cc.in ${BUILD_VERSION_CC} @ONLY)
+set(BUILD_VERSION_CC rocksdb_build_version.cc)
 add_library(rocksdb_build_version OBJECT ${BUILD_VERSION_CC})
+
 target_include_directories(rocksdb_build_version PRIVATE
   ${ROCKSDB_SOURCE_DIR}/util)
 if(MSVC)
