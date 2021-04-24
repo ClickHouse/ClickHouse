@@ -856,8 +856,10 @@ namespace
             {
                 fmt::print("The process with pid = {} is running.\n", pid);
             }
-            else
+            else if (errno == ESRCH)
             {
+                // the process does not exists anymore,
+                // and returning pid of dead process has no sense.
                 pid = 0;
             }
         }
