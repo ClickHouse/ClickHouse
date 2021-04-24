@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <DataTypes/NestedUtils.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
@@ -90,6 +91,13 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const StorageMetada
     auto alter_conversions = storage.getAlterConversionsForPart(part);
     for (size_t i = 0; i < columns.size(); ++i)
     {
+        auto name_in_storage = Nested::extractTableName(columns[i]);
+        if (isObject(storage_columns.get(name_in_storage).type))
+        {
+            have_at_least_one_physical_column = true;
+            continue;
+        }
+
         /// We are going to fetch only physical columns
         if (!storage_columns.hasPhysicalOrSubcolumn(columns[i]))
             throw Exception("There is no physical column or subcolumn " + columns[i] + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
@@ -308,7 +316,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (check_columns)
     {
-        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllWithSubcolumns();
+        auto physical_columns = metadata_snapshot->getColumns().getAllWithSubcolumns();
+        physical_columns = storage.expandObjectColumns(physical_columns, true);
+
         result.pre_columns = physical_columns.addTypes(pre_column_names);
         result.columns = physical_columns.addTypes(column_names);
     }

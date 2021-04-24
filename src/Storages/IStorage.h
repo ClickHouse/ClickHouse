@@ -524,6 +524,9 @@ public:
     /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
+    virtual NamesAndTypesList expandObjectColumns(const NamesAndTypesList & columns_list, bool /*with_subcolumns*/) const { return columns_list; }
+    virtual NamesAndTypesList getExpandedObjects() const { return {}; }
+
 private:
     /// Lock required for alter queries (lockForAlter). Always taken for write
     /// (actually can be replaced with std::mutex, but for consistency we use

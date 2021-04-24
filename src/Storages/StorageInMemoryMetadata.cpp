@@ -5,6 +5,7 @@
 #include <Common/quoteString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -287,7 +288,7 @@ Block StorageInMemoryMetadata::getSampleBlock() const
 }
 
 Block StorageInMemoryMetadata::getSampleBlockForColumns(
-    const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
+    const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id, const NamesAndTypesList & expanded_objects) const
 {
     Block res;
 
@@ -302,6 +303,17 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
     /// override them.
     for (const auto & column : virtuals)
         columns_map.emplace(column.name, column.type);
+
+    for (const auto & column : expanded_objects)
+    {
+        columns_map.emplace(column.name, column.type);
+        for (const auto & subcolumn : column.type->getSubcolumnNames())
+            columns_map.emplace(Nested::concatenateName(column.name, subcolumn), column.type->getSubcolumnType(subcolumn));
+    }
+
+    std::cerr << "expanded objects: ";
+    for (const auto & col : expanded_objects)
+        std::cerr << col.dump() << "\n";
 
     for (const auto & name : column_names)
     {
@@ -477,10 +489,18 @@ namespace
     }
 }
 
-void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id) const
+void StorageInMemoryMetadata::check(
+    const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id, const NamesAndTypesList & expanded_objects) const
 {
     NamesAndTypesList available_columns = getColumns().getAllPhysicalWithSubcolumns();
     available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
+
+    for (const auto & column : expanded_objects)
+    {
+        available_columns.push_back(column);
+        for (const auto & subcolumn : column.type->getSubcolumnNames())
+            available_columns.emplace_back(column.name, subcolumn, column.type, column.type->getSubcolumnType(subcolumn));
+    }
 
     const String list_of_columns = listOfColumns(available_columns);
 

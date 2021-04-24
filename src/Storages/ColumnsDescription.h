@@ -31,6 +31,7 @@ struct ColumnDescription
 {
     String name;
     DataTypePtr type;
+    DataTypePtr expaneded_type;
     ColumnDefault default_desc;
     String comment;
     ASTPtr codec;

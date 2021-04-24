@@ -135,7 +135,7 @@ Pipe StorageS3Cluster::read(
         }
     }
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
     return Pipe::unitePipes(std::move(pipes));
 }
 

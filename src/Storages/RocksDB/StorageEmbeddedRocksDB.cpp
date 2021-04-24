@@ -289,7 +289,7 @@ Pipe StorageEmbeddedRocksDB::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
 
     FieldVectorPtr keys;
     bool all_scan = false;

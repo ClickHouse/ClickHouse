@@ -70,7 +70,7 @@ Pipe StoragePostgreSQL::read(
     size_t max_block_size_,
     unsigned)
 {
-    metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
+    metadata_snapshot->check(column_names_, getVirtuals(), getStorageID(), getExpandedObjects());
 
     /// Connection is already made to the needed database, so it should not be present in the query;
     /// remote_table_schema is empty if it is not specified, will access only table_name.

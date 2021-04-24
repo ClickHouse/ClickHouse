@@ -24,7 +24,7 @@ public:
 
     const char * getFamilyName() const override { return "Object"; }
     String doGetName() const override;
-    TypeIndex getTypeId() const override { return TypeIndex::Nothing; }
+    TypeIndex getTypeId() const override { return TypeIndex::Object; }
 
     MutableColumnPtr createColumn() const override { return ColumnObject::create(); }
 

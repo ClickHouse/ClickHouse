@@ -62,7 +62,7 @@ std::pair<std::string, std::string> splitName(const std::string & name)
 
     ++pos;
 
-    while (pos < end && isWordCharASCII(*pos))
+    while (pos < end && (isWordCharASCII(*pos) || *pos == '.'))
         ++pos;
 
     if (pos != end)

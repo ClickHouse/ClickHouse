@@ -506,7 +506,7 @@ Pipe StorageSystemTables::read(
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
 
     /// Create a mask of what columns are needed in the result.
 

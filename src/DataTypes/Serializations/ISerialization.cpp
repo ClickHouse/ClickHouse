@@ -144,8 +144,10 @@ static String getNameForSubstreamPath(
             /// Because nested data may be represented not by Array of Tuple,
             ///  but by separate Array columns with names in a form of a.b,
             ///  and name is encoded as a whole.
-            stream_name += (escape_tuple_delimiter && elem.escape_tuple_delimiter ?
-                escapeForFileName(".") : ".") + escapeForFileName(elem.tuple_element_name);
+            if (escape_tuple_delimiter && elem.escape_tuple_delimiter)
+                stream_name += escapeForFileName(".") + escapeForFileName(elem.tuple_element_name);
+            else
+                stream_name += "." + elem.tuple_element_name;
         }
         else if (elem.type == Substream::ObjectElement)
         {

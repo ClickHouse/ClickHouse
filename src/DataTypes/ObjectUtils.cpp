@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/FieldVisitors.h>
@@ -65,6 +66,36 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block)
             column.column = column_tuple;
         }
     }
+}
+
+DataTypePtr getLeastCommonTypeForObject(const DataTypes & types)
+{
+    std::unordered_map<String, DataTypes> subcolumns_types;
+    for (const auto & type : types)
+    {
+        const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get());
+        if (!type_tuple)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Least common type for object can be deduced only from tuples, but {} given", type->getName());
+
+        const auto & tuple_names = type_tuple->getElementNames();
+        const auto & tuple_types = type_tuple->getElements();
+        assert(tuple_names.size() == tuple_type.size());
+
+        for (size_t i = 0; i < tuple_names.size(); ++i)
+            subcolumns_types[tuple_names[i]].push_back(tuple_types[i]);
+    }
+
+    Names tuple_names;
+    DataTypes tuple_types;
+
+    for (const auto & [name, subtypes] : subcolumns_types)
+    {
+        tuple_names.push_back(name);
+        tuple_types.push_back(getLeastSupertype(subtypes));
+    }
+
+    return std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
 }
 
 }

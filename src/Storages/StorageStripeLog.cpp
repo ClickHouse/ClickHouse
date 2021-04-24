@@ -330,7 +330,7 @@ Pipe StorageStripeLog::read(
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
 
     NameSet column_names_set(column_names.begin(), column_names.end());
 

@@ -484,7 +484,7 @@ Pipe StorageTinyLog::read(
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
 
     auto all_columns = metadata_snapshot->getColumns().getAllWithSubcolumns().addTypes(column_names);
 
