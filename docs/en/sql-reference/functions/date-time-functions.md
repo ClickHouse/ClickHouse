@@ -59,7 +59,7 @@ int32samoa: 1546300800
 
 ## timezoneOffset {#timezoneoffset}
 
-Returns a timezone offset from [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time) in seconds. The function takes into account [Daylight saving time](https://en.wikipedia.org/wiki/Daylight_saving_time) and historical timezone changes at the specified date and time.
+Returns a timezone offset in seconds from [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time). The function takes into account [daylight saving time](https://en.wikipedia.org/wiki/Daylight_saving_time) and historical timezone changes at the specified date and time.
 [IANA timezone database](https://www.iana.org/time-zones) is used to calculate the offset.
 
 **Syntax**
@@ -70,11 +70,11 @@ timezoneOffset(datetime)
 
 **Arguments**
 
--   `datetime` — date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+-   `datetime` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
 
 **Returned value**
 
--   offset from UTC in seconds. 
+-   Offset from UTC in seconds. 
 
 Type: [Int32](../../sql-reference/data-types/int-uint.md).
 
