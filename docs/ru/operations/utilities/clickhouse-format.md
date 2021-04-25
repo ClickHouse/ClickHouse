@@ -55,42 +55,43 @@ toc_title: clickhouse-format
     ```
 3. Пример с обфуксацией:
 
-   ```bash
-   $clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
-   ```
-   Результат:
+    ```bash
+    $clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
+    ```
+    Результат:
 
-   ```text
-   SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
-   ```
+    ```text
+    SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
+    ```
    
-   Другая строка для обфускации:
+    Другая строка для обфускации:
 
-   ```bash
-   $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
-   ```
-   Результат:
+    ```bash
+    $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
+    ```
+    
+    Результат:
 
-   ```text
-   SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
-   ```
+    ```text
+    SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
+    ```
 
 4. Пример с обратным слешем:
 
-   ```bash
-   $clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
-   ```
+    ```bash
+    $clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
+    ```
 
-   Результат:
+    Результат:
 
-   ```text
-   SELECT * \
-   FROM  \
-   ( \
-      SELECT 1 AS x \
-      UNION ALL \
-      SELECT 1 \
-      UNION DISTINCT \
-      SELECT 3 \
-   )
-   ``` 
+    ```text
+    SELECT * \
+    FROM  \
+    ( \
+       SELECT 1 AS x \
+       UNION ALL \
+       SELECT 1 \
+       UNION DISTINCT \
+       SELECT 3 \
+    )
+    ``` 
