@@ -5,10 +5,15 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/Hash.h>
 
 #include <IO/ReadBufferFromString.h>
 
 #include <gtest/gtest.h>
+
+
+using namespace DB;
+
 
 /// To test dump functionality without using other hashes that can change
 template <typename T>
@@ -251,14 +256,14 @@ TEST(HashTable, SerializationDeserialization)
         cont.insert(2);
         cont.insert(3);
 
-        DB::WriteBufferFromOwnString wb;
+        WriteBufferFromOwnString wb;
         cont.writeText(wb);
 
         std::string expected = "3,1,2,3";
 
         ASSERT_EQ(wb.str(), expected);
 
-        DB::ReadBufferFromString rb(expected);
+        ReadBufferFromString rb(expected);
 
         Cont deserialized;
         deserialized.readText(rb);
@@ -273,10 +278,10 @@ TEST(HashTable, SerializationDeserialization)
         cont.insert(2);
         cont.insert(3);
 
-        DB::WriteBufferFromOwnString wb;
+        WriteBufferFromOwnString wb;
         cont.write(wb);
 
-        DB::ReadBufferFromString rb(wb.str());
+        ReadBufferFromString rb(wb.str());
 
         Cont deserialized;
         deserialized.read(rb);
@@ -286,23 +291,23 @@ TEST(HashTable, SerializationDeserialization)
         using Cont = HashSet<int, DummyHash<int>, HashTableGrower<1>>;
         Cont cont;
 
-        DB::WriteBufferFromOwnString wb;
+        WriteBufferFromOwnString wb;
         cont.writeText(wb);
 
         std::string expected = "0";
         ASSERT_EQ(wb.str(), expected);
 
-        DB::ReadBufferFromString rb(expected);
+        ReadBufferFromString rb(expected);
 
         Cont deserialized;
         deserialized.readText(rb);
         ASSERT_EQ(convertToSet(cont), convertToSet(deserialized));
     }
     {
-        using Cont = HashSet<DB::UInt128, DB::UInt128TrivialHash>;
+        using Cont = HashSet<UInt128, UInt128TrivialHash>;
         Cont cont;
 
-        DB::WriteBufferFromOwnString wb;
+        WriteBufferFromOwnString wb;
         cont.write(wb);
 
         std::string expected;
@@ -310,7 +315,7 @@ TEST(HashTable, SerializationDeserialization)
 
         ASSERT_EQ(wb.str(), expected);
 
-        DB::ReadBufferFromString rb(expected);
+        ReadBufferFromString rb(expected);
 
         Cont deserialized;
         deserialized.read(rb);

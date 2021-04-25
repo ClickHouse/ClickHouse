@@ -251,7 +251,9 @@ TEST(WeakHash32, ColumnVectorU128)
     {
         for (uint64_t i = 0; i < 65536; ++i)
         {
-            UInt128 val(i << 32u, i << 32u);
+            UInt128 val;
+            val.items[0] = i << 32u;
+            val.items[1] = i << 32u;
             data.push_back(val);
             eq_data.push_back(i);
         }
@@ -328,7 +330,7 @@ TEST(WeakHash32, ColumnDecimal128)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(Int64(col->getElement(row))); });
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(Int128(col->getElement(row).value)); });
 }
 
 TEST(WeakHash32, ColumnString1)
