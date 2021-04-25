@@ -23,7 +23,7 @@ toc_title: clickhouse-format
 1. Пример с подсветкой синтаксиса и форматированием в одну строку:
 
 ```bash
-$clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
+$ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
 ```
 
 Результат:
@@ -35,7 +35,7 @@ SELECT sum(number) FROM numbers(5)
 2. Пример с несколькими запросами в одной строке: 
 
 ```bash
-$clickhouse-format -n <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
+$ clickhouse-format -n <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
 ```
     
 Результат:
@@ -57,7 +57,7 @@ UNION ALL
 3. Пример с обфуксацией:
 
 ```bash
-$clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
+$ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
 ```
 
 Результат:
@@ -81,7 +81,7 @@ SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 
 4. Пример с обратным слешем:
 
 ```bash
-$clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
+$ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
 ```
 
 Результат:
