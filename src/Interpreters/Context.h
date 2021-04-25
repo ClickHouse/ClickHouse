@@ -128,6 +128,9 @@ using InputInitializer = std::function<void(ContextPtr, const StoragePtr &)>;
 /// Callback for reading blocks of data from client for function input()
 using InputBlocksReader = std::function<Block(ContextPtr)>;
 
+/// Used in distributed task processing
+using ReadTaskCallback = std::function<String()>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -188,6 +191,9 @@ private:
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
+
+    /// Fields for distributed s3 function
+    std::optional<ReadTaskCallback> next_task_callback;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -499,7 +505,10 @@ public:
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     ExternalModelsLoader & getExternalModelsLoader();
+    ExternalModelsLoader & getExternalModelsLoaderUnlocked();
     void tryCreateEmbeddedDictionaries() const;
+
+    void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
@@ -766,6 +775,10 @@ public:
 
     PartUUIDsPtr getPartUUIDs();
     PartUUIDsPtr getIgnoredPartUUIDs();
+
+    ReadTaskCallback getReadTaskCallback() const;
+    void setReadTaskCallback(ReadTaskCallback && callback);
+
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 

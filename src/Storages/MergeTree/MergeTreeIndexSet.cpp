@@ -299,6 +299,10 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 
     auto column
         = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+
+    if (column->onlyNull())
+        return false;
+
     const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
 
     const NullMap * null_map = nullptr;
@@ -388,7 +392,7 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
 
         func->name = "__bitSwapLastTwo";
     }
-    else if (func->name == "and")
+    else if (func->name == "and" || func->name == "indexHint")
     {
         auto last_arg = args.back();
         args.pop_back();
@@ -444,7 +448,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
 
         const ASTs & args = func->arguments->children;
 
-        if (func->name == "and")
+        if (func->name == "and" || func->name == "indexHint")
             return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
         else if (func->name == "or")
             return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
