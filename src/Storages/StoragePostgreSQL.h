@@ -10,6 +10,7 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Storages/PostgreSQL/PostgreSQLPoolWithFailover.h>
+#include <pqxx/pqxx>
 
 
 namespace DB

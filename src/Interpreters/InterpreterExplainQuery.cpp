@@ -129,7 +129,6 @@ struct QueryPlanSettings
             {"header", query_plan_options.header},
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
-            {"indexes", query_plan_options.indexes},
             {"optimize", optimize},
     };
 };

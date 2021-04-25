@@ -8,14 +8,10 @@ namespace DB
 
 struct Settings;
 class Cluster;
-using ClusterPtr = std::shared_ptr<Cluster>;
 struct SelectQueryInfo;
 
 class Pipe;
 class QueryPlan;
-
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 namespace ClusterProxy
 {
@@ -39,10 +35,7 @@ ContextPtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context,
 void executeQuery(
     QueryPlan & query_plan,
     IStreamFactory & stream_factory, Poco::Logger * log,
-    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
-    const ExpressionActionsPtr & sharding_key_expr,
-    const std::string & sharding_key_column_name,
-    const ClusterPtr & not_optimized_cluster);
+    const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info);
 
 }
 

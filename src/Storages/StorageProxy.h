@@ -11,7 +11,7 @@ class StorageProxy : public IStorage
 {
 public:
 
-    explicit StorageProxy(const StorageID & table_id_) : IStorage(table_id_) {}
+    StorageProxy(const StorageID & table_id_) : IStorage(table_id_) {}
 
     virtual StoragePtr getNested() const = 0;
 

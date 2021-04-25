@@ -50,13 +50,6 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
     };
 }
 
-NamesAndTypesList StorageSystemDictionaries::getVirtuals() const
-{
-    return {
-        {"key", std::make_shared<DataTypeString>()}
-    };
-}
-
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & /*query_info*/) const
 {
     const auto access = context->getAccess();
@@ -135,9 +128,6 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         else
             res_columns[i++]->insertDefault();
 
-        /// Start fill virtual columns
-
-        res_columns[i++]->insert(dictionary_structure.getKeyDescription());
     }
 }
 

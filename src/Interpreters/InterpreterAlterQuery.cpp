@@ -180,6 +180,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, column_names_from_update_assignments());
             break;
         }
+        case ASTAlterCommand::DELETE:
+        {
+            required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
+            break;
+        }
         case ASTAlterCommand::ADD_COLUMN:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_COLUMN, database, table, column_name_from_col_decl());
@@ -242,6 +247,10 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::MODIFY_TTL:
+        {
+            required_access.emplace_back(AccessType::ALTER_TTL, database, table);
+            break;
+        }
         case ASTAlterCommand::REMOVE_TTL:
         {
             required_access.emplace_back(AccessType::ALTER_TTL, database, table);
@@ -262,8 +271,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::INSERT, database, table);
             break;
         }
-        case ASTAlterCommand::DELETE:
-        case ASTAlterCommand::DROP_PARTITION:
+        case ASTAlterCommand::DROP_PARTITION: [[fallthrough]];
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
         {
             required_access.emplace_back(AccessType::ALTER_DELETE, database, table);

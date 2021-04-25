@@ -36,15 +36,6 @@ def get_large_objects_count(cluster, size=100):
     return counter
 
 
-def wait_for_large_objects_count(cluster, expected, size=100, timeout=30):
-    while timeout > 0:
-        if get_large_objects_count(cluster, size) == expected:
-            return
-        timeout -= 1
-        time.sleep(1)
-    assert get_large_objects_count(cluster, size) == expected
-
-
 @pytest.mark.parametrize(
     "policy", ["s3"]
 )
@@ -76,15 +67,23 @@ def test_s3_zero_copy_replication(cluster, policy):
     assert node1.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
 
     # Based on version 20.x - two parts
-    wait_for_large_objects_count(cluster, 2)
+    assert get_large_objects_count(cluster) == 2
 
     node1.query("OPTIMIZE TABLE s3_test")
 
+    time.sleep(1)
+
     # Based on version 20.x - after merge, two old parts and one merged
-    wait_for_large_objects_count(cluster, 3)
+    assert get_large_objects_count(cluster) == 3
 
     # Based on version 20.x - after cleanup - only one merged part
-    wait_for_large_objects_count(cluster, 1, timeout=60)
+    countdown = 60
+    while countdown > 0:
+        if get_large_objects_count(cluster) == 1:
+            break
+        time.sleep(1)
+        countdown -= 1
+    assert get_large_objects_count(cluster) == 1
 
     node1.query("DROP TABLE IF EXISTS s3_test NO DELAY")
     node2.query("DROP TABLE IF EXISTS s3_test NO DELAY")
@@ -128,7 +127,7 @@ def test_s3_zero_copy_on_hybrid_storage(cluster):
     assert node2.query("SELECT partition_id,disk_name FROM system.parts WHERE table='hybrid_test' FORMAT Values") == "('all','s31')"
 
     # Check that after moving partition on node2 no new obects on s3
-    wait_for_large_objects_count(cluster, s3_objects, size=0)
+    assert get_large_objects_count(cluster, 0) == s3_objects
 
     assert node1.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"
     assert node2.query("SELECT * FROM hybrid_test ORDER BY id FORMAT Values") == "(0,'data'),(1,'data')"

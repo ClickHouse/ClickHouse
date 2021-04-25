@@ -74,9 +74,6 @@
 /// Minimum revision supporting OpenTelemetry
 #define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442
 
-
-#define DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION 1
-
 /// Minimum revision supporting interserver secret.
 #define DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET 54441
 

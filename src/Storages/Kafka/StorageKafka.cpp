@@ -28,7 +28,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/formatReadable.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
@@ -586,8 +585,6 @@ void StorageKafka::threadFunc(size_t idx)
 
 bool StorageKafka::streamToViews()
 {
-    Stopwatch watch;
-
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -640,11 +637,7 @@ bool StorageKafka::streamToViews()
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
     std::atomic<bool> stub = {false};
-    size_t rows = 0;
-    copyData(*in, *block_io.out, [&rows](const Block & block)
-    {
-        rows += block.rows();
-    }, &stub);
+    copyData(*in, *block_io.out, &stub);
 
     bool some_stream_is_stalled = false;
     for (auto & stream : streams)
@@ -652,10 +645,6 @@ bool StorageKafka::streamToViews()
         some_stream_is_stalled = some_stream_is_stalled || stream->as<KafkaBlockInputStream>()->isStalled();
         stream->as<KafkaBlockInputStream>()->commit();
     }
-
-    UInt64 milliseconds = watch.elapsedMilliseconds();
-    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.",
-        formatReadableQuantity(rows), table_id.getNameForLogs(), milliseconds);
 
     return some_stream_is_stalled;
 }

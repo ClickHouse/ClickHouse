@@ -300,7 +300,6 @@ function run_tests
         01663_aes_msan                          # Depends on OpenSSL
         01667_aes_args_check                    # Depends on OpenSSL
         01776_decrypt_aead_size_check           # Depends on OpenSSL
-        01811_filter_by_null                    # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
@@ -308,8 +307,10 @@ function run_tests
         01354_order_by_tuple_collate_const
         01355_ilike
         01411_bayesian_ab_testing
-        collate
-        collation
+        01532_collate_in_low_cardinality
+        01533_collate_in_nullable
+        01542_collate_in_array
+        01543_collate_in_tuple
         _orc_
         arrow
         avro
@@ -364,12 +365,6 @@ function run_tests
 
         # JSON functions
         01666_blns
-
-        # Requires postgresql-client
-        01802_test_postgresql_protocol_with_row_policy
-
-        # Depends on AWS
-        01801_s3_cluster
     )
 
     (time clickhouse-test --hung-check -j 8 --order=random --use-skip-list --no-long --testname --shard --zookeeper --skip "${TESTS_TO_SKIP[@]}" -- "$FASTTEST_FOCUS" 2>&1 ||:) | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/test_log.txt"

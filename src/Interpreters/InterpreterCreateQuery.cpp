@@ -59,7 +59,6 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <common/logger_useful.h>
@@ -363,7 +362,7 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, bool attach)
+    const ASTExpressionList & columns_ast, ContextPtr context_, bool sanity_check_compression_codecs)
 {
     /// First, deduce implicit types.
 
@@ -372,7 +371,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
-    bool make_columns_nullable = !attach && context_->getSettingsRef().data_type_default_nullable;
 
     for (const auto & ast : columns_ast.children)
     {
@@ -391,7 +389,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 if (*col_decl.null_modifier)
                     column_type = makeNullable(column_type);
             }
-            else if (make_columns_nullable)
+            /// XXX: context_ or context ?
+            else if (context_->getSettingsRef().data_type_default_nullable)
             {
                 column_type = makeNullable(column_type);
             }
@@ -436,7 +435,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!default_expr_list->children.empty())
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
 
-    bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
     for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
@@ -512,7 +510,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), create.attach);
+            bool sanity_check_compression_codecs = !create.attach && !getContext()->getSettingsRef().allow_suspicious_codecs;
+            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), sanity_check_compression_codecs);
         }
 
         if (create.columns_list->indices)
@@ -724,7 +723,7 @@ static void generateUUIDForTable(ASTCreateQuery & create)
     /// If destination table (to_table_id) is not specified for materialized view,
     /// then MV will create inner table. We should generate UUID of inner table here,
     /// so it will be the same on all hosts if query in ON CLUSTER or database engine is Replicated.
-    bool need_uuid_for_inner_table = !create.attach && create.is_materialized_view && !create.to_table_id;
+    bool need_uuid_for_inner_table = create.is_materialized_view && !create.to_table_id;
     if (need_uuid_for_inner_table && create.to_inner_uuid == UUIDHelpers::Nil)
         create.to_inner_uuid = UUIDHelpers::generateV4();
 }
@@ -891,8 +890,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.select && create.isView())
     {
-        // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor().visit(*create.select);
         AddDefaultDatabaseVisitor visitor(current_database);
         visitor.visit(*create.select);
     }
@@ -994,19 +991,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// We will try to create Storage instance with provided data path
         data_path = *create.attach_from_path;
         create.attach_from_path = std::nullopt;
-    }
-
-    if (create.attach)
-    {
-        /// If table was detached it's not possible to attach it back while some threads are using
-        /// old instance of the storage. For example, AsynchronousMetrics may cause ATTACH to fail,
-        /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
-        /// and old storage instance still exists it will throw exception.
-        bool throw_if_table_in_use = getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously;
-        if (throw_if_table_in_use)
-            database->checkDetachedTableNotInUse(create.uuid);
-        else
-            database->waitDetachedTableNotInUse(create.uuid);
     }
 
     StoragePtr res;

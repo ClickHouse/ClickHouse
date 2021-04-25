@@ -16,9 +16,12 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"
-#include "registerDictionaries.h"
-#include <Common/escapeForFileName.h>
 
+#include "registerDictionaries.h"
+
+#if USE_ODBC
+#    include <Poco/Data/ODBC/Connector.h> // Y_IGNORE
+#endif
 
 namespace DB
 {
@@ -122,7 +125,7 @@ XDBCDictionarySource::XDBCDictionarySource(
 {
     bridge_url = bridge_helper->getMainURI();
 
-    auto url_params = bridge_helper->getURLParams(max_block_size);
+    auto url_params = bridge_helper->getURLParams(sample_block_.getNamesAndTypesList().toString(), max_block_size);
     for (const auto & [name, value] : url_params)
         bridge_url.addQueryParameter(name, value);
 }
@@ -148,7 +151,6 @@ XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
 {
 }
 
-
 std::string XDBCDictionarySource::getUpdateFieldAndDate()
 {
     if (update_time != std::chrono::system_clock::from_time_t(0))
@@ -165,60 +167,51 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
     }
 }
 
-
 BlockInputStreamPtr XDBCDictionarySource::loadAll()
 {
     LOG_TRACE(log, load_all_query);
-    return loadFromQuery(bridge_url, sample_block, load_all_query);
+    return loadBase(load_all_query);
 }
-
 
 BlockInputStreamPtr XDBCDictionarySource::loadUpdatedAll()
 {
     std::string load_query_update = getUpdateFieldAndDate();
 
     LOG_TRACE(log, load_query_update);
-    return loadFromQuery(bridge_url, sample_block, load_query_update);
+    return loadBase(load_query_update);
 }
-
 
 BlockInputStreamPtr XDBCDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return loadFromQuery(bridge_url, sample_block, query);
+    return loadBase(query);
 }
-
 
 BlockInputStreamPtr XDBCDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return loadFromQuery(bridge_url, sample_block, query);
+    return loadBase(query);
 }
-
 
 bool XDBCDictionarySource::supportsSelectiveLoad() const
 {
     return true;
 }
 
-
 bool XDBCDictionarySource::hasUpdateField() const
 {
     return !update_field.empty();
 }
-
 
 DictionarySourcePtr XDBCDictionarySource::clone() const
 {
     return std::make_unique<XDBCDictionarySource>(*this);
 }
 
-
 std::string XDBCDictionarySource::toString() const
 {
     return bridge_helper->getName() + ": " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
 }
-
 
 bool XDBCDictionarySource::isModified() const
 {
@@ -242,38 +235,41 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
     bridge_helper->startBridgeSync();
 
     auto invalidate_url = bridge_helper->getMainURI();
-    auto url_params = bridge_helper->getURLParams(max_block_size);
+    auto url_params = bridge_helper->getURLParams(invalidate_sample_block.getNamesAndTypesList().toString(), max_block_size);
     for (const auto & [name, value] : url_params)
         invalidate_url.addQueryParameter(name, value);
 
-    return readInvalidateQuery(*loadFromQuery(invalidate_url, invalidate_sample_block, request));
+    XDBCBridgeBlockInputStream stream(
+        invalidate_url,
+        [request](std::ostream & os) { os << "query=" << request; },
+        invalidate_sample_block,
+        getContext(),
+        max_block_size,
+        timeouts,
+        bridge_helper->getName() + "BlockInputStream");
+
+    return readInvalidateQuery(stream);
 }
 
-
-BlockInputStreamPtr XDBCDictionarySource::loadFromQuery(const Poco::URI url, const Block & required_sample_block, const std::string & query) const
+BlockInputStreamPtr XDBCDictionarySource::loadBase(const std::string & query) const
 {
     bridge_helper->startBridgeSync();
-
-    auto write_body_callback = [required_sample_block, query](std::ostream & os)
-    {
-        os << "sample_block=" << escapeForFileName(required_sample_block.getNamesAndTypesList().toString());
-        os << "&";
-        os << "query=" << escapeForFileName(query);
-    };
-
     return std::make_shared<XDBCBridgeBlockInputStream>(
-        url,
-        write_body_callback,
-        required_sample_block,
+        bridge_url,
+        [query](std::ostream & os) { os << "query=" << query; },
+        sample_block,
         getContext(),
         max_block_size,
         timeouts,
         bridge_helper->getName() + "BlockInputStream");
 }
 
-
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 {
+#if USE_ODBC
+    Poco::Data::ODBC::Connector::registerConnector();
+#endif
+
     auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
@@ -297,7 +293,6 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
     };
     factory.registerSource("odbc", create_table_source);
 }
-
 
 void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
 {

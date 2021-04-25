@@ -66,8 +66,6 @@ public:
         bool description = true;
         /// Add detailed information about step actions.
         bool actions = false;
-        /// Add information about indexes actions.
-        bool indexes = false;
     };
 
     struct ExplainPipelineOptions

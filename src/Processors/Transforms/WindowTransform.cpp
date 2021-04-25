@@ -975,14 +975,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
     // have it if it's end of data, though.
     if (!input_is_finished)
     {
-        if (!chunk.hasRows())
-        {
-            // Joins may generate empty input chunks when it's not yet end of
-            // input. Just ignore them. They probably shouldn't be sending empty
-            // chunks up the pipeline, but oh well.
-            return;
-        }
-
+        assert(chunk.hasRows());
         blocks.push_back({});
         auto & block = blocks.back();
         // Use the number of rows from the Chunk, because it is correct even in
@@ -1505,7 +1498,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         IColumn & to = *current_block.output_columns[function_index];
         const auto & workspace = transform->workspaces[function_index];
 
-        int64_t offset = 1;
+        int offset = 1;
         if (argument_types.size() > 1)
         {
             offset = (*current_block.input_columns[

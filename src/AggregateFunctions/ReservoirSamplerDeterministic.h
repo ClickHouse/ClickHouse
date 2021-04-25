@@ -163,7 +163,7 @@ public:
         sorted = false;
     }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wclass-memaccess"
 #endif
@@ -191,7 +191,7 @@ public:
         }
     }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 

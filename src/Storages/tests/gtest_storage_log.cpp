@@ -19,7 +19,7 @@
 #include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Processors/QueryPipeline.h>
 
-#if !defined(__clang__)
+#if !__clang__
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
