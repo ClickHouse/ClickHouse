@@ -1036,13 +1036,13 @@ class ClickHouseInstance:
         return "-fsanitize={}".format(sanitizer_name) in build_opts
 
     def is_built_with_thread_sanitizer(self):
-        return is_built_with_sanitizer('thread')
+        return self.is_built_with_sanitizer('thread')
 
     def is_built_with_address_sanitizer(self):
-        return is_built_with_sanitizer('address')
+        return self.is_built_with_sanitizer('address')
 
     def is_built_with_memory_sanitizer(self):
-        return is_built_with_sanitizer('memory')
+        return self.is_built_with_sanitizer('memory')
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
