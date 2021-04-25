@@ -48,7 +48,7 @@ The time zone is an attribute of the `Date` and `DateTime` data types. The inter
 -   `value` — Time or date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
 -   `timezone` — Timezone for the returned value. [String](../../sql-reference/data-types/string.md).
 
-**Returned value(s)**
+**Returned value**
 
 -   Date and time. 
 
