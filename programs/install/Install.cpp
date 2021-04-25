@@ -842,6 +842,13 @@ namespace
             {
                 fmt::print("The process with pid = {} is running.\n", pid);
             }
+            else if (errno == ESRCH)
+            {
+                fmt::print("The process with pid = {} does not exist.\n", pid);
+                return 0;
+            }
+            else
+                throwFromErrno(fmt::format("Cannot obtain the status of pid {} with `kill`", pid), ErrorCodes::CANNOT_KILL);
         }
 
         if (!pid)
