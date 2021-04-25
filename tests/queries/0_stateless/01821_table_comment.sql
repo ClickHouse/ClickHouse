@@ -25,11 +25,10 @@ ENGINE = Log
 COMMENT 'this is a Log table';
 
 SELECT
-    database,
     name,
     comment
 FROM system.tables
-WHERE name IN ('t1', 't2', 't3');
+WHERE name IN ('t1', 't2', 't3') order by name;
 
 DROP TABLE t1;
 DROP TABLE t2;
