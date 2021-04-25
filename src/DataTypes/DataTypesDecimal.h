@@ -235,9 +235,9 @@ convertToDecimalImpl(const typename FromDataType::FieldType & value, UInt32 scal
         if constexpr (is_big_int_v<FromFieldType>)
             return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal256>, ToDataType, ReturnType>(static_cast<Int256>(value), 0, scale, result));
         else if constexpr (std::is_same_v<FromFieldType, UInt64>)
-            return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal128>, ToDataType, ReturnType>(value, 0, scale, result));
+            return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal128>, ToDataType, ReturnType>(static_cast<Int128>(value), 0, scale, result));
         else
-            return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal64>, ToDataType, ReturnType>(value, 0, scale, result));
+            return ReturnType(convertDecimalsImpl<DataTypeDecimal<Decimal64>, ToDataType, ReturnType>(static_cast<Int64>(value), 0, scale, result));
     }
 }
 

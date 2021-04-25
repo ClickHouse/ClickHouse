@@ -845,6 +845,8 @@ decltype(auto) castToNearestFieldType(T && x)
     using U = NearestFieldType<std::decay_t<T>>;
     if constexpr (std::is_same_v<std::decay_t<T>, U>)
         return std::forward<T>(x);
+    else if constexpr (std::is_same_v<std::decay_t<T>, UUID>)
+        return U(x.toUnderType());
     else
         return U(x);
 }

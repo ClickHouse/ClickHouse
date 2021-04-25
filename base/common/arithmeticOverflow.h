@@ -56,12 +56,18 @@ namespace common
     }
 
     template <>
-    inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
+    inline bool addOverflow(Int128 x, Int128 y, Int128 & res)
     {
-        static constexpr __int128 min_int128 = minInt128();
-        static constexpr __int128 max_int128 = maxInt128();
         res = addIgnoreOverflow(x, y);
-        return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
+        return (y > 0 && x > std::numeric_limits<Int128>::max() - y) ||
+            (y < 0 && x < std::numeric_limits<Int128>::min() - y);
+    }
+
+    template <>
+    inline bool addOverflow(UInt128 x, UInt128 y, UInt128 & res)
+    {
+        res = addIgnoreOverflow(x, y);
+        return x > std::numeric_limits<UInt128>::max() - y;
     }
 
     template <>
@@ -104,12 +110,18 @@ namespace common
     }
 
     template <>
-    inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
+    inline bool subOverflow(Int128 x, Int128 y, Int128 & res)
     {
-        static constexpr __int128 min_int128 = minInt128();
-        static constexpr __int128 max_int128 = maxInt128();
         res = subIgnoreOverflow(x, y);
-        return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
+        return (y < 0 && x > std::numeric_limits<Int128>::max() + y) ||
+            (y > 0 && x < std::numeric_limits<Int128>::min() + y);
+    }
+
+    template <>
+    inline bool subOverflow(UInt128 x, UInt128 y, UInt128 & res)
+    {
+        res = subIgnoreOverflow(x, y);
+        return x < y;
     }
 
     template <>

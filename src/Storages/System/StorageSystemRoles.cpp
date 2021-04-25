@@ -39,7 +39,7 @@ void StorageSystemRoles::fillData(MutableColumns & res_columns, ContextPtr conte
                        const String & storage_name)
     {
         column_name.insertData(name.data(), name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
     };
 

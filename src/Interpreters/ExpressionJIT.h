@@ -10,6 +10,7 @@
 #    include <Interpreters/Context.h>
 #    include <Interpreters/ExpressionActions.h>
 #    include <Common/LRUCache.h>
+#    include <Common/HashTable/Hash.h>
 
 
 namespace DB

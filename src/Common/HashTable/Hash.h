@@ -180,6 +180,28 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> k
 }
 
 
+template <typename T>
+inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
+{
+    if constexpr (is_big_int_v<T> && sizeof(T) == 16)
+    {
+        /// TODO This is classical antipattern.
+        return intHash64(
+            static_cast<UInt64>(key) ^
+            static_cast<UInt64>(key >> 64));
+    }
+    else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
+    {
+        return intHash64(
+            static_cast<UInt64>(key) ^
+            static_cast<UInt64>(key >> 64) ^
+            static_cast<UInt64>(key >> 128) ^
+            static_cast<UInt64>(key >> 256));
+    }
+    __builtin_unreachable();
+}
+
+
 template <typename T, typename Enable = void>
 struct DefaultHash;
 
@@ -197,7 +219,7 @@ struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T>>>
 {
     size_t operator() (T key) const
     {
-        return DefaultHash64<typename T::NativeType>(key);
+        return DefaultHash64<typename T::NativeType>(key.value);
     }
 };
 
@@ -320,28 +342,6 @@ struct DefaultHash<DB::UInt128> : public UInt128Hash {};
 
 template <>
 struct DefaultHash<DB::UInt256> : public UInt256Hash {};
-
-
-template <typename T>
-inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> key)
-{
-    if constexpr (std::is_same_v<T, DB::Int128>)
-    {
-        return intHash64(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
-    }
-    if constexpr (std::is_same_v<T, DB::UInt128>)
-    {
-        return intHash64(key.low ^ key.high);   /// TODO This is classical antipattern.
-    }
-    else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
-    {
-        return intHash64(static_cast<UInt64>(key) ^
-            static_cast<UInt64>(key >> 64) ^
-            static_cast<UInt64>(key >> 128) ^
-            static_cast<UInt64>(key >> 256));
-    }
-    __builtin_unreachable();
-}
 
 
 /// It is reasonable to use for UInt8, UInt16 with sufficient hash table size.

@@ -93,7 +93,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         column_short_name.insertData(name_parts.short_name.data(), name_parts.short_name.length());
         column_database.insertData(name_parts.database.data(), name_parts.database.length());
         column_table.insertData(name_parts.table_name.data(), name_parts.table_name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
 
         for (auto condition_type : ext::range(MAX_CONDITION_TYPE))

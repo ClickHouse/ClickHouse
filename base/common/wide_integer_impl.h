@@ -433,7 +433,7 @@ private:
 
         for (unsigned i = 1; i < item_count; ++i)
         {
-            if (underflows[i-1])
+            if (underflows[i - 1])
             {
                 base_type & res_item = res.items[little(i)];
                 if (res_item == 0)
@@ -466,7 +466,7 @@ private:
 
         for (unsigned i = 1; i < item_count; ++i)
         {
-            if (overflows[i-1])
+            if (overflows[i - 1])
             {
                 base_type & res_item = res.items[little(i)];
                 ++res_item;

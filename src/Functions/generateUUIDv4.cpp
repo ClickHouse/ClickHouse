@@ -45,8 +45,8 @@ public:
         {
             /** https://tools.ietf.org/html/rfc4122#section-4.4
              */
-            uuid.low = (uuid.low & 0xffffffffffff0fffull) | 0x0000000000004000ull;
-            uuid.high = (uuid.high & 0x3fffffffffffffffull) | 0x8000000000000000ull;
+            uuid.items[0] = (uuid.items[0] & 0xffffffffffff0fffull) | 0x0000000000004000ull;
+            uuid.items[1] = (uuid.items[1] & 0x3fffffffffffffffull) | 0x8000000000000000ull;
         }
 
         return col_res;
