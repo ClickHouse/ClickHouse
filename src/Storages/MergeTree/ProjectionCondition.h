@@ -16,10 +16,13 @@ public:
 
     Names getRequiredColumns() const;
 
+    NameSet getRequiredColumnsInPredicate() const { return required_columns_in_predicate; }
+
     void rewrite(ASTPtr & node) const;
 
 private:
     std::unordered_map<std::string, size_t> key_columns;
+    NameSet required_columns_in_predicate;
 };
 
 }

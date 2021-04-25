@@ -951,12 +951,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
             !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final() &&
             (tables_with_columns.size() < 2 || isLeft(result.analyzed_join->kind()));
 
-    // TODO Perhaps we can support distinct or other group by variants for projections
-    result.can_use_projection = !result.optimize_trivial_count && settings.allow_experimental_projection_optimization
-        && !select_query->prewhere() && !select_query->sampleSize() && !select_query->sampleOffset() && !select_query->final()
-        && (tables_with_columns.size() < 2) && !select_query->distinct && !select_query->group_by_with_totals
-        && !select_query->group_by_with_rollup && !select_query->group_by_with_cube;
-
     return std::make_shared<const TreeRewriterResult>(result);
 }
 

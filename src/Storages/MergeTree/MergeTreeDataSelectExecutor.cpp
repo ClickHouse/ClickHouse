@@ -142,7 +142,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
     const auto & settings = context->getSettingsRef();
-    if (query_info.aggregate_projection == nullptr)
+    if (query_info.projection == nullptr)
     {
         if (settings.allow_experimental_projection_optimization && settings.force_optimize_projection
             && !metadata_snapshot->projections.empty())
@@ -165,7 +165,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     size_t no_projection_granules = 0;
     size_t with_projection_granules = 0;
 
-    if (query_info.aggregate_projection->type == "normal")
+    if (query_info.projection->type == "normal")
         plan_no_projections = readFromParts(
             data.getDataPartsVector(),
             column_names_to_return,
@@ -177,7 +177,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_numbers_to_read,
             &no_projection_granules);
 
-    LOG_DEBUG(log, "Choose projection {}", query_info.aggregate_projection->name);
+    LOG_DEBUG(log, "Choose projection {}", query_info.projection->name);
 
     Pipes pipes;
     auto parts = data.getDataPartsVector();
@@ -187,7 +187,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     for (auto & part : parts)
     {
         const auto & projections = part->getProjectionParts();
-        auto it = projections.find(query_info.aggregate_projection->name);
+        auto it = projections.find(query_info.projection->name);
         if (it != projections.end())
         {
             projection_parts.push_back(it->second);
@@ -210,12 +210,9 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         throw Exception(
             ErrorCodes::PROJECTION_NOT_USED,
             "No projection is used because there are more than 50% rows don't have projection {}. {} normal rows, {} projection rows",
-            query_info.aggregate_projection->name,
+            query_info.projection->name,
             rows_without_projection,
             rows_with_projection);
-
-    // std::cerr << "========== Normal parts " << normal_parts.size() << std::endl;
-    // std::cerr << "========== Projec parts " << projection_parts.size() << std::endl;
 
     Pipe projection_pipe;
     Pipe ordinary_pipe;
@@ -223,32 +220,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const auto & given_select = query_info.query->as<const ASTSelectQuery &>();
     if (!projection_parts.empty())
     {
-        auto projection_names = query_info.projection_names;
-
-        if (query_info.prewhere_info)
-        {
-            const auto prewhere_columns =
-                (query_info.prewhere_info->alias_actions ?
-                 query_info.prewhere_info->alias_actions :
-                 (query_info.prewhere_info->row_level_filter ?
-                  query_info.prewhere_info->row_level_filter :
-                  query_info.prewhere_info->prewhere_actions))->getRequiredColumns();
-
-            NameSet added_column(projection_names.begin(), projection_names.end());
-            for (const auto & col : prewhere_columns)
-            {
-                if (added_column.count(col) == 0)
-                {
-                    added_column.insert(col);
-                    projection_names.push_back(col);
-                }
-            }
-        }
-
         auto plan = readFromParts(
             std::move(projection_parts),
-            projection_names, // raw columns without key transformation
-            query_info.aggregate_projection->metadata,
+            query_info.projection_names, // raw columns without key transformation
+            query_info.projection->metadata,
             query_info,
             context,
             max_block_size,
@@ -258,7 +233,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             true);
 
         if (plan)
-            projection_pipe = plan->convertToPipe(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+            projection_pipe = plan->convertToPipe(
+                QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
 
         if (!projection_pipe.empty())
         {
@@ -277,16 +253,15 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
                 auto syntax_result = TreeRewriter(context).analyze(expr, columns);
                 auto expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
-                projection_pipe.addSimpleTransform([&expression](const Block & header)
-                {
-                    return std::make_shared<ExpressionTransform>(header, expression);
-                });
+                projection_pipe.addSimpleTransform(
+                    [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
             }
 
             /// In sample block we use just key columns
             if (given_select.where())
             {
-                Block filter_block = projection_pipe.getHeader(); // we can use the previous pipeline's sample block here
+                // we can use the previous pipeline's sample block here
+                Block filter_block = projection_pipe.getHeader();
 
                 ASTPtr where = given_select.where()->clone();
                 ProjectionCondition projection_condition(filter_block.getNames(), {});
@@ -313,14 +288,16 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     if (!normal_parts.empty())
     {
         auto storage_from_source_part = StorageFromMergeTreeDataPart::create(std::move(normal_parts));
-        auto ast = query_info.aggregate_projection->query_ast->clone();
+        auto ast = query_info.projection->query_ast->clone();
         auto & select = ast->as<ASTSelectQuery &>();
         if (given_select.where())
             select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
+
         // After overriding the group by clause, we finish the possible aggregations directly
         if (processed_stage >= QueryProcessingStage::Enum::WithMergeableState && given_select.groupBy())
             select.setExpression(ASTSelectQuery::Expression::GROUP_BY, given_select.groupBy()->clone());
-        auto interpreter = InterpreterSelectQuery(ast, context, storage_from_source_part, nullptr, SelectQueryOptions{processed_stage}.ignoreAggregation());
+        auto interpreter = InterpreterSelectQuery(
+            ast, context, storage_from_source_part, nullptr, SelectQueryOptions{processed_stage}.ignoreAggregation());
         ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
 
         with_projection_granules += storage_from_source_part->getNumGranulesFromLastRead();
@@ -328,19 +305,17 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         if (!ordinary_pipe.empty() && processed_stage < QueryProcessingStage::Enum::WithMergeableState)
         {
             // projection and set bucket number to -1
-            ordinary_pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<ProjectionPartTransform>(header, query_info.projection_block);
-            });
+            ordinary_pipe.addSimpleTransform(
+                [&](const Block & header) { return std::make_shared<ProjectionPartTransform>(header, query_info.projection_block); });
         }
     }
 
     /// Use normal projection only if we read less granules then without it.
     /// TODO: check if read-in-order optimization possible for normal projection.
-    if (query_info.aggregate_projection->type == "normal" && with_projection_granules > no_projection_granules)
+    if (query_info.projection->type == "normal" && with_projection_granules > no_projection_granules)
         return plan_no_projections;
 
-    if (query_info.aggregate_projection->type == "aggregate")
+    if (query_info.projection->type == "aggregate")
     {
         /// Here we create shared ManyAggregatedData for both projection and ordinary data.
         /// For ordinary data, AggregatedData is filled in a usual way.
@@ -356,17 +331,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         auto many_data = std::make_shared<ManyAggregatedData>(projection_pipe.numOutputPorts() + ordinary_pipe.numOutputPorts());
         size_t counter = 0;
 
-        bool overflow_row =
-            given_select.group_by_with_totals &&
-            settings.max_rows_to_group_by &&
-            settings.group_by_overflow_mode == OverflowMode::ANY &&
-            settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
+        bool overflow_row = given_select.group_by_with_totals && settings.max_rows_to_group_by
+            && settings.group_by_overflow_mode == OverflowMode::ANY && settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
 
         if (!projection_pipe.empty())
         {
             const auto & header_before_merge = projection_pipe.getHeader();
-            // std::cerr << "============ header before merge" << std::endl;
-            // std::cerr << header_before_merge.dumpStructure() << std::endl;
+            std::cerr << "============ header before merge" << std::endl;
+            std::cerr << header_before_merge.dumpStructure() << std::endl;
             ColumnNumbers keys;
             for (const auto & key : query_info.aggregation_keys)
                 keys.push_back(header_before_merge.getPositionByName(key.name));
@@ -376,15 +348,20 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             AggregateDescriptions aggregates = query_info.aggregate_descriptions;
 
             /// Aggregator::Params params(header_before_merge, keys, query_info.aggregate_descriptions, overflow_row, settings.max_threads);
-            Aggregator::Params params(header_before_merge, keys, aggregates,
-                                    overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-                                    settings.group_by_two_level_threshold,
-                                    settings.group_by_two_level_threshold_bytes,
-                                    settings.max_bytes_before_external_group_by,
-                                    settings.empty_result_for_aggregation_by_empty_set,
-                                    context->getTemporaryVolume(),
-                                    settings.max_threads,
-                                    settings.min_free_disk_space_for_temporary_data);
+            Aggregator::Params params(
+                header_before_merge,
+                keys,
+                aggregates,
+                overflow_row,
+                settings.max_rows_to_group_by,
+                settings.group_by_overflow_mode,
+                settings.group_by_two_level_threshold,
+                settings.group_by_two_level_threshold_bytes,
+                settings.max_bytes_before_external_group_by,
+                settings.empty_result_for_aggregation_by_empty_set,
+                context->getTemporaryVolume(),
+                settings.max_threads,
+                settings.min_free_disk_space_for_temporary_data);
 
             auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), /*final*/ true);
             /// This part is hacky.
@@ -393,31 +370,32 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             ///
             /// It is needed because data in projection:
             /// * is not merged completely (we may have states with the same key in different parts)
-            /// * is not splitted into buckets (so if we just use MergingAggregated, it will use single thread)
+            /// * is not split into buckets (so if we just use MergingAggregated, it will use single thread)
             transform_params->only_merge = true;
 
             projection_pipe.resize(projection_pipe.numOutputPorts(), true, true);
 
             auto merge_threads = num_streams;
             auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
-                                        ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
-                                        : static_cast<size_t>(settings.max_threads);
+                ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                : static_cast<size_t>(settings.max_threads);
 
             projection_pipe.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+                return std::make_shared<AggregatingTransform>(
+                    header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
             });
 
-            // std::cerr << "========== header after merge" << std::endl;
-            // std::cerr << projection_pipe.getHeader().dumpStructure() << std::endl;
+            std::cerr << "========== header after merge" << std::endl;
+            std::cerr << projection_pipe.getHeader().dumpStructure() << std::endl;
         }
 
         if (!ordinary_pipe.empty())
         {
             const auto & header_before_aggregation = ordinary_pipe.getHeader();
 
-            // std::cerr << "============ header before aggregation" << std::endl;
-            // std::cerr << header_before_aggregation.dumpStructure() << std::endl;
+            std::cerr << "============ header before aggregation" << std::endl;
+            std::cerr << header_before_aggregation.dumpStructure() << std::endl;
 
             ColumnNumbers keys;
             for (const auto & key : query_info.aggregation_keys)
@@ -429,15 +407,20 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                     for (const auto & name : descr.argument_names)
                         descr.arguments.push_back(header_before_aggregation.getPositionByName(name));
 
-            Aggregator::Params params(header_before_aggregation, keys, aggregates,
-                                    overflow_row, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
-                                    settings.group_by_two_level_threshold,
-                                    settings.group_by_two_level_threshold_bytes,
-                                    settings.max_bytes_before_external_group_by,
-                                    settings.empty_result_for_aggregation_by_empty_set,
-                                    context->getTemporaryVolume(),
-                                    settings.max_threads,
-                                    settings.min_free_disk_space_for_temporary_data);
+            Aggregator::Params params(
+                header_before_aggregation,
+                keys,
+                aggregates,
+                overflow_row,
+                settings.max_rows_to_group_by,
+                settings.group_by_overflow_mode,
+                settings.group_by_two_level_threshold,
+                settings.group_by_two_level_threshold_bytes,
+                settings.max_bytes_before_external_group_by,
+                settings.empty_result_for_aggregation_by_empty_set,
+                context->getTemporaryVolume(),
+                settings.max_threads,
+                settings.min_free_disk_space_for_temporary_data);
 
             auto transform_params = std::make_shared<AggregatingTransformParams>(std::move(params), /*final*/ true);
 
@@ -445,16 +428,17 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
             auto merge_threads = num_streams;
             auto temporary_data_merge_threads = settings.aggregation_memory_efficient_merge_threads
-                                        ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
-                                        : static_cast<size_t>(settings.max_threads);
+                ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                : static_cast<size_t>(settings.max_threads);
 
             ordinary_pipe.addSimpleTransform([&](const Block & header)
             {
-                return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
+                return std::make_shared<AggregatingTransform>(
+                    header, transform_params, many_data, counter++, merge_threads, temporary_data_merge_threads);
             });
 
-            // std::cerr << "============ header after aggregation" << std::endl;
-            // std::cerr << ordinary_pipe.getHeader().dumpStructure() << std::endl;
+            std::cerr << "============ header after aggregation" << std::endl;
+            std::cerr << ordinary_pipe.getHeader().dumpStructure() << std::endl;
         }
     }
 
@@ -478,11 +462,11 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    size_t * num_granules_are_to_read,
+    size_t * num_granules_to_read,
     bool use_projection_metadata) const
 {
     const StorageMetadataPtr & metadata_snapshot
-        = (query_info.aggregate_projection && use_projection_metadata) ? query_info.aggregate_projection->metadata : metadata_snapshot_base;
+        = (query_info.projection && use_projection_metadata) ? query_info.projection->metadata : metadata_snapshot_base;
 
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
     /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
@@ -1140,8 +1124,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         total_marks_pk.load(std::memory_order_relaxed),
         sum_marks, sum_ranges);
 
-    if (num_granules_are_to_read)
-        *num_granules_are_to_read = sum_marks_pk.load(std::memory_order_relaxed);
+    if (num_granules_to_read)
+        *num_granules_to_read = sum_marks_pk.load(std::memory_order_relaxed);
 
     if (parts_with_ranges.empty())
         return std::make_unique<QueryPlan>();
@@ -1436,7 +1420,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         std::move(parts),
         std::move(index_stats),
         query_info.prewhere_info,
-        query_info.aggregate_projection,
+        query_info.projection,
         virt_columns,
         step_settings,
         num_streams,
@@ -1646,7 +1630,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             std::move(new_parts),
             std::move(index_stats),
             query_info.prewhere_info,
-            query_info.aggregate_projection,
+            query_info.projection,
             virt_columns,
             step_settings,
             num_streams,
@@ -1830,7 +1814,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
                 std::move(new_parts),
                 std::move(index_stats),
                 query_info.prewhere_info,
-                query_info.aggregate_projection,
+                query_info.projection,
                 virt_columns,
                 step_settings,
                 num_streams,
@@ -1922,7 +1906,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             std::move(lonely_parts),
             std::move(index_stats),
             query_info.prewhere_info,
-            query_info.aggregate_projection,
+            query_info.projection,
             virt_columns,
             step_settings,
             num_streams_for_lonely_parts,

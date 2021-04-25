@@ -16,9 +16,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -3816,12 +3814,26 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     InterpreterSelectQuery select(
         query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
     const auto & analysis_result = select.getAnalysisResult();
-    /// If first staging query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage, return false
+
+    bool can_use_aggregate_projection = true;
+    /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
+    /// we cannot use aggregate projection.
     if (analysis_result.join != nullptr || analysis_result.array_join != nullptr)
-        return false;
+        can_use_aggregate_projection = false;
 
     auto query_block = select.getSampleBlock();
-    auto required_query = select.getQuery();
+    const auto & required_query = select.getQuery()->as<const ASTSelectQuery &>();
+    auto required_predicates = [&required_query]() -> ASTPtr
+    {
+        if (required_query.prewhere() && required_query.where())
+            return makeASTFunction("and", required_query.prewhere()->clone(), required_query.where()->clone());
+        else if (required_query.prewhere())
+            return required_query.prewhere()->clone();
+        else if (required_query.where())
+            return required_query.where()->clone();
+        else
+            return nullptr;
+    }();
 
     /// Check if all needed columns can be provided by some aggregate projection. Here we also try
     /// to find expression matches. For example, suppose an aggregate projection contains a column
@@ -3833,11 +3845,18 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
     /// The ownership of ProjectionDescription is hold in metadata_snapshot which lives along with
     /// InterpreterSelect, thus we can store the raw pointer here.
-    std::vector<std::pair<const ProjectionDescription *, ProjectionKeyActions>> candidates;
+    struct ProjectionCandidate
+    {
+        const ProjectionDescription * desc;
+        ProjectionKeyActions key_actions;
+        Names required_columns;
+        NameSet required_columns_in_predicate;
+    };
+    std::vector<ProjectionCandidate> candidates;
     ParserFunction parse_function;
     for (const auto & projection : metadata_snapshot->projections)
     {
-        if (projection.type == "aggregate" && !analysis_result.need_aggregate)
+        if (projection.type == "aggregate" && (!analysis_result.need_aggregate || !can_use_aggregate_projection))
             continue;
 
         if (projection.type == "normal" && !(analysis_result.hasWhere() || analysis_result.hasPrewhere()))
@@ -3898,18 +3917,13 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             }
 
             ProjectionCondition projection_condition(projection.column_names, required_column_names);
-            const auto & where = query_ptr->as<const ASTSelectQuery &>().where();
-            if (where && !projection_condition.check(where))
+            if (required_predicates && !projection_condition.check(required_predicates))
                 continue;
-            candidates.push_back({&projection, std::move(key_actions)});
-            // A candidate is found, setup needed info but only once.
-            if (query_info.projection_names.empty())
-            {
-                query_info.projection_names = projection_condition.getRequiredColumns();
-                query_info.projection_block = query_block;
-                query_info.aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
-                query_info.aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
-            }
+            candidates.push_back(
+                {&projection,
+                 std::move(key_actions),
+                 projection_condition.getRequiredColumns(),
+                 projection_condition.getRequiredColumnsInPredicate()});
         }
     }
 
@@ -3917,16 +3931,54 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     if (!candidates.empty())
     {
         size_t min_key_size = std::numeric_limits<size_t>::max();
-        for (auto & [candidate, key_actions] : candidates)
+        const ProjectionCandidate * selected_candidate = nullptr;
+        /// Favor aggregate projections
+        for (const auto & candidate : candidates)
         {
             // TODO We choose the projection with least key_size. Perhaps we can do better? (key rollups)
-            if (candidate->key_size < min_key_size)
+            if (candidate.desc->type == "aggregate" && candidate.desc->key_size < min_key_size)
             {
-                query_info.aggregate_projection = candidate;
-                query_info.key_actions = std::move(key_actions);
-                min_key_size = candidate->key_size;
+                selected_candidate = &candidate;
+                min_key_size = candidate.desc->key_size;
             }
         }
+
+        /// Select the best normal projection if no aggregate projection is available
+        if (!selected_candidate)
+        {
+            size_t max_num_of_matched_key_columns = 0;
+            for (const auto & candidate : candidates)
+            {
+                NameSet column_names(
+                    candidate.desc->metadata->sorting_key.column_names.begin(), candidate.desc->metadata->sorting_key.column_names.end());
+
+                size_t num_of_matched_key_columns = 0;
+                for (const auto & name : candidate.desc->metadata->sorting_key.column_names)
+                {
+                    if (candidate.required_columns_in_predicate.find(name) != candidate.required_columns_in_predicate.end())
+                        ++num_of_matched_key_columns;
+                }
+
+                /// Select the normal projection that has the most matched key columns in predicate
+                /// TODO What's the best strategy here?
+                if (num_of_matched_key_columns > max_num_of_matched_key_columns)
+                {
+                    selected_candidate = &candidate;
+                    max_num_of_matched_key_columns = num_of_matched_key_columns;
+                }
+            }
+        }
+
+        if (!selected_candidate)
+            throw Exception("None of the projection candidates is selected", ErrorCodes::LOGICAL_ERROR);
+
+        query_info.projection = selected_candidate->desc;
+        query_info.key_actions = std::move(selected_candidate->key_actions);
+        query_info.projection_names = std::move(selected_candidate->required_columns);
+        query_info.projection_block = query_block;
+        query_info.aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
+        query_info.aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
+
         return true;
     }
     return false;
@@ -3943,7 +3995,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     {
         if (getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
         {
-            if (query_info.aggregate_projection->type == "aggregate")
+            if (query_info.projection->type == "aggregate")
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
     }

@@ -62,8 +62,6 @@ struct TreeRewriterResult
     /// instead of actual retrieving columns and counting rows.
     bool optimize_trivial_count = false;
 
-    bool can_use_projection = false;
-
     /// Cache isRemote() call for storage, because it may be too heavy.
     bool is_remote_storage = false;
 
