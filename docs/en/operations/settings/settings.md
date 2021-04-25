@@ -2937,14 +2937,6 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 Result:
 
-```text
-┌─number─┬─max(number)─┐
-│    4.5 │           9 │
-└────────┴─────────────┘
-```
-
-Default value: `0`.
-=======
 ``` text
 ┌───i─┐
 │ 107 │
