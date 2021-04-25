@@ -31,9 +31,17 @@ public:
         size_t max_block_size,
         unsigned num_streams) override
     {
-        QueryPlan query_plan =
-            std::move(*MergeTreeDataSelectExecutor(parts.front()->storage)
-                      .readFromParts(parts, column_names, metadata_snapshot, query_info, context, max_block_size, num_streams, nullptr, &num_granules_from_last_read));
+        QueryPlan query_plan = std::move(*MergeTreeDataSelectExecutor(parts.front()->storage)
+                                              .readFromParts(
+                                                  parts,
+                                                  column_names,
+                                                  metadata_snapshot,
+                                                  query_info,
+                                                  context,
+                                                  max_block_size,
+                                                  num_streams,
+                                                  nullptr,
+                                                  &num_granules_from_last_read));
 
         return query_plan.convertToPipe(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     }

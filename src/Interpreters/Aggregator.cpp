@@ -1928,8 +1928,6 @@ bool Aggregator::mergeBlock(Block block, AggregatedDataVariants & result, bool &
     else if (result.type != AggregatedDataVariants::Type::without_key)
         throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
-
-
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = 0;
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())

@@ -26,6 +26,7 @@ bool ProjectionCondition::check(const ASTPtr & node)
         if (key_columns.end() != it)
         {
             ++it->second;
+            required_columns_in_predicate.insert(name);
             return true;
         }
         else
@@ -55,7 +56,7 @@ bool ProjectionCondition::check(const ASTPtr & node)
             return false;
         }
 
-        // TODO zhentianqi other special functions such as joinGet/dictGet
+        // TODO Need to check other special functions such as joinGet/dictGet
         auto name = node->getColumnNameWithoutAlias();
         auto it = key_columns.find(name);
         if (key_columns.end() != it)

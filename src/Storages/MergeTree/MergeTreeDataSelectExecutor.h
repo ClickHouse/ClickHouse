@@ -46,7 +46,7 @@ public:
         UInt64 max_block_size,
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr,
-        size_t * num_granules_are_to_read = nullptr,
+        size_t * num_granules_to_read = nullptr,
         bool use_projection_metadata = false) const;
 
 private:

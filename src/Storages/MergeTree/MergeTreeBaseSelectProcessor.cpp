@@ -26,7 +26,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeData & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
-    const ProjectionDescription * aggregate_projection_,
+    const ProjectionDescription * projection_,
     UInt64 max_block_size_rows_,
     UInt64 preferred_block_size_bytes_,
     UInt64 preferred_max_column_in_block_size_bytes_,
@@ -37,7 +37,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , prewhere_info(prewhere_info_)
-    , aggregate_projection(aggregate_projection_)
+    , projection(projection_)
     , max_block_size_rows(max_block_size_rows_)
     , preferred_block_size_bytes(preferred_block_size_bytes_)
     , preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes_)
@@ -66,7 +66,7 @@ Chunk MergeTreeBaseSelectProcessor::generate()
         if (res.hasRows())
         {
             injectVirtualColumns(res, task.get(), partition_value_type, virt_column_names);
-            if (aggregate_projection)
+            if (projection)
             {
                 auto info = std::make_shared<AggregatedChunkInfo>();
                 info->bucket_num = -1;

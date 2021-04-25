@@ -147,8 +147,8 @@ struct SelectQueryInfo
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
-    /// If not null, it means we choose an aggregate projection to execute current query.
-    const ProjectionDescription * aggregate_projection{};
+    /// If not null, it means we choose a projection to execute current query.
+    const ProjectionDescription * projection{};
     ProjectionKeyActions key_actions;
     Names projection_names;
     Block projection_block;

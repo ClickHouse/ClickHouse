@@ -396,7 +396,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         }
 
         // TODO Check if we can have prewhere work for projections, also need to allow it in TreeRewriter
-        if (try_move_to_prewhere && storage && query.where() && !query.prewhere() && !query.final())
+        if (try_move_to_prewhere && storage && query.where() && !query.prewhere())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
@@ -590,7 +590,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info);
 
         /// XXX Used for IN set index analysis. Is this a proper way?
-        metadata_snapshot->selected_projection = query_info.aggregate_projection;
+        metadata_snapshot->selected_projection = query_info.projection;
     }
 
     /// Do I need to perform the first part of the pipeline?
@@ -1822,7 +1822,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         /// Create optimizer with prepared actions.
         /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
-        if ((analysis_result.optimize_read_in_order || analysis_result.optimize_aggregation_in_order) && !query_info.aggregate_projection)
+        if ((analysis_result.optimize_read_in_order || analysis_result.optimize_aggregation_in_order) && !query_info.projection)
         {
             if (analysis_result.optimize_read_in_order)
                 query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
@@ -1864,7 +1864,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 backQuoteIfNeed(local_storage_id.getDatabaseName()),
                 local_storage_id.getFullTableName(),
                 required_columns,
-                query_info.aggregate_projection ? query_info.aggregate_projection->name : "");
+                query_info.projection ? query_info.projection->name : "");
         }
 
         /// Create step which reads from empty source if storage has no data.
@@ -1988,7 +1988,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
     /// It is already added by storage (because of performance issues).
     /// TODO: We should probably add another one processing stage for storage?
     ///       WithMergeableStateAfterAggregation is not ok because, e.g., it skips sorting after aggregation.
-    if (query_info.aggregate_projection)
+    if (query_info.projection && query_info.projection->type == "aggregate")
         return;
 
     const auto & header_before_merge = query_plan.getCurrentDataStream().header;
