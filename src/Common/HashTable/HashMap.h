@@ -252,7 +252,7 @@ public:
         if (this->hasZero())
         {
             auto * zero_value = this->zeroValue();
-            std::forward<Func>(func)(zero_value->getKey(), zero_value->getMapped());
+            func(zero_value->getKey(), zero_value->getMapped());
         }
 
         size_t buf_size = this->grower.bufSize();
@@ -262,7 +262,7 @@ public:
             if (it->isZero(*this))
                 continue;
 
-            std::forward<Func>(func)(it->getKey(), it->getMapped());
+            func(it->getKey(), it->getMapped());
         }
     }
 
@@ -272,7 +272,7 @@ public:
     {
         forEachValue([&](auto &, auto & mapped)
         {
-            std::forward<Func>(func)(mapped);
+            func(mapped);
         });
     }
 
