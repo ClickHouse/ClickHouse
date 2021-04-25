@@ -385,7 +385,24 @@ public:
     Int64 getMaxBlockNumber() const;
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
-    DataParts getDataParts(const DataPartStates & affordable_states) const;
+    template <class ...AffordableStates>
+    inline DataParts getDataParts(AffordableStates ...states) const
+    {
+        DataParts res;
+
+        {
+            auto lock = lockParts();
+
+            for (auto state : {states...})
+            {
+                auto range = getDataPartsStateRange(state);
+                res.insert(range.begin(), range.end());
+            }
+        }
+
+        return res;
+    }
+
     /// Returns sorted list of the parts with specified states
     ///  out_states will contain snapshot of each part state
     DataPartsVector getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
