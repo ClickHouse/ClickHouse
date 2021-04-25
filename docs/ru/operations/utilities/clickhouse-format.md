@@ -53,6 +53,7 @@ toc_title: clickhouse-format
     )
     ;
     ```
+    
 3. Пример с обфуксацией:
 
     ```bash
