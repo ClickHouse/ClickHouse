@@ -10,7 +10,7 @@
 -   `replica_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — номер реплики в шарде, начиная с 1.
 -   `host_name` ([String](../../sql-reference/data-types/string.md)) — хост, указанный в конфигурации.
 -   `host_address` ([String](../../sql-reference/data-types/string.md)) — TIP-адрес хоста, полученный из DNS.
--   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт, на который обращаться для соединения с сервером.
+-   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт для соединения с сервером.
 -   `is_local` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, показывающий является ли хост локальным.
 -   `user` ([String](../../sql-reference/data-types/string.md)) — имя пользователя для соединения с сервером.
 -   `default_database` ([String](../../sql-reference/data-types/string.md)) — имя базы данных по умолчанию.
