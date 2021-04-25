@@ -2861,8 +2861,8 @@ Enables or disables using the original column names instead of aliases. It espec
 
 Possible values:
 
-- 0 — The column name is substituted with the alias if they match.
-- 1 — The column name is used even when it matches the alias. 
+- 0 — The column name is substituted with the alias.
+- 1 — The column name is not substituted with the alias. 
 
 Default value: `0`.
 
