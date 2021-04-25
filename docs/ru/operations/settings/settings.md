@@ -2824,11 +2824,6 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 Результат:
 
-```text
-┌─number─┬─max(number)─┐
-│    4.5 │           9 │
-└────────┴─────────────┘
-=======
 ``` text
 ┌───i─┐
 │ 107 │
