@@ -443,31 +443,40 @@ BlockIO InterpreterSystemQuery::execute()
     return BlockIO();
 }
 
-Strings InterpreterSystemQuery::movePartsToNewTableDetachedFolder(
+Strings InterpreterSystemQuery::moveDetachedPartsToNewTable(
     const String& db_name, const String& old_table_name, const String& new_table_name) const
 {
     Strings parts_names;
 
     StoragePtr new_table_ptr = DatabaseCatalog::instance().getTable({db_name, new_table_name}, getContext());
-    auto& storage = *static_cast<StorageReplicatedMergeTree*>(new_table_ptr.get());
+    auto& new_storage = *static_cast<StorageReplicatedMergeTree*>(new_table_ptr.get());
 
     const StoragePtr old_table_ptr = DatabaseCatalog::instance().getTable({db_name, old_table_name}, getContext());
-    const auto active_parts = static_cast<StorageReplicatedMergeTree *>(old_table_ptr.get())->getDataPartsVector();
-    parts_names.reserve(active_parts.size());
+    auto& old_storage = *static_cast<StorageReplicatedMergeTree*>(old_table_ptr.get());
 
-    for (const auto& part : active_parts)
+    const auto detached_parts = old_storage.getDetachedParts();
+    parts_names.reserve(detached_parts.size());
+
+    for (const DetachedPartInfo& part : detached_parts)
     {
-        const ReservationPtr reservation = storage.reserveSpace(part->getBytesOnDisk());
-        const String part_target_path = storage.getFullPathOnDisk(reservation->getDisk()) + "detached/" + part->name;
+        const DiskPtr part_disk = old_storage.getStoragePolicy()->getDiskByName(part.disk);
+        const String part_name = part.getPartName();
+        const String part_path = old_storage.getFullPathOnDisk(part_disk) + "/detached/" + part_name;
+        const size_t part_size = part_disk->getFileSize(part_path);
+
+        LOG_DEBUG(log, "Detached part {} with size {} located at {}", part_name, part_size, part_size);
+
+        const ReservationPtr reservation = new_storage.reserveSpace(part_size);
+        const String part_target_path = new_storage.getFullPathOnDisk(reservation->getDisk()) + "detached/" + part_name;
 
         std::error_code error;
-        std::filesystem::rename(part->getFullPath(), part_target_path, error);
+        std::filesystem::rename(part_path, part_target_path, error);
 
         if (error)
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Error moving part from {} to {}: {}",
-                part->getFullPath(), part_target_path, error.message());
+                part_path, part_target_path, error.message());
 
-        parts_names.emplace_back(part->name);
+        parts_names.emplace_back(part_name);
     }
 
     LOG_DEBUG(log, "Found {} parts", parts_names.size());
@@ -513,6 +522,7 @@ InterpreterSystemQuery::ReplicaAndZK InterpreterSystemQuery::checkTablesAndSwapI
     return {replica_name, status.zookeeper_path};
 }
 
+
 void InterpreterSystemQuery::restoreReplica()
 {
     /**
@@ -540,30 +550,26 @@ void InterpreterSystemQuery::restoreReplica()
     const String new_table_name = fmt::format("{}_tmp_{}", old_table_name, table_name_hash(old_table_name));
 
     const auto [replica_name, zk_root_path] = checkTablesAndSwapIfNeeded(db_name, old_table_name, new_table_name);
-    const String replica_zk_path = zk_root_path + "/replicas/" + replica_name;
 
-    if (zookeeper->exists(replica_zk_path))
-    {
+    if (zookeeper->exists(zk_root_path))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "The metadata for {}.{} (replica {}) is present at {} -- nothing to restore",
-            db_name, old_table_name, replica_name, replica_zk_path);
-    }
+            "The ZK root is present at {} -- nothing to restore", zk_root_path);
 
     LOG_DEBUG(log, "Started restoring {}.{}, zk root path at {}", db_name, old_table_name, zk_root_path);
+
+    /// 0.
+    /// Detach parts, so in the next step the newly created table would be empty.
+    /// If we don't do that, RESTORE queries running on other replicas would immediately download the parts,
+    /// discarding the local ones.
+    const StoragePtr old_table_ptr = DatabaseCatalog::instance().getTable({db_name, old_table_name}, getContext());
+
+    for (const auto & part : static_cast<StorageReplicatedMergeTree *>(old_table_ptr.get())->getDataParts())
+        executeQuery(fmt::format("ALTER TABLE {}.{} DETACH PART '{}'", db_name, old_table_name, part->name),
+            getContext(), true);
 
     /// 1.
     /// If the server failed after this step, the old temporary table won't be lost in mem so the query re-run could
     /// succeed (need of IF NOT EXISTS).
-
-    // When restoring replica with root not being lost, the server creates new tables as "lost", we don't need that,
-    // so we create a special node which is removed in StorageReplicatedMergeTree::createReplica()
-    if (zookeeper->exists(zk_root_path))
-    {
-        const String path = replica_zk_path + "/is_restoring_replica";
-        zookeeper->createAncestors(path);
-        zookeeper->create(path, "", zkutil::CreateMode::Persistent);
-    }
-
     executeQuery(fmt::format("CREATE TABLE IF NOT EXISTS {0}.{1} AS {0}.{2}", db_name, new_table_name, old_table_name),
         getContext(), true);
 
@@ -574,7 +580,7 @@ void InterpreterSystemQuery::restoreReplica()
     LOG_DEBUG(log, "Stopped replica fetches for {}.{}", db_name, old_table_name);
 
     /// 3. Register parts in new table and send data to ZooKeeper.
-    for (const String& part_name : movePartsToNewTableDetachedFolder(db_name, old_table_name, new_table_name))
+    for (const String& part_name : moveDetachedPartsToNewTable(db_name, old_table_name, new_table_name))
         executeQuery(fmt::format("ALTER TABLE {}.{} ATTACH PART '{}'", db_name, new_table_name, part_name),
             getContext(), true);
 

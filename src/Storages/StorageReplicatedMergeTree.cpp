@@ -705,15 +705,9 @@ void StorageReplicatedMergeTree::createReplica(const StorageMetadataPtr & metada
                 "Cannot create a replica of the table {}, because the last replica of the table was dropped right now",
                 zookeeper_path);
 
-        // See InterpreterSystemQuery.cpp:560
-        const bool from_system_restore_replica = zookeeper->exists(replica_path + "/is_restoring_replica");
-
-        if (from_system_restore_replica)
-            zookeeper->removeRecursive(replica_path);
-
         /// It is not the first replica, we will mark it as "lost", to immediately repair (clone) from existing replica.
         /// By the way, it's possible that the replica will be first, if all previous replicas were removed concurrently.
-        const String is_lost_value = (!from_system_restore_replica && replicas_stat.numChildren) ? "1" : "0";
+        const String is_lost_value = replicas_stat.numChildren ? "1" : "0";
 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "",
@@ -1069,7 +1063,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
 
     /// There are no PreCommitted parts at startup.
-    auto parts = getDataParts({MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+    auto parts = getDataParts(MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated);
 
     /** Local parts that are not in ZK.
       * In very rare cases they may cover missing parts
