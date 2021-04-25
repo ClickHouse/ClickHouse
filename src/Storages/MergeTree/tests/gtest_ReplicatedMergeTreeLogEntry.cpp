@@ -248,7 +248,7 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
             .new_part_type = MergeTreeDataPartType::WIDE,
 
             // Format version 5
-            .new_part_uuid = UUID(UInt128(123456789, 10111213141516)),
+            .new_part_uuid = UUID(UInt128(std::initializer_list<UInt64>{123456789, 10111213141516})),
 
             .create_time = 123,
         },
@@ -273,7 +273,7 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
             .new_part_type = MergeTreeDataPartType::WIDE,
 
             // Mixing features
-            .new_part_uuid = UUID(UInt128(123456789, 10111213141516)),
+            .new_part_uuid = UUID(UInt128(std::initializer_list<UInt64>{123456789, 10111213141516})),
             .deduplicate = true,
             .deduplicate_by_columns = {"foo", "bar", "qux"},
 
@@ -288,7 +288,7 @@ INSTANTIATE_TEST_SUITE_P(Merge, ReplicatedMergeTreeLogEntryDataTest,
             .new_part_type = MergeTreeDataPartType::WIDE,
 
             // Mixing features
-            .new_part_uuid = UUID(UInt128(123456789, 10111213141516)),
+            .new_part_uuid = UUID(UInt128(std::initializer_list<UInt64>{123456789, 10111213141516})),
             .deduplicate = true,
             .deduplicate_by_columns = {"name with space", "\"column\"", "'column'", "колонка", "\u30ab\u30e9\u30e0", "\x01\x03 column \x10\x11\x12"},
 
