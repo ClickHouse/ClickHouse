@@ -27,11 +27,23 @@ SELECT
 
 Returns the timezone of the server.
 
+**Syntax** 
+
+``` sql
+timeZone()
+```
+
 Alias: `timezone`. 
+
+**Returned value**
+
+-   Timezone. 
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 ## toTimeZone {#totimezone}
 
-Converts time or date and time to the specified time zone.  
+Converts time or date and time to the specified time zone. The time zone is an attribute of the `Date` and `DateTime` data types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
 
 **Syntax** 
 
@@ -40,8 +52,6 @@ toTimezone(value, timezone)
 ```
 
 Alias: `toTimezone`.
-
-The time zone is an attribute of the `Date` and `DateTime` data types. The internal value (number of seconds) of the table field or of the resultset's column does not change, the column's type changes and its string representation changes accordingly.
 
 **Arguments** 
 
