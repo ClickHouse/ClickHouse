@@ -10,13 +10,13 @@
 -   `replica_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — номер реплики в шарде, начиная с 1.
 -   `host_name` ([String](../../sql-reference/data-types/string.md)) — хост, указанный в конфигурации.
 -   `host_address` ([String](../../sql-reference/data-types/string.md)) — TIP-адрес хоста, полученный из DNS.
--   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт, на который обращаться для соединения с сервером.
+-   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт для соединения с сервером.
 -   `is_local` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, показывающий является ли хост локальным.
--   `user` ([String](../../sql-reference/data-types/string.md)) — имя пользователя, которого использовать для соединения с сервером.
+-   `user` ([String](../../sql-reference/data-types/string.md)) — имя пользователя для соединения с сервером.
 -   `default_database` ([String](../../sql-reference/data-types/string.md)) — имя базы данных по умолчанию.
--   `errors_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество неудачных попыток у хоста получить доступ к реплике.
--   `slowdowns_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество раз, когда была заменена реплика при установке соединения при хеджированных запросах из-за долгого отсутствия ответа от реплики.
--   `estimated_recovery_time` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество секунд до того момента, когда количество ошибок будет обнулено и реплика будет доступной.
+-   `errors_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество неудачных попыток хоста получить доступ к реплике.
+-   `slowdowns_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество замен реплики из-за долгого отсутствия ответа от нее при установке соединения при хеджированных запросах.
+-   `estimated_recovery_time` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество секунд до момента, когда количество ошибок будет обнулено и реплика станет доступной.
 
 !!! note "Примечание"
     Обратите внимание, что `errors_count` обновляется один раз при запросе к кластеру, а `estimated_recovery_time` пересчитывается по требованию. Таким образом, может возникнуть ситуация, при которой `errors_count` не равен нулю, а `estimated_recovery_time` равен нулю. Поэтому следующий запрос обнулит `errors_count` и попытается использовать реплику так, как будто у нее нет ошибок.
