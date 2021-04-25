@@ -4518,15 +4518,12 @@ static NamesAndTypesList expandObjectColumnsImpl(
             auto expanded_type = getLeastCommonTypeForObject(it->second);
             result_columns.emplace_back(column.name, expanded_type);
 
-            std::cerr << "expanded_type: " << expanded_type->getName() << "\n";
-
             if (with_subcolumns)
             {
                 for (const auto & subcolumn : expanded_type->getSubcolumnNames())
                 {
                     result_columns.emplace_back(column.name, subcolumn,
                         expanded_type, expanded_type->getSubcolumnType(subcolumn));
-                    std::cerr << "adding subcolumn: " << subcolumn << "\n";
                 }
             }
         }

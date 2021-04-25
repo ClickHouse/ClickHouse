@@ -44,6 +44,9 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
 
 private:
+    template <typename Settings, typename StatePtr>
+    void checkSerializationIsSupported(Settings & settings, StatePtr & state) const;
+
     mutable Parser parser;
 };
 
