@@ -2930,10 +2930,6 @@ INSERT INTO test SELECT number FROM numbers(500);
 
 Query:
 
-```sql
-SET prefer_column_name_to_alias = 1;
-SELECT avg(number) AS number, max(number) FROM numbers(10);
-=======
 ``` sql
 SET limit = 5;
 SET offset = 7;
