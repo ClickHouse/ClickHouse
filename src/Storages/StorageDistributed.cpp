@@ -452,7 +452,8 @@ StorageDistributed::StorageDistributed(
     const DistributedSettings & distributed_settings_,
     bool attach,
     ClusterPtr owned_cluster_)
-    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_, storage_policy_name_, relative_data_path_, distributed_settings_, attach, std::move(owned_cluster_))
+    : StorageDistributed(id_, columns_, constraints_, String{}, String{}, cluster_name_, context_, sharding_key_,
+    storage_policy_name_, relative_data_path_, distributed_settings_, attach, std::move(owned_cluster_))
 {
     remote_table_function_ptr = std::move(remote_table_function_ptr_);
 }
@@ -468,25 +469,20 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     /// Always calculate optimized cluster here, to avoid conditions during read()
     /// (Anyway it will be calculated in the read())
-    if (settings.optimize_skip_unused_shards)
+    if (getClusterQueriedNodes(settings, cluster) > 1 && settings.optimize_skip_unused_shards)
     {
         ClusterPtr optimized_cluster = getOptimizedCluster(local_context, metadata_snapshot, query_info.query);
         if (optimized_cluster)
         {
-            LOG_DEBUG(
-                log,
-                "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
-                makeFormattedListOfShards(optimized_cluster));
+            LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
+                    makeFormattedListOfShards(optimized_cluster));
             cluster = optimized_cluster;
-            query_info.cluster = cluster;
+            query_info.optimized_cluster = cluster;
         }
         else
         {
-            LOG_DEBUG(
-                log,
-                "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the "
-                "cluster{}",
-                has_sharding_key ? "" : " (no sharding key)");
+            LOG_DEBUG(log, "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - the query will be sent to all shards of the cluster{}",
+                    has_sharding_key ? "" : " (no sharding key)");
         }
     }
 
@@ -558,7 +554,7 @@ void StorageDistributed::read(
         InterpreterSelectQuery(query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
     /// Return directly (with correct header) if no shard to query.
-    if (query_info.cluster->getShardsInfo().empty())
+    if (query_info.getCluster()->getShardsInfo().empty())
     {
         Pipe pipe(std::make_shared<NullSource>(header));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
@@ -586,7 +582,9 @@ void StorageDistributed::read(
             local_context->getExternalTables());
 
     ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
-        modified_query_ast, local_context, query_info);
+        modified_query_ast, local_context, query_info,
+        sharding_key_expr, sharding_key_column_name,
+        getCluster());
 
     /// This is a bug, it is possible only when there is no shards to query, and this is handled earlier.
     if (!query_plan.isInitialized())
@@ -753,7 +751,7 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
 
 void StorageDistributed::startup()
 {
-    if (remote_database.empty() && !remote_table_function_ptr)
+    if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
         LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
 
     if (!storage_policy)
@@ -952,7 +950,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
             throw Exception(exception_message.str(), ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS);
     }
 
-    return cluster;
+    return {};
 }
 
 IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)

@@ -54,6 +54,26 @@ def run_and_check(args, env=None, shell=False, stdout=subprocess.PIPE, stderr=su
         raise Exception('Command {} return non-zero code {}: {}'.format(args, res.returncode, res.stderr.decode('utf-8')))
 
 
+def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
+    """
+    Retry if `func()` throws, `num` times.
+
+    :param func: func to run
+    :param num: number of retries
+
+    :throws StopIteration
+    """
+    i = 0
+    while i <= num:
+        try:
+            func(*args, **kwargs)
+            time.sleep(delay)
+        except exception: # pylint: disable=broad-except
+            i += 1
+            continue
+        return
+    raise StopIteration('Function did not finished successfully')
+
 def subprocess_check_call(args):
     # Uncomment for debugging
     # print('run:', ' ' . join(args))
@@ -632,16 +652,6 @@ class ClickHouseCluster:
         if self.is_up:
             return
 
-        # Just in case kill unstopped containers from previous launch
-        try:
-            print("Trying to kill unstopped containers...")
-
-            if not subprocess_call(['docker-compose', 'kill']):
-                subprocess_call(['docker-compose', 'down', '--volumes'])
-            print("Unstopped containers killed")
-        except:
-            pass
-
         try:
             if destroy_dirs and p.exists(self.instances_dir):
                 print(("Removing instances dir %s", self.instances_dir))
@@ -651,9 +661,24 @@ class ClickHouseCluster:
                 print(('Setup directory for instance: {} destroy_dirs: {}'.format(instance.name, destroy_dirs)))
                 instance.create_dir(destroy_dir=destroy_dirs)
 
+            # In case of multiple cluster we should not stop compose services.
+            if destroy_dirs:
+                # Just in case kill unstopped containers from previous launch
+                try:
+                    print("Trying to kill unstopped containers...")
+                    subprocess_call(['docker-compose', 'kill'])
+                    subprocess_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+                    print("Unstopped containers killed")
+                except:
+                    pass
+
+            clickhouse_pull_cmd = self.base_cmd + ['pull']
+            print(f"Pulling images for {self.base_cmd}")
+            retry_exception(10, 5, subprocess_check_call, Exception, clickhouse_pull_cmd)
+
             self.docker_client = docker.from_env(version=self.docker_api_version)
 
-            common_opts = ['up', '-d', '--force-recreate']
+            common_opts = ['up', '-d']
 
             if self.with_zookeeper and self.base_zookeeper_cmd:
                 print('Setup ZooKeeper')
@@ -735,7 +760,7 @@ class ClickHouseCluster:
 
             if self.with_redis and self.base_redis_cmd:
                 print('Setup Redis')
-                subprocess_check_call(self.base_redis_cmd + ['up', '-d', '--force-recreate'])
+                subprocess_check_call(self.base_redis_cmd + ['up', '-d'])
                 time.sleep(10)
 
             if self.with_minio and self.base_minio_cmd:
@@ -769,7 +794,7 @@ class ClickHouseCluster:
                             os.environ.pop('SSL_CERT_FILE')
 
             if self.with_cassandra and self.base_cassandra_cmd:
-                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
+                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'])
                 self.wait_cassandra_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ['up', '-d', '--no-recreate']
@@ -1006,13 +1031,18 @@ class ClickHouseInstance:
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
 
-    def is_built_with_thread_sanitizer(self):
+    def is_built_with_sanitizer(self, sanitizer_name=''):
         build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-        return "-fsanitize=thread" in build_opts
+        return "-fsanitize={}".format(sanitizer_name) in build_opts
+
+    def is_built_with_thread_sanitizer(self):
+        return self.is_built_with_sanitizer('thread')
 
     def is_built_with_address_sanitizer(self):
-        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-        return "-fsanitize=address" in build_opts
+        return self.is_built_with_sanitizer('address')
+
+    def is_built_with_memory_sanitizer(self):
+        return self.is_built_with_sanitizer('memory')
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
@@ -1099,23 +1129,28 @@ class ClickHouseInstance:
         return self.http_query(sql=sql, data=data, params=params, user=user, password=password,
                                expect_fail_and_get_error=True)
 
-    def stop_clickhouse(self, start_wait_sec=5, kill=False):
+    def stop_clickhouse(self, stop_wait_sec=30, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be stopped only with stay_alive=True instance")
 
         self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
-        time.sleep(start_wait_sec)
+        deadline = time.time() + stop_wait_sec
+        while time.time() < deadline:
+            time.sleep(0.5)
+            if self.get_process_pid("clickhouse") is None:
+                break
+        assert self.get_process_pid("clickhouse") is None, "ClickHouse was not stopped"
 
-    def start_clickhouse(self, stop_wait_sec=5):
+    def start_clickhouse(self, start_wait_sec=30):
         if not self.stay_alive:
             raise Exception("clickhouse can be started again only with stay_alive=True instance")
 
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
         # wait start
         from helpers.test_tools import assert_eq_with_retry
-        assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_wait_sec / 0.5), sleep_time=0.5)
+        assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
 
-    def restart_clickhouse(self, stop_start_wait_sec=5, kill=False):
+    def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 

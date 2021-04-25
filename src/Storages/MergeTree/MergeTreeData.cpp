@@ -319,8 +319,8 @@ void MergeTreeData::checkProperties(
         {
             const String & pk_column = new_primary_key.column_names[i];
             if (pk_column != sorting_key_column)
-                throw Exception("Primary key must be a prefix of the sorting key, but in position "
-                    + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
+                throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
+                    + toString(i) + " is " + sorting_key_column +", not " + pk_column,
                     ErrorCodes::BAD_ARGUMENTS);
 
             if (!primary_key_columns_set.emplace(pk_column).second)
@@ -1391,12 +1391,20 @@ void MergeTreeData::dropIfEmpty()
     if (!data_parts_by_info.empty())
         return;
 
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    try
     {
-        /// Non recursive, exception is thrown if there are more files.
-        disk->removeFile(path + MergeTreeData::FORMAT_VERSION_FILE_NAME);
-        disk->removeDirectory(path + MergeTreeData::DETACHED_DIR_NAME);
-        disk->removeDirectory(path);
+        for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+        {
+            /// Non recursive, exception is thrown if there are more files.
+            disk->removeFileIfExists(path + MergeTreeData::FORMAT_VERSION_FILE_NAME);
+            disk->removeDirectory(path + MergeTreeData::DETACHED_DIR_NAME);
+            disk->removeDirectory(path);
+        }
+    }
+    catch (...)
+    {
+        // On unsuccessful creation of ReplicatedMergeTree table with multidisk configuration some files may not exist.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -1578,7 +1586,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 const IDataType * new_type = command.data_type.get();
                 const IDataType * old_type = old_types[command.column_name];
 
-                checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
+                if (new_type)
+                    checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
 
                 /// No other checks required
                 continue;
@@ -2563,7 +2572,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until) const
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
         throw Exception(
             ErrorCodes::TOO_MANY_PARTS,
-            "Too many parts ({}). Parts cleaning are processing significantly slower than inserts",
+            "Too many parts ({}). Merges are processing significantly slower than inserts",
             parts_count_in_partition);
     }
 
@@ -2880,7 +2889,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Volume " + name + " does not exists on policy " + getStoragePolicy()->getName(), ErrorCodes::UNKNOWN_DISK);
 
     if (parts.empty())
-        throw Exception("Nothing to move", ErrorCodes::NO_SUCH_DATA_PART);
+        throw Exception("Nothing to move (сheck that the partition exists).", ErrorCodes::NO_SUCH_DATA_PART);
 
     parts.erase(std::remove_if(parts.begin(), parts.end(), [&](auto part_ptr)
         {
@@ -2909,7 +2918,12 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
         throw Exception("Cannot move parts because moves are manually disabled", ErrorCodes::ABORTED);
 }
 
-void MergeTreeData::fetchPartition(const ASTPtr & /*partition*/, const StorageMetadataPtr & /*metadata_snapshot*/, const String & /*from*/, ContextPtr /*query_context*/)
+void MergeTreeData::fetchPartition(
+    const ASTPtr & /*partition*/,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const String & /*from*/,
+    bool /*fetch_part*/,
+    ContextPtr /*query_context*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "FETCH PARTITION is not supported by storage {}", getName());
 }
@@ -2972,7 +2986,7 @@ Pipe MergeTreeData::alterPartition(
             break;
 
             case PartitionCommand::FETCH_PARTITION:
-                fetchPartition(command.partition, metadata_snapshot, command.from_zookeeper_path, query_context);
+                fetchPartition(command.partition, metadata_snapshot, command.from_zookeeper_path, command.part, query_context);
                 break;
 
             case PartitionCommand::FREEZE_PARTITION:
