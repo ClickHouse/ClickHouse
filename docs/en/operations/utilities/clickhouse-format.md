@@ -23,7 +23,7 @@ Keys:
 1. Example with highlighting and single line:
 
 ```bash
-$clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
+$ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
 ```
 
 Result:
@@ -35,7 +35,7 @@ SELECT sum(number) FROM numbers(5)
 2. Example with multiqueries: 
 
 ```bash
-$clickhouse-format -n <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
+$ clickhouse-format -n <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
 ```
     
 Result:
@@ -57,7 +57,7 @@ UNION ALL
 3. Example with obfuscating:
 
 ```bash
-$clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
+$ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
 ```
     
 Result:
@@ -81,7 +81,7 @@ SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 
 4. Example with backslash:
 
 ```bash
-$clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
+$ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
 ```
 
 Result:
