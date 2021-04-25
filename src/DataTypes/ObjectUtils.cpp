@@ -28,7 +28,7 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
     if (column.empty())
         return std::make_shared<DataTypeNothing>();
 
-    return applyVisitor(FieldToDataType(), column[0]);
+    return applyVisitor(FieldToDataType(true), column[0]);
 }
 
 void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block)

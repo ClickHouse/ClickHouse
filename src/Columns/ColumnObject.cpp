@@ -105,7 +105,6 @@ bool ColumnObject::hasSubcolumn(const String & key) const
 
 void ColumnObject::addSubcolumn(const String & key, MutableColumnPtr && subcolumn, bool check_size)
 {
-    std::cerr << "adding subcolumn: " << key << ", subcolumn: " << subcolumn->dumpStructure() << "\n";
     if (check_size && subcolumn->size() != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",

@@ -25,12 +25,21 @@ String getValueAsString(const Element & element)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type of JSON field");
 }
 
+String getNextPath(const String & current_path, const std::string_view & key)
+{
+    String next_path = current_path;
+    if (!next_path.empty())
+        next_path += ".";
+    next_path += key;
+    return next_path;
+}
+
 }
 
 struct ParseResult
 {
     Strings paths;
-    Strings values;
+    std::vector<Field> values;
 };
 
 template <typename ParserImpl>
@@ -61,18 +70,63 @@ public:
 private:
     void traverse(const Element & element, String current_path, ParseResult & result)
     {
-        /// TODO: support arrays.
         if (element.isObject())
         {
             auto object = element.getObject();
+            result.paths.reserve(result.paths.size() + object.size());
+            result.values.reserve(result.values.size() + object.size());
+
             for (auto it = object.begin(); it != object.end(); ++it)
             {
                 const auto & [key, value] = *it;
-                String next_path = current_path;
-                if (!next_path.empty())
-                    next_path += ".";
-                next_path += key;
-                traverse(value, next_path, result);
+                traverse(value, getNextPath(current_path, key), result);
+            }
+        }
+        else if (element.isArray())
+        {
+            auto array = element.getArray();
+            std::unordered_map<String, Array> arrays_by_path;
+            size_t current_size = 0;
+
+            for (auto it = array.begin(); it != array.end(); ++it)
+            {
+                ParseResult element_result;
+                traverse(*it, "", element_result);
+
+                NameSet inserted_paths;
+                const auto & [paths, values] = element_result;
+                for (size_t i = 0; i < paths.size(); ++i)
+                {
+                    inserted_paths.insert(paths[i]);
+
+                    auto & path_array = arrays_by_path[paths[i]];
+                    assert(path_array.size() == 0 || path_array.size() == current_size);
+
+                    if (path_array.size() == 0)
+                    {
+                        path_array.reserve(paths.size());
+                        path_array.resize(current_size);
+                    }
+
+                    path_array.push_back(values[i]);
+                }
+
+                for (auto & [path, path_array] : arrays_by_path)
+                {
+                    if (!inserted_paths.count(path))
+                        path_array.push_back(Field());
+                }
+
+                ++current_size;
+            }
+
+            result.paths.reserve(result.paths.size() + array.size());
+            result.values.reserve(result.paths.size() + array.size());
+
+            for (const auto & [path, path_array] : arrays_by_path)
+            {
+                result.paths.push_back(getNextPath(current_path, path));
+                result.values.push_back(path_array);
             }
         }
         else

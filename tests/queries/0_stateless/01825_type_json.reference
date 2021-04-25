@@ -1,0 +1,10 @@
+1	aa	bb	c	
+2	ee			ff
+3				foo
+all_1_1_0	id	UInt64
+all_1_1_0	data	Tuple(k1 String, `k2.k4` String, `k2.k3` String, k5 String)
+all_2_2_0	id	UInt64
+all_2_2_0	data	Tuple(k5 String)
+1	['aaa','ddd']	[['bbb','ccc'],['eee','fff']]
+all_1_1_0	id	UInt64
+all_1_1_0	data	Tuple(`k1.k3.k4` Array(Array(String)), `k1.k2` Array(String))

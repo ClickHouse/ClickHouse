@@ -282,7 +282,6 @@ DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) co
     auto on_continue = [&](size_t pos, const String & next_subcolumn) { return elems[pos]->tryGetSubcolumnType(next_subcolumn); };
 
     auto kek = getSubcolumnEntity(subcolumn_name, on_success, on_continue);
-    std::cerr << "requested subcolumn: " << subcolumn_name << ", have: " << !!kek << "\n";
     return kek;
 }
 

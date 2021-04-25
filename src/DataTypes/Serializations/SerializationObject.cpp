@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int TYPE_MISMATCH;
 }
 
 template <typename Parser>
@@ -36,7 +37,6 @@ void SerializationObject<Parser>::deserializeText(IColumn & column, ReadBuffer &
 
     String buf;
     parser.readInto(buf, istr);
-    std::cerr << "buf: " << buf << "\n";
     auto result = parser.parse(buf.data(), buf.size());
     if (!result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse object");
@@ -52,13 +52,25 @@ void SerializationObject<Parser>::deserializeText(IColumn & column, ReadBuffer &
     size_t column_size = column_object.size();
     for (size_t i = 0; i < paths.size(); ++i)
     {
+        auto value_type = applyVisitor(FieldToDataType(true), values[i]);
         if (!column_object.hasSubcolumn(paths[i]))
         {
-            auto new_column = ColumnString::create()->cloneResized(column_size);
+            auto new_column = value_type->createColumn()->cloneResized(column_size);
+            new_column->insert(values[i]);
             column_object.addSubcolumn(paths[i], std::move(new_column));
         }
+        else
+        {
+            auto & subcolumn = column_object.getSubcolumn(paths[i]);
+            auto column_type = getDataTypeByColumn(subcolumn);
 
-        column_object.getSubcolumn(paths[i]).insertData(values[i].data(), values[i].size());
+            if (!value_type->equals(*column_type))
+                throw Exception(ErrorCodes::TYPE_MISMATCH,
+                    "Type mismatch beetwen value and column. Type of value: {}. Type of column: {}",
+                    value_type->getName(), column_type->getName());
+
+            subcolumn.insert(values[i]);
+        }
     }
 
     for (auto & [key, subcolumn] : column_object.getSubcolumns())
@@ -68,29 +80,25 @@ void SerializationObject<Parser>::deserializeText(IColumn & column, ReadBuffer &
     }
 }
 
-namespace
+template <typename Parser>
+template <typename Settings, typename StatePtr>
+void SerializationObject<Parser>::checkSerializationIsSupported(Settings & settings, StatePtr & state) const
 {
+    if (settings.position_independent_encoding)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DataTypeObject doesn't support serialization with position independent encoding");
 
-struct SerializeStateObject : public ISerialization::SerializeBinaryBulkState
-{
-    std::unordered_map<String, ISerialization::SerializeBinaryBulkStatePtr> states;
-};
-
-struct DeserializeStateObject : public ISerialization::DeserializeBinaryBulkState
-{
-    std::unordered_map<String, ISerialization::DeserializeBinaryBulkStatePtr> states;
-};
-
+    if (state)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DataTypeObject doesn't support serialization with non-trivial state");
 }
 
 template <typename Parser>
 void SerializationObject<Parser>::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr &) const
+    SerializeBinaryBulkStatePtr & state) const
 {
-    if (settings.position_independent_encoding)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "DataTypeObject cannot be serialized with position independent encoding");
+    checkSerializationIsSupported(settings, state);
 }
 
 template <typename Parser>
@@ -98,18 +106,15 @@ void SerializationObject<Parser>::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    UNUSED(settings);
-    UNUSED(state);
+    checkSerializationIsSupported(settings, state);
 }
 
 template <typename Parser>
 void SerializationObject<Parser>::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr &) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
-    if (settings.position_independent_encoding)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "DataTypeObject cannot be deserialized with position independent encoding");
+    checkSerializationIsSupported(settings, state);
 }
 
 template <typename Parser>
@@ -120,8 +125,8 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
+    checkSerializationIsSupported(settings, state);
     const auto & column_object = assert_cast<const ColumnObject &>(column);
-    assert(!settings.position_independent_encoding);
 
     settings.path.push_back(Substream::ObjectStructure);
     if (auto * stream = settings.getter(settings.path))
@@ -130,9 +135,9 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     settings.path.back() = Substream::ObjectElement;
     for (const auto & [key, subcolumn] : column_object.getSubcolumns())
     {
+        settings.path.back() = Substream::ObjectStructure;
         settings.path.back().object_key_name = key;
 
-        settings.path.back() = Substream::ObjectStructure;
         if (auto * stream = settings.getter(settings.path))
         {
             auto type = getDataTypeByColumn(*subcolumn);
@@ -162,6 +167,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
+    checkSerializationIsSupported(settings, state);
     if (!column->empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "DataTypeObject cannot be deserialized to non-empty column");
@@ -253,7 +259,7 @@ SerializationPtr getObjectSerialization(const String & schema_format)
 #endif
     }
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknow schema_format '{}'", schema_format);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown schema format '{}'", schema_format);
 }
 
 }
