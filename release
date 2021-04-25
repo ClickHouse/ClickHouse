@@ -31,6 +31,9 @@
 
 set -e
 
+# Avoid dependency on locale
+LC_ALL=C
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd $CUR_DIR
 
