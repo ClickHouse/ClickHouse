@@ -104,7 +104,7 @@ Alias: `timezoneOf`.
 
 -   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
 
-**Returned value(s)**
+**Returned value**
 
 -   Timezone name. 
 
