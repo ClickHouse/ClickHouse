@@ -31,7 +31,7 @@ Alias: `timezone`.
 
 ## toTimeZone {#totimezone}
 
-Convert time or date and time to the specified time zone.  
+Converts time or date and time to the specified time zone.  
 
 **Syntax** 
 
@@ -1136,4 +1136,3 @@ Result:
 │ 2020-01-01                         │
 └────────────────────────────────────┘
 ```
-
