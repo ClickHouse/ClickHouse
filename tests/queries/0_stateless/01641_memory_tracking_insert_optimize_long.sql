@@ -6,7 +6,7 @@ SET max_block_size = 1000, min_insert_block_size_rows = 0, min_insert_block_size
 insert into data_01641 select number, toString(number) from numbers(120000);
 
 -- Definitely should fail and it proves that memory is tracked in OPTIMIZE query.
-set max_memory_usage='10Mi';
+set max_memory_usage='10Mi', max_untracked_memory=0;
 optimize table data_01641 final; -- { serverError 241 }
 
 drop table data_01641;
