@@ -1461,6 +1461,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
             Arena * arena = data_variants.aggregates_pools.at(thread_id).get();
             blocks.emplace_back(convertOneBucketToBlock(data_variants, method, arena, final, bucket));
         }
+        
         return blocks;
     };
 
