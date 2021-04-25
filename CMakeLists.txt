@@ -257,11 +257,16 @@ endif()
 
 include(cmake/cpu_features.cmake)
 
-option(ARCH_NATIVE "Add -march=native compiler flag")
+option(ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated.")
 
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
+
+# Asynchronous unwind tables are needed for Query Profiler.
+# They are already by default on some platforms but possibly not on all platforms.
+# Enable it explicitly.
+set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
 
 if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
     # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
@@ -288,6 +293,12 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 if (COMPILER_GCC OR COMPILER_CLANG)
     # Enable C++14 sized global deallocation functions. It should be enabled by setting -std=c++14 but I'm not sure.
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
+endif ()
+
+# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+# benchmarks.
+if (COMPILER_GCC OR COMPILER_CLANG)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
 endif ()
 
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
@@ -510,6 +521,7 @@ include (cmake/find/fast_float.cmake)
 include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
+include (cmake/find/nanodbc.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
 include (cmake/find/nuraft.cmake)

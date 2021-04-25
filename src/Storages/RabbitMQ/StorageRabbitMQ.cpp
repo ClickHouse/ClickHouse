@@ -94,7 +94,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , login_password(std::make_pair(
                     getContext()->getConfigRef().getString("rabbitmq.username"),
                     getContext()->getConfigRef().getString("rabbitmq.password")))
-        , vhost(getContext()->getConfigRef().getString("rabbitmq.vhost", "/"))
+        , vhost(getContext()->getConfigRef().getString("rabbitmq.vhost", rabbitmq_settings->rabbitmq_vhost.value))
         , semaphore(0, num_consumers)
         , unique_strbase(getRandomName())
         , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
@@ -987,6 +987,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(13, rabbitmq_skip_broken_messages)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_max_block_size)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(15, rabbitmq_flush_interval_ms)
+
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(16, rabbitmq_vhost)
 
         #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
 
