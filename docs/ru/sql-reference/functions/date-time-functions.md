@@ -57,6 +57,44 @@ int32samoa: 1546300800
 
 `toTimeZone(time_utc, 'Asia/Yekaterinburg')` изменяет тип `DateTime('UTC')` в `DateTime('Asia/Yekaterinburg')`. Значение (unix-время) 1546300800 остается неизменным, но текстовое отображение (результат функции toString()) меняется `time_utc:   2019-01-01 00:00:00` в `time_yekat: 2019-01-01 05:00:00`.
 
+## timezoneOffset {#timezoneoffset}
+
+Возвращает смещение часового пояса в секундах от [UTC](https://ru.wikipedia.org/wiki/%D0%92%D1%81%D0%B5%D0%BC%D0%B8%D1%80%D0%BD%D0%BE%D0%B5_%D0%BA%D0%BE%D0%BE%D1%80%D0%B4%D0%B8%D0%BD%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%BD%D0%BE%D0%B5_%D0%B2%D1%80%D0%B5%D0%BC%D1%8F). Функция учитывает [летнее время](https://ru.wikipedia.org/wiki/%D0%9B%D0%B5%D1%82%D0%BD%D0%B5%D0%B5_%D0%B2%D1%80%D0%B5%D0%BC%D1%8F) и исторические изменения часовых поясов, которые действовали на указанную дату.
+Для вычисления смещения используется информация из [базы данных IANA](https://www.iana.org/time-zones).
+
+**Синтаксис**
+
+``` sql
+timezoneOffset(datetime)
+```
+
+**Аргументы**
+
+-   `datetime` — дата и время. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+
+**Возвращаемое значение**
+
+-   Смещение в секундах от UTC. 
+
+Тип: [Int32](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toDateTime('2021-04-21 10:20:30', 'Europe/Moscow') AS Time, toTypeName(Time) AS Type,
+       timezoneOffset(Time) AS Offset_in_seconds, (Offset_in_seconds / 3600) AS Offset_in_hours;
+```
+
+Результат:
+
+``` text
+┌────────────────Time─┬─Type──────────────────────┬─Offset_in_seconds─┬─Offset_in_hours─┐
+│ 2021-04-21 10:20:30 │ DateTime('Europe/Moscow') │             10800 │               3 │
+└─────────────────────┴───────────────────────────┴───────────────────┴─────────────────┘
+```
+
 ## toYear {#toyear}
 
 Переводит дату или дату-с-временем в число типа UInt16, содержащее номер года (AD).
