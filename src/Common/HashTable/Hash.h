@@ -1,15 +1,10 @@
 #pragma once
 
-<<<<<<< HEAD
-#include <Core/Types.h>
-#include <common/unaligned.h>
 #include <city.h>
-=======
+#include <Core/Types.h>
 #include <common/types.h>
 #include <common/unaligned.h>
 #include <common/StringRef.h>
-#include <Common/UInt128.h>
->>>>>>> master
 
 #include <type_traits>
 
