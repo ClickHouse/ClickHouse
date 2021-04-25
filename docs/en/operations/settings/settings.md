@@ -2857,7 +2857,7 @@ Default value: `0`.
 
 ## prefer_column_name_to_alias {#prefer-column-name-to-alias}
 
-Enables or disables using the original column names instead of aliases. It especially matters when alias is the same as the column name, see [Expression Aliases](../../sql-reference/syntax.md#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
+Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](../../sql-reference/syntax.md#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
 
 Possible values:
 
