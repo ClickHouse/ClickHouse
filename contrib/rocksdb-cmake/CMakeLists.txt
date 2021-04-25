@@ -2,15 +2,6 @@
 set(ROCKSDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
 list(APPEND CMAKE_MODULE_PATH "${ROCKSDB_SOURCE_DIR}/cmake/modules/")
 
-if (SANITIZE STREQUAL "undefined")
-    set(WITH_UBSAN ON)
-elseif (SANITIZE STREQUAL "address")
-    set(WITH_ASAN ON)
-elseif (SANITIZE STREQUAL "thread")
-    set(WITH_TSAN ON)
-endif()
-
-
 set(PORTABLE ON)
 ## always disable jemalloc for rocksdb by default
 ## because it introduces non-standard jemalloc APIs
@@ -82,27 +73,7 @@ endif()
 set(BUILD_VERSION_CC rocksdb_build_version.cc)
 add_library(rocksdb_build_version OBJECT ${BUILD_VERSION_CC})
 
-target_include_directories(rocksdb_build_version PRIVATE
-  "${ROCKSDB_SOURCE_DIR}/util")
-if(MSVC)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zi /nologo /EHsc /GS /Gd /GR /GF /fp:precise /Zc:wchar_t /Zc:forScope /errorReport:queue")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /FC /d2Zi+ /W4 /wd4127 /wd4800 /wd4996 /wd4351 /wd4100 /wd4204 /wd4324")
-else()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -W -Wextra -Wall")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wsign-compare -Wshadow -Wno-unused-parameter -Wno-unused-variable -Woverloaded-virtual -Wnon-virtual-dtor -Wno-missing-field-initializers -Wno-strict-aliasing")
-  if(MINGW)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-format -fno-asynchronous-unwind-tables")
-    add_definitions(-D_POSIX_C_SOURCE=1)
-  endif()
-  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
-    include(CheckCXXCompilerFlag)
-    CHECK_CXX_COMPILER_FLAG("-momit-leaf-frame-pointer" HAVE_OMIT_LEAF_FRAME_POINTER)
-    if(HAVE_OMIT_LEAF_FRAME_POINTER)
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -momit-leaf-frame-pointer")
-    endif()
-  endif()
-endif()
+target_include_directories(rocksdb_build_version PRIVATE "${ROCKSDB_SOURCE_DIR}/util")
 
 include(CheckCCompilerFlag)
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
@@ -172,50 +143,7 @@ if(HAVE_THREAD_LOCAL)
   add_definitions(-DROCKSDB_SUPPORT_THREAD_LOCAL)
 endif()
 
-option(FAIL_ON_WARNINGS "Treat compile warnings as errors" ON)
-if(FAIL_ON_WARNINGS)
-  if(MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /WX")
-  else() # assume GCC
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
-  endif()
-endif()
-
-option(WITH_ASAN "build with ASAN" OFF)
-if(WITH_ASAN)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
-  if(WITH_JEMALLOC)
-    message(FATAL "ASAN does not work well with JeMalloc")
-  endif()
-endif()
-
-option(WITH_TSAN "build with TSAN" OFF)
-if(WITH_TSAN)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread -pie")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread -fPIC")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=thread -fPIC")
-  if(WITH_JEMALLOC)
-    message(FATAL "TSAN does not work well with JeMalloc")
-  endif()
-endif()
-
-option(WITH_UBSAN "build with UBSAN" OFF)
-if(WITH_UBSAN)
-  add_definitions(-DROCKSDB_UBSAN_RUN)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=undefined")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=undefined")
-  if(WITH_JEMALLOC)
-    message(FATAL "UBSAN does not work well with JeMalloc")
-  endif()
-endif()
-
-
-if(CMAKE_SYSTEM_NAME MATCHES "Cygwin")
-  add_definitions(-fno-builtin-memcmp -DCYGWIN)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   add_definitions(-DOS_MACOSX)
   if(CMAKE_SYSTEM_PROCESSOR MATCHES arm)
     add_definitions(-DIOS_CROSS_COMPILE -DROCKSDB_LITE)
@@ -599,36 +527,11 @@ if(HAS_ARMV8_CRC)
     "${ROCKSDB_SOURCE_DIR}/util/crc32c_arm64.cc")
 endif(HAS_ARMV8_CRC)
 
-if(WIN32)
-  list(APPEND SOURCES
-    "${ROCKSDB_SOURCE_DIR}/port/win/io_win.cc"
-    "${ROCKSDB_SOURCE_DIR}/port/win/env_win.cc"
-    "${ROCKSDB_SOURCE_DIR}/port/win/env_default.cc"
-    "${ROCKSDB_SOURCE_DIR}/port/win/port_win.cc"
-    "${ROCKSDB_SOURCE_DIR}/port/win/win_logger.cc")
-  if(NOT MINGW)
-    # Mingw only supports std::thread when using
-    # posix threads.
-    list(APPEND SOURCES
-      "${ROCKSDB_SOURCE_DIR}/port/win/win_thread.cc")
-  endif()
-if(WITH_XPRESS)
-  list(APPEND SOURCES
-    "${ROCKSDB_SOURCE_DIR}/port/win/xpress_win.cc")
-endif()
-
-if(WITH_JEMALLOC)
-  list(APPEND SOURCES
-    "${ROCKSDB_SOURCE_DIR}/port/win/win_jemalloc.cc")
-endif()
-
-else()
-  list(APPEND SOURCES
+list(APPEND SOURCES
     "${ROCKSDB_SOURCE_DIR}/port/port_posix.cc"
     "${ROCKSDB_SOURCE_DIR}/env/env_posix.cc"
     "${ROCKSDB_SOURCE_DIR}/env/fs_posix.cc"
     "${ROCKSDB_SOURCE_DIR}/env/io_posix.cc")
-endif()
 
 if(WITH_FOLLY_DISTRIBUTED_MUTEX)
   list(APPEND SOURCES
@@ -640,12 +543,6 @@ if(WITH_FOLLY_DISTRIBUTED_MUTEX)
 endif()
 
 set(ROCKSDB_STATIC_LIB rocksdb)
-
-if(WIN32)
-  set(SYSTEM_LIBS ${SYSTEM_LIBS} shlwapi.lib rpcrt4.lib)
-else()
-  set(SYSTEM_LIBS ${CMAKE_THREAD_LIBS_INIT})
-endif()
 
 add_library(${ROCKSDB_STATIC_LIB} STATIC ${SOURCES})
 target_link_libraries(${ROCKSDB_STATIC_LIB} PRIVATE
