@@ -86,9 +86,6 @@ struct HashMapCell
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = true;
 
-    /// Whether the cell was deleted.
-    bool isDeleted() const { return false; }
-
     void setMapped(const value_type & value_) { value.second = value_.second; }
 
     /// Serialization, in binary and text form.
@@ -195,13 +192,26 @@ public:
     ///  and func is invoked with the third argument emplaced set to true. Otherwise
     ///  emplaced is set to false.
     template <typename Func>
-    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that [[maybe_unused]], Func && func)
     {
-        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        typename Self::LookupResult res_it;
+        bool inserted;
+
+        if (this->hasZero())
         {
-            typename Self::LookupResult res_it;
-            bool inserted;
-            that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
+            auto * zero_cell = this->zeroValue();
+            that.emplace(Cell::getKey(zero_cell->getValue()), res_it, inserted, zero_cell->getHash(*this));
+            func(res_it->getMapped(), zero_cell->getMapped(), inserted);
+        }
+
+        size_t buf_size = this->grower.bufSize();
+        for (size_t i = 0; i < buf_size; ++i)
+        {
+            auto * it = (this->buf + i);
+            if (it->isZero(*this))
+                continue;
+
+            that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it->getHash(*this));
             func(res_it->getMapped(), it->getMapped(), inserted);
         }
     }
@@ -214,13 +224,24 @@ public:
     template <typename Func>
     void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func)
     {
-        for (auto it = this->begin(), end = this->end(); it != end; ++it)
+        if (this->hasZero())
         {
-            auto res_it = that.find(Cell::getKey(it->getValue()), it.getHash());
-            if (!res_it)
-                func(it->getMapped(), it->getMapped(), false);
+            if (that.hasZero())
+                func(this->zeroValue()->getMapped(), that.zeroValue()->getMapped(), true);
             else
-                func(res_it->getMapped(), it->getMapped(), true);
+                func(this->zeroValue()->getMapped(), that.zeroValue()->getMapped(), false);
+        }
+
+        size_t buf_size = this->grower.bufSize();
+        for (size_t i = 0; i < buf_size; ++i)
+        {
+            auto * it = (this->buf + i);
+            if (it->isZero(*this))
+                continue;
+
+            auto res_it = that.find(Cell::getKey(it->getValue()), it->getHash(*this));
+            bool found = res_it != nullptr;
+            func(res_it->getMapped(), it->getMapped(), found);
         }
     }
 
@@ -228,16 +249,31 @@ public:
     template <typename Func>
     void forEachValue(Func && func)
     {
-        for (auto & v : *this)
-            func(v.getKey(), v.getMapped());
+        if (this->hasZero())
+        {
+            auto * zero_value = this->zeroValue();
+            std::forward<Func>(func)(zero_value->getKey(), zero_value->getMapped());
+        }
+
+        size_t buf_size = this->grower.bufSize();
+        for (size_t i = 0; i < buf_size; ++i)
+        {
+            auto * it = (this->buf + i);
+            if (it->isZero(*this))
+                continue;
+
+            std::forward<Func>(func)(it->getKey(), it->getMapped());
+        }
     }
 
     /// Call func(Mapped &) for each hash map element.
     template <typename Func>
     void forEachMapped(Func && func)
     {
-        for (auto & v : *this)
-            func(v.getMapped());
+        forEachValue([&](auto &, auto & mapped)
+        {
+            std::forward<Func>(func)(mapped);
+        });
     }
 
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
