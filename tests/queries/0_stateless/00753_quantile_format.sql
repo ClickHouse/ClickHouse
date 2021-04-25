@@ -27,4 +27,7 @@ SELECT quantilesTDigest(0.2)(d) FROM datetime;
 SELECT quantileTDigestWeighted(0.2)(d, 1) FROM datetime;
 SELECT quantilesTDigestWeighted(0.2)(d, 1) FROM datetime;
 
+SELECT quantileBfloat16(0.2)(d) FROM datetime;
+SELECT quantilesBfloat16(0.2)(d) FROM datetime;
+
 DROP TABLE datetime;
