@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <csignal>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string_view>
@@ -14,6 +15,10 @@
 #include <vector>
 #include <shared_mutex>
 
+#include "common/types.h"
+#include <Common/Dwarf.h>
+#include <Common/Elf.h>
+#include <Common/SymbolIndex.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
@@ -80,9 +85,22 @@ public:
 private:
     Writer()
         : coverage_dir(std::filesystem::current_path() / "../../coverage"),
-          pool(4) {}
+          symbol_index(SymbolIndex::instance()),
+          pool(4)
+    {
+        const SymbolIndex & sym_index = *symbol_index;
+        const auto * object = sym_index.findObject(this); // hack to find current binary
+
+        binary_virtual_offset = object->address_begin;
+        elf = object->elf;
+    }
 
     const std::filesystem::path coverage_dir;
+
+    const uintptr_t binary_virtual_offset;
+
+    const MultiVersion<SymbolIndex>::Version symbol_index;
+    const std::shared_ptr<Elf> elf;
 
     FreeThreadPool pool;
 
@@ -90,13 +108,69 @@ private:
     std::vector<void *> edges;
     std::mutex edges_mutex; // to prevent multithreading inserts
 
-    //std::unordered_map<void *, std::string> symbolizer_cache;
-    //std::shared_mutex symbolizer_cache_mutex;
+    struct Frame
+    {
+        const void * virtual_addr = nullptr;
+        void * physical_addr = nullptr;
+        std::string symbol;
+        std::string file;
+        UInt64 line;
+    };
+
+    Frame symbolizeAndDemangle(const void * virtual_addr) const
+    {
+        Frame out = {.virtual_addr=virtual_addr};
+
+        out.physical_addr = reinterpret_cast<void *>(uintptr_t(virtual_addr) - binary_virtual_offset);
+
+        Dwarf::LocationInfo location;
+        std::vector<Dwarf::SymbolizedFrame> inline_frames;
+
+        assert(elf.findAddress(uintptr_t(out.physical_addr), location, Dwarf::LocationInfoMode::FAST, inline_frames));
+
+        out.file = location.file.toString();
+        out.line = location.line;
+
+        const auto * symbol = symbol_index.findSymbol(out.virtual_addr);
+        assert(symbol);
+
+        int status = 0;
+        out.symbol = demangle(symbol->name, status);
+    }
 
     void convertToLCOVAndDumpToDisk(const std::vector<void*>& hits, std::string_view test_name)
     {
+        // TN:<test name>
+        // SF:<absolute path to the source file>
+        // FN:<line number of function start>,<function name> for each function
+        // DA:<line number>,<execution count> for each instrumented line
+        // LH:<number of lines with an execution count> greater than 0, lines hit
+        // LF:<number of instrumented lines>, lines found
+        //
+		// FNDA: <call-count>, <function-name>
+		// FNF: overall count of functions, functions found
+		// FNH: overall count of functions with non-zero call count, functions hit
+		//
+		// BRDA:<line number>,<block number>,<branch number>,<taken>
+		//
+		// where 'taken' is the number of times the branch was taken
+		// or '-' if the block to which the branch belongs was never
+		// executed
+
         (void)hits;
         (void)test_name;
+
+        std::ofstream ofs(coverage_dir / test_name);
+
+        ofs << "TN:" << test_name << "\n";
+
+        for (const void * addr : hits)
+        {
+            const Frame info = symbolizeAndDemangle(addr);
+            ofs << "SF:" << info.file << "\n";
+
+            ofs << "end_of_record\n";
+        }
     }
 };
 }
