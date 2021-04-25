@@ -1,12 +1,21 @@
-#include <aws/core/client/DefaultRetryStrategy.h>
+#if !defined(ARCADIA_BUILD)
+    #include <Common/config.h>
+#endif
+
 #include <IO/ReadHelpers.h>
-#include <IO/S3Common.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <common/logger_useful.h>
+
+
+#if USE_AWS_S3
+
+#include <aws/core/client/DefaultRetryStrategy.h>
+#include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
 #include "Disks/DiskFactory.h"
+#include "Storages/StorageS3Settings.h"
 #include "ProxyConfiguration.h"
 #include "ProxyListConfiguration.h"
 #include "ProxyResolverConfiguration.h"
@@ -108,38 +117,42 @@ void registerDiskS3(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      const Context & context) -> DiskPtr {
-        Poco::File disk{context.getPath() + "disks/" + name};
+                      ContextConstPtr context) -> DiskPtr {
+        Poco::File disk{context->getPath() + "disks/" + name};
         disk.createDirectories();
 
-        Aws::Client::ClientConfiguration cfg;
+        S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
+            context->getRemoteHostFilter(),
+            context->getGlobalContext()->getSettingsRef().s3_max_redirects);
 
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
         if (uri.key.back() != '/')
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
-        cfg.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
-        cfg.httpRequestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
-        cfg.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
-        cfg.endpointOverride = uri.endpoint;
+        client_configuration.connectTimeoutMs = config.getUInt(config_prefix + ".connect_timeout_ms", 10000);
+        client_configuration.requestTimeoutMs = config.getUInt(config_prefix + ".request_timeout_ms", 5000);
+        client_configuration.maxConnections = config.getUInt(config_prefix + ".max_connections", 100);
+        client_configuration.endpointOverride = uri.endpoint;
 
         auto proxy_config = getProxyConfiguration(config_prefix, config);
         if (proxy_config)
-            cfg.perRequestConfiguration = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
+            client_configuration.perRequestConfiguration = [proxy_config](const auto & request) { return proxy_config->getConfiguration(request); };
 
-        cfg.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(
+        client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(
             config.getUInt(config_prefix + ".retry_attempts", 10));
 
         auto client = S3::ClientFactory::instance().create(
-            cfg,
+            client_configuration,
             uri.is_virtual_hosted_style,
             config.getString(config_prefix + ".access_key_id", ""),
             config.getString(config_prefix + ".secret_access_key", ""),
+            config.getString(config_prefix + ".server_side_encryption_customer_key_base64", ""),
+            {},
             config.getBool(config_prefix + ".use_environment_credentials", config.getBool("s3.use_environment_credentials", false)),
-            context.getRemoteHostFilter(),
-            context.getGlobalContext().getSettingsRef().s3_max_redirects);
+            config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false))
+        );
 
-        String metadata_path = config.getString(config_prefix + ".metadata_path", context.getPath() + "disks/" + name + "/");
+        String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
 
         auto s3disk = std::make_shared<DiskS3>(
             name,
@@ -148,10 +161,13 @@ void registerDiskS3(DiskFactory & factory)
             uri.bucket,
             uri.key,
             metadata_path,
-            context.getSettingsRef().s3_min_upload_part_size,
-            context.getSettingsRef().s3_max_single_part_upload_size,
+            context->getSettingsRef().s3_max_single_read_retries,
+            context->getSettingsRef().s3_min_upload_part_size,
+            context->getSettingsRef().s3_max_single_part_upload_size,
             config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
-            config.getBool(config_prefix + ".send_object_metadata", false));
+            config.getBool(config_prefix + ".send_metadata", false),
+            config.getInt(config_prefix + ".thread_pool_size", 16),
+            config.getInt(config_prefix + ".list_object_keys_size", 1000));
 
         /// This code is used only to check access to the corresponding disk.
         if (!config.getBool(config_prefix + ".skip_access_check", false))
@@ -161,11 +177,14 @@ void registerDiskS3(DiskFactory & factory)
             checkRemoveAccess(*s3disk);
         }
 
+        s3disk->restore();
+        s3disk->startup();
+
         bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
 
         if (cache_enabled)
         {
-            String cache_path = config.getString(config_prefix + ".cache_path", context.getPath() + "disks/" + name + "/cache/");
+            String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
 
             if (metadata_path == cache_path)
                 throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
@@ -187,3 +206,10 @@ void registerDiskS3(DiskFactory & factory)
 }
 
 }
+
+#else
+
+void registerDiskS3(DiskFactory &) {}
+
+#endif
+

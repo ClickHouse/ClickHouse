@@ -1,9 +1,36 @@
 #pragma once
 
 #include <common/extended_types.h>
+#include <common/defines.h>
+
 
 namespace common
 {
+    /// Multiply and ignore overflow.
+    template <typename T1, typename T2>
+    inline auto NO_SANITIZE_UNDEFINED mulIgnoreOverflow(T1 x, T2 y)
+    {
+        return x * y;
+    }
+
+    template <typename T1, typename T2>
+    inline auto NO_SANITIZE_UNDEFINED addIgnoreOverflow(T1 x, T2 y)
+    {
+        return x + y;
+    }
+
+    template <typename T1, typename T2>
+    inline auto NO_SANITIZE_UNDEFINED subIgnoreOverflow(T1 x, T2 y)
+    {
+        return x - y;
+    }
+
+    template <typename T>
+    inline auto NO_SANITIZE_UNDEFINED negateIgnoreOverflow(T x)
+    {
+        return -x;
+    }
+
     template <typename T>
     inline bool addOverflow(T x, T y, T & res)
     {
@@ -33,14 +60,14 @@ namespace common
     {
         static constexpr __int128 min_int128 = minInt128();
         static constexpr __int128 max_int128 = maxInt128();
-        res = x + y;
+        res = addIgnoreOverflow(x, y);
         return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
     }
 
     template <>
     inline bool addOverflow(Int256 x, Int256 y, Int256 & res)
     {
-        res = x + y;
+        res = addIgnoreOverflow(x, y);
         return (y > 0 && x > std::numeric_limits<Int256>::max() - y) ||
             (y < 0 && x < std::numeric_limits<Int256>::min() - y);
     }
@@ -48,7 +75,7 @@ namespace common
     template <>
     inline bool addOverflow(UInt256 x, UInt256 y, UInt256 & res)
     {
-        res = x + y;
+        res = addIgnoreOverflow(x, y);
         return x > std::numeric_limits<UInt256>::max() - y;
     }
 
@@ -81,14 +108,14 @@ namespace common
     {
         static constexpr __int128 min_int128 = minInt128();
         static constexpr __int128 max_int128 = maxInt128();
-        res = x - y;
+        res = subIgnoreOverflow(x, y);
         return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
     }
 
     template <>
     inline bool subOverflow(Int256 x, Int256 y, Int256 & res)
     {
-        res = x - y;
+        res = subIgnoreOverflow(x, y);
         return (y < 0 && x > std::numeric_limits<Int256>::max() + y) ||
             (y > 0 && x < std::numeric_limits<Int256>::min() + y);
     }
@@ -96,7 +123,7 @@ namespace common
     template <>
     inline bool subOverflow(UInt256 x, UInt256 y, UInt256 & res)
     {
-        res = x - y;
+        res = subIgnoreOverflow(x, y);
         return x < y;
     }
 
@@ -127,25 +154,25 @@ namespace common
     template <>
     inline bool mulOverflow(Int128 x, Int128 y, Int128 & res)
     {
-        res = static_cast<UInt128>(x) * static_cast<UInt128>(y);    /// Avoid signed integer overflow.
+        res = mulIgnoreOverflow(x, y);
         if (!x || !y)
             return false;
 
         UInt128 a = (x > 0) ? x : -x;
         UInt128 b = (y > 0) ? y : -y;
-        return (a * b) / b != a;
+        return mulIgnoreOverflow(a, b) / b != a;
     }
 
     template <>
     inline bool mulOverflow(Int256 x, Int256 y, Int256 & res)
     {
-        res = x * y;
+        res = mulIgnoreOverflow(x, y);
         if (!x || !y)
             return false;
 
         Int256 a = (x > 0) ? x : -x;
         Int256 b = (y > 0) ? y : -y;
-        return (a * b) / b != a;
+        return mulIgnoreOverflow(a, b) / b != a;
     }
 
     template <>
@@ -160,9 +187,9 @@ namespace common
     template <>
     inline bool mulOverflow(UInt256 x, UInt256 y, UInt256 & res)
     {
-        res = x * y;
+        res = mulIgnoreOverflow(x, y);
         if (!x || !y)
             return false;
-        return (x * y) / y != x;
+        return res / y != x;
     }
 }

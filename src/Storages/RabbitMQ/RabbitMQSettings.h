@@ -1,13 +1,14 @@
 #pragma once
 
 #include <Core/BaseSettings.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
     class ASTStorage;
 
 
-#define LIST_OF_RABBITMQ_SETTINGS(M) \
+#define RABBITMQ_RELATED_SETTINGS(M) \
     M(String, rabbitmq_host_port, "", "A host-port to connect to RabbitMQ server.", 0) \
     M(String, rabbitmq_exchange_name, "clickhouse-exchange", "The exchange name, to which messages are sent.", 0) \
     M(String, rabbitmq_format, "", "The message format.", 0) \
@@ -23,6 +24,11 @@ namespace DB
     M(UInt64, rabbitmq_skip_broken_messages, 0, "Skip at least this number of broken messages from RabbitMQ per block", 0) \
     M(UInt64, rabbitmq_max_block_size, 0, "Number of row collected before flushing data from RabbitMQ.", 0) \
     M(Milliseconds, rabbitmq_flush_interval_ms, 0, "Timeout for flushing data from RabbitMQ.", 0) \
+    M(String, rabbitmq_vhost, "/", "RabbitMQ vhost.", 0) \
+
+#define LIST_OF_RABBITMQ_SETTINGS(M) \
+    RABBITMQ_RELATED_SETTINGS(M) \
+    FORMAT_FACTORY_SETTINGS(M)
 
 DECLARE_SETTINGS_TRAITS(RabbitMQSettingsTraits, LIST_OF_RABBITMQ_SETTINGS)
 

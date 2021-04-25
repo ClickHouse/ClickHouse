@@ -17,6 +17,14 @@
 
             <!-- One NUMA node w/o hyperthreading -->
             <max_threads>12</max_threads>
+
+            <!-- mmap shows some improvements in perf tests -->
+            <min_bytes_to_use_mmap_io>64Mi</min_bytes_to_use_mmap_io>
         </default>
     </profiles>
+    <users>
+        <default>
+            <access_management>1</access_management>
+        </default>
+    </users>
 </yandex>

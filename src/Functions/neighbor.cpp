@@ -31,7 +31,7 @@ class FunctionNeighbor : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbor>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNeighbor>(); }
 
     /// Get the name of the function.
     String getName() const override { return name; }
@@ -49,6 +49,10 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool useDefaultImplementationForConstants() const override { return false; }
+
+    /// We do not use default implementation for LowCardinality because this is not a pure function.
+    /// If used, optimization for LC may execute function only for dictionary, which gives wrong result.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

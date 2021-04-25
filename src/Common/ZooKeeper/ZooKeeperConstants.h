@@ -24,11 +24,13 @@ enum class OpNum : int32_t
     Get = 4,
     Set = 5,
     SimpleList = 8,
+    Sync = 9,
     Heartbeat = 11,
     List = 12,
     Check = 13,
     Multi = 14,
     Auth = 100,
+    SessionID = 997, /// Special internal request
 };
 
 std::string toString(OpNum op_num);

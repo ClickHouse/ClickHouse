@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -67,8 +68,6 @@ public:
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
-    void copyFile(const String & from_path, const String & to_path) override;
-
     void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
@@ -78,7 +77,8 @@ public:
         size_t buf_size,
         size_t estimated_size,
         size_t aio_threshold,
-        size_t mmap_threshold) const override;
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -98,13 +98,11 @@ public:
 
     void createHardLink(const String & src_path, const String & dst_path) override;
 
-    int open(const String & path, int flags) const override;
-    void close(int fd) const override;
-    void sync(int fd) const override;
-
     void truncateFile(const String & path, size_t size) override;
 
-    const String getType() const override { return "local"; }
+    DiskType::Type getType() const override { return DiskType::Type::Local; }
+
+    SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
 private:
     bool tryReserve(UInt64 bytes);
@@ -118,6 +116,8 @@ private:
     UInt64 reservation_count = 0;
 
     static std::mutex reservation_mutex;
+
+    Poco::Logger * log = &Poco::Logger::get("DiskLocal");
 };
 
 }

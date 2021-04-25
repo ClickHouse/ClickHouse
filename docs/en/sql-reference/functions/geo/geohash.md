@@ -29,7 +29,7 @@ geohashEncode(longitude, latitude, [precision])
 **Example**
 
 ``` sql
-SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
 ```
 
 ``` text
@@ -53,7 +53,7 @@ Decodes any [geohash](#geohash)-encoded string into longitude and latitude.
 **Example**
 
 ``` sql
-SELECT geohashDecode('ezs42') AS res
+SELECT geohashDecode('ezs42') AS res;
 ```
 
 ``` text
@@ -72,7 +72,7 @@ Returns an array of [geohash](#geohash)-encoded strings of given precision that 
 geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `longitude_min` — Minimum longitude. Range: `[-180°, 180°]`. Type: [Float](../../../sql-reference/data-types/float.md).
 -   `latitude_min` — Minimum latitude. Range: `[-90°, 90°]`. Type: [Float](../../../sql-reference/data-types/float.md).
@@ -98,8 +98,9 @@ Type: [Array](../../../sql-reference/data-types/array.md)([String](../../../sql-
 Query:
 
 ``` sql
-SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
 ```
+
 Result:
 
 ``` text

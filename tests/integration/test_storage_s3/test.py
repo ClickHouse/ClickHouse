@@ -14,6 +14,9 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/dummy/configs/config.d/defaultS3.xml')
+
 
 # Creates S3 bucket for tests and allows anonymous read-write access to it.
 def prepare_s3_bucket(cluster):
@@ -85,14 +88,15 @@ def cluster():
         cluster.add_instance("restricted_dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"],
                              with_minio=True)
         cluster.add_instance("dummy", with_minio=True, main_configs=["configs/defaultS3.xml"])
-        cluster.add_instance("s3_max_redirects", with_minio=True, main_configs=["configs/defaultS3.xml"], user_configs=["configs/s3_max_redirects.xml"])
+        cluster.add_instance("s3_max_redirects", with_minio=True, main_configs=["configs/defaultS3.xml"],
+                             user_configs=["configs/s3_max_redirects.xml"])
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
 
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
-        run_s3_mock(cluster)
+        run_s3_mocks(cluster)
 
         yield cluster
     finally:
@@ -109,13 +113,18 @@ def run_query(instance, query, stdin=None, settings=None):
     return result
 
 
-# Test simple put.
-@pytest.mark.parametrize("maybe_auth,positive", [
-    ("", True),
-    ("'minio','minio123',", True),
-    ("'wrongid','wrongkey',", False)
+# Test simple put. Also checks that wrong credentials produce an error with every compression method.
+@pytest.mark.parametrize("maybe_auth,positive,compression", [
+    ("", True, 'auto'),
+    ("'minio','minio123',", True, 'auto'),
+    ("'wrongid','wrongkey',", False, 'auto'),
+    ("'wrongid','wrongkey',", False, 'gzip'),
+    ("'wrongid','wrongkey',", False, 'deflate'),
+    ("'wrongid','wrongkey',", False, 'brotli'),
+    ("'wrongid','wrongkey',", False, 'xz'),
+    ("'wrongid','wrongkey',", False, 'zstd')
 ])
-def test_put(cluster, maybe_auth, positive):
+def test_put(cluster, maybe_auth, positive, compression):
     # type: (ClickHouseCluster) -> None
 
     bucket = cluster.minio_bucket if not maybe_auth else cluster.minio_restricted_bucket
@@ -124,8 +133,8 @@ def test_put(cluster, maybe_auth, positive):
     values = "(1, 2, 3), (3, 2, 1), (78, 43, 45)"
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test.csv"
-    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') values {}".format(
-        cluster.minio_host, cluster.minio_port, bucket, filename, maybe_auth, table_format, values)
+    put_query = f"""insert into table function s3('http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
+                    {maybe_auth}'CSV', '{table_format}', {compression}) values {values}"""
 
     try:
         run_query(instance, put_query)
@@ -279,7 +288,7 @@ def test_put_get_with_globs(cluster):
 @pytest.mark.parametrize("maybe_auth,positive", [
     ("", True),
     # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
-    ("'wrongid','wrongkey',", False)
+    ("'wrongid','wrongkey',", False),
 ])
 def test_multipart_put(cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
@@ -375,26 +384,42 @@ def test_s3_glob_scheherazade(cluster):
     assert run_query(instance, query).splitlines() == ["1001\t1001\t1001\t1001"]
 
 
-def run_s3_mock(cluster):
-    logging.info("Starting s3 mock")
-    container_id = cluster.get_container_id('resolver')
-    current_dir = os.path.dirname(__file__)
-    cluster.copy_file_to_container(container_id, os.path.join(current_dir, "s3_mock", "mock_s3.py"), "mock_s3.py")
-    cluster.exec_in_container(container_id, ["python", "mock_s3.py"], detach=True)
+def run_s3_mocks(cluster):
+    logging.info("Starting s3 mocks")
+    mocks = (
+        ("mock_s3.py", "resolver", "8080"),
+        ("unstable_server.py", "resolver", "8081"),
+    )
+    for mock_filename, container, port in mocks:
+        container_id = cluster.get_container_id(container)
+        current_dir = os.path.dirname(__file__)
+        cluster.copy_file_to_container(container_id, os.path.join(current_dir, "s3_mocks", mock_filename), mock_filename)
+        cluster.exec_in_container(container_id, ["python", mock_filename, port], detach=True)
 
-    # Wait for S3 mock start
-    for attempt in range(10):
-        ping_response = cluster.exec_in_container(cluster.get_container_id('resolver'),
-                                                  ["curl", "-s", "http://resolver:8080/"], nothrow=True)
-        if ping_response != 'OK':
-            if attempt == 9:
-                assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
+    # Wait for S3 mocks to start
+    for mock_filename, container, port in mocks:
+        for attempt in range(10):
+            ping_response = cluster.exec_in_container(cluster.get_container_id(container),
+                                                      ["curl", "-s", f"http://{container}:{port}/"], nothrow=True)
+            if ping_response != 'OK':
+                if attempt == 9:
+                    assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
+                else:
+                    time.sleep(1)
             else:
-                time.sleep(1)
-        else:
-            break
+                break
 
-    logging.info("S3 mock started")
+    logging.info("S3 mocks started")
+
+
+def replace_config(old, new):
+    config = open(CONFIG_PATH, 'r')
+    config_lines = config.readlines()
+    config.close()
+    config_lines = [line.replace(old, new) for line in config_lines]
+    config = open(CONFIG_PATH, 'w')
+    config.writelines(config_lines)
+    config.close()
 
 
 def test_custom_auth_headers(cluster):
@@ -408,6 +433,22 @@ def test_custom_auth_headers(cluster):
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     result = run_query(instance, get_query)
     assert result == '1\t2\t3\n'
+
+    instance.query(
+        "CREATE TABLE test ({table_format}) ENGINE = S3('http://resolver:8080/{bucket}/{file}', 'CSV')".format(
+            bucket=cluster.minio_restricted_bucket,
+            file=filename,
+            table_format=table_format
+        ))
+    assert run_query(instance, "SELECT * FROM test") == '1\t2\t3\n'
+
+    replace_config("<header>Authorization: Bearer TOKEN", "<header>Authorization: Bearer INVALID_TOKEN")
+    instance.query("SYSTEM RELOAD CONFIG")
+    ret, err = instance.query_and_get_answer_with_error("SELECT * FROM test")
+    assert ret == "" and err != ""
+    replace_config("<header>Authorization: Bearer INVALID_TOKEN", "<header>Authorization: Bearer TOKEN")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert run_query(instance, "SELECT * FROM test") == '1\t2\t3\n'
 
 
 def test_custom_auth_headers_exclusion(cluster):
@@ -443,10 +484,14 @@ def test_infinite_redirect(cluster):
         assert exception_raised
 
 
-def test_storage_s3_get_gzip(cluster):
+@pytest.mark.parametrize("extension,method", [
+    ("bin", "gzip"),
+    ("gz", "auto")
+])
+def test_storage_s3_get_gzip(cluster, extension, method):
     bucket = cluster.minio_bucket
     instance = cluster.instances["dummy"]
-    filename = "test_get_gzip.bin"
+    filename = f"test_get_gzip.{extension}"
     name = "test_get_gzip"
     data = [
         "Sophia Intrieri,55",
@@ -473,13 +518,24 @@ def test_storage_s3_get_gzip(cluster):
     put_s3_file_content(cluster, bucket, filename, buf.getvalue())
 
     try:
-        run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV', 'gzip')".format(
-            name, cluster.minio_host, cluster.minio_port, bucket, filename))
+        run_query(instance, f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = S3(
+                                    'http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
+                                    'CSV',
+                                    '{method}')""")
 
         run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["565"]
 
     finally:
-        run_query(instance, "DROP TABLE {}".format(name))
+        run_query(instance, f"DROP TABLE {name}")
+
+
+def test_storage_s3_get_unstable(cluster):
+    bucket = cluster.minio_bucket
+    instance = cluster.instances["dummy"]
+    table_format = "column1 Int64, column2 Int64, column3 Int64, column4 Int64"
+    get_query = f"SELECT count(), sum(column3) FROM s3('http://resolver:8081/{cluster.minio_bucket}/test.csv', 'CSV', '{table_format}') FORMAT CSV"
+    result = run_query(instance, get_query)
+    assert result.splitlines() == ["500000,500000"]
 
 
 def test_storage_s3_put_uncompressed(cluster):
@@ -515,13 +571,17 @@ def test_storage_s3_put_uncompressed(cluster):
         uncompressed_content = get_s3_file_content(cluster, bucket, filename)
         assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 753
     finally:
-        run_query(instance, "DROP TABLE {}".format(name))
+        run_query(instance, f"DROP TABLE {name}")
 
 
-def test_storage_s3_put_gzip(cluster):
+@pytest.mark.parametrize("extension,method", [
+    ("bin", "gzip"),
+    ("gz", "auto")
+])
+def test_storage_s3_put_gzip(cluster, extension, method):
     bucket = cluster.minio_bucket
     instance = cluster.instances["dummy"]
-    filename = "test_put_gzip.bin"
+    filename = f"test_put_gzip.{extension}"
     name = "test_put_gzip"
     data = [
         "'Joseph Tomlinson',5",
@@ -541,8 +601,10 @@ def test_storage_s3_put_gzip(cluster):
         "'Yolanda Joseph',89"
     ]
     try:
-        run_query(instance, "CREATE TABLE {} (name String, id UInt32) ENGINE = S3('http://{}:{}/{}/{}', 'CSV', 'gzip')".format(
-            name, cluster.minio_host, cluster.minio_port, bucket, filename))
+        run_query(instance, f"""CREATE TABLE {name} (name String, id UInt32) ENGINE = S3(
+                                    'http://{cluster.minio_host}:{cluster.minio_port}/{bucket}/{filename}',
+                                    'CSV',
+                                    '{method}')""")
 
         run_query(instance, "INSERT INTO {} VALUES ({})".format(name, "),(".join(data)))
 
@@ -553,4 +615,4 @@ def test_storage_s3_put_gzip(cluster):
         uncompressed_content = f.read().decode()
         assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 708
     finally:
-        run_query(instance, "DROP TABLE {}".format(name))
+        run_query(instance, f"DROP TABLE {name}")

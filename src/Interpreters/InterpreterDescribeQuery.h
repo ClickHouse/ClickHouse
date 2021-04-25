@@ -7,16 +7,12 @@
 namespace DB
 {
 
-class Context;
-
-
 /** Return names, types and other information about columns in specified table.
   */
-class InterpreterDescribeQuery : public IInterpreter
+class InterpreterDescribeQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterDescribeQuery(const ASTPtr & query_ptr_, const Context & context_)
-        : query_ptr(query_ptr_), context(context_) {}
+    InterpreterDescribeQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_) {}
 
     BlockIO execute() override;
 
@@ -24,7 +20,6 @@ public:
 
 private:
     ASTPtr query_ptr;
-    const Context & context;
 
     BlockInputStreamPtr executeImpl();
 };

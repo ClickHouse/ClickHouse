@@ -57,6 +57,9 @@ Specifics of each optional clause are covered in separate sections, which are li
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
+
+### COLUMNS expression {#columns-expression}
+
 To match some columns in the result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression, you can use the `COLUMNS` expression.
 
 ``` sql
@@ -278,5 +281,4 @@ Other ways to make settings see [here](../../../operations/settings/index.md).
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/)
-<!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/)<!--hide-->
