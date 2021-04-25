@@ -130,7 +130,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_POLICY;
     extern const int NO_SUCH_DATA_PART;
     extern const int INTERSERVER_SCHEME_DOESNT_MATCH;
-    extern const int DUPLICATE_DATA_PART;
 }
 
 namespace ActionLocks
@@ -585,24 +584,42 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
             /// This is Ok because another replica is definitely going to drop the table.
 
             LOG_WARNING(log, "Removing leftovers from table {} (this might take several minutes)", zookeeper_path);
-            String drop_lock_path = zookeeper_path + "/dropped/lock";
-            Coordination::Error code = zookeeper->tryCreate(drop_lock_path, "", zkutil::CreateMode::Ephemeral);
 
-            if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
+            Strings children;
+            Coordination::Error code = zookeeper->tryGetChildren(zookeeper_path, children);
+            if (code == Coordination::Error::ZNONODE)
             {
-                LOG_WARNING(log, "The leftovers from table {} were removed by another replica", zookeeper_path);
-            }
-            else if (code != Coordination::Error::ZOK)
-            {
-                throw Coordination::Exception(code, drop_lock_path);
+                LOG_WARNING(log, "Table {} is already finished removing by another replica right now", replica_path);
             }
             else
             {
-                auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zookeeper);
-                if (!removeTableNodesFromZooKeeper(zookeeper, zookeeper_path, metadata_drop_lock, log))
+                for (const auto & child : children)
+                    if (child != "dropped")
+                        zookeeper->tryRemoveRecursive(zookeeper_path + "/" + child);
+
+                Coordination::Requests ops;
+                Coordination::Responses responses;
+                ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
+                ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path, -1));
+                code = zookeeper->tryMulti(ops, responses);
+
+                if (code == Coordination::Error::ZNONODE)
                 {
-                    /// Someone is recursively removing table right now, we cannot create new table until old one is removed
-                    continue;
+                    LOG_WARNING(log, "Table {} is already finished removing by another replica right now", replica_path);
+                }
+                else if (code == Coordination::Error::ZNOTEMPTY)
+                {
+                    throw Exception(fmt::format(
+                        "The old table was not completely removed from ZooKeeper, {} still exists and may contain some garbage. But it should never happen according to the logic of operations (it's a bug).", zookeeper_path), ErrorCodes::LOGICAL_ERROR);
+                }
+                else if (code != Coordination::Error::ZOK)
+                {
+                    /// It is still possible that ZooKeeper session is expired or server is killed in the middle of the delete operation.
+                    zkutil::KeeperMultiException::check(code, ops, responses);
+                }
+                else
+                {
+                    LOG_WARNING(log, "The leftovers from table {} was successfully removed from ZooKeeper", zookeeper_path);
                 }
             }
         }
@@ -614,6 +631,10 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
 
         Coordination::Requests ops;
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
+
+        /// Check that the table is not being dropped right now.
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/dropped", "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata_str,
             zkutil::CreateMode::Persistent));
@@ -802,18 +823,10 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
       * because table creation is executed in single transaction that will conflict with remaining nodes.
       */
 
-    /// Node /dropped works like a lock that protects from concurrent removal of old table and creation of new table.
-    /// But recursive removal may fail in the middle of operation leaving some garbage in zookeeper_path, so
-    /// we remove it on table creation if there is /dropped node. Creating thread may remove /dropped node created by
-    /// removing thread, and it causes race condition if removing thread is not finished yet.
-    /// To avoid this we also create ephemeral child before starting recursive removal.
-    /// (The existence of child node does not allow to remove parent node).
     Coordination::Requests ops;
     Coordination::Responses responses;
-    String drop_lock_path = zookeeper_path + "/dropped/lock";
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/replicas", -1));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/dropped", "", zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
     Coordination::Error code = zookeeper->tryMulti(ops, responses);
 
     if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
@@ -830,55 +843,46 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
     }
     else
     {
-        auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zookeeper);
         LOG_INFO(logger, "Removing table {} (this might take several minutes)", zookeeper_path);
-        removeTableNodesFromZooKeeper(zookeeper, zookeeper_path, metadata_drop_lock, logger);
+
+        Strings children;
+        code = zookeeper->tryGetChildren(zookeeper_path, children);
+        if (code == Coordination::Error::ZNONODE)
+        {
+            LOG_WARNING(logger, "Table {} is already finished removing by another replica right now", remote_replica_path);
+        }
+        else
+        {
+            for (const auto & child : children)
+                if (child != "dropped")
+                    zookeeper->tryRemoveRecursive(zookeeper_path + "/" + child);
+
+            ops.clear();
+            responses.clear();
+            ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
+            ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path, -1));
+            code = zookeeper->tryMulti(ops, responses);
+
+            if (code == Coordination::Error::ZNONODE)
+            {
+                LOG_WARNING(logger, "Table {} is already finished removing by another replica right now", remote_replica_path);
+            }
+            else if (code == Coordination::Error::ZNOTEMPTY)
+            {
+                LOG_ERROR(logger, "Table was not completely removed from ZooKeeper, {} still exists and may contain some garbage.",
+                          zookeeper_path);
+            }
+            else if (code != Coordination::Error::ZOK)
+            {
+                /// It is still possible that ZooKeeper session is expired or server is killed in the middle of the delete operation.
+                zkutil::KeeperMultiException::check(code, ops, responses);
+            }
+            else
+            {
+                LOG_INFO(logger, "Table {} was successfully removed from ZooKeeper", zookeeper_path);
+            }
+        }
     }
-}
-
-bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr zookeeper,
-        const String & zookeeper_path, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger)
-{
-    bool completely_removed = false;
-    Strings children;
-    Coordination::Error code = zookeeper->tryGetChildren(zookeeper_path, children);
-    if (code == Coordination::Error::ZNONODE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
-
-
-    for (const auto & child : children)
-        if (child != "dropped")
-            zookeeper->tryRemoveRecursive(zookeeper_path + "/" + child);
-
-    Coordination::Requests ops;
-    Coordination::Responses responses;
-    ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/dropped", -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path, -1));
-    code = zookeeper->tryMulti(ops, responses);
-
-    if (code == Coordination::Error::ZNONODE)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
-    }
-    else if (code == Coordination::Error::ZNOTEMPTY)
-    {
-        LOG_ERROR(logger, "Table was not completely removed from ZooKeeper, {} still exists and may contain some garbage,"
-                          "but someone is removing it right now.", zookeeper_path);
-    }
-    else if (code != Coordination::Error::ZOK)
-    {
-        /// It is still possible that ZooKeeper session is expired or server is killed in the middle of the delete operation.
-        zkutil::KeeperMultiException::check(code, ops, responses);
-    }
-    else
-    {
-        metadata_drop_lock->setAlreadyRemoved();
-        completely_removed = true;
-        LOG_INFO(logger, "Table {} was successfully removed from ZooKeeper", zookeeper_path);
-    }
-
-    return completely_removed;
 }
 
 
@@ -5352,11 +5356,11 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
     }
 }
 
+
 void StorageReplicatedMergeTree::fetchPartition(
     const ASTPtr & partition,
     const StorageMetadataPtr & metadata_snapshot,
     const String & from_,
-    bool fetch_part,
     ContextPtr query_context)
 {
     Macros::MacroExpansionInfo info;
@@ -5369,54 +5373,40 @@ void StorageReplicatedMergeTree::fetchPartition(
     if (from.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+    String partition_id = getPartitionIDFromQuery(partition, query_context);
     zkutil::ZooKeeperPtr zookeeper;
     if (auxiliary_zookeeper_name != default_zookeeper_name)
+    {
         zookeeper = getContext()->getAuxiliaryZooKeeper(auxiliary_zookeeper_name);
+
+        LOG_INFO(log, "Will fetch partition {} from shard {} (auxiliary zookeeper '{}')", partition_id, from_, auxiliary_zookeeper_name);
+    }
     else
+    {
         zookeeper = getZooKeeper();
+
+        LOG_INFO(log, "Will fetch partition {} from shard {}", partition_id, from_);
+    }
 
     if (from.back() == '/')
         from.resize(from.size() - 1);
 
-    if (fetch_part)
-    {
-        String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
-        auto part_path = findReplicaHavingPart(part_name, from, zookeeper);
-
-        if (part_path.empty())
-            throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Part {} does not exist on any replica", part_name);
-        /** Let's check that there is no such part in the `detached` directory (where we will write the downloaded parts).
-          * Unreliable (there is a race condition) - such a part may appear a little later.
-          */
-        if (checkIfDetachedPartExists(part_name))
-            throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Detached part " + part_name + " already exists.");
-        LOG_INFO(log, "Will fetch part {} from shard {} (zookeeper '{}')", part_name, from_, auxiliary_zookeeper_name);
-
-        try
-        {
-            /// part name , metadata, part_path , true, 0, zookeeper
-            if (!fetchPart(part_name, metadata_snapshot, part_path, true, 0, zookeeper))
-                throw Exception(ErrorCodes::UNFINISHED, "Failed to fetch part {} from {}", part_name, from_);
-        }
-        catch (const DB::Exception & e)
-        {
-            if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
-                && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
-                throw;
-
-            LOG_INFO(log, e.displayText());
-        }
-        return;
-    }
-
-    String partition_id = getPartitionIDFromQuery(partition, query_context);
-    LOG_INFO(log, "Will fetch partition {} from shard {} (zookeeper '{}')", partition_id, from_, auxiliary_zookeeper_name);
 
     /** Let's check that there is no such partition in the `detached` directory (where we will write the downloaded parts).
       * Unreliable (there is a race condition) - such a partition may appear a little later.
       */
-    if (checkIfDetachedPartitionExists(partition_id))
-        throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
+    Poco::DirectoryIterator dir_end;
+    for (const std::string & path : getDataPaths())
+    {
+        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
+        {
+            MergeTreePartInfo part_info;
+            if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, format_version)
+                && part_info.partition_id == partition_id)
+                throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
+        }
+
+    }
 
     zkutil::Strings replicas;
     zkutil::Strings active_replicas;
@@ -6923,46 +6913,4 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     return best_replica;
 }
 
-String StorageReplicatedMergeTree::findReplicaHavingPart(
-    const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_)
-{
-    Strings replicas = zookeeper_->getChildren(zookeeper_path_ + "/replicas");
-
-    /// Select replicas in uniformly random order.
-    std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
-
-    for (const String & replica : replicas)
-    {
-        if (zookeeper_->exists(zookeeper_path_ + "/replicas/" + replica + "/parts/" + part_name)
-            && zookeeper_->exists(zookeeper_path_ + "/replicas/" + replica + "/is_active"))
-            return zookeeper_path_ + "/replicas/" + replica;
-    }
-
-    return {};
-}
-
-bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_name)
-{
-    Poco::DirectoryIterator dir_end;
-    for (const std::string & path : getDataPaths())
-        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
-            if (dir_it.name() == part_name)
-                return true;
-    return false;
-}
-
-bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & partition_name)
-{
-    Poco::DirectoryIterator dir_end;
-    for (const std::string & path : getDataPaths())
-    {
-        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
-        {
-            MergeTreePartInfo part_info;
-            if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, format_version) && part_info.partition_id == partition_name)
-                return true;
-        }
-    }
-    return false;
-}
 }

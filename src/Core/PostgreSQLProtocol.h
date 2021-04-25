@@ -832,13 +832,10 @@ class NoPasswordAuth : public AuthenticationMethod
 {
 public:
     void authenticate(
-        const String & user_name,
-        ContextPtr context,
-        Messaging::MessageTransport & mt,
-        const Poco::Net::SocketAddress & address) override
-    {
-        setPassword(user_name, "", context, mt, address);
-    }
+        const String & /* user_name */,
+        ContextPtr /* context */,
+        Messaging::MessageTransport & /* mt */,
+        const Poco::Net::SocketAddress & /* address */) override {}
 
     Authentication::Type getType() const override
     {

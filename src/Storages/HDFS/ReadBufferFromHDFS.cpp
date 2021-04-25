@@ -8,7 +8,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
@@ -22,39 +21,34 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     /// HDFS create/open functions are not thread safe
     static std::mutex hdfs_init_mutex;
 
-    String hdfs_uri;
-    String hdfs_file_path;
-
+    std::string hdfs_uri;
     hdfsFile fin;
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    explicit ReadBufferFromHDFSImpl(
-        const std::string & hdfs_uri_,
-        const std::string & hdfs_file_path_,
+    ReadBufferFromHDFSImpl(const std::string & hdfs_name_,
         const Poco::Util::AbstractConfiguration & config_)
-        : hdfs_uri(hdfs_uri_)
-        , hdfs_file_path(hdfs_file_path_)
-        , builder(createHDFSBuilder(hdfs_uri_, config_))
+        : hdfs_uri(hdfs_name_),
+          builder(createHDFSBuilder(hdfs_uri, config_))
     {
         std::lock_guard lock(hdfs_init_mutex);
 
         fs = createHDFSFS(builder.get());
-        fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
+        const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
+        const std::string path = hdfs_uri.substr(begin_of_path);
+        fin = hdfsOpenFile(fs.get(), path.c_str(), O_RDONLY, 0, 0, 0);
 
         if (fin == nullptr)
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
-                "Unable to open HDFS file: {}. Error: {}",
-                hdfs_uri + hdfs_file_path, std::string(hdfsGetLastError()));
+            throw Exception("Unable to open HDFS file: " + path + " error: " + std::string(hdfsGetLastError()),
+                ErrorCodes::CANNOT_OPEN_FILE);
     }
 
     int read(char * start, size_t size) const
     {
         int bytes_read = hdfsRead(fs.get(), fin, start, size);
         if (bytes_read < 0)
-            throw Exception(ErrorCodes::NETWORK_ERROR,
-                "Fail to read from HDFS: {}, file path: {}. Error: {}",
-                hdfs_uri, hdfs_file_path, std::string(hdfsGetLastError()));
+            throw Exception("Fail to read HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
+                ErrorCodes::NETWORK_ERROR);
         return bytes_read;
     }
 
@@ -68,13 +62,11 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 
 std::mutex ReadBufferFromHDFS::ReadBufferFromHDFSImpl::hdfs_init_mutex;
 
-ReadBufferFromHDFS::ReadBufferFromHDFS(
-        const String & hdfs_uri_,
-        const String & hdfs_file_path_,
-        const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_)
+ReadBufferFromHDFS::ReadBufferFromHDFS(const std::string & hdfs_name_,
+    const Poco::Util::AbstractConfiguration & config_,
+    size_t buf_size_)
     : BufferWithOwnMemory<ReadBuffer>(buf_size_)
-    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_))
+    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_name_, config_))
 {
 }
 

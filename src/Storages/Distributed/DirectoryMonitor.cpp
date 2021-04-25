@@ -231,12 +231,7 @@ namespace
         block_in.readSuffix();
     }
 
-    void writeRemoteConvert(
-        const DistributedHeader & distributed_header,
-        RemoteBlockOutputStream & remote,
-        bool compression_expected,
-        ReadBufferFromFile & in,
-        Poco::Logger * log)
+    void writeRemoteConvert(const DistributedHeader & distributed_header, RemoteBlockOutputStream & remote, ReadBufferFromFile & in, Poco::Logger * log)
     {
         if (!remote.getHeader())
         {
@@ -267,14 +262,6 @@ namespace
             return;
         }
 
-        /// If connection does not use compression, we have to uncompress the data.
-        if (!compression_expected)
-        {
-            writeAndConvert(remote, in);
-            return;
-        }
-
-        /// Otherwise write data as it was already prepared (more efficient path).
         CheckingCompressedReadBuffer checking_in(in);
         remote.writePrepared(checking_in);
     }
@@ -548,7 +535,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
         ReadBufferFromFile in(file_path);
         const auto & distributed_header = readDistributedHeader(in, log);
 
-        LOG_DEBUG(log, "Started processing `{}` ({} rows, {} bytes)", file_path,
+        LOG_TRACE(log, "Started processing `{}` ({} rows, {} bytes)", file_path,
             formatReadableQuantity(distributed_header.rows),
             formatReadableSizeWithBinarySuffix(distributed_header.bytes));
 
@@ -558,8 +545,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
             distributed_header.insert_settings,
             distributed_header.client_info};
         remote.writePrefix();
-        bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-        writeRemoteConvert(distributed_header, remote, compression_expected, in, log);
+        writeRemoteConvert(distributed_header, remote, in, log);
         remote.writeSuffix();
     }
     catch (const Exception & e)
@@ -645,7 +631,7 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         Stopwatch watch;
 
-        LOG_DEBUG(parent.log, "Sending a batch of {} files ({} rows, {} bytes).", file_indices.size(),
+        LOG_TRACE(parent.log, "Sending a batch of {} files ({} rows, {} bytes).", file_indices.size(),
             formatReadableQuantity(total_rows),
             formatReadableSizeWithBinarySuffix(total_bytes));
 
@@ -704,8 +690,7 @@ struct StorageDistributedDirectoryMonitor::Batch
                         distributed_header.client_info);
                     remote->writePrefix();
                 }
-                bool compression_expected = connection->getCompression() == Protocol::Compression::Enable;
-                writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
+                writeRemoteConvert(distributed_header, *remote, in, parent.log);
             }
 
             if (remote)
@@ -891,7 +876,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
 
             if (!total_rows || !header)
             {
-                LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
+                LOG_TRACE(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
 
                 CompressedReadBuffer decompressing_in(in);
                 NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);

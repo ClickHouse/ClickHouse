@@ -201,10 +201,7 @@ void CSVRowInputFormat::readPrefix()
             return;
         }
         else
-        {
             skipRow(in, format_settings.csv, num_columns);
-            setupAllColumnsByTableSchema();
-        }
     }
     else if (!column_mapping->is_set)
         setupAllColumnsByTableSchema();

@@ -18,8 +18,6 @@ public:
 
     static NamesAndTypesList getNamesAndTypes();
 
-    NamesAndTypesList getVirtuals() const override;
-
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 

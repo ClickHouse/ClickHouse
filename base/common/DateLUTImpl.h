@@ -25,7 +25,7 @@
 
 
 #if defined(__PPC__)
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 #endif
@@ -1266,7 +1266,7 @@ public:
 };
 
 #if defined(__PPC__)
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 #endif

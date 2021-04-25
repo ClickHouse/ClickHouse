@@ -28,47 +28,47 @@ Expression (Projection)
         PartialSorting (Sort each block for ORDER BY)
           Expression ((Before ORDER BY + Add table aliases))
             SettingQuotaAndLimits (Set limits and quota after reading from storage)
-              ReadFromMergeTree
+              ReadFromStorage (MergeTree)
 Expression (Projection)
   Limit (preliminary LIMIT)
     FinishSorting
       Expression ((Before ORDER BY + Add table aliases))
         SettingQuotaAndLimits (Set limits and quota after reading from storage)
           Union
-            ReadFromMergeTree
-            ReadFromMergeTree
-            ReadFromMergeTree
+            ReadFromStorage (MergeTree with order)
+            ReadFromStorage (MergeTree with order)
+            ReadFromStorage (MergeTree with order)
 Expression (Projection)
   Limit (preliminary LIMIT)
     FinishSorting
       Expression (Before ORDER BY)
         SettingQuotaAndLimits (Set limits and quota after reading from storage)
           Union
-            ReadFromMergeTree
-            ReadFromMergeTree
-            ReadFromMergeTree
+            ReadFromStorage (MergeTree with order)
+            ReadFromStorage (MergeTree with order)
+            ReadFromStorage (MergeTree with order)
 optimize_aggregation_in_order
 Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression ((Before GROUP BY + Add table aliases))
       SettingQuotaAndLimits (Set limits and quota after reading from storage)
-        ReadFromMergeTree
+        ReadFromStorage (MergeTree)
 Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression ((Before GROUP BY + Add table aliases))
       SettingQuotaAndLimits (Set limits and quota after reading from storage)
         Union
-          ReadFromMergeTree
-          ReadFromMergeTree
-          ReadFromMergeTree
+          ReadFromStorage (MergeTree with order)
+          ReadFromStorage (MergeTree with order)
+          ReadFromStorage (MergeTree with order)
 Expression ((Projection + Before ORDER BY))
   Aggregating
     Expression (Before GROUP BY)
       SettingQuotaAndLimits (Set limits and quota after reading from storage)
         Union
-          ReadFromMergeTree
-          ReadFromMergeTree
-          ReadFromMergeTree
+          ReadFromStorage (MergeTree with order)
+          ReadFromStorage (MergeTree with order)
+          ReadFromStorage (MergeTree with order)
 second-index
 1
 1
