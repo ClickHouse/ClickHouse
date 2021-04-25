@@ -80,7 +80,7 @@ public:
     {}
 
 
-    off_t appendRecord(ChangelogRecord && record, bool sync)
+    off_t appendRecord(ChangelogRecord && record)
     {
         off_t result = plain_buf.count();
         writeIntBinary(computeRecordChecksum(record), plain_buf);
@@ -96,23 +96,21 @@ public:
 
         entries_written++;
 
-        if (sync)
-            plain_buf.sync();
-        else
-            plain_buf.next();
         return result;
     }
 
     void truncateToLength(off_t new_length)
     {
-        flush();
+        plain_buf.next();
         plain_buf.truncate(new_length);
         plain_buf.seek(new_length, SEEK_SET);
     }
 
-    void flush()
+    void flush(bool force_fsync)
     {
-        plain_buf.sync();
+        plain_buf.next();
+        if (force_fsync)
+            plain_buf.sync();
     }
 
     uint64_t getEntriesWritten() const
@@ -247,9 +245,14 @@ private:
     ReadBufferFromFile read_buf;
 };
 
-Changelog::Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_, Poco::Logger * log_)
+Changelog::Changelog(
+    const std::string & changelogs_dir_,
+    uint64_t rotate_interval_,
+    bool force_sync_,
+    Poco::Logger * log_)
     : changelogs_dir(changelogs_dir_)
     , rotate_interval(rotate_interval_)
+    , force_sync(force_sync_)
     , log(log_)
 {
     namespace fs = std::filesystem;
@@ -357,6 +360,9 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
 void Changelog::rotate(uint64_t new_start_log_index)
 {
+    /// Flush previous log
+    flush();
+
     ChangelogFileDescription new_description;
     new_description.prefix = DEFAULT_PREFIX;
     new_description.from_log_index = new_start_log_index;
@@ -387,7 +393,7 @@ ChangelogRecord Changelog::buildRecord(uint64_t index, const LogEntryPtr & log_e
     return record;
 }
 
-void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry, bool force_sync)
+void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
 {
     if (!current_writer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before appending records");
@@ -398,14 +404,14 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry, bool 
     if (current_writer->getEntriesWritten() == rotate_interval)
         rotate(index);
 
-    auto offset = current_writer->appendRecord(buildRecord(index, log_entry), force_sync);
+    auto offset = current_writer->appendRecord(buildRecord(index, log_entry));
     if (!index_to_start_pos.try_emplace(index, offset).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Record with index {} already exists", index);
 
     logs[index] = makeClone(log_entry);
 }
 
-void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry, bool force_sync)
+void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 {
     if (index_to_start_pos.count(index) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write at index {} because changelog doesn't contain it", index);
@@ -451,7 +457,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry, bool forc
 
     current_writer->setEntriesWritten(entries_written);
 
-    appendEntry(index, log_entry, force_sync);
+    appendEntry(index, log_entry);
 }
 
 void Changelog::compact(uint64_t up_to_log_index)
@@ -540,7 +546,7 @@ nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, 
     return buf_out;
 }
 
-void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer, bool force_sync)
+void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer)
 {
     buffer.pos(0);
     int num_logs = buffer.get_int();
@@ -555,23 +561,23 @@ void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer, 
 
         LogEntryPtr log_entry = nuraft::log_entry::deserialize(*buf_local);
         if (i == 0 && logs.count(cur_index))
-            writeAt(cur_index, log_entry, force_sync);
+            writeAt(cur_index, log_entry);
         else
-            appendEntry(cur_index, log_entry, force_sync);
+            appendEntry(cur_index, log_entry);
     }
 }
 
 void Changelog::flush()
 {
-    current_writer->flush();
+    if (current_writer)
+        current_writer->flush(force_sync);
 }
 
 Changelog::~Changelog()
 {
     try
     {
-        if (current_writer)
-            current_writer->flush();
+        flush();
     }
     catch (...)
     {

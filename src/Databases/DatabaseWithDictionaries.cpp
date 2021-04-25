@@ -169,10 +169,21 @@ void DatabaseWithDictionaries::createDictionary(ContextPtr local_context, const 
     }
 
     bool succeeded = false;
+    bool uuid_locked = false;
     SCOPE_EXIT({
         if (!succeeded)
+        {
+            if (uuid_locked)
+                DatabaseCatalog::instance().removeUUIDMappingFinally(dict_id.uuid);
             Poco::File(dictionary_metadata_tmp_path).remove();
+        }
     });
+
+    if (dict_id.uuid != UUIDHelpers::Nil)
+    {
+        DatabaseCatalog::instance().addUUIDMapping(dict_id.uuid);
+        uuid_locked = true;
+    }
 
     /// Add a temporary repository containing the dictionary.
     /// We need this temp repository to try loading the dictionary before actually attaching it to the database.

@@ -245,7 +245,7 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::FETCH_PARTITION)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FETCH "
-                      << "PARTITION " << (settings.hilite ? hilite_none : "");
+                      << (part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
         settings.ostr << (settings.hilite ? hilite_keyword : "")
                       << " FROM " << (settings.hilite ? hilite_none : "") << DB::quote << from;
