@@ -21,6 +21,8 @@
 
 #ifdef __SSE4_1__
     #include <smmintrin.h>
+#else
+    #include <fenv.h>
 #endif
 
 
@@ -34,6 +36,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_SET_ROUNDING_MODE;
 }
 
 
@@ -101,7 +104,8 @@ struct IntegerRoundingComputation
         return scale;
     }
 
-    static ALWAYS_INLINE T computeImpl(T x, T scale)
+    /// Integer overflow is Ok.
+    static ALWAYS_INLINE_NO_SANITIZE_UNDEFINED T computeImpl(T x, T scale)
     {
         switch (rounding_mode)
         {
@@ -230,7 +234,7 @@ inline float roundWithMode(float x, RoundingMode mode)
 {
     switch (mode)
     {
-        case RoundingMode::Round: return roundf(x);
+        case RoundingMode::Round: return nearbyintf(x);
         case RoundingMode::Floor: return floorf(x);
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
@@ -243,7 +247,7 @@ inline double roundWithMode(double x, RoundingMode mode)
 {
     switch (mode)
     {
-        case RoundingMode::Round: return round(x);
+        case RoundingMode::Round: return nearbyint(x);
         case RoundingMode::Floor: return floor(x);
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
@@ -516,7 +520,7 @@ class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRounding>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRounding>(); }
 
     String getName() const override
     {
@@ -588,6 +592,15 @@ public:
             return false;
         };
 
+#if !defined(__SSE4_1__)
+        /// In case of "nearbyint" function is used, we should ensure the expected rounding mode for the Banker's rounding.
+        /// Actually it is by default. But we will set it just in case.
+
+        if constexpr (rounding_mode == RoundingMode::Round)
+            if (0 != fesetround(FE_TONEAREST))
+                throw Exception("Cannot set floating point rounding mode", ErrorCodes::CANNOT_SET_ROUNDING_MODE);
+#endif
+
         if (!callOnIndexAndDataType<void>(column.type->getTypeId(), call))
         {
             throw Exception("Illegal column " + column.name + " of argument of function " + getName(),
@@ -616,7 +629,7 @@ class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRoundDown>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRoundDown>(); }
 
     String getName() const override { return name; }
 

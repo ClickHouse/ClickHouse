@@ -1,8 +1,15 @@
 #pragma once
 
+<<<<<<< HEAD
 #include <Core/Types.h>
 #include <common/unaligned.h>
 #include <city.h>
+=======
+#include <common/types.h>
+#include <common/unaligned.h>
+#include <common/StringRef.h>
+#include <Common/UInt128.h>
+>>>>>>> master
 
 #include <type_traits>
 
@@ -176,6 +183,7 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) <= sizeof(UInt64)), T> k
     u.in = key;
     return intHash64(u.out);
 }
+
 
 template <typename T, typename Enable = void>
 struct DefaultHash;
@@ -408,6 +416,11 @@ struct IntHash32
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
             return intHash32<salt>(key);
+
+        assert(false);
         __builtin_unreachable();
     }
 };
+
+template <>
+struct DefaultHash<StringRef> : public StringRefHash {};

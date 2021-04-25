@@ -99,6 +99,12 @@ ThreadStatus::~ThreadStatus()
         /// We've already allocated a little bit more than the limit and cannot track it in the thread memory tracker or its parent.
     }
 
+#if !defined(ARCADIA_BUILD)
+    /// It may cause segfault if query_context was destroyed, but was not detached
+    auto query_context_ptr = query_context.lock();
+    assert((!query_context_ptr && query_id.empty()) || (query_context_ptr && query_id == query_context_ptr->getCurrentQueryId()));
+#endif
+
     if (deleter)
         deleter();
     current_thread = nullptr;

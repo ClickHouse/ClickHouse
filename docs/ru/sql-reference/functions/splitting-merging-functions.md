@@ -1,6 +1,6 @@
 ---
 toc_priority: 47
-toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0440\u0430\u0437\u0431\u0438\u0435\u043d\u0438\u044f\u0020\u0438\u0020\u0441\u043b\u0438\u044f\u043d\u0438\u044f\u0020\u0441\u0442\u0440\u043e\u043a\u0020\u0438\u0020\u043c\u0430\u0441\u0441\u0438\u0432\u043e\u0432"
+toc_title: "Функции разбиения и слияния строк и массивов"
 ---
 
 # Функции разбиения и слияния строк и массивов {#funktsii-razbieniia-i-sliianiia-strok-i-massivov}
@@ -17,10 +17,10 @@ separator должен быть константной строкой из ро�
 splitByChar(<separator>, <s>)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `separator` — Разделитель, состоящий из одного символа. [String](../../sql-reference/data-types/string.md).
--   `s` — Разбиваемая строка. [String](../../sql-reference/data-types/string.md).
+-   `separator` — разделитель, состоящий из одного символа. [String](../../sql-reference/data-types/string.md).
+-   `s` — разбиваемая строка. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемые значения**
 
@@ -54,10 +54,10 @@ SELECT splitByChar(',', '1,2,3,abcde')
 splitByString(separator, s)
 ```
 
-**Параметры**
+**Аргументы**
 
--   `separator` — Разделитель. [String](../../sql-reference/data-types/string.md).
--   `s` — Разбиваемая строка. [String](../../sql-reference/data-types/string.md).
+-   `separator` — разделитель. [String](../../sql-reference/data-types/string.md).
+-   `s` — разбиваемая строка. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемые значения**
 
@@ -67,7 +67,7 @@ splitByString(separator, s)
 -   Задано несколько последовательных разделителей;
 -   Исходная строка `s` пуста.
 
-Type: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
+Тип: [Array](../../sql-reference/data-types/array.md) of [String](../../sql-reference/data-types/string.md).
 
 **Примеры**
 
@@ -115,4 +115,3 @@ SELECT alphaTokens('abca1abc')
 └─────────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/splitting_merging_functions/) <!--hide-->

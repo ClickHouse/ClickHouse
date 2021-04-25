@@ -52,11 +52,11 @@ void MergeSortingStep::updateLimit(size_t limit_)
     if (limit_ && (limit == 0 || limit_ < limit))
     {
         limit = limit_;
-        transform_traits.preserves_number_of_rows = limit == 0;
+        transform_traits.preserves_number_of_rows = false;
     }
 }
 
-void MergeSortingStep::transformPipeline(QueryPipeline & pipeline)
+void MergeSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {

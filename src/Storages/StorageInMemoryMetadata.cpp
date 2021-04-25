@@ -128,7 +128,7 @@ TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
 
 bool StorageInMemoryMetadata::hasAnyTableTTL() const
 {
-    return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL();
+    return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
 }
 
 TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
@@ -151,6 +151,16 @@ bool StorageInMemoryMetadata::hasRowsTTL() const
     return table_ttl.rows_ttl.expression != nullptr;
 }
 
+TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTLs() const
+{
+    return table_ttl.rows_where_ttl;
+}
+
+bool StorageInMemoryMetadata::hasAnyRowsWhereTTL() const
+{
+    return !table_ttl.rows_where_ttl.empty();
+}
+
 TTLDescriptions StorageInMemoryMetadata::getMoveTTLs() const
 {
     return table_ttl.move_ttl;
@@ -169,6 +179,16 @@ TTLDescriptions StorageInMemoryMetadata::getRecompressionTTLs() const
 bool StorageInMemoryMetadata::hasAnyRecompressionTTL() const
 {
     return !table_ttl.recompression_ttl.empty();
+}
+
+TTLDescriptions StorageInMemoryMetadata::getGroupByTTLs() const
+{
+    return table_ttl.group_by_ttl;
+}
+
+bool StorageInMemoryMetadata::hasAnyGroupByTTL() const
+{
+    return !table_ttl.group_by_ttl.empty();
 }
 
 ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet & updated_columns) const
@@ -271,9 +291,10 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 {
     Block res;
 
-    std::unordered_map<String, DataTypePtr> columns_map;
-
     auto all_columns = getColumns().getAllWithSubcolumns();
+    std::unordered_map<String, DataTypePtr> columns_map;
+    columns_map.reserve(all_columns.size());
+
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
 
@@ -286,15 +307,11 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
     {
         auto it = columns_map.find(name);
         if (it != columns_map.end())
-        {
             res.insert({it->second->createColumn(), it->second, it->first});
-        }
         else
-        {
             throw Exception(
-                "Column " + backQuote(name) + " not found in table " + storage_id.getNameForLogs(),
+                "Column " + backQuote(name) + " not found in table " + (storage_id.empty() ? "" : storage_id.getNameForLogs()),
                 ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-        }
     }
 
     return res;

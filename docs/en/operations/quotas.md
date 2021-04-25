@@ -29,6 +29,8 @@ Let’s look at the section of the ‘users.xml’ file that defines quotas.
 
             <!-- Unlimited. Just collect data for the specified time interval. -->
             <queries>0</queries>
+            <query_selects>0</query_selects>
+            <query_inserts>0</query_inserts>
             <errors>0</errors>
             <result_rows>0</result_rows>
             <read_rows>0</read_rows>
@@ -48,6 +50,8 @@ The resource consumption calculated for each interval is output to the server lo
         <duration>3600</duration>
 
         <queries>1000</queries>
+        <query_selects>100</query_selects>
+        <query_inserts>100</query_inserts>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
@@ -58,6 +62,8 @@ The resource consumption calculated for each interval is output to the server lo
         <duration>86400</duration>
 
         <queries>10000</queries>
+        <query_selects>10000</query_selects>
+        <query_inserts>10000</query_inserts>
         <errors>1000</errors>
         <result_rows>5000000000</result_rows>
         <read_rows>500000000000</read_rows>
@@ -73,6 +79,10 @@ When the interval ends, all collected values are cleared. For the next hour, the
 Here are the amounts that can be restricted:
 
 `queries` – The total number of requests.
+
+`query_selects` – The total number of select requests.
+
+`query_inserts` – The total number of insert requests.
 
 `errors` – The number of queries that threw an exception.
 

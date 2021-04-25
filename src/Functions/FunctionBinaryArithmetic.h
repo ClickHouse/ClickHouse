@@ -504,7 +504,7 @@ private:
 using namespace traits_;
 using namespace impl_;
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
     static constexpr const bool is_plus = IsOperation<Op>::plus;
@@ -512,7 +512,7 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr const bool is_multiply = IsOperation<Op>::multiply;
     static constexpr const bool is_division = IsOperation<Op>::division;
 
-    const Context & context;
+    ContextPtr context;
     bool check_decimal_overflow = true;
 
     template <typename F>
@@ -543,19 +543,57 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     template <typename F>
+    static bool castTypeNoFloats(const IDataType * type, F && f)
+    {
+        return castTypeToEither<
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeUInt256,
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64,
+            DataTypeInt128,
+            DataTypeInt256,
+            DataTypeDate,
+            DataTypeDateTime,
+            DataTypeDecimal<Decimal32>,
+            DataTypeDecimal<Decimal64>,
+            DataTypeDecimal<Decimal128>,
+            DataTypeDecimal<Decimal256>,
+            DataTypeFixedString
+        >(type, std::forward<F>(f));
+    }
+
+    template <typename F>
     static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     {
-        return castType(left, [&](const auto & left_)
+        if constexpr (valid_on_float_arguments)
         {
-            return castType(right, [&](const auto & right_)
+            return castType(left, [&](const auto & left_)
             {
-                return f(left_, right_);
+                return castType(right, [&](const auto & right_)
+                {
+                    return f(left_, right_);
+                });
             });
-        });
+        }
+        else
+        {
+            return castTypeNoFloats(left, [&](const auto & left_)
+            {
+                return castTypeNoFloats(right, [&](const auto & right_)
+                {
+                    return f(left_, right_);
+                });
+            });
+        }
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, const Context & context)
+    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
         bool first_is_date_or_datetime = isDateOrDateTime(type0);
         bool second_is_date_or_datetime = isDateOrDateTime(type1);
@@ -856,9 +894,8 @@ class FunctionBinaryArithmetic : public IFunction
             const NativeResultType const_b = helperGetOrConvert<T1, ResultDataType>(col_right_const, right);
 
             const ResultType res = check_decimal_overflow
-                // the arguments are already scaled after conversion
-                ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, 1, 1)
-                : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, 1, 1);
+                ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b)
+                : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b);
 
             if constexpr (result_is_decimal)
                 return ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
@@ -902,9 +939,9 @@ class FunctionBinaryArithmetic : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
 
-    explicit FunctionBinaryArithmetic(const Context & context_)
+    explicit FunctionBinaryArithmetic(ContextPtr context_)
     :   context(context_),
         check_decimal_overflow(decimalCheckArithmeticOverflow(context))
     {}
@@ -918,7 +955,7 @@ public:
         return getReturnTypeImplStatic(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, const Context & context)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
@@ -1319,18 +1356,18 @@ public:
 };
 
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
-class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
+class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>
 {
 public:
-    using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>;
+    using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>;
     using Monotonicity = typename Base::Monotonicity;
 
     static FunctionPtr create(
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        const Context & context)
+        ContextPtr context)
     {
         return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context);
     }
@@ -1339,7 +1376,7 @@ public:
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        const Context & context_)
+        ContextPtr context_)
         : Base(context_), left(left_), right(right_), return_type(return_type_)
     {
     }
@@ -1488,17 +1525,17 @@ private:
     DataTypePtr return_type;
 };
 
-template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true>
+template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
 class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionOverloadResolverImplPtr create(const Context & context)
+    static FunctionOverloadResolverImplPtr create(ContextPtr context)
     {
         return std::make_unique<BinaryArithmeticOverloadResolver>(context);
     }
 
-    explicit BinaryArithmeticOverloadResolver(const Context & context_) : context(context_) {}
+    explicit BinaryArithmeticOverloadResolver(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -1512,14 +1549,14 @@ public:
                 || (arguments[1].column && isColumnConst(*arguments[1].column))))
         {
             return std::make_unique<DefaultFunction>(
-                FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments>::create(
+                FunctionBinaryArithmeticWithConstants<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(
                     arguments[0], arguments[1], return_type, context),
                 ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
         }
 
         return std::make_unique<DefaultFunction>(
-            FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>::create(context),
+            FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(context),
             ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
             return_type);
     }
@@ -1530,10 +1567,10 @@ public:
             throw Exception(
                 "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size()) + ", should be 2",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments>::getReturnTypeImplStatic(arguments, context);
+        return FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::getReturnTypeImplStatic(arguments, context);
     }
 
 private:
-    const Context & context;
+    ContextPtr context;
 };
 }

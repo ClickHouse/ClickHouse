@@ -13,7 +13,9 @@ Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal
 isNull(x)
 ```
 
-**Parameters**
+Alias: `ISNULL`.
+
+**Arguments**
 
 -   `x` — A value with a non-compound data type.
 
@@ -36,7 +38,7 @@ Input table
 Query
 
 ``` sql
-SELECT x FROM t_null WHERE isNull(y)
+SELECT x FROM t_null WHERE isNull(y);
 ```
 
 ``` text
@@ -53,7 +55,7 @@ Checks whether the argument is [NULL](../../sql-reference/syntax.md#null-literal
 isNotNull(x)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `x` — A value with a non-compound data type.
 
@@ -76,7 +78,7 @@ Input table
 Query
 
 ``` sql
-SELECT x FROM t_null WHERE isNotNull(y)
+SELECT x FROM t_null WHERE isNotNull(y);
 ```
 
 ``` text
@@ -93,7 +95,7 @@ Checks from left to right whether `NULL` arguments were passed and returns the f
 coalesce(x,...)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   Any number of parameters of a non-compound type. All parameters must be compatible by data type.
 
@@ -118,7 +120,7 @@ The `mail` and `phone` fields are of type String, but the `icq` field is `UInt32
 Get the first available contact method for the customer from the contact list:
 
 ``` sql
-SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
+SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook;
 ```
 
 ``` text
@@ -136,7 +138,7 @@ Returns an alternative value if the main argument is `NULL`.
 ifNull(x,alt)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `x` — The value to check for `NULL`.
 -   `alt` — The value that the function returns if `x` is `NULL`.
@@ -149,7 +151,7 @@ ifNull(x,alt)
 **Example**
 
 ``` sql
-SELECT ifNull('a', 'b')
+SELECT ifNull('a', 'b');
 ```
 
 ``` text
@@ -159,7 +161,7 @@ SELECT ifNull('a', 'b')
 ```
 
 ``` sql
-SELECT ifNull(NULL, 'b')
+SELECT ifNull(NULL, 'b');
 ```
 
 ``` text
@@ -176,7 +178,7 @@ Returns `NULL` if the arguments are equal.
 nullIf(x, y)
 ```
 
-**Parameters:**
+**Arguments:**
 
 `x`, `y` — Values for comparison. They must be compatible types, or ClickHouse will generate an exception.
 
@@ -188,7 +190,7 @@ nullIf(x, y)
 **Example**
 
 ``` sql
-SELECT nullIf(1, 1)
+SELECT nullIf(1, 1);
 ```
 
 ``` text
@@ -198,7 +200,7 @@ SELECT nullIf(1, 1)
 ```
 
 ``` sql
-SELECT nullIf(1, 2)
+SELECT nullIf(1, 2);
 ```
 
 ``` text
@@ -215,7 +217,7 @@ Results in a value of type [Nullable](../../sql-reference/data-types/nullable.md
 assumeNotNull(x)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `x` — The original value.
 
@@ -229,7 +231,7 @@ assumeNotNull(x)
 Consider the `t_null` table.
 
 ``` sql
-SHOW CREATE TABLE t_null
+SHOW CREATE TABLE t_null;
 ```
 
 ``` text
@@ -248,7 +250,7 @@ SHOW CREATE TABLE t_null
 Apply the `assumeNotNull` function to the `y` column.
 
 ``` sql
-SELECT assumeNotNull(y) FROM t_null
+SELECT assumeNotNull(y) FROM t_null;
 ```
 
 ``` text
@@ -259,7 +261,7 @@ SELECT assumeNotNull(y) FROM t_null
 ```
 
 ``` sql
-SELECT toTypeName(assumeNotNull(y)) FROM t_null
+SELECT toTypeName(assumeNotNull(y)) FROM t_null;
 ```
 
 ``` text
@@ -277,7 +279,7 @@ Converts the argument type to `Nullable`.
 toNullable(x)
 ```
 
-**Parameters:**
+**Arguments:**
 
 -   `x` — The value of any non-compound type.
 
@@ -288,7 +290,7 @@ toNullable(x)
 **Example**
 
 ``` sql
-SELECT toTypeName(10)
+SELECT toTypeName(10);
 ```
 
 ``` text
@@ -298,7 +300,7 @@ SELECT toTypeName(10)
 ```
 
 ``` sql
-SELECT toTypeName(toNullable(10))
+SELECT toTypeName(toNullable(10));
 ```
 
 ``` text
@@ -307,4 +309,3 @@ SELECT toTypeName(toNullable(10))
 └────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->

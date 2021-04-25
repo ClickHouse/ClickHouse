@@ -45,7 +45,7 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     // 4. type_with_params(param1, param2, ...) options
     // The options can be unsigned, zerofill, or some other strings.
     auto data_type = std::string_view(mysql_data_type);
-    const auto type_end_pos = data_type.find_first_of("(\x20"); // FIXME: fix style-check script instead
+    const auto type_end_pos = data_type.find_first_of(R"(( )"); // FIXME: fix style-check script instead
     const auto type_name = data_type.substr(0, type_end_pos);
 
     DataTypePtr res;
@@ -103,11 +103,11 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
     }
     else if (type_support.isSet(MySQLDataTypesSupport::DECIMAL) && (type_name == "numeric" || type_name == "decimal"))
     {
-        if (precision <= DecimalUtils::maxPrecision<Decimal32>())
+        if (precision <= DecimalUtils::max_precision<Decimal32>)
             res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal64>())
+        else if (precision <= DecimalUtils::max_precision<Decimal64>)
             res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
-        else if (precision <= DecimalUtils::maxPrecision<Decimal128>())
+        else if (precision <= DecimalUtils::max_precision<Decimal128>)
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
     }
 
