@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE;
+    extern const int DICTIONARY_ALREADY_EXISTS;
 }
 
 namespace
@@ -241,9 +242,27 @@ void registerStorageDictionary(StorageFactory & factory)
 
         if (query.is_dictionary)
         {
+            auto dictionary_id = args.table_id;
+            auto & external_dictionaries_loader = local_context->getExternalDictionariesLoader();
+
+            /// A dictionary with the same full name could be defined in *.xml config files.
+            if (external_dictionaries_loader.getCurrentStatus(dictionary_id.getFullNameNotQuoted()) != ExternalLoader::Status::NOT_EXIST)
+                throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS,
+                        "Dictionary {} already exists.", dictionary_id.getFullNameNotQuoted());
+
             /// Create dictionary storage that owns underlying dictionary
-            auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, args.table_id.database_name);
-            return StorageDictionary::create(args.table_id, abstract_dictionary_configuration, local_context);
+            auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
+            auto result_storage = StorageDictionary::create(dictionary_id, abstract_dictionary_configuration, local_context);
+
+            bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
+            if (!lazy_load)
+            {
+                /// load() is called here to force loading the dictionary, wait until the loading is finished,
+                /// and throw an exception if the loading is failed.
+                external_dictionaries_loader.load(result_storage->getStorageID().getInternalDictionaryName());
+            }
+
+            return result_storage;
         }
         else
         {

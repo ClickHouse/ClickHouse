@@ -205,7 +205,7 @@ StoragePtr StorageFactory::get(
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
     auto res = storages.at(name).creator_fn(arguments);
-    if (!empty_engine_args.empty()) //-v547
+    if (!empty_engine_args.empty()) //-V547
     {
         /// Storage creator modified empty arguments list, so we should modify the query
         assert(storage_def && storage_def->engine && !storage_def->engine->arguments);
