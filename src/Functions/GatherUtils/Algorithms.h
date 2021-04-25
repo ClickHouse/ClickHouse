@@ -45,11 +45,7 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 
         if constexpr (OverBigInt<T> || OverBigInt<U>)
         {
-            if constexpr (std::is_same_v<U, UInt128>)
-            {
-                throw Exception("No conversion between UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
-            }
-            else if constexpr (IsDecimalNumber<T>)
+            if constexpr (IsDecimalNumber<T>)
                 dst = static_cast<NativeU>(src.value);
             else
                 dst = static_cast<NativeU>(src);

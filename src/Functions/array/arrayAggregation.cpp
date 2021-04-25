@@ -167,7 +167,7 @@ struct ArrayAggregateImpl
                 {
                     size_t array_size = offsets[i] - pos;
                     /// Just multiply the value by array size.
-                    res[i] = x * array_size;
+                    res[i] = x * Result(array_size);
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::min ||
                                 aggregate_operation == AggregateOperation::max)
@@ -206,12 +206,15 @@ struct ArrayAggregateImpl
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            AggregationType s = 0;
+            AggregationType s{};
 
             /// Array is empty
             if (offsets[i] == pos)
             {
-                res[i] = s;
+                if constexpr (IsDecimalNumber<AggregationType>)
+                    res[i] = s.value;
+                else
+                    res[i] = s;
                 continue;
             }
 
@@ -250,7 +253,7 @@ struct ArrayAggregateImpl
             {
                 if constexpr (IsDecimalNumber<Element>)
                 {
-                    s = s / count;
+                    s = s / AggregationType(count);
                     res[i] = DecimalUtils::convertTo<Result>(s, data.getScale());
                 }
                 else

@@ -57,7 +57,7 @@ struct ArrayDifferenceImpl
         {
             if (pos == begin)
             {
-                dst[pos] = 0;
+                dst[pos] = {};
                 prev = src[pos];
             }
             else

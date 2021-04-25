@@ -290,7 +290,7 @@ namespace
                 if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {
                     String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                    assert_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string));
+                    assert_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string).toUnderType());
                 }
                 else
                     throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) + " for column "

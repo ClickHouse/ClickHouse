@@ -54,7 +54,7 @@ void StorageSystemSettingsProfiles::fillData(MutableColumns & res_columns, Conte
                        const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
         column_num_elements.push_back(elements.size());
 

@@ -40,10 +40,10 @@ public:
                 return l == r;
 
             if constexpr (isDecimalField<T>() && std::is_arithmetic_v<U>)
-                return accurate::equalsOp(l.getValue(), r);
+                return l == DecimalField<Decimal256>(Decimal256(r), 0);
 
             if constexpr (std::is_arithmetic_v<T> && isDecimalField<U>())
-                return accurate::equalsOp(l, r.getValue());
+                return DecimalField<Decimal256>(Decimal256(l), 0) == r;
 
             if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
             {
@@ -94,10 +94,10 @@ public:
                 return l < r;
 
             if constexpr (isDecimalField<T>() && std::is_arithmetic_v<U>)
-                return accurate::lessOp(l.getValue(), r);
+                return l < DecimalField<Decimal256>(Decimal256(r), 0);
 
             if constexpr (std::is_arithmetic_v<T> && isDecimalField<U>())
-                return accurate::lessOp(l, r.getValue());
+                return DecimalField<Decimal256>(Decimal256(l), 0) < r;
 
             if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
             {

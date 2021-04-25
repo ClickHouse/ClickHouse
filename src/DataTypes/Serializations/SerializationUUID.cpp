@@ -18,7 +18,7 @@ void SerializationUUID::deserializeText(IColumn & column, ReadBuffer & istr, con
 {
     UUID x;
     readText(x, istr);
-    assert_cast<ColumnUInt128 &>(column).getData().push_back(x);
+    assert_cast<ColumnUInt128 &>(column).getData().push_back(x.toUnderType());
 }
 
 void SerializationUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -44,7 +44,7 @@ void SerializationUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     assertChar('\'', istr);
     readText(x, istr);
     assertChar('\'', istr);
-    assert_cast<ColumnUInt128 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
+    assert_cast<ColumnUInt128 &>(column).getData().push_back(x.toUnderType());    /// It's important to do this at the end - for exception safety.
 }
 
 void SerializationUUID::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -60,7 +60,7 @@ void SerializationUUID::deserializeTextJSON(IColumn & column, ReadBuffer & istr,
     assertChar('"', istr);
     readText(x, istr);
     assertChar('"', istr);
-    assert_cast<ColumnUInt128 &>(column).getData().push_back(x);
+    assert_cast<ColumnUInt128 &>(column).getData().push_back(x.toUnderType());
 }
 
 void SerializationUUID::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -74,7 +74,7 @@ void SerializationUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
 {
     UUID value;
     readCSV(value, istr);
-    assert_cast<ColumnUInt128 &>(column).getData().push_back(value);
+    assert_cast<ColumnUInt128 &>(column).getData().push_back(value.toUnderType());
 }
 
 }

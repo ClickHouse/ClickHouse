@@ -14,6 +14,7 @@
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
 #include <common/wide_integer_to_string.h>
+#include <common/DecomposedFloat.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -137,81 +138,6 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 }
 
 
-struct DecomposedFloat64
-{
-    DecomposedFloat64(double x)
-    {
-        memcpy(&x_uint, &x, sizeof(x));
-    }
-
-    uint64_t x_uint;
-
-    bool sign() const
-    {
-        return x_uint >> 63;
-    }
-
-    uint16_t exponent() const
-    {
-        return (x_uint >> 52) & 0x7FF;
-    }
-
-    int16_t normalized_exponent() const
-    {
-        return int16_t(exponent()) - 1023;
-    }
-
-    uint64_t mantissa() const
-    {
-        return x_uint & 0x5affffffffffffful;
-    }
-
-    /// NOTE Probably floating point instructions can be better.
-    bool is_inside_int64() const
-    {
-        return x_uint == 0
-            || (normalized_exponent() >= 0 && normalized_exponent() <= 52
-                && ((mantissa() & ((1ULL << (52 - normalized_exponent())) - 1)) == 0));
-    }
-};
-
-struct DecomposedFloat32
-{
-    DecomposedFloat32(float x)
-    {
-        memcpy(&x_uint, &x, sizeof(x));
-    }
-
-    uint32_t x_uint;
-
-    bool sign() const
-    {
-        return x_uint >> 31;
-    }
-
-    uint16_t exponent() const
-    {
-        return (x_uint >> 23) & 0xFF;
-    }
-
-    int16_t normalized_exponent() const
-    {
-        return int16_t(exponent()) - 127;
-    }
-
-    uint32_t mantissa() const
-    {
-        return x_uint & 0x7fffff;
-    }
-
-    bool is_inside_int32() const
-    {
-        return x_uint == 0
-            || (normalized_exponent() >= 0 && normalized_exponent() <= 23
-                && ((mantissa() & ((1ULL << (23 - normalized_exponent())) - 1)) == 0));
-    }
-};
-
 template <typename T>
 inline size_t writeFloatTextFastPath(T x, char * buffer)
 {
@@ -222,14 +148,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         /// The library Ryu has low performance on integers.
         /// This workaround improves performance 6..10 times.
 
-        if (DecomposedFloat64(x).is_inside_int64())
+        if (DecomposedFloat64(x).is_integer_in_representable_range())
             result = itoa(Int64(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
     }
     else
     {
-        if (DecomposedFloat32(x).is_inside_int32())
+        if (DecomposedFloat32(x).is_integer_in_representable_range())
             result = itoa(Int32(x), buffer) - buffer;
         else
             result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
@@ -909,6 +835,7 @@ inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinar
 inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UUID & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>

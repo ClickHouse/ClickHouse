@@ -303,7 +303,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '8': [[fallthrough]];
             case '9':
             {
-                if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
+                if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW && !is_big_int_v<T>)
                 {
                     /// Perform relativelly slow overflow check only when
                     /// number of decimal digits so far is close to the max for given type.

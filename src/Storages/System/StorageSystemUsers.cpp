@@ -95,7 +95,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
                        const RolesOrUsersSet & grantees)
     {
         column_name.insertData(name.data(), name.length());
-        column_id.push_back(id);
+        column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
         column_auth_type.push_back(static_cast<Int8>(authentication.getType()));
 
