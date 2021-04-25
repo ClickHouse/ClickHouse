@@ -112,11 +112,11 @@ make -j $(nproc)
 
 ## How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
 
-### Install Git and Pbuilder {#install-git-and-pbuilder}
+### Install Git {#install-git}
 
 ``` bash
 $ sudo apt-get update
-$ sudo apt-get install git python pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
+$ sudo apt-get install git python debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
 ```
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources-1}
