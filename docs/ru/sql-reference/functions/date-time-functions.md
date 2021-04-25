@@ -45,8 +45,8 @@ toTimezone(value, timezone)
 
 **Аргументы** 
 
--   `value` — Время или дата с временем. [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — Часовой пояс для возвращаемого значения. [String](../../sql-reference/data-types/string.md).
+-   `value` — время или дата с временем. [DateTime64](../../sql-reference/data-types/datetime64.md).
+-   `timezone` — часовой пояс для возвращаемого значения. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
@@ -1010,4 +1010,3 @@ SELECT FROM_UNIXTIME(1234334543, '%Y-%m-%d %R:%S') AS DateTime;
 │ 2009-02-11 14:42:23 │
 └─────────────────────┘
 ```
-
