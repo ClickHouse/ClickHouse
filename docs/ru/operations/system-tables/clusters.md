@@ -12,7 +12,7 @@
 -   `host_address` ([String](../../sql-reference/data-types/string.md)) — TIP-адрес хоста, полученный из DNS.
 -   `port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт, на который обращаться для соединения с сервером.
 -   `is_local` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, показывающий является ли хост локальным.
--   `user` ([String](../../sql-reference/data-types/string.md)) — имя пользователя, которого использовать для соединения с сервером.
+-   `user` ([String](../../sql-reference/data-types/string.md)) — имя пользователя для соединения с сервером.
 -   `default_database` ([String](../../sql-reference/data-types/string.md)) — имя базы данных по умолчанию.
 -   `errors_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество неудачных попыток хоста получить доступ к реплике.
 -   `slowdowns_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество замен реплики из-за долгого отсутствия ответа от нее при установке соединения при хеджированных запросах.
