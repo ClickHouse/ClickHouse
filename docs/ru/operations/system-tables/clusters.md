@@ -14,7 +14,7 @@
 -   `is_local` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, показывающий является ли хост локальным.
 -   `user` ([String](../../sql-reference/data-types/string.md)) — имя пользователя, которого использовать для соединения с сервером.
 -   `default_database` ([String](../../sql-reference/data-types/string.md)) — имя базы данных по умолчанию.
--   `errors_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество неудачных попыток у хоста получить доступ к реплике.
+-   `errors_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество неудачных попыток хоста получить доступ к реплике.
 -   `slowdowns_count` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество раз, когда была заменена реплика при установке соединения при хеджированных запросах из-за долгого отсутствия ответа от реплики.
 -   `estimated_recovery_time` ([UInt32](../../sql-reference/data-types/int-uint.md)) — количество секунд до того момента, когда количество ошибок будет обнулено и реплика будет доступной.
 
