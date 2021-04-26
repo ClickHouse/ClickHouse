@@ -159,8 +159,6 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         return;
     }
 
-    if (exchange && dictionary)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot exchange dictionaries");
     if (exchange && !supportsRenameat2())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RENAME EXCHANGE is not supported");
 
@@ -230,9 +228,15 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     StoragePtr table = getTableUnlocked(table_name, db_lock);
 
-    if (dictionary != table->isDictionary())
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-                        "Use RENAME DICTIONARY for dictionaries and RENAME TABLE for tables.");
+    if (table->isDictionary() && !dictionary)
+    {
+        if (exchange)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Use EXCHANGE DICTIONARIES for dictionaries and EXCAHNGE TABLES for tables.");
+        else
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Use RENAME DICTIONARY for dictionaries and RENAME TABLE for tables.");
+    }
 
     table->checkTableCanBeRenamed();
     assert_can_move_mat_view(table);
