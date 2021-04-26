@@ -61,11 +61,6 @@ def test_dependency_via_implicit_table(node):
 
     check()
 
-    # Restart must not break anything.
-    node.restart_clickhouse()
-    check()
-
-
 @pytest.mark.parametrize("node", nodes)
 def test_dependency_via_explicit_table(node):
     tbl_names = ["test.atbl", "test.ztbl", "atest.tbl", "ztest.tbl"]
@@ -85,10 +80,6 @@ def test_dependency_via_explicit_table(node):
 
     check()
 
-    # Restart must not break anything.
-    node.restart_clickhouse()
-    check()
-
 
 @pytest.mark.parametrize("node", nodes)
 def test_dependency_via_dictionary_database(node):
@@ -104,8 +95,4 @@ def test_dependency_via_dictionary_database(node):
         for d_name in d_names:
             assert node.query("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
 
-    check()
-
-    # Restart must not break anything.
-    node.restart_clickhouse()
     check()

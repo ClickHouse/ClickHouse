@@ -164,6 +164,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
 
             if (table->isDictionary())
             {
+                /// If DROP DICTIONARY query is not used, check if Dictionary can be dropped with DROP TABLE query
                 if (!query.is_dictionary)
                     table->checkTableCanBeDropped();
             }
@@ -207,6 +208,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
 
             if (table->isDictionary())
             {
+                /// If DROP DICTIONARY query is not used, check if Dictionary can be dropped with DROP TABLE query
                 if (!query.is_dictionary)
                     table->checkTableCanBeDropped();
             }
