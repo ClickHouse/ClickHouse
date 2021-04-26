@@ -1015,6 +1015,7 @@ done
 wait
 
 # Create per-query flamegraphs
+touch report/query-files.txt
 IFS=$'\n'
 for version in {right,left}
 do
@@ -1207,8 +1208,8 @@ function upload_results
 
     # Grepping numactl results from log is too crazy, I'll just call it again.
     "${client[@]}" --query "INSERT INTO run_attributes_v1 FORMAT TSV" <<EOF
-$left_sha	$right_sha	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
-$left_sha	$right_sha	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
+$REF_SHA	$SHA_TO_TEST	$(numactl --show | sed -n 's/^cpubind:[[:space:]]\+/numactl-cpubind	/p')
+$REF_SHA	$SHA_TO_TEST	$(numactl --hardware | sed -n 's/^available:[[:space:]]\+/numactl-available	/p')
 EOF
 
     set -x
