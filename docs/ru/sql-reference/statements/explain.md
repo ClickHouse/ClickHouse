@@ -3,17 +3,17 @@ toc_priority: 39
 toc_title: EXPLAIN
 ---
 
-# EXPLAIN Statement {#explain}
+# EXPLAIN {#explain}
 
-Shows the execution plan of a statement.
+Выводит план выполнения запроса.
 
-Syntax:
+Синтаксис:
 
 ```sql
 EXPLAIN [AST | SYNTAX | PLAN | PIPELINE] [setting = value, ...] SELECT ... [FORMAT ...]
 ```
 
-Example:
+Пример:
 
 ```sql
 EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM numbers(10) ORDER BY sum(number) ASC FORMAT TSV;
@@ -38,18 +38,18 @@ Union
                   ReadFromStorage (SystemNumbers)
 ```
 
-## EXPLAIN Types {#explain-types}
+## Типы EXPLAIN {#explain-types}
 
--  `AST` — Abstract syntax tree.
--  `SYNTAX` — Query text after AST-level optimizations.
--  `PLAN` — Query execution plan.
--  `PIPELINE` — Query execution pipeline.
+-  `AST` — абстрактное синтаксическое дерево.
+-  `SYNTAX` — текст запроса после оптимизации на уровне AST.
+-  `PLAN` — план выполнения запроса.
+-  `PIPELINE` — конвейер выполнения запроса.
 
 ### EXPLAIN AST {#explain-ast}
 
-Dump query AST.
+Дамп AST запроса.
 
-Example:
+Пример:
 
 ```sql
 EXPLAIN AST SELECT 1;
@@ -65,9 +65,9 @@ SelectWithUnionQuery (children 1)
 
 ### EXPLAIN SYNTAX {#explain-syntax}
 
-Returns query after syntax optimizations.
+Возвращает текст запроса после применения синтаксических оптимизаций.
 
-Example:
+Пример:
 
 ```sql
 EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c;
@@ -91,15 +91,15 @@ CROSS JOIN system.numbers AS c
 
 ### EXPLAIN PLAN {#explain-plan}
 
-Dump query plan steps.
+Дамп шагов выполнения запроса.
 
-Settings:
+Настройки:
 
--  `header` — Prints output header for step. Default: 0.
--  `description` — Prints step description. Default: 1.
--  `actions` — Prints detailed information about step actions. Default: 0.
+-  `header` — выводит выходной заголовок для шага. По умолчанию: 0.
+-  `description` — выводит описание шага. По умолчанию: 1.
+-  `actions` — выводит подробную информацию о действиях, выполняемых на данном шаге. По умолчанию: 0.
 
-Example:
+Пример:
 
 ```sql
 EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
@@ -115,19 +115,19 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-!!! note "Note"
-    Step and query cost estimation is not supported.
+!!! note "Примечание"
+    Оценка стоимости выполнения шага и запроса не поддерживается.
 
 ### EXPLAIN PIPELINE {#explain-pipeline}
 
-Settings:
+Настройки:
 
--   `header` — Prints header for each output port. Default: 0.
--   `graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
--   `compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
--   `indexes` — Shows used indexes, the number of filtered parts, and granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+-   `header` — выводит заголовок для каждого выходного порта. По умолчанию: 0.
+-   `graph` — выводит граф, описанный на языке [DOT](https://ru.wikipedia.org/wiki/DOT_(язык)). По умолчанию: 0.
+-   `compact` — выводит граф в компактном режиме, если включена настройка `graph`. По умолчанию: 1.
+-   `indexes` — показывает используемые индексы, количество отфильтрованных кусков и гранул для каждого примененного индекса. По умолчанию: 0. Поддерживается для таблиц семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
-Example:
+Пример:
 
 ```sql
 EXPLAIN PIPELINE SELECT sum(number) FROM numbers_mt(100000) GROUP BY number % 4;
@@ -149,4 +149,4 @@ ExpressionTransform
             NumbersMt × 2 0 → 1
 ```
 
-[Оriginal article](https://clickhouse.tech/docs/en/sql-reference/statements/explain/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/explain/) <!--hide-->
