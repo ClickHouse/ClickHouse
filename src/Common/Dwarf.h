@@ -127,15 +127,10 @@ public:
 
     enum class LocationInfoMode
     {
-        // Don't resolve location info.
-        DISABLED,
-        // Perform CU lookup using .debug_aranges (might be incomplete).
-        FAST,
-        // Scan all CU in .debug_info (slow!) on .debug_aranges lookup failure.
-        FULL,
-        // Scan .debug_info (super slower, use with caution) for inline functions in
-        // addition to FULL.
-        FULL_WITH_INLINE,
+        DISABLED, /// Don't resolve location info.
+        FAST, /// Perform CU lookup using .debug_aranges (might be incomplete).
+        FULL, /// Perform FAST lookup, if fails, scan all CU in .debug_info (SLOW!).
+        FULL_WITH_INLINE, /// Perform FULL lookup and also scan .debug_info (SUPER SLOW!) for inline functions.
     };
 
     struct LocationInfo
@@ -167,6 +162,10 @@ public:
       * The address must be physical - offset in object file without offset in virtual memory where the object is loaded.
       */
     bool findAddress(uintptr_t address, LocationInfo & info, LocationInfoMode mode, std::vector<SymbolizedFrame> & inline_frames) const;
+
+    /// Internal function, works like findAddress but doesn't calc inline frames. Works in LocationInfoMode::FULL.
+    /// Uses asserts to make sure the internal state (elf) is valid and all locations are found.
+    LocationInfo findAddressForCoverageRuntime(uintptr_t address) const;
 
 private:
     static bool findDebugInfoOffset(uintptr_t address, std::string_view aranges, uint64_t & offset);

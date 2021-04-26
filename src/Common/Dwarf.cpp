@@ -1145,6 +1145,38 @@ bool Dwarf::findAddress(
     return locationInfo.has_file_and_line;
 }
 
+Dwarf::LocationInfo Dwarf::findAddressForCoverageRuntime(uintptr_t address) const
+{
+    LocationInfo location_info = LocationInfo();
+    const LocationInfoMode mode = LocationInfoMode::FULL;
+    std::vector<SymbolizedFrame> inline_frames;
+
+    // TODO REMOVE copypaste
+    // Fast path: find the right .debug_info entry by looking up the
+    // address in .debug_aranges.
+    if (uint64_t offset = 0; !aranges_.empty() && findDebugInfoOffset(address, aranges_, offset))
+    {
+        // Read compilation unit header from .debug_info
+        auto unit = getCompilationUnit(info_, offset);
+        findLocation(address, mode, unit, location_info, inline_frames);
+        assert(location_info.has_file_and_line);
+    }
+
+    // Slow path (linear scan): Iterate over all .debug_info entries
+    // and look for the address in each compilation unit.
+    uint64_t offset = 0;
+
+    while (offset < info_.size() && !location_info.has_file_and_line)
+    {
+        auto unit = getCompilationUnit(info_, offset);
+        offset += unit.size;
+        findLocation(address, mode, unit, location_info, inline_frames);
+    }
+
+    assert(location_info.has_file_and_line);
+    return location_info;
+}
+
 bool Dwarf::isAddrInRangeList(uint64_t address, std::optional<uint64_t> base_addr, size_t offset, uint8_t addr_size) const
 {
     SAFE_CHECK(addr_size == 4 || addr_size == 8, "wrong address size");

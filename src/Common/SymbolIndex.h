@@ -12,6 +12,8 @@
 namespace DB
 {
 
+constexpr static inline const int dummy_var = 1;
+
 /** Allow to quickly find symbol name from address.
   * Used as a replacement for "dladdr" function which is extremely slow.
   * It works better than "dladdr" because it also allows to search private symbols, that are not participated in shared linking.
@@ -42,6 +44,9 @@ public:
     /// Address in virtual memory should be passed. These addresses include offset where the object is loaded in memory.
     const Symbol * findSymbol(const void * address) const;
     const Object * findObject(const void * address) const;
+
+    /// Retrieves the clickhouse binary object.
+    inline const Object * getSelf() const { return findObject(&dummy_var); }
 
     const std::vector<Symbol> & symbols() const { return data.symbols; }
     const std::vector<Object> & objects() const { return data.objects; }

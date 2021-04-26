@@ -15,7 +15,12 @@
 #include <vector>
 #include <shared_mutex>
 
+#include <fmt/format.h>
+#include <fmt/ostream.h>
+
 #include "common/types.h"
+#include "common/demangle.h"
+
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
@@ -67,7 +72,7 @@ public:
 
         pool.scheduleOrThrowOnError([this] () mutable
         {
-            std::vector<void*> edges_copies;
+            Hits edges_copies;
             std::string test_name;
 
             {
@@ -78,7 +83,7 @@ public:
                 edges.clear(); // hope that it's O(1).
             }
 
-            convertToLCOVAndDumpToDisk(edges_copies, test_name);
+            prepareDataAndDumpToDisk(edges_copies, test_name);
         });
     }
 
@@ -89,87 +94,196 @@ private:
           pool(4)
     {
         const SymbolIndex & sym_index = *symbol_index;
-        const auto * object = sym_index.findObject(this); // hack to find current binary
+        const auto * object = sym_index.getSelf();
 
         binary_virtual_offset = object->address_begin;
-        elf = object->elf;
+        dwarf = object->elf; //create wrapper
     }
 
     const std::filesystem::path coverage_dir;
-
     const uintptr_t binary_virtual_offset;
 
     const MultiVersion<SymbolIndex>::Version symbol_index;
-    const std::shared_ptr<Elf> elf;
+    const Dwarf dwarf;
 
     FreeThreadPool pool;
 
     std::optional<std::string> test;
-    std::vector<void *> edges;
+    using Hits = std::vector<void*>;
+    Hits edges;
     std::mutex edges_mutex; // to prevent multithreading inserts
 
     struct Frame
     {
-        const void * virtual_addr = nullptr;
-        void * physical_addr = nullptr;
-        std::string symbol;
+        const void * virtual_addr;
+        void * physical_addr;
+        std::string symbol; // function
         std::string file;
         UInt64 line;
+        UInt64 symbol_start_line;
     };
 
     Frame symbolizeAndDemangle(const void * virtual_addr) const
     {
-        Frame out = {.virtual_addr=virtual_addr};
+        Frame out =
+        {
+            .virtual_addr = virtual_addr,
+            .physical_addr = reinterpret_cast<void *>(uintptr_t(virtual_addr) - binary_virtual_offset)
+        };
 
-        out.physical_addr = reinterpret_cast<void *>(uintptr_t(virtual_addr) - binary_virtual_offset);
-
-        Dwarf::LocationInfo location;
-        std::vector<Dwarf::SymbolizedFrame> inline_frames;
-
-        assert(elf.findAddress(uintptr_t(out.physical_addr), location, Dwarf::LocationInfoMode::FAST, inline_frames));
-
-        out.file = location.file.toString();
-        out.line = location.line;
+        const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(uintptr_t(out.physical_addr));
+        out.file = loc.file.toString();
+        out.line = loc.line;
 
         const auto * symbol = symbol_index.findSymbol(out.virtual_addr);
         assert(symbol);
 
         int status = 0;
         out.symbol = demangle(symbol->name, status);
+        assert(!status);
+
+        // TODO should cache, no need to recalc for each line.
+        const void * symbol_start_virtual = symbol->address_begin;
+        const uintptr_t symbol_start_phys = uintptr_t(symbol_start_virtual) - binary_virtual_offset;
+        out.symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
+
+        return out;
     }
 
-    void convertToLCOVAndDumpToDisk(const std::vector<void*>& hits, std::string_view test_name)
+    using SourceFileName = std::string;
+
+    using FunctionName = std::string;
+    struct FunctionData { size_t start_line; size_t call_count; };
+
+    using BranchLine = size_t;
+    struct BranchData { size_t block_number; size_t branch_number; size_t taken; };
+
+    using Line = size_t;
+    using LineCalled = size_t;
+
+    struct SourceFileData
     {
-        // TN:<test name>
-        // SF:<absolute path to the source file>
-        // FN:<line number of function start>,<function name> for each function
-        // DA:<line number>,<execution count> for each instrumented line
-        // LH:<number of lines with an execution count> greater than 0, lines hit
-        // LF:<number of instrumented lines>, lines found
-        //
-		// FNDA: <call-count>, <function-name>
-		// FNF: overall count of functions, functions found
-		// FNH: overall count of functions with non-zero call count, functions hit
-		//
-		// BRDA:<line number>,<block number>,<branch number>,<taken>
-		//
-		// where 'taken' is the number of times the branch was taken
-		// or '-' if the block to which the branch belongs was never
-		// executed
+        std::string full_path;
+        std::unordered_map<FunctionName, FunctionData> functions;
+        //std::unordered_map<BranchLine, BranchData> branches; //won't fill as for now
 
-        (void)hits;
-        (void)test_name;
+        // Not all of the instrumented lines in all basic blocks, but only those lines which triggered the callback.
+        std::unordered_map<Line, LineCalled> lines;
+    };
 
+    using SourceFiles = std::unordered_map<SourceFileName, SourceFileData>;
+    using AddrsCache = std::unordered_map<void*, Frame>;
+
+    void prepareDataAndDumpToDisk(const Hits& hits, std::string_view test_name)
+    {
+        SourceFiles source_files;
+        AddrsCache addrs_cache;
+
+        for (void * addr : hits)
+        {
+            Frame addr_info;
+
+            if (auto it = addrs_cache.find(addr); it != addrs_cache.end())
+                addr_info = it->second;
+            else
+            {
+                addr_info = symbolizeAndDemangle(addr);
+                addrs_cache.emplace(addr, addr_info);
+            }
+
+            const std::string file_name = addr_info.file.substr(addr_info.file.rfind('/'));
+
+            SourceFiles::iterator file_data_it = source_files.find(file_name);
+
+            if (file_data_it == source_files.end())
+                file_data_it = source_files.emplace(file_name, SourceFileData{.full_path=addr_info.file}).first;
+
+            SourceFileData& data = file_data_it->second;
+
+            if (auto it = data.lines.find(addr_info.line); it == data.lines.end())
+                data.lines[addr_info.line] = 1;
+            else
+                ++it->second;
+
+            if (auto it = data.functions.find(addr_info.symbol); it == data.functions.end())
+                data.functions[addr_info.symbol] = {.start_line = addr_info.symbol_start_line, .call_count = 0};
+            else
+                ++it->second.call_count;
+        }
+
+        convertToLCOVAndDumpToDisk(source_files, test_name);
+    }
+
+    /**
+     * [incomplete] LCOV .info format reference, parsed from
+     * https://github.com/linux-test-project/lcov/blob/master/bin/geninfo
+     *
+     * TN:<test name>
+     * for each source file:
+     *     SF:<absolute path to the source file>
+     *
+     *     for each instrumented function:
+     *         FN:<line number of function start>,<function name>
+     *         FNDA:<call-count>, <function-name>
+     *
+     *     if >0 functions instrumented:
+     *         FNF:<number of functions instrumented (found)>
+     *         FNH:<number of functions executed (hit)>
+     *
+     *     for each instrumented branch:
+     *         BRDA:<line number>,<block number>,<branch number>,<taken -- number > 0 or "-" if was not taken>
+     *
+     *     if >0 branches instrumented:
+     *         BRF:<number of branches instrumented (found)>
+     *         BRH:<number of branches executed (hit)>
+     *
+     *     for each instrumented line:
+     *         DA:<line number>,<execution count>
+     *
+     *     LF:<number of lines instrumented (found)>
+     *     LH:<number of lines executed (hit)>
+     *     end_of_record
+     */
+    void convertToLCOVAndDumpToDisk(const SourceFiles& source_files, std::string_view test_name)
+    {
         std::ofstream ofs(coverage_dir / test_name);
 
-        ofs << "TN:" << test_name << "\n";
+        fmt::print(ofs, "TN:{}\n", test_name);
 
-        for (const void * addr : hits)
+        for (const auto& [name, data] : source_files)
         {
-            const Frame info = symbolizeAndDemangle(addr);
-            ofs << "SF:" << info.file << "\n";
+            fmt::print(ofs, "SF:{}\n", data.full_path);
 
-            ofs << "end_of_record\n";
+            size_t fnh = 0;
+
+            for (const auto & [func_name, func_data]: data.functions)
+            {
+                fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n",
+                        func_data.start_line,
+                        func_name,
+                        func_data.call_count);
+
+                if (func_data.call_count > 0)
+                    ++fnh;
+            }
+
+            assert(!data.functions.empty());
+
+            fmt::print(ofs, "FNF:{}\nFNH:{}\n", data.functions.size(), fnh);
+
+            // TODO Branches
+
+            size_t lh = 0;
+
+            for (auto [line, calls] : data.lines)
+            {
+                fmt::print(ofs, "DA:{},{}\n", line, calls);
+
+                if (calls > 0)
+                    ++lh;
+            }
+
+            fmt::print(ofs, "LF:{}\nLH:{}\nend_of_record\n", data.lines.size(), lh);
         }
     }
 };
