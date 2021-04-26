@@ -52,8 +52,11 @@ public:
     void setLeafLimits(const SizeLimits & leaf_limits_) final {leaf_limits = leaf_limits_; }
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) final { quota = quota_; }
     void setProcessListElement(QueryStatus * elem) final { process_list_elem = elem; }
-    void setProgressCallback(const ProgressCallback & callback) final { progress_callback = callback; }
     void addTotalRowsApprox(size_t value) final { total_rows_approx += value; }
+
+    /// This method might be overriden, if, during query execution, there is a Source, that needs
+    /// to add one more progress callback.
+    void setProgressCallback(const ProgressCallback & callback) override { progress_callback = callback; }
 
 protected:
     /// Call this method to provide information about progress.
@@ -61,11 +64,12 @@ protected:
 
     void work() override;
 
+    ProgressCallback progress_callback;
+
 private:
     StreamLocalLimits limits;
     SizeLimits leaf_limits;
     std::shared_ptr<const EnabledQuota> quota;
-    ProgressCallback progress_callback;
     QueryStatus * process_list_elem = nullptr;
 
     /// The approximate total number of rows to read. For progress bar.

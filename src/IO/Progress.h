@@ -5,6 +5,8 @@
 #include <common/types.h>
 
 #include <Core/Defines.h>
+#include <Common/Stopwatch.h>
+
 
 namespace DB
 {
@@ -44,6 +46,37 @@ struct WriteProgress
     WriteProgress(size_t written_rows_, size_t written_bytes_)
         : written_rows(written_rows_), written_bytes(written_bytes_) {}
 };
+
+/// Track progress of processing one or multiple files via File table engine.
+struct FileTableEngineProgress
+{
+    /// Track elapsed time.
+    Stopwatch watch;
+    size_t total_bytes_to_process;
+
+    /// FileTableEngineProgress struct can be accessed from Context via const reference.
+    /// These fields are allowed to be updated in a progress callback.
+    mutable std::atomic<uint64_t> processed_bytes;
+    mutable std::atomic<uint64_t> processed_rows;
+
+    FileTableEngineProgress() : total_bytes_to_process(0), processed_bytes(0) {}
+
+    FileTableEngineProgress(const FileTableEngineProgress & other)
+        : watch(other.watch)
+        , total_bytes_to_process(other.total_bytes_to_process)
+        , processed_bytes(other.processed_bytes.load())
+        , processed_rows(other.processed_rows.load()) {}
+
+    FileTableEngineProgress & operator=(FileTableEngineProgress other)
+    {
+        watch = other.watch;
+        total_bytes_to_process = other.total_bytes_to_process;
+        processed_bytes = other.processed_bytes.load();
+        processed_rows = other.processed_rows.load();
+        return *this;
+    }
+};
+
 
 /** Progress of query execution.
   * Values, transferred over network are deltas - how much was done after previously sent value.

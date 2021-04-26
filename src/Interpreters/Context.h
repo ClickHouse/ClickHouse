@@ -181,10 +181,13 @@ private:
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
     String current_database;
-    Settings settings;                                  /// Setting for query execution.
+    Settings settings;  /// Setting for query execution.
+
     using ProgressCallback = std::function<void(const Progress & progress)>;
-    ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
-    QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
+    ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
+    FileTableEngineProgress file_progress;  /// Progress data to track processing of one or multiple files for File table engine.
+
+    QueryStatus * process_list_elem = nullptr;  /// For tracking total resource usage for query.
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
@@ -580,6 +583,9 @@ public:
     void setProgressCallback(ProgressCallback callback);
     /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
     ProgressCallback getProgressCallback() const;
+
+    const FileTableEngineProgress & getFileTableEngineProgress() { return file_progress; }
+    void setFileTableEngineApproxBytesToProcess(size_t num_bytes) { file_progress.total_bytes_to_process = num_bytes; }
 
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IBlockInputStream,
       *  to update and monitor information about the total number of resources spent for the query.
