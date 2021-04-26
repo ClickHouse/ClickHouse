@@ -17,31 +17,21 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-void MergeTreeProjectionFactory::registerCreator(const std::string & projection_type, Creator creator)
+void MergeTreeProjectionFactory::registerCreator(ProjectionDescription::Type projection_type, Creator creator)
 {
     if (!creators.emplace(projection_type, std::move(creator)).second)
         throw Exception(
-            "MergeTreeProjectionFactory: the Projection creator name '" + projection_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+            ErrorCodes::LOGICAL_ERROR,
+            "MergeTreeProjectionFactory: the Projection creator name '{}' is not unique",
+            ProjectionDescription::typeToString(projection_type));
 }
 
 MergeTreeProjectionPtr MergeTreeProjectionFactory::get(const ProjectionDescription & projection) const
 {
     auto it = creators.find(projection.type);
     if (it == creators.end())
-        throw Exception(
-            "Unknown Projection type '" + projection.type + "'. Available projection types: "
-                + std::accumulate(
-                    creators.cbegin(),
-                    creators.cend(),
-                    std::string{},
-                    [](auto && left, const auto & right) -> std::string
-                    {
-                        if (left.empty())
-                            return right.first;
-                        else
-                            return left + ", " + right.first;
-                    }),
-            ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection type {} is not registered",
+                        ProjectionDescription::typeToString(projection.type));
 
     return it->second(projection);
 }
@@ -60,22 +50,7 @@ void MergeTreeProjectionFactory::validate(const ProjectionDescription & projecti
     if (startsWith(projection.name, "tmp_"))
         throw Exception("Projection's name cannot start with 'tmp_'", ErrorCodes::INCORRECT_QUERY);
 
-    auto it = creators.find(projection.type);
-    if (it == creators.end())
-        throw Exception(
-            "Unknown Projection type '" + projection.type + "'. Available projection types: "
-                + std::accumulate(
-                    creators.cbegin(),
-                    creators.cend(),
-                    std::string{},
-                    [](auto && left, const auto & right) -> std::string
-                    {
-                        if (left.empty())
-                            return right.first;
-                        else
-                            return left + ", " + right.first;
-                    }),
-            ErrorCodes::INCORRECT_QUERY);
+    get(projection);
 }
 
 MergeTreeProjectionPtr normalProjectionCreator(const ProjectionDescription & projection)
@@ -90,8 +65,8 @@ MergeTreeProjectionPtr aggregateProjectionCreator(const ProjectionDescription & 
 
 MergeTreeProjectionFactory::MergeTreeProjectionFactory()
 {
-    registerCreator("normal", normalProjectionCreator);
-    registerCreator("aggregate", aggregateProjectionCreator);
+    registerCreator(ProjectionDescription::Type::Normal, normalProjectionCreator);
+    registerCreator(ProjectionDescription::Type::Aggregate, aggregateProjectionCreator);
 }
 
 MergeTreeProjectionFactory & MergeTreeProjectionFactory::instance()

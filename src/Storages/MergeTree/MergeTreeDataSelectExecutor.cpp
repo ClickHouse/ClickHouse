@@ -165,7 +165,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     size_t no_projection_granules = 0;
     size_t with_projection_granules = 0;
 
-    if (query_info.projection->type == "normal")
+    if (query_info.projection->type == ProjectionDescription::Type::Normal)
         plan_no_projections = readFromParts(
             data.getDataPartsVector(),
             column_names_to_return,
@@ -205,14 +205,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
     for (auto & part : normal_parts)
         rows_without_projection += part->rows_count;
-
-    if (rows_with_projection < rows_without_projection)
-        throw Exception(
-            ErrorCodes::PROJECTION_NOT_USED,
-            "No projection is used because there are more than 50% rows don't have projection {}. {} normal rows, {} projection rows",
-            query_info.projection->name,
-            rows_without_projection,
-            rows_with_projection);
 
     Pipe projection_pipe;
     Pipe ordinary_pipe;
@@ -312,10 +304,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
     /// Use normal projection only if we read less granules then without it.
     /// TODO: check if read-in-order optimization possible for normal projection.
-    if (query_info.projection->type == "normal" && with_projection_granules > no_projection_granules)
+    if (query_info.projection->type == ProjectionDescription::Type::Normal && with_projection_granules > no_projection_granules)
         return plan_no_projections;
 
-    if (query_info.projection->type == "aggregate")
+    if (query_info.projection->type == ProjectionDescription::Type::Aggregate)
     {
         /// Here we create shared ManyAggregatedData for both projection and ordinary data.
         /// For ordinary data, AggregatedData is filled in a usual way.

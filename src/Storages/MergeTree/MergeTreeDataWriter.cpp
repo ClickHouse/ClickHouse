@@ -395,7 +395,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
                           context,
                           Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
                           SelectQueryOptions{
-                              projection.type == "normal" ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState})
+                              projection.type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState})
                           .execute()
                           .getInputStream();
             in = std::make_shared<SquashingBlockInputStream>(in, block.rows(), std::numeric_limits<UInt64>::max());
