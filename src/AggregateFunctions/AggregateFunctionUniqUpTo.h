@@ -17,7 +17,7 @@
 #include <IO/WriteHelpers.h>
 
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
@@ -281,7 +281,7 @@ public:
 
 }
 
-#if !__clang__
+#if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
 

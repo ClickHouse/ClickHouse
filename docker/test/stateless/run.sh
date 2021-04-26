@@ -44,7 +44,7 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     -- --path /var/lib/clickhouse1/ --logger.stderr /var/log/clickhouse-server/stderr1.log \
     --logger.log /var/log/clickhouse-server/clickhouse-server1.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server1.err.log \
     --tcp_port 19000 --tcp_port_secure 19440 --http_port 18123 --https_port 18443 --interserver_http_port 19009 --tcp_with_proxy_port 19010 \
-    --mysql_port 19004 \
+    --mysql_port 19004 --postgresql_port 19005 \
     --keeper_server.tcp_port 19181 --keeper_server.server_id 2 \
     --macros.replica r2   # It doesn't work :(
 
@@ -52,7 +52,7 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     -- --path /var/lib/clickhouse2/ --logger.stderr /var/log/clickhouse-server/stderr2.log \
     --logger.log /var/log/clickhouse-server/clickhouse-server2.log --logger.errorlog /var/log/clickhouse-server/clickhouse-server2.err.log \
     --tcp_port 29000 --tcp_port_secure 29440 --http_port 28123 --https_port 28443 --interserver_http_port 29009 --tcp_with_proxy_port 29010 \
-    --mysql_port 29004 \
+    --mysql_port 29004 --postgresql_port 29005 \
     --keeper_server.tcp_port 29181 --keeper_server.server_id 3 \
     --macros.shard s2   # It doesn't work :(
 
@@ -104,6 +104,29 @@ clickhouse-client -q "system flush logs" ||:
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz &
 clickhouse-client -q "select * from system.query_log format TSVWithNamesAndTypes" | pigz > /test_output/query-log.tsv.gz &
 clickhouse-client -q "select * from system.query_thread_log format TSVWithNamesAndTypes" | pigz > /test_output/query-thread-log.tsv.gz &
+clickhouse-client --allow_introspection_functions=1 -q "
+    WITH
+        arrayMap(x -> concat(demangle(addressToSymbol(x)), ':', addressToLine(x)), trace) AS trace_array,
+        arrayStringConcat(trace_array, '\n') AS trace_string
+    SELECT * EXCEPT(trace), trace_string FROM system.trace_log FORMAT TSVWithNamesAndTypes
+" | pigz > /test_output/trace-log.tsv.gz &
+
+# Also export trace log in flamegraph-friendly format.
+for trace_type in CPU Memory Real
+do
+    clickhouse-client -q "
+            select
+                arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
+                count(*) AS samples
+            from system.trace_log
+            where trace_type = '$trace_type'
+            group by trace
+            order by samples desc
+            settings allow_introspection_functions = 1
+            format TabSeparated" \
+        | pigz > "/test_output/trace-log-$trace_type-flamegraph.tsv.gz" &
+done
+
 wait ||:
 
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
