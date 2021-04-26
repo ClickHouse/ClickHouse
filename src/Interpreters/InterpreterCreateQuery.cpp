@@ -354,7 +354,7 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
 {
     auto res = std::make_shared<ASTExpressionList>();
 
-    for (const auto & constraint : constraints.constraints)
+    for (const auto & constraint : constraints.getConstraints())
         res->children.push_back(constraint->clone());
 
     return res;
@@ -489,9 +489,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const ASTExpressionList * constraints)
 {
     ConstraintsDescription res;
+    auto constraints_data = res.getConstraints();
     if (constraints)
         for (const auto & constraint : constraints->children)
-            res.constraints.push_back(std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint->clone()));
+            constraints_data.push_back(std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint->clone()));
+    res.updateConstraints(constraints_data);
     return res;
 }
 
