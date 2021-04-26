@@ -120,11 +120,9 @@ timeZoneOf(value)
 
 Тип: [String](../../sql-reference/data-types/string.md).
 
-
 **Пример**
 
 Запрос:
-
 ``` sql
 SELECT timezoneOf(now());
 ```
