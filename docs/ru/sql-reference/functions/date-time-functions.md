@@ -172,6 +172,7 @@ SELECT toDateTime('2021-04-21 10:20:30', 'Europe/Moscow') AS Time, toTypeName(Ti
 ┌────────────────Time─┬─Type──────────────────────┬─Offset_in_seconds─┬─Offset_in_hours─┐
 │ 2021-04-21 10:20:30 │ DateTime('Europe/Moscow') │             10800 │               3 │
 └─────────────────────┴───────────────────────────┴───────────────────┴─────────────────┘
+```
 
 ## toYear {#toyear}
 
