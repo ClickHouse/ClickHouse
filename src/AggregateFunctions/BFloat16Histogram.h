@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 template <typename Value>
-struct Bfloat16Histogram
+struct BFloat16Histogram
 {
     using bfloat16 = UInt16;
     using Data = HashMap<bfloat16, size_t>;
@@ -39,7 +39,7 @@ struct Bfloat16Histogram
         data[val] += to_add;
     }
 
-    void merge(const Bfloat16Histogram & rhs)
+    void merge(const BFloat16Histogram & rhs)
     {
         for (const Float32 & value : rhs.array)
         {

@@ -9,7 +9,7 @@
 #include <AggregateFunctions/QuantileExactWeighted.h>
 #include <AggregateFunctions/QuantileTiming.h>
 #include <AggregateFunctions/QuantileTDigest.h>
-#include <AggregateFunctions/QuantileBfloat16Histogram.h>
+#include <AggregateFunctions/QuantileBFloat16Histogram.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
@@ -229,7 +229,7 @@ struct NameQuantileTDigestWeighted { static constexpr auto name = "quantileTDige
 struct NameQuantilesTDigest { static constexpr auto name = "quantilesTDigest"; };
 struct NameQuantilesTDigestWeighted { static constexpr auto name = "quantilesTDigestWeighted"; };
 
-struct NameQuantileBfloat16 { static constexpr auto name = "quantileBfloat16"; };
-struct NameQuantilesBfloat16 { static constexpr auto name = "quantilesBfloat16"; };
+struct NameQuantileBFloat16 { static constexpr auto name = "quantileBFloat16"; };
+struct NameQuantilesBFloat16 { static constexpr auto name = "quantilesBFloat16"; };
 
 }

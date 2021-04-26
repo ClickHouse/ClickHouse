@@ -8,8 +8,8 @@ FROM
             arrayFilter(x -> x != intDiv(number, 10), arr) AS arr_filtered
         SELECT
             number,
-            arrayReduce('quantileBfloat16', arr_with_nan) AS q1,
-            arrayReduce('quantileBfloat16', arr_filtered) AS q2,
+            arrayReduce('quantileBFloat16', arr_with_nan) AS q1,
+            arrayReduce('quantileBFloat16', arr_filtered) AS q2,
             q1 = q2 AS eq
         FROM
             numbers(100)
