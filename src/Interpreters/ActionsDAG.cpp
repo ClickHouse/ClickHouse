@@ -181,7 +181,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         }
     }
 
-    /// Some functions like ignore() or getTypeName() always return constant result even if arguments are not constant.
+    /// Some functions like ignore(), indexHint() or getTypeName() always return constant result even if arguments are not constant.
     /// We can't do constant folding, but can specify in sample block that function result is constant to avoid
     /// unnecessary materialization.
     if (!node.column && node.function_base->isSuitableForConstantFolding())
@@ -965,7 +965,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
     struct Frame
     {
-        const Node * node;
+        const Node * node = nullptr;
         size_t next_child_to_visit = 0;
     };
 
