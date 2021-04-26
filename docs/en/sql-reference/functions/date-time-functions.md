@@ -134,7 +134,7 @@ Result:
 └───────────────────┘
 ```
 
-## timezoneOffset {#timezoneoffset}
+## timeZoneOffset {#timezoneoffset}
 
 Returns a timezone offset in seconds from [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time). The function takes into account [daylight saving time](https://en.wikipedia.org/wiki/Daylight_saving_time) and historical timezone changes at the specified date and time.
 [IANA timezone database](https://www.iana.org/time-zones) is used to calculate the offset.
@@ -142,12 +142,14 @@ Returns a timezone offset in seconds from [UTC](https://en.wikipedia.org/wiki/Co
 **Syntax**
 
 ``` sql
-timezoneOffset(datetime)
+timeZoneOffset(value)
 ```
+
+Alias: `timezoneOffset`.
 
 **Arguments**
 
--   `datetime` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+-   `value` — Date and time. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
 
 **Returned value**
 
@@ -161,7 +163,7 @@ Query:
 
 ``` sql
 SELECT toDateTime('2021-04-21 10:20:30', 'America/New_York') AS Time, toTypeName(Time) AS Type,
-       timezoneOffset(Time) AS Offset_in_seconds, (Offset_in_seconds / 3600) AS Offset_in_hours;
+       timeZoneOffset(Time) AS Offset_in_seconds, (Offset_in_seconds / 3600) AS Offset_in_hours;
 ```
 
 Result:
