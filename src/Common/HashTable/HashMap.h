@@ -22,7 +22,7 @@ struct PairNoInit
     First first;
     Second second;
 
-    PairNoInit() {}
+    PairNoInit() {} /// NOLINT
 
     template <typename FirstValue>
     PairNoInit(FirstValue && first_, NoInitTag)
@@ -192,26 +192,13 @@ public:
     ///  and func is invoked with the third argument emplaced set to true. Otherwise
     ///  emplaced is set to false.
     template <typename Func>
-    void ALWAYS_INLINE mergeToViaEmplace(Self & that [[maybe_unused]], Func && func)
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func && func)
     {
-        typename Self::LookupResult res_it;
-        bool inserted;
-
-        if (this->hasZero())
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
-            auto * zero_cell = this->zeroValue();
-            that.emplace(Cell::getKey(zero_cell->getValue()), res_it, inserted, zero_cell->getHash(*this));
-            func(res_it->getMapped(), zero_cell->getMapped(), inserted);
-        }
-
-        size_t buf_size = this->grower.bufSize();
-        for (size_t i = 0; i < buf_size; ++i)
-        {
-            auto * it = (this->buf + i);
-            if (it->isZero(*this))
-                continue;
-
-            that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it->getHash(*this));
+            typename Self::LookupResult res_it;
+            bool inserted;
+            that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
             func(res_it->getMapped(), it->getMapped(), inserted);
         }
     }
@@ -224,24 +211,13 @@ public:
     template <typename Func>
     void ALWAYS_INLINE mergeToViaFind(Self & that, Func && func)
     {
-        if (this->hasZero())
+        for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
-            if (that.hasZero())
-                func(this->zeroValue()->getMapped(), that.zeroValue()->getMapped(), true);
+            auto res_it = that.find(Cell::getKey(it->getValue()), it.getHash());
+            if (!res_it)
+                func(it->getMapped(), it->getMapped(), false);
             else
-                func(this->zeroValue()->getMapped(), that.zeroValue()->getMapped(), false);
-        }
-
-        size_t buf_size = this->grower.bufSize();
-        for (size_t i = 0; i < buf_size; ++i)
-        {
-            auto * it = (this->buf + i);
-            if (it->isZero(*this))
-                continue;
-
-            auto res_it = that.find(Cell::getKey(it->getValue()), it->getHash(*this));
-            bool found = res_it != nullptr;
-            func(res_it->getMapped(), it->getMapped(), found);
+                func(res_it->getMapped(), it->getMapped(), true);
         }
     }
 
@@ -249,31 +225,16 @@ public:
     template <typename Func>
     void forEachValue(Func && func)
     {
-        if (this->hasZero())
-        {
-            auto * zero_value = this->zeroValue();
-            func(zero_value->getKey(), zero_value->getMapped());
-        }
-
-        size_t buf_size = this->grower.bufSize();
-        for (size_t i = 0; i < buf_size; ++i)
-        {
-            auto * it = (this->buf + i);
-            if (it->isZero(*this))
-                continue;
-
-            func(it->getKey(), it->getMapped());
-        }
+        for (auto & v : *this)
+            func(v.getKey(), v.getMapped());
     }
 
     /// Call func(Mapped &) for each hash map element.
     template <typename Func>
     void forEachMapped(Func && func)
     {
-        forEachValue([&](auto &, auto & mapped)
-        {
-            func(mapped);
-        });
+        for (auto & v : *this)
+            func(v.getMapped());
     }
 
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)

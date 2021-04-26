@@ -700,7 +700,6 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
 
     /// We select one of the aggregation methods and call it.
 
-
     /// For the case when there are no keys (all aggregate into one row).
     if (result.type == AggregatedDataVariants::Type::without_key)
     {
