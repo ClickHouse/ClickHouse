@@ -6,12 +6,11 @@
 
 namespace DB
 {
-class Context;
 
-class InterpreterShowAccessEntitiesQuery : public IInterpreter
+class InterpreterShowAccessEntitiesQuery : public IInterpreter, WithContext
 {
 public:
-    InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, Context & context_);
+    InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, ContextPtr context_);
 
     BlockIO execute() override;
 
@@ -22,7 +21,6 @@ private:
     String getRewrittenQuery() const;
 
     ASTPtr query_ptr;
-    Context & context;
 };
 
 }

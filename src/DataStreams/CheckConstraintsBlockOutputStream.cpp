@@ -27,7 +27,7 @@ CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
     const BlockOutputStreamPtr & output_,
     const Block & header_,
     const ConstraintsDescription & constraints_,
-    const Context & context_)
+    ContextPtr context_)
     : table_id(table_id_),
     output(output_),
     header(header_),

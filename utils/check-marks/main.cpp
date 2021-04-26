@@ -19,7 +19,7 @@
 static void checkByCompressedReadBuffer(const std::string & mrk_path, const std::string & bin_path)
 {
     DB::ReadBufferFromFile mrk_in(mrk_path);
-    DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0);
+    DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0, nullptr);
 
     DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
     bool mrk2_format = boost::algorithm::ends_with(mrk_path, ".mrk2");

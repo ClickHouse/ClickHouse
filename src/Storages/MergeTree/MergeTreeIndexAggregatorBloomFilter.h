@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class MergeTreeIndexAggregatorBloomFilter : public IMergeTreeIndexAggregator
+class MergeTreeIndexAggregatorBloomFilter final : public IMergeTreeIndexAggregator
 {
 public:
     MergeTreeIndexAggregatorBloomFilter(size_t bits_per_row_, size_t hash_functions_, const Names & columns_name_);

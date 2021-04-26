@@ -121,7 +121,7 @@ std::unique_ptr<ComparisonGraph> ConstraintsDescription::buildGraph() const
     return std::make_unique<ComparisonGraph>(constraints_for_graph);
 }
 
-ConstraintsExpressions ConstraintsDescription::getExpressionsToCheck(const DB::Context & context,
+ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
                                                               const DB::NamesAndTypesList & source_columns_) const
 {
     ConstraintsExpressions res;
