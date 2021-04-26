@@ -1,6 +1,6 @@
 #pragma once
 
-#include <AggregateFunctions/Bfloat16Histogram.h>
+#include <AggregateFunctions/BFloat16Histogram.h>
 
 namespace DB
 {
@@ -10,9 +10,9 @@ namespace ErrorCodes
 }
 
 template <typename Value>
-struct QuantileBfloat16Histogram
+struct QuantileBFloat16Histogram
 {
-    using Histogram = Bfloat16Histogram<Value>;
+    using Histogram = BFloat16Histogram<Value>;
     Histogram data;
 
     void add(const Value & x) { data.add(x); }
@@ -20,10 +20,10 @@ struct QuantileBfloat16Histogram
     template <typename Weight>
     void add(const Value &, const Weight &)
     {
-        throw Exception("Method add with weight is not implemented for QuantileBfloat16Histogram", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Method add with weight is not implemented for QuantileBFloat16Histogram", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void merge(const QuantileBfloat16Histogram & rhs) { data.merge(rhs.data); }
+    void merge(const QuantileBFloat16Histogram & rhs) { data.merge(rhs.data); }
 
     void serialize(WriteBuffer & buf) const { data.write(buf); }
 
