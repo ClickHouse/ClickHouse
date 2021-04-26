@@ -147,8 +147,8 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
 
 Chunk ParallelParsingInputFormat::generate()
 {
-    /// Delayed launching of segmenting thread
-    if (!parsing_started.exchange(true))
+    /// Delayed launching of segmentator thread
+    if (unlikely(!parsing_started.exchange(true)))
     {
         segmentator_thread = ThreadFromGlobalPool(
             &ParallelParsingInputFormat::segmentatorThreadFunction, this, CurrentThread::getGroup());
