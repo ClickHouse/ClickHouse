@@ -61,7 +61,7 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
-    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context);
+    static Strings getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read);
 
     /// Check if the format is column-oriented.
     /// Is is useful because column oriented formats could effectively skip unknown columns
@@ -85,6 +85,9 @@ protected:
 private:
     explicit StorageFile(CommonArguments args);
 
+    /// For clickhouse-local query display progress of processed files.
+    static void addProgressCallback(ContextPtr context);
+
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
     // function -- in this case, format_settings is set.
@@ -106,6 +109,9 @@ private:
     mutable std::shared_timed_mutex rwlock;
 
     Poco::Logger * log = &Poco::Logger::get("StorageFile");
+
+    /// Approximate number of bytes to read. Needed for progress bar.
+    size_t total_bytes_to_read = 0;
 };
 
 }

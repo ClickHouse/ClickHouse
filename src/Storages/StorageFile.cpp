@@ -38,6 +38,9 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
+#include <Common/UnicodeBar.h>
+#include <Common/TerminalSize.h>
+
 
 namespace fs = std::filesystem;
 
@@ -65,7 +68,7 @@ namespace
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
-std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
+std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match, size_t & total_bytes_to_read)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -94,6 +97,7 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
+                total_bytes_to_read += fs::file_size(it->path());
                 result.push_back(it->path().string());
             }
         }
@@ -102,7 +106,7 @@ std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_fo
             if (re2::RE2::FullMatch(file_name, matcher))
             {
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
-                Strings result_part = listFilesWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash));
+                Strings result_part = listFilesWithRegexpMatching(full_path + "/", suffix_with_globs.substr(next_slash), total_bytes_to_read);
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
         }
@@ -131,7 +135,7 @@ void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_di
 }
 }
 
-Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextPtr context)
+Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read)
 {
     String user_files_absolute_path = Poco::Path(user_files_path).makeAbsolute().makeDirectory().toString();
     Poco::Path poco_path = Poco::Path(table_path);
@@ -141,9 +145,12 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     Strings paths;
     const String path = poco_path.absolute().toString();
     if (path.find_first_of("*?{") == std::string::npos)
+    {
+        total_bytes_to_read += fs::file_size(path);
         paths.push_back(path);
+    }
     else
-        paths = listFilesWithRegexpMatching("/", path);
+        paths = listFilesWithRegexpMatching("/", path, total_bytes_to_read);
 
     for (const auto & cur_path : paths)
         checkCreationIsAllowed(context, user_files_absolute_path, cur_path);
@@ -177,7 +184,7 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     : StorageFile(args)
 {
     is_db_table = false;
-    paths = getPathsList(table_path_, user_files_path, args.getContext());
+    paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
 
     if (args.format_name == "Distributed")
     {
@@ -329,6 +336,7 @@ public:
 
     Chunk generate() override
     {
+        //setFileProgressCallback();
         while (!finished_generate)
         {
             /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
@@ -421,6 +429,80 @@ public:
         return {};
     }
 
+
+    void setProgressCallback(const ProgressCallback & callback) override
+    {
+        /// Add file progress callback only for clickhouse-local.
+        if (context->getApplicationType() != Context::ApplicationType::LOCAL)
+        {
+            progress_callback = callback;
+            return;
+        }
+
+        auto file_progress_callback = [this](const Progress & progress)
+        {
+            static size_t increment = 0;
+            static const char * indicators[8] =
+            {
+                "\033[1;30m→\033[0m",
+                "\033[1;31m↘\033[0m",
+                "\033[1;32m↓\033[0m",
+                "\033[1;33m↙\033[0m",
+                "\033[1;34m←\033[0m",
+                "\033[1;35m↖\033[0m",
+                "\033[1;36m↑\033[0m",
+                "\033[1m↗\033[0m",
+            };
+            size_t terminal_width = getTerminalWidth();
+
+            auto & file_progress = context->getFileTableEngineProgress();
+            WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
+
+            /// Output progress bar one line lower.
+            if (!file_progress.processed_bytes)
+                message << std::string(terminal_width, ' ');
+
+            file_progress.processed_bytes += progress.read_bytes;
+            file_progress.processed_rows += progress.read_rows;
+
+            /// Display progress bar only if .25 seconds have passed since query execution start.
+            size_t elapsed_ns = file_progress.watch.elapsed();
+            if (elapsed_ns > 25000000 && progress.read_bytes > 0)
+            {
+                message << '\r';
+                const char * indicator = indicators[increment % 8];
+                size_t prefix_size = message.count();
+
+                message << indicator << " Progress: ";
+                message << formatReadableQuantity(file_progress.processed_rows) << " rows, ";
+                message << formatReadableSizeWithDecimalSuffix(file_progress.processed_bytes) << " bytes. ";
+
+                size_t written_progress_chars = message.count() - prefix_size - (strlen(indicator) - 1); /// Don't count invisible output (escape sequences).
+                ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
+                std::string bar = UnicodeBar::render(UnicodeBar::getWidth(file_progress.processed_bytes, 0, file_progress.total_bytes_to_process, width_of_progress_bar));
+
+                message << "\033[0;32m" << bar << "\033[0m";
+
+                if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
+                    message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
+
+                message << ' ' << std::min((100 * file_progress.processed_bytes / file_progress.total_bytes_to_process), static_cast<size_t>(99)) << '%';
+            }
+            ++increment;
+        };
+
+        /// Progress callback can be added via context or via method in SourceWithProgress.
+        /// In executeQuery a callback from context is wrapped into another
+        /// progress callback and then passed to SourceWithProgress. Here another callback is
+        /// added to avoid overriding previous callbacks or avoid other callbacks overriding this one.
+        progress_callback = [callback, file_progress_callback](const Progress & progress)
+        {
+            callback(progress);
+            file_progress_callback(progress);
+        };
+    }
+
+
 private:
     std::shared_ptr<StorageFile> storage;
     StorageMetadataPtr metadata_snapshot;
@@ -482,6 +564,10 @@ Pipe StorageFile::read(
 
     Pipes pipes;
     pipes.reserve(num_streams);
+
+    /// For clickhouse-local add progress callback to display in a progress bar.
+    if (context->getApplicationType() == Context::ApplicationType::LOCAL)
+        context->setFileTableEngineApproxBytesToProcess(total_bytes_to_read);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
