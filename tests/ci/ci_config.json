@@ -92,7 +92,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-10",
+            "compiler": "gcc-9",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -359,7 +359,7 @@
         },
         "Functional stateless tests (unbundled)": {
             "required_build_properties": {
-                "compiler": "gcc-10",
+                "compiler": "gcc-9",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",

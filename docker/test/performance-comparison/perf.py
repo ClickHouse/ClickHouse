@@ -66,12 +66,7 @@ reportStageEnd('parse')
 subst_elems = root.findall('substitutions/substitution')
 available_parameters = {} # { 'table': ['hits_10m', 'hits_100m'], ... }
 for e in subst_elems:
-    name = e.find('name').text
-    values = [v.text for v in e.findall('values/value')]
-    if not values:
-        raise Exception(f'No values given for substitution {{{name}}}')
-
-    available_parameters[name] = values
+    available_parameters[e.find('name').text] = [v.text for v in e.findall('values/value')]
 
 # Takes parallel lists of templates, substitutes them with all combos of
 # parameters. The set of parameters is determined based on the first list.

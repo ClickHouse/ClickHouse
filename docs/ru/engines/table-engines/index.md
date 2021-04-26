@@ -16,7 +16,7 @@ toc_title: "Введение"
 -   Возможно ли многопоточное выполнение запроса.
 -   Параметры репликации данных.
 
-## Семейства движков {#engine-families}
+## Семейства движков {#semeistva-dvizhkov}
 
 ### MergeTree {#mergetree}
 
@@ -42,7 +42,7 @@ toc_title: "Введение"
 -   [StripeLog](log-family/stripelog.md#stripelog)
 -   [Log](log-family/log.md#log)
 
-### Движки для интеграции {#integration-engines}
+### Движки для интеграции {#dvizhki-dlia-integratsii}
 
 Движки для связи с другими системами хранения и обработки данных.
 
@@ -52,21 +52,8 @@ toc_title: "Введение"
 -   [MySQL](integrations/mysql.md#mysql)
 -   [ODBC](integrations/odbc.md#table-engine-odbc)
 -   [JDBC](integrations/jdbc.md#table-engine-jdbc)
--   [S3](integrations/s3.md#table-engine-s3)
 
 ### Специальные движки {#spetsialnye-dvizhki}
-
--   [ODBC](../../engines/table-engines/integrations/odbc.md)
--   [JDBC](../../engines/table-engines/integrations/jdbc.md)
--   [MySQL](../../engines/table-engines/integrations/mysql.md)
--   [MongoDB](../../engines/table-engines/integrations/mongodb.md)
--   [HDFS](../../engines/table-engines/integrations/hdfs.md)
--   [Kafka](../../engines/table-engines/integrations/kafka.md)
--   [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md)
--   [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md)
--   [PostgreSQL](../../engines/table-engines/integrations/postgresql.md)
-
-### Специальные движки {#special-engines}
 
 Движки семейства:
 
@@ -92,3 +79,4 @@ toc_title: "Введение"
 Чтобы получить данные из виртуального столбца, необходимо указать его название в запросе `SELECT`. `SELECT *` не отображает данные из виртуальных столбцов.
 
 При создании таблицы со столбцом, имя которого совпадает с именем одного из виртуальных столбцов таблицы, виртуальный столбец становится недоступным. Не делайте так. Чтобы помочь избежать конфликтов, имена виртуальных столбцов обычно предваряются подчеркиванием.
+

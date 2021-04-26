@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from multiprocessing import cpu_count
-from subprocess import Popen, call, check_output, STDOUT
+from subprocess import Popen, call, STDOUT
 import os
 import sys
 import shutil
@@ -85,27 +85,10 @@ def prepare_for_hung_check():
     # Issue #21004, live views are experimental, so let's just suppress it
     call("""clickhouse client -q "KILL QUERY WHERE upper(query) LIKE 'WATCH %'" """, shell=True, stderr=STDOUT)
 
-    # Kill other queries which known to be slow
-    # It's query from 01232_preparing_sets_race_condition_long, it may take up to 1000 seconds in slow builds
-    call("""clickhouse client -q "KILL QUERY WHERE query LIKE 'insert into tableB select %'" """, shell=True, stderr=STDOUT)
-    # Long query from 00084_external_agregation
-    call("""clickhouse client -q "KILL QUERY WHERE query LIKE 'SELECT URL, uniq(SearchPhrase) AS u FROM test.hits GROUP BY URL ORDER BY u %'" """, shell=True, stderr=STDOUT)
-
-    # Wait for last queries to finish if any, not longer than 300 seconds
+    # Wait for last queries to finish if any, not longer than 120 seconds
     call("""clickhouse client -q "select sleepEachRow((
-            select maxOrDefault(300 - elapsed) + 1 from system.processes where query not like '%from system.processes%' and elapsed < 300
-            ) / 300) from numbers(300) format Null" """, shell=True, stderr=STDOUT)
-
-    # Even if all clickhouse-test processes are finished, there are probably some sh scripts,
-    # which still run some new queries. Let's ignore them.
-    try:
-        query = """clickhouse client -q "SELECT count() FROM system.processes where where elapsed > 300" """
-        output = check_output(query, shell=True, stderr=STDOUT).decode('utf-8').strip()
-        if int(output) == 0:
-            return False
-    except:
-        pass
-    return True
+            select maxOrDefault(120 - elapsed) + 1 from system.processes where query not like '%from system.processes%' and elapsed < 120
+            ) / 120) from numbers(120) format Null" """, shell=True, stderr=STDOUT)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
@@ -136,12 +119,12 @@ if __name__ == "__main__":
 
     logging.info("All processes finished")
     if args.hung_check:
-        have_long_running_queries = prepare_for_hung_check()
+        prepare_for_hung_check()
         logging.info("Checking if some queries hung")
         cmd = "{} {} {}".format(args.test_cmd, "--hung-check", "00001_select_1")
         res = call(cmd, shell=True, stderr=STDOUT)
         hung_check_status = "No queries hung\tOK\n"
-        if res != 0 and have_long_running_queries:
+        if res != 0:
             logging.info("Hung check failed with exit code {}".format(res))
             hung_check_status = "Hung check failed\tFAIL\n"
         open(os.path.join(args.output_folder, "test_results.tsv"), 'w+').write(hung_check_status)

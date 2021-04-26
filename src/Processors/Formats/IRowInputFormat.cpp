@@ -190,7 +190,7 @@ Chunk IRowInputFormat::generate()
         if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
             Poco::Logger * log = &Poco::Logger::get("IRowInputFormat");
-            LOG_DEBUG(log, "Skipped {} rows with errors while reading the input stream", num_errors);
+            LOG_TRACE(log, "Skipped {} rows with errors while reading the input stream", num_errors);
         }
 
         readSuffix();

@@ -1,3 +1,4 @@
+# Third-party libraries may have substandard code.
 
 # Put all targets defined here and in added subfolders under "contrib/" folder in GUI-based IDEs by default.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they will
@@ -10,10 +11,8 @@ else ()
 endif ()
 unset (_current_dir_name)
 
-# Third-party libraries may have substandard code.
-# Also remove a possible source of nondeterminism.
-set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w -D__DATE__= -D__TIME__= -D__TIMESTAMP__=")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
 if (WITH_COVERAGE)
   set (WITHOUT_COVERAGE_LIST ${WITHOUT_COVERAGE})
@@ -48,11 +47,7 @@ add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
-add_subdirectory (nanodbc-cmake)
-
-if (USE_INTERNAL_XZ_LIBRARY)
-    add_subdirectory (xz)
-endif()
+add_subdirectory (xz)
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
@@ -98,8 +93,14 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     add_subdirectory (${INTERNAL_ZLIB_NAME})
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    if (TARGET zlibstatic)
+        target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    endif ()
     if (ARCH_AMD64 OR ARCH_AARCH64)
         target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
+        if (TARGET zlibstatic)
+            target_compile_definitions (zlibstatic PUBLIC X86_64 UNALIGNED_OK)
+        endif ()
     endif ()
 endif ()
 

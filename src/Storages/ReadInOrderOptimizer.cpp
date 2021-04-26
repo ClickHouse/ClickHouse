@@ -34,7 +34,7 @@ ReadInOrderOptimizer::ReadInOrderOptimizer(
     forbidden_columns = syntax_result->getArrayJoinSourceNameSet();
 }
 
-InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const
+InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr & metadata_snapshot, const Context & context) const
 {
     Names sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
     if (!metadata_snapshot->hasSortingKey())
@@ -130,7 +130,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(const StorageMetadataPtr &
         /// currently we only support alias column without any function wrapper
         /// ie: `order by aliased_column` can have this optimization, but `order by function(aliased_column)` can not.
         /// This suits most cases.
-        if (context->getSettingsRef().optimize_respect_aliases && aliased_columns.contains(required_sort_description[i].column_name))
+        if (context.getSettingsRef().optimize_respect_aliases && aliased_columns.contains(required_sort_description[i].column_name))
         {
             auto column_expr = metadata_snapshot->getColumns().get(required_sort_description[i].column_name).default_desc.expression->clone();
             replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), forbidden_columns, context);
