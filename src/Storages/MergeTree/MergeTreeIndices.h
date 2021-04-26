@@ -135,4 +135,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr bloomFilterIndexCreatorNew(const IndexDescription & index);
 void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
 
+MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
+void hypothesisIndexValidator(const IndexDescription & index, bool attach);
+
 }
