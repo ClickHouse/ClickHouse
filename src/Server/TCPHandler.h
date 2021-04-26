@@ -135,6 +135,8 @@ private:
     ContextPtr connection_context;
     ContextPtr query_context;
 
+    size_t unknown_packet_in_send_data = 0;
+
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;

@@ -650,7 +650,7 @@ std::optional<NameAndTypePair> ActionsMatcher::getNameAndTypeFromAST(const ASTPt
         return NameAndTypePair(child_column_name, node->result_type);
 
     if (!data.only_consts)
-        throw Exception("Unknown identifier: " + child_column_name + " there are columns: " + data.actions_stack.dumpNames(),
+        throw Exception("Unknown identifier: " + child_column_name + "; there are columns: " + data.actions_stack.dumpNames(),
                         ErrorCodes::UNKNOWN_IDENTIFIER);
 
     return {};
@@ -809,6 +809,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             }
             return;
         }
+    }
+
+    /// A special function `indexHint`. Everything that is inside it is not calculated
+    if (node.name == "indexHint")
+    {
+        // Arguments are removed. We add function instead of constant column to avoid constant folding.
+        data.addFunction(FunctionFactory::instance().get("indexHint", data.getContext()), {}, column_name);
+        return;
     }
 
     if (node.is_window_function)
