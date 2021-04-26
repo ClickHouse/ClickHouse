@@ -513,6 +513,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
     size_t moved_tables = 0;
     std::vector<UUID> dropped_tables;
+    size_t dropped_dictionaries = 0;
+
     for (const auto & table_name : tables_to_detach)
     {
         DDLGuardPtr table_guard = DatabaseCatalog::instance().getDDLGuard(db_name, table_name);
@@ -525,6 +527,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         {
             LOG_DEBUG(log, "Will DROP TABLE {}, because it does not store data on disk and can be safely dropped", backQuoteIfNeed(table_name));
             dropped_tables.push_back(tryGetTableUUID(table_name));
+            dropped_dictionaries += table->isDictionary();
+
             table->shutdown();
             DatabaseAtomic::dropTable(getContext(), table_name, true);
         }
@@ -542,8 +546,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
 
     if (!tables_to_detach.empty())
-        LOG_WARNING(log, "Cleaned {} outdated objects: {} tables, moved {} tables",
-                    tables_to_detach.size(), dropped_tables.size(), moved_tables);
+        LOG_WARNING(log, "Cleaned {} outdated objects: dropped {} dictionaries and {} tables, moved {} tables",
+                    tables_to_detach.size(), dropped_dictionaries, dropped_tables.size() - dropped_dictionaries, moved_tables);
 
     /// Now database is cleared from outdated tables, let's rename ReplicatedMergeTree tables to actual names
     for (const auto & old_to_new : replicated_tables_to_rename)

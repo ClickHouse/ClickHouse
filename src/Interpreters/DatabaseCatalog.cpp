@@ -630,11 +630,7 @@ std::unique_lock<std::shared_mutex> DatabaseCatalog::getExclusiveDDLGuardForData
 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 {
-    auto db = tryGetDatabase(table_id.getDatabaseName());
-    if (!db)
-        return false;
-
-    auto storage = db->tryGetTable(table_id.getTableName(), getContext());
+    auto storage = tryGetTable(table_id, getContext());
     bool storage_is_dictionary = storage && storage->isDictionary();
 
     return storage_is_dictionary;
