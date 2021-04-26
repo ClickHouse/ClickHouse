@@ -25,6 +25,7 @@ function download
 {
     # Historically there were various paths for the performance test package.
     # Test all of them.
+    
     # FIXME test against 20.8
     for path in "https://clickhouse-builds.s3.yandex.net/14297/483aee889e669aeb002b574c8a0e8fe392dd5bbe/clickhouse_build_check/performance/performance.tgz"
     do
