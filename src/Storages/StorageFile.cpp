@@ -336,7 +336,6 @@ public:
 
     Chunk generate() override
     {
-        //setFileProgressCallback();
         while (!finished_generate)
         {
             /// Open file lazily on first read. This is needed to avoid too many open files from different streams.
@@ -458,7 +457,6 @@ public:
             auto & file_progress = context->getFileTableEngineProgress();
             WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
 
-            /// Output progress bar one line lower.
             if (!file_progress.processed_bytes)
                 message << std::string(terminal_width, ' ');
 
@@ -467,11 +465,12 @@ public:
 
             /// Display progress bar only if .25 seconds have passed since query execution start.
             size_t elapsed_ns = file_progress.watch.elapsed();
-            if (elapsed_ns > 25000000 && progress.read_bytes > 0)
+            if (elapsed_ns > 25000000)
             {
                 message << '\r';
                 const char * indicator = indicators[increment % 8];
                 size_t prefix_size = message.count();
+                size_t processed_bytes = file_progress.processed_bytes.load();
 
                 message << indicator << " Progress: ";
                 message << formatReadableQuantity(file_progress.processed_rows) << " rows, ";
@@ -479,14 +478,18 @@ public:
 
                 size_t written_progress_chars = message.count() - prefix_size - (strlen(indicator) - 1); /// Don't count invisible output (escape sequences).
                 ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
-                std::string bar = UnicodeBar::render(UnicodeBar::getWidth(file_progress.processed_bytes, 0, file_progress.total_bytes_to_process, width_of_progress_bar));
 
+                /// total_bytes_to_read is approximate, since its amount is taken as file size (or sum of all file sizes
+                /// from paths, generated for file table engine). And progress.read_bytes is counted accorging to columns types.
+                size_t total_bytes_corrected = std::max(processed_bytes, file_progress.total_bytes_to_process);
+
+                std::string bar = UnicodeBar::render(UnicodeBar::getWidth(processed_bytes, 0, total_bytes_corrected, width_of_progress_bar));
                 message << "\033[0;32m" << bar << "\033[0m";
 
                 if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
                     message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
 
-                message << ' ' << std::min((100 * file_progress.processed_bytes / file_progress.total_bytes_to_process), static_cast<size_t>(99)) << '%';
+                message << ' ' << std::min((99 * file_progress.processed_bytes / file_progress.total_bytes_to_process), static_cast<size_t>(99)) << '%';
             }
             ++increment;
         };
