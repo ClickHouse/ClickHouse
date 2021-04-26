@@ -2888,14 +2888,26 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 Result:
 
-``` text
+```text
 Received exception from server (version 21.5.1):
 Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
+```
+
 Query:
 
 ```sql
 SET prefer_column_name_to_alias = 1;
 SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Result:
+
+```text
+┌─number─┬─max(number)─┐
+│    4.5 │           9 │
+└────────┴─────────────┘
+```
+
 ## limit {#limit}
 
 Sets the maximum number of rows to get from the query result. It adjusts the value set by the [LIMIT](../../sql-reference/statements/select/limit.md#limit-clause) clause, so that the limit, specified in the query, cannot exceed the limit, set by this setting.
