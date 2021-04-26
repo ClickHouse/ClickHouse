@@ -2891,7 +2891,6 @@ Result:
 ``` text
 Received exception from server (version 21.5.1):
 Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
-
 Query:
 
 ```sql
