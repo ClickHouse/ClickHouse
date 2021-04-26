@@ -38,20 +38,6 @@ const char * ProjectionDescription::typeToString(Type type)
     __builtin_unreachable();
 }
 
-ProjectionDescription::ProjectionDescription(const ProjectionDescription & other)
-    : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
-    , query_ast(other.query_ast ? other.query_ast->clone() : nullptr)
-    , name(other.name)
-    , type(other.type)
-    , required_columns(other.required_columns)
-    , column_names(other.column_names)
-    , data_types(other.data_types)
-    , sample_block(other.sample_block)
-    , metadata(other.metadata)
-    , key_size(other.key_size)
-{
-}
-
 
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
@@ -69,30 +55,33 @@ bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const A
 }
 
 
-ProjectionDescription & ProjectionDescription::operator=(const ProjectionDescription & other)
+ProjectionDescription ProjectionDescription::clone() const
 {
-    if (&other == this)
-        return *this;
+    ProjectionDescription other;
+    if (definition_ast)
+        other.definition_ast = definition_ast->clone();
+    if (query_ast)
+        other.query_ast = query_ast->clone();
 
-    if (other.definition_ast)
-        definition_ast = other.definition_ast->clone();
-    else
-        definition_ast.reset();
+    other.name = name;
+    other.type = type;
+    other.required_columns = required_columns;
+    other.column_names = column_names;
+    other.data_types = data_types;
+    other.sample_block = sample_block;
+    other.metadata = metadata;
+    other.key_size = key_size;
 
-    if (other.query_ast)
-        query_ast = other.query_ast->clone();
-    else
-        query_ast.reset();
+    return other;
+}
 
-    name = other.name;
-    type = other.type;
-    required_columns = other.required_columns;
-    column_names = other.column_names;
-    data_types = other.data_types;
-    sample_block = other.sample_block;
-    metadata = other.metadata;
-    key_size = other.key_size;
-    return *this;
+ProjectionsDescription ProjectionsDescription::clone() const
+{
+    ProjectionsDescription other;
+    for (const auto & projection : projections)
+        other.add(projection.clone());
+
+    return other;
 }
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
@@ -116,9 +105,6 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     if (!projection_definition->query)
         throw Exception("QUERY is required for projection", ErrorCodes::INCORRECT_QUERY);
-
-    // if (projection_definition->type == "normal")
-    //     throw Exception("Normal projections are not supported for now", ErrorCodes::NOT_IMPLEMENTED);
 
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
@@ -251,16 +237,16 @@ ProjectionsDescription ProjectionsDescription::parse(const String & str, const C
 
 bool ProjectionsDescription::has(const String & projection_name) const
 {
-    return projections.get<1>().find(projection_name) != projections.get<1>().end();
+    return map.count(projection_name) > 0;
 }
 
 const ProjectionDescription & ProjectionsDescription::get(const String & projection_name) const
 {
-    auto it = projections.get<1>().find(projection_name);
-    if (it == projections.get<1>().end())
+    auto it = map.find(projection_name);
+    if (it == map.end())
         throw Exception("There is no projection " + projection_name + " in table", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
 
-    return *it;
+    return *(it->second);
 }
 
 void ProjectionsDescription::add(ProjectionDescription && projection, const String & after_projection, bool first, bool if_not_exists)
@@ -288,15 +274,18 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
         insert_it = it;
     }
 
-    projections.get<0>().insert(insert_it, std::move(projection));
+    auto it = projections.insert(insert_it, std::move(projection));
+    map[it->name] = it;
 }
 
 void ProjectionsDescription::remove(const String & projection_name)
 {
-    auto it = projections.get<1>().find(projection_name);
-    if (it == projections.get<1>().end())
+    auto it = map.find(projection_name);
+    if (it == map.end())
         throw Exception("There is no projection " + projection_name + " in table.", ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE);
-    projections.get<1>().erase(it);
+
+    projections.erase(it->second);
+    map.erase(it);
 }
 
 ExpressionActionsPtr

@@ -27,7 +27,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     : columns(other.columns)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
-    , projections(other.projections)
+    , projections(other.projections.clone())
     , partition_key(other.partition_key)
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
@@ -47,7 +47,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     columns = other.columns;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
-    projections = other.projections;
+    projections = other.projections.clone();
     partition_key = other.partition_key;
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
