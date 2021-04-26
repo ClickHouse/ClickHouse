@@ -204,22 +204,36 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
 
 std::vector<ASTPtr> ComparisonGraph::getEqual(const ASTPtr & ast) const
 {
+    const auto res = getComponentId(ast);
+    if (!res)
+        return {};
+    else
+        return getComponent(res.value());
+}
+
+std::optional<std::size_t> ComparisonGraph::getComponentId(const ASTPtr & ast) const
+{
     const auto hash_it = graph.ast_hash_to_component.find(ast->getTreeHash());
     if (hash_it == std::end(graph.ast_hash_to_component))
         return {};
     const size_t index = hash_it->second;
     if (std::any_of(
-            std::cbegin(graph.vertexes[index].asts),
-            std::cend(graph.vertexes[index].asts),
-            [ast](const ASTPtr & constraint_ast)
-            {
-                return constraint_ast->getTreeHash() == ast->getTreeHash() &&
-                    constraint_ast->getColumnName() == ast->getColumnName();
-            })) {
-        return graph.vertexes[index].asts;
+        std::cbegin(graph.vertexes[index].asts),
+        std::cend(graph.vertexes[index].asts),
+        [ast](const ASTPtr & constraint_ast)
+        {
+            return constraint_ast->getTreeHash() == ast->getTreeHash() &&
+                   constraint_ast->getColumnName() == ast->getColumnName();
+        })) {
+        return index;
     } else {
         return {};
     }
+}
+
+std::vector<ASTPtr> ComparisonGraph::getComponent(const std::size_t id) const
+{
+    return graph.vertexes[id].asts;
 }
 
 bool ComparisonGraph::EqualComponent::hasConstant() const {

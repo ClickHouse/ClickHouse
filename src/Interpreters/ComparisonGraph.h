@@ -35,6 +35,9 @@ public:
     std::vector<ASTPtr> getEqual(const ASTPtr & ast) const;
     std::optional<ASTPtr> getEqualConst(const ASTPtr & ast) const;
 
+    std::optional<std::size_t> getComponentId(const ASTPtr & ast) const;
+    std::vector<ASTPtr> getComponent(const std::size_t id) const;
+
     /// Find constants lessOrEqual and greaterOrEqual.
     /// For int and double linear programming can be applied here.
     /// Returns: {constant, is strict less/greater}
