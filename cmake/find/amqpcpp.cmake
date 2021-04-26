@@ -1,19 +1,11 @@
-if (OS_DARWIN AND COMPILER_GCC)
-    # AMQP-CPP requires libuv which cannot be built with GCC in macOS due to a bug: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=93082
+if (MISSING_INTERNAL_LIBUV_LIBRARY)
+    message (WARNING "Can't find internal libuv needed for AMQP-CPP library")
     set (ENABLE_AMQPCPP OFF CACHE INTERNAL "")
 endif()
 
 option(ENABLE_AMQPCPP "Enalbe AMQP-CPP" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_AMQPCPP)
-    return()
-endif()
-
-include(cmake/find/libuv.cmake)
-
-if (MISSING_INTERNAL_LIBUV_LIBRARY)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal libuv needed for AMQP-CPP library")
-    set (USE_AMQPCPP 0)
     return()
 endif()
 
