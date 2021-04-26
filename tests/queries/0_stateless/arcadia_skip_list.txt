@@ -231,3 +231,4 @@
 01801_distinct_group_by_shard
 01804_dictionary_decimal256_type
 01801_s3_distributed
+01833_test_collation_alvarotuso

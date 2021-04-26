@@ -365,8 +365,8 @@ void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
     /// 4. INSERT INTO table ...; (both Storage instances writes data without any synchronization)
     /// To avoid it, we remember UUIDs of detached tables and does not allow ATTACH table with such UUID until detached instance still in use.
     if (detached_tables.count(uuid))
-        throw Exception("Cannot attach table with UUID " + toString(uuid) +
-              ", because it was detached but still used by some query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table with UUID {}, "
+                        "because it was detached but still used by some query. Retry later.", toString(uuid));
 }
 
 void DatabaseAtomic::setDetachedTableNotInUseForce(const UUID & uuid)
@@ -573,12 +573,6 @@ void DatabaseAtomic::renameDictionaryInMemoryUnlocked(const StorageID & old_name
 }
 void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
 {
-    {
-        std::lock_guard lock{mutex};
-        if (detached_tables.count(uuid) == 0)
-            return;
-    }
-
     /// Table is in use while its shared_ptr counter is greater than 1.
     /// We cannot trigger condvar on shared_ptr destruction, so it's busy wait.
     while (true)
@@ -592,6 +586,14 @@ void DatabaseAtomic::waitDetachedTableNotInUse(const UUID & uuid)
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
+}
+
+void DatabaseAtomic::checkDetachedTableNotInUse(const UUID & uuid)
+{
+    DetachedTables not_in_use;
+    std::lock_guard lock{mutex};
+    not_in_use = cleanupDetachedTables();
+    assertDetachedTableNotInUse(uuid);
 }
 
 }
