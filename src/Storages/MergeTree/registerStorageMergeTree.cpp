@@ -658,9 +658,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             for (auto & index : args.query.columns_list->indices->children)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.context));
 
+        auto constraints = metadata.constraints.getConstraints();
         if (args.query.columns_list && args.query.columns_list->constraints)
             for (auto & constraint : args.query.columns_list->constraints->children)
-                metadata.constraints.constraints.push_back(constraint);
+                constraints.push_back(constraint);
+        metadata.constraints.updateConstraints(constraints);
 
         auto column_ttl_asts = args.columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)

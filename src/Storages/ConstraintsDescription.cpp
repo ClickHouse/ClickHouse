@@ -66,7 +66,7 @@ ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
     return res;
 }
 
-std::vector<std::vector<CNFQuery::AtomicFormula>> ConstraintsDescription::getConstraintData() const
+std::vector<std::vector<CNFQuery::AtomicFormula>> ConstraintsDescription::buildConstraintData() const
 {
     std::vector<std::vector<CNFQuery::AtomicFormula>> constraint_data;
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
@@ -97,7 +97,7 @@ std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomicConstraint
     return constraint_data;
 }
 
-ComparisonGraph ConstraintsDescription::getGraph() const
+std::unique_ptr<ComparisonGraph> ConstraintsDescription::buildGraph() const
 {
     static const std::set<std::string> relations = {
         "equals", "less", "lessOrEquals", "greaterOrEquals", "greater"};
@@ -118,7 +118,7 @@ ComparisonGraph ConstraintsDescription::getGraph() const
         }
     }
 
-    return ComparisonGraph(constraints_for_graph);
+    return std::make_unique<ComparisonGraph>(constraints_for_graph);
 }
 
 ConstraintsExpressions ConstraintsDescription::getExpressionsToCheck(const DB::Context & context,
@@ -140,11 +140,33 @@ ConstraintsExpressions ConstraintsDescription::getExpressionsToCheck(const DB::C
     return res;
 }
 
+const ComparisonGraph & ConstraintsDescription::getGraph() const
+{
+    return *graph;
+}
+
+const std::vector<std::vector<CNFQuery::AtomicFormula>> & ConstraintsDescription::getConstraintData() const
+{
+    return cnf_constraints;
+}
+
+const std::vector<ASTPtr> & ConstraintsDescription::getConstraints() const
+{
+    return constraints;
+}
+
+void ConstraintsDescription::updateConstraints(const std::vector<ASTPtr> & constraints_)
+{
+    constraints = constraints_;
+    update();
+}
+
 ConstraintsDescription::ConstraintsDescription(const ConstraintsDescription & other)
 {
     constraints.reserve(other.constraints.size());
     for (const auto & constraint : other.constraints)
         constraints.emplace_back(constraint->clone());
+    update();
 }
 
 ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDescription & other)
@@ -152,7 +174,14 @@ ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDesc
     constraints.resize(other.constraints.size());
     for (size_t i = 0; i < constraints.size(); ++i)
         constraints[i] = other.constraints[i]->clone();
+    update();
     return *this;
+}
+
+void ConstraintsDescription::update()
+{
+    cnf_constraints = buildConstraintData();
+    graph = buildGraph();
 }
 
 }
