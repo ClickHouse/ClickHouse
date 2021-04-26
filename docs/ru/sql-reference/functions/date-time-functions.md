@@ -151,7 +151,7 @@ timeZoneOffset(value)
 
 **Аргументы**
 
--   `value` — дата и время. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
+-   `value` — Дата с временем. [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md). 
 
 **Возвращаемое значение**
 
