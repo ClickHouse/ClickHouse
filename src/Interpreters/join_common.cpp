@@ -96,7 +96,7 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
     ColumnPtr dst_not_null = JoinCommon::emptyNotNullableClone(dst_column);
     bool lowcard_src = JoinCommon::emptyNotNullableClone(src_column)->lowCardinality();
     bool lowcard_dst = dst_not_null->lowCardinality();
-    bool change_lowcard = (!lowcard_src && lowcard_dst) || (lowcard_src && !lowcard_dst);
+    bool change_lowcard = lowcard_src != lowcard_dst;
 
     if (nullable_src && !nullable_dst)
     {
@@ -268,6 +268,10 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const TableJ
         {
             if (table_join.rightBecomeNullable(col.type))
                 JoinCommon::convertColumnToNullable(col);
+
+            /// In case of arrayJoin it can be not one row
+            if (col.column->size() != 1)
+                col.column = col.column->cloneResized(1);
         }
 
         for (size_t i = 0; i < totals_without_keys.columns(); ++i)
@@ -280,6 +284,11 @@ void joinTotals(const Block & totals, const Block & columns_to_add, const TableJ
         for (size_t i = 0; i < columns_to_add.columns(); ++i)
         {
             const auto & col = columns_to_add.getByPosition(i);
+            if (block.has(col.name))
+            {
+                /// For StorageJoin we discarded table qualifiers, so some names may clash
+                continue;
+            }
             block.insert({
                 col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(),
                 col.type,

@@ -2,14 +2,14 @@
 #include <IO/ReadHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 
 namespace DB
 {
 
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr thread_group)
 {
-    SCOPE_EXIT(
+    SCOPE_EXIT_SAFE(
         if (thread_group)
             CurrentThread::detachQueryIfNotDetached();
     );
@@ -60,7 +60,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
 void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupStatusPtr thread_group, size_t current_ticket_number)
 {
-    SCOPE_EXIT(
+    SCOPE_EXIT_SAFE(
         if (thread_group)
             CurrentThread::detachQueryIfNotDetached();
     );

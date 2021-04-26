@@ -4,7 +4,9 @@ Contains information about columns in all the tables.
 
 You can use this table to get information similar to the [DESCRIBE TABLE](../../sql-reference/statements/misc.md#misc-describe-table) query, but for multiple tables at once.
 
-The `system.columns` table contains the following columns (the column type is shown in brackets):
+Columns from [temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in the `system.columns` only in those session where they have been created. They are shown with the empty `database` field. 
+
+Columns:
 
 -   `database` ([String](../../sql-reference/data-types/string.md)) — Database name.
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
@@ -26,7 +28,7 @@ The `system.columns` table contains the following columns (the column type is sh
 **Example**
 
 ```sql
-:) select * from system.columns LIMIT 2 FORMAT Vertical;
+SELECT * FROM system.columns LIMIT 2 FORMAT Vertical;
 ```
 
 ```text
@@ -65,8 +67,6 @@ is_in_sorting_key:       0
 is_in_primary_key:       0
 is_in_sampling_key:      0
 compression_codec:       
-
-2 rows in set. Elapsed: 0.002 sec. 
 ```
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/columns) <!--hide-->

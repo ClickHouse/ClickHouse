@@ -26,7 +26,7 @@ class FunctionArrayConcat : public IFunction
 {
 public:
     static constexpr auto name = "arrayConcat";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayConcat>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayConcat>(); }
 
     String getName() const override { return name; }
 

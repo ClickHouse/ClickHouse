@@ -5,7 +5,7 @@
 #include <Processors/QueryPipeline.h>
 
 #include <Common/setThreadName.h>
-#include <ext/scope_guard.h>
+#include <ext/scope_guard_safe.h>
 
 namespace DB
 {
@@ -72,7 +72,7 @@ static void threadFunction(PullingAsyncPipelineExecutor::Data & data, ThreadGrou
         if (thread_group)
             CurrentThread::attachTo(thread_group);
 
-        SCOPE_EXIT(
+        SCOPE_EXIT_SAFE(
             if (thread_group)
                 CurrentThread::detachQueryIfNotDetached();
         );
