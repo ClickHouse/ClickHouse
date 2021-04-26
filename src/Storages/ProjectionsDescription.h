@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -41,6 +42,7 @@ struct ProjectionDescription
     /// Projection type (normal, aggregate, etc.)
     Type type = Type::Normal;
 
+    /// Columns which are required for query_ast.
     Names required_columns;
 
     Names getRequiredColumns() const { return required_columns; }
@@ -65,9 +67,13 @@ struct ProjectionDescription
     ProjectionDescription() = default;
 
     /// We need custom copy constructors because we don't want
-    /// unintentionaly share AST variables and modify them.
-    ProjectionDescription(const ProjectionDescription & other);
-    ProjectionDescription & operator=(const ProjectionDescription & other);
+    /// unintentionally share AST variables and modify them.
+    ProjectionDescription(const ProjectionDescription & other) = delete;
+    ProjectionDescription(ProjectionDescription && other) = default;
+    ProjectionDescription & operator=(const ProjectionDescription & other) = delete;
+    ProjectionDescription & operator=(ProjectionDescription && other) = default;
+
+    ProjectionDescription clone() const;
 
     bool operator==(const ProjectionDescription & other) const;
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }
@@ -82,6 +88,12 @@ struct ProjectionDescription
 /// All projections in storage
 struct ProjectionsDescription
 {
+    ProjectionsDescription() = default;
+    ProjectionsDescription(ProjectionsDescription && other) = default;
+    ProjectionsDescription & operator=(ProjectionsDescription && other) = default;
+
+    ProjectionsDescription clone() const;
+
     /// Convert description to string
     String toString() const;
     /// Parse description from string
@@ -108,13 +120,11 @@ struct ProjectionsDescription
 
 private:
     /// Keep the sequence of columns and allow to lookup by name.
-    using Container = boost::multi_index_container<
-        ProjectionDescription,
-        boost::multi_index::indexed_by<
-            boost::multi_index::sequenced<>,
-            boost::multi_index::ordered_unique<boost::multi_index::member<ProjectionDescription, String, &ProjectionDescription::name>>>>;
+    using Container = std::list<ProjectionDescription>;
+    using Map = std::unordered_map<std::string, Container::iterator>;
 
     Container projections;
+    Map map;
 };
 
 }
