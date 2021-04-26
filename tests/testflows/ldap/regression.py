@@ -14,7 +14,7 @@ def regression(self, local, clickhouse_binary_path, parallel=None, stress=None):
     """
     args = {"local": local, "clickhouse_binary_path": clickhouse_binary_path}
     
-    for i in range(10):
+    for i in range(2):
         with Module(f"run {i}"):
             Feature(test=load("ldap.authentication.regression", "regression"))(**args)
             Feature(test=load("ldap.external_user_directory.regression", "regression"))(**args)
