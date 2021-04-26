@@ -2755,4 +2755,53 @@ SELECT * FROM test2;
 
 Значение по умолчанию: `0`.
 
+## limit {#limit}
+
+Устанавливает максимальное количество строк, возвращаемых запросом. Ограничивает сверху значение, установленное в запросе в секции [LIMIT](../../sql-reference/statements/select/limit.md#limit-clause).
+
+Возможные значения:
+
+-   0 — число строк не ограничено.
+-   Положительное целое число.
+
+Значение по умолчанию: `0`.
+
+## offset {#offset}
+
+Устанавливает количество строк, которые необходимо пропустить перед началом возврата строк из запроса. Суммируется со значением, установленным в запросе в секции [OFFSET](../../sql-reference/statements/select/offset.md#offset-fetch).
+
+Возможные значения:
+
+-   0 — строки не пропускаются.
+-   Положительное целое число.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Исходная таблица:
+
+``` sql
+CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
+INSERT INTO test SELECT number FROM numbers(500);
+```
+
+Запрос:
+
+``` sql
+SET limit = 5;
+SET offset = 7;
+SELECT * FROM test LIMIT 10 OFFSET 100;
+```
+
+Результат:
+
+``` text
+┌───i─┐
+│ 107 │
+│ 108 │
+│ 109 │
+└─────┘
+```
+
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

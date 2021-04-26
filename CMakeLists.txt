@@ -499,6 +499,7 @@ include (cmake/find/krb5.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/cyrus-sasl.cmake)
 include (cmake/find/rdkafka.cmake)
+include (cmake/find/libuv.cmake) # for amqpcpp and cassandra
 include (cmake/find/amqpcpp.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
