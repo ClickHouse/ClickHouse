@@ -243,9 +243,12 @@ function run_tests
     profile_seconds_left=600
 
     # Run the tests.
+    total_tests=$(echo "$test_files" | wc -w)
+    current_test=0
     test_name="<none>"
     for test in $test_files
     do
+        echo "$current_test of $total_tests tests complete" > status.txt
         # Check that both servers are alive, and restart them if they die.
         clickhouse-client --port $LEFT_SERVER_PORT --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; }
@@ -273,6 +276,7 @@ function run_tests
         profile_seconds_left=$(awk -F'	' \
             'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
+        current_test=$((current_test + 1))
     done
 
     unset TIMEFORMAT
@@ -1287,3 +1291,4 @@ esac
 # Print some final debug info to help debug Weirdness, of which there is plenty.
 jobs
 pstree -apgT
+
