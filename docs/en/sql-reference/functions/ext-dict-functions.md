@@ -100,6 +100,23 @@ LIMIT 3
 
 -   [External Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)
 
+## dictGetOrNull  {#dictgetornull }
+
+Retrieves a value from an external dictionary. It works like `dictGet`, but return `NULL` in case key was not found in dictionary. 
+
+``` sql
+dictGetOrNull('dict_name', 'attr_name', id_expr)
+```
+
+**Arguments**
+
+
+
+**Returned value**
+
+
+Type: 
+
 ## dictHas {#dicthas}
 
 Checks whether a key is present in a dictionary.
