@@ -192,6 +192,20 @@ void StorageDictionary::shutdown()
     removeDictionaryConfigurationFromRepository();
 }
 
+void StorageDictionary::startup()
+{
+    auto context = getContext();
+
+    bool lazy_load = context->getConfigRef().getBool("dictionaries_lazy_load", true);
+    if (!lazy_load)
+    {
+        auto & external_dictionaries_loader = context->getExternalDictionariesLoader();
+
+        /// reloadConfig() is called here to force loading the dictionary.
+        external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
+    }
+}
+
 void StorageDictionary::removeDictionaryConfigurationFromRepository()
 {
     if (remove_repository_callback_executed)
@@ -255,14 +269,6 @@ void registerStorageDictionary(StorageFactory & factory)
             /// Create dictionary storage that owns underlying dictionary
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = StorageDictionary::create(dictionary_id, abstract_dictionary_configuration, local_context);
-
-            bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
-            if (!lazy_load)
-            {
-                /// load() is called here to force loading the dictionary, wait until the loading is finished,
-                /// and throw an exception if the loading is failed.
-                external_dictionaries_loader.load(result_storage->getStorageID().getInternalDictionaryName());
-            }
 
             return result_storage;
         }

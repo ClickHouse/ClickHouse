@@ -38,7 +38,8 @@ public:
 
     bool isDictionary() const override { return true; }
     void drop() override;
-    void shutdown()  override;
+    void shutdown() override;
+    void startup() override;
 
     void renameInMemory(const StorageID & new_table_id) override;
 
