@@ -1131,7 +1131,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         MergeTreeData::MergingParams projection_merging_params;
         projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
-        if (projection.type == "aggregate")
+        if (projection.type == ProjectionDescription::Type::Aggregate)
             projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
         // TODO Should we use a new merge_entry for projection?
@@ -2005,7 +2005,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
                           context,
                           Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
                           SelectQueryOptions{
-                              projection.type == "normal" ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState})
+                              projection.type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns : QueryProcessingStage::WithMergeableState})
                           .execute()
                           .getInputStream();
             in = std::make_shared<SquashingBlockInputStream>(in, block.rows(), std::numeric_limits<UInt64>::max());
@@ -2104,7 +2104,7 @@ void MergeTreeDataMergerMutator::writeWithProjections(
 
                 MergeTreeData::MergingParams projection_merging_params;
                 projection_merging_params.mode = MergeTreeData::MergingParams::Ordinary;
-                if (projection.type == "aggregate")
+                if (projection.type == ProjectionDescription::Type::Aggregate)
                     projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
                 LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part.name);

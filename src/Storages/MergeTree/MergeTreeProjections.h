@@ -49,7 +49,7 @@ using MergeTreeProjections = std::vector<MergeTreeProjectionPtr>;
 class MergeTreeProjectionNormal : public IMergeTreeProjection
 {
 public:
-    MergeTreeProjectionNormal(const ProjectionDescription & projection_) : IMergeTreeProjection(projection_) { }
+    explicit MergeTreeProjectionNormal(const ProjectionDescription & projection_) : IMergeTreeProjection(projection_) { }
 
     ~MergeTreeProjectionNormal() override = default;
 };
@@ -57,7 +57,7 @@ public:
 class MergeTreeProjectionAggregate : public IMergeTreeProjection
 {
 public:
-    MergeTreeProjectionAggregate(const ProjectionDescription & projection_) : IMergeTreeProjection(projection_) { }
+    explicit MergeTreeProjectionAggregate(const ProjectionDescription & projection_) : IMergeTreeProjection(projection_) { }
 
     ~MergeTreeProjectionAggregate() override = default;
 };
@@ -69,23 +69,19 @@ public:
 
     using Creator = std::function<MergeTreeProjectionPtr(const ProjectionDescription & projection)>;
 
-    using Validator = std::function<void(const ProjectionDescription & projection, bool attach)>;
-
     void validate(const ProjectionDescription & projection) const;
 
     MergeTreeProjectionPtr get(const ProjectionDescription & projection) const;
 
     MergeTreeProjections getMany(const std::vector<ProjectionDescription> & projections) const;
 
-    void registerCreator(const std::string & projection_type, Creator creator);
-    void registerValidator(const std::string & projection_type, Validator validator);
+    void registerCreator(ProjectionDescription::Type projection_type, Creator creator);
 
 protected:
     MergeTreeProjectionFactory();
 
 private:
-    using Creators = std::unordered_map<std::string, Creator>;
-    using Validators = std::unordered_map<std::string, Validator>;
+    using Creators = std::unordered_map<ProjectionDescription::Type, Creator>;
     Creators creators;
 };
 

@@ -3856,10 +3856,10 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     ParserFunction parse_function;
     for (const auto & projection : metadata_snapshot->projections)
     {
-        if (projection.type == "aggregate" && (!analysis_result.need_aggregate || !can_use_aggregate_projection))
+        if (projection.type == ProjectionDescription::Type::Aggregate && (!analysis_result.need_aggregate || !can_use_aggregate_projection))
             continue;
 
-        if (projection.type == "normal" && !(analysis_result.hasWhere() || analysis_result.hasPrewhere()))
+        if (projection.type == ProjectionDescription::Type::Normal && !(analysis_result.hasWhere() || analysis_result.hasPrewhere()))
             continue;
 
         bool covered = true;
@@ -3936,7 +3936,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         for (const auto & candidate : candidates)
         {
             // TODO We choose the projection with least key_size. Perhaps we can do better? (key rollups)
-            if (candidate.desc->type == "aggregate" && candidate.desc->key_size < min_key_size)
+            if (candidate.desc->type == ProjectionDescription::Type::Aggregate && candidate.desc->key_size < min_key_size)
             {
                 selected_candidate = &candidate;
                 min_key_size = candidate.desc->key_size;
@@ -3970,7 +3970,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         }
 
         if (!selected_candidate)
-            throw Exception("None of the projection candidates is selected", ErrorCodes::LOGICAL_ERROR);
+            return false;
 
         query_info.projection = selected_candidate->desc;
         query_info.key_actions = std::move(selected_candidate->key_actions);
@@ -3995,7 +3995,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     {
         if (getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
         {
-            if (query_info.projection->type == "aggregate")
+            if (query_info.projection->type == ProjectionDescription::Type::Aggregate)
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
     }

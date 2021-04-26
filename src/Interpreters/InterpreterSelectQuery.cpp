@@ -1988,7 +1988,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
     /// It is already added by storage (because of performance issues).
     /// TODO: We should probably add another one processing stage for storage?
     ///       WithMergeableStateAfterAggregation is not ok because, e.g., it skips sorting after aggregation.
-    if (query_info.projection && query_info.projection->type == "aggregate")
+    if (query_info.projection && query_info.projection->type == ProjectionDescription::Type::Aggregate)
         return;
 
     const auto & header_before_merge = query_plan.getCurrentDataStream().header;

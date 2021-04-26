@@ -21,6 +21,14 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 /// Description of projections for Storage
 struct ProjectionDescription
 {
+    enum class Type
+    {
+        Normal,
+        Aggregate,
+    };
+
+    static const char * typeToString(Type type);
+
     /// Definition AST of projection
     ASTPtr definition_ast;
 
@@ -31,7 +39,7 @@ struct ProjectionDescription
     String name;
 
     /// Projection type (normal, aggregate, etc.)
-    String type = "normal";
+    Type type = Type::Normal;
 
     Names required_columns;
 
