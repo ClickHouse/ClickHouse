@@ -65,7 +65,7 @@
 #endif
 
 #if WITH_COVERAGE
-#   include <common/coverage/coverage.h>
+#   include <Common/Coverage.h>
 #endif
 
 #if defined(OS_DARWIN)

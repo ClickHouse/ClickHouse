@@ -186,11 +186,7 @@ private:
     Settings settings;                                  /// Setting for query execution.
 
     using SettingHook = std::function<void(const Field& /*new_value*/)>;
-    struct SettingsHooksHolder
-    {
-        /// name -> f(old_value, new_value).
-        std::unordered_multimap<std::string_view, SettingHook> hooks;
-    };
+    using SettingsHooksHolder = std::unordered_multimap<std::string_view, SettingHook>;
 
     static SettingsHooksHolder& getHooksHolderInstance()
     {
@@ -508,7 +504,7 @@ public:
 
     static inline void setSettingHook(std::string_view setting_name, SettingHook f)
     {
-        getHooksHolderInstance().hooks.emplace(setting_name, std::move(f));
+        getHooksHolderInstance().emplace(setting_name, std::move(f));
     }
 
     /// Checks the constraints.

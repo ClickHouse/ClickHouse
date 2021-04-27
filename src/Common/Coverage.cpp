@@ -1,4 +1,4 @@
-#include "coverage.h"
+#include "Coverage.h"
 
 #include <cassert>
 

@@ -24,19 +24,16 @@ public:
         return w;
     }
 
-    void initialized(uint32_t count, const uint32_t * start)
+    inline void initialized(uint32_t count)
     {
-        (void)start;
-
         std::filesystem::remove_all(coverage_dir);
         std::filesystem::create_directory(coverage_dir);
 
         edges.reserve(count);
     }
 
-    void hit(uint32_t edge_index, void * addr)
+    inline void hit(void * addr)
     {
-        (void)edge_index;
         auto lck = std::lock_guard(edges_mutex);
         edges.push_back(addr);
     }

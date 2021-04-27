@@ -86,13 +86,6 @@ target_link_libraries (common
         fmt
 )
 
-set_source_files_properties(
-    coverage/coverage.cpp
-    PROPERTIES
-        COMPILE_FLAGS "-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE}"
-        INCLUDE_DIRECTORIES ../../src/Common
-    )
-
 if (ENABLE_TESTS)
     add_subdirectory (tests)
 endif ()

@@ -73,7 +73,7 @@
 #include <Server/HTTP/HTTPServer.h>
 
 #if WITH_COVERAGE
-#   include <common/coverage/sanitizer_callbacks.h>
+#   include <Common/CoverageCallbacks.h>
 #endif
 
 #if !defined(ARCADIA_BUILD)
