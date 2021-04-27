@@ -15,6 +15,7 @@
 #include <IO/MMappedFileCache.h>
 #include <Databases/IDatabase.h>
 #include <chrono>
+#include <Storages/QueryCache.h>
 
 
 #if !defined(ARCADIA_BUILD)
@@ -191,6 +192,14 @@ void AsynchronousMetrics::update()
         if (auto mmap_cache = getContext()->getMMappedFileCache())
         {
             new_values["MMapCacheCells"] = mmap_cache->count();
+        }
+    }
+
+    {
+        if (auto query_cache = getContext()->getQueryCache())
+        {
+            new_values["QueryCacheBytes"] = query_cache->weight();
+            new_values["QueryCacheFiles"] = query_cache->count();
         }
     }
 

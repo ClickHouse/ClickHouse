@@ -74,6 +74,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/QueryCache.h>
 
 
 namespace ProfileEvents
@@ -348,6 +349,7 @@ struct ContextSharedPart
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    mutable QueryCachePtr query_cache;                        /// Cache of query results (decompressed blocks).
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ReplicatedFetchList replicated_fetch_list;
@@ -1510,6 +1512,30 @@ void Context::dropMMappedFileCache() const
 }
 
 
+void Context::setQueryCache(size_t cache_size_in_bytes)
+{
+    auto lock = getLock();
+
+    if (shared->query_cache)
+        throw Exception("Query cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->query_cache = std::make_shared<QueryCache>(cache_size_in_bytes);
+}
+
+QueryCachePtr Context::getQueryCache() const
+{
+    auto lock = getLock();
+    return shared->query_cache;
+}
+
+void Context::dropQueryCache() const
+{
+    auto lock = getLock();
+    if (shared->query_cache)
+        shared->query_cache->reset();
+}
+
+
 void Context::dropCaches() const
 {
     auto lock = getLock();
@@ -1522,6 +1548,10 @@ void Context::dropCaches() const
 
     if (shared->mmap_cache)
         shared->mmap_cache->reset();
+    
+    if (shared->query_cache)
+        shared->query_cache->reset();
+    
 }
 
 BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const

@@ -15,6 +15,8 @@
 
 #include <Columns/FilterDescription.h>
 
+#include <Storages/QueryCache.h>
+
 namespace Poco { class Logger; }
 
 namespace DB
@@ -177,6 +179,7 @@ private:
     TableLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.
+    
     BlockInputStreamPtr input;
     std::optional<Pipe> input_pipe;
 

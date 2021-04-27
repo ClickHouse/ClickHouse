@@ -63,6 +63,7 @@ class Compiler;
 class MarkCache;
 class MMappedFileCache;
 class UncompressedCache;
+class QueryCache;
 class ProcessList;
 class QueryStatus;
 class Macros;
@@ -643,6 +644,11 @@ public:
       * const - because the change in the cache is not considered significant.
       */
     void dropCaches() const;
+
+    /// Create a cache of query results of specified size. This can be done only once.
+    void setQueryCache(size_t cache_size_in_bytes);
+    std::shared_ptr<QueryCache> getQueryCache() const;
+    void dropQueryCache() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;

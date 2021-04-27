@@ -834,6 +834,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mmap_cache_size)
         global_context->setMMappedFileCache(mmap_cache_size);
 
+    /// A cache for query results.
+    size_t query_cache_size = config().getUInt64("query_cache_size");
+    if (query_cache_size > max_cache_size)
+    {
+        query_cache_size = max_cache_size;
+        LOG_INFO(log, "Query cache size was lowered to {} because the system has low amount of memory",
+            formatReadableSizeWithBinarySuffix(query_cache_size));
+    }
+    global_context->setQueryCache(query_cache_size);
+
+
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
