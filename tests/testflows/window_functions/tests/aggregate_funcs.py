@@ -76,12 +76,6 @@ from window_functions.tests.common import *
 def aggregate_funcs_over_rows_frame(self, func):
     """Checking aggregate funcs over rows frame.
     """
-    if func.startswith("rankCorr"):
-        err("server crash")
-
-    elif func.startswith("mannWhitneyUTest"):
-        err("server crash")
-
     execute_query(f"""
         SELECT {func} OVER (ORDER BY salary ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS func
           FROM empsalary

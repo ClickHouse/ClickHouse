@@ -50,10 +50,10 @@ xfails = {
         [(Fail, "DB::Exception: The RANGE OFFSET frame for 'DB::ColumnNullable' ORDER BY column is not implemented")],
     "tests/non distributed/misc/exclude clause":
         [(Fail, "exclude clause not supported")],
-    "tests/non distributed/aggregate funcs/aggregate funcs over rows frame/func='mannWhitneyUTest(salary, 1)'":
-        [(Error, "https://github.com/ClickHouse/ClickHouse/issues/22728")],
-    "tests/non distributed/aggregate funcs/aggregate funcs over rows frame/func='rankCorr(salary, 0.5)'":
-        [(Error, "https://github.com/ClickHouse/ClickHouse/issues/22728")]
+    "tests/:/aggregate funcs/aggregate funcs over rows frame/func='mannWhitneyUTest(salary, 1)'":
+        [(Fail, "need to investigate")],
+    "tests/:/aggregate funcs/aggregate funcs over rows frame/func='rankCorr(salary, 0.5)'":
+        [(Fail, "need to investigate")]
 }
 
 xflags = {
