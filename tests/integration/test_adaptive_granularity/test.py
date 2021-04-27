@@ -30,6 +30,12 @@ def prepare_single_pair_with_setting(first_node, second_node, group):
     for node in (first_node, second_node):
         node.query("CREATE DATABASE IF NOT EXISTS test")
 
+    first_node.query("DROP TABLE IF EXISTS table_by_default")
+    second_node.query("DROP TABLE IF EXISTS table_by_default")
+    first_node.query("DROP TABLE IF EXISTS table_with_fixed_granularity")
+    second_node.query("DROP TABLE IF EXISTS table_with_fixed_granularity")
+
+
     # Two tables with adaptive granularity
     first_node.query(
         '''
