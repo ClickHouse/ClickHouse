@@ -596,18 +596,6 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     Field & out_value,
     DataTypePtr & out_type)
 {
-    /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
-    /// Consider the following test case:
-    ///
-    /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
-    /// insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
-    /// select count() from test1 where p > toDateTime('2020-09-01 10:00:00');
-    ///
-    /// toDate(DateTime) is always monotonic, but we cannot relaxing the predicates to be
-    /// >= toDate(toDateTime('2020-09-01 10:00:00')), which returns 3 instead of the right count: 2.
-    if (strict)
-        return false;
-
     // Constant expr should use alias names if any
     String expr_name = node->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
@@ -621,8 +609,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     bool found_transformation = false;
     auto input_column = sample_block.getByName(expr_name);
     auto const_column = out_type->createColumnConst(1, out_value);
-    out_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
-    out_type = input_column.type;
+    auto const_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
+    auto const_type = input_column.type;
     for (const auto & action : key_expr->getActions())
     {
         /** The key functional expression constraint may be inferred from a plain column in the expression.
@@ -644,14 +632,14 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
                 return false;
 
             /// Range is irrelevant in this case.
-            IFunction::Monotonicity monotonicity = action.node->function_base->getMonotonicityForRange(*out_type, Field(), Field());
+            IFunction::Monotonicity monotonicity = action.node->function_base->getMonotonicityForRange(*const_type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
                 return false;
 
             /// Apply the next transformation step.
-            std::tie(out_value, out_type) = applyFunctionForFieldOfUnknownType(
+            std::tie(const_value, const_type) = applyFunctionForFieldOfUnknownType(
                 action.node->function_builder,
-                out_type, out_value);
+                const_type, const_value);
 
             expr_name = action.node->result_name;
 
@@ -661,6 +649,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             {
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
+                out_value = const_value;
+                out_type = const_type;
                 found_transformation = true;
                 break;
             }
@@ -674,9 +664,6 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 bool KeyCondition::canConstantBeWrappedByFunctions(
     const ASTPtr & ast, size_t & out_key_column_num, DataTypePtr & out_key_column_type, Field & out_value, DataTypePtr & out_type)
 {
-    if (strict)
-        return false;
-
     // Constant expr should use alias names if any
     String expr_name = ast->getColumnName();
     const auto & sample_block = key_expr->getSampleBlock();
@@ -734,12 +721,10 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 
             if (is_valid_chain)
             {
-                {
-                    auto input_column = sample_block.getByName(expr_name);
-                    auto const_column = out_type->createColumnConst(1, out_value);
-                    out_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
-                    out_type = input_column.type;
-                }
+                auto input_column = sample_block.getByName(expr_name);
+                auto const_column = out_type->createColumnConst(1, out_value);
+                auto const_value = (*castColumn({const_column, out_type, "c"}, input_column.type))[0];
+                auto const_type = input_column.type;
 
                 while (!chain.empty())
                 {
@@ -751,7 +736,7 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
 
                     if (func->children.size() == 1)
                     {
-                        std::tie(out_value, out_type) = applyFunctionForFieldOfUnknownType(func->function_builder, out_type, out_value);
+                        std::tie(const_value, const_type) = applyFunctionForFieldOfUnknownType(func->function_builder, const_type, const_value);
                     }
                     else if (func->children.size() == 2)
                     {
@@ -761,21 +746,23 @@ bool KeyCondition::canConstantBeWrappedByFunctions(
                         {
                             auto left_arg_type = left->result_type;
                             auto left_arg_value = (*left->column)[0];
-                            std::tie(out_value, out_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                    func->function_builder, left_arg_type, left_arg_value, out_type, out_value);
+                            std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
+                                    func->function_builder, left_arg_type, left_arg_value, const_type, const_value);
                         }
                         else
                         {
                             auto right_arg_type = right->result_type;
                             auto right_arg_value = (*right->column)[0];
-                            std::tie(out_value, out_type) = applyBinaryFunctionForFieldOfUnknownType(
-                                    func->function_builder, out_type, out_value, right_arg_type, right_arg_value);
+                            std::tie(const_value, const_type) = applyBinaryFunctionForFieldOfUnknownType(
+                                    func->function_builder, const_type, const_value, right_arg_type, right_arg_value);
                         }
                     }
                 }
 
                 out_key_column_num = it->second;
                 out_key_column_type = sample_block.getByName(it->first).type;
+                out_value = const_value;
+                out_type = const_type;
                 return true;
             }
         }
@@ -1109,6 +1096,23 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
             bool is_set_const = false;
             bool is_constant_transformed = false;
 
+            /// We don't look for inversed key transformations when strict is true, which is required for trivial count().
+            /// Consider the following test case:
+            ///
+            /// create table test1(p DateTime, k int) engine MergeTree partition by toDate(p) order by k;
+            /// insert into test1 values ('2020-09-01 00:01:02', 1), ('2020-09-01 20:01:03', 2), ('2020-09-02 00:01:03', 3);
+            /// select count() from test1 where p > toDateTime('2020-09-01 10:00:00');
+            ///
+            /// toDate(DateTime) is always monotonic, but we cannot relax the predicates to be
+            /// >= toDate(toDateTime('2020-09-01 10:00:00')), which returns 3 instead of the right count: 2.
+            bool strict_condition = strict;
+
+            /// If we use this key condition to prune partitions by single value, we cannot relax conditions for NOT.
+            if (single_point
+                && (func_name == "notLike" || func_name == "notIn" || func_name == "globalNotIn" || func_name == "notEquals"
+                    || func_name == "notEmpty"))
+                strict_condition = true;
+
             if (functionIsInOrGlobalInOperator(func_name))
             {
                 if (tryPrepareSetIndex(args, context, out, key_column_num))
@@ -1125,13 +1129,15 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                 {
                     key_arg_pos = 0;
                 }
-                else if (canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
+                else if (
+                    !strict_condition
+                    && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
                     is_constant_transformed = true;
                 }
                 else if (
-                    single_point && func_name == "equals"
+                    single_point && func_name == "equals" && !strict_condition
                     && canConstantBeWrappedByFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
@@ -1146,13 +1152,15 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
                 {
                     key_arg_pos = 1;
                 }
-                else if (canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+                else if (
+                    !strict_condition
+                    && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 1;
                     is_constant_transformed = true;
                 }
                 else if (
-                    single_point && func_name == "equals"
+                    single_point && func_name == "equals" && !strict_condition
                     && canConstantBeWrappedByFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
                 {
                     key_arg_pos = 0;
