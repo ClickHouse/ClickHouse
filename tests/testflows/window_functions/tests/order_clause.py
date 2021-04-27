@@ -8,10 +8,10 @@ def single_expr_asc(self):
     """
     expected = convert_output("""
      x  | s | sum
-    ----+---+----- 
-      1 | a | 2 
-      1 | b | 2 
-      2 | b | 4 
+    ----+---+-----
+      1 | a | 2
+      1 | b | 2
+      2 | b | 4
     """)
 
     execute_query(
@@ -25,10 +25,10 @@ def single_expr_desc(self):
     """
     expected = convert_output("""
      x  | s | sum
-    ----+---+----- 
-      2 | b | 2 
-      1 | a | 4 
-      1 | b | 4 
+    ----+---+-----
+      2 | b | 2
+      1 | a | 4
+      1 | b | 4
     """)
 
     execute_query(
@@ -46,9 +46,9 @@ def multiple_expr_desc_desc(self):
     expected = convert_output("""
      x | s | sum
      --+---+----
-     2 | b | 2 
-     1 | b | 3 
-     1 | a | 4 
+     2 | b | 2
+     1 | b | 3
+     1 | a | 4
     """)
 
     execute_query(
@@ -65,10 +65,10 @@ def multiple_expr_asc_asc(self):
     """
     expected = convert_output("""
       x | s | sum
-    ----+---+------  
-      1 | a |  1 
-      1 | b |  2 
-      2 | b |  4 
+    ----+---+------
+      1 | a |  1
+      1 | b |  2
+      2 | b |  4
     """)
 
     execute_query(
@@ -85,10 +85,10 @@ def multiple_expr_asc_desc(self):
     """
     expected = convert_output("""
       x | s | sum
-    ----+---+------  
-      1 | b |   1 
-      1 | a |   2 
-      2 | b |   4 
+    ----+---+------
+      1 | b |   1
+      1 | a |   2
+      2 | b |   4
     """)
 
     execute_query(
@@ -125,22 +125,22 @@ def by_column(self):
     """Check order by using a single column.
     """
     expected = convert_output("""
-      depname  | empno | salary | rank 
+      depname  | empno | salary | rank
     -----------+-------+--------+------
-     develop   |     7 |   4200 |    1
-     develop   |     9 |   4500 |    2
-     develop   |    10 |   5200 |    3
-     develop   |    11 |   5200 |    3
-     develop   |     8 |   6000 |    5
-     personnel |     5 |   3500 |    1
-     personnel |     2 |   3900 |    2
-     sales     |     3 |   4800 |    1
-     sales     |     4 |   4800 |    1
-     sales     |     1 |   5000 |    3
+    develop    | 7     | 4200   | 1
+    develop    | 8     | 6000   | 1
+    develop    | 9     | 4500   | 1
+    develop    | 10    | 5200   | 1
+    develop    | 11    | 5200   | 1
+    personnel  | 2     | 3900   | 1
+    personnel  | 5     | 3500   | 1
+    sales      | 1     | 5000   | 1
+    sales      | 3     | 4800   | 1
+    sales      | 4     | 4800   | 1
     """)
 
     execute_query(
-        "SELECT depname, empno, salary, rank() OVER (PARTITION BY depname ORDER BY salary) AS rank FROM empsalary",
+        "SELECT depname, empno, salary, rank() OVER (PARTITION BY depname, empno ORDER BY salary) AS rank FROM empsalary",
         expected=expected,
     )
 
@@ -149,7 +149,7 @@ def by_expr(self):
     """Check order by with expression.
     """
     expected = convert_output("""
-              avg           
+              avg
     ------------------------
      0
      0
@@ -171,7 +171,7 @@ def by_expr(self):
 @TestScenario
 def by_expr_with_aggregates(self):
     expected = convert_output("""
-     ten |   res    | rank 
+     ten |   res    | rank
     -----+----------+------
        0 |  9976146 |    4
        1 | 10114187 |    9
@@ -196,7 +196,7 @@ def by_a_non_integer_constant(self):
     """Check if it is allowed to use a window with ordering by a non integer constant.
     """
     expected = convert_output("""
-     rank 
+     rank
     ------
         1
     """)

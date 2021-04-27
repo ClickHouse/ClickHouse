@@ -895,7 +895,7 @@ def between_expr_preceding_and_expr_preceding_with_order_by(self):
 
         execute_query(
             "SELECT sum(unique1) over (order by four range between 2 preceding and 1 preceding) AS sum, "
-	        "unique1, four "
+                "unique1, four "
             "FROM tenk1 WHERE unique1 < 10",
             expected=expected
         )

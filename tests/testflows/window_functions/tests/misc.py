@@ -134,18 +134,18 @@ def query_with_order_by_and_one_window(self):
     """Check using a window function in the query that has `ORDER BY` clause.
     """
     expected = convert_output("""
-     depname   |	empno |	salary |	rank
+     depname   |    empno | salary |  rank
      ----------+----------+--------+---------
-     sales     |	3     |	4800   |	1
-     sales     |	4	  | 4800   |	1
-     personnel |	5	  | 3500   |	1
-     develop   |	7	  | 4200   |	1
-     personnel |	2	  | 3900   |	2
-     develop   |	9	  | 4500   |	2
-     sales     |	1	  | 5000   |	3
-     develop   |	10	  | 5200   |	3
-     develop   |	11	  | 5200   |	3
-     develop   |	8	  | 6000   |	5
+     sales     |    3     | 4800   |    1
+     sales     |    4     | 4800   |    1
+     personnel |    5     | 3500   |    1
+     develop   |    7     | 4200   |    1
+     personnel |    2     | 3900   |    2
+     develop   |    9     | 4500   |    2
+     sales     |    1     | 5000   |    3
+     develop   |    10    | 5200   |    3
+     develop   |    11    | 5200   |    3
+     develop   |    8     | 6000   |    5
 
     """)
 
@@ -248,11 +248,11 @@ def subquery_multiple_window_functions(self):
     """Check using multiple window functions is a subquery.
     """
     expected = convert_output("""
-    depname |	depsalary |	depminsalary
+    depname |   depsalary |  depminsalary
     --------+-------------+--------------
-    sales	|     5000	  |  5000
-    sales	|     9800	  |  4800
-    sales	|    14600	  |  4800
+    sales   |     5000    |  5000
+    sales   |     9800    |  4800
+    sales   |    14600    |  4800
     """)
 
     execute_query("""
@@ -272,7 +272,7 @@ def windows_with_same_partitioning_but_different_ordering(self):
     but different ordering.
     """
     expected = convert_output("""
-    first |	last
+    first |     last
     ------+-----
     7     | 7
     7     | 9
@@ -300,14 +300,14 @@ def subquery_with_multiple_windows_filtering(self):
     """Check filtering rows from a subquery that uses multiple window functions.
     """
     expected = convert_output("""
-    depname	  | empno |	salary   |	enroll_date |	first_emp |	last_emp
+    depname   | empno |  salary  |  enroll_date |   first_emp |  last_emp
     ----------+-------+----------+--------------+-------------+---------- 
-    develop   |  8    |    6000  | 2006-10-01   |	   1	  |  5
-    develop   |  7    |    4200  | 2008-01-01   |	   4	  |  1
-    personnel |	 2    |    3900  | 2006-12-23	|      1	  |  2
-    personnel |	 5    |    3500  | 2007-12-10	|      2	  |  1
-    sales     |	 1    |    5000  | 2006-10-01   |      1	  |  3
-    sales     |	 4    |    4800  | 2007-08-08   |      3	  |  1
+    develop   |  8    |    6000  | 2006-10-01   |      1      |  5
+    develop   |  7    |    4200  | 2008-01-01   |      4      |  1
+    personnel |  2    |    3900  | 2006-12-23   |      1      |  2
+    personnel |  5    |    3500  | 2007-12-10   |      2      |  1
+    sales     |  1    |    5000  | 2006-10-01   |      1      |  3
+    sales     |  4    |    4800  | 2007-08-08   |      3      |  1
     """)
 
     execute_query("""
