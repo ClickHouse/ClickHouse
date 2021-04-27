@@ -42,6 +42,7 @@ def started_cluster():
 def test_move(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
         for replica_ix, r in enumerate(rs):
+            r.query("DROP TABLE IF EXISTS t")
             r.query("""
             CREATE TABLE t(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/t', '{}')
@@ -104,6 +105,9 @@ def test_move(started_cluster):
 def test_deduplication_while_move(started_cluster):
     for shard_ix, rs in enumerate([[s0r0, s0r1], [s1r0, s1r1]]):
         for replica_ix, r in enumerate(rs):
+            r.query("DROP TABLE IF EXISTS t")
+            r.query("DROP TABLE IF EXISTS t_d")
+
             r.query("""
             CREATE TABLE t(v UInt64)
             ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/t', '{}')
@@ -143,6 +147,7 @@ def test_deduplication_while_move(started_cluster):
 
 def test_move_not_permitted(started_cluster):
     for ix, n in enumerate([s0r0, s1r0]):
+        n.query("DROP TABLE IF EXISTS not_permitted")
         n.query("""
         CREATE TABLE not_permitted(v_{} UInt64)
         ENGINE ReplicatedMergeTree('/clickhouse/shard_{}/tables/not_permitted', 'r')
