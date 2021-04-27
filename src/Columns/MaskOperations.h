@@ -21,10 +21,6 @@ void disjunctionMasks(PaddedPODArray<UInt8> & mask1, const PaddedPODArray<UInt8>
 
 void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, bool reverse = false, const UInt8 * default_value_for_expanding_mask = nullptr);
 
-void expandColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& mask, bool reverse);
-
-void expandMaskColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& mask, bool reverse, UInt8 default_value = 0);
-
 void executeColumnIfNeeded(ColumnWithTypeAndName & column);
 
 bool checkArgumentsForColumnFunction(const ColumnsWithTypeAndName & arguments);
