@@ -221,6 +221,12 @@ ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint, 
     return ColumnNullable::create(filtered_data, filtered_null_map);
 }
 
+void ColumnNullable::expand(const IColumn::Filter & mask, bool reverse)
+{
+    nested_column->expand(mask, reverse);
+    null_map->expand(mask, reverse);
+}
+
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
 {
     ColumnPtr permuted_data = getNestedColumn().permute(perm, limit);

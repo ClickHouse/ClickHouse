@@ -70,7 +70,8 @@ public:
     void insertFrom(const IColumn & src_, size_t n) override;
     void insertDefault() override;
     void popBack(size_t n) override;
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool revers = false) const override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool revers) const override;
+    void expand(const Filter & mask, bool reverse) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;

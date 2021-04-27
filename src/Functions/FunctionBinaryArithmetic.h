@@ -955,6 +955,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return IsOperation<Op>::can_throw; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return getReturnTypeImplStatic(arguments, context);

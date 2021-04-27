@@ -61,6 +61,8 @@ struct IsOperation
         plus || minus || multiply ||
         div_floating || div_int || div_int_or_zero ||
         least || greatest;
+
+    static constexpr bool can_throw = div_int || modulo;
 };
 
 }

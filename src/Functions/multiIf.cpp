@@ -110,11 +110,14 @@ public:
 
     void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments) const override
     {
+        if (!checkArgumentsForColumnFunction(arguments))
+            return;
+
         executeColumnIfNeeded(arguments[0]);
         IColumn::Filter current_mask;
         IColumn::Filter mask_disjunctions = IColumn::Filter(arguments[0].column->size(), 0);
 
-        auto default_value = std::make_unique<Field>(0);
+        UInt8 default_value_for_mask_expanding = 0;
         size_t i = 1;
         while (i < arguments.size())
         {
@@ -124,11 +127,14 @@ public:
                 maskedExecute(arguments[i], current_mask);
 
             ++i;
-            if (i == arguments.size() - 1)
-                default_value = nullptr;
 
             if (isColumnFunction(*arguments[i].column))
-                maskedExecute(arguments[i], mask_disjunctions, default_value.get(), true);
+            {
+                if (i < arguments.size() - 1)
+                    maskedExecute(arguments[i], mask_disjunctions, true, &default_value_for_mask_expanding);
+                else
+                    maskedExecute(arguments[i], mask_disjunctions, true);
+            }
 
             ++i;
         }

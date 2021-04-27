@@ -239,6 +239,7 @@ public:
         return data[n];
     }
 
+
     void get(size_t n, Field & res) const override
     {
         res = (*this)[n];
@@ -282,7 +283,9 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse = false) const override;
+    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse) const override;
+
+    void expand(const IColumn::Filter & mask, bool reverse) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 

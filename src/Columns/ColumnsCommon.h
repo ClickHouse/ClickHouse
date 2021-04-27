@@ -41,6 +41,11 @@ void filterArraysImplOnlyData(
     PaddedPODArray<T> & res_elems,
     const IColumn::Filter & filt, ssize_t result_size_hint, bool reverse = false);
 
+template <typename Container, typename T>
+void expandDataByMask(Container & data, const PaddedPODArray<UInt8> & mask, bool reverse, T default_value);
+
+void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<UInt8> & mask, bool reverse);
+
 namespace detail
 {
     template <typename T>
@@ -69,6 +74,7 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
         throw Exception("Indexes column for IColumn::select must be ColumnUInt, got" + indexes.getName(),
                         ErrorCodes::LOGICAL_ERROR);
 }
+
 
 #define INSTANTIATE_INDEX_IMPL(Column) \
     template ColumnPtr Column::indexImpl<UInt8>(const PaddedPODArray<UInt8> & indexes, size_t limit) const; \

@@ -157,6 +157,11 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint, bo
     return res;
 }
 
+void ColumnString::expand(const IColumn::Filter & mask, bool reverse)
+{
+    expandOffsetsByMask(offsets, mask, reverse);
+}
+
 
 ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 {

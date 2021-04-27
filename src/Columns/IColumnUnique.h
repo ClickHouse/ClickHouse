@@ -139,6 +139,11 @@ public:
         throw Exception("Method filter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    void expand(const IColumn::Filter &, bool) override
+    {
+        throw Exception("Method expand is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     ColumnPtr permute(const IColumn::Permutation &, size_t) const override
     {
         throw Exception("Method permute is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);

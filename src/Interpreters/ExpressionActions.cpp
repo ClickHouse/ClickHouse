@@ -69,21 +69,84 @@ ExpressionActionsPtr ExpressionActions::clone() const
     return std::make_shared<ExpressionActions>(*this);
 }
 
+bool ExpressionActions::rewriteShortCircuitArguments(const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & need_outside, bool force_rewrite)
+{
+    bool have_rewritten_child = false;
+    for (const auto * child : children)
+    {
+        if (!need_outside.contains(child) || need_outside.at(child) || child->is_lazy_executed)
+            continue;
+        switch (child->type)
+        {
+            case ActionsDAG::ActionType::FUNCTION:
+                if (rewriteShortCircuitArguments(child->children, need_outside, force_rewrite) || child->function_base->isSuitableForShortCircuitArgumentsExecution() || force_rewrite)
+                {
+                    const_cast<ActionsDAG::Node *>(child)->is_lazy_executed = true;
+                    have_rewritten_child = true;
+                }
+                break;
+            case ActionsDAG::ActionType::ALIAS:
+                have_rewritten_child |= rewriteShortCircuitArguments(child->children, need_outside, force_rewrite);
+                break;
+            default:
+                break;
+        }
+    }
+    return have_rewritten_child;
+}
+
+
+void ExpressionActions::rewriteArgumentsForShortCircuitFunctions(
+    const std::list<ActionsDAG::Node> & nodes,
+    const std::vector<Data> & data,
+    const std::unordered_map<const ActionsDAG::Node *, size_t> & reverse_index)
+{
+    for (const auto & node : nodes)
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base->isShortCircuit())
+        {
+            std::unordered_map<const ActionsDAG::Node *, bool> need_outside;
+            std::deque<const ActionsDAG::Node *> queue;
+            for (const auto * child : node.children)
+                queue.push_back(child);
+
+            need_outside[&node] = false;
+            while (!queue.empty())
+            {
+                const ActionsDAG::Node * cur = queue.front();
+                queue.pop_front();
+                if (need_outside.contains(cur))
+                    continue;
+                if (data[reverse_index.at(cur)].used_in_result)
+                    need_outside[cur] = true;
+                else
+                {
+                    bool is_need_outside = false;
+                    for (const auto * parent : data[reverse_index.at(cur)].parents)
+                    {
+                        if (!need_outside.contains(parent) || need_outside[parent])
+                        {
+                            is_need_outside = true;
+                            break;
+                        }
+                    }
+                    need_outside[cur] = is_need_outside;
+                }
+
+                for (const auto * child : cur->children)
+                    queue.push_back(child);
+            }
+            bool force_rewrite = (node.children.size() == 1);
+            rewriteShortCircuitArguments(node.children, need_outside, force_rewrite);
+        }
+    }
+}
+
 void ExpressionActions::linearizeActions()
 {
     /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
     /// Algorithm traverses DAG starting from nodes without children.
     /// For every node we support the number of created children, and if all children are created, put node into queue.
-    struct Data
-    {
-        const Node * node = nullptr;
-        size_t num_created_children = 0;
-        std::vector<const Node *> parents;
-
-        ssize_t position = -1;
-        size_t num_created_parents = 0;
-        bool used_in_result = false;
-    };
 
     const auto & nodes = getNodes();
     const auto & index = actions_dag->getIndex();
@@ -118,6 +181,9 @@ void ExpressionActions::linearizeActions()
         if (node.children.empty())
             ready_nodes.emplace(&node);
     }
+
+    if (settings.use_short_circuit_function_evaluation)
+        rewriteArgumentsForShortCircuitFunctions(nodes, data, reverse_index);
 
     /// Every argument will have fixed position in columns list.
     /// If argument is removed, it's position may be reused by other action.
@@ -246,18 +312,6 @@ std::string ExpressionActions::Action::toString() const
             out << ")";
             break;
 
-        case ActionsDAG::ActionType::COLUMN_FUNCTION:
-            out << "COLUMN FUNCTION " << (node->is_function_compiled ? "[compiled] " : "")
-                << (node->function_base ? node->function_base->getName() : "(no function)") << "(";
-            for (size_t i = 0; i < node->children.size(); ++i)
-            {
-                if (i)
-                    out << ", ";
-                out << node->children[i]->result_name << " " << arguments[i];
-            }
-            out << ")";
-            break;
-
         case ActionsDAG::ActionType::ARRAY_JOIN:
             out << "ARRAY JOIN " << node->children.front()->result_name << " " << arguments.front();
             break;
@@ -334,11 +388,11 @@ namespace
         ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns = {};
         std::vector<ssize_t> inputs_pos = {};
-        size_t num_rows = 0;
+        size_t num_rows;
     };
 }
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool use_short_circuit_function_evaluation)
+static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -348,54 +402,6 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
-//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute action FUNCTION: {}", action.node->function_base->getName());
-
-            auto & res_column = columns[action.result_position];
-            if (res_column.type || res_column.column)
-                throw Exception("Result column is not empty", ErrorCodes::LOGICAL_ERROR);
-
-            res_column.type = action.node->result_type;
-            res_column.name = action.node->result_name;
-
-            ColumnsWithTypeAndName arguments(action.arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
-            {
-                auto & column = columns[action.arguments[i].pos];
-
-                if (action.node->children[i]->type == ActionsDAG::ActionType::COLUMN_FUNCTION)
-                {
-                    const ColumnFunction * column_function = typeid_cast<const ColumnFunction *>(column.column.get());
-                    if (column_function && (!action.node->function_base->isShortCircuit() || action.arguments[i].needed_later))
-                        column.column = column_function->reduce(true).column;
-                }
-
-
-                if (!action.arguments[i].needed_later)
-                    arguments[i] = std::move(column);
-                else
-                    arguments[i] = column;
-            }
-
-            ProfileEvents::increment(ProfileEvents::FunctionExecute);
-            if (action.node->is_function_compiled)
-                ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-
-            if (action.node->function_base->isShortCircuit() && use_short_circuit_function_evaluation)
-            {
-//                LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute Short Circuit Arguments");
-                action.node->function_base->executeShortCircuitArguments(arguments);
-            }
-
-//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute function");
-
-            res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-            break;
-        }
-
-        case ActionsDAG::ActionType::COLUMN_FUNCTION:
-        {
-//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute action COLUMN FUNCTION: {}", action.node->function_base->getName());
-
             auto & res_column = columns[action.result_position];
             if (res_column.type || res_column.column)
                 throw Exception("Result column is not empty", ErrorCodes::LOGICAL_ERROR);
@@ -412,18 +418,19 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     arguments[i] = columns[action.arguments[i].pos];
             }
 
-            if (use_short_circuit_function_evaluation)
+            if (action.node->is_lazy_executed)
                 res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments));
             else
             {
-//                LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute function");
-
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
                 if (action.node->is_function_compiled)
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+
+                if (action.node->function_base->isShortCircuit())
+                    action.node->function_base->executeShortCircuitArguments(arguments);
+
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
             }
-
             break;
         }
 
@@ -462,8 +469,6 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
         case ActionsDAG::ActionType::COLUMN:
         {
-//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute action COLUMN: {}", action.node->result_name);
-
             auto & res_column = columns[action.result_position];
             res_column.column = action.node->column->cloneResized(num_rows);
             res_column.type = action.node->result_type;
@@ -473,21 +478,11 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
         case ActionsDAG::ActionType::ALIAS:
         {
-//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute action ALIAS: {}", action.node->result_name);
-
             const auto & arg = action.arguments.front();
             if (action.result_position != arg.pos)
             {
-                auto & column = columns[arg.pos];
-                if (action.node->children.back()->type == ActionsDAG::ActionType::COLUMN_FUNCTION)
-                {
-                    const ColumnFunction * column_function = typeid_cast<const ColumnFunction *>(column.column.get());
-                    if (column_function)
-                        column.column = column_function->reduce(true).column;
-                }
-
-                columns[action.result_position].column = column.column;
-                columns[action.result_position].type = column.type;
+                columns[action.result_position].column = columns[arg.pos].column;
+                columns[action.result_position].type = columns[arg.pos].type;
 
                 if (!arg.needed_later)
                     columns[arg.pos] = {};
@@ -500,8 +495,6 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
 
         case ActionsDAG::ActionType::INPUT:
         {
-//            LOG_DEBUG(&Poco::Logger::get("ExpressionActions"), "Execute action INPUT: {}", action.node->result_name);
-
             auto pos = execution_context.inputs_pos[action.arguments.front().pos];
             if (pos < 0)
             {
@@ -513,15 +506,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                                     action.node->result_name);
             }
             else
-            {
-                auto & column = inputs[pos];
-
-                const ColumnFunction * column_function = typeid_cast<const ColumnFunction *>(column.column.get());
-                if (column_function && column.type->getTypeId() != TypeIndex::Function)
-                    column.column = column_function->reduce(true).column;
-
-                columns[action.result_position] = std::move(column);
-            }
+                columns[action.result_position] = std::move(inputs[pos]);
 
             break;
         }
@@ -561,7 +546,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run) 
     {
         try
         {
-            executeAction(action, execution_context, dry_run, settings.use_short_circuit_function_evaluation);
+            executeAction(action, execution_context, dry_run);
             checkLimits(execution_context.columns);
 
             //std::cerr << "Action: " << action.toString() << std::endl;

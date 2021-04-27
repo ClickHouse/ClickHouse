@@ -106,6 +106,14 @@ public:
         return cloneDummy(bytes);
     }
 
+    void expand(const IColumn::Filter & mask, bool reverse) override
+    {
+        size_t bytes = countBytesInFilter(mask);
+        if (reverse)
+            bytes = mask.size() - bytes;
+        s = bytes;
+    }
+
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         if (s != perm.size())

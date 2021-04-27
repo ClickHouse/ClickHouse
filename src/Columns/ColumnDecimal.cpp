@@ -15,6 +15,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/MaskOperations.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -318,6 +319,12 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
     }
 
     return res;
+}
+
+template <typename T>
+void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool reverse)
+{
+    expandDataByMask<T>(data, mask, reverse, T());
 }
 
 template <typename T>
