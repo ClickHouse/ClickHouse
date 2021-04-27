@@ -190,6 +190,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
+            if (table->isDictionary())
+                throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
+
             getContext()->checkAccess(AccessType::TRUNCATE, table_id);
 
             table->checkTableCanBeDropped();
