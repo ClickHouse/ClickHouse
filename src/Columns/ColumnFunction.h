@@ -25,7 +25,7 @@ class ColumnFunction final : public COWHelper<IColumn, ColumnFunction>
 private:
     friend class COWHelper<IColumn, ColumnFunction>;
 
-    ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture);
+    ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture, bool ignore_arguments_types = false);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -51,7 +51,7 @@ public:
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
 
-    void appendArguments(const ColumnsWithTypeAndName & columns);
+    void appendArguments(const ColumnsWithTypeAndName & columns, bool ignore_arguments_types = false);
     ColumnWithTypeAndName reduce(bool reduce_arguments = false) const;
 
     Field operator[](size_t) const override
@@ -159,7 +159,7 @@ private:
     FunctionBasePtr function;
     ColumnsWithTypeAndName captured_columns;
 
-    void appendArgument(const ColumnWithTypeAndName & column);
+    void appendArgument(const ColumnWithTypeAndName & column, bool ignore_argument_type = false);
 };
 
 }

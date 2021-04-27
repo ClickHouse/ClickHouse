@@ -236,6 +236,7 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
     if (default_value_for_expanding_mask)
     {
         result.column = result.column->convertToFullColumnIfLowCardinality();
+        result.column = result.column->convertToFullColumnIfConst();
         expandMaskColumnByMask(result.column, mask, reverse, *default_value_for_expanding_mask);
     }
     else
