@@ -81,4 +81,9 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
+void IDisk::applyNewSettings(ContextConstPtr)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Apply new settings is not implemented for disk of type {}", getType());
+}
+
 }

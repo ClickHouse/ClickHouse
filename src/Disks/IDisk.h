@@ -234,7 +234,7 @@ protected:
     friend class DiskDecorator;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(ContextConstPtr) { }
+    virtual void applyNewSettings(ContextConstPtr);
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }

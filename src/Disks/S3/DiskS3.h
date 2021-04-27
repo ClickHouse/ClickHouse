@@ -62,7 +62,7 @@ public:
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
-        DiskS3Settings settings,
+        DiskS3Settings settings_,
         GetDiskSettings settings_getter);
 
     const String & getName() const override { return name; }
@@ -169,7 +169,7 @@ private:
     /// Converts revision to binary string with leading zeroes (64 bit).
     static String revisionToString(UInt64 revision);
 
-    bool checkObjectExists(const String & source_bucket, const String & prefix);
+    bool checkObjectExists(const String & source_bucket, const String & prefix) const;
     void findLastRevision();
 
     int readSchemaVersion(const String & source_bucket, const String & source_path);
@@ -179,9 +179,9 @@ private:
     void migrateToRestorableSchemaRecursive(const String & path, Futures & results);
     void migrateToRestorableSchema();
 
-    Aws::S3::Model::HeadObjectResult headObject(const String & source_bucket, const String & key);
-    void listObjects(const String & source_bucket, const String & source_path, std::function<bool(const Aws::S3::Model::ListObjectsV2Result &)> callback);
-    void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key);
+    Aws::S3::Model::HeadObjectResult headObject(const String & source_bucket, const String & key) const;
+    void listObjects(const String & source_bucket, const String & source_path, std::function<bool(const Aws::S3::Model::ListObjectsV2Result &)> callback) const;
+    void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key) const;
 
     /// Restore S3 metadata files on file system.
     void restore();
@@ -202,14 +202,8 @@ private:
     const String bucket;
     const String s3_root_path;
     const String metadata_path;
-    std::shared_ptr<Aws::S3::S3Client> client;
-    size_t s3_max_single_read_retries;
-    size_t s3_min_upload_part_size;
-    size_t s3_max_single_part_upload_size;
-    size_t min_bytes_for_seek;
-    bool send_metadata;
-    /// The number of keys listed in one request (1000 is max value)
-    int list_object_keys_size;
+    DiskS3Settings settings;
+
     /// Gets current disk settings from context.
     GetDiskSettings disk_settings_getter;
 

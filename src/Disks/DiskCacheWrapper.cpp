@@ -27,12 +27,18 @@ public:
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
-private:
-    void finalizeImpl() override
+
+    void finalize() override
     {
+        if (finalized)
+            return;
+
+        WriteBufferFromFileDecorator::finalize();
+
         completion_callback();
     }
 
+private:
     const std::function<void()> completion_callback;
 };
 
