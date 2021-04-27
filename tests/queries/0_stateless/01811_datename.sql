@@ -31,8 +31,8 @@ SELECT dateName('week', toDate('2021-04-14'));
 SELECT dateName('weekday', toDate('2021-04-14'));
 
 
-SELECT dateName('day', toDateTime('2021-04-14 11:22:33'), 'Europe/Moscow'),
-       dateName('day', toDateTime('2021-04-14 11:22:33'), 'UTC');
+SELECT dateName('hour', toDateTime('2021-04-14 11:22:33'), 'Europe/Moscow'),
+       dateName('hour', toDateTime('2021-04-14 11:22:33'), 'UTC');
 
 SELECT dateName('day', toDate('2021-04-12'));
 SELECT dateName('day', toDate('2021-04-13'));
