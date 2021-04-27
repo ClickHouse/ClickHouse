@@ -403,7 +403,7 @@ public:
     {
         try
         {
-            finalize();
+            WriteIndirectBufferFromS3::finalize();
         }
         catch (...)
         {
