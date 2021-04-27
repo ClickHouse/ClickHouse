@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <Common/PODArray.h>
-#include <Common/PODArray.h>
 
 using namespace DB;
 
@@ -13,7 +12,6 @@ TEST(Common, PODArrayBasicMove)
     static constexpr size_t initial_bytes = 32;
     using Array = PODArray<UInt64, initial_bytes,
         AllocatorWithStackMemory<Allocator<false>, initial_bytes>>;
-    
 
     {
         Array arr;
