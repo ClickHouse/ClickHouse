@@ -191,15 +191,15 @@ std::unique_ptr<ReadBufferFromFileBase> DiskRestartProxy::readFile(
     const
 {
     ReadLock lock (mutex);
-    auto delegate = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
-    return std::make_unique<RestartAwareReadBuffer>(*this, std::move(delegate));
+    auto impl = DiskDecorator::readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
+    return std::make_unique<RestartAwareReadBuffer>(*this, std::move(impl));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskRestartProxy::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     ReadLock lock (mutex);
-    auto delegate = DiskDecorator::writeFile(path, buf_size, mode);
-    return std::make_unique<RestartAwareWriteBuffer>(*this, std::move(delegate));
+    auto impl = DiskDecorator::writeFile(path, buf_size, mode);
+    return std::make_unique<RestartAwareWriteBuffer>(*this, std::move(impl));
 }
 
 void DiskRestartProxy::removeFile(const String & path)
