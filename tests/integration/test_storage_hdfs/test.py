@@ -216,6 +216,7 @@ def test_write_gzip_storage(started_cluster):
 
 
 def test_virtual_columns(started_cluster):
+    hdfs_api = started_cluster.make_hdfs_api()
     node1.query("create table virtual_cols (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/file*', 'TSV')")
     started_cluster.hdfs_api.write_data("/file1", "1\n")
     started_cluster.hdfs_api.write_data("/file2", "2\n")
@@ -225,6 +226,7 @@ def test_virtual_columns(started_cluster):
 
     
 def test_read_files_with_spaces(started_cluster):
+    hdfs_api = started_cluster.make_hdfs_api()
     started_cluster.hdfs_api.write_data("/test test test 1.txt", "1\n")
     started_cluster.hdfs_api.write_data("/test test test 2.txt", "2\n")
     started_cluster.hdfs_api.write_data("/test test test 3.txt", "3\n")

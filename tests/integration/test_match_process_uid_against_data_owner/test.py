@@ -31,7 +31,7 @@ def test_different_user():
 
     with open(os.path.join(node.path, 'logs/clickhouse-server.err.log')) as log:
         expected_message = "Effective user of the process \(.*\) does not match the owner of the data \(.*\)\. Run under 'sudo -u .*'\."
-        last_message = log.readlines()[-1].strip()
+        last_messages = ";".join(log.readlines()[-2:-1])
 
         if re.search(expected_message, last_message) is None:
             pytest.fail(
