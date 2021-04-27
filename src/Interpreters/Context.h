@@ -186,6 +186,7 @@ private:
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
     FileTableEngineProgress file_progress;  /// Progress data to track processing of one or multiple files for File table engine.
+    bool render_progress = false;
 
     QueryStatus * process_list_elem = nullptr;  /// For tracking total resource usage for query.
     StorageID insertion_table = StorageID::createEmpty();  /// Saved insertion table in query context
@@ -583,6 +584,9 @@ public:
     void setProgressCallback(ProgressCallback callback);
     /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
     ProgressCallback getProgressCallback() const;
+
+    void setRenderProgress() { render_progress = true; }
+    bool needRenderProgress() const { return render_progress; }
 
     const FileTableEngineProgress & getFileTableEngineProgress() { return file_progress; }
     void setFileTableEngineApproxBytesToProcess(size_t num_bytes) { file_progress.total_bytes_to_process = num_bytes; }
