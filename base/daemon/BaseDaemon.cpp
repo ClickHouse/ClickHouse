@@ -42,15 +42,12 @@
 #include <common/getThreadId.h>
 #include <common/sleep.h>
 
-#if WITH_COVERAGE
-#include <common/coverage/coverage.h>
-#endif
-
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
 #include <Common/Exception.h>
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
@@ -65,6 +62,10 @@
 
 #if !defined(ARCADIA_BUILD)
 #   include <Common/config_version.h>
+#endif
+
+#if WITH_COVERAGE
+#   include <common/coverage/coverage.h>
 #endif
 
 #if defined(OS_DARWIN)

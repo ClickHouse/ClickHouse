@@ -1,6 +1,5 @@
 set(CLICKHOUSE_SERVER_SOURCES
     MetricsTransmitter.cpp
-    ../../base/common/coverage/coverage.h
     Server.cpp
 )
 

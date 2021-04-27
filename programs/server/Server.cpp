@@ -19,12 +19,6 @@
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <common/errnoToString.h>
-
-#if WITH_COVERAGE
-#include <common/coverage/coverage.h>
-#include <common/coverage/sanitizer_callbacks.h>
-#endif
-
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
@@ -78,6 +72,9 @@
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 
+#if WITH_COVERAGE
+#   include <common/coverage/sanitizer_callbacks.h>
+#endif
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
