@@ -51,6 +51,11 @@ static llvm::TargetMachine * getNativeMachine()
     );
 }
 
+void test_function()
+{
+    std::cerr << "TestFunction" << std::endl;
+}
+
 struct LLVMContext
 {
     llvm::orc::ThreadSafeContext context { std::make_unique<llvm::LLVMContext>() };
@@ -71,13 +76,32 @@ struct LLVMContext
     std::vector<llvm::orc::VModuleKey> modules;
 
     LLVMContext()
-        : object_layer(execution_session, []() { return std::make_unique<llvm::SectionMemoryManager>(); })
+        : object_layer(execution_session, []() {
+            std::cerr << "RTDyldObjectLinkingLayer get SectionMemoryManager" << std::endl;
+            return std::make_unique<llvm::SectionMemoryManager>();
+        })
         , compiler(std::make_unique<llvm::orc::SimpleCompiler>(*machine))
         , compile_layer(execution_session, object_layer, *compiler)
         , mangler(execution_session, layout)
     {
         module->setDataLayout(layout);
         module->setTargetTriple(machine->getTargetTriple().getTriple());
+
+        auto pointer = llvm::pointerToJITTargetAddress(&test_function);
+        auto symbol = mangler("test_function");
+
+        llvm::orc::SymbolMap map;
+        map[symbol] = llvm::JITEvaluatedSymbol(pointer, llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute);
+
+        auto error = execution_session.getMainJITDylib().define(llvm::orc::absoluteSymbols(map));
+        bool is_error = static_cast<bool>(error);
+        std::cerr << "Error " << is_error << std::endl;
+
+        // if (error)
+        // {
+        //     std::cerr << "Could not define symbols " << error-> << std::endl;
+        //     std::terminate();
+        // }
     }
 
     /// returns used memory
@@ -155,41 +179,51 @@ int main(int argc, char **argv)
     llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
 
     LLVMContext context;
-
     auto & b = context.builder;
     auto * integer_type = b.getInt64Ty();
     auto * func_type = llvm::FunctionType::get(integer_type, { integer_type }, /*isVarArg=*/false);
 
     std::cerr << "Context module " << context.module.get() << std::endl;
 
+    auto * standard_function_type = llvm::FunctionType::get(b.getVoidTy(), {}, false);
+    auto * standard_function = llvm::Function::Create(
+        standard_function_type,
+        llvm::Function::LinkageTypes::ExternalLinkage,
+        "test_function",
+        *context.module);
+    standard_function->setCallingConv(llvm::CallingConv::C);
+
     auto * func = llvm::Function::Create(
         func_type, llvm::Function::LinkageTypes::ExternalLinkage, "test1",
         context.module.get());
 
-    auto *basic_block = llvm::BasicBlock::Create(b.getContext(), "entry", func);
-    b.SetInsertPoint(basic_block);
+    auto *entry = llvm::BasicBlock::Create(b.getContext(), "entry", func);
+    b.SetInsertPoint(entry);
 
     auto *argument = func->args().begin();
 
-    // auto *value = llvm::ConstantInt::get(b.getInt64Ty(), 0);
-    // auto *phi_value = b.CreatePHI(b.getInt64Ty(), 2);
-    // phi_value->addIncoming(value, basic_block);
+    auto *value = llvm::ConstantInt::get(b.getInt64Ty(), 1);
+    auto *loop_block = llvm::BasicBlock::Create(b.getContext(), "loop", func);
+    b.CreateBr(loop_block);
 
-    // auto *loop_block = llvm::BasicBlock::Create(b.getContext(), "loop", func);
-    // b.CreateBr(loop_block);
-    // b.SetInsertPoint(loop_block);
-    // auto *add_value =
-    //     b.CreateAdd(phi_value, llvm::ConstantInt::get(b.getInt64Ty(), 1));
-    // phi_value->addIncoming(add_value, loop_block);
+    b.SetInsertPoint(loop_block);
 
-    // auto *end = llvm::BasicBlock::Create(b.getContext(), "end", func);
-    // b.CreateCondBr(
-    //     b.CreateICmpNE(phi_value, llvm::ConstantInt::get(b.getInt64Ty(), 10)),
-    //     loop_block, end);
+    auto *phi_value = b.CreatePHI(b.getInt64Ty(), 2);
+    phi_value->addIncoming(value, entry);
 
-    // b.SetInsertPoint(end);
+    b.CreateCall(standard_function);
 
-    auto * result = b.CreateAdd(argument, argument);
+    auto *add_value = b.CreateAdd(phi_value, llvm::ConstantInt::get(b.getInt64Ty(), 1));
+    phi_value->addIncoming(add_value, loop_block);
+
+    auto *end = llvm::BasicBlock::Create(b.getContext(), "end", func);
+    b.CreateCondBr(
+        b.CreateICmpNE(phi_value, llvm::ConstantInt::get(b.getInt64Ty(), 10)),
+        loop_block, end);
+
+    b.SetInsertPoint(end);
+
+    auto * result = b.CreateAdd(phi_value, argument);
     b.CreateRet(result);
 
     std::cerr << "Context module " << context.module.get() << std::endl;
