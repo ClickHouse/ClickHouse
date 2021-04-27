@@ -1,0 +1,8 @@
+<test>
+    <query>SELECT if(number >= 0, isValidUTF8(toString(number)), isValidUTF8(toString(number + 10))) FROM numbers(10000000)</query>
+    <query>SELECT not isValidUTF8(toString(number)) and isValidUTF8(toString(number + 10)) FROM numbers(10000000)</query>
+    <query>SELECT isValidUTF8(toString(number)) or isValidUTF8(toString(number + 10)) FROM numbers(10000000)</query>
+    <query>SELECT multiIf(number >= 500000, isValidUTF8(toString(number)), less(number, 50000), number * 2, isValidUTF8(toString(number + 10))) FROM numbers(10000000)</query>
+    <query>SELECT toTypeName(isValidUTF8(toString(number))) FROM numbers(10000000)</query>
+    <query>SELECT toColumnTypeName(isValidUTF8(toString(number))) FROM numbers(10000000)</query>
+</test>
