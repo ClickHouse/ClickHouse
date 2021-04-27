@@ -688,9 +688,11 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     const SelectQueryInfo & query_info, ContextPtr local_context, const DataPartsVector & parts) const
 {
+    if (parts.empty())
+        return 0u;
     auto metadata_snapshot = getInMemoryMetadataPtr();
     ASTPtr expression_ast;
-    Block virtual_columns_block = MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns();
+    Block virtual_columns_block = MergeTreeDataSelectExecutor::getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
     // Generate valid expressions for filtering
     bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
@@ -702,7 +704,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     std::unordered_set<String> part_values;
     if (valid && expression_ast)
     {
-        MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
+        virtual_columns_block = MergeTreeDataSelectExecutor::getBlockWithVirtualPartColumns(parts, false /* one_part */);
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, local_context, expression_ast);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
@@ -1391,12 +1393,20 @@ void MergeTreeData::dropIfEmpty()
     if (!data_parts_by_info.empty())
         return;
 
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    try
     {
-        /// Non recursive, exception is thrown if there are more files.
-        disk->removeFile(path + MergeTreeData::FORMAT_VERSION_FILE_NAME);
-        disk->removeDirectory(path + MergeTreeData::DETACHED_DIR_NAME);
-        disk->removeDirectory(path);
+        for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+        {
+            /// Non recursive, exception is thrown if there are more files.
+            disk->removeFileIfExists(path + MergeTreeData::FORMAT_VERSION_FILE_NAME);
+            disk->removeDirectory(path + MergeTreeData::DETACHED_DIR_NAME);
+            disk->removeDirectory(path);
+        }
+    }
+    catch (...)
+    {
+        // On unsuccessful creation of ReplicatedMergeTree table with multidisk configuration some files may not exist.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -1578,7 +1588,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 const IDataType * new_type = command.data_type.get();
                 const IDataType * old_type = old_types[command.column_name];
 
-                checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
+                if (new_type)
+                    checkVersionColumnTypesConversion(old_type, new_type, command.column_name);
 
                 /// No other checks required
                 continue;

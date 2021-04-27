@@ -70,7 +70,6 @@ FormatSettings getFormatSettings(ContextConstPtr context, const Settings & setti
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
     format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
-    format_settings.custom.result_after_delimiter = settings.format_custom_result_after_delimiter;
     format_settings.custom.result_before_delimiter = settings.format_custom_result_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
     format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
