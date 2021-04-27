@@ -13,10 +13,10 @@
 #include <Common/NetException.h>
 #include <IO/createReadBufferFromFileBase.h>
 #include <ext/scope_guard.h>
-
-#include <Poco/File.h>
 #include <Poco/Net/HTTPRequest.h>
 
+
+namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -281,13 +281,13 @@ void Service::sendPartS3Metadata(const MergeTreeData::DataPartPtr & part, WriteB
 
         String metadata_file = disk->getPath() + part->getFullRelativePath() + file_name;
 
-        Poco::File metadata(metadata_file);
+        fs::path metadata(metadata_file);
 
-        if (!metadata.exists())
+        if (!fs::exists(metadata))
             throw Exception("S3 metadata '" + file_name + "' is not exists", ErrorCodes::CORRUPTED_DATA);
-        if (!metadata.isFile())
+        if (!fs::is_regular_file(metadata))
             throw Exception("S3 metadata '" + file_name + "' is not a file", ErrorCodes::CORRUPTED_DATA);
-        UInt64 file_size = metadata.getSize();
+        UInt64 file_size = fs::file_size(metadata);
 
         writeStringBinary(it.first, out);
         writeBinary(file_size, out);

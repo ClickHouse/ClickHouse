@@ -51,8 +51,6 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
-#include <Poco/DirectoryIterator.h>
-
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
 
@@ -66,7 +64,10 @@
 #include <typeinfo>
 #include <typeindex>
 #include <unordered_set>
+#include <filesystem>
 
+
+namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -3834,9 +3835,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     const String & with_name,
     ContextPtr local_context)
 {
-    String clickhouse_path = Poco::Path(local_context->getPath()).makeAbsolute().toString();
+    String clickhouse_path = fs::absolute(local_context->getPath());
     String default_shadow_path = clickhouse_path + "shadow/";
-    Poco::File(default_shadow_path).createDirectories();
+    fs::create_directories(default_shadow_path);
     auto increment = Increment(default_shadow_path + "increment.txt").get(true);
 
     const String shadow_path = "shadow/";
