@@ -247,6 +247,9 @@ Pipe StorageURLWithFailover::read(
     unsigned /*num_streams*/)
 {
     auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
+    WriteBufferFromOwnString error_message;
+    error_message << "Detailed description:";
+
     for (const auto & uri_option : uri_options)
     {
         auto request_uri = uri_option;
@@ -277,11 +280,14 @@ Pipe StorageURLWithFailover::read(
         }
         catch (...)
         {
+            error_message << " Host: " << uri_option.getHost() << ", post: " << uri_option.getPort() << ", path: " << uri_option.getPath();
+            error_message << ", error: " << getCurrentExceptionMessage(false) << ";";
+
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
-    throw Exception(ErrorCodes::NETWORK_ERROR, "All uri options are unreachable");
+    throw Exception(ErrorCodes::NETWORK_ERROR, "All uri options are unreachable. {}", error_message.str());
 }
 
 
