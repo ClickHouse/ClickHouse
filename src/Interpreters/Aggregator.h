@@ -867,7 +867,7 @@ using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants
 
 /** Aggregates the source of the blocks.
   */
-class Aggregator
+class Aggregator final
 {
 public:
     struct Params
@@ -952,7 +952,7 @@ public:
         void explain(WriteBuffer & out, size_t indent) const;
     };
 
-    Aggregator(const Params & params_);
+    explicit Aggregator(const Params & params_);
 
     using AggregateColumns = std::vector<ColumnRawPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
@@ -994,12 +994,6 @@ public:
       */
     std::vector<Block> convertBlockToTwoLevel(const Block & block);
 
-    using CancellationHook = std::function<bool()>;
-
-    /** Set a function that checks whether the current task can be aborted.
-      */
-    void setCancellationHook(const CancellationHook & cancellation_hook);
-
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, const String & tmp_path);
     void writeToTemporaryFile(AggregatedDataVariants & data_variants);
@@ -1025,7 +1019,8 @@ public:
     /// Get data structure of the result.
     Block getHeader(bool final) const;
 
-protected:
+private:
+
     friend struct AggregatedDataVariants;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
@@ -1042,17 +1037,12 @@ protected:
 
     /** This array serves two purposes.
       *
-      * 1. Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
+      * Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
       * The inner loop (for the case without_key) is almost twice as compact; performance gain of about 30%.
-      *
-      * 2. Calling a function by pointer is better than a virtual call, because in the case of a virtual call,
-      *  GCC 5.1.2 generates code that, at each iteration of the loop, reloads the function address from memory into the register
-      *  (the offset value in the virtual function table).
       */
     struct AggregateFunctionInstruction
     {
         const IAggregateFunction * that;
-        IAggregateFunction::AddFunc func;
         size_t state_offset;
         const IColumn ** arguments;
         const IAggregateFunction * batch_that;
@@ -1075,12 +1065,7 @@ protected:
     /// How many RAM were used to process the query before processing the first block.
     Int64 memory_usage_before_aggregation = 0;
 
-    std::mutex mutex;
-
     Poco::Logger * log = &Poco::Logger::get("Aggregator");
-
-    /// Returns true if you can abort the current task.
-    CancellationHook isCancelled;
 
     /// For external aggregation.
     TemporaryFiles temporary_files;
@@ -1139,7 +1124,6 @@ protected:
         Method & method,
         IBlockOutputStream & out);
 
-protected:
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataNullKey(
