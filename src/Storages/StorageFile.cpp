@@ -146,7 +146,9 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     const String path = poco_path.absolute().toString();
     if (path.find_first_of("*?{") == std::string::npos)
     {
-        total_bytes_to_read += fs::file_size(path);
+        std::error_code error;
+        if (fs::exists(path))
+            total_bytes_to_read += fs::file_size(path, error);
         paths.push_back(path);
     }
     else
@@ -465,7 +467,7 @@ public:
 
             /// Display progress bar only if .25 seconds have passed since query execution start.
             size_t elapsed_ns = file_progress.watch.elapsed();
-            if (elapsed_ns > 25000000)
+            if (elapsed_ns > 25000000 && progress.read_bytes > 0)
             {
                 message << '\r';
                 const char * indicator = indicators[increment % 8];
@@ -483,13 +485,16 @@ public:
                 /// from paths, generated for file table engine). And progress.read_bytes is counted accorging to columns types.
                 size_t total_bytes_corrected = std::max(processed_bytes, file_progress.total_bytes_to_process);
 
-                std::string bar = UnicodeBar::render(UnicodeBar::getWidth(processed_bytes, 0, total_bytes_corrected, width_of_progress_bar));
-                message << "\033[0;32m" << bar << "\033[0m";
+                if (width_of_progress_bar > 0)
+                {
+                    std::string bar = UnicodeBar::render(UnicodeBar::getWidth(processed_bytes, 0, total_bytes_corrected, width_of_progress_bar));
+                    message << "\033[0;32m" << bar << "\033[0m";
 
-                if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
-                    message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
+                    if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
+                        message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
 
-                message << ' ' << std::min((99 * file_progress.processed_bytes / file_progress.total_bytes_to_process), static_cast<size_t>(99)) << '%';
+                    message << ' ' << std::min((99 * file_progress.processed_bytes / file_progress.total_bytes_to_process), static_cast<size_t>(99)) << '%';
+                }
             }
             ++increment;
         };
