@@ -388,7 +388,7 @@ namespace
         ColumnsWithTypeAndName & inputs;
         ColumnsWithTypeAndName columns = {};
         std::vector<ssize_t> inputs_pos = {};
-        size_t num_rows;
+        size_t num_rows = 0;
     };
 }
 

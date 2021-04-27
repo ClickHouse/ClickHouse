@@ -158,7 +158,6 @@ private:
     size_t size_;
     FunctionBasePtr function;
     ColumnsWithTypeAndName captured_columns;
-    bool is_short_circuit_argumentz;
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };

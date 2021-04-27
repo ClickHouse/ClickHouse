@@ -5,7 +5,6 @@
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
 
-#include <common/logger_useful.h>
 
 namespace DB
 {

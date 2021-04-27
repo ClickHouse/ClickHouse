@@ -566,8 +566,8 @@ void ScopeStack::addFunction(
     children.reserve(argument_names.size());
     for (const auto & argument : argument_names)
         children.push_back(&stack[level].index->getNode(argument));
-    const auto & node = stack[level].actions_dag->addFunction(
-        function, std::move(children), std::move(result_name), getContext()->getSettingsRef().use_short_circuit_function_evaluation);
+
+    const auto & node = stack[level].actions_dag->addFunction(function, std::move(children), std::move(result_name));
     stack[level].index->addNode(&node);
 
     for (size_t j = level + 1; j < stack.size(); ++j)

@@ -30,8 +30,8 @@
   */
 
 namespace DB
-
 {
+
 struct NameAnd { static constexpr auto name = "and"; };
 struct NameOr { static constexpr auto name = "or"; };
 struct NameXor { static constexpr auto name = "xor"; };
