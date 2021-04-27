@@ -38,7 +38,7 @@ void Writer::dump()
             return;
     }
 
-    pool.scheduleOrThrowOnError([this] () mutable // TODO Maybe should protect with mutex?
+    pool.scheduleOrThrowOnError([this] () mutable //thread safe, no mutex needed
     {
         Hits edges_copies;
         std::string test_name;

@@ -106,10 +106,6 @@ endif()
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-set_source_files_properties(
-    Common/Coverage.cpp
-    PROPERTIES COMPILE_FLAGS "-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE}")
-
 list (APPEND dbms_sources
     Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp
     Functions/extractTimeZoneFromFunctionArguments.cpp Functions/replicate.cpp Functions/FunctionsLogical.cpp)
@@ -283,18 +279,23 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
-# Otherwise it will slow down stack traces printing too much.
-set_source_files_properties(
-        Common/Elf.cpp
-        Common/Dwarf.cpp
-        Common/SymbolIndex.cpp
-        PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
-
 # coverage for everything in src/
 foreach (module ${all_modules})
     set_target_properties(${module}
         PROPERTIES COMPILE_FLAGS "${WITH_COVERAGE_FLAGS}")
 endforeach ()
+
+set_source_files_properties(
+    Common/Coverage.cpp
+    Common/ThreadPool.cpp # used in Coverage.cpp
+    PROPERTIES COMPILE_FLAGS "-O3 -DNDEBUG -finline-functions ${WITHOUT_COVERAGE}")
+
+# Otherwise it will slow down stack traces printing too much.
+set_source_files_properties(
+    Common/Elf.cpp
+    Common/Dwarf.cpp
+    Common/SymbolIndex.cpp
+    PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
         PRIVATE

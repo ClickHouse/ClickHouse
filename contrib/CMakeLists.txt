@@ -15,12 +15,11 @@ set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
 if (WITH_COVERAGE)
-  # disable coverage for contrib files and build with optimisations
-  add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
+    add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
 endif()
 
 if (SANITIZE STREQUAL "undefined")
-    # 3rd-party libraries usually not intended to work with UBSan.
+    # 3rd-party libraries usually are not intended to work with UBSan.
     add_compile_options(-fno-sanitize=undefined)
 endif()
 
@@ -159,7 +158,7 @@ if(USE_INTERNAL_SNAPPY_LIBRARY)
 endif()
 
 if (USE_INTERNAL_PARQUET_LIBRARY)
-    # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
+    # We dont use arrow's cmakefiles because they use too many depends and download some libs in compile time
     # But you can update auto-generated parquet files manually:
     # cd {BUILD_DIR}/contrib/arrow/cpp/src/parquet && mkdir -p build && cd build
     # cmake .. -DARROW_COMPUTE=ON -DARROW_PARQUET=ON -DARROW_SIMD_LEVEL=NONE -DARROW_VERBOSE_THIRDPARTY_BUILD=ON
