@@ -201,7 +201,7 @@ public:
                 /// and such compression would break this logic;
                 /// 2) we shall not compress centroids further than `max_centroids` parameter requires because
                 /// this will lead to uneven compression.
-                /// For more information see: https://arxiv.org/abs/1902.04023 .
+                /// For more information see: https://arxiv.org/abs/1902.04023
 
                 /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
                 BetterFloat ql = (sum + l_count * 0.5) / count;
