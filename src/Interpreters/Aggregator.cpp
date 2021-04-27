@@ -1769,6 +1769,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
     /// For all rows.
     size_t rows = block.rows();
+    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
+
     for (size_t i = 0; i < rows; ++i)
     {
         AggregateDataPtr aggregate_data = nullptr;
@@ -1797,18 +1799,17 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
         /// aggregate_date == nullptr means that the new key did not fit in the hash table because of no_more_keys.
 
-        /// If the key does not fit, and the data does not need to be aggregated into a separate row, then there's nothing to do.
-        if (!aggregate_data && !overflow_row)
-            continue;
-
         AggregateDataPtr value = aggregate_data ? aggregate_data : overflow_row;
+        places[i] = value;
+    }
 
+    for (size_t j = 0; j < params.aggregates_size; ++j)
+    {
         /// Merge state of aggregate functions.
-        for (size_t j = 0; j < params.aggregates_size; ++j)
-            aggregate_functions[j]->merge(
-                value + offsets_of_aggregate_states[j],
-                (*aggregate_columns[j])[i],
-                aggregates_pool);
+        aggregate_functions[j]->mergeBatch(
+            rows, places.get(), offsets_of_aggregate_states[j],
+            aggregate_columns[j]->data(),
+            aggregates_pool);
     }
 
     /// Early release memory.
