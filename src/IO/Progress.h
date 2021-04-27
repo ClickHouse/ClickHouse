@@ -59,7 +59,7 @@ struct FileTableEngineProgress
     mutable std::atomic<uint64_t> processed_bytes;
     mutable std::atomic<uint64_t> processed_rows;
 
-    FileTableEngineProgress() : total_bytes_to_process(0), processed_bytes(0) {}
+    FileTableEngineProgress() : total_bytes_to_process(0), processed_bytes(0), processed_rows(0) {}
 
     FileTableEngineProgress(const FileTableEngineProgress & other)
         : watch(other.watch)

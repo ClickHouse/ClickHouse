@@ -54,7 +54,7 @@ public:
     void setProcessListElement(QueryStatus * elem) final { process_list_elem = elem; }
     void addTotalRowsApprox(size_t value) final { total_rows_approx += value; }
 
-    /// This method might be overriden, if, during query execution, there is a Source, that needs
+    /// This method might be overridden, if, during query execution, there is a Source, that needs
     /// to add one more progress callback.
     void setProgressCallback(const ProgressCallback & callback) override { progress_callback = callback; }
 
