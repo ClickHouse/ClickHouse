@@ -1,8 +1,8 @@
-#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionFactory.h>
@@ -14,8 +14,8 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <common/DateLUTImpl.h>
 #include <Core/DecimalFunctions.h>
+#include <common/DateLUTImpl.h>
 
 #include <type_traits>
 
@@ -43,10 +43,7 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateNameImpl>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -85,12 +82,13 @@ public:
     }
 
     ColumnPtr executeImpl(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, [[maybe_unused]] size_t input_rows_count) const override
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        [[maybe_unused]] size_t input_rows_count) const override
     {
         ColumnPtr res;
 
-        if (!((res = executeType<DataTypeDate>(arguments, result_type))
-              || (res = executeType<DataTypeDateTime>(arguments, result_type))
+        if (!((res = executeType<DataTypeDate>(arguments, result_type)) || (res = executeType<DataTypeDateTime>(arguments, result_type))
               || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -181,10 +179,7 @@ private:
             datepart_functions.at(datepart)(target, source, timezone);
         }
 
-        bool isCorrectDatePart(const String &datepart)
-        {
-            return datepart_functions.find(datepart) != datepart_functions.end();
-        }
+        bool isCorrectDatePart(const String & datepart) { return datepart_functions.find(datepart) != datepart_functions.end(); }
 
     private:
         const std::unordered_map<String, void (*)(char *&, Time, const DateLUTImpl &)> datepart_functions = {
@@ -213,12 +208,19 @@ private:
         static inline void writeMonth(char *& target, Time source, const DateLUTImpl & timezone)
         {
             const auto month = ToMonthImpl::execute(source, timezone);
-            const String monthnames[12] = {
-                "January", "February", "March",
-                "April", "May", "June",
-                "July", "August", "September",
-                "October", "November", "December"
-            };
+            const String monthnames[12]
+                = {"January",
+                   "February",
+                   "March",
+                   "April",
+                   "May",
+                   "June",
+                   "July",
+                   "August",
+                   "September",
+                   "October",
+                   "November",
+                   "December"};
             writeString(target, monthnames[month - 1]);
         }
 
@@ -240,9 +242,7 @@ private:
         static inline void writeWeekday(char *& target, Time source, const DateLUTImpl & timezone)
         {
             const auto day = ToDayOfWeekImpl::execute(source, timezone);
-            const String daynames[12] = {
-                "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
-            };
+            const String daynames[12] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
             writeString(target, daynames[day - 1]);
         }
 
@@ -297,8 +297,9 @@ private:
             }
             else
             {
-                throw Exception("Illegal value of second ('datetime') argument of function dateName. Check documentation.",
-                                ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Illegal value of second ('datetime') argument of function dateName. Check documentation.",
+                    ErrorCodes::BAD_ARGUMENTS);
             }
         }
 
