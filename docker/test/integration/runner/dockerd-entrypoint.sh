@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+mkdir -p /etc/docker/
 cat > /etc/docker/daemon.json << EOF
 {
     "ipv6": true,
