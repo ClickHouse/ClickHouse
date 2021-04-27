@@ -20,7 +20,7 @@ public:
     {
         try
         {
-            finalize();
+            CompletionAwareWriteBuffer::finalize();
         }
         catch (...)
         {

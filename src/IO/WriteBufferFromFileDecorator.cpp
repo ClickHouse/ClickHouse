@@ -26,7 +26,7 @@ WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()
 {
     try
     {
-        finalize();
+        WriteBufferFromFileDecorator::finalize();
     }
     catch (...)
     {

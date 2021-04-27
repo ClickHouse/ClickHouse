@@ -13,7 +13,7 @@ namespace ErrorCodes
 using Millis = std::chrono::milliseconds;
 using Seconds = std::chrono::seconds;
 
-/// Holds restart read lock till finalize.
+/// Holds restart read lock till buffer destruction.
 class RestartAwareReadBuffer : public ReadBufferFromFileDecorator
 {
 public:
@@ -24,7 +24,7 @@ private:
     ReadLock lock;
 };
 
-/// Holds restart write lock till finalize.
+/// Holds restart read lock till buffer finalize.
 class RestartAwareWriteBuffer : public WriteBufferFromFileDecorator
 {
 public:
@@ -35,7 +35,7 @@ public:
     {
         try
         {
-            finalize();
+            RestartAwareWriteBuffer::finalize();
         }
         catch (...)
         {
