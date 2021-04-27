@@ -25,7 +25,6 @@ protected:
 
 private:
     void nextImpl() override;
-    virtual void finalizeImpl() { }
 };
 
 }

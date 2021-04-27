@@ -43,12 +43,17 @@ public:
         }
     }
 
-private:
-    void finalizeImpl() override
+    void finalize() override
     {
+        if (finalized)
+            return;
+
+        WriteBufferFromFileDecorator::finalize();
+
         lock.unlock();
     }
 
+private:
     ReadLock lock;
 };
 
