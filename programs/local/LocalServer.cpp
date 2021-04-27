@@ -388,6 +388,8 @@ void LocalServer::processQueries()
     CurrentThread::QueryScope query_scope_holder(context);
 
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
+    if (config().hasOption("progress"))
+        context->setRenderProgress();
     std::exception_ptr exception;
 
     for (const auto & query : queries)
@@ -540,6 +542,7 @@ void LocalServer::init(int argc, char ** argv)
         ("output-format", po::value<std::string>(), "default output format")
 
         ("stacktrace", "print stack traces of exceptions")
+        ("progress", "show progress for File table engine")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
@@ -597,6 +600,8 @@ void LocalServer::init(int argc, char ** argv)
 
     if (options.count("stacktrace"))
         config().setBool("stacktrace", true);
+    if (options.count("progress"))
+        config().setBool("progress", true);
     if (options.count("echo"))
         config().setBool("echo", true);
     if (options.count("verbose"))

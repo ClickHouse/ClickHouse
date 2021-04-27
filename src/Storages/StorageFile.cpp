@@ -434,7 +434,7 @@ public:
     void setProgressCallback(const ProgressCallback & callback) override
     {
         /// Add file progress callback only for clickhouse-local.
-        if (context->getApplicationType() != Context::ApplicationType::LOCAL)
+        if (!context->needRenderProgress() || context->getApplicationType() != Context::ApplicationType::LOCAL)
         {
             progress_callback = callback;
             return;
