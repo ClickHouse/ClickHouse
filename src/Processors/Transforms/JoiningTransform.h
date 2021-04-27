@@ -81,7 +81,7 @@ public:
     AddingJoinedTransform(Block input_header, JoinPtr join_);
     String getName() const override { return "AddingJoinedTransform"; }
 
-    void addTotaslPort();
+    InputPort * addTotaslPort();
 
     Status prepare() override;
     void work() override;
