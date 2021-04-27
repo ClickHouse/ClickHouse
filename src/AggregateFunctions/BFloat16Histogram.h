@@ -67,11 +67,12 @@ struct BFloat16Histogram
         buf.read(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
 
-    Float32 quantile(const Float64 & level)
+    template <typename ResultType>
+    ResultType quantile(const Float64 & level)
     {
         if (array.empty())
         {
-            return onEmpty<Value>();
+            return onEmpty<ResultType>();
         }
         sortIfNeeded();
 
@@ -128,7 +129,7 @@ struct BFloat16Histogram
         else
         {
             for (size_t i = 0; i < size; ++i)
-                result[indices[i]] = quantile(levels[indices[i]]);
+                result[indices[i]] = quantile<T>(levels[indices[i]]);
         }
     }
 

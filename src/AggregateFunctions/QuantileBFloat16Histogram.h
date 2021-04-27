@@ -29,14 +29,14 @@ struct QuantileBFloat16Histogram
 
     void deserialize(ReadBuffer & buf) { data.read(buf); }
 
-    Value get(Float64 level) { return data.quantile(level); }
+    Value get(Float64 level) { return data.template quantile<Value>(level); }
 
     void getMany(const Float64 * levels, const size_t * indices, size_t size, Value * result)
     {
         data.quantilesMany(levels, indices, size, result);
     }
 
-    Float64 getFloat(Float64 level) { return data.quantile(level); }
+    Float64 getFloat(Float64 level) { return data.template quantile<Float64>(level); }
 
     void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result)
     {
