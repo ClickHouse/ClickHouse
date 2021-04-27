@@ -252,8 +252,14 @@ constexpr Event END = __COUNTER__;
 
 /// Global variable, initialized by zeros.
 Counter global_counters_array[END] {};
+
+#if WITH_COVERAGE
+/// Will be re-initialized on coverage runtime init, see Coverage.cpp
+Counters global_counters(nullptr);
+#else
 /// Initialize global counters statically
 Counters global_counters(global_counters_array);
+#endif
 
 const Event Counters::num_counters = END;
 
