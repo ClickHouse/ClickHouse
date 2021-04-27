@@ -15,10 +15,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnFunction::ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture)
+ColumnFunction::ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture, bool ignore_arguments_types)
         : size_(size), function(function_)
 {
-    appendArguments(columns_to_capture);
+    appendArguments(columns_to_capture, ignore_arguments_types);
 }
 
 MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
@@ -173,7 +173,7 @@ size_t ColumnFunction::allocatedBytes() const
     return total_size;
 }
 
-void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)
+void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns, bool ignore_arguments_types)
 {
     auto args = function->getArgumentTypes().size();
     auto were_captured = captured_columns.size();
@@ -186,15 +186,15 @@ void ColumnFunction::appendArguments(const ColumnsWithTypeAndName & columns)
                         + ".", ErrorCodes::LOGICAL_ERROR);
 
     for (const auto & column : columns)
-        appendArgument(column);
+        appendArgument(column, ignore_arguments_types);
 }
 
-void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
+void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column, bool ignore_argument_type)
 {
     const auto & argumnet_types = function->getArgumentTypes();
 
     auto index = captured_columns.size();
-    if (!column.type->equals(*argumnet_types[index]))
+    if (!ignore_argument_type && !column.type->equals(*argumnet_types[index]))
         throw Exception("Cannot capture column " + std::to_string(argumnet_types.size()) +
                         " because it has incompatible type: got " + column.type->getName() +
                         ", but " + argumnet_types[index]->getName() + " is expected.", ErrorCodes::LOGICAL_ERROR);

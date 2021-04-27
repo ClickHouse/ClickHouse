@@ -74,8 +74,15 @@ bool ExpressionActions::rewriteShortCircuitArguments(const ActionsDAG::NodeRawCo
     bool have_rewritten_child = false;
     for (const auto * child : children)
     {
-        if (!need_outside.contains(child) || need_outside.at(child) || child->is_lazy_executed)
+        if (!need_outside.contains(child) || need_outside.at(child))
             continue;
+
+        if (child->is_lazy_executed)
+        {
+            have_rewritten_child = true;
+            continue;
+        }
+
         switch (child->type)
         {
             case ActionsDAG::ActionType::FUNCTION:
@@ -92,6 +99,7 @@ bool ExpressionActions::rewriteShortCircuitArguments(const ActionsDAG::NodeRawCo
                 break;
         }
     }
+
     return have_rewritten_child;
 }
 
@@ -419,7 +427,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             }
 
             if (action.node->is_lazy_executed)
-                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments));
+                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true);
             else
             {
                 ProfileEvents::increment(ProfileEvents::FunctionExecute);
