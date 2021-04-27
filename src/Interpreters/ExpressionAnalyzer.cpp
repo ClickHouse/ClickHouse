@@ -26,6 +26,8 @@
 #include <Interpreters/DictionaryReader.h>
 #include <Interpreters/Context.h>
 
+#include <Processors/QueryPlan/ExpressionStep.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
@@ -746,11 +748,11 @@ static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
     return {};
 }
 
-static ExpressionActionsPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
+static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoin & analyzed_join)
 {
     ASTPtr expression_list = analyzed_join.rightKeysList();
     auto syntax_result = TreeRewriter(context).analyze(expression_list, analyzed_join.columnsFromJoinedTable());
-    return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
+    return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
 static bool allowDictJoin(StoragePtr joined_storage, ContextPtr context, String & dict_name, String & key_name)
@@ -802,40 +804,61 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     const ASTTablesInSelectQueryElement & join_element, const ColumnsWithTypeAndName & left_sample_columns)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
-    auto join_hash = join_element.getTreeHash();
-    String join_subquery_id = toString(join_hash.first) + "_" + toString(join_hash.second);
+    // auto join_hash = join_element.getTreeHash();
+    // String join_subquery_id = toString(join_hash.first) + "_" + toString(join_hash.second);
 
-    SubqueryForSet & subquery_for_join = subqueries_for_sets[join_subquery_id];
+    // SubqueryForSet & subquery_for_join = subqueries_for_sets[join_subquery_id];
+
+    if (joined_plan)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join was already created for query");
 
     /// Use StorageJoin if any.
-    if (!subquery_for_join.join)
-        subquery_for_join.join = tryGetStorageJoin(syntax->analyzed_join);
+    JoinPtr join = tryGetStorageJoin(syntax->analyzed_join);
 
-    if (!subquery_for_join.join)
+    if (!join)
     {
         /// Actions which need to be calculated on joined block.
-        ExpressionActionsPtr joined_block_actions = createJoinedBlockActions(getContext(), analyzedJoin());
+        auto joined_block_actions = createJoinedBlockActions(getContext(), analyzedJoin());
 
         Names original_right_columns;
-        if (!subquery_for_join.source)
+
+        NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
+            Block(joined_block_actions->getResultColumns()), joined_block_actions->getRequiredColumns().getNames());
+        for (auto & pr : required_columns_with_aliases)
+            original_right_columns.push_back(pr.first);
+
+        /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
+            * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
+            *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
+            * - this function shows the expression JOIN _data1.
+            */
+        auto interpreter = interpretSubquery(join_element.table_expression, getContext(), original_right_columns, query_options);
+
+
+        /// subquery_for_join.makeSource(interpreter, std::move(required_columns_with_aliases));
         {
-            NamesWithAliases required_columns_with_aliases = analyzedJoin().getRequiredColumns(
-                joined_block_actions->getSampleBlock(), joined_block_actions->getRequiredColumns());
-            for (auto & pr : required_columns_with_aliases)
-                original_right_columns.push_back(pr.first);
+            // joined_block_aliases = std::move(joined_block_aliases_);
+            joined_plan = std::make_unique<QueryPlan>();
+            interpreter->buildQueryPlan(*joined_plan);
 
-            /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
-                * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
-                *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
-                * - this function shows the expression JOIN _data1.
-                */
-            auto interpreter = interpretSubquery(join_element.table_expression, getContext(), original_right_columns, query_options);
+            auto sample_block = interpreter->getSampleBlock();
+            //renameColumns(sample_block);
 
-            subquery_for_join.makeSource(interpreter, std::move(required_columns_with_aliases));
+            auto rename_dag = std::make_unique<ActionsDAG>(sample_block.getColumnsWithTypeAndName());
+            rename_dag->project(required_columns_with_aliases);
+            auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
+            rename_step->setStepDescription("Rename joined columns");
+            joined_plan->addStep(std::move(rename_step));
         }
 
+
+
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
-        subquery_for_join.addJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
+        //subquery_for_join.addJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
+
+        auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(joined_block_actions));
+        joined_actions_step->setStepDescription("Joined actions");
+        joined_plan->addStep(std::move(joined_actions_step));
 
         const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
         bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
