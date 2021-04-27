@@ -27,6 +27,7 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <algorithm>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
@@ -456,7 +457,7 @@ public:
             };
             size_t terminal_width = getTerminalWidth();
 
-            auto & file_progress = context->getFileTableEngineProgress();
+            const auto & file_progress = context->getFileTableEngineProgress();
             WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
 
             if (!file_progress.processed_bytes)
