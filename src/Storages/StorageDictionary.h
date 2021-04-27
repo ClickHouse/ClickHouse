@@ -37,7 +37,6 @@ public:
     static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
     bool isDictionary() const override { return true; }
-    void drop() override;
     void shutdown() override;
     void startup() override;
 
