@@ -182,3 +182,9 @@ toc_title: "Визуальные интерфейсы от сторонних р
 SeekTable [бесплатен](https://www.seektable.com/help/cloud-pricing) для личного/индивидуального использования.
 
 [Как сконфигурировать подключение ClickHouse в SeekTable.](https://www.seektable.com/help/clickhouse-pivot-table)
+
+### Chadmin {#chadmin}
+
+[Chadmin](https://github.com/bun4uk/chadmin) — простой графический интерфейс для визуализации запущенных запросов на вашем кластере ClickHouse. Он отображает информацию о запросах и дает возможность их завершать.
+
+[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->
