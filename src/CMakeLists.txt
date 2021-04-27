@@ -297,8 +297,6 @@ set_source_files_properties(
     Common/SymbolIndex.cpp
     PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
 
-set_property(GLOBAL PROPERTY ${WITHOUT_COVERAGE})
-
 target_link_libraries (clickhouse_common_io
         PRIVATE
             string_utils

@@ -7,6 +7,7 @@
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
+#include "Common/ProfileEvents.h"
 #include <common/demangle.h>
 
 #include <Interpreters/Context.h>
@@ -14,10 +15,24 @@
 
 namespace detail
 {
+auto getInstanceAndInitGlobalCounters()
+{
+    /**
+     * Writer is a singleton, so it initializes statically.
+     * SymbolIndex uses a MMapReadBufferFromFile which uses ProfileEvents.
+     * If no thread was found in the events profiler, a global variable is used.
+     * This variable may get initialized after Writer (static initialization order fiasco).
+     * We can't use constinit on that variable as it has a shared_ptr on it, so we just
+     * ultimately initialize it before getting the instance.
+     */
+    ProfileEvents::global_counters = ProfileEvents::Counters(ProfileEvents::global_counters_array);
+
+    return SymbolIndex::instance();
+}
 
 Writer::Writer()
     : coverage_dir(std::filesystem::current_path() / "../../coverage"),
-      symbol_index(SymbolIndex::instance()),
+      symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
       binary_virtual_offset(uintptr_t(symbol_index->getSelf()->address_begin)),
       pool(4)
