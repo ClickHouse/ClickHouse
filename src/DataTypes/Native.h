@@ -5,15 +5,9 @@
 #endif
 
 #if USE_EMBEDDED_COMPILER
-#    include <DataTypes/DataTypeDate.h>
-#    include <DataTypes/DataTypeDateTime.h>
-#    include <DataTypes/DataTypeFixedString.h>
-#    include <DataTypes/DataTypeInterval.h>
+#    include <DataTypes/IDataType.h>
 #    include <DataTypes/DataTypeNullable.h>
-#    include <DataTypes/DataTypeUUID.h>
-#    include <DataTypes/DataTypesNumber.h>
-#    include <Common/typeid_cast.h>
-
+#    include <DataTypes/DataTypeFixedString.h>
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -29,60 +23,61 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-template <typename... Ts>
-static inline bool typeIsEither(const IDataType & type)
-{
-    return (typeid_cast<const Ts *>(&type) || ...);
-}
-
 static inline bool typeIsSigned(const IDataType & type)
 {
-    return typeIsEither<
-        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
-        DataTypeFloat32, DataTypeFloat64, DataTypeInterval
-    >(type);
+    WhichDataType data_type(type);
+    return data_type.isNativeInt() || data_type.isFloat();
 }
 
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
 {
-    if (auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+    WhichDataType data_type(type);
+
+    if (data_type.isNullable())
     {
-        auto * wrapped = toNativeType(builder, *nullable->getNestedType());
+        const auto & data_type_nullable = static_cast<const DataTypeNullable&>(type);
+        auto * wrapped = toNativeType(builder, *data_type_nullable.getNestedType());
         return wrapped ? llvm::StructType::get(wrapped, /* is null = */ builder.getInt1Ty()) : nullptr;
     }
+
     /// LLVM doesn't have unsigned types, it has unsigned instructions.
-    if (typeIsEither<DataTypeInt8, DataTypeUInt8>(type))
+    if (data_type.isInt8() || data_type.isUInt8())
         return builder.getInt8Ty();
-    if (typeIsEither<DataTypeInt16, DataTypeUInt16, DataTypeDate>(type))
+    if (data_type.isInt16() || data_type.isUInt16() || data_type.isDate())
         return builder.getInt16Ty();
-    if (typeIsEither<DataTypeInt32, DataTypeUInt32, DataTypeDateTime>(type))
+    if (data_type.isInt32() || data_type.isUInt32() || data_type.isDateTime())
         return builder.getInt32Ty();
-    if (typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeInterval>(type))
+    if (data_type.isInt64() || data_type.isUInt64())
         return builder.getInt64Ty();
-    if (typeIsEither<DataTypeUUID>(type))
+    if (data_type.isUUID())
+    {
+        /// TODO: Check
         return builder.getInt128Ty();
-    if (typeIsEither<DataTypeFloat32>(type))
+    }
+    if (data_type.isFloat32())
         return builder.getFloatTy();
-    if (typeIsEither<DataTypeFloat64>(type))
+    if (data_type.isFloat64())
         return builder.getDoubleTy();
-    if (auto * fixed_string = typeid_cast<const DataTypeFixedString *>(&type))
-        return llvm::VectorType::get(builder.getInt8Ty(), fixed_string->getN());
+    if (data_type.isFixedString())
+    {
+        const auto & data_type_fixed_string = static_cast<const DataTypeFixedString &>(type);
+        return llvm::VectorType::get(builder.getInt8Ty(), data_type_fixed_string.getN());
+    }
+
     return nullptr;
 }
 
 static inline bool canBeNativeType(const IDataType & type)
 {
-    if (auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
-        return canBeNativeType(*nullable->getNestedType());
+    WhichDataType data_type(type);
 
-    return typeIsEither<DataTypeInt8, DataTypeUInt8>(type)
-        || typeIsEither<DataTypeInt16, DataTypeUInt16, DataTypeDate>(type)
-        || typeIsEither<DataTypeInt32, DataTypeUInt32, DataTypeDateTime>(type)
-        || typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeInterval>(type)
-        || typeIsEither<DataTypeUUID>(type)
-        || typeIsEither<DataTypeFloat32>(type)
-        || typeIsEither<DataTypeFloat64>(type)
-        || typeid_cast<const DataTypeFixedString *>(&type);
+    if (data_type.isNullable())
+    {
+        const auto & data_type_nullable = static_cast<const DataTypeNullable&>(type);
+        return canBeNativeType(*data_type_nullable.getNestedType());
+    }
+
+    return data_type.isNativeInt() || data_type.isNativeUInt() || data_type.isFloat() || data_type.isFixedString() || data_type.isDate() || data_type.isUUID();
 }
 
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)

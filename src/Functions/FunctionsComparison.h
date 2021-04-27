@@ -1240,13 +1240,17 @@ public:
         if (2 != types.size())
             return false;
 
-        auto isBigInteger = &typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeUUID>;
-        auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
-        if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1]))
-            || (isBigInteger(*types[1]) && isFloatingPoint(*types[0]))
-            || (WhichDataType(types[0]).isDate() && WhichDataType(types[1]).isDateTime())
-            || (WhichDataType(types[1]).isDate() && WhichDataType(types[0]).isDateTime()))
+        WhichDataType data_type_lhs(types[0]);
+        WhichDataType data_type_rhs(types[1]);
+
+        auto is_big_integer = [](WhichDataType type) { return type.isUInt64() || type.isInt64() || type.isUUID(); };
+
+        if ((is_big_integer(data_type_lhs) && data_type_rhs.isFloat())
+            || (is_big_integer(data_type_rhs) && data_type_lhs.isFloat())
+            || (data_type_lhs.isDate() && data_type_rhs.isDateTime())
+            || (data_type_rhs.isDate() && data_type_lhs.isDateTime()))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
+
         return isCompilableType(types[0]) && isCompilableType(types[1]);
     }
 

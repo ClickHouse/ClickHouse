@@ -40,6 +40,7 @@
 #include <llvm/ExecutionEngine/Orc/CompileUtils.h>
 #include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
 #include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
+#include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/MC/SubtargetFeature.h>
 #include <llvm/Support/DynamicLibrary.h>
@@ -130,7 +131,7 @@ static llvm::TargetMachine * getNativeMachine()
     llvm::TargetOptions options;
     return target->createTargetMachine(
         triple, cpu, features.getString(), options, llvm::None,
-        llvm::None, llvm::CodeGenOpt::Default, /*jit=*/true
+        llvm::None, llvm::CodeGenOpt::Aggressive, /*jit=*/true
     );
 }
 
@@ -193,6 +194,8 @@ struct LLVMContext
         })
         , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
     {
+        std::cerr << "LLVMContext::constructor" << std::endl;
+
         module->setDataLayout(layout);
         module->setTargetTriple(machine->getTargetTriple().getTriple());
     }
@@ -218,14 +221,28 @@ struct LLVMContext
         pass_manager_builder.populateModulePassManager(mpm);
         fpm.doInitialization();
         for (auto & function : *module)
+        {
+            // std::cerr << "Run for function " << std::string(function.getName()) << std::endl;
             fpm.run(function);
+        }
         fpm.doFinalization();
         mpm.run(*module);
 
         std::vector<std::string> functions;
         functions.reserve(module->size());
         for (const auto & function : *module)
+        {
+
             functions.emplace_back(function.getName());
+        }
+
+        std::cerr << "Dump module after compile " << std::endl;
+
+        std::string value;
+        llvm::raw_string_ostream stream(value);
+        module->print(stream, nullptr);
+
+        std::cerr << value << std::endl;
 
         llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
         if (compile_layer.addModule(module_key, std::move(module)))
@@ -279,6 +296,11 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t block_size) const override
     {
+        // std::cerr << "LLVMExecutableFunction::execute" << std::endl;
+
+        // for (const auto & argument : arguments)
+        //     std::cerr << argument.name << " " << argument.type->getName() << std::endl;
+
         auto col_res = result_type->createColumn();
 
         if (block_size)
@@ -318,6 +340,8 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
     auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy(), size_type);
     auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
+
+    /// TODO: External linkage
     auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, f.getName(), context.module.get());
     auto * args = func->args().begin();
     llvm::Value * counter_arg = &*args++;
@@ -374,6 +398,7 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
     {
         b.CreateStore(result, columns.back().data);
     }
+
     auto * cur_block = b.GetInsertBlock();
     for (auto & col : columns)
     {
@@ -389,10 +414,19 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
     b.CreateCondBr(b.CreateICmpNE(counter_phi, llvm::ConstantInt::get(size_type, 1)), loop, end);
     b.SetInsertPoint(end);
     b.CreateRetVoid();
+
+    std::cerr << "Dump module" << std::endl;
+
+    std::string value;
+    llvm::raw_string_ostream mangled_name_stream(value);
+    context.module->print(mangled_name_stream, nullptr);
+
+    std::cerr << value << std::endl;
 }
 
 static llvm::Constant * getNativeValue(llvm::Type * type, const IColumn & column, size_t i)
 {
+    /// TODO: Change name this is just for constants
     if (!type || column.size() <= i)
         return nullptr;
     if (const auto * constant = typeid_cast<const ColumnConst *>(&column))
@@ -584,9 +618,13 @@ static bool isCompilable(const IFunctionBase & function)
 {
     if (!canBeNativeType(*function.getResultType()))
         return false;
+
     for (const auto & type : function.getArgumentTypes())
+    {
         if (!canBeNativeType(*type))
             return false;
+    }
+
     return function.isCompilable();
 }
 
@@ -796,6 +834,8 @@ static FunctionBasePtr compile(
 
 void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 {
+    // std::cerr << "ActionsDAG::compileFunctions before dump " << dumpDAG() << std::endl;
+
     struct Data
     {
         bool is_compilable = false;
@@ -875,8 +915,20 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
                     if (should_compile)
                     {
+                        // std::cerr << "ActionsDAG::should compileFunction " << frame.node->result_name;
+                        // std::cerr << " children size " << frame.node->children.size() << std::endl;
+
+                        // for (const auto * child_node : frame.node->children)
+                        //     std::cerr << child_node->result_name << std::endl;
+
                         NodeRawConstPtrs new_children;
                         auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
+
+                        // std::cerr << "ActionsDAG::new children size " << new_children.size() << std::endl;
+                        // for (const auto * child_node : new_children)
+                        //     std::cerr << child_node->result_name << std::endl;
+
+                        // std::cerr << "DAG dump " << dag.dump() << std::endl;
 
                         if (auto fn = compile(dag, min_count_to_compile_expression))
                         {
@@ -886,6 +938,8 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
                             arguments.reserve(new_children.size());
                             for (const auto * child : new_children)
                                 arguments.emplace_back(child->column, child->result_type, child->result_name);
+
+                            // std::cerr << "Compile node arguments " << arguments.size() << std::endl;
 
                             auto * frame_node = const_cast<Node *>(frame.node);
                             frame_node->type = ActionsDAG::ActionType::FUNCTION;
