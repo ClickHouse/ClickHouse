@@ -213,6 +213,8 @@ public:
 
     virtual bool isShortCircuit() const { return false; }
 
+    virtual bool isSuitableForShortCircuitArgumentsExecution() const { return true; }
+
     virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
     {
         throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::NOT_IMPLEMENTED);
@@ -276,6 +278,8 @@ public:
     virtual bool isVariadic() const { return false; }
 
     virtual bool isShortCircuit() const { return false; }
+
+    virtual bool isSuitableForShortCircuitArgumentsExecution() const { return true; }
 
     virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
     {

@@ -25,7 +25,7 @@ struct ExpressionActionsSettings
 
     CompileExpressions compile_expressions = CompileExpressions::no;
 
-    bool use_short_circuit_function_evaluation = true;
+    bool use_short_circuit_function_evaluation = false;
 
     static ExpressionActionsSettings fromSettings(const Settings & from, CompileExpressions compile_expressions = CompileExpressions::no);
     static ExpressionActionsSettings fromContext(ContextPtr from, CompileExpressions compile_expressions = CompileExpressions::no);

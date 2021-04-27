@@ -68,7 +68,6 @@ public:
     using NameToInputMap = std::unordered_map<std::string_view, std::list<size_t>>;
 
 private:
-
     ActionsDAGPtr actions_dag;
     Actions actions;
     size_t num_columns = 0;
@@ -120,9 +119,27 @@ public:
     ExpressionActionsPtr clone() const;
 
 private:
+    struct Data
+    {
+        const Node * node = nullptr;
+        size_t num_created_children = 0;
+        std::vector<const Node *> parents;
+
+        ssize_t position = -1;
+        size_t num_created_parents = 0;
+        bool used_in_result = false;
+    };
+
     void checkLimits(const ColumnsWithTypeAndName & columns) const;
 
     void linearizeActions();
+    bool rewriteShortCircuitArguments(
+        const ActionsDAG::NodeRawConstPtrs & children, const std::unordered_map<const ActionsDAG::Node *, bool> & need_outside, bool force_rewrite);
+
+    void rewriteArgumentsForShortCircuitFunctions(
+        const std::list<ActionsDAG::Node> & nodes,
+        const std::vector<Data> & data,
+        const std::unordered_map<const ActionsDAG::Node *, size_t> & reverse_index);
 };
 
 

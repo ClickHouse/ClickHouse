@@ -551,6 +551,11 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint, boo
     return filterGeneric(filt, result_size_hint, reverse);
 }
 
+void ColumnArray::expand(const IColumn::Filter & mask, bool reverse)
+{
+    expandOffsetsByMask(getOffsets(), mask, reverse);
+}
+
 template <typename T>
 ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint, bool reverse) const
 {

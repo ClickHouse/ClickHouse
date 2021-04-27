@@ -4,42 +4,142 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnLowCardinality.h>
-
-#include <common/logger_useful.h>
+#include <Columns/ColumnsCommon.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-void expandColumnByMask(ColumnPtr & column, const PaddedPODArray<UInt8>& mask, Field * field, bool reverse)
+template <typename T>
+void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool reverse, T default_value)
 {
-    MutableColumnPtr res = column->cloneEmpty();
-    res->reserve(mask.size());
-    size_t index = 0;
-    for (size_t i = 0; i != mask.size(); ++i)
-    {
-        if (reverse ^ mask[i])
-        {
-            if (index >= column->size())
-                throw Exception("Too many bits in mask", ErrorCodes::LOGICAL_ERROR);
+    if (mask.size() < data.size())
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
 
-            res->insert((*column)[index]);
-            ++index;
+    int from = data.size() - 1;
+    int index = mask.size() - 1;
+    data.resize(mask.size());
+    while (index >= 0)
+    {
+        if (mask[index] ^ reverse)
+        {
+            if (from < 0)
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+            data[index] = data[from];
+            --from;
         }
-        else if (field)
-            res->insert(*field);
         else
-            res->insertDefault();
+            data[index] = default_value;
+
+        --index;
     }
 
-    if (index < column->size())
-        throw Exception("Too less bits in mask", ErrorCodes::LOGICAL_ERROR);
-    column = std::move(res);
+    if (from != -1)
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+}
+
+/// Explicit instantiations - not to place the implementation of the function above in the header file.
+#define INSTANTIATE(TYPE) \
+template void expandDataByMask<TYPE>(PaddedPODArray<TYPE> &, const PaddedPODArray<UInt8> &, bool, TYPE);
+
+INSTANTIATE(UInt8)
+INSTANTIATE(UInt16)
+INSTANTIATE(UInt32)
+INSTANTIATE(UInt64)
+INSTANTIATE(UInt128)
+INSTANTIATE(UInt256)
+INSTANTIATE(Int8)
+INSTANTIATE(Int16)
+INSTANTIATE(Int32)
+INSTANTIATE(Int64)
+INSTANTIATE(Int128)
+INSTANTIATE(Int256)
+INSTANTIATE(Float32)
+INSTANTIATE(Float64)
+INSTANTIATE(Decimal32)
+INSTANTIATE(Decimal64)
+INSTANTIATE(Decimal128)
+INSTANTIATE(Decimal256)
+INSTANTIATE(DateTime64)
+INSTANTIATE(char *)
+
+#undef INSTANTIATE
+
+void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<UInt8> & mask, bool reverse)
+{
+    if (mask.size() < offsets.size())
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+
+    int index = mask.size() - 1;
+    int from = offsets.size() - 1;
+    offsets.resize(mask.size());
+    UInt64 prev_offset = offsets[from];
+    while (index >= 0)
+    {
+        if (mask[index] ^ reverse)
+        {
+            if (from < 0)
+                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+            offsets[index] = offsets[from];
+            --from;
+            prev_offset = offsets[from];
+        }
+        else
+            offsets[index] = prev_offset;
+        --index;
+    }
+
+    if (from != -1)
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+}
+
+
+
+template <typename ValueType>
+bool tryExpandMaskColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8> & mask, bool reverse, UInt8 default_value_for_expanding_mask)
+{
+    if (const auto * col = checkAndGetColumn<ColumnVector<ValueType>>(*column))
+    {
+        expandDataByMask<ValueType>(const_cast<ColumnVector<ValueType> *>(col)->getData(), mask, reverse, default_value_for_expanding_mask);
+        return true;
+    }
+
+    return false;
+}
+
+void expandMaskColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& mask, bool reverse, UInt8 default_value_for_expanding_mask)
+{
+    if (const auto * col = checkAndGetColumn<ColumnNullable>(column.get()))
+    {
+        expandMaskColumnByMask(col->getNullMapColumnPtr(), mask, reverse, 0);
+        expandMaskColumnByMask(col->getNestedColumnPtr(), mask, reverse, default_value_for_expanding_mask);
+        return;
+    }
+
+    if (!tryExpandMaskColumnByMask<Int8>(column, mask, reverse, default_value_for_expanding_mask) &&
+        !tryExpandMaskColumnByMask<Int16>(column, mask, reverse, default_value_for_expanding_mask) &&
+        !tryExpandMaskColumnByMask<Int32>(column, mask, reverse, default_value_for_expanding_mask) &&
+        !tryExpandMaskColumnByMask<Int64>(column, mask, reverse, default_value_for_expanding_mask) &&
+        !tryExpandMaskColumnByMask<UInt8>(column, mask, reverse, default_value_for_expanding_mask) &&
+        !tryExpandMaskColumnByMask<UInt16>(column, mask, reverse, default_value_for_expanding_mask) &&
+        !tryExpandMaskColumnByMask<UInt32>(column, mask, reverse, default_value_for_expanding_mask) &&
+        !tryExpandMaskColumnByMask<UInt64>(column, mask, reverse, default_value_for_expanding_mask) &&
+        !tryExpandMaskColumnByMask<Float32>(column, mask, reverse, default_value_for_expanding_mask) &&
+        !tryExpandMaskColumnByMask<Float64>(column, mask, reverse, default_value_for_expanding_mask))
+        throw Exception("Cannot convert column " + column.get()->getName() + " to mask", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
+
+void expandColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8>& mask, bool reverse)
+{
+    column->assumeMutable()->expand(mask, reverse);
 }
 
 template <typename ValueType>
@@ -125,7 +225,7 @@ void disjunctionMasks(PaddedPODArray<UInt8> & mask1, const PaddedPODArray<UInt8>
     binaryMasksOperationImpl(mask1, mask2, [](const auto & lhs, const auto & rhs){ return lhs | rhs; });
 }
 
-void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, Field * default_value, bool reverse)
+void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, bool reverse, const UInt8 * default_value_for_expanding_mask)
 {
     const auto * column_function = checkAndGetColumn<ColumnFunction>(*column.column);
     if (!column_function)
@@ -133,7 +233,13 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
 
     auto filtered = column_function->filter(mask, -1, reverse);
     auto result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce(true);
-    expandColumnByMask(result.column, mask, default_value, reverse);
+    if (default_value_for_expanding_mask)
+    {
+        result.column = result.column->convertToFullColumnIfLowCardinality();
+        expandMaskColumnByMask(result.column, mask, reverse, *default_value_for_expanding_mask);
+    }
+    else
+        expandColumnByMask(result.column, mask, reverse);
     column = std::move(result);
 }
 
@@ -144,6 +250,16 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column)
         return;
 
     column = typeid_cast<const ColumnFunction *>(column_function)->reduce(true);
+}
+
+bool checkArgumentsForColumnFunction(const ColumnsWithTypeAndName & arguments)
+{
+    for (const auto & arg : arguments)
+    {
+        if (const auto * col = checkAndGetColumn<ColumnFunction>(*arg.column))
+            return true;
+    }
+    return false;
 }
 
 }

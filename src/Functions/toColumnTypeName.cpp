@@ -26,6 +26,10 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    bool isShortCircuit() const override { return true; }
+
+    void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const override {}
+
     size_t getNumberOfArguments() const override
     {
         return 1;

@@ -77,6 +77,17 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint, 
     return ColumnFunction::create(filtered_size, function, capture);
 }
 
+void ColumnFunction::expand(const Filter & mask, bool reverse)
+{
+    for (auto & column : captured_columns)
+    {
+        column.column = column.column->cloneResized(column.column->size());
+        column.column->assumeMutable()->expand(mask, reverse);
+    }
+
+    size_ = mask.size();
+}
+
 ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
 {
     if (limit == 0)
@@ -194,8 +205,6 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
 
 ColumnWithTypeAndName ColumnFunction::reduce(bool reduce_arguments) const
 {
-//    LOG_DEBUG(&Poco::Logger::get("ColumnFunction"), "Reduce function: {}", function->getName());
-
     auto args = function->getArgumentTypes().size();
     auto captured = captured_columns.size();
 
@@ -203,22 +212,17 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool reduce_arguments) const
         throw Exception("Cannot call function " + function->getName() + " because is has " + toString(args) +
                         "arguments but " + toString(captured) + " columns were captured.", ErrorCodes::LOGICAL_ERROR);
 
-    ColumnsWithTypeAndName columns;
-    if (reduce_arguments)
+    ColumnsWithTypeAndName columns = captured_columns;
+    if (function->isShortCircuit())
+        function->executeShortCircuitArguments(columns);
+    else if (reduce_arguments)
     {
-        columns.reserve(captured_columns.size());
-        for (const auto & col : captured_columns)
+        for (auto & col : columns)
         {
-//            LOG_DEBUG(&Poco::Logger::get("ColumnFunction"), "Arg type: {}", col.type->getName());
-
             if (const auto * column_function = typeid_cast<const ColumnFunction *>(col.column.get()))
-                columns.push_back(column_function->reduce(true));
-            else
-                columns.push_back(col);
+                col = column_function->reduce(true);
         }
     }
-    else
-        columns = captured_columns;
 
     ColumnWithTypeAndName res{nullptr, function->getResultType(), ""};
 

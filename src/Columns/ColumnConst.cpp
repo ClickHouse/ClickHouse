@@ -65,6 +65,24 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/,
     return ColumnConst::create(data, new_size);
 }
 
+void ColumnConst::expand(const Filter & mask, bool reverse)
+{
+    if (mask.size() < s)
+        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
+
+    size_t bytes_count = countBytesInFilter(mask);
+    if (reverse)
+        bytes_count = mask.size() - bytes_count;
+
+    if (bytes_count < s)
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+    else if (bytes_count > s)
+        throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+
+    s = mask.size();
+}
+
+
 ColumnPtr ColumnConst::replicate(const Offsets & offsets) const
 {
     if (s != offsets.size())

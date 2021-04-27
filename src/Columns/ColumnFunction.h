@@ -37,7 +37,8 @@ public:
 
     ColumnPtr cut(size_t start, size_t length) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool reverse = false) const override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint, bool reverse) const override;
+    void expand(const Filter & mask, bool reverse) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
@@ -157,6 +158,7 @@ private:
     size_t size_;
     FunctionBasePtr function;
     ColumnsWithTypeAndName captured_columns;
+    bool is_short_circuit_argumentz;
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };

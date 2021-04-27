@@ -29,6 +29,7 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool isShortCircuit() const override { return true; }
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 

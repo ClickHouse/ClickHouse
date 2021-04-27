@@ -236,6 +236,11 @@ public:
     using Filter = PaddedPODArray<UInt8>;
     virtual Ptr filter(const Filter & filt, ssize_t result_size_hint, bool reverse = false) const = 0;
 
+    virtual void expand(const Filter &, bool)
+    {
+        throw Exception("expand function is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
     using Permutation = PaddedPODArray<size_t>;
