@@ -55,6 +55,7 @@ def count_running_mutations(node, table):
 # but it revealed a bug when we assign different merges to the same part
 # on the borders of partitions.
 def test_no_ttl_merges_in_busy_pool(started_cluster):
+    node1.query("DROP TABLE IF EXISTS test_ttl")
     node1.query(
         "CREATE TABLE test_ttl (d DateTime, key UInt64, data UInt64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0, number_of_free_entries_in_pool_to_execute_mutation = 0")
 
@@ -87,6 +88,7 @@ def test_no_ttl_merges_in_busy_pool(started_cluster):
 
 
 def test_limited_ttl_merges_in_empty_pool(started_cluster):
+    node1.query("DROP TABLE IF EXISTS test_ttl_v2")
     node1.query(
         "CREATE TABLE test_ttl_v2 (d DateTime, key UInt64, data UInt64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0")
 
@@ -110,6 +112,7 @@ def test_limited_ttl_merges_in_empty_pool(started_cluster):
 
 
 def test_limited_ttl_merges_in_empty_pool_replicated(started_cluster):
+    node1.query("DROP TABLE IF EXISTS replicated_ttl")
     node1.query(
         "CREATE TABLE replicated_ttl (d DateTime, key UInt64, data UInt64) ENGINE = ReplicatedMergeTree('/test/t', '1') ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0")
 
@@ -138,6 +141,9 @@ def test_limited_ttl_merges_in_empty_pool_replicated(started_cluster):
 def test_limited_ttl_merges_two_replicas(started_cluster):
     # Actually this test quite fast and often we cannot catch any merges.
     # To check for sure just add some sleeps in mergePartsToTemporaryPart
+    node1.query("DROP TABLE IF EXISTS replicated_ttl_2")
+    node2.query("DROP TABLE IF EXISTS replicated_ttl_2")
+
     node1.query(
         "CREATE TABLE replicated_ttl_2 (d DateTime, key UInt64, data UInt64) ENGINE = ReplicatedMergeTree('/test/t2', '1') ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0")
     node2.query(

@@ -95,7 +95,7 @@ def started_cluster():
 
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
-        run_s3_mock(cluster)
+        run_s3_mocks(cluster)
 
         yield cluster
     finally:
@@ -383,26 +383,33 @@ def test_s3_glob_scheherazade(started_cluster):
     assert run_query(instance, query).splitlines() == ["1001\t1001\t1001\t1001"]
 
 
-def run_s3_mock(started_cluster):
-    logging.info("Starting s3 mock")
-    container_id = started_cluster.get_container_id('resolver')
-    current_dir = os.path.dirname(__file__)
-    started_cluster.copy_file_to_container(container_id, os.path.join(current_dir, "s3_mock", "mock_s3.py"), "mock_s3.py")
-    started_cluster.exec_in_container(container_id, ["python", "mock_s3.py"], detach=True)
 
-    # Wait for S3 mock start
-    for attempt in range(10):
-        ping_response = started_cluster.exec_in_container(started_cluster.get_container_id('resolver'),
-                                                  ["curl", "-s", "http://resolver:8080/"], nothrow=True)
-        if ping_response != 'OK':
-            if attempt == 9:
-                assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
+def run_s3_mocks(started_cluster):
+    logging.info("Starting s3 mocks")
+    mocks = (
+        ("mock_s3.py", "resolver", "8080"),
+        ("unstable_server.py", "resolver", "8081"),
+    )
+    for mock_filename, container, port in mocks:
+        container_id = started_cluster.get_container_id(container)
+        current_dir = os.path.dirname(__file__)
+        started_cluster.copy_file_to_container(container_id, os.path.join(current_dir, "s3_mocks", mock_filename), mock_filename)
+        started_cluster.exec_in_container(container_id, ["python", mock_filename, port], detach=True)
+
+    # Wait for S3 mocks to start
+    for mock_filename, container, port in mocks:
+        for attempt in range(10):
+            ping_response = started_cluster.exec_in_container(started_cluster.get_container_id(container),
+                                                      ["curl", "-s", f"http://{container}:{port}/"], nothrow=True)
+            if ping_response != 'OK':
+                if attempt == 9:
+                    assert ping_response == 'OK', 'Expected "OK", but got "{}"'.format(ping_response)
+                else:
+                    time.sleep(1)
             else:
-                time.sleep(1)
-        else:
-            break
+                break
 
-    logging.info("S3 mock started")
+    logging.info("S3 mocks started")
 
 
 def replace_config(old, new):
@@ -496,6 +503,15 @@ def test_storage_s3_get_gzip(started_cluster, extension, method):
                                 '{method}')""")
 
     run_query(instance, "SELECT sum(id) FROM {}".format(name)).splitlines() == ["565"]
+
+
+def test_storage_s3_get_unstable(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+    table_format = "column1 Int64, column2 Int64, column3 Int64, column4 Int64"
+    get_query = f"SELECT count(), sum(column3) FROM s3('http://resolver:8081/{started_cluster.minio_bucket}/test.csv', 'CSV', '{table_format}') FORMAT CSV"
+    result = run_query(instance, get_query)
+    assert result.splitlines() == ["500000,500000"]
 
 
 def test_storage_s3_put_uncompressed(started_cluster):

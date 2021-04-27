@@ -90,6 +90,8 @@ private:
     bool operatorFromAST(const ASTFunction * func, RPNElement & out)
     {
         /// Functions AND, OR, NOT.
+        /// Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
+        /// (or, the same thing - calling the function `and` from one argument).
         const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
         if (func->name == "not")
@@ -101,7 +103,7 @@ private:
         }
         else
         {
-            if (func->name == "and")
+            if (func->name == "and" || func->name == "indexHint")
                 out.function = RPNElement::FUNCTION_AND;
             else if (func->name == "or")
                 out.function = RPNElement::FUNCTION_OR;

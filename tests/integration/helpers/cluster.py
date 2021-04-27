@@ -326,11 +326,15 @@ class ClickHouseCluster:
     def cleanup(self):
         # Just in case kill unstopped containers from previous launch
         try:
-            logging.debug("Trying to kill unstopped containers...")
-            subprocess_call(['docker', 'kill', f'`docker container list -a -f name={self.project_name}`'])
-            subprocess_call(['docker', 'rm', f'`docker container list -a -f name={self.project_name}`'])
-            logging.debug("Unstopped containers killed")
-            subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+            result = subprocess_call(['docker', 'container', 'list', '-a', '-f name={self.project_name}'])
+            if int(result) > 1:
+                logging.debug("Trying to kill unstopped containers...")
+                subprocess_call(['docker', 'kill', f'`docker container list -a -f name={self.project_name}`'])
+                subprocess_call(['docker', 'rm', f'`docker container list -a -f name={self.project_name}`'])
+                logging.debug("Unstopped containers killed")
+                subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+            else:
+                logging.debug(f"No running containers for project: {self.project_name}")
         except:
             pass
 
@@ -343,12 +347,12 @@ class ClickHouseCluster:
         # except:
         #     pass
 
-        # Remove unused containers
+        # Remove unused images
         try:
-            logging.debug("Trying to prune unused containers...")
+            logging.debug("Trying to prune unused images...")
 
-            subprocess_call(['docker', 'container', 'prune', '-f'])
-            logging.debug("Networks pruned")
+            subprocess_call(['docker', 'images', 'prune', '-f'])
+            logging.debug("Images pruned")
         except:
             pass
 
@@ -1272,6 +1276,8 @@ class ClickHouseCluster:
             except Exception as e:
                 logging.debug("Down + remove orphans failed durung shutdown. {}".format(repr(e)))
 
+        self.cleanup()
+
         self.is_up = False
 
         self.docker_client = None
@@ -1467,13 +1473,18 @@ class ClickHouseInstance:
         self.is_up = False
 
 
-    def is_built_with_thread_sanitizer(self):
+    def is_built_with_sanitizer(self, sanitizer_name=''):
         build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-        return "-fsanitize=thread" in build_opts
+        return "-fsanitize={}".format(sanitizer_name) in build_opts
+
+    def is_built_with_thread_sanitizer(self):
+        return self.is_built_with_sanitizer('thread')
 
     def is_built_with_address_sanitizer(self):
-        build_opts = self.query("SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'")
-        return "-fsanitize=address" in build_opts
+        return self.is_built_with_sanitizer('address')
+
+    def is_built_with_memory_sanitizer(self):
+        return self.is_built_with_sanitizer('memory')
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
@@ -1560,10 +1571,9 @@ class ClickHouseInstance:
         return self.http_query(sql=sql, data=data, params=params, user=user, password=password,
                                expect_fail_and_get_error=True)
 
-    def stop_clickhouse(self, start_wait_sec=5, kill=False):
+    def stop_clickhouse(self, stop_wait_sec=30, kill=False):
         if not self.stay_alive:
             raise Exception("clickhouse can be stopped only with stay_alive=True instance")
-
         try:
             ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
             if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND" :
@@ -1571,7 +1581,7 @@ class ClickHouseInstance:
                 return
 
             self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
-            time.sleep(start_wait_sec)
+            time.sleep(stop_wait_sec)
             ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
             if ps_clickhouse != "  PID TTY      STAT   TIME COMMAND" :
                 logging.warning(f"Force kill clickhouse in stop_clickhouse. ps:{ps_clickhouse}")
@@ -1579,16 +1589,16 @@ class ClickHouseInstance:
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
-    def start_clickhouse(self, stop_wait_sec=5):
+    def start_clickhouse(self, start_wait_sec=30):
         if not self.stay_alive:
             raise Exception("clickhouse can be started again only with stay_alive=True instance")
 
         self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user=str(os.getuid()))
         # wait start
         from helpers.test_tools import assert_eq_with_retry
-        assert_eq_with_retry(self, "select 1", "1", retry_count=int(stop_wait_sec / 0.5), sleep_time=0.5)
+        assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
 
-    def restart_clickhouse(self, stop_start_wait_sec=15, kill=False):
+    def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 
@@ -1649,7 +1659,7 @@ class ClickHouseInstance:
                 return None
         return None
 
-    def restart_with_latest_version(self, stop_start_wait_sec=15, callback_onstop=None, signal=60):
+    def restart_with_latest_version(self, stop_start_wait_sec=60, callback_onstop=None, signal=60):
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
