@@ -32,7 +32,7 @@ CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
     output(output_),
     header(header_),
     constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK)),
-    expressions(constraints_.getExpressionsToCheck(context_, header.getNamesAndTypesList()))
+    expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
 {
 }
 

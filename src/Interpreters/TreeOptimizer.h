@@ -3,11 +3,8 @@
 #include <Interpreters/Aliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-<<<<<<< HEAD
 #include <Storages/IStorage_fwd.h>
-=======
 #include <Parsers/IAST_fwd.h>
->>>>>>> upstream/master
 
 namespace DB
 {
