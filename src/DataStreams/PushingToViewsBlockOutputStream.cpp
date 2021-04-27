@@ -91,6 +91,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto inner_metadata_snapshot = inner_table->getInMemoryMetadataPtr();
             query = dependent_metadata_snapshot->getSelectQuery().inner_query;
 
+            // StorageAggregatingMemory accepts pushed blocks without any transformations
             if (dynamic_cast<StorageAggregatingMemory *>(inner_table.get()))
             {
                 query = nullptr;

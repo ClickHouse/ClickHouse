@@ -14,12 +14,12 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 
-#include <Common/MultiVersion.h>
-
 namespace DB
 {
 
-/** TODO: describe this memory storage
+/** Special storage, allows incremental data aggregation in memory.
+  * Creates and stores all the data in the Aggregator,
+  * allowing reads and writes to it.
   */
 class StorageAggregatingMemory final : public ext::shared_ptr_helper<StorageAggregatingMemory>, public IStorage
 {
@@ -28,8 +28,6 @@ friend struct ext::shared_ptr_helper<StorageAggregatingMemory>;
 
 public:
     String getName() const override { return "AggregatingMemory"; }
-
-    size_t getSize() const { return data.get()->size(); }
 
     Pipe read(
         const Names & column_names,
@@ -49,27 +47,17 @@ public:
 
     void drop() override;
 
-    void mutate(const MutationCommands & commands, ContextPtr context) override;
-
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    std::optional<UInt64> totalRows(const Settings &) const override;
-    std::optional<UInt64> totalBytes(const Settings &) const override;
-
-    void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = false; }
+    // TODO implement totalRows and totalBytes using data from Aggregator (if possible)
+    // std::optional<UInt64> totalRows(const Settings &) const override;
+    // std::optional<UInt64> totalBytes(const Settings &) const override;
 
 private:
-    /// MultiVersion data storage, so that we can copy the list of blocks to readers.
-    MultiVersion<Blocks> data;
-
     mutable std::mutex mutex;
 
-    bool delay_read_for_global_subqueries = false;
-
-    std::atomic<size_t> total_size_bytes = 0;
-    std::atomic<size_t> total_size_rows = 0;
-
-    Block src_sample_block;
+    Block src_block_header;
+    StorageMetadataPtr src_metadata_snapshot;
 
     AggregatingTransformParamsPtr aggregator_transform;
 

@@ -909,7 +909,7 @@ public:
 
         const size_t min_free_disk_space;
 
-        /// Do not drop aggregator state after read, e.g. allowing more than one read of aggregation result.
+        /// Do not drop aggregator state after read, allowing more than one read of aggregation result.
         const bool keep_state_after_read;
 
         Params(

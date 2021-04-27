@@ -1088,8 +1088,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
-    // AggregatingMemory accepts AS SELECT query on creation, but does not require to fill table.
-    // TODO: figure out a better hack?
+    /// AggregatingMemory accepts AS SELECT query on creation, but does not require to fill table.
+    /// TODO figure out a better hack?
     if (create.storage && create.storage->engine && create.storage->engine->name == "AggregatingMemory")
     {
         return {};

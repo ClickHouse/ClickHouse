@@ -59,14 +59,11 @@ public:
     }
 
     // OutputStream structure is same as source (before aggregation).
-    Block getHeader() const override { return storage.src_sample_block; }
+    Block getHeader() const override { return storage.src_block_header; }
 
     void write(const Block & block) override
     {
-        // writeForDebug(block);
-
-        // TODO: metadata_snapshot->check
-        // TODO: update storage.total_size_bytes
+        storage.src_metadata_snapshot->check(block, true);
 
         Block block_for_aggregation(block);
 
@@ -85,33 +82,17 @@ public:
 
     // Used to run aggregation the usual way (via InterpreterSelectQuery),
     // and only purpose is to aid development.
-    // TODO: remove this.
+    // TODO remove this.
     void writeForDebug(const Block & block)
     {
         BlockInputStreamPtr in;
 
-        /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
-        ///
-        /// - We copy Context inside InterpreterSelectQuery to support
-        ///   modification of context (Settings) for subqueries
-        /// - InterpreterSelectQuery lives shorter than query pipeline.
-        ///   It's used just to build the query pipeline and no longer needed
-        /// - ExpressionAnalyzer and then, Functions, that created in InterpreterSelectQuery,
-        ///   **can** take a reference to Context from InterpreterSelectQuery
-        ///   (the problem raises only when function uses context from the
-        ///    execute*() method, like FunctionDictGet do)
-        /// - These objects live inside query pipeline (DataStreams) and the reference become dangling.
         std::optional<InterpreterSelectQuery> select;
 
         if (metadata_snapshot->hasSelectQuery())
         {
             auto query = metadata_snapshot->getSelectQuery();
 
-            /// We create a table with the same name as original table and the same alias columns,
-            ///  but it will contain single block (that is INSERT-ed into main table).
-            /// InterpreterSelectQuery will do processing of alias columns.
-
-            // TODO: seems like storage -> src_storage (block source)
             auto block_storage
                 = StorageValues::create(storage.getStorageID(), metadata_snapshot->getColumns(), block, storage.getVirtuals());
 
@@ -126,9 +107,6 @@ public:
 
             in = std::make_shared<MaterializingBlockInputStream>(select_result.getInputStream());
 
-            /// Squashing is needed here because the materialized view query can generate a lot of blocks
-            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
-            /// and two-level aggregation is triggered).
             in = std::make_shared<SquashingBlockInputStream>(
                 in, context->getSettingsRef().min_insert_block_size_rows, context->getSettingsRef().min_insert_block_size_bytes);
             in = std::make_shared<ConvertingBlockInputStream>(
@@ -142,36 +120,12 @@ public:
         while (Block result_block = in->read())
         {
             Nested::validateArraySizes(result_block);
-            new_blocks.emplace_back(result_block);
         }
 
         in->readSuffix();
     }
 
-    void writeSuffix() override
-    {
-        size_t inserted_bytes = 0;
-        size_t inserted_rows = 0;
-
-        for (const auto & block : new_blocks)
-        {
-            inserted_bytes += block.allocatedBytes();
-            inserted_rows += block.rows();
-        }
-
-        std::lock_guard lock(storage.mutex);
-
-        auto new_data = std::make_unique<Blocks>(*(storage.data.get()));
-        new_data->insert(new_data->end(), new_blocks.begin(), new_blocks.end());
-
-        storage.data.set(std::move(new_data));
-        storage.total_size_bytes.fetch_add(inserted_bytes, std::memory_order_relaxed);
-        storage.total_size_rows.fetch_add(inserted_rows, std::memory_order_relaxed);
-    }
-
 private:
-    Blocks new_blocks;
-
     StorageAggregatingMemory & storage;
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
@@ -183,7 +137,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     ConstraintsDescription constraints_,
     const ASTCreateQuery & query,
     ContextPtr context_)
-    : IStorage(table_id_), data(std::make_unique<const Blocks>())
+    : IStorage(table_id_)
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -191,7 +145,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     if (query.select->list_of_selects->children.size() != 1)
         throw Exception("UNION is not supported for AggregatingMemory", ErrorCodes::INCORRECT_QUERY);
 
-    // TODO: check GROUP BY inside this func
+    // TODO check validity of aggregation query inside this func
     auto select = SelectQueryDescription::getSelectQueryFromASTForAggr(query.select->clone());
     ASTPtr select_ptr = select.inner_query;
 
@@ -200,7 +154,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     /// Get info about source table.
     JoinedTables joined_tables(context_, select_ptr->as<ASTSelectQuery &>());
     StoragePtr source_storage = joined_tables.getLeftTableStorage();
-    auto source_columns = source_storage->getInMemoryMetadata().getColumns().getAll();
+    NamesAndTypesList source_columns = source_storage->getInMemoryMetadata().getColumns().getAll();
 
     ColumnsDescription columns_before_aggr;
     for (const auto & column : source_columns)
@@ -210,7 +164,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     }
 
     /// Get list of columns we get from select query.
-    auto header = InterpreterSelectQuery(select_ptr, *select_context, SelectQueryOptions().analyze()).getSampleBlock();
+    Block header = InterpreterSelectQuery(select_ptr, *select_context, SelectQueryOptions().analyze()).getSampleBlock();
 
     ColumnsDescription columns_after_aggr;
 
@@ -229,16 +183,16 @@ StorageAggregatingMemory::StorageAggregatingMemory(
 
     StorageInMemoryMetadata src_metadata;
     src_metadata.setColumns(std::move(columns_before_aggr));
-    src_sample_block = src_metadata.getSampleBlock();
+    src_block_header = src_metadata.getSampleBlock();
 
-    auto src_metadata_snapshot = std::make_shared<StorageInMemoryMetadata>(src_metadata);
+    src_metadata_snapshot = std::make_shared<StorageInMemoryMetadata>(src_metadata);
 
-    Names required_result_column_names; // TODO:
+    Names required_result_column_names;
 
     auto syntax_analyzer_result
         = TreeRewriter(*select_context)
               .analyzeSelect(
-                  select_ptr, TreeRewriterResult(src_sample_block.getNamesAndTypesList()), {}, {}, required_result_column_names, {});
+                  select_ptr, TreeRewriterResult(src_block_header.getNamesAndTypesList()), {}, {}, required_result_column_names, {});
 
     auto query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
         select_ptr,
@@ -249,9 +203,9 @@ StorageAggregatingMemory::StorageAggregatingMemory(
 
     const Settings & settings = (*select_context)->getSettingsRef();
 
-    analysis_result = ExpressionAnalysisResult(*query_analyzer, src_metadata_snapshot, false, false, false, nullptr, src_sample_block);
+    analysis_result = ExpressionAnalysisResult(*query_analyzer, src_metadata_snapshot, false, false, false, nullptr, src_block_header);
 
-    Block header_before_aggregation = src_sample_block;
+    Block header_before_aggregation = src_block_header;
     auto expression = analysis_result.before_aggregation;
     auto expression_actions = std::make_shared<ExpressionActions>(expression);
     expression_actions->execute(header_before_aggregation);
@@ -285,7 +239,7 @@ StorageAggregatingMemory::StorageAggregatingMemory(
     if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
     {
         AggregatingOutputStream os(*this, getInMemoryMetadataPtr(), context_);
-        os.write(src_sample_block);
+        os.write(src_block_header);
     }
 }
 
@@ -301,8 +255,8 @@ Pipe StorageAggregatingMemory::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
-    // TODO: allow parallel read? (num_streams)
-    // TODO: check if read by aggregation key is O(1)
+    // TODO allow parallel read (num_streams)
+    // TODO implement O(1) read by aggregation key
 
     auto prepared_data = aggregator_transform->aggregator.prepareVariantsToMerge(many_data->variants);
     auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
@@ -311,10 +265,11 @@ Pipe StorageAggregatingMemory::read(
         = std::make_shared<ConvertingAggregatedToChunksTransform>(aggregator_transform, std::move(prepared_data_ptr), num_streams);
 
     Pipe pipe(std::move(processor));
-    executeExpression(pipe, analysis_result.before_window); // TODO: add window
+    executeExpression(pipe, analysis_result.before_window);
+    // TODO add support for window expressions
     executeExpression(pipe, analysis_result.before_order_by);
     executeExpression(pipe, analysis_result.final_projection);
-    // TODO: implement ORDER BY? (quite hard)
+    // TODO implement ORDER BY? (quite hard)
 
     return pipe;
 }
@@ -325,109 +280,14 @@ BlockOutputStreamPtr StorageAggregatingMemory::write(const ASTPtr & /*query*/, c
     return out;
 }
 
-
 void StorageAggregatingMemory::drop()
 {
-    data.set(std::make_unique<Blocks>());
-    total_size_bytes.store(0, std::memory_order_relaxed);
-    total_size_rows.store(0, std::memory_order_relaxed);
-
-    // TODO: drop aggregator state?
+    // TODO drop aggregator state
 }
-
-static inline void updateBlockData(Block & old_block, const Block & new_block)
-{
-    for (const auto & it : new_block)
-    {
-        auto col_name = it.name;
-        auto & col_with_type_name = old_block.getByName(col_name);
-        col_with_type_name.column = it.column;
-    }
-}
-
-void StorageAggregatingMemory::mutate(const MutationCommands & commands, ContextPtr context)
-{
-    // TODO: mutate is not supported?
-
-    std::lock_guard lock(mutex);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto storage = getStorageID();
-    auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context, true);
-    auto in = interpreter->execute();
-
-    in->readPrefix();
-    Blocks out;
-    Block block;
-    while ((block = in->read()))
-    {
-        out.push_back(block);
-    }
-    in->readSuffix();
-
-    std::unique_ptr<Blocks> new_data;
-
-    // all column affected
-    if (interpreter->isAffectingAllColumns())
-    {
-        new_data = std::make_unique<Blocks>(out);
-    }
-    else
-    {
-        /// just some of the column affected, we need update it with new column
-        new_data = std::make_unique<Blocks>(*(data.get()));
-        auto data_it = new_data->begin();
-        auto out_it = out.begin();
-
-        while (data_it != new_data->end())
-        {
-            /// Mutation does not change the number of blocks
-            assert(out_it != out.end());
-
-            updateBlockData(*data_it, *out_it);
-            ++data_it;
-            ++out_it;
-        }
-
-        assert(out_it == out.end());
-    }
-
-    size_t rows = 0;
-    size_t bytes = 0;
-    for (const auto & buffer : *new_data)
-    {
-        rows += buffer.rows();
-        bytes += buffer.bytes();
-    }
-    total_size_bytes.store(rows, std::memory_order_relaxed);
-    total_size_rows.store(bytes, std::memory_order_relaxed);
-    data.set(std::move(new_data));
-}
-
 
 void StorageAggregatingMemory::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
-    data.set(std::make_unique<Blocks>());
-    total_size_bytes.store(0, std::memory_order_relaxed);
-    total_size_rows.store(0, std::memory_order_relaxed);
-
-    // TODO: clear aggregator state?
-}
-
-std::optional<UInt64> StorageAggregatingMemory::totalRows(const Settings &) const
-{
-    /// All modifications of these counters are done under mutex which automatically guarantees synchronization/consistency
-    /// When run concurrently we are fine with any value: "before" or "after"
-    return total_size_rows.load(std::memory_order_relaxed);
-
-    // TODO: get info from aggregator?
-}
-
-std::optional<UInt64> StorageAggregatingMemory::totalBytes(const Settings &) const
-{
-    return total_size_bytes.load(std::memory_order_relaxed);
-
-    // TODO: get info from aggregator?
+    // TODO clear aggregator state
 }
 
 void registerStorageAggregatingMemory(StorageFactory & factory)
@@ -442,7 +302,7 @@ void registerStorageAggregatingMemory(StorageFactory & factory)
         return StorageAggregatingMemory::create(args.table_id, args.constraints, args.query, args.getLocalContext());
     },
     {
-        .supports_parallel_insert = true, // TODO: not sure
+        .supports_parallel_insert = true, // TODO not sure
     });
 }
 
