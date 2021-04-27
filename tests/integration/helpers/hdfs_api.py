@@ -157,15 +157,15 @@ class HDFSApi(object):
             self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override=self.host, principal=self.principal)
             # print(self.kerberos_auth)
 
-            response = self.req_wrapper(requests.put, 307,
-                                   url="{protocol}://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(
-                                       protocol=self.protocol, host=self.host,
-                                       port=self.proxy_port,
-                                       path=path, user=self.user),
-                                   allow_redirects=False,
-                                   headers={'host': 'localhost'},
-                                   params={'overwrite' : 'true'},
-                                   verify=False, auth=self.kerberos_auth
+        response = self.req_wrapper(requests.put, 307,
+                                    url="{protocol}://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(
+                                        protocol=self.protocol, host=self.host,
+                                        port=self.proxy_port,
+                                        path=path, user=self.user),
+                                    allow_redirects=False,
+                                    headers={'host': 'localhost'},
+                                    params={'overwrite' : 'true'},
+                                    verify=False, auth=self.kerberos_auth
             )
         additional_params = '&'.join(
             response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
