@@ -178,11 +178,6 @@ Pipe StorageDictionary::read(
     return Pipe(std::make_shared<SourceFromInputStream>(stream));
 }
 
-void StorageDictionary::drop()
-{
-    removeDictionaryConfigurationFromRepository();
-}
-
 void StorageDictionary::shutdown()
 {
     removeDictionaryConfigurationFromRepository();

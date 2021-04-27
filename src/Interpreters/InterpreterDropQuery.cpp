@@ -166,10 +166,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
             {
                 /// If DROP DICTIONARY query is not used, check if Dictionary can be dropped with DROP TABLE query
                 if (!query.is_dictionary)
-                    table->checkTableCanBeDropped();
+                    table->checkTableCanBeDetached();
             }
             else
-                table->checkTableCanBeDropped();
+                table->checkTableCanBeDetached();
 
             table->shutdown();
             TableExclusiveLockHolder table_lock;
@@ -190,9 +190,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         }
         else if (query.kind == ASTDropQuery::Kind::Truncate)
         {
-            if (table->isDictionary())
-                throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
-
             getContext()->checkAccess(AccessType::TRUNCATE, table_id);
 
             table->checkTableCanBeDropped();
@@ -322,8 +319,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             if (database->shouldBeEmptyOnDetach())
             {
-                /// TODO: Check if dictionarise should be removed first
-
                 ASTDropQuery query_for_table;
                 query_for_table.kind = query.kind;
                 query_for_table.if_exists = true;
