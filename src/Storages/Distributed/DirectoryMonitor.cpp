@@ -479,11 +479,10 @@ std::map<UInt64, std::string> StorageDistributedDirectoryMonitor::getFiles()
     for (fs::directory_iterator it{path}; it != end; ++it)
     {
         const auto & file_path_str = it->path();
-        fs::path fs_file_path(file_path_str);
-        if (!it->is_directory() && startsWith(fs_file_path.extension(), ".bin"))
+        if (!it->is_directory() && startsWith(fs::path(file_path_str).extension(), ".bin"))
         {
-            files[parse<UInt64>(fs_file_path.stem())] = file_path_str;
-            new_bytes_count += fs::file_size(fs_file_path);
+            files[parse<UInt64>(fs::path(file_path_str).stem())] = file_path_str;
+            new_bytes_count += fs::file_size(fs::path(file_path_str));
         }
     }
 
