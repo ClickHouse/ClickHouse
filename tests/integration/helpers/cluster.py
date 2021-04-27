@@ -323,6 +323,45 @@ class ClickHouseCluster:
         self.is_up = False
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
 
+    def cleanup(self):
+        # Just in case kill unstopped containers from previous launch
+        try:
+            logging.debug("Trying to kill unstopped containers...")
+            subprocess_call(['docker', 'kill', f'`docker container list -a -f name={self.project_name}`'])
+            subprocess_call(['docker', 'rm', f'`docker container list -a -f name={self.project_name}`'])
+            logging.debug("Unstopped containers killed")
+            subprocess_call(['docker-compose', 'ps', '--services', '--all'])
+        except:
+            pass
+
+        # # Just in case remove unused networks
+        # try:
+        #     logging.debug("Trying to prune unused networks...")
+
+        #     subprocess_call(['docker', 'network', 'prune', '-f'])
+        #     logging.debug("Networks pruned")
+        # except:
+        #     pass
+
+        # Remove unused containers
+        try:
+            logging.debug("Trying to prune unused containers...")
+
+            subprocess_call(['docker', 'container', 'prune', '-f'])
+            logging.debug("Networks pruned")
+        except:
+            pass
+
+        # Remove unused volumes
+        try:
+            logging.debug("Trying to prune unused volumes...")
+
+            subprocess_call(['docker', 'volume', 'prune', '-f'])
+            logging.debug("Volumes pruned")
+        except:
+            pass
+
+
     def get_docker_handle(self, docker_id):
         return self.docker_client.containers.get(docker_id)
 
@@ -1009,26 +1048,10 @@ class ClickHouseCluster:
         if self.is_up:
             return
 
-        # Just in case kill unstopped containers from previous launch
         try:
-            logging.debug("Trying to kill unstopped containers...")
-
-            if not subprocess_call(['docker-compose', 'kill']):
-                subprocess_call(['docker-compose', 'down', '--volumes'])
-            logging.debug("Unstopped containers killed")
-            subprocess_call(['docker-compose', 'ps', '--services', '--all'])
-
-        except:
-            pass
-
-        # # Just in case remove unused networks
-        # try:
-        #     logging.debug("Trying to prune unused networks...")
-
-        #     subprocess_call(['docker', 'network', 'prune', '-f'])
-        #     logging.debug("Networks pruned")
-        # except:
-        #     pass
+            self.cleanup()
+        except Exception as e:
+            logging.warning("Cleanup failed:{e}")
 
         try:
             # clickhouse_pull_cmd = self.base_cmd + ['pull']
