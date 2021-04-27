@@ -232,7 +232,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     {
         if (exchange)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Use EXCHANGE DICTIONARIES for dictionaries and EXCAHNGE TABLES for tables.");
+                "Use EXCHANGE DICTIONARIES for dictionaries and EXCHANGE TABLES for tables.");
         else
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Use RENAME DICTIONARY for dictionaries and RENAME TABLE for tables.");
