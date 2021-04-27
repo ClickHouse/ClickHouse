@@ -79,7 +79,6 @@ private:
 
     void removeDictionaryConfigurationFromRepository();
 
-protected:
     StorageDictionary(
         const StorageID & table_id_,
         const String & dictionary_name_,
