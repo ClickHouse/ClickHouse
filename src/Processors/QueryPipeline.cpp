@@ -96,6 +96,12 @@ void QueryPipeline::addTransform(ProcessorPtr transform)
     pipe.addTransform(std::move(transform));
 }
 
+void QueryPipeline::addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes)
+{
+    checkInitializedAndNotCompleted();
+    pipe.addTransform(std::move(transform), totals, extremes);
+}
+
 void QueryPipeline::transform(const Transformer & transformer)
 {
     checkInitializedAndNotCompleted();

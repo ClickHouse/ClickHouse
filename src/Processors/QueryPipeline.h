@@ -52,6 +52,7 @@ public:
     void addSimpleTransform(const Pipe::ProcessorGetterWithStreamKind & getter);
     /// Add transform with getNumStreams() input ports.
     void addTransform(ProcessorPtr transform);
+    void addTransform(ProcessorPtr transform, InputPort * totals, InputPort * extremes);
 
     using Transformer = std::function<Processors(OutputPortRawPtrs ports)>;
     /// Transform pipeline in general way.
