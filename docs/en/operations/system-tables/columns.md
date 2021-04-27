@@ -4,7 +4,9 @@ Contains information about columns in all the tables.
 
 You can use this table to get information similar to the [DESCRIBE TABLE](../../sql-reference/statements/misc.md#misc-describe-table) query, but for multiple tables at once.
 
-The `system.columns` table contains the following columns (the column type is shown in brackets):
+Columns from [temporary tables](../../sql-reference/statements/create/table.md#temporary-tables) are visible in the `system.columns` only in those session where they have been created. They are shown with the empty `database` field. 
+
+Columns:
 
 -   `database` ([String](../../sql-reference/data-types/string.md)) — Database name.
 -   `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
@@ -22,5 +24,49 @@ The `system.columns` table contains the following columns (the column type is sh
 -   `is_in_primary_key` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the column is in the primary key expression.
 -   `is_in_sampling_key` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the column is in the sampling key expression.
 -   `compression_codec` ([String](../../sql-reference/data-types/string.md)) — Compression codec name.
+
+**Example**
+
+```sql
+SELECT * FROM system.columns LIMIT 2 FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+database:                system
+table:                   aggregate_function_combinators
+name:                    name
+type:                    String
+default_kind:            
+default_expression:      
+data_compressed_bytes:   0
+data_uncompressed_bytes: 0
+marks_bytes:             0
+comment:                 
+is_in_partition_key:     0
+is_in_sorting_key:       0
+is_in_primary_key:       0
+is_in_sampling_key:      0
+compression_codec:       
+
+Row 2:
+──────
+database:                system
+table:                   aggregate_function_combinators
+name:                    is_internal
+type:                    UInt8
+default_kind:            
+default_expression:      
+data_compressed_bytes:   0
+data_uncompressed_bytes: 0
+marks_bytes:             0
+comment:                 
+is_in_partition_key:     0
+is_in_sorting_key:       0
+is_in_primary_key:       0
+is_in_sampling_key:      0
+compression_codec:       
+```
 
 [Original article](https://clickhouse.tech/docs/en/operations/system_tables/columns) <!--hide-->

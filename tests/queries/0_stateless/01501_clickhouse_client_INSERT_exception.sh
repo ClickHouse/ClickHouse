@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS data"
@@ -11,5 +12,8 @@ ${CLICKHOUSE_CLIENT} --input_format_parallel_parsing=0 -q "INSERT INTO data SELE
 # well for TSV it is ok, but for RowBinary:
 #   Code: 33. DB::Exception: Cannot read all data. Bytes read: 1. Bytes expected: 4.
 # so check that the exception message contain the data source.
-${CLICKHOUSE_CLIENT} --input_format_parallel_parsing=0 -q "INSERT INTO data FORMAT TSV " <<<2 |& grep -F -c 'data for INSERT was parsed from query'
+${CLICKHOUSE_CLIENT} --input_format_parallel_parsing=0 -q "INSERT INTO data FORMAT TSV
+ " <<<2 |& grep -F -c 'data for INSERT was parsed from query'
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM data"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE data"

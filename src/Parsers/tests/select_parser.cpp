@@ -22,7 +22,7 @@ try
         " INTO OUTFILE 'test.out'"
         " FORMAT TabSeparated";
 
-    ParserQueryWithOutput parser;
+    ParserQueryWithOutput parser(input.data() + input.size());
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
     std::cout << "Success." << std::endl;

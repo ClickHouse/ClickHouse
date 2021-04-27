@@ -2,7 +2,6 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
 #include <mutex>
@@ -10,6 +9,7 @@
 #include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
+#include <Storages/RabbitMQ/UVLoop.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -21,14 +21,13 @@ namespace DB
 
 using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
-class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage
+class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
 {
     friend struct ext::shared_ptr_helper<StorageRabbitMQ>;
 
 public:
     std::string getName() const override { return "RabbitMQ"; }
 
-    bool supportsSettings() const override { return true; }
     bool noPushingToViews() const override { return true; }
 
     void startup() override;
@@ -39,7 +38,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        const Context & context,
+        ContextPtr context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -47,7 +46,7 @@ public:
     BlockOutputStreamPtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
-        const Context & context) override;
+        ContextPtr context) override;
 
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();
@@ -58,22 +57,22 @@ public:
     const String & getFormatName() const { return format_name; }
     NamesAndTypesList getVirtuals() const override;
 
-    const String getExchange() const { return exchange_name; }
+    String getExchange() const { return exchange_name; }
     void unbindExchange();
     bool exchangeRemoved() { return exchange_removed.load(); }
 
-    void updateChannel(ChannelPtr & channel);
+    bool updateChannel(ChannelPtr & channel);
+    void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
 
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
-            const Context & context_,
+            ContextPtr context_,
             const ColumnsDescription & columns_,
             std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
 
 private:
-    const Context & global_context;
-    std::shared_ptr<Context> rabbitmq_context;
+    ContextPtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;
 
     const String exchange_name;
@@ -93,8 +92,9 @@ private:
     String address;
     std::pair<String, UInt16> parsed_address;
     std::pair<String, String> login_password;
+    String vhost;
 
-    std::unique_ptr<uv_loop_t> loop;
+    UVLoop loop;
     std::shared_ptr<RabbitMQHandler> event_handler;
     std::unique_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
 
@@ -112,7 +112,7 @@ private:
     size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
     std::atomic<size_t> producer_id = 1; /// counter for producer buffer, needed for channel id
     std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
-    std::atomic<bool> exchange_removed = false;
+    std::atomic<bool> exchange_removed = false, rabbit_is_ready = false;
     ChannelPtr setup_channel;
     std::vector<String> queues;
 
@@ -120,6 +120,7 @@ private:
     std::mutex task_mutex;
     BackgroundSchedulePool::TaskHolder streaming_task;
     BackgroundSchedulePool::TaskHolder looping_task;
+    BackgroundSchedulePool::TaskHolder connection_task;
 
     std::atomic<bool> stream_cancelled{false};
     size_t read_attempts = 0;
@@ -128,17 +129,18 @@ private:
 
     /// Functions working in the background
     void streamingToViewsFunc();
-    void heartbeatFunc();
     void loopingFunc();
+    void connectionFunc();
 
     static Names parseRoutingKeys(String routing_key_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    std::shared_ptr<Context> addSettings(const Context & context) const;
+    std::shared_ptr<Context> addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
+    void initRabbitMQ();
     void initExchange();
     void bindExchange();
     void bindQueue(size_t queue_id);

@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 
-
-
 import datetime
 import decimal
 import os
-import subprocess
 import sys
 import time
 import uuid
@@ -14,7 +11,7 @@ import docker
 import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
 psycopg2.extras.register_uuid()
 
@@ -42,7 +39,7 @@ def server_address():
 @pytest.fixture(scope='module')
 def psql_client():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgesql.yml')
-    subprocess.check_call(
+    run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_psql_1')
 
@@ -66,7 +63,7 @@ def psql_server(psql_client):
 @pytest.fixture(scope='module')
 def java_container():
     docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_postgesql_java_client.yml')
-    subprocess.check_call(
+    run_and_check(
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
     yield docker.from_env().containers.get(cluster.project_name + '_java_1')
 
@@ -120,7 +117,7 @@ def test_python_client(server_address):
         cur.execute('select name from tables;')
 
     assert exc_info.value.args == (
-        "Query execution failed.\nDB::Exception: Table default.tables doesn't exist.\nSSL connection has been closed unexpectedly\n",)
+        "Query execution failed.\nDB::Exception: Table default.tables doesn't exist\nSSL connection has been closed unexpectedly\n",)
 
     ch = py_psql.connect(host=server_address, port=server_port, user='default', password='123', database='')
     cur = ch.cursor()

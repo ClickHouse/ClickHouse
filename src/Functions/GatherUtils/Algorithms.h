@@ -50,9 +50,9 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
                 throw Exception("No conversion between UInt128 and " + demangle(typeid(T).name()), ErrorCodes::NOT_IMPLEMENTED);
             }
             else if constexpr (IsDecimalNumber<T>)
-                dst = bigint_cast<NativeU>(src.value);
+                dst = static_cast<NativeU>(src.value);
             else
-                dst = bigint_cast<NativeU>(src);
+                dst = static_cast<NativeU>(src);
         }
         else
             dst = static_cast<NativeU>(src);
@@ -82,7 +82,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
         sink.current_offset += slice.size;
     }
     else
-        throw Exception("Function writeSlice expect same column types for GenericArraySlice and GenericArraySink.",
+        throw Exception("Function writeSlice expects same column types for GenericArraySlice and GenericArraySink.",
                         ErrorCodes::LOGICAL_ERROR);
 }
 
@@ -162,7 +162,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, GenericArr
         ++sink.current_offset;
     }
     else
-        throw Exception("Function writeSlice expect same column types for GenericValueSlice and GenericArraySink.",
+        throw Exception("Function writeSlice expects same column types for GenericValueSlice and GenericArraySink.",
                         ErrorCodes::LOGICAL_ERROR);
 }
 
@@ -342,7 +342,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1);
             else
-                slice = src.getSliceFromRight(-offset);
+                slice = src.getSliceFromRight(-static_cast<UInt64>(offset));
 
             writeSlice(slice, sink);
         }
@@ -374,7 +374,7 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
         Int64 size = has_length ? length_nested_column->getInt(row_num) : static_cast<Int64>(src.getElementSize());
 
         if (size < 0)
-            size += offset > 0 ? static_cast<Int64>(src.getElementSize()) - (offset - 1) : -offset;
+            size += offset > 0 ? static_cast<Int64>(src.getElementSize()) - (offset - 1) : -UInt64(offset);
 
         if (offset != 0 && size > 0)
         {
@@ -383,7 +383,7 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1, size);
             else
-                slice = src.getSliceFromRight(-offset, size);
+                slice = src.getSliceFromRight(-UInt64(offset), size);
 
             writeSlice(slice, sink);
         }
@@ -465,7 +465,7 @@ std::vector<size_t> buildKMPPrefixFunction(const SliceType & pattern, const Equa
     for (size_t i = 1; i < pattern.size; ++i)
     {
         result[i] = 0;
-        for (auto length = i; length > 0;)
+        for (size_t length = i; length > 0;)
         {
             length = result[length - 1];
             if (isEqualFunc(pattern, i, length))
@@ -609,7 +609,7 @@ bool sliceHas(const GenericArraySlice & first, const GenericArraySlice & second)
 {
     /// Generic arrays should have the same type in order to use column.compareAt(...)
     if (!first.elements->structureEquals(*second.elements))
-        return false;
+        throw Exception("Function sliceHas expects same column types for slices.", ErrorCodes::LOGICAL_ERROR);
 
     auto impl = sliceHasImpl<search_type, GenericArraySlice, GenericArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, nullptr, nullptr);
@@ -670,7 +670,7 @@ void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnU
     auto & data = result.getData();
     for (auto row : ext::range(0, size))
     {
-        data[row] = static_cast<UInt8>(sliceHas<search_type>(first.getWhole(), second.getWhole()) ? 1 : 0);
+        data[row] = static_cast<UInt8>(sliceHas<search_type>(first.getWhole(), second.getWhole()));
         first.next();
         second.next();
     }
@@ -695,7 +695,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
 
             if (size >= 0)
             {
-                auto length = static_cast<size_t>(size);
+                size_t length = static_cast<size_t>(size);
                 if (length > MAX_ARRAY_SIZE)
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                         length, MAX_ARRAY_SIZE);
@@ -711,7 +711,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
             }
             else
             {
-                auto length = static_cast<size_t>(-size);
+                size_t length = -static_cast<size_t>(size);
                 if (length > MAX_ARRAY_SIZE)
                     throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                         length, MAX_ARRAY_SIZE);
@@ -744,7 +744,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
 
         if (size >= 0)
         {
-            auto length = static_cast<size_t>(size);
+            size_t length = static_cast<size_t>(size);
             if (length > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                     length, MAX_ARRAY_SIZE);
@@ -760,7 +760,7 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
         }
         else
         {
-            auto length = static_cast<size_t>(-size);
+            size_t length = -static_cast<size_t>(size);
             if (length > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size: {}, maximum: {}",
                     length, MAX_ARRAY_SIZE);

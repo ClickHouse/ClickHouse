@@ -17,14 +17,15 @@ public:
     void start() override { tcp_server->start(); }
     void stop() override { tcp_server->stop(); }
     size_t currentConnections() const override { return tcp_server->currentConnections(); }
+    size_t currentThreads() const override { return tcp_server->currentThreads(); }
 
 private:
     std::unique_ptr<Poco::Net::TCPServer> tcp_server;
 };
 
-ProtocolServerAdapter::ProtocolServerAdapter(std::unique_ptr<Poco::Net::TCPServer> tcp_server_)
+ProtocolServerAdapter::ProtocolServerAdapter(const char * port_name_, std::unique_ptr<Poco::Net::TCPServer> tcp_server_)
+    : port_name(port_name_), impl(std::make_unique<TCPServerAdapterImpl>(std::move(tcp_server_)))
 {
-    impl = std::make_unique<TCPServerAdapterImpl>(std::move(tcp_server_));
 }
 
 #if USE_GRPC
@@ -37,14 +38,15 @@ public:
     void start() override { grpc_server->start(); }
     void stop() override { grpc_server->stop(); }
     size_t currentConnections() const override { return grpc_server->currentConnections(); }
+    size_t currentThreads() const override { return grpc_server->currentThreads(); }
 
 private:
     std::unique_ptr<GRPCServer> grpc_server;
 };
 
-ProtocolServerAdapter::ProtocolServerAdapter(std::unique_ptr<GRPCServer> grpc_server_)
+ProtocolServerAdapter::ProtocolServerAdapter(const char * port_name_, std::unique_ptr<GRPCServer> grpc_server_)
+    : port_name(port_name_), impl(std::make_unique<GRPCServerAdapterImpl>(std::move(grpc_server_)))
 {
-    impl = std::make_unique<GRPCServerAdapterImpl>(std::move(grpc_server_));
 }
 #endif
 }

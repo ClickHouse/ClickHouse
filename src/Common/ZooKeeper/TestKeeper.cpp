@@ -31,7 +31,6 @@ using Undo = std::function<void()>;
 
 struct TestKeeperRequest : virtual Request
 {
-    virtual bool isMutable() const { return false; }
     virtual ResponsePtr createResponse() const = 0;
     virtual std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const = 0;
     virtual void processWatches(TestKeeper::Watches & /*watches*/, TestKeeper::Watches & /*list_watches*/) const {}
@@ -85,7 +84,6 @@ struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 {
     TestKeeperRemoveRequest() = default;
     explicit TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
-    bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
@@ -112,7 +110,6 @@ struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 {
     TestKeeperSetRequest() = default;
     explicit TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
-    bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     std::pair<ResponsePtr, Undo> process(TestKeeper::Container & container, int64_t zxid) const override;
 
@@ -216,7 +213,6 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
             if (is_sequential)
             {
                 auto seq_num = it->second.seq_num;
-                ++it->second.seq_num;
 
                 std::stringstream seq_num_str;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
                 seq_num_str.exceptions(std::ios::failbit);
@@ -225,18 +221,19 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
                 path_created += seq_num_str.str();
             }
 
+            /// Increment sequential number even if node is not sequential
+            ++it->second.seq_num;
+
             response.path_created = path_created;
             container.emplace(path_created, std::move(created_node));
 
-            undo = [&container, path_created, is_sequential = is_sequential, parent_path = it->first]
+            undo = [&container, path_created, parent_path = it->first]
             {
                 container.erase(path_created);
                 auto & undo_parent = container.at(parent_path);
                 --undo_parent.stat.cversion;
                 --undo_parent.stat.numChildren;
-
-                if (is_sequential)
-                    --undo_parent.seq_num;
+                --undo_parent.seq_num;
             };
 
             ++it->second.stat.cversion;
@@ -424,26 +421,38 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
 
     try
     {
-        for (const auto & request : requests)
+        auto request_it = requests.begin();
+        response.error = Error::ZOK;
+        while (request_it != requests.end())
         {
-            const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(*request);
+            const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(**request_it);
+            ++request_it;
             auto [ cur_response, undo_action ] = concrete_request.process(container, zxid);
             response.responses.emplace_back(cur_response);
             if (cur_response->error != Error::ZOK)
             {
                 response.error = cur_response->error;
-
-                for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
-                    if (*it)
-                        (*it)();
-
-                return { std::make_shared<MultiResponse>(response), {} };
+                break;
             }
-            else
-                undo_actions.emplace_back(std::move(undo_action));
+
+            undo_actions.emplace_back(std::move(undo_action));
         }
 
-        response.error = Error::ZOK;
+        if (response.error != Error::ZOK)
+        {
+            for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
+                if (*it)
+                    (*it)();
+
+            while (request_it != requests.end())
+            {
+                const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(**request_it);
+                ++request_it;
+                response.responses.emplace_back(concrete_request.createResponse());
+                response.responses.back()->error = Error::ZRUNTIMEINCONSISTENCY;
+            }
+        }
+
         return { std::make_shared<MultiResponse>(response), {} };
     }
     catch (...)

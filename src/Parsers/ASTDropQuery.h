@@ -33,6 +33,9 @@ public:
 
     bool no_delay{false};
 
+    // We detach the object permanently, so it will not be reattached back during server restart.
+    bool permanently{false};
+
     /** Get the text that identifies this element. */
     String getID(char) const override;
     ASTPtr clone() const override;

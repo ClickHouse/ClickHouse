@@ -299,7 +299,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (type == ADD_COLUMN)
     {
@@ -320,7 +320,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         metadata.columns.add(column, after_column, first);
 
         /// Slow, because each time a list is copied
-        metadata.columns.flattenNested();
+        if (context->getSettingsRef().flatten_nested)
+            metadata.columns.flattenNested();
     }
     else if (type == DROP_COLUMN)
     {
@@ -701,7 +702,7 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!isRequireMutationStage(metadata))
         return {};
@@ -787,12 +788,13 @@ String alterTypeToString(const AlterCommand::Type type)
     __builtin_unreachable();
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
         throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
     auto metadata_copy = metadata;
+
     for (const AlterCommand & command : *this)
         if (!command.ignore)
             command.apply(metadata_copy, context);
@@ -823,6 +825,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
 
     /// Changes in columns may lead to changes in TTL expressions.
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
+    metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
         auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, metadata_copy.columns, context, metadata_copy.primary_key);
@@ -830,7 +833,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & co
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
-        metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+        metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
             metadata_copy.table_ttl.definition_ast, metadata_copy.columns, context, metadata_copy.primary_key);
 
     metadata = std::move(metadata_copy);
@@ -877,7 +880,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     prepared = true;
 }
 
-void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
@@ -904,7 +907,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::BAD_ARGUMENTS};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs);
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -924,7 +927,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::NOT_IMPLEMENTED};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs);
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
             {
@@ -1169,7 +1172,7 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, const Context & context) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)

@@ -4,10 +4,19 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithAlias.h>
-
+#include <Storages/ColumnsDescription.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int THERE_IS_NO_DEFAULT_VALUE;
+}
 
 ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
 {
@@ -22,5 +31,24 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
 
     return func;
 }
+
+ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, ContextPtr context)
+{
+    auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, all_columns);
+    const auto actions = ExpressionAnalyzer(ast, syntax_analyzer_result, context).getActions(true);
+
+    for (const auto & action : actions->getActions())
+        if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+
+    auto block = actions->getSampleBlock();
+
+    auto desc_type =  block.getByName(ast->getColumnName()).type;
+    if (desc_type->getName() != type_name)
+        return addTypeConversionToAST(std::move(ast), type_name);
+
+    return std::move(ast);
+}
+
 
 }

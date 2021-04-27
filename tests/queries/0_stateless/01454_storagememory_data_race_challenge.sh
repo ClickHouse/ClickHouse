@@ -3,6 +3,7 @@
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS mem"
@@ -37,3 +38,5 @@ export -f g;
 timeout 30 bash -c f > /dev/null &
 timeout 30 bash -c g > /dev/null &
 wait
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE mem"

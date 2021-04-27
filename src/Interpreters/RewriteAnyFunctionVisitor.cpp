@@ -38,8 +38,16 @@ bool extractIdentifiers(const ASTFunction & func, std::unordered_set<ASTPtr *> &
             if (arg_func->name == "lambda")
                 return false;
 
-            if (AggregateFunctionFactory::instance().isAggregateFunctionName(arg_func->name))
+            // We are looking for identifiers inside a function calculated inside
+            // the aggregate function `any()`. Window or aggregate function can't
+            // be inside `any`, but this check in GetAggregatesMatcher happens
+            // later, so we have to explicitly skip these nested functions here.
+            if (arg_func->is_window_function
+                || AggregateFunctionFactory::instance().isAggregateFunctionName(
+                    arg_func->name))
+            {
                 return false;
+            }
 
             if (!extractIdentifiers(*arg_func, identifiers))
                 return false;
@@ -62,13 +70,16 @@ void RewriteAnyFunctionMatcher::visit(ASTPtr & ast, Data & data)
 
 void RewriteAnyFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
-    if (func.arguments->children.empty() || !func.arguments->children[0])
+    if (!func.arguments || func.arguments->children.empty() || !func.arguments->children[0])
         return;
 
     if (func.name != "any" && func.name != "anyLast")
         return;
 
     auto & func_arguments = func.arguments->children;
+
+    if (func_arguments.size() != 1)
+        return;
 
     const auto * first_arg_func = func_arguments[0]->as<ASTFunction>();
     if (!first_arg_func || first_arg_func->arguments->children.empty())

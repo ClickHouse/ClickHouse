@@ -15,10 +15,11 @@ protected:
     bool got_exception = false;
     Port::Data current_chunk;
 
-    virtual Chunk generate() = 0;
+    virtual Chunk generate();
+    virtual std::optional<Chunk> tryGenerate();
 
 public:
-    ISource(Block header);
+    explicit ISource(Block header);
 
     Status prepare() override;
     void work() override;

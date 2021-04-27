@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <common/sleep.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -35,7 +36,7 @@ class FunctionSleep : public IFunction
 {
 public:
     static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionSleep<variant>>();
     }
@@ -78,8 +79,8 @@ public:
 
         Float64 seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), assert_cast<const ColumnConst &>(*col).getField());
 
-        if (seconds < 0)
-            throw Exception("Cannot sleep negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
+        if (seconds < 0 || !std::isfinite(seconds))
+            throw Exception("Cannot sleep infinite or negative amount of time (not implemented)", ErrorCodes::BAD_ARGUMENTS);
 
         size_t size = col->size();
 

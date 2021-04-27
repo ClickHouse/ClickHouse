@@ -92,7 +92,7 @@ namespace ErrorCodes
 }
 
 
-std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum stage)
+std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextPtr context, const SelectQueryOptions & options)
 {
     OpenTelemetrySpanHolder span("InterpreterFactory::get()");
 
@@ -102,17 +102,17 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
-        return std::make_unique<InterpreterSelectQuery>(query, context, SelectQueryOptions(stage));
+        return std::make_unique<InterpreterSelectQuery>(query, context, options);
     }
     else if (query->as<ASTSelectWithUnionQuery>())
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
-        return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, SelectQueryOptions(stage));
+        return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, options);
     }
     else if (query->as<ASTInsertQuery>())
     {
         ProfileEvents::increment(ProfileEvents::InsertQuery);
-        bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
+        bool allow_materialized = static_cast<bool>(context->getSettingsRef().insert_allow_materialized_columns);
         return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
     }
     else if (query->as<ASTCreateQuery>())
@@ -148,7 +148,15 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterOptimizeQuery>(query, context);
     }
+    else if (query->as<ASTExistsDatabaseQuery>())
+    {
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
     else if (query->as<ASTExistsTableQuery>())
+    {
+        return std::make_unique<InterpreterExistsQuery>(query, context);
+    }
+    else if (query->as<ASTExistsViewQuery>())
     {
         return std::make_unique<InterpreterExistsQuery>(query, context);
     }
@@ -157,6 +165,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         return std::make_unique<InterpreterExistsQuery>(query, context);
     }
     else if (query->as<ASTShowCreateTableQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateViewQuery>())
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }

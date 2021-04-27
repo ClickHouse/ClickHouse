@@ -16,7 +16,7 @@
 
 `context.setSetting` - для выставления `max_memory_usage` и других.
 
-## Битовые операции для FixedString.
+## + Битовые операции для FixedString.
 
 bitAnd, bitOr, bitNot, bitXor для значения типа FixedString, интерпретируемого как набор бит.
 
@@ -26,7 +26,7 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 ```
 Потом используйте их в вашей функции.
 
-## Добавить generic вариант функций least, greatest.
+## + Добавить generic вариант функций least, greatest.
 
 `SELECT least(123, 456)` - работает.
 
@@ -38,7 +38,7 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 
 Смотрим, что все файлы в прикрепляемых кусках от правильного пользователя.
 
-## COLLATE должно работать для Nullable(String).
+## + COLLATE должно работать для Nullable(String).
 
 В ClickHouse есть возможность указать collation для сортировки строк. Это не работает для `Nullable(String)`.
 
@@ -46,13 +46,13 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 
 Состояния агрегатных функций могут быть записаны в дамп и считаны из него. Но десериализация состояний агрегатных функций небезопасна. Аккуратно выбранные пользовательские данные могут привести к segfault или порче памяти. Поэтому нужно просто сделать настройку, которая запрещает читать AggregateFunction из пользовательских данных.
 
-## В статистику jemalloc добавить информацию по arenas.
+## + В статистику jemalloc добавить информацию по arenas.
 
 В `system.asynchronous_metrics` - суммарный размер арен.
 
 # Более сложные задачи
 
-## Layout внешних словарей "direct".
+## + Layout внешних словарей "direct".
 
 Как cache, но без кэша — всегда прямой запрос в источник.
 
@@ -60,7 +60,7 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 
 ## Агрегатные функции для статистических тестов (e.g. тест нормальности распределения) и статистик.
 
-## Функции создания и обновления состояния агрегатной функции по одному кортежу аргументов.
+## + Функции создания и обновления состояния агрегатной функции по одному кортежу аргументов.
 
 В ClickHouse есть понятие - состояние вычисления агрегатной функции. Состояния агрегатных функций можно записывать в таблицы, складывать, финализировать и т. п. https://clickhouse.yandex/docs/ru/data_types/nested_data_structures/aggregatefunction/
 
@@ -85,7 +85,7 @@ void memoryBitAnd(const char * a, const char * b, char * result, size_t size);
 
 `changeYear(datetime, 2019)`
 
-## Исправить мерцание прогресс-бара в clickhouse-client.
+## + Исправить мерцание прогресс-бара в clickhouse-client.
 
 Это заметно при работе с серверами с большим пингом.
 Прогресс бар не должен мерцать.
@@ -107,15 +107,15 @@ https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_da
 
 position с конца строки.
 
-## Функция indexOf должна поддерживать Enum-ы без cast-а.
+## + Функция indexOf должна поддерживать Enum-ы без cast-а.
 
 `indexOf(arr, 'hello')`, `indexOf(arr, 1)` должны работать, если arr имеет тип `Array(Enum8('hello' = 1, 'world' = 2))`
 
-## Комбинатор агрегатных функций Distinct.
+## + Комбинатор агрегатных функций Distinct.
 
 Пример: `avgDistinct(x)` - вычислить среднее по всем различным переданным значениям.
 
-## Метрики количества ошибок.
+## + Метрики количества ошибок.
 
 Добавляем счётчики всех ошибок (ErrorCodes) по аналогии с ProfileEvents. Кроме количества запоминаем также время последней ошибки, стек трейс, сообщение. Добавляем системную таблицу system.errors. Отправка в Graphite.
 
@@ -125,9 +125,9 @@ position с конца строки.
 
 ## Запрос CREATE OR REPLACE TABLE
 
-Атомарно (под блокировкой) удаляет таблицу перед созданием новой, если такая была.
+Атомарно удаляет таблицу перед созданием новой, если такая была.
 
-## Приведение типов для IN (subquery).
+## * Приведение типов для IN (subquery).
 
 `SELECT 1 IN (SELECT -1 UNION ALL SELECT 1)`
 
@@ -155,7 +155,7 @@ https://clickhouse.yandex/docs/en/query_language/create/#create-table
 
 Подключить одну из key-value БД как источник.
 
-## Движок таблиц Mongo, табличная функция mongo.
+## + Движок таблиц Mongo, табличная функция mongo.
 
 Возможность легко импортировать данные из MongoDB.
 
@@ -201,7 +201,7 @@ https://clickhouse.yandex/docs/en/operations/table_engines/external_data/
 
 ## Настройка rollup_use_nulls.
 
-## Настройка cast_keep_nullable.
+## + Настройка cast_keep_nullable.
 
 ## Функция bitEquals для сравнения произвольных типов данных побитово.
 

@@ -57,7 +57,35 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::RELOAD_MODEL:
+        {
+            String cluster_str;
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                    return false;
+            }
+            res->cluster = cluster_str;
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+            {
+                res->target_model = ast->as<ASTLiteral &>().value.safeGet<String>();
+            }
+            else
+            {
+                ParserIdentifier model_parser;
+                ASTPtr model;
+                String target_model;
 
+                if (!model_parser.parse(pos, model, expected))
+                    return false;
+
+                if (!tryGetIdentifierNameInto(model, res->target_model))
+                    return false;
+            }
+
+            break;
+        }
         case Type::DROP_REPLICA:
         {
             ASTPtr ast;
@@ -120,7 +148,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
             {
                 /// FLUSH DISTRIBUTED requires table
-                /// START/STOP DISTRIBUTED SENDS does not requires table
+                /// START/STOP DISTRIBUTED SENDS does not require table
                 if (res->type == Type::FLUSH_DISTRIBUTED)
                     return false;
             }
@@ -168,6 +196,20 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATION_QUEUES:
             parseDatabaseAndTableName(pos, expected, res->database, res->table);
             break;
+
+        case Type::SUSPEND:
+        {
+            ASTPtr seconds;
+            if (!(ParserKeyword{"FOR"}.ignore(pos, expected)
+                && ParserUnsignedInteger().parse(pos, seconds, expected)
+                && ParserKeyword{"SECOND"}.ignore(pos, expected)))   /// SECOND, not SECONDS to be consistent with INTERVAL parsing in SQL
+            {
+                return false;
+            }
+
+            res->seconds = seconds->as<ASTLiteral>()->value.get<UInt64>();
+            break;
+        }
 
         default:
             /// There are no [db.table] after COMMAND NAME

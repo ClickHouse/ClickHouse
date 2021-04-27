@@ -1,4 +1,4 @@
-<test>
+<test max_ignored_relative_change="0.2">
     <query>SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomString(10))</query>
     <query>SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomString(100))</query>
     <query>SELECT count() FROM zeros(1000000) WHERE NOT ignore(randomString(1000))</query>

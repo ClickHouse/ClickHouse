@@ -2,13 +2,15 @@
 #include <Common/createHardLink.h>
 #include "DiskFactory.h"
 
+#include <Disks/LocalDirectorySyncGuard.h>
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 
 #include <IO/createReadBufferFromFileBase.h>
-#include <IO/createWriteBufferFromFileBase.h>
+
 #include <unistd.h>
+
 
 namespace DB
 {
@@ -19,11 +21,9 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int PATH_ACCESS_DENIED;
     extern const int INCORRECT_DISK_INDEX;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_FSYNC;
-    extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int CANNOT_UNLINK;
+    extern const int CANNOT_RMDIR;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -96,7 +96,7 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     std::lock_guard lock(DiskLocal::reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(&Poco::Logger::get("DiskLocal"), "Reserving 0 bytes on disk {}", backQuote(name));
+        LOG_DEBUG(log, "Reserving 0 bytes on disk {}", backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -105,7 +105,7 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
-        LOG_DEBUG(&Poco::Logger::get("DiskLocal"), "Reserving {} on disk {}, having unreserved {}.",
+        LOG_DEBUG(log, "Reserving {} on disk {}, having unreserved {}.",
             ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
@@ -218,27 +218,39 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
         from_file.renameTo(to_file.path());
 }
 
-void DiskLocal::copyFile(const String & from_path, const String & to_path)
-{
-    Poco::File(disk_path + from_path).copyTo(disk_path + to_path);
-}
-
 std::unique_ptr<ReadBufferFromFileBase>
-DiskLocal::readFile(const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold) const
+DiskLocal::readFile(
+    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
 {
-    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, buf_size);
+    return createReadBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, size_t estimated_size, size_t aio_threshold)
+DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
-    return createWriteBufferFromFileBase(disk_path + path, estimated_size, aio_threshold, buf_size, flags);
+    return std::make_unique<WriteBufferFromFile>(disk_path + path, buf_size, flags);
 }
 
-void DiskLocal::remove(const String & path)
+void DiskLocal::removeFile(const String & path)
 {
-    Poco::File(disk_path + path).remove(false);
+    auto fs_path = disk_path + path;
+    if (0 != unlink(fs_path.c_str()))
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
+}
+
+void DiskLocal::removeFileIfExists(const String & path)
+{
+    auto fs_path = disk_path + path;
+    if (0 != unlink(fs_path.c_str()) && errno != ENOENT)
+        throwFromErrnoWithPath("Cannot unlink file " + fs_path, fs_path, ErrorCodes::CANNOT_UNLINK);
+}
+
+void DiskLocal::removeDirectory(const String & path)
+{
+    auto fs_path = disk_path + path;
+    if (0 != rmdir(fs_path.c_str()))
+        throwFromErrnoWithPath("Cannot rmdir " + fs_path, fs_path, ErrorCodes::CANNOT_RMDIR);
 }
 
 void DiskLocal::removeRecursive(const String & path)
@@ -296,26 +308,9 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
 
-int DiskLocal::open(const String & path, mode_t mode) const
+SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 {
-    String full_path = disk_path + path;
-    int fd = ::open(full_path.c_str(), mode);
-    if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + full_path, full_path,
-                        errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
-    return fd;
-}
-
-void DiskLocal::close(int fd) const
-{
-    if (-1 == ::close(fd))
-        throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
-}
-
-void DiskLocal::sync(int fd) const
-{
-    if (-1 == ::fsync(fd))
-        throw Exception("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
+    return std::make_unique<LocalDirectorySyncGuard>(disk_path + path);
 }
 
 DiskPtr DiskLocalReservation::getDisk(size_t i) const
@@ -344,7 +339,7 @@ DiskLocalReservation::~DiskLocalReservation()
         if (disk->reserved_bytes < size)
         {
             disk->reserved_bytes = 0;
-            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+            LOG_ERROR(disk->log, "Unbalanced reservations size for disk '{}'.", disk->getName());
         }
         else
         {
@@ -352,7 +347,7 @@ DiskLocalReservation::~DiskLocalReservation()
         }
 
         if (disk->reservation_count == 0)
-            LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+            LOG_ERROR(disk->log, "Unbalanced reservation count for disk '{}'.", disk->getName());
         else
             --disk->reservation_count;
     }
@@ -368,7 +363,7 @@ void registerDiskLocal(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      const Context & context) -> DiskPtr {
+                      ContextConstPtr context) -> DiskPtr {
         String path = config.getString(config_prefix + ".path", "");
         if (name == "default")
         {
@@ -376,7 +371,7 @@ void registerDiskLocal(DiskFactory & factory)
                 throw Exception(
                     "\"default\" disk path should be provided in <path> not it <storage_configuration>",
                     ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-            path = context.getPath();
+            path = context->getPath();
         }
         else
         {
@@ -388,7 +383,7 @@ void registerDiskLocal(DiskFactory & factory)
 
         if (Poco::File disk{path}; !disk.canRead() || !disk.canWrite())
         {
-            throw Exception("There is no RW access to disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
+            throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
         }
 
         bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
@@ -407,7 +402,7 @@ void registerDiskLocal(DiskFactory & factory)
                 throw Exception("'keep_free_space_ratio' have to be between 0 and 1", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
             String tmp_path = path;
             if (tmp_path.empty())
-                tmp_path = context.getPath();
+                tmp_path = context->getPath();
 
             // Create tmp disk for getting total disk space.
             keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);

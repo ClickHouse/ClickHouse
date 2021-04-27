@@ -6,18 +6,18 @@ ADDINCL (
     GLOBAL clickhouse/src
     contrib/libs/libcpuid
     contrib/libs/libunwind/include
-    GLOBAL contrib/restricted/ryu
+    GLOBAL contrib/restricted/dragonbox
 )
 
 PEERDIR(
     clickhouse/base/common
     clickhouse/base/pcg-random
     clickhouse/base/widechar_width
-    contrib/libs/libcpuid/libcpuid
+    contrib/libs/libcpuid
     contrib/libs/openssl
     contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
-    contrib/restricted/ryu
+    contrib/restricted/dragonbox
 )
 
 INCLUDE(${ARCADIA_ROOT}/clickhouse/cmake/yandex/ya.make.versions.inc)

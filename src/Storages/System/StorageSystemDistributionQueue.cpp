@@ -4,10 +4,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemDistributionQueue.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
@@ -101,9 +103,9 @@ NamesAndTypesList StorageSystemDistributionQueue::getNamesAndTypes()
 }
 
 
-void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
+void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
-    const auto access = context.getAccess();
+    const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
     std::map<String, std::map<String, StoragePtr>> tables;

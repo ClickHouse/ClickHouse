@@ -1,13 +1,15 @@
-SET enable_global_with_statement = true;
+SET enable_global_with_statement = 1;
 
-WITH 1 AS x SELECT x;
-WITH 1 AS x SELECT * FROM (SELECT x);
-WITH 1 AS x SELECT *, x FROM (WITH 2 AS x SELECT x AS y);
-WITH 1 AS x SELECT x UNION ALL SELECT x;
-select x from (WITH 1 AS x SELECT x UNION ALL WITH 2 AS x SELECT x) order by x;
+with 1 as x select x;
+with 1 as x select * from (select x);
+with 1 as x select *, x from (with 2 as x select x as y);
+with 1 as x select x union all select x;
+select x from (with 1 as x select x union all with 2 as x select x) order by x;
+with 5 as q1, x as (select number+100 as b, number as a from numbers(10) where number > q1) select * from x;
 
-EXPLAIN SYNTAX WITH 1 AS x SELECT x;
-EXPLAIN SYNTAX WITH 1 AS x SELECT * FROM (SELECT x);
-EXPLAIN SYNTAX WITH 1 AS x SELECT *, x FROM (WITH 2 AS x SELECT x AS y);
-EXPLAIN SYNTAX WITH 1 AS x SELECT x UNION ALL SELECT x;
-EXPLAIN SYNTAX WITH 1 AS x SELECT x UNION ALL WITH 2 AS x SELECT x;
+explain syntax with 1 as x select x;
+explain syntax with 1 as x select * from (select x);
+explain syntax with 1 as x select *, x from (with 2 as x select x as y);
+explain syntax with 1 as x select x union all select x;
+explain syntax with 1 as x select x union all with 2 as x select x;
+explain syntax with 5 as q1, x as (select number + 100 as b, number as a from numbers(10) where number > q1) select * from x;

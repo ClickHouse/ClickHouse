@@ -67,7 +67,7 @@ struct MutationCommand
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
-    std::shared_ptr<ASTAlterCommandList> ast() const;
+    std::shared_ptr<ASTExpressionList> ast() const;
 
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);

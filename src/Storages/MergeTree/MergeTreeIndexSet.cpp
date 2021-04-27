@@ -52,28 +52,31 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
             "Attempt to write empty set index " + backQuote(index_name), ErrorCodes::LOGICAL_ERROR);
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    auto size_serialization = size_type->getDefaultSerialization();
 
     if (max_rows != 0 && size() > max_rows)
     {
-        size_type->serializeBinary(0, ostr);
+        size_serialization->serializeBinary(0, ostr);
         return;
     }
 
-    size_type->serializeBinary(size(), ostr);
+    size_serialization->serializeBinary(size(), ostr);
 
     for (size_t i = 0; i < index_sample_block.columns(); ++i)
     {
         const auto & type = index_sample_block.getByPosition(i).type;
 
-        IDataType::SerializeBinaryBulkSettings settings;
-        settings.getter = [&ostr](IDataType::SubstreamPath) -> WriteBuffer * { return &ostr; };
+        ISerialization::SerializeBinaryBulkSettings settings;
+        settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
         settings.position_independent_encoding = false;
         settings.low_cardinality_max_dictionary_size = 0;
 
-        IDataType::SerializeBinaryBulkStatePtr state;
-        type->serializeBinaryBulkStatePrefix(settings, state);
-        type->serializeBinaryBulkWithMultipleStreams(*block.getByPosition(i).column, 0, size(), settings, state);
-        type->serializeBinaryBulkStateSuffix(settings, state);
+        auto serialization = type->getDefaultSerialization();
+        ISerialization::SerializeBinaryBulkStatePtr state;
+
+        serialization->serializeBinaryBulkStatePrefix(settings, state);
+        serialization->serializeBinaryBulkWithMultipleStreams(*block.getByPosition(i).column, 0, size(), settings, state);
+        serialization->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
 
@@ -83,7 +86,7 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
 
     Field field_rows;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
-    size_type->deserializeBinary(field_rows, istr);
+    size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr);
     size_t rows_to_read = field_rows.get<size_t>();
 
     if (rows_to_read == 0)
@@ -93,17 +96,20 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr)
     {
         const auto & column = index_sample_block.getByPosition(i);
         const auto & type = column.type;
-        auto new_column = type->createColumn();
+        ColumnPtr new_column = type->createColumn();
 
-        IDataType::DeserializeBinaryBulkSettings settings;
-        settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return &istr; };
+
+        ISerialization::DeserializeBinaryBulkSettings settings;
+        settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
         settings.position_independent_encoding = false;
 
-        IDataType::DeserializeBinaryBulkStatePtr state;
-        type->deserializeBinaryBulkStatePrefix(settings, state);
-        type->deserializeBinaryBulkWithMultipleStreams(*new_column, rows_to_read, settings, state);
+        ISerialization::DeserializeBinaryBulkStatePtr state;
+        auto serialization = type->getDefaultSerialization();
 
-        block.insert(ColumnWithTypeAndName(new_column->getPtr(), type, column.name));
+        serialization->deserializeBinaryBulkStatePrefix(settings, state);
+        serialization->deserializeBinaryBulkWithMultipleStreams(new_column, rows_to_read, settings, state, nullptr);
+
+        block.insert(ColumnWithTypeAndName(new_column, type, column.name));
     }
 }
 
@@ -235,7 +241,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     const Block & index_sample_block_,
     size_t max_rows_,
     const SelectQueryInfo & query,
-    const Context & context)
+    ContextPtr context)
     : index_name(index_name_)
     , max_rows(max_rows_)
     , index_sample_block(index_sample_block_)
@@ -293,6 +299,10 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
 
     auto column
         = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+
+    if (column->onlyNull())
+        return false;
+
     const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
 
     const NullMap * null_map = nullptr;
@@ -382,7 +392,7 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
 
         func->name = "__bitSwapLastTwo";
     }
-    else if (func->name == "and")
+    else if (func->name == "and" || func->name == "indexHint")
     {
         auto last_arg = args.back();
         args.pop_back();
@@ -438,7 +448,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
 
         const ASTs & args = func->arguments->children;
 
-        if (func->name == "and")
+        if (func->name == "and" || func->name == "indexHint")
             return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
         else if (func->name == "or")
             return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
@@ -468,7 +478,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const SelectQueryInfo & query, const Context & context) const
+    const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
 };

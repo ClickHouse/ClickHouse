@@ -9,6 +9,7 @@
 #include <common/getMemoryAmount.h>
 #include <common/logger_useful.h>
 
+#include <Common/formatReadable.h>
 #include <Common/SymbolIndex.h>
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -179,7 +180,7 @@ void SentryWriter::onFault(int sig, const std::string & error_message, const Sta
         sentry_set_extra("signal_number", sentry_value_new_int32(sig));
 
         #if defined(__ELF__) && !defined(__FreeBSD__)
-            const String & build_id_hex = DB::SymbolIndex::instance().getBuildIDHex();
+            const String & build_id_hex = DB::SymbolIndex::instance()->getBuildIDHex();
             sentry_set_tag("build_id", build_id_hex.c_str());
         #endif
 

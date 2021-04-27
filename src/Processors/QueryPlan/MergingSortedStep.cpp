@@ -42,11 +42,11 @@ void MergingSortedStep::updateLimit(size_t limit_)
     if (limit_ && (limit == 0 || limit_ < limit))
     {
         limit = limit_;
-        transform_traits.preserves_number_of_rows = limit == 0;
+        transform_traits.preserves_number_of_rows = false;
     }
 }
 
-void MergingSortedStep::transformPipeline(QueryPipeline & pipeline)
+void MergingSortedStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1)

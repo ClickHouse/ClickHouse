@@ -1,14 +1,22 @@
-<test>
-
+<test max_ignored_relative_change="0.2">
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
+        <table_exists>hits_10m_single</table_exists>
+        <table_exists>test.hits</table_exists>
     </preconditions>
-
 
 
     <substitutions>
         <substitution>
-           <name>func</name>
+           <name>func_slow</name>
+           <values>
+               <value>URLHierarchy</value>
+               <value>URLPathHierarchy</value>
+           </values>
+       </substitution>
+
+        <substitution>
+           <name>func_fast</name>
            <values>
                <value>protocol</value>
                <value>domain</value>
@@ -23,9 +31,8 @@
                <value>queryStringAndFragment</value>
                <value>extractURLParameters</value>
                <value>extractURLParameterNames</value>
-               <value>URLHierarchy</value>
-               <value>URLPathHierarchy</value>
                <value>decodeURLComponent</value>
+               <value>decodeXMLComponent</value>
                <value>cutWWW</value>
                <value>cutQueryString</value>
                <value>cutQueryStringAndFragment</value>
@@ -33,5 +40,13 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore({func}(URL))</query>
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore({func_fast}(URL))</query>
+    <query>SELECT count() FROM hits_10m_single  WHERE NOT ignore({func_slow}(URL))</query>
+
+    <!-- firstSignificantSubdomain/firstSignificantSubdomainCustom -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(firstSignificantSubdomain(URL)) SETTINGS max_threads=1</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(firstSignificantSubdomainCustom(URL, 'public_suffix_list')) SETTINGS max_threads=1</query>
+    <!-- cutToFirstSignificantSubdomain/cutToFirstSignificantSubdomainCustom -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(cutToFirstSignificantSubdomain(URL)) SETTINGS max_threads=1</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(cutToFirstSignificantSubdomainCustom(URL, 'public_suffix_list')) SETTINGS max_threads=1</query>
 </test>

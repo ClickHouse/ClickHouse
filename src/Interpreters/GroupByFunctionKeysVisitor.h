@@ -105,7 +105,7 @@ public:
     {
         if (auto * function_node = ast->as<ASTFunction>())
         {
-            if (!(function_node->arguments->children.empty()))
+            if (function_node->arguments && !function_node->arguments->children.empty())
                 visit(function_node, data);
         }
     }

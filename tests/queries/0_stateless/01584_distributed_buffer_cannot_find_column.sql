@@ -8,11 +8,15 @@ CREATE TABLE realtimebuff(amount Int64,transID String,userID String,appID String
 
 insert into realtimebuff (amount,transID,userID,appID,appName,transType,orderSource,nau,fau,transactionType,supplier,fMerchant,bankConnCode,reqDate) values (100, '200312000295032','200223000028708','14', 'Data','1', '20','1', '0','123','abc', '1234a','ZPVBIDV', 1598256583);
 
+-- Data is written to the buffer table but has not been written to the Distributed table
 select sum(amount) = 100 from realtimebuff;
 
 OPTIMIZE TABLE realtimebuff;
-select sum(amount) IN (100, 200) from realtimebuff;
+-- Data has been flushed from Buffer table to the Distributed table and can possibly being sent to 0, 1 or 2 shards.
+-- Both shards reside on localhost in the same table.
+select sum(amount) IN (0, 100, 200) from realtimebuff;
 
+-- Data has been sent to all shards.
 SYSTEM FLUSH DISTRIBUTED realtimedistributed;
 select sum(amount) = 200 from realtimebuff;
 

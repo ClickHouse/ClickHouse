@@ -1,9 +1,9 @@
 ---
 toc_priority: 44
-toc_title: "\u041a\u043b\u044e\u0447\u0020\u0438\u0020\u043f\u043e\u043b\u044f\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u044f"
+toc_title: "Ключ и поля словаря"
 ---
 
-# Ключ и поля словаря {#kliuch-i-polia-slovaria}
+# Ключ и поля словаря {#dictionary-key-and-fields}
 
 Секция `<structure>` описывает ключ словаря и поля, доступные для запросов.
 
@@ -88,7 +88,7 @@ PRIMARY KEY Id
 
 -   `PRIMARY KEY` – имя столбца с ключами.
 
-### Составной ключ {#sostavnoi-kliuch}
+### Составной ключ {#composite-key}
 
 Ключом может быть кортеж (`tuple`) из полей произвольных типов. В этом случае [layout](external-dicts-dict-layout.md) должен быть `complex_key_hashed` или `complex_key_cache`.
 
@@ -159,14 +159,12 @@ CREATE DICTIONARY somename (
 | Тег                                                  | Описание                                                                                                                                                                                                                                                                                                                                                      | Обязательный |
 |------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|
 | `name`                                               | Имя столбца.                                                                                                                                                                                                                                                                                                                                                  | Да           |
-| `type`                                               | Тип данных ClickHouse.<br/>ClickHouse пытается привести значение из словаря к заданному типу данных. Например, в случае MySQL, в таблице-источнике поле может быть `TEXT`, `VARCHAR`, `BLOB`, но загружено может быть как `String`. [Nullable](../../../sql-reference/data-types/nullable.md) не поддерживается. | Да           |
-| `null_value`                                         | Значение по умолчанию для несуществующего элемента.<br/>В примере это пустая строка. Нельзя указать значение `NULL`.                                                                                                                                                                                                                                          | Да           |
+| `type`                                               | Тип данных ClickHouse.<br/>ClickHouse пытается привести значение из словаря к заданному типу данных. Например, в случае MySQL, в таблице-источнике поле может быть `TEXT`, `VARCHAR`, `BLOB`, но загружено может быть как `String`. <br/>[Nullable](../../../sql-reference/data-types/nullable.md) в настоящее время поддерживается для словарей [Flat](external-dicts-dict-layout.md#flat), [Hashed](external-dicts-dict-layout.md#dicts-external_dicts_dict_layout-hashed), [ComplexKeyHashed](external-dicts-dict-layout.md#complex-key-hashed), [Direct](external-dicts-dict-layout.md#direct), [ComplexKeyDirect](external-dicts-dict-layout.md#complex-key-direct), [RangeHashed](external-dicts-dict-layout.md#range-hashed), [Polygon](external-dicts-dict-polygon.md). Для словарей [Cache](external-dicts-dict-layout.md#cache), [ComplexKeyCache](external-dicts-dict-layout.md#complex-key-cache), [SSDCache](external-dicts-dict-layout.md#ssd-cache), [SSDComplexKeyCache](external-dicts-dict-layout.md#complex-key-ssd-cache) и [IPTrie](external-dicts-dict-layout.md#ip-trie) `Nullable`-типы не поддерживаются. | Да           |
+| `null_value`                                         | Значение по умолчанию для несуществующего элемента.<br/>В примере это пустая строка. Значение [NULL](../../syntax.md#null-literal) можно указывать только для типов `Nullable` (см. предыдущую строку с описанием типов).                                                                                                                                                                                                                                          | Да           |
 | `expression`                                         | [Выражение](../../syntax.md#syntax-expressions), которое ClickHouse выполняет со значением.<br/>Выражением может быть имя столбца в удаленной SQL базе. Таким образом, вы можете использовать его для создания псевдонима удаленного столбца.<br/><br/>Значение по умолчанию: нет выражения.                                                                  | Нет          |
-| <a name="hierarchical-dict-attr"></a> `hierarchical` | Если `true`, то атрибут содержит ключ предка для текущего элемента. Смотрите [Иерархические словари](external-dicts-dict-hierarchical.md).<br/><br/>Default value: `false`.                                                                                                                                                                                   | No           |
+| <a name="hierarchical-dict-attr"></a> `hierarchical` | Если `true`, то атрибут содержит ключ предка для текущего элемента. Смотрите [Иерархические словари](external-dicts-dict-hierarchical.md).<br/><br/>Значение по умолчанию: `false`.                                                                                                                                                                                   | Нет           |
 | `is_object_id`                                       | Признак того, что запрос выполняется к документу MongoDB по `ObjectID`.<br/><br/>Значение по умолчанию: `false`.                                                                                                                                                                                                                                              | Нет          |
 
-## Смотрите также {#smotrite-takzhe}
+**Смотрите также**
 
 -   [Функции для работы с внешними словарями](../../../sql-reference/functions/ext-dict-functions.md).
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

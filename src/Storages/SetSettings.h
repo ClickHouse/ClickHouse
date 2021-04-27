@@ -10,7 +10,8 @@ class ASTStorage;
 
 
 #define SET_RELATED_SETTINGS(M) \
-    M(Bool, persistent, true, "Disable setting to avoid the overhead of writing to disk for StorageSet", 0)
+    M(Bool, persistent, true, "Disable setting to avoid the overhead of writing to disk for StorageSet", 0) \
+    M(String, disk, "default", "Name of the disk used to persist set data", 0)
 
 #define LIST_OF_SET_SETTINGS(M) \
     SET_RELATED_SETTINGS(M) \

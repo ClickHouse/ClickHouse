@@ -13,9 +13,27 @@ SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 
 If the left side is a single column that is in the index, and the right side is a set of constants, the system uses the index for processing the query.
 
-Don’t list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section “External data for query processing”), then use a subquery.
+Don’t list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section [External data for query processing](../../engines/table-engines/special/external-data.md)), then use a subquery.
 
 The right side of the operator can be a set of constant expressions, a set of tuples with constant expressions (shown in the examples above), or the name of a database table or SELECT subquery in brackets.
+
+ClickHouse allows types to differ in the left and the right parts of `IN` subquery. In this case it converts the left side value to the type of the right side, as if the [accurateCastOrNull](../functions/type-conversion-functions.md#type_conversion_function-accurate-cast_or_null) function is applied. That means, that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion cannot be performed, it returns [NULL](../../sql-reference/syntax.md#null-literal).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT '1' IN (SELECT 1);
+```
+
+Result:
+
+``` text
+┌─in('1', _subquery49)─┐
+│                    1 │
+└──────────────────────┘
+```
 
 If the right side of the operator is the name of a table (for example, `UserID IN users`), this is equivalent to the subquery `UserID IN (SELECT * FROM users)`. Use this when working with external data that is sent along with the query. For example, the query can be sent together with a set of user IDs loaded to the ‘users’ temporary table, which should be filtered.
 
@@ -197,3 +215,25 @@ This is more optimal than using the normal IN. However, keep the following point
 5.  If you need to use GLOBAL IN often, plan the location of the ClickHouse cluster so that a single group of replicas resides in no more than one data center with a fast network between them, so that a query can be processed entirely within a single data center.
 
 It also makes sense to specify a local table in the `GLOBAL IN` clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
+
+### Distributed Subqueries and max_parallel_replicas {#max_parallel_replica-subqueries}
+
+When max_parallel_replicas is greater than 1, distributed queries are further transformed. For example, the following:
+
+```sql
+SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS max_parallel_replicas=3
+```
+
+is transformed on each server into
+
+```sql
+SELECT CounterID, count() FROM local_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
+```
+
+where M is between 1 and 3 depending on which replica the local query is executing on. These settings affect every MergeTree-family table in the query and have the same effect as applying `SAMPLE 1/3 OFFSET (M-1)/3` on each table.
+
+Therefore adding the max_parallel_replicas setting will only produce correct results if both tables have the same replication scheme and are sampled by UserID or a subkey of it. In particular, if local_table_2 does not have a sampling key, incorrect results will be produced. The same rule applies to JOIN.
+
+One workaround if local_table_2 doesn't meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.

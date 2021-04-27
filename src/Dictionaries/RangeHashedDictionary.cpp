@@ -5,6 +5,8 @@
 #include <ext/range.h>
 #include "DictionaryFactory.h"
 #include "RangeDictionaryBlockInputStream.h"
+#include <Interpreters/castColumn.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 namespace
 {
@@ -74,7 +76,7 @@ RangeHashedDictionary::RangeHashedDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : IDictionaryBase(dict_id_)
+    : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -85,66 +87,167 @@ RangeHashedDictionary::RangeHashedDictionary(
     calculateBytesAllocated();
 }
 
-
-#define DECLARE_MULTIPLE_GETTER(TYPE) \
-    void RangeHashedDictionary::get##TYPE( \
-        const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids, \
-        const PaddedPODArray<RangeStorageType> & dates, \
-        ResultArrayType<TYPE> & out) const \
-    { \
-        const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::ut##TYPE); \
-        getItems<TYPE>(attribute, ids, dates, out); \
-    }
-DECLARE_MULTIPLE_GETTER(UInt8)
-DECLARE_MULTIPLE_GETTER(UInt16)
-DECLARE_MULTIPLE_GETTER(UInt32)
-DECLARE_MULTIPLE_GETTER(UInt64)
-DECLARE_MULTIPLE_GETTER(UInt128)
-DECLARE_MULTIPLE_GETTER(Int8)
-DECLARE_MULTIPLE_GETTER(Int16)
-DECLARE_MULTIPLE_GETTER(Int32)
-DECLARE_MULTIPLE_GETTER(Int64)
-DECLARE_MULTIPLE_GETTER(Float32)
-DECLARE_MULTIPLE_GETTER(Float64)
-DECLARE_MULTIPLE_GETTER(Decimal32)
-DECLARE_MULTIPLE_GETTER(Decimal64)
-DECLARE_MULTIPLE_GETTER(Decimal128)
-#undef DECLARE_MULTIPLE_GETTER
-
-void RangeHashedDictionary::getString(
+ColumnPtr RangeHashedDictionary::getColumn(
     const std::string & attribute_name,
-    const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<RangeStorageType> & dates,
-    ColumnString * out) const
+    const DataTypePtr & result_type,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    const ColumnPtr & default_values_column) const
 {
-    const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::utString);
-    const auto & attr = *std::get<Ptr<StringRef>>(attribute.maps);
-    const auto & null_value = std::get<String>(attribute.null_values);
+    ColumnPtr result;
 
-    for (const auto i : ext::range(0, ids.size()))
+    const auto & attribute = getAttribute(attribute_name);
+    const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+
+    auto keys_size = key_columns.front()->size();
+
+    /// Cast second column to storage type
+    Columns modified_key_columns = key_columns;
+
+    auto range_storage_column = key_columns[1];
+    ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types[1], ""};
+
+    auto range_column_storage_type = std::make_shared<DataTypeInt64>();
+    modified_key_columns[1] = castColumnAccurate(column_to_cast, range_column_storage_type);
+
+    ColumnUInt8::MutablePtr col_null_map_to;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
+    if (attribute.is_nullable)
     {
-        const auto * it = attr.find(ids[i]);
-        if (it)
-        {
-            const auto date = dates[i];
-            const auto & ranges_and_values = it->getMapped();
-            const auto val_it
-                = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values), [date](const Value<StringRef> & v)
-                  {
-                      return v.range.contains(date);
-                  });
+        col_null_map_to = ColumnUInt8::create(keys_size, false);
+        vec_null_map_to = &col_null_map_to->getData();
+    }
 
-            const auto string_ref = val_it != std::end(ranges_and_values) ? val_it->value : StringRef{null_value};
-            out->insertData(string_ref.data, string_ref.size);
+    auto type_call = [&](const auto &dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+
+        const auto attribute_null_value = std::get<ValueType>(attribute.null_values);
+        AttributeType null_value = static_cast<AttributeType>(attribute_null_value);
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(std::move(null_value), default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
+
+        if constexpr (std::is_same_v<AttributeType, String>)
+        {
+            auto * out = column.get();
+
+            getItemsImpl<ValueType, ValueType>(
+                attribute,
+                modified_key_columns,
+                [&](const size_t row, const StringRef value, bool is_null)
+                {
+                    if (attribute.is_nullable)
+                        (*vec_null_map_to)[row] = is_null;
+
+                    out->insertData(value.data, value.size);
+                },
+                default_value_extractor);
         }
         else
-            out->insertData(null_value.data(), null_value.size());
+        {
+            auto & out = column->getData();
+
+            getItemsImpl<ValueType, ValueType>(
+                attribute,
+                modified_key_columns,
+                [&](const size_t row, const auto value, bool is_null)
+                {
+                    if (attribute.is_nullable)
+                        (*vec_null_map_to)[row] = is_null;
+
+                    out[row] = value;
+                },
+                default_value_extractor);
+        }
+
+        result = std::move(column);
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    if (attribute.is_nullable)
+    {
+        result = ColumnNullable::create(result, std::move(col_null_map_to));
     }
 
-    query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+    return result;
 }
 
+ColumnUInt8::Ptr RangeHashedDictionary::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
+{
+    auto range_storage_column = key_columns[1];
+    ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types[1], ""};
+
+    auto range_column_storage_type = std::make_shared<DataTypeInt64>();
+    auto range_column_updated = castColumnAccurate(column_to_cast, range_column_storage_type);
+
+    PaddedPODArray<UInt64> key_backup_storage;
+    PaddedPODArray<RangeStorageType> range_backup_storage;
+
+    const PaddedPODArray<UInt64> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
+    const PaddedPODArray<RangeStorageType> & dates = getColumnVectorData(this, range_column_updated, range_backup_storage);
+
+    const auto & attribute = attributes.front();
+
+    ColumnUInt8::Ptr result;
+
+    auto type_call = [&](const auto & dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        result = hasKeysImpl<ValueType>(attribute, ids, dates);
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    query_count.fetch_add(ids.size(), std::memory_order_relaxed);
+
+    return result;
+}
+
+template <typename AttributeType>
+ColumnUInt8::Ptr RangeHashedDictionary::hasKeysImpl(
+    const Attribute & attribute,
+    const PaddedPODArray<UInt64> & ids,
+    const PaddedPODArray<RangeStorageType> & dates) const
+{
+    auto result = ColumnUInt8::create(ids.size());
+    auto& out = result->getData();
+
+    const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
+
+    for (const auto row : ext::range(0, ids.size()))
+    {
+        const auto it = attr.find(ids[row]);
+
+        if (it)
+        {
+            const auto date = dates[row];
+            const auto & ranges_and_values = it->getMapped();
+            const auto val_it = std::find_if(
+                std::begin(ranges_and_values),
+                std::end(ranges_and_values),
+                [date](const Value<AttributeType> & v)
+                {
+                    return v.range.contains(date);
+                });
+
+            if (val_it != std::end(ranges_and_values))
+                out[row] = true;
+            else
+                out[row] = false;
+        }
+        else
+            out[row] = false;
+    }
+
+    return result;
+}
 
 void RangeHashedDictionary::createAttributes()
 {
@@ -154,11 +257,11 @@ void RangeHashedDictionary::createAttributes()
     for (const auto & attribute : dict_struct.attributes)
     {
         attribute_index_by_name.emplace(attribute.name, attributes.size());
-        attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
+        attributes.push_back(createAttribute(attribute, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
-                            getDictionaryID().getNameForLogs()};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Hierarchical attributes not supported by {} dictionary.",
+                            getDictionaryID().getNameForLogs());
     }
 }
 
@@ -208,8 +311,8 @@ void RangeHashedDictionary::loadData()
     stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.",
-                        ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
+            "{}: dictionary source is empty and 'require_nonempty' property is set.");
 }
 
 template <typename T>
@@ -220,195 +323,111 @@ void RangeHashedDictionary::addAttributeSize(const Attribute & attribute)
     bucket_count = map_ref->getBufferSizeInCells();
 }
 
+template <>
+void RangeHashedDictionary::addAttributeSize<String>(const Attribute & attribute)
+{
+    addAttributeSize<StringRef>(attribute);
+    bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
+}
+
 void RangeHashedDictionary::calculateBytesAllocated()
 {
     bytes_allocated += attributes.size() * sizeof(attributes.front());
 
     for (const auto & attribute : attributes)
     {
-        switch (attribute.type)
+        auto type_call = [&](const auto & dictionary_attribute_type)
         {
-            case AttributeUnderlyingType::utUInt8:
-                addAttributeSize<UInt8>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt16:
-                addAttributeSize<UInt16>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt32:
-                addAttributeSize<UInt32>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt64:
-                addAttributeSize<UInt64>(attribute);
-                break;
-            case AttributeUnderlyingType::utUInt128:
-                addAttributeSize<UInt128>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt8:
-                addAttributeSize<Int8>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt16:
-                addAttributeSize<Int16>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt32:
-                addAttributeSize<Int32>(attribute);
-                break;
-            case AttributeUnderlyingType::utInt64:
-                addAttributeSize<Int64>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat32:
-                addAttributeSize<Float32>(attribute);
-                break;
-            case AttributeUnderlyingType::utFloat64:
-                addAttributeSize<Float64>(attribute);
-                break;
+            using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+            using AttributeType = typename Type::AttributeType;
+            addAttributeSize<AttributeType>(attribute);
+        };
 
-            case AttributeUnderlyingType::utDecimal32:
-                addAttributeSize<Decimal32>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal64:
-                addAttributeSize<Decimal64>(attribute);
-                break;
-            case AttributeUnderlyingType::utDecimal128:
-                addAttributeSize<Decimal128>(attribute);
-                break;
-
-            case AttributeUnderlyingType::utString:
-            {
-                addAttributeSize<StringRef>(attribute);
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
-
-                break;
-            }
-        }
+        callOnDictionaryAttributeType(attribute.type, type_call);
     }
 }
 
 template <typename T>
 void RangeHashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+    attribute.null_values = T(null_value.get<T>());
     attribute.maps = std::make_unique<Collection<T>>();
 }
 
-RangeHashedDictionary::Attribute
-RangeHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
+template <>
+void RangeHashedDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
 {
-    Attribute attr{type, {}, {}, {}};
+    attribute.string_arena = std::make_unique<Arena>();
+    const String & string = null_value.get<String>();
+    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
+    attribute.maps = std::make_unique<Collection<StringRef>>();
+}
 
-    switch (type)
+RangeHashedDictionary::Attribute
+RangeHashedDictionary::createAttribute(const DictionaryAttribute& attribute, const Field & null_value)
+{
+    Attribute attr{attribute.underlying_type, attribute.is_nullable, {}, {}, {}};
+
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            createAttributeImpl<UInt8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            createAttributeImpl<UInt16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            createAttributeImpl<UInt32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            createAttributeImpl<UInt64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            createAttributeImpl<UInt128>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            createAttributeImpl<Int8>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            createAttributeImpl<Int16>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            createAttributeImpl<Int32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            createAttributeImpl<Int64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            createAttributeImpl<Float32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            createAttributeImpl<Float64>(attr, null_value);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        createAttributeImpl<AttributeType>(attr, null_value);
+    };
 
-        case AttributeUnderlyingType::utDecimal32:
-            createAttributeImpl<Decimal32>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            createAttributeImpl<Decimal64>(attr, null_value);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            createAttributeImpl<Decimal128>(attr, null_value);
-            break;
-
-        case AttributeUnderlyingType::utString:
-        {
-            attr.null_values = null_value.get<String>();
-            attr.maps = std::make_unique<Collection<StringRef>>();
-            attr.string_arena = std::make_unique<Arena>();
-            break;
-        }
-    }
+    callOnDictionaryAttributeType(attribute.underlying_type, type_call);
 
     return attr;
 }
 
-
-template <typename OutputType>
-void RangeHashedDictionary::getItems(
-    const Attribute & attribute,
-    const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<RangeStorageType> & dates,
-    PaddedPODArray<OutputType> & out) const
-{
-    if (false) {} // NOLINT
-#define DISPATCH(TYPE) else if (attribute.type == AttributeUnderlyingType::ut##TYPE) getItemsImpl<TYPE, OutputType>(attribute, ids, dates, out);
-    DISPATCH(UInt8)
-    DISPATCH(UInt16)
-    DISPATCH(UInt32)
-    DISPATCH(UInt64)
-    DISPATCH(UInt128)
-    DISPATCH(Int8)
-    DISPATCH(Int16)
-    DISPATCH(Int32)
-    DISPATCH(Int64)
-    DISPATCH(Float32)
-    DISPATCH(Float64)
-    DISPATCH(Decimal32)
-    DISPATCH(Decimal64)
-    DISPATCH(Decimal128)
-#undef DISPATCH
-    else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
-}
-
-template <typename AttributeType, typename OutputType>
+template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultValueExtractor>
 void RangeHashedDictionary::getItemsImpl(
     const Attribute & attribute,
-    const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<RangeStorageType> & dates,
-    PaddedPODArray<OutputType> & out) const
+    const Columns & key_columns,
+    ValueSetter && set_value,
+    DefaultValueExtractor & default_value_extractor) const
 {
-    const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
-    const auto null_value = std::get<AttributeType>(attribute.null_values);
+    PaddedPODArray<UInt64> key_backup_storage;
+    PaddedPODArray<RangeStorageType> range_backup_storage;
 
-    for (const auto i : ext::range(0, ids.size()))
+    const PaddedPODArray<UInt64> & ids = getColumnVectorData(this, key_columns[0], key_backup_storage);
+    const PaddedPODArray<RangeStorageType> & dates = getColumnVectorData(this, key_columns[1], range_backup_storage);
+
+    const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
+
+    for (const auto row : ext::range(0, ids.size()))
     {
-        const auto it = attr.find(ids[i]);
+        const auto it = attr.find(ids[row]);
         if (it)
         {
-            const auto date = dates[i];
+            const auto date = dates[row];
             const auto & ranges_and_values = it->getMapped();
-            const auto val_it
-                = std::find_if(std::begin(ranges_and_values), std::end(ranges_and_values), [date](const Value<AttributeType> & v)
-                  {
-                      return v.range.contains(date);
-                  });
+            const auto val_it = std::find_if(
+                std::begin(ranges_and_values),
+                std::end(ranges_and_values),
+                [date](const Value<AttributeType> & v)
+                {
+                    return v.range.contains(date);
+                });
 
-            out[i] = static_cast<OutputType>(val_it != std::end(ranges_and_values) ? val_it->value : null_value); // NOLINT
+            if (val_it != std::end(ranges_and_values))
+            {
+                auto& value = val_it->value;
+
+                if (value)
+                    set_value(row, static_cast<OutputType>(*value), false); // NOLINT
+                else
+                    set_value(row, default_value_extractor[row], true);
+            }
+            else
+            {
+                set_value(row, default_value_extractor[row], false);
+            }
         }
         else
         {
-            out[i] = static_cast<OutputType>(null_value); // NOLINT
+            set_value(row, default_value_extractor[row], false);
         }
     }
 
@@ -417,9 +436,32 @@ void RangeHashedDictionary::getItemsImpl(
 
 
 template <typename T>
-void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const Range & range, const T value)
+void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const UInt64 id, const Range & range, const Field & value)
 {
-    auto & map = *std::get<Ptr<T>>(attribute.maps);
+    using ValueType = std::conditional_t<std::is_same_v<T, String>, StringRef, T>;
+    auto & map = *std::get<Ptr<ValueType>>(attribute.maps);
+
+    Value<ValueType> value_to_insert;
+
+    if (attribute.is_nullable && value.isNull())
+    {
+        value_to_insert = { range, {} };
+    }
+    else
+    {
+        if constexpr (std::is_same_v<T, String>)
+        {
+            const auto & string = value.get<String>();
+            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+            const StringRef string_ref{string_in_arena, string.size()};
+            value_to_insert = Value<ValueType>{ range, { string_ref }};
+        }
+        else
+        {
+            value_to_insert = Value<ValueType>{ range, { value.get<ValueType>() }};
+        }
+    }
+
     const auto it = map.find(id);
 
     if (it)
@@ -427,99 +469,35 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
         auto & values = it->getMapped();
 
         const auto insert_it
-            = std::lower_bound(std::begin(values), std::end(values), range, [](const Value<T> & lhs, const Range & rhs_range)
+            = std::lower_bound(std::begin(values), std::end(values), range, [](const Value<ValueType> & lhs, const Range & rhs_range)
               {
                   return lhs.range < rhs_range;
               });
 
-        values.insert(insert_it, Value<T>{range, value});
+        values.insert(insert_it, std::move(value_to_insert));
     }
     else
-        map.insert({id, Values<T>{Value<T>{range, value}}});
+        map.insert({id, Values<ValueType>{std::move(value_to_insert)}});
 }
 
-void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key id, const Range & range, const Field & value)
+void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const UInt64 id, const Range & range, const Field & value)
 {
-    switch (attribute.type)
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            setAttributeValueImpl<UInt8>(attribute, id, range, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            setAttributeValueImpl<UInt16>(attribute, id, range, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            setAttributeValueImpl<UInt32>(attribute, id, range, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            setAttributeValueImpl<UInt64>(attribute, id, range, value.get<UInt64>());
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            setAttributeValueImpl<UInt128>(attribute, id, range, value.get<UInt128>());
-            break;
-        case AttributeUnderlyingType::utInt8:
-            setAttributeValueImpl<Int8>(attribute, id, range, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt16:
-            setAttributeValueImpl<Int16>(attribute, id, range, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt32:
-            setAttributeValueImpl<Int32>(attribute, id, range, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utInt64:
-            setAttributeValueImpl<Int64>(attribute, id, range, value.get<Int64>());
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            setAttributeValueImpl<Float32>(attribute, id, range, value.get<Float64>());
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            setAttributeValueImpl<Float64>(attribute, id, range, value.get<Float64>());
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
 
-        case AttributeUnderlyingType::utDecimal32:
-            setAttributeValueImpl<Decimal32>(attribute, id, range, value.get<Decimal32>());
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            setAttributeValueImpl<Decimal64>(attribute, id, range, value.get<Decimal64>());
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            setAttributeValueImpl<Decimal128>(attribute, id, range, value.get<Decimal128>());
-            break;
+        setAttributeValueImpl<AttributeType>(attribute, id, range, value);
+    };
 
-        case AttributeUnderlyingType::utString:
-        {
-            auto & map = *std::get<Ptr<StringRef>>(attribute.maps);
-            const auto & string = value.get<String>();
-            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            const StringRef string_ref{string_in_arena, string.size()};
-
-            auto * it = map.find(id);
-
-            if (it)
-            {
-                auto & values = it->getMapped();
-
-                const auto insert_it = std::lower_bound(
-                    std::begin(values), std::end(values), range, [](const Value<StringRef> & lhs, const Range & rhs_range)
-                    {
-                        return lhs.range < rhs_range;
-                    });
-
-                values.insert(insert_it, Value<StringRef>{range, string_ref});
-            }
-            else
-                map.insert({id, Values<StringRef>{Value<StringRef>{range, string_ref}}});
-
-            break;
-        }
-    }
+    callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
 const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttribute(const std::string & attribute_name) const
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: no such attribute '{}'", full_name, attribute_name);
 
     return attributes[it->second];
 }
@@ -529,73 +507,37 @@ RangeHashedDictionary::getAttributeWithType(const std::string & attribute_name, 
 {
     const auto & attribute = getAttribute(attribute_name);
     if (attribute.type != type)
-        throw Exception{attribute_name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-                        ErrorCodes::TYPE_MISMATCH};
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "attribute {} has type {}",
+            attribute_name,
+            toString(attribute.type));
 
     return attribute;
 }
 
 template <typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(
-    PaddedPODArray<Key> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const
+    PaddedPODArray<UInt64> & ids,
+    PaddedPODArray<RangeType> & start_dates,
+    PaddedPODArray<RangeType> & end_dates) const
 {
     const auto & attribute = attributes.front();
 
-    switch (attribute.type)
+    auto type_call = [&](const auto &dictionary_attribute_type)
     {
-        case AttributeUnderlyingType::utUInt8:
-            getIdsAndDates<UInt8>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utUInt16:
-            getIdsAndDates<UInt16>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utUInt32:
-            getIdsAndDates<UInt32>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utUInt64:
-            getIdsAndDates<UInt64>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utUInt128:
-            getIdsAndDates<UInt128>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utInt8:
-            getIdsAndDates<Int8>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utInt16:
-            getIdsAndDates<Int16>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utInt32:
-            getIdsAndDates<Int32>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utInt64:
-            getIdsAndDates<Int64>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utFloat32:
-            getIdsAndDates<Float32>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utFloat64:
-            getIdsAndDates<Float64>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utString:
-            getIdsAndDates<StringRef>(attribute, ids, start_dates, end_dates);
-            break;
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
 
-        case AttributeUnderlyingType::utDecimal32:
-            getIdsAndDates<Decimal32>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utDecimal64:
-            getIdsAndDates<Decimal64>(attribute, ids, start_dates, end_dates);
-            break;
-        case AttributeUnderlyingType::utDecimal128:
-            getIdsAndDates<Decimal128>(attribute, ids, start_dates, end_dates);
-            break;
-    }
+        getIdsAndDates<ValueType>(attribute, ids, start_dates, end_dates);
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
 template <typename T, typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(
     const Attribute & attribute,
-    PaddedPODArray<Key> & ids,
+    PaddedPODArray<UInt64> & ids,
     PaddedPODArray<RangeType> & start_dates,
     PaddedPODArray<RangeType> & end_dates) const
 {
@@ -615,8 +557,9 @@ void RangeHashedDictionary::getIdsAndDates(
             start_dates.push_back(value.range.left);
             end_dates.push_back(value.range.right);
 
-            if (is_date && static_cast<UInt64>(end_dates.back()) > DATE_LUT_MAX_DAY_NUM)
-                end_dates.back() = 0;
+            if constexpr (std::numeric_limits<RangeType>::max() > DATE_LUT_MAX_DAY_NUM) /// Avoid warning about tautological comparison in next line.
+                if (is_date && static_cast<UInt64>(end_dates.back()) > DATE_LUT_MAX_DAY_NUM)
+                    end_dates.back() = 0;
         }
     }
 }
@@ -625,18 +568,25 @@ void RangeHashedDictionary::getIdsAndDates(
 template <typename RangeType>
 BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const
 {
-    PaddedPODArray<Key> ids;
+    PaddedPODArray<UInt64> ids;
     PaddedPODArray<RangeType> start_dates;
     PaddedPODArray<RangeType> end_dates;
     getIdsAndDates(ids, start_dates, end_dates);
 
-    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeHashedDictionary, RangeType, Key>;
-    auto dict_ptr = std::static_pointer_cast<const RangeHashedDictionary>(shared_from_this());
-    return std::make_shared<BlockInputStreamType>(
-        dict_ptr, max_block_size, column_names, std::move(ids), std::move(start_dates), std::move(end_dates));
+    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeType>;
+
+    auto stream = std::make_shared<BlockInputStreamType>(
+        shared_from_this(),
+        max_block_size,
+        column_names,
+        std::move(ids),
+        std::move(start_dates),
+        std::move(end_dates));
+
+    return stream;
 }
 
-struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
+struct RangeHashedDictionaryCallGetBlockInputStreamImpl
 {
     BlockInputStreamPtr stream;
     const RangeHashedDictionary * dict;
@@ -656,7 +606,7 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
 {
     using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Int128, Float32, Float64>;
 
-    RangeHashedDIctionaryCallGetBlockInputStreamImpl callable;
+    RangeHashedDictionaryCallGetBlockInputStreamImpl callable;
     callable.dict = this;
     callable.column_names = &column_names;
     callable.max_block_size = max_block_size;
@@ -664,8 +614,9 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
     ListType::forEach(callable);
 
     if (!callable.stream)
-        throw Exception(
-            "Unexpected range type for RangeHashed dictionary: " + dict_struct.range_min->type->getName(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Unexpected range type for RangeHashed dictionary: {}",
+            dict_struct.range_min->type->getName());
 
     return callable.stream;
 }
@@ -680,11 +631,12 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                              DictionarySourcePtr source_ptr) -> DictionaryPtr
     {
         if (dict_struct.key)
-            throw Exception{"'key' is not supported for dictionary of layout 'range_hashed'", ErrorCodes::UNSUPPORTED_METHOD};
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'range_hashed'");
 
         if (!dict_struct.range_min || !dict_struct.range_max)
-            throw Exception{full_name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
-                            ErrorCodes::BAD_ARGUMENTS};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "{}: dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
+                full_name);
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};

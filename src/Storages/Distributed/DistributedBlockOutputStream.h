@@ -38,7 +38,7 @@ class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
     DistributedBlockOutputStream(
-        const Context & context_,
+        ContextPtr context_,
         StorageDistributed & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const ASTPtr & query_ast_,
@@ -62,10 +62,10 @@ private:
 
     void writeSplitAsync(const Block & block);
 
-    void writeAsyncImpl(const Block & block, const size_t shard_id = 0);
+    void writeAsyncImpl(const Block & block, size_t shard_id = 0);
 
     /// Increments finished_writings_count after each repeat.
-    void writeToLocal(const Block & block, const size_t repeats);
+    void writeToLocal(const Block & block, size_t repeats);
 
     void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
@@ -73,18 +73,17 @@ private:
     /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
     void writeSync(const Block & block);
 
-    void initWritingJobs(const Block & first_block);
+    void initWritingJobs(const Block & first_block, size_t start, size_t end);
 
     struct JobReplica;
-    ThreadPool::Job runWritingJob(JobReplica & job, const Block & current_block);
+    ThreadPool::Job runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block, size_t num_shards);
 
     void waitForJobs();
 
     /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
     std::string getCurrentStateDescription();
 
-private:
-    const Context & context;
+    ContextPtr context;
     StorageDistributed & storage;
     StorageMetadataPtr metadata_snapshot;
     ASTPtr query_ast;
@@ -115,7 +114,7 @@ private:
         Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;
-        std::unique_ptr<Context> local_context;
+        ContextPtr local_context;
         BlockOutputStreamPtr stream;
 
         UInt64 blocks_written = 0;

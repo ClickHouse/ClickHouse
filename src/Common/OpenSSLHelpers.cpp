@@ -37,12 +37,16 @@ void encodeSHA256(const void * text, size_t size, unsigned char * out)
 
 String getOpenSSLErrors()
 {
-    BIO * mem = BIO_new(BIO_s_mem());
-    SCOPE_EXIT(BIO_free(mem));
-    ERR_print_errors(mem);
-    char * buf = nullptr;
-    size_t size = BIO_get_mem_data(mem, &buf);
-    return String(buf, size);
+    String res;
+    ERR_print_errors_cb([](const char * str, size_t len, void * ctx)
+    {
+        String & out = *reinterpret_cast<String*>(ctx);
+        if (!out.empty())
+            out += ", ";
+        out.append(str, len);
+        return 1;
+    }, &res);
+    return res;
 }
 
 }

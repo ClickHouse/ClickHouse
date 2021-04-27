@@ -1,1 +1,1 @@
-`value` Nullable(Decimal128(1))
+`value` Nullable(Decimal(13, 2))

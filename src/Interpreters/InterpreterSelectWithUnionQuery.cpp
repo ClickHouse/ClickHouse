@@ -6,12 +6,18 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/OffsetStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/InDepthNodeVisitor.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -20,132 +26,19 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
-    extern const int EXPECTED_ALL_OR_DISTINCT;
 }
 
-struct CustomizeASTSelectWithUnionQueryNormalize
-{
-    using TypeToVisit = ASTSelectWithUnionQuery;
-
-    const UnionMode & union_default_mode;
-
-    static void getSelectsFromUnionListNode(ASTPtr & ast_select, ASTs & selects)
-    {
-        if (auto * inner_union = ast_select->as<ASTSelectWithUnionQuery>())
-        {
-            for (auto & child : inner_union->list_of_selects->children)
-                getSelectsFromUnionListNode(child, selects);
-
-            return;
-        }
-
-        selects.push_back(std::move(ast_select));
-    }
-
-    void visit(ASTSelectWithUnionQuery & ast, ASTPtr &) const
-    {
-        auto & union_modes = ast.list_of_modes;
-        ASTs selects;
-        auto & select_list = ast.list_of_selects->children;
-
-        int i;
-        for (i = union_modes.size() - 1; i >= 0; --i)
-        {
-            /// Rewrite UNION Mode
-            if (union_modes[i] == ASTSelectWithUnionQuery::Mode::Unspecified)
-            {
-                if (union_default_mode == UnionMode::ALL)
-                    union_modes[i] = ASTSelectWithUnionQuery::Mode::ALL;
-                else if (union_default_mode == UnionMode::DISTINCT)
-                    union_modes[i] = ASTSelectWithUnionQuery::Mode::DISTINCT;
-                else
-                    throw Exception(
-                        "Expected ALL or DISTINCT in SelectWithUnion query, because setting (union_default_mode) is empty",
-                        DB::ErrorCodes::EXPECTED_ALL_OR_DISTINCT);
-            }
-
-            if (union_modes[i] == ASTSelectWithUnionQuery::Mode::ALL)
-            {
-                if (auto * inner_union = select_list[i + 1]->as<ASTSelectWithUnionQuery>())
-                {
-                    /// Inner_union is an UNION ALL list, just lift up
-                    for (auto child = inner_union->list_of_selects->children.rbegin();
-                         child != inner_union->list_of_selects->children.rend();
-                         ++child)
-                        selects.push_back(std::move(*child));
-                }
-                else
-                    selects.push_back(std::move(select_list[i + 1]));
-            }
-            /// flatten all left nodes and current node to a UNION DISTINCT list
-            else if (union_modes[i] == ASTSelectWithUnionQuery::Mode::DISTINCT)
-            {
-                auto distinct_list = std::make_shared<ASTSelectWithUnionQuery>();
-                distinct_list->list_of_selects = std::make_shared<ASTExpressionList>();
-                distinct_list->children.push_back(distinct_list->list_of_selects);
-
-                for (int j = 0; j <= i + 1; ++j)
-                {
-                    getSelectsFromUnionListNode(select_list[j], distinct_list->list_of_selects->children);
-                }
-
-                distinct_list->union_mode = ASTSelectWithUnionQuery::Mode::DISTINCT;
-                distinct_list->is_normalized = true;
-                selects.push_back(std::move(distinct_list));
-                break;
-            }
-        }
-
-        /// No UNION DISTINCT or only one child in select_list
-        if (i == -1)
-        {
-            if (auto * inner_union = select_list[0]->as<ASTSelectWithUnionQuery>())
-            {
-                /// Inner_union is an UNION ALL list, just lift it up
-                for (auto child = inner_union->list_of_selects->children.rbegin(); child != inner_union->list_of_selects->children.rend();
-                     ++child)
-                    selects.push_back(std::move(*child));
-            }
-            else
-                selects.push_back(std::move(select_list[0]));
-        }
-
-        // reverse children list
-        std::reverse(selects.begin(), selects.end());
-
-        ast.is_normalized = true;
-        ast.union_mode = ASTSelectWithUnionQuery::Mode::ALL;
-
-        ast.list_of_selects->children = std::move(selects);
-    }
-};
-
-/// We need normalize children first, so we should visit AST tree bottom up
-using CustomizeASTSelectWithUnionQueryNormalizeVisitor
-    = InDepthNodeVisitor<OneTypeMatcher<CustomizeASTSelectWithUnionQueryNormalize>, false>;
-
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
-    const ASTPtr & query_ptr_, const Context & context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
+    const ASTPtr & query_ptr_, ContextPtr context_, const SelectQueryOptions & options_, const Names & required_result_column_names)
     : IInterpreterUnionOrSelectQuery(query_ptr_, context_, options_)
 {
-    auto & ast = query_ptr->as<ASTSelectWithUnionQuery &>();
+    ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
 
-    /// Normalize AST Tree
-    if (!ast.is_normalized)
-    {
-        CustomizeASTSelectWithUnionQueryNormalizeVisitor::Data union_default_mode{context->getSettingsRef().union_default_mode};
-        CustomizeASTSelectWithUnionQueryNormalizeVisitor(union_default_mode).visit(query_ptr);
+    const Settings & settings = context->getSettingsRef();
+    if (options.subquery_depth == 0 && (settings.limit > 0 || settings.offset > 0))
+        settings_limit_offset_needed = true;
 
-        /// After normalization, if it only has one ASTSelectWithUnionQuery child,
-        /// we can lift it up, this can reduce one unnecessary recursion later.
-        if (ast.list_of_selects->children.size() == 1 && ast.list_of_selects->children.at(0)->as<ASTSelectWithUnionQuery>())
-        {
-            query_ptr = std::move(ast.list_of_selects->children.at(0));
-            ast = query_ptr->as<ASTSelectWithUnionQuery &>();
-        }
-    }
-
-    size_t num_children = ast.list_of_selects->children.size();
+    size_t num_children = ast->list_of_selects->children.size();
     if (!num_children)
         throw Exception("Logical error: no children in ASTSelectWithUnionQuery", ErrorCodes::LOGICAL_ERROR);
 
@@ -161,7 +54,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         /// Result header if there are no filtering by 'required_result_column_names'.
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
 
-        Block full_result_header = getCurrentChildResultHeader(ast.list_of_selects->children.at(0), required_result_column_names);
+        Block full_result_header = getCurrentChildResultHeader(ast->list_of_selects->children.at(0), required_result_column_names);
 
         std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
 
@@ -171,7 +64,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         for (size_t query_num = 1; query_num < num_children; ++query_num)
         {
             Block full_result_header_for_current_select
-                = getCurrentChildResultHeader(ast.list_of_selects->children.at(query_num), required_result_column_names);
+                = getCurrentChildResultHeader(ast->list_of_selects->children.at(query_num), required_result_column_names);
 
             if (full_result_header_for_current_select.columns() != full_result_header.columns())
                 throw Exception("Different number of columns in UNION ALL elements:\n"
@@ -186,13 +79,59 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         }
     }
 
+    if (num_children == 1 && settings_limit_offset_needed)
+    {
+        const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
+        ASTSelectQuery * select_query = first_select_ast->as<ASTSelectQuery>();
+
+        if (!select_query->withFill() && !select_query->limit_with_ties)
+        {
+            UInt64 limit_length = 0;
+            UInt64 limit_offset = 0;
+
+            const ASTPtr limit_offset_ast = select_query->limitOffset();
+            if (limit_offset_ast)
+            {
+                limit_offset = limit_offset_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+                UInt64 new_limit_offset = settings.offset + limit_offset;
+                limit_offset_ast->as<ASTLiteral &>().value = Field(new_limit_offset);
+            }
+            else if (settings.offset)
+            {
+                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(Field(UInt64(settings.offset)));
+                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
+            }
+
+            const ASTPtr limit_length_ast = select_query->limitLength();
+            if (limit_length_ast)
+            {
+                limit_length = limit_length_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+                UInt64 new_limit_length = 0;
+                if (settings.offset == 0)
+                    new_limit_length = std::min(limit_length, UInt64(settings.limit));
+                else if (settings.offset < limit_length)
+                    new_limit_length =  settings.limit ? std::min(UInt64(settings.limit), limit_length - settings.offset) : (limit_length - settings.offset);
+
+                limit_length_ast->as<ASTLiteral &>().value = Field(new_limit_length);
+            }
+            else if (settings.limit)
+            {
+                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(Field(UInt64(settings.limit)));
+                select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
+            }
+
+            settings_limit_offset_done = true;
+        }
+    }
+
     for (size_t query_num = 0; query_num < num_children; ++query_num)
     {
         const Names & current_required_result_column_names
             = query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(
-            buildCurrentChildInterpreter(ast.list_of_selects->children.at(query_num), current_required_result_column_names));
+            buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), current_required_result_column_names));
     }
 
     /// Determine structure of the result.
@@ -258,26 +197,26 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & he
 Block InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return InterpreterSelectWithUnionQuery(ast_ptr_, *context, options.copy().analyze().noModify(), required_result_column_names)
+        return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
             .getSampleBlock();
     else
-        return InterpreterSelectQuery(ast_ptr_, *context, options.copy().analyze().noModify()).getSampleBlock();
+        return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names)
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, *context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
     else
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, *context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
 
-Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, const Context & context_)
+Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, ContextPtr context_, bool is_subquery)
 {
-    auto & cache = context_.getSampleBlockCache();
+    auto & cache = context_->getSampleBlockCache();
     /// Using query string because query_ptr changes for every internal SELECT
     auto key = queryToString(query_ptr_);
     if (cache.find(key) != cache.end())
@@ -285,7 +224,11 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
         return cache[key];
     }
 
-    return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
+    if (is_subquery)
+        return cache[key]
+            = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
+    else
+        return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
 }
 
 
@@ -293,39 +236,69 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     // auto num_distinct_union = optimizeUnionList();
     size_t num_plans = nested_interpreters.size();
+    const Settings & settings = context->getSettingsRef();
 
     /// Skip union for single interpreter.
     if (num_plans == 1)
     {
         nested_interpreters.front()->buildQueryPlan(query_plan);
-        return;
+    }
+    else
+    {
+        std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
+        DataStreams data_streams(num_plans);
+
+        for (size_t i = 0; i < num_plans; ++i)
+        {
+            plans[i] = std::make_unique<QueryPlan>();
+            nested_interpreters[i]->buildQueryPlan(*plans[i]);
+
+            if (!blocksHaveEqualStructure(plans[i]->getCurrentDataStream().header, result_header))
+            {
+                auto actions_dag = ActionsDAG::makeConvertingActions(
+                        plans[i]->getCurrentDataStream().header.getColumnsWithTypeAndName(),
+                        result_header.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Position);
+                auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentDataStream(), std::move(actions_dag));
+                converting_step->setStepDescription("Conversion before UNION");
+                plans[i]->addStep(std::move(converting_step));
+            }
+
+            data_streams[i] = plans[i]->getCurrentDataStream();
+        }
+
+        auto max_threads = context->getSettingsRef().max_threads;
+        auto union_step = std::make_unique<UnionStep>(std::move(data_streams), max_threads);
+
+        query_plan.unitePlans(std::move(union_step), std::move(plans));
+
+        const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
+        if (query.union_mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
+        {
+            /// Add distinct transform
+            SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
+
+            auto distinct_step
+                = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
+
+            query_plan.addStep(std::move(distinct_step));
+        }
     }
 
-    std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
-    DataStreams data_streams(num_plans);
-
-    for (size_t i = 0; i < num_plans; ++i)
+    if (settings_limit_offset_needed && !settings_limit_offset_done)
     {
-        plans[i] = std::make_unique<QueryPlan>();
-        nested_interpreters[i]->buildQueryPlan(*plans[i]);
-        data_streams[i] = plans[i]->getCurrentDataStream();
-    }
-
-    auto max_threads = context->getSettingsRef().max_threads;
-    auto union_step = std::make_unique<UnionStep>(std::move(data_streams), result_header, max_threads);
-
-    query_plan.unitePlans(std::move(union_step), std::move(plans));
-
-    const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
-    if (query.union_mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
-    {
-        /// Add distinct transform
-        const Settings & settings = context->getSettingsRef();
-        SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
-
-        auto distinct_step = std::make_unique<DistinctStep>(query_plan.getCurrentDataStream(), limits, 0, result_header.getNames(), false);
-
-        query_plan.addStep(std::move(distinct_step));
+        if (settings.limit > 0)
+        {
+            auto limit = std::make_unique<LimitStep>(query_plan.getCurrentDataStream(), settings.limit, settings.offset);
+            limit->setStepDescription("LIMIT OFFSET for SETTINGS");
+            query_plan.addStep(std::move(limit));
+        }
+        else
+        {
+            auto offset = std::make_unique<OffsetStep>(query_plan.getCurrentDataStream(), settings.offset);
+            offset->setStepDescription("OFFSET for SETTINGS");
+            query_plan.addStep(std::move(offset));
+        }
     }
 
 }
@@ -337,7 +310,9 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto pipeline = query_plan.buildQueryPipeline();
+    auto pipeline = query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context),
+        BuildQueryPipelineSettings::fromContext(context));
 
     res.pipeline = std::move(*pipeline);
     res.pipeline.addInterpreterContext(context);

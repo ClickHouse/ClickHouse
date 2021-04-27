@@ -10,9 +10,6 @@ target_link_libraries (sip_hash_perf PRIVATE clickhouse_common_io)
 add_executable (auto_array auto_array.cpp)
 target_link_libraries (auto_array PRIVATE clickhouse_common_io)
 
-add_executable (hash_table hash_table.cpp)
-target_link_libraries (hash_table PRIVATE clickhouse_common_io)
-
 add_executable (small_table small_table.cpp)
 target_link_libraries (small_table PRIVATE clickhouse_common_io)
 
@@ -40,6 +37,9 @@ target_link_libraries (arena_with_free_lists PRIVATE dbms)
 
 add_executable (pod_array pod_array.cpp)
 target_link_libraries (pod_array PRIVATE clickhouse_common_io)
+
+add_executable (lru_hash_map_perf lru_hash_map_perf.cpp)
+target_link_libraries (lru_hash_map_perf PRIVATE clickhouse_common_io)
 
 add_executable (thread_creation_latency thread_creation_latency.cpp)
 target_link_libraries (thread_creation_latency PRIVATE clickhouse_common_io)

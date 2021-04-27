@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 
-from clickhouse.utils.github.cherrypick import CherryPick
-from clickhouse.utils.github.query import Query as RemoteRepo
-from clickhouse.utils.github.local import Repository as LocalRepo
+try:
+    from clickhouse.utils.github.cherrypick import CherryPick
+    from clickhouse.utils.github.query import Query as RemoteRepo
+    from clickhouse.utils.github.local import Repository as LocalRepo
+except:
+    from .cherrypick import CherryPick
+    from .query import Query as RemoteRepo
+    from .local import Repository as LocalRepo
 
 import argparse
 import logging
@@ -20,9 +25,24 @@ class Backport:
     def getPullRequests(self, from_commit):
         return self._gh.get_pull_requests(from_commit)
 
-    def execute(self, repo, until_commit, number, run_cherrypick):
-        repo = LocalRepo(repo, 'origin', self.default_branch_name)
-        branches = repo.get_release_branches()[-number:]  # [(branch_name, base_commit)]
+    def getBranchesWithRelease(self):
+        branches = set()
+        for pull_request in self._gh.find_pull_requests("release"):
+            if not pull_request['merged'] and not pull_request['closed']:
+                branches.add(pull_request['headRefName'])
+        return branches
+
+    def execute(self, repo, upstream, until_commit, run_cherrypick):
+        repo = LocalRepo(repo, upstream, self.default_branch_name)
+        all_branches = repo.get_release_branches()  # [(branch_name, base_commit)]
+
+        release_branches = self.getBranchesWithRelease()
+
+        branches = []
+        # iterate over all branches to preserve their precedence.
+        for branch in all_branches:
+            if branch[0] in release_branches:
+                branches.append(branch)
 
         if not branches:
             logging.info('No release branches found!')
@@ -41,7 +61,7 @@ class Backport:
         RE_NO_BACKPORT = re.compile(r'^v(\d+\.\d+)-no-backport$')
         RE_BACKPORTED = re.compile(r'^v(\d+\.\d+)-backported$')
 
-        # pull-requests are sorted by ancestry from the least recent.
+        # pull-requests are sorted by ancestry from the most recent.
         for pr in pull_requests:
             while repo.comparator(branches[-1][1]) >= repo.comparator(pr['mergeCommit']['oid']):
                 logging.info("PR #{} is already inside {}. Dropping this branch for further PRs".format(pr['number'], branches[-1][0]))
@@ -55,7 +75,7 @@ class Backport:
 
             # First pass. Find all must-backports
             for label in pr['labels']['nodes']:
-                if label['name'] == 'pr-bugfix':
+                if label['name'] == 'pr-bugfix' or label['name'] == 'pr-must-backport':
                     backport_map[pr['number']] = branch_set.copy()
                     continue
                 matched = RE_MUST_BACKPORT.match(label['name'])
@@ -94,9 +114,9 @@ if __name__ == "__main__":
     parser.add_argument('--token',     type=str, required=True, help='token for Github access')
     parser.add_argument('--repo',      type=str, required=True, help='path to full repository', metavar='PATH')
     parser.add_argument('--til',       type=str,                help='check PRs from HEAD til this commit', metavar='COMMIT')
-    parser.add_argument('-n',          type=int, dest='number', help='number of last release branches to consider')
     parser.add_argument('--dry-run',   action='store_true',     help='do not create or merge any PRs', default=False)
     parser.add_argument('--verbose', '-v', action='store_true', help='more verbose output', default=False)
+    parser.add_argument('--upstream', '-u', type=str,           help='remote name of upstream in repository', default='origin')
     args = parser.parse_args()
 
     if args.verbose:
@@ -106,4 +126,4 @@ if __name__ == "__main__":
 
     cherrypick_run = lambda token, pr, branch: CherryPick(token, 'ClickHouse', 'ClickHouse', 'core', pr, branch).execute(args.repo, args.dry_run)
     bp = Backport(args.token, 'ClickHouse', 'ClickHouse', 'core')
-    bp.execute(args.repo, args.til, args.number, cherrypick_run)
+    bp.execute(args.repo, args.upstream, args.til, cherrypick_run)

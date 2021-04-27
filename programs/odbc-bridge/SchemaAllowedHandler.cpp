@@ -2,47 +2,40 @@
 
 #if USE_ODBC
 
-#    include <IO/WriteBufferFromHTTPServerResponse.h>
-#    include <IO/WriteHelpers.h>
-#    include <Poco/Data/ODBC/ODBCException.h>
-#    include <Poco/Data/ODBC/SessionImpl.h>
-#    include <Poco/Data/ODBC/Utility.h>
-#    include <Poco/Net/HTMLForm.h>
-#    include <Poco/Net/HTTPServerRequest.h>
-#    include <Poco/Net/HTTPServerResponse.h>
-#    include <common/logger_useful.h>
-#    include "validateODBCConnectionString.h"
+#include <Server/HTTP/HTMLForm.h>
+#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <IO/WriteHelpers.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <common/logger_useful.h>
+#include "validateODBCConnectionString.h"
+#include "ODBCConnectionFactory.h"
+#include <sql.h>
+#include <sqlext.h>
 
-#    define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
 
 namespace DB
 {
 namespace
 {
-    bool isSchemaAllowed(SQLHDBC hdbc)
+    bool isSchemaAllowed(nanodbc::connection & connection)
     {
-        SQLUINTEGER value;
-        SQLSMALLINT value_length = sizeof(value);
-        SQLRETURN r = POCO_SQL_ODBC_CLASS::SQLGetInfo(hdbc, SQL_SCHEMA_USAGE, &value, sizeof(value), &value_length);
-
-        if (POCO_SQL_ODBC_CLASS::Utility::isError(r))
-            throw POCO_SQL_ODBC_CLASS::ConnectionException(hdbc);
-
-        return value != 0;
+        uint32_t result = connection.get_info<uint32_t>(SQL_SCHEMA_USAGE);
+        return result != 0;
     }
 }
 
 
-void SchemaAllowedHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+void SchemaAllowedHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
-    Poco::Net::HTMLForm params(request, request.stream());
+    HTMLForm params(request, request.getStream());
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 
     auto process_error = [&response, this](const std::string & message)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
-            response.send() << message << std::endl;
+            *response.send() << message << std::endl;
         LOG_WARNING(log, message);
     };
 
@@ -55,13 +48,23 @@ void SchemaAllowedHandler::handleRequest(Poco::Net::HTTPServerRequest & request,
     try
     {
         std::string connection_string = params.get("connection_string");
-        POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
-        SQLHDBC hdbc = session.dbc().handle();
 
-        bool result = isSchemaAllowed(hdbc);
+        auto connection = ODBCConnectionFactory::instance().get(
+                validateODBCConnectionString(connection_string),
+                getContext()->getSettingsRef().odbc_bridge_connection_pool_size);
 
-        WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
-        writeBoolText(result, out);
+        bool result = isSchemaAllowed(*connection);
+
+        WriteBufferFromHTTPServerResponse out(response, request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD, keep_alive_timeout);
+        try
+        {
+            writeBoolText(result, out);
+            out.finalize();
+        }
+        catch (...)
+        {
+            out.finalize();
+        }
     }
     catch (...)
     {

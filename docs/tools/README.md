@@ -28,8 +28,8 @@ Follow the instructions on it's official website: <https://wkhtmltopdf.org/downl
 
 #### 2. Install CLI tools from npm
 
-1. `apt-get install npm` for Debian/Ubuntu or `brew install npm` on Mac OS X.
-2. `npm install -g purifycss amphtml-validator`.
+1. `sudo apt-get install npm` for Debian/Ubuntu or `brew install npm` on Mac OS X.
+2. `sudo npm install -g purify-css amphtml-validator`.
 
 #### 3. Set up virtualenv
 
@@ -51,5 +51,5 @@ The easiest way to see the result is to use `--livereload=8888` argument of buil
 
 At the moment there’s no easy way to do just that, but you can consider:
 
--   To hit the “Watch” button on top of GitHub web interface to know as early as possible, even during pull request. Alternative to this is `#github-activity` channel of [public ClickHouse Slack](https://join.slack.com/t/clickhousedb/shared_invite/enQtOTUzMjM4ODQwNTc5LWJmMjE3Yjc2YmI1ZDBlZmI4ZTc3OWY3ZTIwYTljYzY4MzBlODM3YzBjZTc1YmYyODRlZTJkYTgzYzBiNTA2Yjk).
+-   To hit the “Watch” button on top of GitHub web interface to know as early as possible, even during pull request. Alternative to this is `#github-activity` channel of [public ClickHouse Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-nwwakmk4-xOJ6cdy0sJC3It8j348~IA).
 -   Some search engines allow to subscribe on specific website changes via email and you can opt-in for that for https://clickhouse.tech.

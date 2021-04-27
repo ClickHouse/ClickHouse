@@ -18,14 +18,19 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
-set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/Common/config_version.h)
-set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/Common/config.h)
+set (CONFIG_VERSION "${CMAKE_CURRENT_BINARY_DIR}/Common/config_version.h")
+set (CONFIG_COMMON "${CMAKE_CURRENT_BINARY_DIR}/Common/config.h")
 
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 configure_file (Common/config.h.in ${CONFIG_COMMON})
 configure_file (Common/config_version.h.in ${CONFIG_VERSION})
-configure_file (Core/config_core.h.in ${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h)
+configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
+
+if (USE_DEBUG_HELPERS)
+    set (INCLUDE_DEBUG_HELPERS "-I\"${ClickHouse_SOURCE_DIR}/base\" -include \"${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h\"")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
+endif ()
 
 if (COMPILER_GCC)
     # If we leave this optimization enabled, gcc-7 replaces a pair of SSE intrinsics (16 byte load, store) with a call to memcpy.
@@ -49,6 +54,7 @@ add_subdirectory (Dictionaries)
 add_subdirectory (Disks)
 add_subdirectory (Storages)
 add_subdirectory (Parsers)
+add_subdirectory (Parsers/New)
 add_subdirectory (IO)
 add_subdirectory (Functions)
 add_subdirectory (Interpreters)
@@ -59,6 +65,7 @@ add_subdirectory (Processors)
 add_subdirectory (Formats)
 add_subdirectory (Compression)
 add_subdirectory (Server)
+add_subdirectory (Coordination)
 
 
 set(dbms_headers)
@@ -78,6 +85,11 @@ if (USE_AMQPCPP)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
+if (USE_LIBPQXX)
+    add_headers_and_sources(dbms Databases/PostgreSQL)
+    add_headers_and_sources(dbms Storages/PostgreSQL)
+endif()
+
 if (USE_ROCKSDB)
     add_headers_and_sources(dbms Storages/RocksDB)
 endif()
@@ -87,11 +99,15 @@ if (USE_AWS_S3)
     add_headers_and_sources(dbms Disks/S3)
 endif()
 
+if (USE_HDFS)
+    add_headers_and_sources(dbms Storages/HDFS)
+endif()
+
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp)
-list (APPEND dbms_headers Functions/IFunctionImpl.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h)
+list (APPEND dbms_sources Functions/IFunction.cpp Functions/FunctionFactory.cpp Functions/FunctionHelpers.cpp Functions/extractTimeZoneFromFunctionArguments.cpp Functions/replicate.cpp Functions/FunctionsLogical.cpp)
+list (APPEND dbms_headers Functions/IFunctionImpl.h Functions/FunctionFactory.h Functions/FunctionHelpers.h Functions/extractTimeZoneFromFunctionArguments.h Functions/replicate.h Functions/FunctionsLogical.h)
 
 list (APPEND dbms_sources
     AggregateFunctions/AggregateFunctionFactory.cpp
@@ -129,8 +145,12 @@ endif ()
 add_library (clickhouse_malloc OBJECT Common/malloc.cpp)
 set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
-add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
-target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
+if (((SANITIZE STREQUAL "thread") OR (SANITIZE STREQUAL "address")) AND COMPILER_GCC)
+    message(WARNING "Memory tracking is disabled, due to gcc sanitizers")
+else()
+    add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
+    target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
+endif()
 
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
@@ -143,7 +163,11 @@ macro(add_object_library name common_path)
         list (APPEND all_modules ${name})
         add_headers_and_sources(${name} ${common_path})
         add_library(${name} SHARED ${${name}_sources} ${${name}_headers})
-        target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+        if (OS_DARWIN)
+            target_link_libraries (${name} PRIVATE -Wl,-undefined,dynamic_lookup)
+        else()
+            target_link_libraries (${name} PRIVATE -Wl,--unresolved-symbols=ignore-all)
+        endif()
     endif ()
 endmacro()
 
@@ -153,6 +177,7 @@ add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
 add_object_library(clickhouse_datastreams DataStreams)
 add_object_library(clickhouse_datatypes DataTypes)
+add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
 add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
@@ -165,7 +190,9 @@ add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
 add_object_library(clickhouse_client Client)
+add_object_library(clickhouse_bridge Bridge)
 add_object_library(clickhouse_server Server)
+add_object_library(clickhouse_server_http Server/HTTP)
 add_object_library(clickhouse_formats Formats)
 add_object_library(clickhouse_processors Processors)
 add_object_library(clickhouse_processors_executors Processors/Executors)
@@ -176,6 +203,11 @@ add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_merges Processors/Merges)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
+add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
+
+if (USE_NURAFT)
+    add_object_library(clickhouse_coordination Coordination)
+endif()
 
 set (DBMS_COMMON_LIBRARIES)
 # libgcc_s does not provide an implementation of an atomics library. Instead,
@@ -186,15 +218,19 @@ endif()
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
+    target_link_libraries (dbms PRIVATE clickhouse_parsers_new jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules} ${DBMS_COMMON_LIBRARIES})
-    target_link_libraries (clickhouse_interpreters PRIVATE jemalloc libdivide)
+    target_link_libraries (clickhouse_interpreters PRIVATE clickhouse_parsers_new jemalloc libdivide)
     list (APPEND all_modules dbms)
     # force all split libs to be linked
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
+    if (OS_DARWIN)
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-undefined,error")
+    else()
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
+    endif()
 endif ()
 
 macro (dbms_target_include_directories)
@@ -209,8 +245,8 @@ macro (dbms_target_link_libraries)
     endforeach ()
 endmacro ()
 
-dbms_target_include_directories (PUBLIC ${ClickHouse_SOURCE_DIR}/src ${ClickHouse_BINARY_DIR}/src)
-target_include_directories (clickhouse_common_io PUBLIC ${ClickHouse_SOURCE_DIR}/src ${ClickHouse_BINARY_DIR}/src)
+dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
+target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
 if (USE_EMBEDDED_COMPILER)
     dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
@@ -253,7 +289,7 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
             common
             ${DOUBLE_CONVERSION_LIBRARIES}
-            ryu
+            dragonbox_to_chars
 )
 
 if(RE2_LIBRARY)
@@ -286,18 +322,18 @@ if (USE_RDKAFKA)
     endif()
 endif()
 
-if (USE_AMQPCPP)
-    dbms_target_link_libraries(PUBLIC amqp-cpp)
-endif()
-
 if (USE_CYRUS_SASL)
     dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})
 endif()
 
 if (USE_KRB5)
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${KRB5_INCLUDE_DIR})
     dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
+if (USE_NURAFT)
+    dbms_target_link_libraries(PUBLIC ${NURAFT_LIBRARY})
+endif()
 
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
@@ -321,24 +357,24 @@ dbms_target_link_libraries (
         clickhouse_common_io
 )
 
-target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/Core/include) # uses some includes from core
-dbms_target_include_directories(PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/Core/include)
+target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
+dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
 
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
 
 if (ZSTD_LIBRARY)
     dbms_target_link_libraries(PRIVATE ${ZSTD_LIBRARY})
+    target_link_libraries (clickhouse_common_io PUBLIC ${ZSTD_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${ZSTD_INCLUDE_DIR})
     if (NOT USE_INTERNAL_ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
         dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
     endif ()
 endif()
 
-set (LZMA_LIBRARY liblzma)
-set (LZMA_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/xz/src/liblzma/api)
-if (LZMA_LIBRARY)
-    target_link_libraries (clickhouse_common_io PUBLIC ${LZMA_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LZMA_INCLUDE_DIR})
+if (XZ_LIBRARY)
+    target_link_libraries (clickhouse_common_io PUBLIC ${XZ_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${XZ_INCLUDE_DIR})
 endif()
 
 if (USE_ICU)
@@ -352,7 +388,7 @@ endif ()
 
 if (USE_PARQUET)
     dbms_target_link_libraries(PRIVATE ${PARQUET_LIBRARY})
-    if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+    if (NOT USE_INTERNAL_PARQUET_LIBRARY)
         dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
         if (USE_STATIC_LIBRARIES)
             dbms_target_link_libraries(PRIVATE ${ARROW_LIBRARY})
@@ -386,8 +422,8 @@ if (USE_GRPC)
 endif()
 
 if (USE_HDFS)
-    target_link_libraries (clickhouse_common_io PUBLIC ${HDFS3_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
+    dbms_target_link_libraries(PRIVATE ${HDFS3_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 endif()
 
 if (USE_AWS_S3)
@@ -401,6 +437,11 @@ if (USE_BROTLI)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
 endif()
 
+if (USE_AMQPCPP)
+    dbms_target_link_libraries(PUBLIC ${AMQPCPP_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${AMQPCPP_INCLUDE_DIR})
+endif()
+
 if (USE_CASSANDRA)
     dbms_target_link_libraries(PUBLIC ${CASSANDRA_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${CASS_INCLUDE_DIR})
@@ -412,15 +453,31 @@ if (USE_MSGPACK)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
 endif()
 
+target_link_libraries (clickhouse_common_io PUBLIC ${FAST_FLOAT_LIBRARY})
+target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${FAST_FLOAT_INCLUDE_DIR})
+
 if (USE_ORC)
     dbms_target_link_libraries(PUBLIC ${ORC_LIBRARIES})
-    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} ${CMAKE_BINARY_DIR}/contrib/orc/c++/include)
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${CMAKE_BINARY_DIR}/contrib/orc/c++/include")
 endif ()
 
 if (USE_ROCKSDB)
     dbms_target_link_libraries(PUBLIC ${ROCKSDB_LIBRARY})
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ROCKSDB_INCLUDE_DIR})
 endif()
+
+if (USE_LIBPQXX)
+    dbms_target_link_libraries(PUBLIC ${LIBPQXX_LIBRARY})
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${LIBPQXX_INCLUDE_DIR})
+endif()
+
+if (USE_DATASKETCHES)
+    target_include_directories (clickhouse_aggregate_functions SYSTEM BEFORE PRIVATE ${DATASKETCHES_INCLUDE_DIR})
+endif ()
+
+dbms_target_link_libraries(PRIVATE _boost_context)
+
+include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
@@ -429,7 +486,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     endmacro()
 
     # attach all dbms gtest sources
-    grep_gtest_sources(${ClickHouse_SOURCE_DIR}/src dbms_gtest_sources)
+    grep_gtest_sources("${ClickHouse_SOURCE_DIR}/src" dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
 
     # gtest framework has substandard code
@@ -442,6 +499,20 @@ if (ENABLE_TESTS AND USE_GTEST)
         -Wno-gnu-zero-variadic-macro-arguments
     )
 
-    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} clickhouse_functions clickhouse_aggregate_functions clickhouse_parsers dbms clickhouse_common_zookeeper string_utils)
+    target_link_libraries(unit_tests_dbms PRIVATE
+        ${GTEST_BOTH_LIBRARIES}
+        clickhouse_functions
+        clickhouse_aggregate_functions
+        clickhouse_parsers
+        clickhouse_storages_system
+        dbms
+        clickhouse_common_zookeeper
+        string_utils)
+
+    # For __udivmodti4 referenced in Core/tests/gtest_DecimalFunctions.cpp
+    if (OS_DARWIN AND COMPILER_GCC)
+        target_link_libraries(unit_tests_dbms PRIVATE gcc)
+    endif ()
+
     add_check(unit_tests_dbms)
 endif ()

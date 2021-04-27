@@ -37,10 +37,10 @@ NamesAndTypesList StorageSystemSettingsProfileElements::getNamesAndTypes()
 }
 
 
-void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    context.checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
-    const auto & access_control = context.getAccessControlManager();
+    context->checkAccess(AccessType::SHOW_SETTINGS_PROFILES);
+    const auto & access_control = context->getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
     boost::range::push_back(ids, access_control.findAll<SettingsProfile>());
@@ -68,121 +68,97 @@ void StorageSystemSettingsProfileElements::fillData(MutableColumns & res_columns
 
     auto add_rows_for_single_element = [&](const String & owner_name, EntityType owner_type, const SettingsProfileElement & element, size_t & index)
     {
-        switch (owner_type)
+        size_t old_num_rows = column_profile_name.size();
+        size_t new_num_rows = old_num_rows + 1;
+        size_t current_index = index++;
+
+        bool inserted_value = false;
+        if (!element.value.isNull() && !element.setting_name.empty())
         {
-            case EntityType::SETTINGS_PROFILE:
-            {
-                column_user_name.insertDefault();
-                column_user_name_null_map.push_back(true);
-                column_role_name.insertDefault();
-                column_role_name_null_map.push_back(true);
-                column_profile_name.insertData(owner_name.data(), owner_name.length());
-                column_profile_name_null_map.push_back(false);
-                break;
-            }
-            case EntityType::USER:
-            {
-                column_user_name.insertData(owner_name.data(), owner_name.length());
-                column_user_name_null_map.push_back(false);
-                column_profile_name.insertDefault();
-                column_profile_name_null_map.push_back(true);
-                column_role_name.insertDefault();
-                column_role_name_null_map.push_back(true);
-                break;
-            }
-            case EntityType::ROLE:
-            {
-                column_user_name.insertDefault();
-                column_user_name_null_map.push_back(true);
-                column_role_name.insertData(owner_name.data(), owner_name.length());
-                column_role_name_null_map.push_back(false);
-                column_profile_name.insertDefault();
-                column_profile_name_null_map.push_back(true);
-                break;
-            }
-            default:
-                assert(false);
+            String str = Settings::valueToStringUtil(element.setting_name, element.value);
+            column_value.insertData(str.data(), str.length());
+            column_value_null_map.push_back(false);
+            inserted_value = true;
         }
 
+        bool inserted_min = false;
+        if (!element.min_value.isNull() && !element.setting_name.empty())
+        {
+            String str = Settings::valueToStringUtil(element.setting_name, element.min_value);
+            column_min.insertData(str.data(), str.length());
+            column_min_null_map.push_back(false);
+            inserted_min = true;
+        }
+
+        bool inserted_max = false;
+        if (!element.max_value.isNull() && !element.setting_name.empty())
+        {
+            String str = Settings::valueToStringUtil(element.setting_name, element.max_value);
+            column_max.insertData(str.data(), str.length());
+            column_max_null_map.push_back(false);
+            inserted_max = true;
+        }
+
+        bool inserted_readonly = false;
+        if (element.readonly && !element.setting_name.empty())
+        {
+            column_readonly.push_back(*element.readonly);
+            column_readonly_null_map.push_back(false);
+            inserted_readonly = true;
+        }
+
+        bool inserted_setting_name = false;
+        if (inserted_value || inserted_min || inserted_max || inserted_readonly)
+        {
+            const auto & setting_name = element.setting_name;
+            column_setting_name.insertData(setting_name.data(), setting_name.size());
+            column_setting_name_null_map.push_back(false);
+            inserted_setting_name = true;
+        }
+
+        bool inserted_inherit_profile = false;
         if (element.parent_profile)
         {
             auto parent_profile = access_control.tryReadName(*element.parent_profile);
             if (parent_profile)
             {
-                column_index.push_back(index++);
-                column_setting_name.insertDefault();
-                column_setting_name_null_map.push_back(true);
-                column_value.insertDefault();
-                column_value_null_map.push_back(true);
-                column_min.insertDefault();
-                column_min_null_map.push_back(true);
-                column_max.insertDefault();
-                column_max_null_map.push_back(true);
-                column_readonly.push_back(0);
-                column_readonly_null_map.push_back(true);
                 const String & parent_profile_str = *parent_profile;
                 column_inherit_profile.insertData(parent_profile_str.data(), parent_profile_str.length());
                 column_inherit_profile_null_map.push_back(false);
+                inserted_inherit_profile = true;
             }
         }
 
-        if (!element.setting_name.empty()
-            && (!element.value.isNull() || !element.min_value.isNull() || !element.max_value.isNull() || element.readonly))
+        if (inserted_setting_name || inserted_inherit_profile)
         {
-            const auto & setting_name = element.setting_name;
-            column_index.push_back(index++);
-            column_setting_name.insertData(setting_name.data(), setting_name.size());
-            column_setting_name_null_map.push_back(false);
-
-            if (element.value.isNull())
+            switch (owner_type)
             {
-                column_value.insertDefault();
-                column_value_null_map.push_back(true);
-            }
-            else
-            {
-                String str = Settings::valueToStringUtil(setting_name, element.value);
-                column_value.insertData(str.data(), str.length());
-                column_value_null_map.push_back(false);
-            }
-
-            if (element.min_value.isNull())
-            {
-                column_min.insertDefault();
-                column_min_null_map.push_back(true);
-            }
-            else
-            {
-                String str = Settings::valueToStringUtil(setting_name, element.min_value);
-                column_min.insertData(str.data(), str.length());
-                column_min_null_map.push_back(false);
+                case EntityType::SETTINGS_PROFILE:
+                {
+                    column_profile_name.insertData(owner_name.data(), owner_name.length());
+                    column_profile_name_null_map.push_back(false);
+                    break;
+                }
+                case EntityType::USER:
+                {
+                    column_user_name.insertData(owner_name.data(), owner_name.length());
+                    column_user_name_null_map.push_back(false);
+                    break;
+                }
+                case EntityType::ROLE:
+                {
+                    column_role_name.insertData(owner_name.data(), owner_name.length());
+                    column_role_name_null_map.push_back(false);
+                    break;
+                }
+                default:
+                    assert(false);
             }
 
-            if (element.max_value.isNull())
-            {
-                column_max.insertDefault();
-                column_max_null_map.push_back(true);
-            }
-            else
-            {
-                String str = Settings::valueToStringUtil(setting_name, element.max_value);
-                column_max.insertData(str.data(), str.length());
-                column_max_null_map.push_back(false);
-            }
+            column_index.push_back(current_index);
 
-            if (element.readonly)
-            {
-                column_readonly.push_back(*element.readonly);
-                column_readonly_null_map.push_back(false);
-            }
-            else
-            {
-                column_readonly.push_back(0);
-                column_readonly_null_map.push_back(true);
-            }
-
-            column_inherit_profile.insertDefault();
-            column_inherit_profile_null_map.push_back(true);
+            for (auto & res_column : res_columns)
+                res_column->insertManyDefaults(new_num_rows - res_column->size());
         }
     };
 

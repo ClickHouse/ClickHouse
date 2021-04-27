@@ -154,7 +154,7 @@ $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhous
 ## 下载预处理好的分区数据 {#xia-zai-yu-chu-li-hao-de-fen-qu-shu-ju}
 
 ``` bash
-$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart

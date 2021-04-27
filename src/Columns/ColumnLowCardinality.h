@@ -3,7 +3,6 @@
 #include <Columns/IColumnUnique.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include "ColumnsNumber.h"
 
 
@@ -95,6 +94,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
+    const char * skipSerializedInArena(const char * pos) const override;
+
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
@@ -127,6 +128,8 @@ public:
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
 
+    bool hasEqualValues() const override;
+
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     void updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_range) const override;
@@ -152,6 +155,7 @@ public:
     void reserve(size_t n) override { idx.reserve(n); }
 
     size_t byteSize() const override { return idx.getPositions()->byteSize() + getDictionary().byteSize(); }
+    size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
     void forEachSubcolumn(ColumnCallback callback) override

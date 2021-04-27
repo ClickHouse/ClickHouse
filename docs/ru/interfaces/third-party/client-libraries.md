@@ -1,6 +1,6 @@
 ---
 toc_priority: 26
-toc_title: "\u041a\u043b\u0438\u0435\u043d\u0442\u0441\u043a\u0438\u0435\u0020\u0431\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u043e\u0442\u0020\u0441\u0442\u043e\u0440\u043e\u043d\u043d\u0438\u0445\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
+toc_title: "Клиентские библиотеки от сторонних разработчиков"
 ---
 
 # Клиентские библиотеки от сторонних разработчиков {#klientskie-biblioteki-ot-storonnikh-razrabotchikov}
@@ -13,6 +13,7 @@ toc_title: "\u041a\u043b\u0438\u0435\u043d\u0442\u0441\u043a\u0438\u0435\u0020\u
     -   [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
     -   [aiochclient](https://github.com/maximdanilchenko/aiochclient)
+    -   [asynch](https://github.com/long2ice/asynch)
 -   PHP
     -   [smi2/phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
     -   [8bitov/clickhouse-php-client](https://packagist.org/packages/8bitov/clickhouse-php-client)
@@ -20,6 +21,8 @@ toc_title: "\u041a\u043b\u0438\u0435\u043d\u0442\u0441\u043a\u0438\u0435\u0020\u
     -   [simpod/clickhouse-client](https://packagist.org/packages/simpod/clickhouse-client)
     -   [seva-code/php-click-house-client](https://packagist.org/packages/seva-code/php-click-house-client)
     -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
+    -   [glushkovds/phpclickhouse-laravel](https://packagist.org/packages/glushkovds/phpclickhouse-laravel)
+    -   [kolya7k ClickHouse PHP extension](https://github.com//kolya7k/clickhouse-php)
 -   Go
     -   [clickhouse](https://github.com/kshvakov/clickhouse/)
     -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
@@ -55,4 +58,3 @@ toc_title: "\u041a\u043b\u0438\u0435\u043d\u0442\u0441\u043a\u0438\u0435\u0020\u
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/client_libraries/) <!--hide-->

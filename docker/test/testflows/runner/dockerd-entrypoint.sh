@@ -16,6 +16,14 @@ while true; do
 done
 set -e
 
+echo "Configure to use Yandex dockerhub-proxy"
+cat > /etc/docker/daemon.json << EOF
+{
+    "insecure-registries": ["dockerhub-proxy.sas.yp-c.yandex.net:5000"],
+    "registry-mirrors": ["dockerhub-proxy.sas.yp-c.yandex.net:5000"]
+}
+EOF
+
 echo "Start tests"
 export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse
 export CLICKHOUSE_TESTS_CLIENT_BIN_PATH=/clickhouse

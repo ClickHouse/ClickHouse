@@ -25,13 +25,14 @@ namespace DB
 
 static void executeCreateQuery(
     const String & query,
-    Context & context,
+    ContextPtr context,
     const String & database,
     const String & file_name,
     bool has_force_restore_data_flag)
 {
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context.getSettingsRef().max_parser_depth);
+    ASTPtr ast = parseQuery(
+        parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context->getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.database = database;
@@ -45,7 +46,7 @@ static void executeCreateQuery(
 
 
 static void loadDatabase(
-    Context & context,
+    ContextPtr context,
     const String & database,
     const String & database_path,
     bool force_restore_data)
@@ -73,8 +74,7 @@ static void loadDatabase(
 
     try
     {
-        executeCreateQuery(database_attach_query, context, database,
-            database_metadata_file, force_restore_data);
+        executeCreateQuery(database_attach_query, context, database, database_metadata_file, force_restore_data);
     }
     catch (Exception & e)
     {
@@ -84,18 +84,18 @@ static void loadDatabase(
 }
 
 
-void loadMetadata(Context & context, const String & default_database_name)
+void loadMetadata(ContextPtr context, const String & default_database_name)
 {
     Poco::Logger * log = &Poco::Logger::get("loadMetadata");
 
-    String path = context.getPath() + "metadata";
+    String path = context->getPath() + "metadata";
 
     /** There may exist 'force_restore_data' file, that means,
       *  skip safety threshold on difference of data parts while initializing tables.
       * This file is deleted after successful loading of tables.
       * (flag is "one-shot")
       */
-    Poco::File force_restore_data_flag_file(context.getFlagsPath() + "force_restore_data");
+    Poco::File force_restore_data_flag_file(context->getFlagsPath() + "force_restore_data");
     bool has_force_restore_data_flag = force_restore_data_flag_file.exists();
 
     /// Loop over databases.
@@ -108,6 +108,7 @@ void loadMetadata(Context & context, const String & default_database_name)
 
         if (!it->isDirectory())
         {
+            /// TODO: DETACH DATABASE PERMANENTLY ?
             if (endsWith(it.name(), ".sql"))
             {
                 String db_name = it.name().substr(0, it.name().size() - 4);
@@ -167,9 +168,9 @@ void loadMetadata(Context & context, const String & default_database_name)
 }
 
 
-void loadMetadataSystem(Context & context)
+void loadMetadataSystem(ContextPtr context)
 {
-    String path = context.getPath() + "metadata/" + DatabaseCatalog::SYSTEM_DATABASE;
+    String path = context->getPath() + "metadata/" + DatabaseCatalog::SYSTEM_DATABASE;
     String metadata_file = path + ".sql";
     if (Poco::File(path).exists() || Poco::File(metadata_file).exists())
     {

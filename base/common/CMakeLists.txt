@@ -6,6 +6,7 @@ set (SRCS
     demangle.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
+    getPageSize.cpp
     getThreadId.cpp
     JSON.cpp
     LineReader.cpp
@@ -28,7 +29,7 @@ elseif (ENABLE_READLINE)
 endif ()
 
 if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-include ${ClickHouse_SOURCE_DIR}/base/common/iostream_debug_helpers.h")
+    set (INCLUDE_DEBUG_HELPERS "-include \"${ClickHouse_SOURCE_DIR}/base/common/iostream_debug_helpers.h\"")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
@@ -44,7 +45,11 @@ if (USE_INTERNAL_CCTZ)
     set_source_files_properties(DateLUTImpl.cpp PROPERTIES COMPILE_DEFINITIONS USE_INTERNAL_CCTZ)
 endif()
 
-target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
+target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
+
+if (OS_DARWIN AND NOT MAKE_STATIC_LIBRARIES)
+    target_link_libraries(common PUBLIC -Wl,-U,_inside_main)
+endif()
 
 # Allow explicit fallback to readline
 if (NOT ENABLE_REPLXX AND ENABLE_READLINE)
@@ -73,7 +78,6 @@ target_link_libraries (common
         ${CITYHASH_LIBRARIES}
         boost::headers_only
         boost::system
-        FastMemcpy
         Poco::Net
         Poco::Net::SSL
         Poco::Util

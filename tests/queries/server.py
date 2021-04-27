@@ -24,6 +24,7 @@ class ServerThread(threading.Thread):
         self.server_config = os.path.join(self.etc_dir, 'server-config.xml')
         self.users_config = os.path.join(self.etc_dir, 'users.xml')
         self.dicts_config = os.path.join(self.etc_dir, 'dictionaries.xml')
+        self.client_config = os.path.join(self.etc_dir, 'client-config.xml')
 
         os.makedirs(self.log_dir)
         os.makedirs(self.etc_dir)
@@ -36,6 +37,7 @@ class ServerThread(threading.Thread):
         self.tcps_port = port_base + 4
         self.https_port = port_base + 5
         self.odbc_port = port_base + 6
+        self.proxy_port = port_base + 7
 
         self._args = [
             '--config-file={config_path}'.format(config_path=self.server_config),
@@ -43,6 +45,8 @@ class ServerThread(threading.Thread):
             '--tcp_port={tcp_port}'.format(tcp_port=self.tcp_port),
             '--http_port={http_port}'.format(http_port=self.http_port),
             '--interserver_http_port={inter_port}'.format(inter_port=self.inter_port),
+            '--tcp_with_proxy_port={proxy_port}'.format(proxy_port=self.proxy_port),
+            # TODO: SSL certificate is not specified '--tcp_port_secure={tcps_port}'.format(tcps_port=self.tcps_port),
         ]
 
         with open(self.server_config, 'w') as f:
@@ -54,6 +58,9 @@ class ServerThread(threading.Thread):
 
         with open(self.dicts_config, 'w') as f:
             f.write(ServerThread.DEFAULT_DICTIONARIES_CONFIG.format(tcp_port=self.tcp_port))
+
+        with open(self.client_config, 'w') as f:
+            f.write(ServerThread.DEFAULT_CLIENT_CONFIG)
 
     def run(self):
         retries = ServerThread.DEFAULT_RETRIES
@@ -71,8 +78,8 @@ class ServerThread(threading.Thread):
                     print('Successful server response:', s.recv(1024))  # FIXME: read whole buffered response
                     s.shutdown(socket.SHUT_RDWR)
                     s.close()
-                except Exception as e:
-                    print('Failed to connect to server:', e, file=sys.stderr)
+                except Exception:
+                    # Failed to connect to server - try again
                     continue
                 else:
                     break
@@ -90,6 +97,10 @@ class ServerThread(threading.Thread):
             break
 
         self._lock.release()
+
+        if not retries:
+            print('Failed to start server', file=sys.stderr)
+            return
 
         while self._proc.returncode is None:
             self._proc.communicate()
@@ -164,6 +175,13 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
             </retention>
         </default>
     </graphite_rollup>
+
+    <query_masking_rules>
+        <rule>
+            <regexp>TOPSECRET.TOPSECRET</regexp>
+            <replace>[hidden]</replace>
+        </rule>
+    </query_masking_rules>
 
     <remote_servers>
         <test_shard_localhost>
@@ -253,6 +271,24 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
                 </replica>
             </shard>
         </test_cluster_two_shards_internal_replication>
+
+        <test_cluster_with_incorrect_pw>
+             <shard>
+                 <internal_replication>true</internal_replication>
+                 <replica>
+                     <host>127.0.0.1</host>
+                     <port>{tcp_port}</port>
+                     <!-- password is incorrect -->
+                     <password>foo</password>
+                 </replica>
+                 <replica>
+                     <host>127.0.0.2</host>
+                     <port>{tcp_port}</port>
+                     <!-- password is incorrect -->
+                     <password>foo</password>
+                 </replica>
+             </shard>
+         </test_cluster_with_incorrect_pw>
     </remote_servers>
 
     <storage_configuration>
@@ -266,6 +302,10 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
     <zookeeper>
         <implementation>testkeeper</implementation>
     </zookeeper>
+
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
 
     <part_log>
         <database>system</database>
@@ -1082,5 +1122,152 @@ ServerThread.DEFAULT_DICTIONARIES_CONFIG = \
             </attribute>
         </structure>
     </dictionary>
+
+    <dictionary>
+        <name>simple_executable_cache_dictionary_no_implicit_key</name>
+        <structure>
+            <id>
+                <name>id</name>
+                <type>UInt64</type>
+            </id>
+
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "1\tValue"</command>
+                <format>TabSeparated</format>
+                <implicit_key>false</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <cache>
+                <size_in_cells>10000</size_in_cells>
+            </cache>
+        </layout>
+        <lifetime>300</lifetime>
+    </dictionary>
+
+    <dictionary>
+        <name>simple_executable_cache_dictionary_implicit_key</name>
+        <structure>
+            <id>
+                <name>id</name>
+                <type>UInt64</type>
+            </id>
+
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "Value"</command>
+                <format>TabSeparated</format>
+                <implicit_key>true</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <cache>
+                <size_in_cells>10000</size_in_cells>
+            </cache>
+        </layout>
+        <lifetime>300</lifetime>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_executable_cache_dictionary_no_implicit_key</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>id</name>
+                    <type>UInt64</type>
+                    <null_value></null_value>
+                </attribute>
+                <attribute>
+                    <name>id_key</name>
+                    <type>String</type>
+                    <null_value></null_value>
+                </attribute>
+            </key>
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "1\tFirstKey\tValue"</command>
+                <format>TabSeparated</format>
+                <implicit_key>false</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <complex_key_cache>
+                <size_in_cells>10000</size_in_cells>
+            </complex_key_cache>
+        </layout>
+        <lifetime>300</lifetime>
+    </dictionary>
+
+    <dictionary>
+        <name>complex_executable_cache_dictionary_implicit_key</name>
+        <structure>
+            <key>
+                <attribute>
+                    <name>id</name>
+                    <type>UInt64</type>
+                    <null_value></null_value>
+                </attribute>
+                <attribute>
+                    <name>id_key</name>
+                    <type>String</type>
+                    <null_value></null_value>
+                </attribute>
+            </key>
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <source>
+            <executable>
+                <command>echo "Value"</command>
+                <format>TabSeparated</format>
+                <implicit_key>true</implicit_key>
+            </executable>
+        </source>
+        <layout>
+            <complex_key_cache>
+                <size_in_cells>10000</size_in_cells>
+            </complex_key_cache>
+        </layout>
+        <lifetime>300</lifetime>
+    </dictionary>
 </yandex>
+"""
+
+ServerThread.DEFAULT_CLIENT_CONFIG = \
+"""\
+<config>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>true</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</config>
 """

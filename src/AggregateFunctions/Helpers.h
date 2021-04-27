@@ -135,6 +135,8 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256>(std::forward<TArgs>(args)...);
+    if constexpr (AggregateFunctionTemplate<DateTime64>::DateTime64Supported)
+        if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -146,6 +148,8 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
     if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128, Data>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Decimal256) return new AggregateFunctionTemplate<Decimal256, Data>(std::forward<TArgs>(args)...);
+    if constexpr (AggregateFunctionTemplate<DateTime64, Data>::DateTime64Supported)
+        if (which.idx == TypeIndex::DateTime64) return new AggregateFunctionTemplate<DateTime64, Data>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -177,6 +181,46 @@ static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_ty
         return createWithTwoNumericTypesSecond<Int8, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Enum16)
         return createWithTwoNumericTypesSecond<Int16, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
+template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
+static IAggregateFunction * createWithTwoNumericOrDateTypesSecond(const IDataType & second_type, TArgs && ... args)
+{
+    WhichDataType which(second_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<FirstType, TYPE>(std::forward<TArgs>(args)...);
+    FOR_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<FirstType, Int8>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<FirstType, Int16>(std::forward<TArgs>(args)...);
+
+    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32 and UUID based on UInt128
+    if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<FirstType, UInt16>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<FirstType, UInt32>(std::forward<TArgs>(args)...);
+
+    return nullptr;
+}
+
+template <template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
+static IAggregateFunction * createWithTwoNumericOrDateTypes(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
+{
+    WhichDataType which(first_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return createWithTwoNumericOrDateTypesSecond<TYPE, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
+    FOR_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    if (which.idx == TypeIndex::Enum8)
+        return createWithTwoNumericOrDateTypesSecond<Int8, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16)
+        return createWithTwoNumericOrDateTypesSecond<Int16, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
+
+    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32 and UUID based on UInt128
+    if (which.idx == TypeIndex::Date)
+        return createWithTwoNumericOrDateTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::DateTime)
+        return createWithTwoNumericOrDateTypesSecond<UInt32, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
     return nullptr;
 }
 

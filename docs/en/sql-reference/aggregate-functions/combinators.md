@@ -25,6 +25,40 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘a
 
 -If and -Array can be combined. However, ‘Array’ must come first, then ‘If’. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the ‘cond’ argument won’t be an array.
 
+## -SimpleState {#agg-functions-combinator-simplestate}
+
+If you apply this combinator, the aggregate function returns the same value but with a different type. This is a [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md) that can be stored in a table to work with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) tables.
+
+**Syntax**
+
+``` sql
+<aggFunction>SimpleState(x)
+```
+
+**Arguments**
+
+-   `x` — Aggregate function parameters.
+
+**Returned values**
+
+The value of an aggregate function with the `SimpleAggregateFunction(...)` type.
+
+**Example**
+
+Query:
+
+``` sql
+WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
+```
+
+Result:
+
+``` text
+┌─toTypeName(c)────────────────────────┬─c─┐
+│ SimpleAggregateFunction(any, UInt64) │ 0 │
+└──────────────────────────────────────┴───┘
+```
+
 ## -State {#agg-functions-combinator-state}
 
 If you apply this combinator, the aggregate function doesn’t return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
@@ -49,6 +83,11 @@ Merges the intermediate aggregation states in the same way as the -Merge combina
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
 
+## -Distinct {#agg-functions-combinator-distinct}
+
+Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
+Examples: `sum(DISTINCT x)`, `groupArray(DISTINCT x)`, `corrStableDistinct(DISTINCT x, y)` and so on.
+
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
 Changes behavior of an aggregate function.
@@ -63,7 +102,7 @@ If an aggregate function doesn’t have input values, with this combinator it re
 <aggFunction>OrDefault(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Aggregate function parameters.
 
@@ -123,7 +162,7 @@ This combinator converts a result of an aggregate function to the [Nullable](../
 <aggFunction>OrNull(x)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `x` — Aggregate function parameters.
 
@@ -180,7 +219,7 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
 ```
 
-**Parameters**
+**Arguments**
 
 -   `start` — Starting value of the whole required interval for `resampling_key` values.
 -   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.
@@ -240,4 +279,3 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->

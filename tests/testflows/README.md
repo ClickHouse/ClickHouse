@@ -72,6 +72,94 @@ If you want to run only a single test such as the `/clickhouse/rbac/syntax/grant
 
 For more information, please see [Filtering](https://testflows.com/handbook/#Filtering) section in the [TestFlows Handbook].
 
+## How To Debug Why Test Failed
+
+### Step 1: find which tests failed
+
+If [TestFlows] check does not pass you should look at the end of the `test_run.txt.out.log` to find the list
+of failing tests. For example,
+
+```bash
+clickhouse_testflows_tests_volume
+Start tests
+➤ Dec 02,2020 22:22:24 /clickhouse
+...
+Failing
+
+✘ [ Fail ] /clickhouse/rbac/syntax/grant privilege/grant privileges/privilege='SELECT', on=('db0.table0', 'db0.*', '*.*', 'tb0', '*'), allow_column=True, allow_introspection=False
+✘ [ Fail ] /clickhouse/rbac/syntax/grant privilege/grant privileges
+✘ [ Fail ] /clickhouse/rbac/syntax/grant privilege
+✘ [ Fail ] /clickhouse/rbac/syntax
+✘ [ Fail ] /clickhouse/rbac
+✘ [ Fail ] /clickhouse
+```
+
+In this case the failing test is
+
+```
+/clickhouse/rbac/syntax/grant privilege/grant privileges/privilege='SELECT', on=('db0.table0', 'db0.*', '*.*', 'tb0', '*'), allow_column=True, allow_introspection=False
+```
+
+while the others
+
+```
+✘ [ Fail ] /clickhouse/rbac/syntax/grant privilege/grant privileges
+✘ [ Fail ] /clickhouse/rbac/syntax/grant privilege
+✘ [ Fail ] /clickhouse/rbac/syntax
+✘ [ Fail ] /clickhouse/rbac
+✘ [ Fail ] /clickhouse
+```
+
+failed because the first fail gets "bubble-up" the test execution tree all the way to the top level test which is the
+`/clickhouse`.
+
+### Step 2: download `test.log` that contains all raw messages
+
+You need to download the `test.log` that contains all raw messages.
+
+### Step 3: get messages for the failing test
+
+Once you know the name of the failing test and you have the `test.log` that contains all the raw messages
+for all the tests, you can use `tfs show test messages` command. 
+
+> You get the `tfs` command by installing [TestFlows]. 
+
+For example,
+
+```bash
+cat test.log | tfs show test messages "/clickhouse/rbac/syntax/grant privilege/grant privileges/privilege='SELECT', on=\('db0.table0', 'db0.\*', '\*.\*', 'tb0', '\*'\), allow_column=True, allow_introspection=False"
+```
+
+> Note: that characters that are treated as special in extended regular expressions need to be escaped. In this case
+> we have to escape the `*`, `(`, and the `)` characters in the test name.
+
+### Step 4: working with the `test.log`
+
+You can use the `test.log` with many of the commands provided by the 
+`tfs` utility. 
+
+> See `tfs --help` for more information. 
+
+For example, you can get a list of failing tests from the `test.log` using the
+`tfs show fails` command as follows
+
+```bash
+$ cat test.log | tfs show fails
+```
+
+or get the results using the `tfs show results` command as follows
+
+```bash
+$ cat test.log | tfs show results
+```
+
+or you can transform the log to see only the new fails using the
+`tfs transform fail --new` command as follows
+
+```bash
+$ cat test.log | tfs transform fails --new
+```
+
 [Python 3]: https://www.python.org/
 [Ubuntu]: https://ubuntu.com/ 
 [TestFlows]: https://testflows.com

@@ -39,6 +39,8 @@
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
+#include <Storages/System/StorageSystemDDLWorkerQueue.h>
+
 #if !defined(ARCADIA_BUILD)
     #include <Storages/System/StorageSystemLicenses.h>
     #include <Storages/System/StorageSystemTimeZones.h>
@@ -134,6 +136,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     attach<StorageSystemMutations>(system_database, "mutations");
     attach<StorageSystemReplicas>(system_database, "replicas");
     attach<StorageSystemReplicationQueue>(system_database, "replication_queue");
+    attach<StorageSystemDDLWorkerQueue>(system_database, "distributed_ddl_queue");
     attach<StorageSystemDistributionQueue>(system_database, "distribution_queue");
     attach<StorageSystemDictionaries>(system_database, "dictionaries");
     attach<StorageSystemModels>(system_database, "models");

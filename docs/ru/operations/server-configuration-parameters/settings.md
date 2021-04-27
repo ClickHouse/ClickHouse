@@ -1,6 +1,6 @@
 ---
 toc_priority: 57
-toc_title: "\u041a\u043e\u043d\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u043e\u043d\u043d\u044b\u0435\u0020\u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b\u0020\u0441\u0435\u0440\u0432\u0435\u0440\u0430"
+toc_title: "Конфигурационные параметры сервера"
 ---
 
 # Конфигурационные параметры сервера {#server-configuration-parameters-reference}
@@ -79,6 +79,33 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 **См. также**
 
 -   [Пользовательские настройки](../../operations/settings/index.md#custom_settings)
+
+## core_dump {#server_configuration_parameters-core_dump}
+
+Задает мягкое ограничение для размера файла дампа памяти.
+
+Возможные значения:
+
+-   положительное целое число.
+
+Значение по умолчанию: `1073741824` (1 ГБ).
+
+!!! info "Примечание"
+    Жесткое ограничение настраивается с помощью системных инструментов.
+
+**Пример**
+
+```xml
+<core_dump>
+    <size_limit>1073741824</size_limit>
+</core_dump> 
+```
+
+## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
+
+Устанавливает задержку перед удалением табличных данных, в секундах. Если запрос имеет идентификатор `SYNC`, эта настройка игнорируется.
+
+Значение по умолчанию: `480` (8 минут).
 
 ## default\_database {#default-database}
 
@@ -264,7 +291,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## interserver_http_host {#interserver-http-host}
 
-Имя хоста, которое могут использовать другие серверы для обращения к этому.
+Имя хоста, которое могут использовать другие серверы для обращения к этому хосту.
 
 Если не указано, то определяется аналогично команде `hostname -f`.
 
@@ -276,10 +303,35 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
+## interserver_https_port {#interserver-https-port}
+
+Порт для обмена данными между репликами ClickHouse по протоколу `HTTPS`.
+
+**Пример**
+
+``` xml
+<interserver_https_port>9010</interserver_https_port>
+```
+
+## interserver_https_host {#interserver-https-host}
+
+Имя хоста, которое могут использовать другие реплики для обращения к нему по протоколу `HTTPS`.
+
+**Пример**
+
+``` xml
+<interserver_https_host>example.yandex.ru</interserver_https_host>
+```
+
+
+
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
 Имя пользователя и пароль, использующиеся для аутентификации при [репликации](../../operations/server-configuration-parameters/settings.md) движками Replicated\*. Это имя пользователя и пароль используются только для взаимодействия между репликами кластера и никак не связаны с аутентификацией клиентов ClickHouse. Сервер проверяет совпадение имени и пароля для соединяющихся с ним реплик, а также использует это же имя и пароль для соединения с другими репликами. Соответственно, эти имя и пароль должны быть прописаны одинаковыми для всех реплик кластера.
 По умолчанию аутентификация не используется.
+
+!!! note "Примечание"
+    Эти учетные данные являются общими для обмена данными по протоколам `HTTP` и `HTTPS`.
 
 Раздел содержит следующие параметры:
 
@@ -420,7 +472,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 Возможные значения:
 
 -   Положительное целое число.
--   0 — объём используемой памяти не ограничен.
+-   0 — автоматически.
 
 Значение по умолчанию: `0`.
 
@@ -460,7 +512,15 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-Максимальное количество одновременно обрабатываемых запросов.
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+
+!!! info "Примечание"
+	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений. 
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
 
 **Пример**
 
@@ -487,6 +547,21 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 **Смотрите также**
 
 -   [max_concurrent_queries](#max-concurrent-queries)
+
+## min_marks_to_honor_max_concurrent_queries {#min-marks-to-honor-max-concurrent-queries}
+
+Определяет минимальное количество засечек, считываемых запросом для применения настройки [max_concurrent_queries](#max-concurrent-queries).
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
+
+**Пример**
+
+``` xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```
 
 ## max_connections {#max-connections}
 
@@ -554,6 +629,35 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <merge_tree>
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </merge_tree>
+```
+
+## metric_log {#metric_log}
+
+Эта настройка включена по умолчанию. Если это не так, вы можете включить ее сами.
+
+**Включение**
+
+Чтобы вручную включить сбор истории метрик в таблице [`system.metric_log`](../../operations/system-tables/metric_log.md), создайте `/etc/clickhouse-server/config.d/metric_log.xml` следующего содержания:
+
+``` xml
+<yandex>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+    </metric_log>
+</yandex>
+```
+
+**Выключение**
+
+Чтобы отключить настройку `metric_log` , создайте файл `/etc/clickhouse-server/config.d/disable_metric_log.xml` следующего содержания:
+
+``` xml
+<yandex>
+<metric_log remove="1" />
+</yandex>
 ```
 
 ## replicated\_merge\_tree {#server_configuration_parameters-replicated_merge_tree}
@@ -1109,5 +1213,3 @@ ClickHouse использует ZooKeeper для хранения метадан
         </roles>
 </ldap>
 ```
-
-[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/server_configuration_parameters/settings/) <!--hide-->

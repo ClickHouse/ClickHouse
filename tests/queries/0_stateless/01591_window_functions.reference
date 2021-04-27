@@ -1,0 +1,1116 @@
+-- { echo }
+
+set allow_experimental_window_functions = 1;
+-- just something basic
+select number, count() over (partition by intDiv(number, 3) order by number rows unbounded preceding) from numbers(10);
+0	1
+1	2
+2	3
+3	1
+4	2
+5	3
+6	1
+7	2
+8	3
+9	1
+-- proper calculation across blocks
+select number, max(number) over (partition by intDiv(number, 3) order by number desc rows unbounded preceding) from numbers(10) settings max_block_size = 2;
+2	2
+1	2
+0	2
+5	5
+4	5
+3	5
+8	8
+7	8
+6	8
+9	9
+-- not a window function
+select number, abs(number) over (partition by toString(intDiv(number, 3)) rows unbounded preceding) from numbers(10); -- { serverError 63 }
+-- no partition by
+select number, avg(number) over (order by number rows unbounded preceding) from numbers(10);
+0	0
+1	0.5
+2	1
+3	1.5
+4	2
+5	2.5
+6	3
+7	3.5
+8	4
+9	4.5
+-- no order by
+select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) from numbers(10);
+0	0
+1	1
+2	1
+3	3
+4	4
+5	4
+6	6
+7	7
+8	7
+9	9
+-- can add an alias after window spec
+select number, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) q from numbers(10);
+0	0
+1	1
+2	1
+3	3
+4	4
+5	4
+6	6
+7	7
+8	7
+9	9
+-- can't reference it yet -- the window functions are calculated at the
+-- last stage of select, after all other functions.
+select q * 10, quantileExact(number) over (partition by intDiv(number, 3) rows unbounded preceding) q from numbers(10); -- { serverError 47 }
+-- must work in WHERE if you wrap it in a subquery
+select * from (select count(*) over (rows unbounded preceding) c from numbers(3)) where c > 0;
+1
+2
+3
+-- should work in ORDER BY
+select number, max(number) over (partition by intDiv(number, 3) order by number desc rows unbounded preceding) m from numbers(10) order by m desc, number;
+9	9
+6	8
+7	8
+8	8
+3	5
+4	5
+5	5
+0	2
+1	2
+2	2
+-- also works in ORDER BY if you wrap it in a subquery
+select * from (select count(*) over (rows unbounded preceding) c from numbers(3)) order by c;
+1
+2
+3
+-- Example with window function only in ORDER BY. Here we make a rank of all
+-- numbers sorted descending, and then sort by this rank descending, and must get
+-- the ascending order.
+select * from (select * from numbers(5) order by rand()) order by count() over (order by number desc rows unbounded preceding) desc;
+0
+1
+2
+3
+4
+-- Aggregate functions as window function arguments. This query is semantically
+-- the same as the above one, only we replace `number` with
+-- `any(number) group by number` and so on.
+select * from (select * from numbers(5) order by rand()) group by number order by sum(any(number + 1)) over (order by min(number) desc rows unbounded preceding) desc;
+0
+1
+2
+3
+4
+-- some more simple cases w/aggregate functions
+select sum(any(number)) over (rows unbounded preceding) from numbers(1);
+0
+select sum(any(number) + 1) over (rows unbounded preceding) from numbers(1);
+1
+select sum(any(number + 1)) over (rows unbounded preceding) from numbers(1);
+1
+-- different windows
+-- an explain test would also be helpful, but it's too immature now and I don't
+-- want to change reference all the time
+select number, max(number) over (partition by intDiv(number, 3) order by number desc rows unbounded preceding), count(number) over (partition by intDiv(number, 5) order by number rows unbounded preceding) as m from numbers(31) order by number settings max_block_size = 2;
+0	2	1
+1	2	2
+2	2	3
+3	5	4
+4	5	5
+5	5	1
+6	8	2
+7	8	3
+8	8	4
+9	11	5
+10	11	1
+11	11	2
+12	14	3
+13	14	4
+14	14	5
+15	17	1
+16	17	2
+17	17	3
+18	20	4
+19	20	5
+20	20	1
+21	23	2
+22	23	3
+23	23	4
+24	26	5
+25	26	1
+26	26	2
+27	29	3
+28	29	4
+29	29	5
+30	30	1
+-- two functions over the same window
+-- an explain test would also be helpful, but it's too immature now and I don't
+-- want to change reference all the time
+select number, max(number) over (partition by intDiv(number, 3) order by number desc rows unbounded preceding), count(number) over (partition by intDiv(number, 3) order by number desc rows unbounded preceding) as m from numbers(7) order by number settings max_block_size = 2;
+0	2	3
+1	2	2
+2	2	1
+3	5	3
+4	5	2
+5	5	1
+6	6	1
+-- check that we can work with constant columns
+select median(x) over (partition by x) from (select 1 x);
+1
+-- an empty window definition is valid as well
+select groupArray(number) over (rows unbounded preceding) from numbers(3);
+[0]
+[0,1]
+[0,1,2]
+select groupArray(number) over () from numbers(3);
+[0,1,2]
+[0,1,2]
+[0,1,2]
+-- This one tests we properly process the window  function arguments.
+-- Seen errors like 'column `1` not found' from count(1).
+select count(1) over (rows unbounded preceding), max(number + 1) over () from numbers(3);
+1	3
+-- Should work in DISTINCT
+select distinct sum(0) over (rows unbounded preceding) from numbers(2);
+0
+select distinct any(number) over (rows unbounded preceding) from numbers(2);
+0
+-- Various kinds of aliases are properly substituted into various parts of window
+-- function definition.
+with number + 1 as x select intDiv(number, 3) as y, sum(x + y) over (partition by y order by x rows unbounded preceding) from numbers(7);
+0	1
+0	3
+0	6
+1	5
+1	11
+1	18
+2	9
+-- WINDOW clause
+select 1 window w1 as ();
+1
+select sum(number) over w1, sum(number) over w2
+from numbers(10)
+window
+    w1 as (rows unbounded preceding),
+    w2 as (partition by intDiv(number, 3) rows unbounded preceding)
+;
+0	0
+1	1
+3	3
+6	3
+10	7
+15	12
+21	6
+28	13
+36	21
+45	9
+-- FIXME both functions should use the same window, but they don't. Add an
+-- EXPLAIN test for this.
+select
+    sum(number) over w1,
+    sum(number) over (partition by intDiv(number, 3) rows unbounded preceding)
+from numbers(10)
+window
+    w1 as (partition by intDiv(number, 3) rows unbounded preceding)
+;
+0	0
+1	1
+3	3
+3	3
+7	7
+12	12
+6	6
+13	13
+21	21
+9	9
+-- RANGE frame
+-- It's the default
+select sum(number) over () from numbers(3);
+3
+3
+3
+-- Try some mutually prime sizes of partition, group and block, for the number
+-- of rows that is their least common multiple + 1, so that we see all the
+-- interesting corner cases.
+select number, intDiv(number, 3) p, mod(number, 2) o, count(number) over w as c
+from numbers(31)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 5
+;
+0	0	0	2
+1	0	1	3
+2	0	0	2
+3	1	1	3
+4	1	0	1
+5	1	1	3
+6	2	0	2
+7	2	1	3
+8	2	0	2
+9	3	1	3
+10	3	0	1
+11	3	1	3
+12	4	0	2
+13	4	1	3
+14	4	0	2
+15	5	1	3
+16	5	0	1
+17	5	1	3
+18	6	0	2
+19	6	1	3
+20	6	0	2
+21	7	1	3
+22	7	0	1
+23	7	1	3
+24	8	0	2
+25	8	1	3
+26	8	0	2
+27	9	1	3
+28	9	0	1
+29	9	1	3
+30	10	0	1
+select number, intDiv(number, 5) p, mod(number, 3) o, count(number) over w as c
+from numbers(31)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 2
+;
+0	0	0	2
+1	0	1	4
+2	0	2	5
+3	0	0	2
+4	0	1	4
+5	1	2	5
+6	1	0	2
+7	1	1	3
+8	1	2	5
+9	1	0	2
+10	2	1	3
+11	2	2	5
+12	2	0	1
+13	2	1	3
+14	2	2	5
+15	3	0	2
+16	3	1	4
+17	3	2	5
+18	3	0	2
+19	3	1	4
+20	4	2	5
+21	4	0	2
+22	4	1	3
+23	4	2	5
+24	4	0	2
+25	5	1	3
+26	5	2	5
+27	5	0	1
+28	5	1	3
+29	5	2	5
+30	6	0	1
+select number, intDiv(number, 5) p, mod(number, 2) o, count(number) over w as c
+from numbers(31)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 3
+;
+0	0	0	3
+1	0	1	5
+2	0	0	3
+3	0	1	5
+4	0	0	3
+5	1	1	5
+6	1	0	2
+7	1	1	5
+8	1	0	2
+9	1	1	5
+10	2	0	3
+11	2	1	5
+12	2	0	3
+13	2	1	5
+14	2	0	3
+15	3	1	5
+16	3	0	2
+17	3	1	5
+18	3	0	2
+19	3	1	5
+20	4	0	3
+21	4	1	5
+22	4	0	3
+23	4	1	5
+24	4	0	3
+25	5	1	5
+26	5	0	2
+27	5	1	5
+28	5	0	2
+29	5	1	5
+30	6	0	1
+select number, intDiv(number, 3) p, mod(number, 5) o, count(number) over w as c
+from numbers(31)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 2
+;
+0	0	0	1
+1	0	1	2
+2	0	2	3
+3	1	3	2
+4	1	4	3
+5	1	0	1
+6	2	1	1
+7	2	2	2
+8	2	3	3
+9	3	4	3
+10	3	0	1
+11	3	1	2
+12	4	2	1
+13	4	3	2
+14	4	4	3
+15	5	0	1
+16	5	1	2
+17	5	2	3
+18	6	3	2
+19	6	4	3
+20	6	0	1
+21	7	1	1
+22	7	2	2
+23	7	3	3
+24	8	4	3
+25	8	0	1
+26	8	1	2
+27	9	2	1
+28	9	3	2
+29	9	4	3
+30	10	0	1
+select number, intDiv(number, 2) p, mod(number, 5) o, count(number) over w as c
+from numbers(31)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 3
+;
+0	0	0	1
+1	0	1	2
+2	1	2	1
+3	1	3	2
+4	2	4	2
+5	2	0	1
+6	3	1	1
+7	3	2	2
+8	4	3	1
+9	4	4	2
+10	5	0	1
+11	5	1	2
+12	6	2	1
+13	6	3	2
+14	7	4	2
+15	7	0	1
+16	8	1	1
+17	8	2	2
+18	9	3	1
+19	9	4	2
+20	10	0	1
+21	10	1	2
+22	11	2	1
+23	11	3	2
+24	12	4	2
+25	12	0	1
+26	13	1	1
+27	13	2	2
+28	14	3	1
+29	14	4	2
+30	15	0	1
+select number, intDiv(number, 2) p, mod(number, 3) o, count(number) over w as c
+from numbers(31)
+window w as (partition by p order by o range unbounded preceding)
+order by number
+settings max_block_size = 5
+;
+0	0	0	1
+1	0	1	2
+2	1	2	2
+3	1	0	1
+4	2	1	1
+5	2	2	2
+6	3	0	1
+7	3	1	2
+8	4	2	2
+9	4	0	1
+10	5	1	1
+11	5	2	2
+12	6	0	1
+13	6	1	2
+14	7	2	2
+15	7	0	1
+16	8	1	1
+17	8	2	2
+18	9	0	1
+19	9	1	2
+20	10	2	2
+21	10	0	1
+22	11	1	1
+23	11	2	2
+24	12	0	1
+25	12	1	2
+26	13	2	2
+27	13	0	1
+28	14	1	1
+29	14	2	2
+30	15	0	1
+-- A case where the partition end is in the current block, and the frame end
+-- is triggered by the partition end.
+select min(number) over (partition by p)  from (select number, intDiv(number, 3) p from numbers(10));
+0
+0
+0
+3
+3
+3
+6
+6
+6
+9
+-- UNBOUNDED FOLLOWING frame end
+select
+    min(number) over wa, min(number) over wo,
+    max(number) over wa, max(number) over wo
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(31))
+window
+    wa as (partition by p order by o
+        range between unbounded preceding and unbounded following),
+    wo as (partition by p order by o
+        rows between unbounded preceding and unbounded following)
+settings max_block_size = 2;
+0	0	2	2
+0	0	2	2
+0	0	2	2
+3	3	5	5
+3	3	5	5
+3	3	5	5
+6	6	8	8
+6	6	8	8
+6	6	8	8
+9	9	11	11
+9	9	11	11
+9	9	11	11
+12	12	14	14
+12	12	14	14
+12	12	14	14
+15	15	17	17
+15	15	17	17
+15	15	17	17
+18	18	20	20
+18	18	20	20
+18	18	20	20
+21	21	23	23
+21	21	23	23
+21	21	23	23
+24	24	26	26
+24	24	26	26
+24	24	26	26
+27	27	29	29
+27	27	29	29
+27	27	29	29
+30	30	30	30
+-- ROWS offset frame start
+select number, p,
+    count(*) over (partition by p order by number
+        rows between 1 preceding and unbounded following),
+    count(*) over (partition by p order by number
+        rows between current row and unbounded following),
+    count(*) over (partition by p order by number
+        rows between 1 following and unbounded following)
+from (select number, intDiv(number, 5) p from numbers(31))
+order by p, number
+settings max_block_size = 2;
+0	0	5	5	4
+1	0	5	4	3
+2	0	4	3	2
+3	0	3	2	1
+4	0	2	1	0
+5	1	5	5	4
+6	1	5	4	3
+7	1	4	3	2
+8	1	3	2	1
+9	1	2	1	0
+10	2	5	5	4
+11	2	5	4	3
+12	2	4	3	2
+13	2	3	2	1
+14	2	2	1	0
+15	3	5	5	4
+16	3	5	4	3
+17	3	4	3	2
+18	3	3	2	1
+19	3	2	1	0
+20	4	5	5	4
+21	4	5	4	3
+22	4	4	3	2
+23	4	3	2	1
+24	4	2	1	0
+25	5	5	5	4
+26	5	5	4	3
+27	5	4	3	2
+28	5	3	2	1
+29	5	2	1	0
+30	6	1	1	0
+-- ROWS offset frame start and end
+select number, p,
+    count(*) over (partition by p order by number
+        rows between 2 preceding and 2 following)
+from (select number, intDiv(number, 7) p from numbers(71))
+order by p, number
+settings max_block_size = 2;
+0	0	3
+1	0	4
+2	0	5
+3	0	5
+4	0	5
+5	0	4
+6	0	3
+7	1	3
+8	1	4
+9	1	5
+10	1	5
+11	1	5
+12	1	4
+13	1	3
+14	2	3
+15	2	4
+16	2	5
+17	2	5
+18	2	5
+19	2	4
+20	2	3
+21	3	3
+22	3	4
+23	3	5
+24	3	5
+25	3	5
+26	3	4
+27	3	3
+28	4	3
+29	4	4
+30	4	5
+31	4	5
+32	4	5
+33	4	4
+34	4	3
+35	5	3
+36	5	4
+37	5	5
+38	5	5
+39	5	5
+40	5	4
+41	5	3
+42	6	3
+43	6	4
+44	6	5
+45	6	5
+46	6	5
+47	6	4
+48	6	3
+49	7	3
+50	7	4
+51	7	5
+52	7	5
+53	7	5
+54	7	4
+55	7	3
+56	8	3
+57	8	4
+58	8	5
+59	8	5
+60	8	5
+61	8	4
+62	8	3
+63	9	3
+64	9	4
+65	9	5
+66	9	5
+67	9	5
+68	9	4
+69	9	3
+70	10	1
+SELECT count(*) OVER (ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) FROM numbers(4);
+1
+2
+3
+3
+-- frame boundaries that runs into the partition end
+select
+    count() over (partition by intDiv(number, 3)
+        rows between 100 following and unbounded following),
+    count() over (partition by intDiv(number, 3)
+        rows between current row and 100 following)
+from numbers(10);
+0	3
+0	2
+0	1
+0	3
+0	2
+0	1
+0	3
+0	2
+0	1
+0	1
+-- seen a use-after-free under MSan in this query once
+SELECT number, max(number) OVER (PARTITION BY intDiv(number, 7) ORDER BY number ASC NULLS LAST ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(1024) SETTINGS max_block_size = 2 FORMAT Null;
+-- a corner case
+select count() over ();
+1
+-- RANGE CURRENT ROW frame start
+select number, p, o,
+    count(*) over (partition by p order by o
+        range between current row and unbounded following)
+from (select number, intDiv(number, 5) p, mod(number, 3) o
+    from numbers(31))
+order by p, o, number
+settings max_block_size = 2;
+0	0	0	5
+3	0	0	5
+1	0	1	3
+4	0	1	3
+2	0	2	1
+6	1	0	5
+9	1	0	5
+7	1	1	3
+5	1	2	2
+8	1	2	2
+12	2	0	5
+10	2	1	4
+13	2	1	4
+11	2	2	2
+14	2	2	2
+15	3	0	5
+18	3	0	5
+16	3	1	3
+19	3	1	3
+17	3	2	1
+21	4	0	5
+24	4	0	5
+22	4	1	3
+20	4	2	2
+23	4	2	2
+27	5	0	5
+25	5	1	4
+28	5	1	4
+26	5	2	2
+29	5	2	2
+30	6	0	1
+select
+    count(*) over (rows between  current row and current row),
+    count(*) over (range between  current row and current row)
+from numbers(3);
+1	3
+1	3
+1	3
+-- RANGE OFFSET
+-- a basic RANGE OFFSET frame
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11))
+window w as (order by x asc range between 1 preceding and 2 following)
+order by x;
+0	0	2	3
+1	0	3	4
+2	1	4	4
+3	2	5	4
+4	3	6	4
+5	4	7	4
+6	5	8	4
+7	6	9	4
+8	7	10	4
+9	8	10	3
+10	9	10	2
+-- overflow conditions
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toUInt8(if(mod(number, 2),
+        toInt64(255 - intDiv(number, 2)),
+        toInt64(intDiv(number, 2)))) x
+    from numbers(10)
+)
+window w as (order by x range between 1 preceding and 2 following)
+order by x;
+0	0	2	3
+1	0	3	4
+2	1	4	4
+3	2	4	3
+4	3	4	2
+251	251	253	3
+252	251	254	4
+253	252	255	4
+254	253	255	3
+255	254	255	2
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toInt8(multiIf(
+        mod(number, 3) == 0, toInt64(intDiv(number, 3)),
+        mod(number, 3) == 1, toInt64(127 - intDiv(number, 3)),
+        toInt64(-128 + intDiv(number, 3)))) x
+    from numbers(15)
+)
+window w as (order by x range between 1 preceding and 2 following)
+order by x;
+-128	-128	-126	3
+-127	-128	-125	4
+-126	-127	-124	4
+-125	-126	-124	3
+-124	-125	-124	2
+0	0	2	3
+1	0	3	4
+2	1	4	4
+3	2	4	3
+4	3	4	2
+123	123	125	3
+124	123	126	4
+125	124	127	4
+126	125	127	3
+127	126	127	2
+-- We need large offsets to trigger overflow to positive direction, or
+-- else the frame end runs into partition end w/o overflow and doesn't move
+-- after that. The frame from this query is equivalent to the entire partition.
+select x, min(x) over w, max(x) over w, count(x) over w
+from (
+    select toUInt8(if(mod(number, 2),
+        toInt64(255 - intDiv(number, 2)),
+        toInt64(intDiv(number, 2)))) x
+    from numbers(10)
+)
+window w as (order by x range between 255 preceding and 255 following)
+order by x;
+0	0	255	10
+1	0	255	10
+2	0	255	10
+3	0	255	10
+4	0	255	10
+251	0	255	10
+252	0	255	10
+253	0	255	10
+254	0	255	10
+255	0	255	10
+-- RANGE OFFSET ORDER BY DESC
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between 1 preceding and 2 following)
+order by x
+settings max_block_size = 1;
+0	0	1	2
+1	0	2	3
+2	0	3	4
+3	1	4	4
+4	2	5	4
+5	3	6	4
+6	4	7	4
+7	5	8	4
+8	6	9	4
+9	7	10	4
+10	8	10	3
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between 1 preceding and unbounded following)
+order by x
+settings max_block_size = 2;
+0	0	1	2
+1	0	2	3
+2	0	3	4
+3	0	4	5
+4	0	5	6
+5	0	6	7
+6	0	7	8
+7	0	8	9
+8	0	9	10
+9	0	10	11
+10	0	10	11
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between unbounded preceding and 2 following)
+order by x
+settings max_block_size = 3;
+0	0	10	11
+1	0	10	11
+2	0	10	11
+3	1	10	10
+4	2	10	9
+5	3	10	8
+6	4	10	7
+7	5	10	6
+8	6	10	5
+9	7	10	4
+10	8	10	3
+select x, min(x) over w, max(x) over w, count(x) over w from (
+    select toUInt8(number) x from numbers(11)) t
+window w as (order by x desc range between unbounded preceding and 2 preceding)
+order by x
+settings max_block_size = 4;
+0	2	10	9
+1	3	10	8
+2	4	10	7
+3	5	10	6
+4	6	10	5
+5	7	10	4
+6	8	10	3
+7	9	10	2
+8	10	10	1
+9	0	0	0
+10	0	0	0
+-- Check that we put windows in such an order that we can reuse the sort.
+-- First, check that at least the result is correct when we have many windows
+-- with different sort order.
+select
+    number,
+    count(*) over (partition by p order by number),
+    count(*) over (partition by p order by number, o),
+    count(*) over (),
+    count(*) over (order by number),
+    count(*) over (order by o),
+    count(*) over (order by o, number),
+    count(*) over (order by number, o),
+    count(*) over (partition by p order by o, number),
+    count(*) over (partition by p),
+    count(*) over (partition by p order by o),
+    count(*) over (partition by p, o order by number)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+order by number
+;
+0	1	1	16	1	4	1	1	1	3	1	1
+1	2	2	16	2	7	5	2	2	3	2	1
+2	3	3	16	3	10	8	3	3	3	3	1
+3	1	1	16	4	13	11	4	2	3	2	1
+4	2	2	16	5	16	14	5	3	3	3	1
+5	3	3	16	6	4	2	6	1	3	1	1
+6	1	1	16	7	7	6	7	1	3	1	1
+7	2	2	16	8	10	9	8	2	3	2	1
+8	3	3	16	9	13	12	9	3	3	3	1
+9	1	1	16	10	16	15	10	3	3	3	1
+10	2	2	16	11	4	3	11	1	3	1	1
+11	3	3	16	12	7	7	12	2	3	2	1
+12	1	1	16	13	10	10	13	1	3	1	1
+13	2	2	16	14	13	13	14	2	3	2	1
+14	3	3	16	15	16	16	15	3	3	3	1
+15	1	1	16	16	4	4	16	1	1	1	1
+-- The EXPLAIN for the above query would be difficult to understand, so check some
+-- simple cases instead.
+explain select
+    count(*) over (partition by p),
+    count(*) over (),
+    count(*) over (partition by p order by o)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+;
+Expression ((Projection + Before ORDER BY))
+  Window (Window step for window \'\')
+    Window (Window step for window \'PARTITION BY p\')
+      Window (Window step for window \'PARTITION BY p ORDER BY o ASC\')
+        MergingSorted (Merge sorted streams for window \'PARTITION BY p ORDER BY o ASC\')
+          MergeSorting (Merge sorted blocks for window \'PARTITION BY p ORDER BY o ASC\')
+            PartialSorting (Sort each block for window \'PARTITION BY p ORDER BY o ASC\')
+              Expression ((Before window functions + (Projection + Before ORDER BY)))
+                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                  ReadFromStorage (SystemNumbers)
+explain select
+    count(*) over (order by o, number),
+    count(*) over (order by number)
+from
+    (select number, intDiv(number, 3) p, mod(number, 5) o
+        from numbers(16)) t
+;
+Expression ((Projection + Before ORDER BY))
+  Window (Window step for window \'ORDER BY o ASC, number ASC\')
+    MergingSorted (Merge sorted streams for window \'ORDER BY o ASC, number ASC\')
+      MergeSorting (Merge sorted blocks for window \'ORDER BY o ASC, number ASC\')
+        PartialSorting (Sort each block for window \'ORDER BY o ASC, number ASC\')
+          Window (Window step for window \'ORDER BY number ASC\')
+            MergingSorted (Merge sorted streams for window \'ORDER BY number ASC\')
+              MergeSorting (Merge sorted blocks for window \'ORDER BY number ASC\')
+                PartialSorting (Sort each block for window \'ORDER BY number ASC\')
+                  Expression ((Before window functions + (Projection + Before ORDER BY)))
+                    SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                      ReadFromStorage (SystemNumbers)
+-- A test case for the sort comparator found by fuzzer.
+SELECT
+    max(number) OVER (ORDER BY number DESC NULLS FIRST),
+    max(number) OVER (ORDER BY number ASC NULLS FIRST)
+FROM numbers(2)
+;
+1	0
+1	1
+-- optimize_read_in_order conflicts with sorting for window functions, check that
+-- it is disabled.
+drop table if exists window_mt;
+create table window_mt engine MergeTree order by number
+    as select number, mod(number, 3) p from numbers(100);
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 0;
+0	34
+1	33
+2	33
+3	34
+4	33
+5	33
+6	34
+7	33
+8	33
+9	34
+select number, count(*) over (partition by p)
+    from window_mt order by number limit 10 settings optimize_read_in_order = 1;
+0	34
+1	33
+2	33
+3	34
+4	33
+5	33
+6	34
+7	33
+8	33
+9	34
+drop table window_mt;
+-- some true window functions -- rank and friends
+select number, p, o,
+    count(*) over w,
+    rank() over w,
+    dense_rank() over w,
+    row_number() over w
+from (select number, intDiv(number, 5) p, mod(number, 3) o
+    from numbers(31) order by o, number) t
+window w as (partition by p order by o)
+order by p, o, number
+settings max_block_size = 2;
+0	0	0	2	1	1	1
+3	0	0	2	1	1	2
+1	0	1	4	3	2	3
+4	0	1	4	3	2	4
+2	0	2	5	5	3	5
+6	1	0	2	1	1	1
+9	1	0	2	1	1	2
+7	1	1	3	3	2	3
+5	1	2	5	4	3	4
+8	1	2	5	4	3	5
+12	2	0	1	1	1	1
+10	2	1	3	2	2	2
+13	2	1	3	2	2	3
+11	2	2	5	4	3	4
+14	2	2	5	4	3	5
+15	3	0	2	1	1	2
+18	3	0	2	1	1	1
+16	3	1	4	3	2	3
+19	3	1	4	3	2	4
+17	3	2	5	5	3	5
+21	4	0	2	1	1	1
+24	4	0	2	1	1	2
+22	4	1	3	3	2	3
+20	4	2	5	4	3	5
+23	4	2	5	4	3	4
+27	5	0	1	1	1	1
+25	5	1	3	2	2	2
+28	5	1	3	2	2	3
+26	5	2	5	4	3	4
+29	5	2	5	4	3	5
+30	6	0	1	1	1	1
+-- our replacement for lag/lead
+select
+    anyOrNull(number)
+        over (order by number rows between 1 preceding and 1 preceding),
+    anyOrNull(number)
+        over (order by number rows between 1 following and 1 following)
+from numbers(5);
+\N	1
+0	2
+1	3
+2	4
+3	\N
+-- variants of lag/lead that respect the frame
+select number, p, pp,
+    lagInFrame(number) over w as lag1,
+    lagInFrame(number, number - pp) over w as lag2,
+    lagInFrame(number, number - pp, number * 11) over w as lag,
+    leadInFrame(number, number - pp, number * 11) over w as lead
+from (select number, intDiv(number, 5) p, p * 5 pp from numbers(16))
+window w as (partition by p order by number
+    rows between unbounded preceding and unbounded following)
+order by number
+settings max_block_size = 3;
+;
+0	0	0	0	0	0	0
+1	0	0	0	0	0	2
+2	0	0	1	0	0	4
+3	0	0	2	0	0	33
+4	0	0	3	0	0	44
+5	1	5	0	5	5	5
+6	1	5	5	5	5	7
+7	1	5	6	5	5	9
+8	1	5	7	5	5	88
+9	1	5	8	5	5	99
+10	2	10	0	10	10	10
+11	2	10	10	10	10	12
+12	2	10	11	10	10	14
+13	2	10	12	10	10	143
+14	2	10	13	10	10	154
+15	3	15	0	15	15	15
+-- case-insensitive SQL-standard synonyms for any and anyLast
+select
+    number,
+    fIrSt_VaLue(number) over w,
+    lAsT_vAlUe(number) over w
+from numbers(10)
+window w as (order by number range between 1 preceding and 1 following)
+order by number
+;
+0	0	1
+1	0	2
+2	1	3
+3	2	4
+4	3	5
+5	4	6
+6	5	7
+7	6	8
+8	7	9
+9	8	9
+-- In this case, we had a problem with PartialSortingTransform returning zero-row
+-- chunks for input chunks w/o columns.
+select count() over () from numbers(4) where number < 2;
+2
+2
+-- floating point RANGE frame
+select
+    count(*) over (order by toFloat32(number) range 5. preceding),
+    count(*) over (order by toFloat64(number) range 5. preceding),
+    count(*) over (order by toFloat32(number) range between current row and 5. following),
+    count(*) over (order by toFloat64(number) range between current row and 5. following)
+from numbers(7)
+;
+1	1	6	6
+2	2	6	6
+3	3	5	5
+4	4	4	4
+5	5	3	3
+6	6	2	2
+6	6	1	1
+-- negative offsets should not be allowed
+select count() over (order by toInt64(number) range between -1 preceding and unbounded following) from numbers(1); -- { serverError 36 }
+select count() over (order by toInt64(number) range between -1 following and unbounded following) from numbers(1); -- { serverError 36 }
+select count() over (order by toInt64(number) range between unbounded preceding and -1 preceding) from numbers(1); -- { serverError 36 }
+select count() over (order by toInt64(number) range between unbounded preceding and -1 following) from numbers(1); -- { serverError 36 }
+-- a test with aggregate function that allocates memory in arena
+select sum(a[length(a)])
+from (
+    select groupArray(number) over (partition by modulo(number, 11)
+            order by modulo(number, 1111), number) a
+    from numbers_mt(10000)
+) settings max_block_size = 7;
+49995000
+-- -INT_MIN row offset that can lead to problems with negation, found when fuzzing
+-- under UBSan. Should be limited to at most INT_MAX.
+select count() over (rows between 2147483648 preceding and 2147493648 following) from numbers(2); -- { serverError 36 }
+-- Somehow in this case WindowTransform gets empty input chunks not marked as
+-- input end, and then two (!) empty input chunks marked as input end. Whatever.
+select count() over () from (select 1 a) l inner join (select 2 a) r using a;
+-- This case works as expected, one empty input chunk marked as input end.
+select count() over () where null;

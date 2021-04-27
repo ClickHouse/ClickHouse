@@ -1,9 +1,8 @@
 import os
 import pytest
-import subprocess
 import sys
 import grpc
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, run_and_check
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -13,7 +12,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 proto_dir = os.path.join(SCRIPT_DIR, './protos')
 gen_dir = os.path.join(SCRIPT_DIR, './_gen')
 os.makedirs(gen_dir, exist_ok=True)
-subprocess.check_call(
+run_and_check(
     'python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
     {proto_dir}/clickhouse_grpc.proto'.format(proto_dir=proto_dir, gen_dir=gen_dir), shell=True)
 
@@ -73,18 +72,15 @@ def start_cluster():
 
 # Actual tests
 
-@pytest.mark.skip(reason="Flaky")
 def test_secure_channel():
     with create_secure_channel() as channel:
         assert query("SELECT 'ok'", channel) == "ok\n"
 
-@pytest.mark.skip(reason="Flaky")
 def test_insecure_channel():
     with pytest.raises(grpc.FutureTimeoutError):
         with create_insecure_channel() as channel:
             query("SELECT 'ok'", channel)
 
-@pytest.mark.skip(reason="Flaky")
 def test_wrong_client_certificate():
     with pytest.raises(grpc.FutureTimeoutError):
         with create_insecure_channel() as channel:

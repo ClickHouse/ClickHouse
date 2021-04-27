@@ -31,10 +31,6 @@
 #include <grpc++/server_builder.h>
 
 
-/// For diagnosing problems use the following environment variables:
-/// export GRPC_TRACE=all
-/// export GRPC_VERBOSITY=DEBUG
-
 using GRPCService = clickhouse::grpc::ClickHouse::AsyncService;
 using GRPCQueryInfo = clickhouse::grpc::QueryInfo;
 using GRPCResult = clickhouse::grpc::Result;
@@ -57,6 +53,39 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Make grpc to pass logging messages to ClickHouse logging system.
+    void initGRPCLogging(const Poco::Util::AbstractConfiguration & config)
+    {
+        static std::once_flag once_flag;
+        std::call_once(once_flag, [&config]
+        {
+            static Poco::Logger * logger = &Poco::Logger::get("grpc");
+            gpr_set_log_function([](gpr_log_func_args* args)
+            {
+                if (args->severity == GPR_LOG_SEVERITY_DEBUG)
+                    LOG_DEBUG(logger, "{} ({}:{})", args->message, args->file, args->line);
+                else if (args->severity == GPR_LOG_SEVERITY_INFO)
+                    LOG_INFO(logger, "{} ({}:{})", args->message, args->file, args->line);
+                else if (args->severity == GPR_LOG_SEVERITY_ERROR)
+                    LOG_ERROR(logger, "{} ({}:{})", args->message, args->file, args->line);
+            });
+
+            if (config.getBool("grpc.verbose_logs", false))
+            {
+                gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
+                grpc_tracer_set_enabled("all", true);
+            }
+            else if (logger->is(Poco::Message::PRIO_DEBUG))
+            {
+                gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
+            }
+            else if (logger->is(Poco::Message::PRIO_INFORMATION))
+            {
+                gpr_set_log_verbosity(GPR_LOG_SEVERITY_INFO);
+            }
+        });
+    }
+
     grpc_compression_algorithm parseCompressionAlgorithm(const String & str)
     {
         if (str == "none")
@@ -492,7 +521,7 @@ namespace
         Poco::Logger * log = nullptr;
 
         std::shared_ptr<NamedSession> session;
-        std::optional<Context> query_context;
+        ContextPtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
         String query_text;
         ASTPtr ast;
@@ -622,8 +651,7 @@ namespace
         }
 
         /// Create context.
-        query_context.emplace(iserver.context());
-        query_scope.emplace(*query_context);
+        query_context = Context::createCopy(iserver.context());
 
         /// Authentication.
         query_context->setUser(user, password, user_address);
@@ -637,9 +665,11 @@ namespace
         {
             session = query_context->acquireNamedSession(
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
-            query_context = session->context;
+            query_context = Context::createCopy(session->context);
             query_context->setSessionContext(session->context);
         }
+
+        query_scope.emplace(query_context);
 
         /// Set client info.
         ClientInfo & client_info = query_context->getClientInfo();
@@ -711,26 +741,26 @@ namespace
             output_format = query_context->getDefaultFormat();
 
         /// Set callback to create and fill external tables
-        query_context->setExternalTablesInitializer([this] (Context & context)
+        query_context->setExternalTablesInitializer([this] (ContextPtr context)
         {
-            if (&context != &*query_context)
+            if (context != query_context)
                 throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
             createExternalTables();
         });
 
         /// Set callbacks to execute function input().
-        query_context->setInputInitializer([this] (Context & context, const StoragePtr & input_storage)
+        query_context->setInputInitializer([this] (ContextPtr context, const StoragePtr & input_storage)
         {
-            if (&context != &query_context.value())
+            if (context != query_context)
                 throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
             input_function_is_used = true;
             initializeBlockInputStream(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
             block_input_stream->readPrefix();
         });
 
-        query_context->setInputBlocksReaderCallback([this](Context & context) -> Block
+        query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
         {
-            if (&context != &query_context.value())
+            if (context != query_context)
                 throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
             auto block = block_input_stream->read();
             if (!block)
@@ -745,15 +775,13 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(query, *query_context, false, QueryProcessingStage::Complete, true, true);
+        io = ::DB::executeQuery(query, query_context, false, QueryProcessingStage::Complete, true, true);
     }
 
     void Call::processInput()
     {
         if (!io.out)
             return;
-
-        initializeBlockInputStream(io.out->getHeader());
 
         bool has_data_to_insert = (insert_query && insert_query->data)
                                   || !query_info.input_data().empty() || query_info.next_query_info();
@@ -764,6 +792,10 @@ namespace
             else
                 throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
         }
+
+        /// This is significant, because parallel parsing may be used.
+        /// So we mustn't touch the input stream from other thread.
+        initializeBlockInputStream(io.out->getHeader());
 
         block_input_stream->readPrefix();
         io.out->writePrefix();
@@ -846,10 +878,10 @@ namespace
                 auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
                 if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
                 {
-                    StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, *query_context);
+                    StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
                     const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
                     if (!columns.empty())
-                        block_input_stream = std::make_shared<AddingDefaultsBlockInputStream>(block_input_stream, columns, *query_context);
+                        block_input_stream = std::make_shared<AddingDefaultsBlockInputStream>(block_input_stream, columns, query_context);
                 }
             }
         }
@@ -871,7 +903,7 @@ namespace
                 StoragePtr storage;
                 if (auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal))
                 {
-                    storage = DatabaseCatalog::instance().getTable(resolved, *query_context);
+                    storage = DatabaseCatalog::instance().getTable(resolved, query_context);
                 }
                 else
                 {
@@ -886,7 +918,7 @@ namespace
                         column.type = DataTypeFactory::instance().get(name_and_type.type());
                         columns.emplace_back(std::move(column));
                     }
-                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns}, {});
+                    auto temporary_table = TemporaryTableHolder(query_context, ColumnsDescription{columns}, {});
                     storage = temporary_table.getTable();
                     query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
                 }
@@ -895,17 +927,17 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto out_stream = storage->write(ASTPtr(), metadata_snapshot, *query_context);
+                    auto out_stream = storage->write(ASTPtr(), metadata_snapshot, query_context);
                     ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
                     String format = external_table.format();
                     if (format.empty())
                         format = "TabSeparated";
-                    Context * external_table_context = &*query_context;
-                    std::optional<Context> temp_context;
+                    ContextPtr external_table_context = query_context;
+                    ContextPtr temp_context;
                     if (!external_table.settings().empty())
                     {
-                        temp_context = *query_context;
-                        external_table_context = &*temp_context;
+                        temp_context = Context::createCopy(query_context);
+                        external_table_context = temp_context;
                         SettingsChanges settings_changes;
                         for (const auto & [key, value] : external_table.settings())
                             settings_changes.push_back({key, value});
@@ -965,7 +997,7 @@ namespace
 
         AsynchronousBlockInputStream async_in(io.in);
         write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputFormat(output_format, *write_buffer, async_in.getHeader());
+        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, async_in.getHeader());
         Stopwatch after_send_progress;
 
         /// Unless the input() function is used we are not going to receive input data anymore.
@@ -1037,7 +1069,7 @@ namespace
 
         auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
         write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputFormat(output_format, *write_buffer, executor->getHeader());
+        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, executor->getHeader());
         block_output_stream->writePrefix();
         Stopwatch after_send_progress;
 
@@ -1292,7 +1324,7 @@ namespace
             return;
 
         WriteBufferFromString buf{*result.mutable_totals()};
-        auto stream = query_context->getOutputFormat(output_format, buf, totals);
+        auto stream = query_context->getOutputStream(output_format, buf, totals);
         stream->writePrefix();
         stream->write(totals);
         stream->writeSuffix();
@@ -1304,7 +1336,7 @@ namespace
             return;
 
         WriteBufferFromString buf{*result.mutable_extremes()};
-        auto stream = query_context->getOutputFormat(output_format, buf, extremes);
+        auto stream = query_context->getOutputStream(output_format, buf, extremes);
         stream->writePrefix();
         stream->write(extremes);
         stream->writeSuffix();
@@ -1584,7 +1616,10 @@ private:
 
 
 GRPCServer::GRPCServer(IServer & iserver_, const Poco::Net::SocketAddress & address_to_listen_)
-    : iserver(iserver_), address_to_listen(address_to_listen_), log(&Poco::Logger::get("GRPCServer"))
+    : iserver(iserver_)
+    , address_to_listen(address_to_listen_)
+    , log(&Poco::Logger::get("GRPCServer"))
+    , runner(std::make_unique<Runner>(*this))
 {}
 
 GRPCServer::~GRPCServer()
@@ -1604,6 +1639,7 @@ GRPCServer::~GRPCServer()
 
 void GRPCServer::start()
 {
+    initGRPCLogging(iserver.config());
     grpc::ServerBuilder builder;
     builder.AddListeningPort(address_to_listen.toString(), makeCredentials(iserver.config()));
     builder.RegisterService(&grpc_service);
@@ -1614,7 +1650,6 @@ void GRPCServer::start()
 
     queue = builder.AddCompletionQueue();
     grpc_server = builder.BuildAndStart();
-    runner = std::make_unique<Runner>(*this);
     runner->start();
 }
 

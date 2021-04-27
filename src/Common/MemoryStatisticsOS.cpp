@@ -8,10 +8,11 @@
 
 #include "MemoryStatisticsOS.h"
 
+#include <common/logger_useful.h>
+#include <common/getPageSize.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
-#include <common/logger_useful.h>
 
 
 namespace DB
@@ -26,7 +27,6 @@ namespace ErrorCodes
 }
 
 static constexpr auto filename = "/proc/self/statm";
-static constexpr size_t PAGE_SIZE = 4096;
 
 MemoryStatisticsOS::MemoryStatisticsOS()
 {
@@ -93,11 +93,12 @@ MemoryStatisticsOS::Data MemoryStatisticsOS::get() const
     skipWhitespaceIfAny(in);
     readIntText(data.data_and_stack, in);
 
-    data.virt *= PAGE_SIZE;
-    data.resident *= PAGE_SIZE;
-    data.shared *= PAGE_SIZE;
-    data.code *= PAGE_SIZE;
-    data.data_and_stack *= PAGE_SIZE;
+    size_t page_size = static_cast<size_t>(::getPageSize());
+    data.virt *= page_size;
+    data.resident *= page_size;
+    data.shared *= page_size;
+    data.code *= page_size;
+    data.data_and_stack *= page_size;
 
     return data;
 }

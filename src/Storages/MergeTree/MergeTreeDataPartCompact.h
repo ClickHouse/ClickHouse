@@ -19,7 +19,6 @@ class MergeTreeDataPartCompact : public IMergeTreeDataPart
 {
 public:
     static constexpr auto DATA_FILE_NAME = "data";
-    static constexpr auto DATA_FILE_EXTENSION = ".bin";
     static constexpr auto DATA_FILE_NAME_WITH_EXTENSION = "data.bin";
 
     MergeTreeDataPartCompact(
@@ -55,7 +54,7 @@ public:
 
     bool isStoredOnDisk() const override { return true; }
 
-    bool hasColumnFiles(const String & column_name, const IDataType & type) const override;
+    bool hasColumnFiles(const NameAndTypePair & column) const override;
 
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 

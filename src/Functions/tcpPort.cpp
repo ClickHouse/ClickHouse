@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -13,9 +14,9 @@ class FunctionTcpPort : public IFunction
 public:
     static constexpr auto name = "tcpPort";
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionTcpPort>(context.getTCPPort());
+        return std::make_shared<FunctionTcpPort>(context->getTCPPort());
     }
 
     explicit FunctionTcpPort(UInt16 port_) : port(port_)

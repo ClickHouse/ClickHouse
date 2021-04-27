@@ -7,6 +7,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <IO/ConnectionTimeoutsContext.h>
 
 #include <common/logger_useful.h>
 #include <Processors/Pipe.h>
@@ -14,6 +15,8 @@
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 
 namespace ProfileEvents
@@ -73,7 +76,7 @@ namespace
 std::unique_ptr<QueryPlan> createLocalPlan(
     const ASTPtr & query_ast,
     const Block & header,
-    const Context & context,
+    ContextPtr context,
     QueryProcessingStage::Enum processed_stage)
 {
     checkStackSize();
@@ -112,8 +115,8 @@ String formattedAST(const ASTPtr & ast)
 
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
-    const String &, const ASTPtr & query_ast,
-    const Context & context, const ThrottlerPtr & throttler,
+    const ASTPtr & query_ast,
+    ContextPtr context, const ThrottlerPtr & throttler,
     const SelectQueryInfo &,
     std::vector<QueryPlanPtr> & plans,
     Pipes & remote_pipes,
@@ -123,10 +126,11 @@ void SelectStreamFactory::createForShard(
     bool add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
     bool add_extremes = false;
+    bool async_read = context->getSettingsRef().async_socket_for_remote;
     if (processed_stage == QueryProcessingStage::Complete)
     {
         add_totals = query_ast->as<ASTSelectQuery &>().group_by_with_totals;
-        add_extremes = context.getSettingsRef().extremes;
+        add_extremes = context->getSettingsRef().extremes;
     }
 
     auto modified_query_ast = query_ast->clone();
@@ -143,17 +147,18 @@ void SelectStreamFactory::createForShard(
     auto emplace_remote_stream = [&]()
     {
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard_info.pool, modified_query, header, context, nullptr, throttler, scalars, external_tables, processed_stage);
+            shard_info.pool, modified_query, header, context, throttler, scalars, external_tables, processed_stage);
         remote_query_executor->setLogger(log);
 
         remote_query_executor->setPoolMode(PoolMode::GET_MANY);
         if (!table_func_ptr)
             remote_query_executor->setMainTable(main_table);
 
-        remote_pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes));
+        remote_pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
+        remote_pipes.back().addInterpreterContext(context);
     };
 
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     if (settings.prefer_localhost_replica && shard_info.isLocal())
     {
@@ -166,7 +171,7 @@ void SelectStreamFactory::createForShard(
         }
         else
         {
-            auto resolved_id = context.resolveStorageID(main_table);
+            auto resolved_id = context->resolveStorageID(main_table);
             main_table_storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
         }
 
@@ -242,12 +247,13 @@ void SelectStreamFactory::createForShard(
         /// Do it lazily to avoid connecting in the main thread.
 
         auto lazily_create_stream = [
-                pool = shard_info.pool, shard_num = shard_info.shard_num, modified_query, header = header, modified_query_ast, context, throttler,
+                pool = shard_info.pool, shard_num = shard_info.shard_num, modified_query, header = header, modified_query_ast,
+                context, throttler,
                 main_table = main_table, table_func_ptr = table_func_ptr, scalars = scalars, external_tables = external_tables,
-                stage = processed_stage, local_delay, add_agg_info, add_totals, add_extremes]()
+                stage = processed_stage, local_delay, add_agg_info, add_totals, add_extremes, async_read]()
             -> Pipe
         {
-            auto current_settings = context.getSettingsRef();
+            auto current_settings = context->getSettingsRef();
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
                 current_settings).getSaturated(
                     current_settings.max_execution_time);
@@ -278,7 +284,9 @@ void SelectStreamFactory::createForShard(
             if (try_results.empty() || local_delay < max_remote_delay)
             {
                 auto plan = createLocalPlan(modified_query_ast, header, context, stage);
-                return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline()));
+                return QueryPipeline::getPipe(std::move(*plan->buildQueryPipeline(
+                    QueryPlanOptimizationSettings::fromContext(context),
+                    BuildQueryPipelineSettings::fromContext(context))));
             }
             else
             {
@@ -288,13 +296,14 @@ void SelectStreamFactory::createForShard(
                     connections.emplace_back(std::move(try_result.entry));
 
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    std::move(connections), modified_query, header, context, nullptr, throttler, scalars, external_tables, stage);
+                    std::move(connections), modified_query, header, context, throttler, scalars, external_tables, stage);
 
-                return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes);
+                return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
             }
         };
 
         delayed_pipes.emplace_back(createDelayedPipe(header, lazily_create_stream, add_totals, add_extremes));
+        delayed_pipes.back().addInterpreterContext(context);
     }
     else
         emplace_remote_stream();
