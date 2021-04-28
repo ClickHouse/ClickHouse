@@ -23,7 +23,7 @@ class IExternalLoaderConfigRepository
 {
 public:
     /// Returns the name of the repository.
-    virtual const std::string & getName() const = 0;
+    virtual std::string getName() const = 0;
 
     /// Whether this repository is temporary:
     /// it's created and destroyed while executing the same query.
