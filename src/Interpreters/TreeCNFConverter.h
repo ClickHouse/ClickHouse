@@ -20,7 +20,16 @@ public:
         /// for set
         bool operator<(const AtomicFormula & rhs) const
         {
-            return ast == rhs.ast ? negative < rhs.negative : ast < rhs.ast;
+            return ast->getTreeHash() == rhs.ast->getTreeHash()
+                ? negative < rhs.negative
+                : ast->getTreeHash() < rhs.ast->getTreeHash();
+        }
+
+        bool operator==(const AtomicFormula & rhs) const
+        {
+            return negative == rhs.negative &&
+                ast->getTreeHash() == rhs.ast->getTreeHash() &&
+                ast->getColumnName() == rhs.ast->getColumnName();
         }
     };
 
@@ -68,6 +77,21 @@ public:
             }
         }
         std::swap(statements, filtered);
+        return *this;
+    }
+
+    template <typename F>
+    CNFQuery & iterateGroups(F func)
+    {
+        for (const auto & group : statements)
+            func(group);
+        return *this;
+    }
+
+    CNFQuery & appendGroup(AndGroup&& and_group)
+    {
+        for (auto && or_group : and_group)
+            statements.emplace(std::move(or_group));
         return *this;
     }
 

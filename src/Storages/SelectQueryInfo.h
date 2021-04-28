@@ -131,8 +131,6 @@ struct SelectQueryInfo
 
     PrewhereInfoPtr prewhere_info;
 
-    ASTPtr index_hint;
-
     ReadInOrderOptimizerPtr order_optimizer;
     /// Can be modified while reading from storage
     InputOrderInfoPtr input_order_info;
