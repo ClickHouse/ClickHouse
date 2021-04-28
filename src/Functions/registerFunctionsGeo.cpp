@@ -42,6 +42,12 @@ void registerFunctionH3ToString(FunctionFactory &);
 void registerFunctionH3HexAreaM2(FunctionFactory &);
 #endif
 
+void registerFunctionDegreesToS2(FunctionFactory &);
+void registerFunctionRadiansToS2(FunctionFactory &);
+void registerFunctionS2GetNeighbors(FunctionFactory &);
+void registerFunctionS2ToGeo(FunctionFactory &);
+void registerFunctionS2CellsIntersect(FunctionFactory &);
+
 
 void registerFunctionsGeo(FunctionFactory & factory)
 {
@@ -79,6 +85,12 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3ToString(factory);
     registerFunctionH3HexAreaM2(factory);
 #endif
+
+    registerFunctionDegreesToS2(factory);
+    registerFunctionRadiansToS2(factory);
+    registerFunctionS2GetNeighbors(factory);
+    registerFunctionS2ToGeo(factory);
+    registerFunctionS2CellsIntersect(factory);
 }
 
 }
