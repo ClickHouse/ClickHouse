@@ -4,7 +4,6 @@ toc_priority: 3
 
 # max {#agg_function-max}
 
-
 Aggregate function that calculates the maximum across a group of values.
 
 Example:
