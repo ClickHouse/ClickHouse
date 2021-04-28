@@ -316,6 +316,18 @@ ComparisonGraph::Graph ComparisonGraph::reverseGraph(const Graph & asts_graph) c
     return asts_graph;
 }
 
+std::vector<ASTs> ComparisonGraph::getVertexes() const
+{
+    std::vector<ASTs> result;
+    for (const auto & vertex : graph.vertexes)
+    {
+        result.emplace_back();
+        for (const auto & ast : vertex.asts)
+            result.back().push_back(ast);
+    }
+    return result;
+}
+
 void ComparisonGraph::dfsComponents(
     const Graph & reversed_graph, size_t v, std::vector<size_t> & components, const size_t not_visited, const size_t component) const
 {
