@@ -628,7 +628,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMeta
         local_context, *this, metadata_snapshot,
         createInsertToRemoteTableQuery(
             remote_database, remote_table, metadata_snapshot->getSampleBlockNonMaterialized()),
-        cluster, insert_sync, timeout);
+        cluster, insert_sync, timeout, StorageID{remote_database, remote_table});
 }
 
 
