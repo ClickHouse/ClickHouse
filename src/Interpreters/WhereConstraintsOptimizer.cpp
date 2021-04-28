@@ -6,6 +6,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Interpreters/AddIndexConstraintsOptimizer.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Poco/Logger.h>
 
@@ -229,8 +230,8 @@ void WhereConstraintsOptimizer::perform()
 {
     if (select_query->where() && metadata_snapshot)
     {
-        const auto constraint_data = metadata_snapshot->getConstraints().getConstraintData();
-        const auto compare_graph = metadata_snapshot->getConstraints().getGraph();
+        const auto & constraint_data = metadata_snapshot->getConstraints().getConstraintData();
+        const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
         Poco::Logger::get("BEFORE CNF ").information(select_query->where()->dumpTree());
         auto cnf = TreeCNFConverter::toCNF(select_query->where());
         Poco::Logger::get("BEFORE OPT").information(cnf.dump());
@@ -245,6 +246,7 @@ void WhereConstraintsOptimizer::perform()
                 return replaceTermsToConstants(atom, compare_graph);
             })
             .pushNotInFuntions();
+        AddIndexConstraintsOptimizer(metadata_snapshot).perform(cnf);
 
         Poco::Logger::get("AFTER OPT").information(cnf.dump());
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, TreeCNFConverter::fromCNF(cnf));

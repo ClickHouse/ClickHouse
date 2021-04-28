@@ -30,22 +30,21 @@ static ITransformingStep::Traits getTraits()
 
 CreatingSetStep::CreatingSetStep(
     const DataStream & input_stream_,
-    Block header,
     String description_,
     SubqueryForSet subquery_for_set_,
     SizeLimits network_transfer_limits_,
-    const Context & context_)
-    : ITransformingStep(input_stream_, header, getTraits())
+    ContextPtr context_)
+    : ITransformingStep(input_stream_, Block{}, getTraits())
+    , WithContext(context_)
     , description(std::move(description_))
     , subquery_for_set(std::move(subquery_for_set_))
     , network_transfer_limits(std::move(network_transfer_limits_))
-    , context(context_)
 {
 }
 
 void CreatingSetStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, context);
+    pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
 }
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const
@@ -70,10 +69,12 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
     output_stream = input_streams.front();
 
     for (size_t i = 1; i < input_streams.size(); ++i)
-        assertBlocksHaveEqualStructure(output_stream->header, input_streams[i].header, "CreatingSets");
+        if (input_streams[i].header)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Creating set input must have empty header. Got: {}",
+                            input_streams[i].header.dumpStructure());
 }
 
-QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings & settings)
+QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.empty())
         throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
@@ -82,14 +83,13 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, cons
     if (pipelines.size() == 1)
         return main_pipeline;
 
-    std::swap(pipelines.front(), pipelines.back());
-    pipelines.pop_back();
+    pipelines.erase(pipelines.begin());
 
     QueryPipeline delayed_pipeline;
     if (pipelines.size() > 1)
     {
         QueryPipelineProcessorsCollector collector(delayed_pipeline, this);
-        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines), output_stream->header, settings.getActionsSettings());
+        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines));
         processors = collector.detachProcessors();
     }
     else
@@ -109,7 +109,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
 }
 
 void addCreatingSetsStep(
-    QueryPlan & query_plan, SubqueriesForSets subqueries_for_sets, const SizeLimits & limits, const Context & context)
+    QueryPlan & query_plan, SubqueriesForSets subqueries_for_sets, const SizeLimits & limits, ContextPtr context)
 {
     DataStreams input_streams;
     input_streams.emplace_back(query_plan.getCurrentDataStream());
@@ -129,7 +129,6 @@ void addCreatingSetsStep(
 
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
-                input_streams.front().header,
                 std::move(description),
                 std::move(set),
                 limits,

@@ -1,11 +1,12 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
+
 #include <Poco/Timespan.h>
 
 namespace DB
 {
 
-class Context;
 struct Settings;
 
 struct ConnectionTimeouts
@@ -110,7 +111,7 @@ struct ConnectionTimeouts
     static ConnectionTimeouts getTCPTimeoutsWithoutFailover(const Settings & settings);
     /// Timeouts for the case when we will try many addresses in a loop.
     static ConnectionTimeouts getTCPTimeoutsWithFailover(const Settings & settings);
-    static ConnectionTimeouts getHTTPTimeouts(const Context & context);
+    static ConnectionTimeouts getHTTPTimeouts(ContextPtr context);
 };
 
 }

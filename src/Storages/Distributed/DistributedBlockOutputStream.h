@@ -38,7 +38,7 @@ class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
     DistributedBlockOutputStream(
-        const Context & context_,
+        ContextPtr context_,
         StorageDistributed & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const ASTPtr & query_ast_,
@@ -83,8 +83,7 @@ private:
     /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
     std::string getCurrentStateDescription();
 
-private:
-    const Context & context;
+    ContextPtr context;
     StorageDistributed & storage;
     StorageMetadataPtr metadata_snapshot;
     ASTPtr query_ast;
@@ -115,7 +114,7 @@ private:
         Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;
-        std::unique_ptr<Context> local_context;
+        ContextPtr local_context;
         BlockOutputStreamPtr stream;
 
         UInt64 blocks_written = 0;

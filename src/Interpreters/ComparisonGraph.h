@@ -44,6 +44,8 @@ public:
     std::optional<std::pair<Field, bool>> getConstUpperBound(const ASTPtr & ast) const;
     std::optional<std::pair<Field, bool>> getConstLowerBound(const ASTPtr & ast) const;
 
+    std::vector<ASTs> getVertexes() const;
+
 private:
     /// strongly connected component
     struct EqualComponent

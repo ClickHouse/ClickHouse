@@ -28,6 +28,10 @@ def instrument_clickhouse_server_log(self, node=None, clickhouse_server_log="/va
     try:
         with And("adding test name start message to the clickhouse-server.log"):
             node.command(f"echo -e \"\\n-- start: {current().name} --\\n\" >> {clickhouse_server_log}")
+        with And("dump memory info"):
+            node.command(f"echo -e \"\\n-- {current().name} -- top --\\n\" && top -bn1")
+            node.command(f"echo -e \"\\n-- {current().name} -- df --\\n\" && df -h")
+            node.command(f"echo -e \"\\n-- {current().name} -- free --\\n\" && free -mh")
         yield
 
     finally:

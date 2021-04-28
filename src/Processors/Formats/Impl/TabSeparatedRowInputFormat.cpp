@@ -7,7 +7,8 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
 
 namespace DB
 {
@@ -195,7 +196,7 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
         if (column_index)
         {
             const auto & type = data_types[*column_index];
-            ext.read_columns[*column_index] = readField(*columns[*column_index], type, is_last_file_column);
+            ext.read_columns[*column_index] = readField(*columns[*column_index], type, serializations[*column_index], is_last_file_column);
         }
         else
         {
@@ -223,18 +224,21 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 }
 
 
-bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr & type, bool is_last_file_column)
+bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr & type,
+    const SerializationPtr & serialization, bool is_last_file_column)
 {
     const bool at_delimiter = !is_last_file_column && !in.eof() && *in.position() == '\t';
     const bool at_last_column_line_end = is_last_file_column && (in.eof() || *in.position() == '\n');
+
     if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
     {
         column.insertDefault();
         return false;
     }
     else if (format_settings.null_as_default && !type->isNullable())
-        return DataTypeNullable::deserializeTextEscaped(column, in, format_settings, type);
-    type->deserializeAsTextEscaped(column, in, format_settings);
+        return SerializationNullable::deserializeTextEscapedImpl(column, in, format_settings, serialization);
+
+    serialization->deserializeTextEscaped(column, in, format_settings);
     return true;
 }
 
@@ -332,10 +336,13 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
 
 void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
 {
-    if (column_mapping->column_indexes_for_input_fields[file_column])
+    const auto & index = column_mapping->column_indexes_for_input_fields[file_column];
+    if (index)
     {
+        bool can_be_parsed_as_null = removeLowCardinality(type)->isNullable();
+
         // check null value for type is not nullable. don't cross buffer bound for simplicity, so maybe missing some case
-        if (!type->isNullable() && !in.eof())
+        if (!can_be_parsed_as_null && !in.eof())
         {
             if (*in.position() == '\\' && in.available() >= 2)
             {
@@ -351,8 +358,9 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
                 }
             }
         }
+
         const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
-        readField(column, type, is_last_file_column);
+        readField(column, type, serializations[*index], is_last_file_column);
     }
     else
     {

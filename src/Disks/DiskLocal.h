@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -76,7 +77,8 @@ public:
         size_t buf_size,
         size_t estimated_size,
         size_t aio_threshold,
-        size_t mmap_threshold) const override;
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -114,6 +116,8 @@ private:
     UInt64 reservation_count = 0;
 
     static std::mutex reservation_mutex;
+
+    Poco::Logger * log = &Poco::Logger::get("DiskLocal");
 };
 
 }

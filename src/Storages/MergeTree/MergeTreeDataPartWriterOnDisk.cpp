@@ -90,6 +90,9 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     if (!disk->exists(part_path))
         disk->createDirectories(part_path);
 
+    for (const auto & column : columns_list)
+        serializations.emplace(column.name, column.type->getDefaultSerialization());
+
     if (settings.rewrite_primary_key)
         initPrimaryIndex();
     initSkipIndices();
@@ -200,7 +203,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
                 {
                     const auto & primary_column = primary_index_block.getByPosition(j);
                     index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
-                    primary_column.type->serializeBinary(*primary_column.column, granule.start_row, *index_stream);
+                    primary_column.type->getDefaultSerialization()->serializeBinary(*primary_column.column, granule.start_row, *index_stream);
                 }
             }
         }
@@ -265,7 +268,7 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
                 const auto & column = *last_block_index_columns[j];
                 size_t last_row_number = column.size() - 1;
                 index_columns[j]->insertFrom(column, last_row_number);
-                index_types[j]->serializeBinary(column, last_row_number, *index_stream);
+                index_types[j]->getDefaultSerialization()->serializeBinary(column, last_row_number, *index_stream);
             }
             last_block_index_columns.clear();
         }

@@ -31,14 +31,14 @@ MergeTreeIndexGranuleHypothesis::MergeTreeIndexGranuleHypothesis(const String & 
 void MergeTreeIndexGranuleHypothesis::serializeBinary(WriteBuffer & ostr) const
 {
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt8>());
-    size_type->serializeBinary(static_cast<UInt8>(met), ostr);
+    size_type->getDefaultSerialization()->serializeBinary(static_cast<UInt8>(met), ostr);
 }
 
 void MergeTreeIndexGranuleHypothesis::deserializeBinary(ReadBuffer & istr)
 {
     Field field_met;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt8>());
-    size_type->deserializeBinary(field_met, istr);
+    size_type->getDefaultSerialization()->deserializeBinary(field_met, istr);
     met = field_met.get<UInt8>();
     is_empty = false;
 }
@@ -74,7 +74,7 @@ MergeTreeIndexConditionHypothesis::MergeTreeIndexConditionHypothesis(
     const String & index_name_,
     const String & column_name_,
     const SelectQueryInfo & query_,
-    const Context &)
+    ContextPtr)
     : index_name(index_name_)
     , column_name(column_name_)
 {
@@ -141,7 +141,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator() co
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
-    const SelectQueryInfo & query, const Context & context) const
+    const SelectQueryInfo & query, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionHypothesis>(index.name, index.sample_block.getNames().front(), query, context);
 }
