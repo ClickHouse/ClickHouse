@@ -142,8 +142,12 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
     //std::unordered_map<SymbolMangledName, SymbolData> symbol_cache;
 
     //for (void * addr : hits)
-    for (void * addr : {hits[0]}) //testing only
+    for (size_t i = 0; i < hits.size(); ++i)
     {
+        std::cout << i << "/" << hits.size() << "\n";
+
+        void * addr = hits.at(i);
+
         AddrInfo addr_info;
 
         if (auto it = addrs_cache.find(addr); it != addrs_cache.end())
@@ -174,44 +178,47 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
             ++it->second.call_count;
     }
 
-    convertToLCOVAndDumpToDisk(source_files, test_name);
+    convertToLCOVAndDumpToDisk(hits.size(), source_files, test_name);
 }
 
-/**
- * [incomplete] LCOV .info format reference, parsed from
- * https://github.com/linux-test-project/lcov/blob/master/bin/geninfo
- *
- * TN:<test name>
- * for each source file:
- *     SF:<absolute path to the source file>
- *
- *     for each instrumented function:
- *         FN:<line number of function start>,<function name>
- *         FNDA:<call-count>, <function-name>
- *
- *     if >0 functions instrumented:
- *         FNF:<number of functions instrumented (found)>
- *         FNH:<number of functions executed (hit)>
- *
- *     for each instrumented branch:
- *         BRDA:<line number>,<block number>,<branch number>,<taken -- number > 0 or "-" if was not taken>
- *
- *     if >0 branches instrumented:
- *         BRF:<number of branches instrumented (found)>
- *         BRH:<number of branches executed (hit)>
- *
- *     for each instrumented line:
- *         DA:<line number>,<execution count>
- *
- *     LF:<number of lines instrumented (found)>
- *     LH:<number of lines executed (hit)>
- *     end_of_record
- */
-void Writer::convertToLCOVAndDumpToDisk(const Writer::SourceFiles& source_files, std::string_view test_name)
+void Writer::convertToLCOVAndDumpToDisk(
+    size_t processed_edges, const Writer::SourceFiles& source_files, std::string_view test_name)
 {
+    /**
+     * [incomplete] LCOV .info format reference, parsed from
+     * https://github.com/linux-test-project/lcov/blob/master/bin/geninfo
+     *
+     * TN:<test name>
+     * TD:<test description>
+     *
+     * for each source file:
+     *     SF:<absolute path to the source file>
+     *
+     *     for each instrumented function:
+     *         FN:<line number of function start>,<function name>
+     *         FNDA:<call-count>, <function-name>
+     *
+     *     if >0 functions instrumented:
+     *         FNF:<number of functions instrumented (found)>
+     *         FNH:<number of functions executed (hit)>
+     *
+     *     for each instrumented branch:
+     *         BRDA:<line number>,<block number>,<branch number>,<taken -- number > 0 or "-" if was not taken>
+     *
+     *     if >0 branches instrumented:
+     *         BRF:<number of branches instrumented (found)>
+     *         BRH:<number of branches executed (hit)>
+     *
+     *     for each instrumented line:
+     *         DA:<line number>,<execution count>
+     *
+     *     LF:<number of lines instrumented (found)>
+     *     LH:<number of lines executed (hit)>
+     *     end_of_record
+     */
     std::ofstream ofs(coverage_dir / test_name);
 
-    fmt::print(ofs, "TN:{}\n", test_name);
+    fmt::print(ofs, "TN:{}\nTD:{} edges\n", test_name, processed_edges);
 
     for (const auto& [name, data] : source_files)
     {

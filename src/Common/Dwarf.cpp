@@ -1151,30 +1151,17 @@ Dwarf::LocationInfo Dwarf::findAddressForCoverageRuntime(uintptr_t address) cons
     const LocationInfoMode mode = LocationInfoMode::FULL;
     std::vector<SymbolizedFrame> inline_frames;
 
-    // TODO REMOVE copypaste
+    // We don't allow slow path here
     // Fast path: find the right .debug_info entry by looking up the
     // address in .debug_aranges.
-    if (uint64_t offset = 0; !aranges_.empty() && findDebugInfoOffset(address, aranges_, offset))
-    {
-        // Read compilation unit header from .debug_info
-        auto unit = getCompilationUnit(info_, offset);
-        findLocation(address, mode, unit, location_info, inline_frames);
-        assert(location_info.has_file_and_line);
-        return location_info;
-    }
-
-    // Slow path (linear scan): Iterate over all .debug_info entries
-    // and look for the address in each compilation unit.
     uint64_t offset = 0;
+    const bool [[maybe_unused]] use_fast_path = !aranges_.empty() && findDebugInfoOffset(address, aranges_, offset);
+    assert(use_fast_path);
 
-    while (offset < info_.size() && !location_info.has_file_and_line)
-    {
-        auto unit = getCompilationUnit(info_, offset);
-        offset += unit.size;
-        findLocation(address, mode, unit, location_info, inline_frames);
-    }
-
-    assert(location_info.has_file_and_line);
+    // Read compilation unit header from .debug_info
+    auto unit = getCompilationUnit(info_, offset);
+    const bool [[maybe_unused]] found_location = findLocation(address, mode, unit, location_info, inline_frames);
+    assert(found_location);
     return location_info;
 }
 

@@ -90,6 +90,8 @@ private:
     // struct SymbolData { std::string demangled_name; UInt64 start_line; }
 
     void prepareDataAndDumpToDisk(const Hits& hits, std::string_view test_name);
-    void convertToLCOVAndDumpToDisk(const SourceFiles& source_files, std::string_view test_name);
+
+    void convertToLCOVAndDumpToDisk(
+        size_t processed_edges, const SourceFiles& source_files, std::string_view test_name);
 };
 }
