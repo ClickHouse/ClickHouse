@@ -2,8 +2,10 @@
 
 #include <common/logger_useful.h>
 
+
 namespace DB
 {
+
 TimeoutSetter::TimeoutSetter(Poco::Net::StreamSocket & socket_,
     const Poco::Timespan & send_timeout_,
     const Poco::Timespan & receive_timeout_,
@@ -32,10 +34,12 @@ TimeoutSetter::~TimeoutSetter()
         socket.setSendTimeout(old_send_timeout);
         socket.setReceiveTimeout(old_receive_timeout);
     }
-    catch (std::exception & e)
+    catch (...)
     {
-        // Sometimes caught on macos
-        LOG_ERROR(&Poco::Logger::get("Client"), "TimeoutSetter: Can't reset timeouts: {}", e.what());
+        /// Sometimes caught on Mac OS X. This message can be safely ignored.
+        /// If you are developer using Mac, please debug this error message by yourself.
+        tryLogCurrentException("Client", "TimeoutSetter: Can't reset timeouts");
     }
 }
+
 }
