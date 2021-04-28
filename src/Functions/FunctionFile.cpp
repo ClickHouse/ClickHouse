@@ -73,8 +73,7 @@ public:
             fs::path file_path(filename);
             if (file_path.is_relative())
                 file_path = user_files_absolute_path / file_path;
-
-            fs::path file_absolute_path = fs::absolute(file_path);
+            fs::path file_absolute_path = fs::canonical(file_path);
             checkReadIsAllowedOrThrow(user_files_absolute_path.string(), file_absolute_path);
 
             checked_filenames[row] = file_absolute_path.string();
