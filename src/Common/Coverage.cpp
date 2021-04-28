@@ -4,6 +4,7 @@
 
 #include <fstream>
 #include <optional>
+#include <string>
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>
@@ -52,22 +53,22 @@ Writer::Writer()
 }
 
 void Writer::initialized(uint32_t count)
+{
+    if (std::filesystem::exists(coverage_dir))
     {
-        if (std::filesystem::exists(coverage_dir))
-        {
-            size_t suffix = 1;
-            const std::string dir_path = coverage_dir.string();
+        size_t suffix = 1;
+        const std::string dir_path = coverage_dir.string();
 
-            while (std::filesystem::exists(dir_path + "_" + std::to_string(suffix)))
-                ++suffix;
+        while (std::filesystem::exists(dir_path + "_" + std::to_string(suffix)))
+            ++suffix;
 
-            std::filesystem::rename(coverage_dir, dir_path);
-        }
-
-        std::filesystem::create_directory(coverage_dir);
-
-        edges.reserve(count);
+        std::filesystem::rename(coverage_dir, dir_path + "_" + std::to_string(suffix));
     }
+
+    std::filesystem::create_directory(coverage_dir);
+
+    edges.reserve(count);
+}
 
 void Writer::dumpAndChangeTestName(std::string_view test_name)
 {
@@ -106,7 +107,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
     pool.scheduleOrThrowOnError(std::move(f));
 }
 
-Writer::AddrInfo Writer::symbolizeAndDemangle(const void * virtual_addr) const
+Writer::AddrInfo Writer::symbolizeAndDemangle(SymbolsCache& symbols_cache, const void * virtual_addr) const
 {
     AddrInfo out =
     {
@@ -119,44 +120,56 @@ Writer::AddrInfo Writer::symbolizeAndDemangle(const void * virtual_addr) const
     out.line = loc.line;
 
     const auto * symbol = symbol_index->findSymbol(out.virtual_addr);
-    // won't cache addresses as there are lots of them.
     assert(symbol);
 
-    // TODO check if better with demangler/start_line cache
-    //
+    const std::string symbol_name = symbol->name;
+
+    if (auto it = symbols_cache.find(symbol_name); it != symbols_cache.end())
+    {
+        out.symbol = it->second.demangled_name;
+        out.symbol_start_line = it->second.start_line;
+        return out;
+    }
+
     int status = 0;
     out.symbol = demangle(symbol->name, status);
     assert(!status);
-    //
+
     const void * symbol_start_virtual = symbol->address_begin;
     const uintptr_t symbol_start_phys = uintptr_t(symbol_start_virtual) - binary_virtual_offset;
     out.symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
 
+    symbols_cache[symbol_name] = {.demangled_name = out.symbol, .start_line = out.symbol_start_line};
     return out;
 }
 
 void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view test_name)
 {
     SourceFiles source_files;
-    std::unordered_map<void*, AddrInfo> addrs_cache;
-    //std::unordered_map<SymbolMangledName, SymbolData> symbol_cache;
+
+    using AddrsCache = std::unordered_map<void*, AddrInfo>;
+    AddrsCache addrs_cache;
+
+    SymbolsCache symbols_cache;
+
+    time_t t = time(nullptr);
 
     //for (void * addr : hits)
     for (size_t i = 0; i < hits.size(); ++i)
     {
-        std::cout << i << "/" << hits.size() << "\n";
-
         void * addr = hits.at(i);
 
-        AddrInfo addr_info;
+        AddrsCache::iterator iter = addrs_cache.find(addr);
 
-        if (auto it = addrs_cache.find(addr); it != addrs_cache.end())
-            addr_info = it->second;
-        else
-        {
-            addr_info = symbolizeAndDemangle(addr);
-            addrs_cache.emplace(addr, addr_info);
-        }
+        if (iter == addrs_cache.end())
+            iter = addrs_cache.emplace(addr, symbolizeAndDemangle(symbols_cache, addr)).first;
+
+        const AddrInfo& addr_info = iter->second;
+
+        fmt::print(std::cout, "{}/{} ({}s, {}, line {}, file {})\n", i, hits.size(), time(nullptr) - t,
+            addr_info.symbol,
+            addr_info.line,
+            addr_info.file);
 
         const std::string file_name = addr_info.file.substr(addr_info.file.rfind('/') + 1);
 

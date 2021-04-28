@@ -1155,12 +1155,12 @@ Dwarf::LocationInfo Dwarf::findAddressForCoverageRuntime(uintptr_t address) cons
     // Fast path: find the right .debug_info entry by looking up the
     // address in .debug_aranges.
     uint64_t offset = 0;
-    const bool [[maybe_unused]] use_fast_path = !aranges_.empty() && findDebugInfoOffset(address, aranges_, offset);
+    [[maybe_unused]] const bool use_fast_path = !aranges_.empty() && findDebugInfoOffset(address, aranges_, offset);
     assert(use_fast_path);
 
     // Read compilation unit header from .debug_info
     auto unit = getCompilationUnit(info_, offset);
-    const bool [[maybe_unused]] found_location = findLocation(address, mode, unit, location_info, inline_frames);
+    [[maybe_unused]] const bool found_location = findLocation(address, mode, unit, location_info, inline_frames);
     assert(found_location);
     return location_info;
 }

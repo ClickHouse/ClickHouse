@@ -221,4 +221,21 @@ if (NOT EXTERNAL_BOOST_FOUND)
     add_library (boost::coroutine ALIAS _boost_coroutine)
     target_include_directories (_boost_coroutine PRIVATE ${LIBRARY_DIR})
     target_link_libraries(_boost_coroutine PRIVATE _boost_context)
-endif ()
+
+    # header-only boost gets instrumented
+    if (WITH_COVERAGE)
+        set(boosts
+            _boost_filesystem
+            _boost_iostreams
+            _boost_program_options
+            _boost_regex
+            _boost_system
+            _boost_context
+            _boost_coroutine)
+
+        foreach(BOOST ${boosts})
+            target_compile_options(${BOOST}
+                PRIVATE -O3 -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
+        endforeach(BOOST)
+    endif()
+endif()

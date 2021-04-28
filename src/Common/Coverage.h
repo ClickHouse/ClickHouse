@@ -60,10 +60,8 @@ private:
         std::string symbol; // function
         std::string file;
         UInt64 line;
-        UInt64 symbol_start_line; // TODO move out, no need to recalc for each address
+        UInt64 symbol_start_line;
     };
-
-    AddrInfo symbolizeAndDemangle(const void * virtual_addr) const;
 
     using SourceFileName = std::string;
 
@@ -86,8 +84,11 @@ private:
 
     using SourceFiles = std::unordered_map<SourceFileName, SourceFileData>;
 
-    // using SymbolMangledName = std::string;
-    // struct SymbolData { std::string demangled_name; UInt64 start_line; }
+    using SymbolMangledName = std::string;
+    struct SymbolData { std::string demangled_name; UInt64 start_line; };
+    using SymbolsCache = std::unordered_map<SymbolMangledName, SymbolData>;
+
+    AddrInfo symbolizeAndDemangle(SymbolsCache& symbols_cache, const void * virtual_addr) const;
 
     void prepareDataAndDumpToDisk(const Hits& hits, std::string_view test_name);
 
