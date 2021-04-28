@@ -394,7 +394,8 @@
         "01666_merge_tree_max_query_limit",
         "01786_explain_merge_tree",
         "01666_merge_tree_max_query_limit",
-        "01802_test_postgresql_protocol_with_row_policy" /// It cannot parse DROP ROW POLICY
+        "01802_test_postgresql_protocol_with_row_policy", /// It cannot parse DROP ROW POLICY
+        "01823_explain_json"
     ],
     "parallel":
     [
