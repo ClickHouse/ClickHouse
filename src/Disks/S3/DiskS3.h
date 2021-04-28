@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <common/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 #include "ProxyConfiguration.h"
@@ -40,6 +41,7 @@ public:
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
+        UInt64 s3_max_single_read_retries_,
         size_t min_upload_part_size_,
         size_t max_single_part_upload_size_,
         size_t min_bytes_for_seek_,
@@ -148,6 +150,7 @@ private:
     Metadata createMeta(const String & path) const;
 
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
+    /// Converts revision to binary string with leading zeroes (64 bit).
     static String revisionToString(UInt64 revision);
 
     bool checkObjectExists(const String & source_bucket, const String & prefix);
@@ -165,14 +168,17 @@ private:
     void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key);
 
     void readRestoreInformation(RestoreInformation & restore_information);
-    void restoreFiles(const String & source_bucket, const String & source_path, UInt64 target_revision);
+    void restoreFiles(const RestoreInformation & restore_information);
     void processRestoreFiles(const String & source_bucket, const String & source_path, std::vector<String> keys);
-    void restoreFileOperations(const String & source_bucket, const String & source_path, UInt64 target_revision);
+    void restoreFileOperations(const RestoreInformation & restore_information);
 
     /// Remove 'path' prefix from 'key' to get relative key.
     /// It's needed to store keys to metadata files in RELATIVE_PATHS version.
     static String shrinkKey(const String & path, const String & key);
     std::tuple<UInt64, String> extractRevisionAndOperationFromKey(const String & key);
+
+    /// Forms detached path '../../detached/part_name/' from '../../part_name/'
+    static String pathToDetached(const String & source_path);
 
     const String name;
     std::shared_ptr<Aws::S3::S3Client> client;
@@ -180,6 +186,7 @@ private:
     const String bucket;
     const String s3_root_path;
     String metadata_path;
+    UInt64 s3_max_single_read_retries;
     size_t min_upload_part_size;
     size_t max_single_part_upload_size;
     size_t min_bytes_for_seek;
@@ -207,6 +214,8 @@ private:
     static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
     /// Directories with data.
     const std::vector<String> data_roots {"data", "store"};
+
+    Poco::Logger * log = &Poco::Logger::get("DiskS3");
 };
 
 }

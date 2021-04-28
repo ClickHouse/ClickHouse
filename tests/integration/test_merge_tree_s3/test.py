@@ -68,6 +68,16 @@ def create_table(cluster, table_name, additional_settings=None):
     node.query(create_table_statement)
 
 
+def wait_for_delete_s3_objects(cluster, expected, timeout=30):
+    minio = cluster.minio_client
+    while timeout > 0:
+        if len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == expected:
+            return
+        timeout -= 1
+        time.sleep(1)
+    assert(len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == expected)
+
+
 @pytest.fixture(autouse=True)
 def drop_table(cluster):
     yield
@@ -75,8 +85,9 @@ def drop_table(cluster):
     minio = cluster.minio_client
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+
     try:
-        assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
+        wait_for_delete_s3_objects(cluster, 0)
     finally:
         # Remove extra objects to prevent tests cascade failing
         for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
@@ -151,7 +162,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
 
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(distinct(id)) FROM s3_test FORMAT Values") == "(8192)"
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD)
 
 
 def test_alter_table_columns(cluster):
@@ -167,32 +178,20 @@ def test_alter_table_columns(cluster):
     # To ensure parts have merged
     node.query("OPTIMIZE TABLE s3_test")
 
-    # Wait for merges, mutations and old parts deletion
-    time.sleep(3)
-
     assert node.query("SELECT sum(col1) FROM s3_test FORMAT Values") == "(8192)"
     assert node.query("SELECT sum(col1) FROM s3_test WHERE id > 0 FORMAT Values") == "(4096)"
-    assert len(list(minio.list_objects(cluster.minio_bucket,
-                                       'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN)
 
     node.query("ALTER TABLE s3_test MODIFY COLUMN col1 String", settings={"mutations_sync": 2})
 
-    # Wait for old parts deletion
-    time.sleep(3)
-
     assert node.query("SELECT distinct(col1) FROM s3_test FORMAT Values") == "('1')"
     # and file with mutation
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == (
-            FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 1)
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD_PER_COLUMN + 1)
 
     node.query("ALTER TABLE s3_test DROP COLUMN col1", settings={"mutations_sync": 2})
 
-    # Wait for old parts deletion
-    time.sleep(3)
-
     # and 2 files with mutations
-    assert len(
-        list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2)
 
 
 def test_attach_detach_partition(cluster):
@@ -320,9 +319,7 @@ def test_move_replace_partition_to_another_table(cluster):
     assert node.query("SELECT count(*) FROM s3_clone FORMAT Values") == "(8192)"
 
     # Wait for outdated partitions deletion.
-    time.sleep(3)
-    assert len(list(
-        minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD * 2 + FILES_OVERHEAD_PER_PART_WIDE * 4)
 
     node.query("DROP TABLE s3_clone NO DELAY")
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
@@ -338,7 +335,8 @@ def test_move_replace_partition_to_another_table(cluster):
 
     node.query("DROP TABLE s3_test NO DELAY")
     # Backup data should remain in S3.
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD_PER_PART_WIDE * 4
+
+    wait_for_delete_s3_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE * 4)
 
     for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
         minio.remove_object(cluster.minio_bucket, obj.object_name)

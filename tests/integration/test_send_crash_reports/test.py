@@ -23,7 +23,7 @@ def started_node():
         cluster.shutdown()
 
 
-def test_send_segfault(started_node, ):
+def test_send_segfault(started_node):
     if started_node.is_built_with_thread_sanitizer():
         pytest.skip("doesn't fit in timeouts for stacktrace generation")
 
