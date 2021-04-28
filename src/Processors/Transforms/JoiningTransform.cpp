@@ -20,13 +20,15 @@ JoiningTransform::JoiningTransform(
     bool on_totals_,
     bool default_totals_,
     FinishCounterPtr finish_counter_)
-    : IProcessor({input_header, Block()}, {transformHeader(input_header, join_)})
+    : IProcessor({input_header}, {transformHeader(input_header, join_)})
     , join(std::move(join_))
     , on_totals(on_totals_)
     , default_totals(default_totals_)
     , finish_counter(std::move(finish_counter_))
     , max_block_size(max_block_size_)
 {
+    if (!join->isStorageJoin())
+        inputs.emplace_back(Block(), this);
 }
 
 IProcessor::Status JoiningTransform::prepare()
@@ -58,14 +60,17 @@ IProcessor::Status JoiningTransform::prepare()
         return Status::PortFull;
     }
 
-    auto & last_in = inputs.back();
-    if (!last_in.isFinished())
+    if (inputs.size() > 1)
     {
-        last_in.setNeeded();
-        if (last_in.hasData())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No data is expected from second JoiningTransform port");
+        auto & last_in = inputs.back();
+        if (!last_in.isFinished())
+        {
+            last_in.setNeeded();
+            if (last_in.hasData())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No data is expected from second JoiningTransform port");
 
-        return Status::NeedData;
+            return Status::NeedData;
+        }
     }
 
     if (has_input)
@@ -98,7 +103,7 @@ void JoiningTransform::work()
         transform(input_chunk);
         output_chunk.swap(input_chunk);
         has_input = not_processed != nullptr;
-        has_output = true;
+        has_output = !output_chunk.empty();
     }
     else
     {
@@ -175,6 +180,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
 
     if (!not_processed)
     {
+        // std::cerr << "========= not_processed null " << chunk.getNumColumns() << std::endl;
         if (chunk.hasColumns())
             res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -183,6 +189,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
     {
+        // std::cerr << "========= not_processed->empty() " << chunk.getNumColumns() << std::endl;
         if (chunk.hasColumns())
             res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -191,9 +198,14 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
     else
     {
+        // std::cerr << "========= not_processed with block\n";
         res = std::move(not_processed->block);
         join->joinBlock(res, not_processed);
     }
+
+    // std::cerr << "Res rows " << res.rows() << std::endl;
+    // if (not_processed)
+    //     std::cerr << "Not processed size " << not_processed->block.rows() << std::endl;
     return res;
 }
 
@@ -202,12 +214,12 @@ AddingJoinedTransform::AddingJoinedTransform(Block input_header, JoinPtr join_)
     , join(std::move(join_))
 {}
 
-void AddingJoinedTransform::addTotaslPort()
+InputPort * AddingJoinedTransform::addTotaslPort()
 {
     if (inputs.size() > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Totals port was already added to AddingJoinedTransform");
 
-    inputs.emplace_back(inputs.front().getHeader(), this);
+    return &inputs.emplace_back(inputs.front().getHeader(), this);
 }
 
 IProcessor::Status AddingJoinedTransform::prepare()
@@ -245,14 +257,17 @@ IProcessor::Status AddingJoinedTransform::prepare()
     if (inputs.size() > 1)
     {
         auto & totals_input = inputs.back();
-        totals_input.setNeeded();
+        if (!totals_input.isFinished())
+        {
+            totals_input.setNeeded();
 
-        if (!totals_input.hasData())
-            return Status::NeedData;
+            if (!totals_input.hasData())
+                return Status::NeedData;
 
-        chunk = totals_input.pull(true);
-        for_totals = true;
-        return Status::Ready;
+            chunk = totals_input.pull(true);
+            for_totals = true;
+            return Status::Ready;
+        }
     }
 
     output.finish();
@@ -262,6 +277,7 @@ IProcessor::Status AddingJoinedTransform::prepare()
 void AddingJoinedTransform::work()
 {
     auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
+    std::cerr << "-------- Adding block with " << block.rows() << " rows for totals ? " << for_totals << std::endl;
 
     if (for_totals)
         join->setTotals(block);

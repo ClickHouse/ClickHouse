@@ -121,6 +121,8 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
     return true;
 }
 
+ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
+
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
     , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
@@ -860,32 +862,43 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         joined_actions_step->setStepDescription("Joined actions");
         joined_plan->addStep(std::move(joined_actions_step));
 
-        const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
+        const ColumnsWithTypeAndName & right_sample_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
         bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
         if (need_convert)
-            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(
-                syntax->analyzed_join->rightConvertingActions(),
-                ExpressionActionsSettings::fromContext(getContext())));
+        {
+            // subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(
+            //     syntax->analyzed_join->rightConvertingActions(),
+            //     ExpressionActionsSettings::fromContext(getContext())));
 
-        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, getContext());
+            auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), syntax->analyzed_join->rightConvertingActions());
+            converting_step->setStepDescription("Convert joined columns");
+            joined_plan->addStep(std::move(converting_step));
+        }
+
+        join = makeJoin(syntax->analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
 
         /// Do not make subquery for join over dictionary.
         if (syntax->analyzed_join->dictionary_reader)
         {
-            JoinPtr join = subquery_for_join.join;
-            subqueries_for_sets.erase(join_subquery_id);
-            return join;
+            // JoinPtr join = subquery_for_join.join;
+            // subqueries_for_sets.erase(join_subquery_id);
+            // return join;
+
+            joined_plan.reset();
         }
     }
     else
     {
-        const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
-        bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
-        if (need_convert)
-            subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(syntax->analyzed_join->rightConvertingActions()));
+        syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, {});
+
+        /// TODO
+        //const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
+        // bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, {});
+        // if (need_convert)
+        //     subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(syntax->analyzed_join->rightConvertingActions()));
     }
 
-    return subquery_for_join.join;
+    return join;
 }
 
 ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(

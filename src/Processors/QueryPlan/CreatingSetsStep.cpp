@@ -54,8 +54,8 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
     settings.out << prefix;
     if (subquery_for_set.set)
         settings.out << "Set: ";
-    else if (subquery_for_set.join)
-        settings.out << "Join: ";
+    // else if (subquery_for_set.join)
+    //     settings.out << "Join: ";
 
     settings.out << description << '\n';
 }
@@ -124,8 +124,6 @@ void addCreatingSetsStep(
             continue;
 
         auto plan = std::move(set.source);
-        std::string type = (set.join != nullptr) ? "JOIN"
-                                                 : "subquery";
 
         auto creating_set = std::make_unique<CreatingSetStep>(
                 plan->getCurrentDataStream(),
@@ -133,7 +131,7 @@ void addCreatingSetsStep(
                 std::move(set),
                 limits,
                 context);
-        creating_set->setStepDescription("Create set for " + type);
+        creating_set->setStepDescription("Create set for subquery");
         plan->addStep(std::move(creating_set));
 
         input_streams.emplace_back(plan->getCurrentDataStream());

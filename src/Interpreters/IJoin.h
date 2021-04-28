@@ -41,6 +41,10 @@ public:
     virtual size_t getTotalByteCount() const = 0;
     virtual bool alwaysReturnsEmptySet() const { return false; }
 
+    /// StorageJoin is already filled. No need to call addJoinedBlock.
+    /// Different query plan is used for storage join.
+    virtual bool isStorageJoin() const { return false; }
+
     virtual BlockInputStreamPtr createStreamWithNonJoinedRows(const Block &, UInt64) const { return {}; }
 };
 
