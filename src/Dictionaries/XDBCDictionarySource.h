@@ -62,7 +62,7 @@ private:
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
-    BlockInputStreamPtr loadBase(const std::string & query) const;
+    BlockInputStreamPtr loadFromQuery(const Poco::URI url, const Block & required_sample_block, const std::string & query) const;
 
     Poco::Logger * log;
 

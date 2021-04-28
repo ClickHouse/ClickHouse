@@ -7,9 +7,9 @@ toc_title: Storing Dictionaries in Memory
 
 There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed). which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed), which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section “[cache](#cache)”.
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section [cache](#cache).
 
 There are several ways to improve dictionary performance:
 
@@ -68,9 +68,9 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
 
-The dictionary key has the `UInt64` type and the value is limited to 500,000. If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary.
+The dictionary key has the [UInt64](../../../sql-reference/data-types/int-uint.md) type and the value is limited to `max_array_size` (by default — 500,000). If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary. Dictionary flat arrays initial size is controlled by `initial_array_size` setting (by default — 1024).
 
-All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
+All types of sources are supported. When updating, data (from a file or from a table) is read in it entirety.
 
 This method provides the best performance among all available methods of storing the dictionary.
 
@@ -78,14 +78,17 @@ Configuration example:
 
 ``` xml
 <layout>
-  <flat />
+  <flat>
+    <initial_array_size>50000</initial_array_size>
+    <max_array_size>5000000</max_array_size>
+  </flat>
 </layout>
 ```
 
 or
 
 ``` sql
-LAYOUT(FLAT())
+LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 ```
 
 ### hashed {#dicts-external_dicts_dict_layout-hashed}
