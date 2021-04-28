@@ -102,6 +102,7 @@ void expandOffsetsByMask(PaddedPODArray<UInt64> & offsets, const PaddedPODArray<
 }
 
 
+
 template <typename ValueType>
 bool tryExpandMaskColumnByMask(const ColumnPtr & column, const PaddedPODArray<UInt8> & mask, bool reverse, UInt8 default_value_for_expanding_mask)
 {
@@ -256,11 +257,10 @@ bool checkArgumentsForColumnFunction(const ColumnsWithTypeAndName & arguments)
 {
     for (const auto & arg : arguments)
     {
-        if (const auto * col = checkAndGetColumn<ColumnFunction>(*arg.column))
+        if (checkAndGetColumn<ColumnFunction>(*arg.column))
             return true;
     }
     return false;
 }
 
 }
-
