@@ -1856,6 +1856,9 @@ private:
             /// Send data read from stdin.
             try
             {
+                if (need_render_progress)
+                    std_in.setProgressCallback(context);
+
                 sendDataFrom(std_in, sample, columns_description);
             }
             catch (Exception & e)

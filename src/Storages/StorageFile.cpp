@@ -27,7 +27,6 @@
 
 #include <fcntl.h>
 #include <unistd.h>
-#include <algorithm>
 
 #include <Poco/Path.h>
 #include <Poco/File.h>
@@ -39,8 +38,6 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
-#include <Common/UnicodeBar.h>
-#include <Common/TerminalSize.h>
 
 
 namespace fs = std::filesystem;
@@ -374,6 +371,13 @@ public:
                     method = chooseCompressionMethod(current_path, storage->compression_method);
                 }
 
+                /// For clickhouse-local add progress callback to display progress bar.
+                if (context->needRenderProgress() && context->getApplicationType() == Context::ApplicationType::LOCAL)
+                {
+                    auto & in = static_cast<ReadBufferFromFileDescriptor &>(*nested_buffer);
+                    in.setProgressCallback(context);
+                }
+
                 read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
 
                 auto get_block_for_format = [&]() -> Block
@@ -429,86 +433,6 @@ public:
         }
 
         return {};
-    }
-
-
-    void setProgressCallback(const ProgressCallback & callback) override
-    {
-        /// Add file progress callback only for clickhouse-local.
-        if (!context->needRenderProgress() || context->getApplicationType() != Context::ApplicationType::LOCAL)
-        {
-            progress_callback = callback;
-            return;
-        }
-
-        auto file_progress_callback = [this](const Progress & progress)
-        {
-            static size_t increment = 0;
-            static const char * indicators[8] =
-            {
-                "\033[1;30m→\033[0m",
-                "\033[1;31m↘\033[0m",
-                "\033[1;32m↓\033[0m",
-                "\033[1;33m↙\033[0m",
-                "\033[1;34m←\033[0m",
-                "\033[1;35m↖\033[0m",
-                "\033[1;36m↑\033[0m",
-                "\033[1m↗\033[0m",
-            };
-            size_t terminal_width = getTerminalWidth();
-
-            const auto & file_progress = context->getFileTableEngineProgress();
-            WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
-
-            if (!file_progress.processed_bytes)
-                message << std::string(terminal_width, ' ');
-
-            file_progress.processed_bytes += progress.read_bytes;
-            file_progress.processed_rows += progress.read_rows;
-
-            /// Display progress bar only if .25 seconds have passed since query execution start.
-            size_t elapsed_ns = file_progress.watch.elapsed();
-            if (elapsed_ns > 25000000 && progress.read_bytes > 0)
-            {
-                message << '\r';
-                const char * indicator = indicators[increment % 8];
-                size_t prefix_size = message.count();
-                size_t processed_bytes = file_progress.processed_bytes.load();
-
-                message << indicator << " Progress: ";
-                message << formatReadableQuantity(file_progress.processed_rows) << " rows, ";
-                message << formatReadableSizeWithDecimalSuffix(file_progress.processed_bytes) << " bytes. ";
-
-                size_t written_progress_chars = message.count() - prefix_size - (strlen(indicator) - 1); /// Don't count invisible output (escape sequences).
-                ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
-
-                /// total_bytes_to_read is approximate, since its amount is taken as file size (or sum of all file sizes
-                /// from paths, generated for file table engine). And progress.read_bytes is counted accorging to columns types.
-                size_t total_bytes_corrected = std::max(processed_bytes, file_progress.total_bytes_to_process);
-
-                if (width_of_progress_bar > 0)
-                {
-                    std::string bar = UnicodeBar::render(UnicodeBar::getWidth(processed_bytes, 0, total_bytes_corrected, width_of_progress_bar));
-                    message << "\033[0;32m" << bar << "\033[0m";
-
-                    if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
-                        message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
-
-                    message << ' ' << std::min((99 * file_progress.processed_bytes / file_progress.total_bytes_to_process), static_cast<size_t>(99)) << '%';
-                }
-            }
-            ++increment;
-        };
-
-        /// Progress callback can be added via context or via method in SourceWithProgress.
-        /// In executeQuery a callback from context is wrapped into another
-        /// progress callback and then passed to SourceWithProgress. Here another callback is
-        /// added to avoid overriding previous callbacks or avoid other callbacks overriding this one.
-        progress_callback = [callback, file_progress_callback](const Progress & progress)
-        {
-            callback(progress);
-            file_progress_callback(progress);
-        };
     }
 
 
@@ -574,9 +498,9 @@ Pipe StorageFile::read(
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    /// For clickhouse-local add progress callback to display in a progress bar.
+    /// For clickhouse-local to display progress bar.
     if (context->getApplicationType() == Context::ApplicationType::LOCAL)
-        context->setFileTableEngineApproxBytesToProcess(total_bytes_to_read);
+        context->setFileTotalBytesToProcess(total_bytes_to_read);
 
     for (size_t i = 0; i < num_streams; ++i)
     {

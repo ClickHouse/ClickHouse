@@ -47,32 +47,30 @@ struct WriteProgress
         : written_rows(written_rows_), written_bytes(written_bytes_) {}
 };
 
-/// Track progress of processing one or multiple files via File table engine.
-struct FileTableEngineProgress
+/// Track progress of processing file base buffer.
+/// Used to display progress of loading data from stdin, for file table engine, etc.
+struct FileProgress
 {
     /// Track elapsed time.
     Stopwatch watch;
     size_t total_bytes_to_process;
 
-    /// FileTableEngineProgress struct can be accessed from Context via const reference.
+    /// FileProgress lies in Context and accessed via const reference.
     /// These fields are allowed to be updated in a progress callback.
     mutable std::atomic<uint64_t> processed_bytes;
-    mutable std::atomic<uint64_t> processed_rows;
 
-    FileTableEngineProgress() : total_bytes_to_process(0), processed_bytes(0), processed_rows(0) {}
+    FileProgress() : total_bytes_to_process(0), processed_bytes(0) {}
 
-    FileTableEngineProgress(const FileTableEngineProgress & other)
+    FileProgress(const FileProgress & other)
         : watch(other.watch)
         , total_bytes_to_process(other.total_bytes_to_process)
-        , processed_bytes(other.processed_bytes.load())
-        , processed_rows(other.processed_rows.load()) {}
+        , processed_bytes(other.processed_bytes.load()) {}
 
-    FileTableEngineProgress & operator=(FileTableEngineProgress other)
+    FileProgress & operator=(FileProgress other)
     {
         watch = other.watch;
         total_bytes_to_process = other.total_bytes_to_process;
         processed_bytes = other.processed_bytes.load();
-        processed_rows = other.processed_rows.load();
         return *this;
     }
 };

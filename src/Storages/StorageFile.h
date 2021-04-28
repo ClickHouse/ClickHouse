@@ -85,9 +85,6 @@ protected:
 private:
     explicit StorageFile(CommonArguments args);
 
-    /// For clickhouse-local query display progress of processed files.
-    static void addProgressCallback(ContextPtr context);
-
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
     // function -- in this case, format_settings is set.
@@ -110,7 +107,7 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("StorageFile");
 
-    /// Approximate number of bytes to read. Needed for progress bar.
+    /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
     size_t total_bytes_to_read = 0;
 };
 
