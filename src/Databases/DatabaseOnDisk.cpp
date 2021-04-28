@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
@@ -63,14 +62,21 @@ std::pair<String, StoragePtr> createTableFromAST(
         storage->renameInMemory(ast_create_query);
         return {ast_create_query.table, storage};
     }
-    /// We do not directly use `InterpreterCreateQuery::execute`, because
-    /// - the database has not been loaded yet;
-    /// - the code is simpler, since the query is already brought to a suitable form.
-    if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
-        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
-    ConstraintsDescription constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
+    ColumnsDescription columns;
+    ConstraintsDescription constraints;
+
+    if (!ast_create_query.is_dictionary)
+    {
+        /// We do not directly use `InterpreterCreateQuery::execute`, because
+        /// - the database has not been loaded yet;
+        /// - the code is simpler, since the query is already brought to a suitable form.
+        if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
+            throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+
+        columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
+        constraints = InterpreterCreateQuery::getConstraintsDescription(ast_create_query.columns_list->constraints);
+    }
 
     return
     {
@@ -219,10 +225,6 @@ void DatabaseOnDisk::createTable(
 
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
-
-    if (isDictionaryExist(table_name))
-        throw Exception(
-            ErrorCodes::DICTIONARY_ALREADY_EXISTS, "Dictionary {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
     if (isTableExist(table_name, getContext()))
         throw Exception(
