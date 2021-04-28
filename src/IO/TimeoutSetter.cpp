@@ -34,11 +34,11 @@ TimeoutSetter::~TimeoutSetter()
         socket.setSendTimeout(old_send_timeout);
         socket.setReceiveTimeout(old_receive_timeout);
     }
-    catch (const std::exception & e)
+    catch (...)
     {
         /// Sometimes caught on Mac OS X. This message can be safely ignored.
         /// If you are developer using Mac, please debug this error message by yourself.
-        LOG_ERROR(&Poco::Logger::get("Client"), "TimeoutSetter: Can't reset timeouts: {}", e.what());
+        tryLogCurrentException("Client", "TimeoutSetter: Can't reset timeouts");
     }
 }
 
