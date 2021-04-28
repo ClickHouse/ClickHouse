@@ -1518,6 +1518,11 @@ private:
                 server_exception.reset();
                 client_exception.reset();
                 have_error = false;
+
+                // We have to reinitialize connection after errors, because it
+                // might have gotten into a wrong state and we'll get false
+                // positives about "Unknown packet from server".
+                connection->forceConnected(connection_parameters.timeouts);
             }
             else if (ast_to_process->formatForErrorMessage().size() > 500)
             {
