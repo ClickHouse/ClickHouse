@@ -51,6 +51,24 @@ Writer::Writer()
     });
 }
 
+void Writer::initialized(uint32_t count)
+    {
+        if (std::filesystem::exists(coverage_dir))
+        {
+            size_t suffix = 1;
+            const std::string dir_path = coverage_dir.string();
+
+            while (std::filesystem::exists(dir_path + "_" + std::to_string(suffix)))
+                ++suffix;
+
+            std::filesystem::rename(coverage_dir, dir_path);
+        }
+
+        std::filesystem::create_directory(coverage_dir);
+
+        edges.reserve(count);
+    }
+
 void Writer::dumpAndChangeTestName(std::string_view test_name)
 {
     std::string old_test_name;
@@ -60,7 +78,10 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         auto lck = std::lock_guard(edges_mutex);
 
         if (!test)
+        {
+            test = test_name;
             return;
+        }
 
         edges_copies = edges;
         old_test_name = *test;
@@ -120,7 +141,8 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
     std::unordered_map<void*, AddrInfo> addrs_cache;
     //std::unordered_map<SymbolMangledName, SymbolData> symbol_cache;
 
-    for (void * addr : hits)
+    //for (void * addr : hits)
+    for (void * addr : {hits[0]}) //testing only
     {
         AddrInfo addr_info;
 
@@ -132,7 +154,7 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
             addrs_cache.emplace(addr, addr_info);
         }
 
-        const std::string file_name = addr_info.file.substr(addr_info.file.rfind('/'));
+        const std::string file_name = addr_info.file.substr(addr_info.file.rfind('/') + 1);
 
         SourceFiles::iterator file_data_it = source_files.find(file_name);
 

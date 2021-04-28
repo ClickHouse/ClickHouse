@@ -381,7 +381,9 @@ def run_tests_array(all_tests_with_params):
                             failed_to_check = True
 
                         if failed_to_check or clickhouse_proc.returncode != 0:
-                            failures += 1
+                            if increment_failures:
+                                failures += 1
+
                             print("Server does not respond to health check")
                             return False
 

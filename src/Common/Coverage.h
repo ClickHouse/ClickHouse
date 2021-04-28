@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <string>
 #include <vector>
 #include <unordered_map>
 
@@ -24,13 +25,7 @@ public:
         return w;
     }
 
-    inline void initialized(uint32_t count)
-    {
-        std::filesystem::remove_all(coverage_dir);
-        std::filesystem::create_directory(coverage_dir);
-
-        edges.reserve(count);
-    }
+    void initialized(uint32_t count);
 
     inline void hit(void * addr)
     {

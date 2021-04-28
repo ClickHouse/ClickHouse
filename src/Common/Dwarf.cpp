@@ -1160,6 +1160,7 @@ Dwarf::LocationInfo Dwarf::findAddressForCoverageRuntime(uintptr_t address) cons
         auto unit = getCompilationUnit(info_, offset);
         findLocation(address, mode, unit, location_info, inline_frames);
         assert(location_info.has_file_and_line);
+        return location_info;
     }
 
     // Slow path (linear scan): Iterate over all .debug_info entries
