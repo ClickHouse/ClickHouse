@@ -17,6 +17,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/JSONBuilder.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <IO/Operators.h>
@@ -175,6 +176,38 @@ void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 
         for (const auto & aggregate : aggregates)
             aggregate.explain(out, indent + 4);
+    }
+}
+
+void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
+{
+    const auto & header = src_header ? src_header
+                                     : intermediate_header;
+
+    auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    for (auto key : keys)
+    {
+        if (key >= header.columns())
+            keys_array->add("");
+        else
+            keys_array->add(header.getByPosition(key).name);
+    }
+
+    map.add("Keys", std::move(keys_array));
+
+    if (!aggregates.empty())
+    {
+        auto aggregates_array = std::make_unique<JSONBuilder::JSONArray>();
+
+        for (const auto & aggregate : aggregates)
+        {
+            auto aggregate_map = std::make_unique<JSONBuilder::JSONMap>();
+            aggregate.explain(*aggregate_map);
+            aggregates_array->add(std::move(aggregate_map));
+        }
+
+        map.add("Aggregates", std::move(aggregates_array));
     }
 }
 
