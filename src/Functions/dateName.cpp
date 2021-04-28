@@ -29,7 +29,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace {
+namespace
+{
 
 template <typename DataType> struct ActionValueTypeMap {};
 template <> struct ActionValueTypeMap<DataTypeDate> { using ActionValueType = UInt16; };
