@@ -755,11 +755,11 @@ static ExpressionActionsPtr createJoinedBlockActions(ContextPtr context, const T
 
 static bool allowDictJoin(StoragePtr joined_storage, ContextPtr context, String & dict_name, String & key_name)
 {
-    const auto * dict = dynamic_cast<const StorageDictionary *>(joined_storage.get());
-    if (!dict)
+    if (!joined_storage->isDictionary())
         return false;
 
-    dict_name = dict->dictionaryName();
+    StorageDictionary & storage_dictionary = static_cast<StorageDictionary &>(*joined_storage);
+    dict_name = storage_dictionary.getDictionaryName();
     auto dictionary = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
     if (!dictionary)
         return false;
@@ -1510,7 +1510,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         optimize_read_in_order =
             settings.optimize_read_in_order
-            && storage && query.orderBy()
+            && storage
+            && query.orderBy()
             && !query_analyzer.hasAggregation()
             && !query_analyzer.hasWindow()
             && !query.final()

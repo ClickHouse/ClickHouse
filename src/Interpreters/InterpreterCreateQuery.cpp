@@ -59,6 +59,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <common/logger_useful.h>
@@ -70,6 +71,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int INCORRECT_QUERY;
     extern const int UNKNOWN_DATABASE_ENGINE;
@@ -78,7 +80,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
-    extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
@@ -362,7 +363,7 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, bool sanity_check_compression_codecs)
+    const ASTExpressionList & columns_ast, ContextPtr context_, bool attach)
 {
     /// First, deduce implicit types.
 
@@ -371,6 +372,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
+    bool make_columns_nullable = !attach && context_->getSettingsRef().data_type_default_nullable;
 
     for (const auto & ast : columns_ast.children)
     {
@@ -389,8 +391,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                 if (*col_decl.null_modifier)
                     column_type = makeNullable(column_type);
             }
-            /// XXX: context_ or context ?
-            else if (context_->getSettingsRef().data_type_default_nullable)
+            else if (make_columns_nullable)
             {
                 column_type = makeNullable(column_type);
             }
@@ -435,6 +436,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!default_expr_list->children.empty())
         defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context_);
 
+    bool sanity_check_compression_codecs = !attach && !context_->getSettingsRef().allow_suspicious_codecs;
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
     for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
@@ -510,8 +512,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
 
         if (create.columns_list->columns)
         {
-            bool sanity_check_compression_codecs = !create.attach && !getContext()->getSettingsRef().allow_suspicious_codecs;
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), sanity_check_compression_codecs);
+            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), create.attach);
         }
 
         if (create.columns_list->indices)
@@ -549,6 +550,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         auto table_function = TableFunctionFactory::instance().get(create.as_table_function, getContext());
         properties.columns = table_function->getActualTableStructure(getContext());
         assert(!properties.columns.empty());
+    }
+    else if (create.is_dictionary)
+    {
+        return {};
     }
     else
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
@@ -723,7 +728,7 @@ static void generateUUIDForTable(ASTCreateQuery & create)
     /// If destination table (to_table_id) is not specified for materialized view,
     /// then MV will create inner table. We should generate UUID of inner table here,
     /// so it will be the same on all hosts if query in ON CLUSTER or database engine is Replicated.
-    bool need_uuid_for_inner_table = create.is_materialized_view && !create.to_table_id;
+    bool need_uuid_for_inner_table = !create.attach && create.is_materialized_view && !create.to_table_id;
     if (need_uuid_for_inner_table && create.to_inner_uuid == UUIDHelpers::Nil)
         create.to_inner_uuid = UUIDHelpers::generateV4();
 }
@@ -836,11 +841,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         // Table SQL definition is available even if the table is detached (even permanently)
         auto query = database->getCreateTableQuery(create.table, getContext());
-        create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
-        if (create.is_dictionary)
+        auto create_query = query->as<ASTCreateQuery &>();
+
+        if (!create.is_dictionary && create_query.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                            "Cannot ATTACH TABLE {}.{}, it is a Dictionary",
-                            backQuoteIfNeed(database_name), backQuoteIfNeed(create.table));
+                "Cannot ATTACH TABLE {}.{}, it is a Dictionary",
+                backQuoteIfNeed(database_name), backQuoteIfNeed(create.table));
+
+        if (create.is_dictionary && !create_query.is_dictionary)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Cannot ATTACH DICTIONARY {}.{}, it is a Table",
+                backQuoteIfNeed(database_name), backQuoteIfNeed(create.table));
+
+        create = create_query; // Copy the saved create query, but use ATTACH instead of CREATE
+
         create.attach = true;
         create.attach_short_syntax = true;
         create.if_not_exists = if_not_exists;
@@ -890,6 +904,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.select && create.isView())
     {
+        // Expand CTE before filling default database
+        ApplyWithSubqueryVisitor().visit(*create.select);
         AddDefaultDatabaseVisitor visitor(current_database);
         visitor.visit(*create.select);
     }
@@ -944,6 +960,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         database = DatabaseCatalog::instance().getDatabase(create.database);
         assertOrSetUUID(create, database);
 
+        String storage_name = create.is_dictionary ? "Dictionary" : "Table";
+        auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
+
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
         if (database->isTableExist(create.table, getContext()))
         {
@@ -963,12 +982,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 interpreter.execute();
             }
             else
-                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists.", backQuoteIfNeed(create.database), backQuoteIfNeed(create.table));
+                throw Exception(storage_already_exists_error_code,
+                    "{} {}.{} already exists.", storage_name, backQuoteIfNeed(create.database), backQuoteIfNeed(create.table));
         }
 
         data_path = database->getTableDataPath(create);
         if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Directory for table data {} already exists", String(data_path));
+            throw Exception(storage_already_exists_error_code, "Directory for {} data {} already exists", Poco::toLower(storage_name), String(data_path));
     }
     else
     {
@@ -991,6 +1011,19 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// We will try to create Storage instance with provided data path
         data_path = *create.attach_from_path;
         create.attach_from_path = std::nullopt;
+    }
+
+    if (create.attach)
+    {
+        /// If table was detached it's not possible to attach it back while some threads are using
+        /// old instance of the storage. For example, AsynchronousMetrics may cause ATTACH to fail,
+        /// so we allow waiting here. If database_atomic_wait_for_drop_and_detach_synchronously is disabled
+        /// and old storage instance still exists it will throw exception.
+        bool throw_if_table_in_use = getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously;
+        if (throw_if_table_in_use)
+            database->checkDetachedTableNotInUse(create.uuid);
+        else
+            database->waitDetachedTableNotInUse(create.uuid);
     }
 
     StoragePtr res;
@@ -1107,56 +1140,6 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     return {};
 }
 
-BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
-{
-    String dictionary_name = create.table;
-
-    create.database = getContext()->resolveDatabase(create.database);
-    const String & database_name = create.database;
-
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name);
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
-
-    if (typeid_cast<DatabaseReplicated *>(database.get())
-        && getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-    {
-        if (!create.attach)
-            assertOrSetUUID(create, database);
-        guard->releaseTableLock();
-        return typeid_cast<DatabaseReplicated *>(database.get())->tryEnqueueReplicatedDDL(query_ptr, getContext());
-    }
-
-    if (database->isDictionaryExist(dictionary_name))
-    {
-        /// TODO Check structure of dictionary
-        if (create.if_not_exists)
-            return {};
-        else
-            throw Exception(
-                "Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
-    }
-
-    if (create.attach)
-    {
-        auto query = DatabaseCatalog::instance().getDatabase(database_name)->getCreateDictionaryQuery(dictionary_name);
-        create = query->as<ASTCreateQuery &>();
-        create.attach = true;
-    }
-
-    assertOrSetUUID(create, database);
-
-    if (create.attach)
-    {
-        auto config = getDictionaryConfigurationFromAST(create, getContext());
-        auto modification_time = database->getObjectMetadataModificationTime(dictionary_name);
-        database->attachDictionary(dictionary_name, DictionaryAttachInfo{query_ptr, config, modification_time});
-    }
-    else
-        database->createDictionary(getContext(), dictionary_name, query_ptr);
-
-    return {};
-}
-
 void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr local_context, const String & cluster_name)
 {
     if (create.attach)
@@ -1221,10 +1204,8 @@ BlockIO InterpreterCreateQuery::execute()
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
         return createDatabase(create);
-    else if (!create.is_dictionary)
-        return createTable(create);
     else
-        return createDictionary(create);
+        return createTable(create);
 }
 
 

@@ -117,6 +117,45 @@ def dml_with_materialize_mysql_database(clickhouse_node, mysql_node, service_nam
     mysql_node.query("DROP DATABASE test_database")
 
 
+def materialize_mysql_database_with_views(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+    mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
+    # existed before the mapping was created
+
+    mysql_node.query("CREATE TABLE test_database.test_table_1 ("
+                     "`key` INT NOT NULL PRIMARY KEY, "
+                     "unsigned_tiny_int TINYINT UNSIGNED, tiny_int TINYINT, "
+                     "unsigned_small_int SMALLINT UNSIGNED, small_int SMALLINT, "
+                     "unsigned_medium_int MEDIUMINT UNSIGNED, medium_int MEDIUMINT, "
+                     "unsigned_int INT UNSIGNED, _int INT, "
+                     "unsigned_integer INTEGER UNSIGNED, _integer INTEGER, "
+                     "unsigned_bigint BIGINT UNSIGNED, _bigint BIGINT, "
+                     "/* Need ClickHouse support read mysql decimal unsigned_decimal DECIMAL(19, 10) UNSIGNED, _decimal DECIMAL(19, 10), */"
+                     "unsigned_float FLOAT UNSIGNED, _float FLOAT, "
+                     "unsigned_double DOUBLE UNSIGNED, _double DOUBLE, "
+                     "_varchar VARCHAR(10), _char CHAR(10), binary_col BINARY(8), "
+                     "/* Need ClickHouse support Enum('a', 'b', 'v') _enum ENUM('a', 'b', 'c'), */"
+                     "_date Date, _datetime DateTime, _timestamp TIMESTAMP, _bool BOOLEAN) ENGINE = InnoDB;")
+
+    mysql_node.query("CREATE VIEW test_database.test_table_1_view AS SELECT SUM(tiny_int) FROM test_database.test_table_1 GROUP BY _date;")
+
+    # it already has some data
+    mysql_node.query("""
+        INSERT INTO test_database.test_table_1 VALUES(1, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6, 3.2, -3.2, 3.4, -3.4, 'varchar', 'char', 'binary',
+        '2020-01-01', '2020-01-01 00:00:00', '2020-01-01 00:00:00', true);
+        """)
+    clickhouse_node.query(
+        "CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(
+            service_name))
+
+    assert "test_database" in clickhouse_node.query("SHOW DATABASES")
+    check_query(clickhouse_node, "SHOW TABLES FROM test_database FORMAT TSV", "test_table_1\n")
+
+    clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
+
+
 def materialize_mysql_database_with_datetime_and_decimal(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS test_database")
     clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
@@ -803,3 +842,31 @@ def system_tables_test(clickhouse_node, mysql_node, service_name):
     mysql_node.query("CREATE TABLE system_tables_test.test (id int NOT NULL PRIMARY KEY) ENGINE=InnoDB")
     clickhouse_node.query("CREATE DATABASE system_tables_test ENGINE = MaterializeMySQL('{}:3306', 'system_tables_test', 'root', 'clickhouse')".format(service_name))
     check_query(clickhouse_node, "SELECT partition_key, sorting_key, primary_key FROM system.tables WHERE database = 'system_tables_test' AND name = 'test'", "intDiv(id, 4294967)\tid\tid\n")
+
+def move_to_prewhere_and_column_filtering(clickhouse_node, mysql_node, service_name):
+    clickhouse_node.query("DROP DATABASE IF EXISTS cond_on_key_col")
+    mysql_node.query("DROP DATABASE IF EXISTS cond_on_key_col")
+    mysql_node.query("CREATE DATABASE cond_on_key_col")
+    clickhouse_node.query("CREATE DATABASE cond_on_key_col ENGINE = MaterializeMySQL('{}:3306', 'cond_on_key_col', 'root', 'clickhouse')".format(service_name))
+    mysql_node.query("create table cond_on_key_col.products (id int primary key, product_id int not null, catalog_id int not null, brand_id int not null, name text)")
+    mysql_node.query("insert into cond_on_key_col.products (id, name, catalog_id, brand_id, product_id) values (915, 'ertyui', 5287, 15837, 0), (990, 'wer', 1053, 24390, 1), (781, 'qwerty', 1041, 1176, 2);")
+    check_query(clickhouse_node, "SELECT DISTINCT P.id, P.name, P.catalog_id FROM cond_on_key_col.products P WHERE P.name ILIKE '%e%' and P.catalog_id=5287", '915\tertyui\t5287\n')
+    clickhouse_node.query("DROP DATABASE cond_on_key_col")
+    mysql_node.query("DROP DATABASE cond_on_key_col")
+
+def mysql_settings_test(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
+    mysql_node.query("CREATE DATABASE test_database")
+    mysql_node.query("CREATE TABLE test_database.a (id INT(11) NOT NULL PRIMARY KEY, value VARCHAR(255))")
+    mysql_node.query("INSERT INTO test_database.a VALUES(1, 'foo')")
+    mysql_node.query("INSERT INTO test_database.a VALUES(2, 'bar')")
+
+    clickhouse_node.query("CREATE DATABASE test_database ENGINE = MaterializeMySQL('{}:3306', 'test_database', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT COUNT() FROM test_database.a FORMAT TSV", "2\n")
+
+    assert clickhouse_node.query("SELECT COUNT(DISTINCT  blockNumber()) FROM test_database.a FORMAT TSV") == "2\n"
+
+    clickhouse_node.query("DROP DATABASE test_database")
+    mysql_node.query("DROP DATABASE test_database")
+
