@@ -762,8 +762,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         for (size_t i = 0; i < data_types.size(); ++i)
             if (isFloat(data_types[i]))
-                throw Exception(
-                    "Donot support float point as partition key: " + metadata.partition_key.column_names[i], ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Floating point partition key is not supported: {}", metadata.partition_key.column_names[i]);
     }
 
     if (arg_num != arg_cnt)
