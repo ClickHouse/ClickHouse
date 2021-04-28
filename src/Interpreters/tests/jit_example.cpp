@@ -245,6 +245,138 @@ public:
     }
 };
 
+class MCJitWrapper
+{
+public:
+    llvm::LLVMContext context;
+    std::unique_ptr<llvm::TargetMachine> machine {getNativeMachine()};
+    llvm::orc::SimpleCompiler compiler;
+
+    MCJitWrapper()
+    {
+        // std::cerr << "Engine " << engine << " builder " << *builder.getErrorStr() << std::endl;
+
+        std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("jit", context);
+        generateFunctionInModule(*module);
+
+        // auto builder = llvm::EngineBuilder(std::move(module));
+        // auto * engine = builder
+        //     .setEngineKind(llvm::EngineKind::JIT)
+        //     .setMemoryManager(std::make_unique<llvm::SectionMemoryManager>())
+        //     .create(getNativeMachine());
+        // engine->finalizeObject();
+        // auto test_function = engine->getFunctionAddress("test1");
+
+        // std::cerr << "Test function address " << test_function << std::endl;
+        // auto test_function_typed = reinterpret_cast<int64_t (*)(int64_t)>(test_function);
+
+        // int64_t result = 5;
+
+        // while (result != 15)
+        // {
+        //     result = test_function_typed(result);
+        //     std::cerr << "Result " << result << std::endl;
+        // }
+
+        llvm::cantFail(module->materializeAll());
+
+        auto buffer = compiler(*module);
+
+        llvm::Expected<std::unique_ptr<llvm::object::ObjectFile>> object = llvm::object::ObjectFile::createObjectFile(*buffer);
+
+        if (!object)
+        {
+            logAllUnhandledErrors(object.takeError(), llvm::errs());
+            return;
+        }
+
+        std::unique_ptr<RuntimeDyld::LoadedObjectInfo> L = Dyld.loadObject(*LoadedObject.get());
+
+  if (Dyld.hasError())
+    report_fatal_error(Dyld.getErrorString());
+
+        // llvm::legacy::PassManager pass_manager;
+
+        // // The RuntimeDyld will take ownership of this shortly
+        // llvm::SmallVector<char, 4096> object_buffer_vector;
+        // llvm::raw_svector_ostream object_buffer_stream(object_buffer_vector);
+
+        // // Turn the machine code intermediate representation into bytes in memory
+        // // that may be executed.
+        // if (machine->addPassesToEmitMC(pass_manager, nullptr, object_buffer_stream, true))
+        //     report_fatal_error("Target does not support MC emission!");
+
+        // Initialize passes.
+        // PM.run(*M);
+        // Flush the output buffer to get the generated code into memory
+
+        // std::unique_ptr<MemoryBuffer> CompiledObjBuffer(
+        //     new SmallVectorMemoryBuffer(std::move(ObjBufferSV)));
+    }
+
+    static void generateFunctionInModule(llvm::Module & module)
+    {
+        llvm::IRBuilder<> b(module.getContext());
+
+        auto * func_type = llvm::FunctionType::get(b.getInt64Ty(), { b.getInt64Ty() }, /*isVarArg=*/false);
+        auto * func = llvm::Function::Create(
+            func_type,
+            llvm::Function::LinkageTypes::ExternalLinkage,
+            "test1",
+            module);
+
+        auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", func);
+        b.SetInsertPoint(entry);
+
+        // auto * argument = func->args().begin();
+
+        auto * loop = llvm::BasicBlock::Create(b.getContext(), "loop", func);
+        b.CreateBr(loop);
+        b.SetInsertPoint(loop);
+
+        auto * counter = b.CreatePHI(b.getInt64Ty(), 2);
+        counter->addIncoming(llvm::ConstantInt::get(b.getInt64Ty(), 0), entry);
+
+        auto * add_value = b.CreateAdd(counter, llvm::ConstantInt::get(b.getInt64Ty(), 1));
+        counter->addIncoming(add_value, loop);
+
+        auto * end = llvm::BasicBlock::Create(b.getContext(), "end", func);
+        b.CreateCondBr(b.CreateICmpNE(counter, llvm::ConstantInt::get(b.getInt64Ty(), 5000000)), loop, end);
+        b.SetInsertPoint(end);
+
+        // auto * result = b.CreateAdd(phi, argument);
+        b.CreateRet(counter);
+
+        // module.print(llvm::errs(), nullptr);
+    }
+
+    void optimizeModuleFunctions(llvm::Module & module) const
+    {
+        llvm::PassManagerBuilder pass_manager_builder;
+        llvm::legacy::PassManager mpm;
+        llvm::legacy::FunctionPassManager fpm(&module);
+        pass_manager_builder.OptLevel = 3;
+        pass_manager_builder.SLPVectorize = true;
+        pass_manager_builder.LoopVectorize = true;
+        pass_manager_builder.RerollLoops = true;
+        pass_manager_builder.VerifyInput = true;
+        pass_manager_builder.VerifyOutput = true;
+        machine->adjustPassManager(pass_manager_builder);
+
+        fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+        mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+        pass_manager_builder.populateFunctionPassManager(fpm);
+        pass_manager_builder.populateModulePassManager(mpm);
+        fpm.doInitialization();
+        for (auto & function : module)
+            fpm.run(function);
+        fpm.doFinalization();
+        mpm.run(module);
+
+        module.print(llvm::errs(), nullptr);
+    }
+};
+
 struct LLVMContext
 {
     llvm::orc::ThreadSafeContext context { std::make_unique<llvm::LLVMContext>() };
@@ -365,57 +497,63 @@ int main(int argc, char **argv)
 
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
-    llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+    LLVMLinkInMCJIT();
 
-    LLVMContext context;
-    auto & b = context.builder;
-    auto * integer_type = b.getInt64Ty();
-    auto * func_type = llvm::FunctionType::get(integer_type, { integer_type }, /*isVarArg=*/false);
+    // std::string error_message;
+    // bool load_permanently = llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr, &error_message);
+    // std::cerr << "Load " << load_permanently << " error " << error_message << std::endl;
 
-    std::cerr << "Context module " << context.module.get() << std::endl;
+    auto wrapper = MCJitWrapper();
 
-    auto * standard_function_type = llvm::FunctionType::get(b.getVoidTy(), {}, false);
-    auto * standard_function = llvm::Function::Create(
-        standard_function_type,
-        llvm::Function::LinkageTypes::ExternalLinkage,
-        "test_function",
-        *context.module);
-    standard_function->setCallingConv(llvm::CallingConv::C);
+    // LLVMContext context;
+    // auto & b = context.builder;
+    // auto * integer_type = b.getInt64Ty();
+    // auto * func_type = llvm::FunctionType::get(integer_type, { integer_type }, /*isVarArg=*/false);
 
-    auto * func = llvm::Function::Create(func_type, llvm::Function::LinkageTypes::ExternalLinkage, "test1", context.module.get());
+    // std::cerr << "Context module " << context.module.get() << std::endl;
 
-    auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", func);
-    b.SetInsertPoint(entry);
+    // auto * standard_function_type = llvm::FunctionType::get(b.getVoidTy(), {}, false);
+    // auto * standard_function = llvm::Function::Create(
+    //     standard_function_type,
+    //     llvm::Function::LinkageTypes::ExternalLinkage,
+    //     "test_function",
+    //     *context.module);
+    // standard_function->setCallingConv(llvm::CallingConv::C);
 
-    auto * argument = func->args().begin();
+    // auto * func = llvm::Function::Create(func_type, llvm::Function::LinkageTypes::ExternalLinkage, "test1", context.module.get());
 
-    auto * value = llvm::ConstantInt::get(b.getInt64Ty(), 1);
-    auto * loop_block = llvm::BasicBlock::Create(b.getContext(), "loop", func);
-    b.CreateBr(loop_block);
+    // auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", func);
+    // b.SetInsertPoint(entry);
 
-    b.SetInsertPoint(loop_block);
+    // auto * argument = func->args().begin();
 
-    auto * phi_value = b.CreatePHI(b.getInt64Ty(), 2);
-    phi_value->addIncoming(value, entry);
+    // auto * value = llvm::ConstantInt::get(b.getInt64Ty(), 1);
+    // auto * loop_block = llvm::BasicBlock::Create(b.getContext(), "loop", func);
+    // b.CreateBr(loop_block);
 
-    b.CreateCall(standard_function);
+    // b.SetInsertPoint(loop_block);
 
-    auto * add_value = b.CreateAdd(phi_value, llvm::ConstantInt::get(b.getInt64Ty(), 1));
-    phi_value->addIncoming(add_value, loop_block);
+    // auto * phi_value = b.CreatePHI(b.getInt64Ty(), 2);
+    // phi_value->addIncoming(value, entry);
 
-    auto * end = llvm::BasicBlock::Create(b.getContext(), "end", func);
-    b.CreateCondBr(b.CreateICmpNE(phi_value, llvm::ConstantInt::get(b.getInt64Ty(), 10)), loop_block, end);
+    // b.CreateCall(standard_function);
 
-    b.SetInsertPoint(end);
+    // auto * add_value = b.CreateAdd(phi_value, llvm::ConstantInt::get(b.getInt64Ty(), 1));
+    // phi_value->addIncoming(add_value, loop_block);
 
-    auto * result = b.CreateAdd(phi_value, argument);
-    b.CreateRet(result);
+    // auto * end = llvm::BasicBlock::Create(b.getContext(), "end", func);
+    // b.CreateCondBr(b.CreateICmpNE(phi_value, llvm::ConstantInt::get(b.getInt64Ty(), 10)), loop_block, end);
+
+    // b.SetInsertPoint(end);
+
+    // auto * result = b.CreateAdd(phi_value, argument);
+    // b.CreateRet(result);
 
     // std::cerr << "Context module " << context.module.get() << std::endl;
     // if (context.module)
-    //     context.module->print(llvm::errs(), nullptr);
+    // context.module->print(llvm::errs(), nullptr);
 
-    context.compileAllFunctionsToNativeCode();
+    // context.compileAllFunctionsToNativeCode();
 
     // context.module->print(llvm::errs(), nullptr);
 
@@ -425,18 +563,18 @@ int main(int argc, char **argv)
     // for (auto module_key : context.modules)
         // context.execution_session.releaseVModule(module_key);
 
-    llvm::orc::SymbolNameSet set;
+    // llvm::orc::SymbolNameSet set;
 
-    auto ptr = context.execution_session.intern("test1");
-    set.insert(ptr);
+    // auto ptr = context.execution_session.intern("test1");
+    // set.insert(ptr);
 
-    auto error = context.execution_session.getMainJITDylib().remove(set);
+    // auto error = context.execution_session.getMainJITDylib().remove(set);
 
-    if (error)
-        llvm::logAllUnhandledErrors(std::move(error), llvm::errs(), "Error logging ");
+    // if (error)
+    //     llvm::logAllUnhandledErrors(std::move(error), llvm::errs(), "Error logging ");
 
-    std::cerr << "ExecutionSession after module release dump " << std::endl;
-    context.execution_session.dump(llvm::errs());
+    // std::cerr << "ExecutionSession after module release dump " << std::endl;
+    // context.execution_session.dump(llvm::errs());
 
     // auto * symbol = context.symbols.at("test1");
     // auto compiled_func = reinterpret_cast<int64_t (*)(int64_t)>(symbol);
