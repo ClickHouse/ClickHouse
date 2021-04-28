@@ -89,11 +89,9 @@ void convertColumnToNullable(ColumnWithTypeAndName & column, bool remove_low_car
         if (column.column->lowCardinality())
         {
             /// Convert nested to nullable, not LowCardinality itself
-            auto new_col = column.column->cloneEmpty();
-            new_col->insertRangeFrom(*column.column, 0, column.column->size());
-            /// How to call non-constant methon on ColumnPtr without a copy?
-            assert_cast<ColumnLowCardinality *>(new_col.get())->nestedToNullable();
-            column.column = std::move(new_col);
+            ColumnLowCardinality * col_as_lc = assert_cast<ColumnLowCardinality *>(column.column->assumeMutable().get());
+            if (!col_as_lc->nestedIsNullable())
+                col_as_lc->nestedToNullable();
         }
         else
             column.column = makeNullable(column.column);
