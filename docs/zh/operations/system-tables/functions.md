@@ -16,7 +16,6 @@
 ```
 
 ```text
->>>>>>> update zh translations for system tables and some pages related to access rights
 ┌─name─────────────────────┬─is_aggregate─┬─case_insensitive─┬─alias_to─┐
 │ sumburConsistentHash     │            0 │                0 │          │
 │ yandexConsistentHash     │            0 │                0 │          │
