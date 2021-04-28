@@ -358,7 +358,7 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool reverse)
             if (from < 0)
                 throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
 
-            memcpySmallAllowReadWriteOverflow15(&chars[from * n], &chars[index * n], n);
+            memcpy(&chars[index * n], &chars[from * n], n);
             --from;
         }
 
