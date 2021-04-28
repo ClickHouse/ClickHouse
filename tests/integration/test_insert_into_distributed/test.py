@@ -179,7 +179,6 @@ def test_inserts_single_replica(started_cluster):
         "INSERT INTO distributed_one_replica VALUES ('2000-01-01', 1)",
         settings={"insert_distributed_sync": "1", "prefer_localhost_replica": "0"},
     )
-    time.sleep(0.5)
     assert node2.query("SELECT count(*) FROM single_replicated").strip() == '1'
 
 
