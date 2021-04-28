@@ -7,7 +7,9 @@
 #include <Poco/Glob.h>
 #include <Poco/File.h>
 #include <Poco/Path.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -59,7 +61,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
 
 bool ExternalLoaderXMLConfigRepository::exists(const std::string & definition_entity_name)
 {
-    return Poco::File(definition_entity_name).exists();
+    return fs::exists(fs::path(definition_entity_name));
 }
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderXMLConfigRepository::load(
