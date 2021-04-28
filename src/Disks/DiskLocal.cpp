@@ -6,11 +6,12 @@
 #include <Interpreters/Context.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
-
 #include <IO/createReadBufferFromFileBase.h>
 
+#include <filesystem>
 #include <unistd.h>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -152,45 +153,43 @@ UInt64 DiskLocal::getUnreservedSpace() const
 
 bool DiskLocal::exists(const String & path) const
 {
-    return Poco::File(disk_path + path).exists();
+    return fs::exists(fs::path(disk_path) / path);
 }
 
 bool DiskLocal::isFile(const String & path) const
 {
-    return Poco::File(disk_path + path).isFile();
+    return fs::is_regular_file(fs::path(disk_path) / path);
 }
 
 bool DiskLocal::isDirectory(const String & path) const
 {
-    return Poco::File(disk_path + path).isDirectory();
+    return fs::is_directory(fs::path(disk_path) / path);
 }
 
 size_t DiskLocal::getFileSize(const String & path) const
 {
-    return Poco::File(disk_path + path).getSize();
+    return fs::file_size(fs::path(disk_path) / path);
 }
 
 void DiskLocal::createDirectory(const String & path)
 {
-    Poco::File(disk_path + path).createDirectory();
+    fs::create_directory(fs::path(disk_path) / path);
 }
 
 void DiskLocal::createDirectories(const String & path)
 {
-    Poco::File(disk_path + path).createDirectories();
+    fs::create_directories(fs::path(disk_path) / path);
 }
 
 void DiskLocal::clearDirectory(const String & path)
 {
-    std::vector<Poco::File> files;
-    Poco::File(disk_path + path).list(files);
-    for (auto & file : files)
-        file.remove();
+    for (auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
+        fs::remove(entry.path());
 }
 
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 {
-    Poco::File(disk_path + from_path).renameTo(disk_path + to_path);
+    fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
 }
 
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
@@ -200,22 +199,24 @@ DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
-    Poco::File(disk_path + from_path).renameTo(disk_path + to_path);
+    fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
 }
 
 void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 {
-    Poco::File from_file(disk_path + from_path);
-    Poco::File to_file(disk_path + to_path);
-    if (to_file.exists())
+    fs::path from_file = fs::path(disk_path) / from_path;
+    fs::path to_file = fs::path(disk_path) / to_path;
+    if (fs::exists(to_file))
     {
-        Poco::File tmp_file(disk_path + to_path + ".old");
-        to_file.renameTo(tmp_file.path());
-        from_file.renameTo(disk_path + to_path);
-        tmp_file.remove();
+        fs::path tmp_file(to_file.string() + ".old");
+        fs::rename(to_file, tmp_file);
+        fs::rename(from_file, fs::path(disk_path) / to_path);
+        fs::remove(tmp_file);
     }
     else
-        from_file.renameTo(to_file.path());
+    {
+        fs::rename(from_file, to_file);
+    }
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
@@ -255,7 +256,7 @@ void DiskLocal::removeDirectory(const String & path)
 
 void DiskLocal::removeRecursive(const String & path)
 {
-    Poco::File(disk_path + path).remove(true);
+    fs::remove_all(fs::path(disk_path) / path);
 }
 
 void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
