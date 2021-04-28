@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
 #include <Interpreters/Aliases.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/IStorage_fwd.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
 
-class Context;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
@@ -17,10 +17,16 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class TreeOptimizer
 {
 public:
-    static void apply(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set,
-                      const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-                      const Context & context, const StorageMetadataPtr & metadata_snapshot,
-                      const ConstStoragePtr & storage, bool & rewrite_subqueries);
+
+    static void apply(
+        ASTPtr & query,
+        Aliases & aliases,
+        const NameSet & source_columns_set,
+        const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
+        ContextPtr context,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ConstStoragePtr & storage,
+        bool & rewrite_subqueries);
 
     static void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif);
 };

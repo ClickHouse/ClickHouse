@@ -299,7 +299,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (type == ADD_COLUMN)
     {
@@ -320,7 +320,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         metadata.columns.add(column, after_column, first);
 
         /// Slow, because each time a list is copied
-        if (context.getSettingsRef().flatten_nested)
+        if (context->getSettingsRef().flatten_nested)
             metadata.columns.flattenNested();
     }
     else if (type == DROP_COLUMN)
@@ -462,9 +462,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
     }
     else if (type == ADD_CONSTRAINT)
     {
+        auto constraints = metadata.constraints.getConstraints();
         if (std::any_of(
-                metadata.constraints.constraints.cbegin(),
-                metadata.constraints.constraints.cend(),
+                constraints.cbegin(),
+                constraints.cend(),
                 [this](const ASTPtr & constraint_ast)
                 {
                     return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
@@ -476,28 +477,31 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
                         ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        auto insert_it = metadata.constraints.constraints.end();
+        auto insert_it = constraints.end();
 
-        metadata.constraints.constraints.emplace(insert_it, std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint_decl));
+        constraints.emplace(insert_it, std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint_decl));
+        metadata.constraints.updateConstraints(constraints);
     }
     else if (type == DROP_CONSTRAINT)
     {
+        auto constraints = metadata.constraints.getConstraints();
         auto erase_it = std::find_if(
-                metadata.constraints.constraints.begin(),
-                metadata.constraints.constraints.end(),
+                constraints.begin(),
+                constraints.end(),
                 [this](const ASTPtr & constraint_ast)
                 {
                     return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
                 });
 
-        if (erase_it == metadata.constraints.constraints.end())
+        if (erase_it == constraints.end())
         {
             if (if_exists)
                 return;
             throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop.",
                     ErrorCodes::BAD_ARGUMENTS);
         }
-        metadata.constraints.constraints.erase(erase_it);
+        constraints.erase(erase_it);
+        metadata.constraints.updateConstraints(constraints);
     }
     else if (type == MODIFY_TTL)
     {
@@ -543,8 +547,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, const Context & con
         if (metadata.table_ttl.definition_ast)
             rename_visitor.visit(metadata.table_ttl.definition_ast);
 
-        for (auto & constraint : metadata.constraints.constraints)
+        auto constraints_data = metadata.constraints.getConstraints();
+        for (auto & constraint : constraints_data)
             rename_visitor.visit(constraint);
+        metadata.constraints.updateConstraints(constraints_data);
 
         if (metadata.isSortingKeyDefined())
             rename_visitor.visit(metadata.sorting_key.definition_ast);
@@ -702,7 +708,7 @@ bool AlterCommand::isRemovingProperty() const
     return to_remove != RemoveProperty::NO_PROPERTY;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!isRequireMutationStage(metadata))
         return {};
@@ -788,7 +794,7 @@ String alterTypeToString(const AlterCommand::Type type)
     __builtin_unreachable();
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     if (!prepared)
         throw DB::Exception("Alter commands is not prepared. Cannot apply. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -880,7 +886,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     prepared = true;
 }
 
-void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Context & context) const
+void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
@@ -907,7 +913,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::BAD_ARGUMENTS};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs);
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -927,7 +933,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                                 ErrorCodes::NOT_IMPLEMENTED};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context.getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs);
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
             {
@@ -1172,7 +1178,7 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, const Context & context) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)

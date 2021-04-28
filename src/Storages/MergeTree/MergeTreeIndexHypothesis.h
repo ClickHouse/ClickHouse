@@ -65,7 +65,7 @@ public:
         const String & index_name_,
         const String & column_name_,
         const SelectQueryInfo & query,
-        const Context & context);
+        ContextPtr context);
 
     bool alwaysUnknownOrTrue() const override { return false; }
 
@@ -97,7 +97,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query, const Context & context) const override;
+        const SelectQueryInfo & query, ContextPtr context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 

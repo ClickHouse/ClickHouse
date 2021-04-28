@@ -84,7 +84,7 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & so
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
-void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
+void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, ContextPtr context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
@@ -138,7 +138,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                 const auto & dict_name = dict_name_ast->value.safeGet<String>();
                 const auto & attr_name = attr_name_ast->value.safeGet<String>();
 
-                const auto & dict_ptr = context.getExternalDictionariesLoader().getDictionary(dict_name, context);
+                const auto & dict_ptr = context->getExternalDictionariesLoader().getDictionary(dict_name, context);
                 if (!dict_ptr->isInjective(attr_name))
                 {
                     ++i;
@@ -273,7 +273,7 @@ void optimizeDuplicatesInOrderBy(const ASTSelectQuery * select_query)
 }
 
 /// Optimize duplicate ORDER BY
-void optimizeDuplicateOrderBy(ASTPtr & query, const Context & context)
+void optimizeDuplicateOrderBy(ASTPtr & query, ContextPtr context)
 {
     DuplicateOrderByVisitor::Data order_by_data{context};
     DuplicateOrderByVisitor(order_by_data).visit(query);
@@ -399,7 +399,7 @@ void optimizeDuplicateDistinct(ASTSelectQuery & select)
 
 /// Replace monotonous functions in ORDER BY if they don't participate in GROUP BY expression,
 /// has a single argument and not an aggregate functions.
-void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const Context & context,
+void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, ContextPtr context,
                                           const TablesWithColumns & tables_with_columns,
                                           const Names & sorting_key_columns)
 {
@@ -451,7 +451,7 @@ void optimizeMonotonousFunctionsInOrderBy(ASTSelectQuery * select_query, const C
 /// Optimize ORDER BY x, y, f(x), g(x, y), f(h(x)), t(f(x), g(x)) into ORDER BY x, y
 /// in case if f(), g(), h(), t() are deterministic (in scope of query).
 /// Don't optimize ORDER BY f(x), g(x), x even if f(x) is bijection for x or g(x).
-void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, const Context & context)
+void optimizeRedundantFunctionsInOrderBy(const ASTSelectQuery * select_query, ContextPtr context)
 {
     const auto & order_by = select_query->orderBy();
     if (!order_by)
@@ -596,9 +596,9 @@ void optimizeCountConstantAndSumOne(ASTPtr & query)
 }
 
 
-void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, const Context & context)
+void optimizeInjectiveFunctionsInsideUniq(ASTPtr & query, ContextPtr context)
 {
-    RemoveInjectiveFunctionsVisitor::Data data = {context};
+    RemoveInjectiveFunctionsVisitor::Data data(context);
     RemoveInjectiveFunctionsVisitor(data).visit(query);
 }
 
@@ -627,10 +627,10 @@ void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_
 
 void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set,
                           const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-                          const Context & context, const StorageMetadataPtr & metadata_snapshot,
+                          ContextPtr context, const StorageMetadataPtr & metadata_snapshot,
                           const ConstStoragePtr & storage, bool & rewrite_subqueries)
 {
-    const auto & settings = context.getSettingsRef();
+    const auto & settings = context->getSettingsRef();
 
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
