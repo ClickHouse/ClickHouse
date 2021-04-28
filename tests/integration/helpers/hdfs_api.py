@@ -60,6 +60,9 @@ class HDFSApi(object):
                 #principal=self.principal,
                 #hostname_override=self.host, principal=self.principal)
                 # , mutual_authentication=reqkerb.REQUIRED, force_preemptive=True)
+            self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override=self.host, principal=self.principal)
+            if self.kerberos_auth is None:
+                print("failed to obtain kerberos_auth")
         else:
             self.kerberos_auth = None
 
@@ -94,23 +97,24 @@ class HDFSApi(object):
 
         raise Exception("Kinit running failure")
 
-    def read_data(self, path, universal_newlines=True):
-        logging.debug("read_data protocol:{} host:{} port:{} path: {}".format(self.protocol, self.host, self.proxy_port, path))
-        response = requests.get("{protocol}://{host}:{port}/webhdfs/v1{path}?op=OPEN".format(protocol=self.protocol, host=self.host, port=self.proxy_port, path=path), headers={'host': 'localhost'}, allow_redirects=False, verify=False, auth=self.kerberos_auth)
-        if response.status_code != 307:
-            response.raise_for_status()
-        # additional_params = '&'.join(response.headers['Location'].split('&')[1:2])
-        location = None
-        if self.kerberized:
-            location = response.headers['Location'].replace("kerberizedhdfs1:1006", "{}:{}".format(self.host, self.data_port)) 
-        else:
-            location = response.headers['Location'].replace("hdfs1:50075", "{}:{}".format(self.host, self.data_port)) 
-        logging.debug("redirected to {}".format(location))
+    def req_wrapper(self, func, expected_code, cnt=2, **kwargs):
+        with dns_hook(self):
+            for i in range(0, cnt):
+                response_data = func(**kwargs)
+                if response_data.status_code == expected_code:
+                    return response_data
+                else:
+                    print("unexpected response_data.status_code {}", response_data.status_code)
+        response_data.raise_for_status()
 
-        response_data = requests.get(location, headers={'host': 'localhost'},
-                                     verify=False, auth=self.kerberos_auth)
-        if response_data.status_code != 200:
-            response_data.raise_for_status()
+    def read_data(self, path, universal_newlines=True):
+        response = self.req_wrapper(requests.get, 307, url="{protocol}://{host}:{port}/webhdfs/v1{path}?op=OPEN".format(protocol=self.protocol, host=self.host, port=self.proxy_port, path=path), headers={'host': 'localhost'}, allow_redirects=False, verify=False, auth=self.kerberos_auth)
+        # additional_params = '&'.join(response.headers['Location'].split('&')[1:2])
+        url = "{location}".format(location=response.headers['Location'])
+        # print("redirected to ", url)
+        response_data = self.req_wrapper(requests.get, 200, url=url,
+                                    headers={'host': 'localhost'},
+                                    verify=False, auth=self.kerberos_auth)
         if universal_newlines:
             return response_data.text
         else:
@@ -126,41 +130,37 @@ class HDFSApi(object):
         named_file.write(content)
         named_file.flush()
 
-        response = requests.put(
-            "{protocol}://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(protocol=self.protocol, host='localhost',
-                                                                            port=self.proxy_port,
-                                                                            path=path, user=self.user),
-            allow_redirects=False,
-            headers={'host': 'localhost'},
-            params={'overwrite' : 'true'},
-            verify=False, auth=self.kerberos_auth
-        )
 
-        logging.debug("HDFS api response:{}".format(response.headers))
-
-        if response.status_code != 307:
-            response.raise_for_status()
-
-        # additional_params = '&'.join(
-        #     response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
         if self.kerberized:
-            location = response.headers['Location'].replace("kerberizedhdfs1:1006", "{}:{}".format(self.host, self.data_port)) 
-        else:
-            location = response.headers['Location'].replace("hdfs1:50075", "{}:{}".format(self.host, self.data_port))
-            
+            self._run_kinit()
+            self.kerberos_auth = reqkerb.HTTPKerberosAuth(mutual_authentication=reqkerb.DISABLED, hostname_override=self.host, principal=self.principal)
+            # print(self.kerberos_auth)
+
+        response = self.req_wrapper(requests.put, 307,
+                                    url="{protocol}://{host}:{port}/webhdfs/v1{path}?op=CREATE".format(
+                                        protocol=self.protocol, host=self.host,
+                                        port=self.proxy_port,
+                                        path=path, user=self.user),
+                                    allow_redirects=False,
+                                    headers={'host': 'localhost'},
+                                    params={'overwrite' : 'true'},
+                                    verify=False, auth=self.kerberos_auth
+            )
+        additional_params = '&'.join(
+            response.headers['Location'].split('&')[1:2] + ["user.name={}".format(self.user), "overwrite=true"])
+
         with open(fpath, mode="rb") as fh:
             file_data = fh.read()
             protocol = "http" # self.protocol
-            response = requests.put(
-                "{location}".format(location=location),
-                data=file_data,
-                headers={'content-type':'text/plain', 'host': 'localhost'},
-                params={'file': path, 'user.name' : self.user},
-                allow_redirects=False, verify=False, auth=self.kerberos_auth
+            response = self.req_wrapper(requests.put, 201,
+                                        url="{location}".format(
+                                            location=response.headers['Location']),
+                                        data=file_data,
+                                        headers={'content-type':'text/plain', 'host': 'localhost'},
+                                        params={'file': path, 'user.name' : self.user},
+                                        allow_redirects=False, verify=False, auth=self.kerberos_auth
             )
-            logging.debug(response)
-            if response.status_code != 201:
-                response.raise_for_status()
+        # print(response)
 
 
     def write_gzip_data(self, path, content):
