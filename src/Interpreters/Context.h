@@ -185,7 +185,7 @@ private:
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;  /// Callback for tracking progress of query execution.
-    FileTableEngineProgress file_progress;  /// Progress data to track processing of one or multiple files for File table engine.
+    FileProgress file_progress;  /// Progress data to track processing of file based buffer(s).
     bool render_progress = false;
 
     QueryStatus * process_list_elem = nullptr;  /// For tracking total resource usage for query.
@@ -588,8 +588,8 @@ public:
     void setRenderProgress() { render_progress = true; }
     bool needRenderProgress() const { return render_progress; }
 
-    const FileTableEngineProgress & getFileTableEngineProgress() { return file_progress; }
-    void setFileTableEngineApproxBytesToProcess(size_t num_bytes) { file_progress.total_bytes_to_process = num_bytes; }
+    const FileProgress & getFileProgress() { return file_progress; }
+    void setFileTotalBytesToProcess(size_t num_bytes) { file_progress.total_bytes_to_process = num_bytes; }
 
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IBlockInputStream,
       *  to update and monitor information about the total number of resources spent for the query.
