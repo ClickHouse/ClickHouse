@@ -83,7 +83,7 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
 
                 if (index_left != bad_term && index_right != bad_term)
                 {
-                    Poco::Logger::get("Edges").information("GOOD: " + atom->dumpTree());
+                    //Poco::Logger::get("Edges").information("GOOD: " + atom->dumpTree());
                     Poco::Logger::get("Edges").information("left=" + std::to_string(index_left) + " right=" + std::to_string(index_right));
                     Poco::Logger::get("Edges").information("sz=" + std::to_string(g.edges.size()));
                     g.edges[index_right].push_back(Edge{it->second, index_left});
@@ -95,7 +95,7 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
                 }
                 else
                 {
-                    Poco::Logger::get("Edges").information("BAD: " + atom->dumpTree());
+                    //Poco::Logger::get("Edges").information("BAD: " + atom->dumpTree());
                 }
             }
         }
@@ -118,8 +118,8 @@ std::pair<bool, bool> ComparisonGraph::findPath(const size_t start, const size_t
     else
     {
         Poco::Logger::get("dists found").information(std::to_string(start) + " " + std::to_string(finish) + " : " + std::to_string(static_cast<int>(it->second)));
-        Poco::Logger::get("dists found").information(graph.vertexes[start].asts.back()->dumpTree());
-        Poco::Logger::get("dists found").information(graph.vertexes[finish].asts.back()->dumpTree());
+        //Poco::Logger::get("dists found").information(graph.vertexes[start].asts.back()->dumpTree());
+        //Poco::Logger::get("dists found").information(graph.vertexes[finish].asts.back()->dumpTree());
         return {true, it->second == Path::LESS};
     }
 }
@@ -151,7 +151,7 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
                 const auto right_bound = getConstUpperBound(right);
                 if (left_bound && right_bound)
                 {
-                    Poco::Logger::get("&&&&&&&").information(left_bound->first.dump() + " " + std::to_string(left_bound->second) + " | " + right_bound->first.dump() + " " + std::to_string(right_bound->second));
+                    //Poco::Logger::get("&&&&&&&").information(left_bound->first.dump() + " " + std::to_string(left_bound->second) + " | " + right_bound->first.dump() + " " + std::to_string(right_bound->second));
                     if (left_bound->first < right_bound->first)
                         return CompareResult::UNKNOWN;
                     else if (left_bound->first > right_bound->first)
@@ -165,7 +165,7 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
             {
                 const auto left_bound = getConstUpperBound(left);
                 const auto right_bound = getConstLowerBound(right);
-                Poco::Logger::get("!!!!!!").information(left_bound->first.dump() + " " + std::to_string(left_bound->second) + " | " + right_bound->first.dump() + " " + std::to_string(right_bound->second));
+                //Poco::Logger::get("!!!!!!").information(left_bound->first.dump() + " " + std::to_string(left_bound->second) + " | " + right_bound->first.dump() + " " + std::to_string(right_bound->second));
                 if (left_bound && right_bound)
                 {
                     if (left_bound->first > right_bound->first)
@@ -348,9 +348,9 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
     const auto n = asts_graph.vertexes.size();
 
     for (size_t v = 0; v < n; ++v) {
-        Poco::LogStream{"kek"}.information() << "VERTEX " << v << " " << asts_graph.vertexes[v].asts.back()->dumpTree() << std::endl;
+        //Poco::LogStream{"kek"}.information() << "VERTEX " << v << " " << asts_graph.vertexes[v].asts.back()->dumpTree() << std::endl;
         for (const auto & edge : asts_graph.edges[v]) {
-            Poco::LogStream{"kek"}.information() << "TO " << edge.to << " " << static_cast<int>(edge.type) << std::endl;
+            //Poco::LogStream{"kek"}.information() << "TO " << edge.to << " " << static_cast<int>(edge.type) << std::endl;
         }
     }
 
@@ -422,14 +422,12 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
             {
                 const auto * left = result.vertexes[v].getConstant()->as<ASTLiteral>();
                 const auto * right = result.vertexes[u].getConstant()->as<ASTLiteral>();
-                Poco::Logger::get("Graph").information("kek");
-                Poco::Logger::get("Graph").information(left->value.dump() + " " + right->value.dump());
+                //Poco::Logger::get("Graph").information(left->value.dump() + " " + right->value.dump());
 
                 /// Only less. Equal constant fields = equal literals so it was already considered above.
                 if (left->value > right->value)
                 {
                     result.edges[v].push_back(Edge{Edge::LESS, u});
-                    Poco::Logger::get("Graph").information("1111 > ");
                 }
             }
         }
@@ -438,12 +436,12 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
     Poco::Logger::get("Graph").information("finish");
 
 
-    for (size_t v = 0; v < result.vertexes.size(); ++v) {
+   /* for (size_t v = 0; v < result.vertexes.size(); ++v) {
         Poco::LogStream{"kekkek"}.information() << "VERTEX " << v << " " << result.vertexes[v].asts.back()->dumpTree() << std::endl;
         for (const auto & edge : result.edges[v]) {
             Poco::LogStream{"kekkek"}.information() << "TO " << edge.to << " " << static_cast<int>(edge.type) << std::endl;
         }
-    }
+    }*/
 
     for (size_t v = 0; v < result.vertexes.size(); ++v)
     {
