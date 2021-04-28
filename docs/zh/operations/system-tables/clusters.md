@@ -1,29 +1,70 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
-
-# 系统。集群 {#system-clusters}
+# system.cluster {#system-clusters}
 
 包含有关配置文件中可用的集群及其中的服务器的信息。
 
 列:
 
--   `cluster` (String) — The cluster name.
--   `shard_num` (UInt32) — The shard number in the cluster, starting from 1.
--   `shard_weight` (UInt32) — The relative weight of the shard when writing data.
--   `replica_num` (UInt32) — The replica number in the shard, starting from 1.
--   `host_name` (String) — The host name, as specified in the config.
--   `host_address` (String) — The host IP address obtained from DNS.
--   `port` (UInt16) — The port to use for connecting to the server.
--   `user` (String) — The name of the user for connecting to the server.
--   `errors_count` (UInt32)-此主机无法到达副本的次数。
--   `estimated_recovery_time` (UInt32)-剩下的秒数，直到副本错误计数归零，它被认为是恢复正常。
+-   `cluster` (String) — 集群名称。
+-   `shard_num` (UInt32) — 集群中的分片号，从1开始。
+-   `shard_weight` (UInt32) — 写入数据时分片的相对权重。
+-   `replica_num` (UInt32) — 分片中的副本号，从1开始。
+-   `host_name` (String) — 主机名，如在配置中指定的那样。
+-   `host_address` (String) — 从DNS获得的主机IP地址。
+-   `port` (UInt16) — 用于连接到服务器的端口。
+-   `is_local` (UInt8) — 指示主机是否在本地的标志。
+-   `user` (String) — 用于连接到服务器的用户名。
+-   `errors_count` (UInt32)-此主机无法访问副本的次数。
+-   `slowdowns_count` (UInt32) — 在与被对冲的请求建立连接时导致更改副本的速度下降的次数。
+-   `estimated_recovery_time` (UInt32)-剩余秒数，直到副本错误计数归零且被视为恢复正常为止。
 
-请注意 `errors_count` 每个查询集群更新一次，但 `estimated_recovery_time` 按需重新计算。 所以有可能是非零的情况 `errors_count` 和零 `estimated_recovery_time`，下一个查询将为零 `errors_count` 并尝试使用副本，就好像它没有错误。
+**示例**
+
+查询:
+
+```sql
+SELECT * FROM system.clusters LIMIT 2 FORMAT Vertical;
+```
+
+结果:
+
+```text
+Row 1:
+──────
+cluster:                 test_cluster_two_shards
+shard_num:               1
+shard_weight:            1
+replica_num:             1
+host_name:               127.0.0.1
+host_address:            127.0.0.1
+port:                    9000
+is_local:                1
+user:                    default
+default_database:
+errors_count:            0
+slowdowns_count:         0
+estimated_recovery_time: 0
+
+Row 2:
+──────
+cluster:                 test_cluster_two_shards
+shard_num:               2
+shard_weight:            1
+replica_num:             1
+host_name:               127.0.0.2
+host_address:            127.0.0.2
+port:                    9000
+is_local:                0
+user:                    default
+default_database:
+errors_count:            0
+slowdowns_count:         0
+estimated_recovery_time: 0
+```
 
 **另请参阅**
 
--   [表引擎分布式](../../engines/table-engines/special/distributed.md)
+-   [分布式表引擎](../../engines/table-engines/special/distributed.md)
 -   [distributed_replica_error_cap设置](../../operations/settings/settings.md#settings-distributed_replica_error_cap)
 -   [distributed_replica_error_half_life设置](../../operations/settings/settings.md#settings-distributed_replica_error_half_life)
+
+[原始文章](https://clickhouse.tech/docs/en/operations/system_tables/clusters) <!--hide-->

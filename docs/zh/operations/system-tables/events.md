@@ -1,17 +1,12 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
+# system.events {#system_tables-events}
 
-# 系统。活动 {#system_tables-events}
-
-包含有关系统中发生的事件数的信息。 例如，在表中，您可以找到多少 `SELECT` 自ClickHouse服务器启动以来已处理查询。
+包含有关系统中发生的事件数的信息。 例如，在表中，您可以找到自ClickHouse服务器启动以来处理的 `SELECT` 查询数。
 
 列:
 
--   `event` ([字符串](../../sql-reference/data-types/string.md)) — Event name.
--   `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of events occurred.
--   `description` ([字符串](../../sql-reference/data-types/string.md)) — Event description.
+-   `event` ([String](../../sql-reference/data-types/string.md)) — 事件名称。
+-   `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — 事件发生的次数。
+-   `description` ([String](../../sql-reference/data-types/string.md)) — 事件描述。
 
 **示例**
 
@@ -31,7 +26,9 @@ SELECT * FROM system.events LIMIT 5
 
 **另请参阅**
 
--   [系统。asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [系统。指标](../../operations/system-tables/metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
--   [系统。metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
--   [监测](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — 包含在后台定期计算的指标。
+-   [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) — 包含实时计算的指标。
+-   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — 包含来自表 `system.metrics` 和 `system.events`的指标值的历史记录。
+-   [监测](../../operations/monitoring.md) — ClickHouse监测的基本概念。
+
+[原始文章](https://clickhouse.tech/docs/en/operations/system_tables/events) <!--hide-->

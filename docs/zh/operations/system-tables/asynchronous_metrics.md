@@ -1,16 +1,11 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
+# system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
-# 系统。asynchronous_metrics {#system_tables-asynchronous_metrics}
-
-包含在后台定期计算的指标。 例如，在使用的RAM量。
+包含在后台定期计算的指标。 例如，正在使用的RAM量。
 
 列:
 
--   `metric` ([字符串](../../sql-reference/data-types/string.md)) — Metric name.
--   `value` ([Float64](../../sql-reference/data-types/float.md)) — Metric value.
+-   `metric` ([String](../../sql-reference/data-types/string.md)) — 指标名称。
+-   `value` ([Float64](../../sql-reference/data-types/float.md)) — 指标值。
 
 **示例**
 
@@ -35,7 +30,10 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 **另请参阅**
 
--   [监测](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
--   [系统。指标](../../operations/system-tables/metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
--   [系统。活动](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that have occurred.
--   [系统。metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [监测](../../operations/monitoring.md) — ClickHouse监测的基本概念。
+-   [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) — 包含实时计算的指标。
+-   [system.events](../../operations/system-tables/events.md#system_tables-events) — 包含已发生的事件。
+-   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — 包含来自表 `system.metrics` 和 `system.events`的指标值的历史记录。
+
+ [原始文章](https://clickhouse.tech/docs/en/operations/system_tables/asynchronous_metrics) <!--hide-->
+ 

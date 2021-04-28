@@ -1,24 +1,25 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
+# system.merges {#system-merges}
 
-# 系统。合并 {#system-merges}
-
-包含有关MergeTree系列中表当前正在进行的合并和部件突变的信息。
+包含有关MergeTree系列中表当前正在进行的合并和分区突变(part mutation)的信息。
 
 列:
 
--   `database` (String) — The name of the database the table is in.
--   `table` (String) — Table name.
--   `elapsed` (Float64) — The time elapsed (in seconds) since the merge started.
--   `progress` (Float64) — The percentage of completed work from 0 to 1.
--   `num_parts` (UInt64) — The number of pieces to be merged.
--   `result_part_name` (String) — The name of the part that will be formed as the result of merging.
--   `is_mutation` (UInt8)-1如果这个过程是一个部分突变.
--   `total_size_bytes_compressed` (UInt64) — The total size of the compressed data in the merged chunks.
--   `total_size_marks` (UInt64) — The total number of marks in the merged parts.
--   `bytes_read_uncompressed` (UInt64) — Number of bytes read, uncompressed.
--   `rows_read` (UInt64) — Number of rows read.
--   `bytes_written_uncompressed` (UInt64) — Number of bytes written, uncompressed.
--   `rows_written` (UInt64) — Number of rows written.
+-   `database` (String) — 表所在的数据库的名称。
+-   `table` (String) — 表名。
+-   `elapsed` (Float64) — 自合并开始起经过的时间（以秒为单位）。
+-   `progress` (Float64) — 从0到1的已完成工作的百分比。 
+-   `num_parts` (UInt64) — 要合并的片段数。
+-   `result_part_name` (String) — 合并结果将形成的分区(part)的名称。
+-   `is_mutation` (UInt8)- 如果这个过程是一个分区突变，则为1。
+-   `total_size_bytes_compressed` (UInt64) — 合并块中压缩数据的总大小。
+-   `total_size_marks` (UInt64) — 合并分区中的标记总数。
+-   `bytes_read_uncompressed` (UInt64) — 读取的未压缩字节数。
+-   `rows_read` (UInt64) — 读取的行数。
+-   `bytes_written_uncompressed` (UInt64) — 写入的未压缩字节数。
+-   `rows_written` (UInt64) — 写入的行数。
+-   `memory_usage` (UInt64) — 合并过程的内存消耗。
+-   `thread_id` (UInt64) — 合并过程的线程ID。
+-   `merge_type` — 当前合并的类型。如果是突变则为空。
+-   `merge_algorithm` — 当前合并中使用的算法。如果是突变则为空。
+
+[原始文章](https://clickhouse.tech/docs/en/operations/system_tables/merges) <!--hide-->

@@ -4,15 +4,19 @@
 
 列:
 
--   `name`(`String`) – The name of the function.
--   `is_aggregate`(`UInt8`) — Whether the function is aggregate.
+-   `name`(`String`) – 函数的名称。
+-   `is_aggregate`(`UInt8`) — 该函数是否聚合。
 
-**举例**
-```
+[原始文章](https://clickhouse.tech/docs/en/operations/system_tables/functions) <!--hide-->
+
+**示例**
+
+```sql
  SELECT * FROM system.functions LIMIT 10;
 ```
 
-```
+```text
+>>>>>>> update zh translations for system tables and some pages related to access rights
 ┌─name─────────────────────┬─is_aggregate─┬─case_insensitive─┬─alias_to─┐
 │ sumburConsistentHash     │            0 │                0 │          │
 │ yandexConsistentHash     │            0 │                0 │          │

@@ -1,8 +1,6 @@
 ---
-machine_translated: true
-machine_translated_rev: 72537a2d527c63c07aa5d2361a8829f3895cf2bd
 toc_priority: 41
-toc_title: "\u5176\u4ED6"
+toc_title: 其他
 ---
 
 # 杂项查询 {#miscellaneous-queries}
@@ -172,9 +170,9 @@ DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 
 ## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
 
-删除settings配置。
+删除设置配置文件。
 
-已删除的settings配置将从分配该settings配置的所有实体撤销。
+已删除的设置配置文件将从分配该设置配置文件的所有实体撤销。
 
 语法:
 

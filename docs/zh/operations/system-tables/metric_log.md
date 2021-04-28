@@ -1,23 +1,11 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
+# system.metric_log {#system_tables-metric_log}
 
-# 系统。metric_log {#system_tables-metric_log}
+包含来自表`system.metrics` 和 `system.events` 的指标值的历史记录，并定期刷新到磁盘。
 
-包含表中度量值的历史记录 `system.metrics` 和 `system.events`，定期刷新到磁盘。
-打开指标历史记录收集 `system.metric_log`,创建 `/etc/clickhouse-server/config.d/metric_log.xml` 具有以下内容:
-
-``` xml
-<yandex>
-    <metric_log>
-        <database>system</database>
-        <table>metric_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-    </metric_log>
-</yandex>
-```
+列：
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — 事件的日期。
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 事件时间。
+-   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — 事件时间（以微秒为单位）。
 
 **示例**
 
@@ -28,33 +16,36 @@ SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
 ``` text
 Row 1:
 ──────
-event_date:                                                 2020-02-18
-event_time:                                                 2020-02-18 07:15:33
-milliseconds:                                               554
-ProfileEvent_Query:                                         0
-ProfileEvent_SelectQuery:                                   0
-ProfileEvent_InsertQuery:                                   0
-ProfileEvent_FileOpen:                                      0
-ProfileEvent_Seek:                                          0
-ProfileEvent_ReadBufferFromFileDescriptorRead:              1
-ProfileEvent_ReadBufferFromFileDescriptorReadFailed:        0
-ProfileEvent_ReadBufferFromFileDescriptorReadBytes:         0
-ProfileEvent_WriteBufferFromFileDescriptorWrite:            1
-ProfileEvent_WriteBufferFromFileDescriptorWriteFailed:      0
-ProfileEvent_WriteBufferFromFileDescriptorWriteBytes:       56
+event_date:                                                      2020-09-05
+event_time:                                                      2020-09-05 16:22:33
+event_time_microseconds:                                         2020-09-05 16:22:33.196807
+milliseconds:                                                    196
+ProfileEvent_Query:                                              0
+ProfileEvent_SelectQuery:                                        0
+ProfileEvent_InsertQuery:                                        0
+ProfileEvent_FailedQuery:                                        0
+ProfileEvent_FailedSelectQuery:                                  0
 ...
-CurrentMetric_Query:                                        0
-CurrentMetric_Merge:                                        0
-CurrentMetric_PartMutation:                                 0
-CurrentMetric_ReplicatedFetch:                              0
-CurrentMetric_ReplicatedSend:                               0
-CurrentMetric_ReplicatedChecks:                             0
 ...
+CurrentMetric_Revision:                                          54439
+CurrentMetric_VersionInteger:                                    20009001
+CurrentMetric_RWLockWaitingReaders:                              0
+CurrentMetric_RWLockWaitingWriters:                              0
+CurrentMetric_RWLockActiveReaders:                               0
+CurrentMetric_RWLockActiveWriters:                               0
+CurrentMetric_GlobalThread:                                      74
+CurrentMetric_GlobalThreadActive:                                26
+CurrentMetric_LocalThread:                                       0
+CurrentMetric_LocalThreadActive:                                 0
+CurrentMetric_DistributedFilesToInsert:                          0
 ```
 
 **另请参阅**
 
--   [系统。asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [系统。活动](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
--   [系统。指标](../../operations/system-tables/metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
--   [监测](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [metric_log setting](../../operations/server-configuration-parameters/settings.md#metric_log) — 启用和禁用设置。
+-   [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — 包含定期计算的指标。
+-   [system.events](../../operations/system-tables/events.md#system_tables-events) — 包含已发生的事件。
+-   [system.metrics](../../operations/system-tables/metrics.md) — 包含实时计算的指标。
+-   [监测](../../operations/monitoring.md) — ClickHouse监测的基本概念。
+
+[原始文章](https://clickhouse.tech/docs/en/operations/system_tables/metric_log) <!--hide-->

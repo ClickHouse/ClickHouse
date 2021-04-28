@@ -1,9 +1,9 @@
 ---
 toc_priority: 39
-toc_title: 授权操作
+toc_title: GRANT
 ---
 
-# 授权 {#grant}
+# 授权 GRANT {#grant}
 -   给ClickHouse的用户或角色赋予 [权限](#grant-privileges)
 -   将角色分配给用户或其他角色
 

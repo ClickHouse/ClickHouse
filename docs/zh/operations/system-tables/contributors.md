@@ -1,15 +1,10 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
-
-# 系统。贡献者 {#system-contributors}
+# system.contributors {#system-contributors}
 
 包含有关贡献者的信息。 该顺序在查询执行时是随机的。
 
 列:
 
--   `name` (String) — Contributor (author) name from git log.
+-   `name` (String) — 来自git log的贡献者（作者）名称。
 
 **示例**
 
@@ -32,7 +27,7 @@ SELECT * FROM system.contributors LIMIT 10
 └──────────────────┘
 ```
 
-要在表中找出自己，请使用查询:
+要在表中查找自己，请使用查询:
 
 ``` sql
 SELECT * FROM system.contributors WHERE name = 'Olga Khvostikova'
@@ -43,3 +38,4 @@ SELECT * FROM system.contributors WHERE name = 'Olga Khvostikova'
 │ Olga Khvostikova │
 └──────────────────┘
 ```
+[原始文章](https://clickhouse.tech/docs/en/operations/system_tables/contributors) <!--hide-->
