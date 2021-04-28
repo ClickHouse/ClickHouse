@@ -177,10 +177,11 @@ void JoiningTransform::transform(Chunk & chunk)
 Block JoiningTransform::readExecute(Chunk & chunk)
 {
     Block res;
+    // std::cerr << "=== Chunk rows " << chunk.getNumRows() << " cols " << chunk.getNumColumns() << std::endl;
 
     if (!not_processed)
     {
-        // std::cerr << "========= not_processed null " << chunk.getNumColumns() << std::endl;
+        // std::cerr << "!not_processed " << std::endl;
         if (chunk.hasColumns())
             res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -189,7 +190,7 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
     else if (not_processed->empty()) /// There's not processed data inside expression.
     {
-        // std::cerr << "========= not_processed->empty() " << chunk.getNumColumns() << std::endl;
+        // std::cerr << "not_processed->empty() " << std::endl;
         if (chunk.hasColumns())
             res = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
@@ -198,14 +199,12 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     }
     else
     {
-        // std::cerr << "========= not_processed with block\n";
+        // std::cerr << "not not_processed->empty() " << std::endl;
         res = std::move(not_processed->block);
         join->joinBlock(res, not_processed);
     }
 
-    // std::cerr << "Res rows " << res.rows() << std::endl;
-    // if (not_processed)
-    //     std::cerr << "Not processed size " << not_processed->block.rows() << std::endl;
+    // std::cerr << "Res block rows " << res.rows() << " cols " << res.columns() << std::endl;
     return res;
 }
 
@@ -269,6 +268,12 @@ IProcessor::Status AddingJoinedTransform::prepare()
             return Status::Ready;
         }
     }
+    else if (!set_totals)
+    {
+        chunk.setColumns(inputs.front().getHeader().cloneEmpty().getColumns(), 0);
+        for_totals = true;
+        return Status::Ready;
+    }
 
     output.finish();
     return Status::Finished;
@@ -277,12 +282,15 @@ IProcessor::Status AddingJoinedTransform::prepare()
 void AddingJoinedTransform::work()
 {
     auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
-    std::cerr << "-------- Adding block with " << block.rows() << " rows for totals ? " << for_totals << std::endl;
+    // std::cerr << "-------- Adding block with " << block.rows() << " rows for totals ? " << for_totals << std::endl;
+    // std::cerr << block.dumpStructure() << std::endl;
 
     if (for_totals)
         join->setTotals(block);
     else
         join->addJoinedBlock(block);
+
+    set_totals = for_totals;
 }
 
 }
