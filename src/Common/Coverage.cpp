@@ -3,6 +3,7 @@
 #include <cassert>
 
 #include <fstream>
+#include <optional>
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>
@@ -15,15 +16,21 @@
 
 namespace detail
 {
-auto getInstanceAndInitGlobalCounters()
+static inline auto getInstanceAndInitGlobalCounters()
 {
     /**
      * Writer is a singleton, so it initializes statically.
      * SymbolIndex uses a MMapReadBufferFromFile which uses ProfileEvents.
-     * If no thread was found in the events profiler, a global variable is used.
+     * If no thread was found in the events profiler, a global variable global_counters is used.
+     *
      * This variable may get initialized after Writer (static initialization order fiasco).
+     * In fact, the __sanitizer_cov_trace_pc_guard_init is called before the global_counters init.
+     *
      * We can't use constinit on that variable as it has a shared_ptr on it, so we just
      * ultimately initialize it before getting the instance.
+     *
+     * We can't initialize global_counters in ProfileEvents.cpp to nullptr as in that case it will become nullptr.
+     * So we just initialize it twice (here and in ProfileEvents.cpp).
      */
     ProfileEvents::global_counters = ProfileEvents::Counters(ProfileEvents::global_counters_array);
 
@@ -39,35 +46,43 @@ Writer::Writer()
 {
     Context::setSettingHook("coverage_test_name", [this](const Field& value)
     {
-        dump();
-        auto lck = std::lock_guard(edges_mutex);
-        test = value.get<std::string>();
+        const std::string& name = value.get<String>();
+        dumpAndChangeTestName(name);
     });
 }
 
-void Writer::dump()
+void Writer::dumpAndChangeTestName(std::string_view test_name)
 {
+    std::string old_test_name;
+    Hits edges_copies;
+
     {
         auto lck = std::lock_guard(edges_mutex);
+
         if (!test)
             return;
+
+        edges_copies = edges;
+        old_test_name = *test;
+
+        if (test_name.empty())
+            test = std::nullopt;
+        else
+        {
+            test = test_name;
+            edges.clear();
+        }
     }
 
-    pool.scheduleOrThrowOnError([this] () mutable //thread safe, no mutex needed
+    /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
+    /// The move is evaluated within current function's lifetime during function constructor call.
+    auto f = [this, test_name = std::move(old_test_name), edges_copied = std::move(edges_copies)]
     {
-        Hits edges_copies;
-        std::string test_name;
+        prepareDataAndDumpToDisk(edges_copied, test_name);
+    };
 
-        {
-            auto lock = std::lock_guard(edges_mutex);
-            edges_copies = edges;
-            test_name = *test;
-            test = std::nullopt; //already copied the data, can process the new test
-            edges.clear(); // hope that it's O(1).
-        }
-
-        prepareDataAndDumpToDisk(edges_copies, test_name);
-    });
+    // The functor insertion itself is thread-safe.
+    pool.scheduleOrThrowOnError(std::move(f));
 }
 
 Writer::AddrInfo Writer::symbolizeAndDemangle(const void * virtual_addr) const

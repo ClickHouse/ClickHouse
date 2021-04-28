@@ -1,3 +1,4 @@
+#pragma once
 #include "Coverage.h"
 
 //NOLINTNEXTLINE(bugprone-reserved-identifier, readability-non-const-parameter)

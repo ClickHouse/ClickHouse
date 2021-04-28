@@ -38,7 +38,7 @@ public:
         edges.push_back(addr);
     }
 
-    void dump();
+    inline void dump() { dumpAndChangeTestName({}); }
 
 private:
     Writer();
@@ -55,6 +55,8 @@ private:
     using Hits = std::vector<void*>;
     Hits edges;
     std::mutex edges_mutex; // protects test, edges
+
+    void dumpAndChangeTestName(std::string_view test_name);
 
     struct AddrInfo
     {
