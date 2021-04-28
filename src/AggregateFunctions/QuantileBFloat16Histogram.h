@@ -1,10 +1,8 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/NaNUtils.h>
 #include <common/types.h>
 #include <ext/bit_cast.h>
 
