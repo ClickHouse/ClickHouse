@@ -42,7 +42,7 @@ protected:
         const String & compression_method_);
 
 private:
-    String uri;
+    const String uri;
     String format_name;
     String compression_method;
 
