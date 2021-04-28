@@ -43,7 +43,7 @@ private:
     Stopwatch watch;
 
     bool done_with_set = true;
-    bool done_with_join = true;
+    //bool done_with_join = true;
     bool done_with_table = true;
 
     SizeLimits network_transfer_limits;

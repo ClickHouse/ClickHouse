@@ -27,6 +27,9 @@ struct SizeLimits;
 
 struct ExpressionActionsSettings;
 
+class IJoin;
+using JoinPtr = std::shared_ptr<IJoin>;
+
 class QueryPipeline
 {
 public:
@@ -90,6 +93,13 @@ public:
             std::vector<std::unique_ptr<QueryPipeline>> pipelines,
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
+
+    static std::unique_ptr<QueryPipeline> joinPipelines(
+        std::unique_ptr<QueryPipeline> left,
+        std::unique_ptr<QueryPipeline> right,
+        JoinPtr join,
+        size_t max_block_size,
+        Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
     /// Pipeline must have empty header, it should not generate any chunk.
