@@ -950,6 +950,7 @@ public:
 
         /// Returns keys and aggregated for EXPLAIN query
         void explain(WriteBuffer & out, size_t indent) const;
+        void explain(JSONBuilder::JSONMap & map) const;
     };
 
     explicit Aggregator(const Params & params_);

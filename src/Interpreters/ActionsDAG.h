@@ -29,6 +29,14 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class CompiledExpressionCache;
 
+namespace JSONBuilder
+{
+    class JSONMap;
+
+    class IItem;
+    using ItemPtr = std::unique_ptr<IItem>;
+}
+
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
 /// Node of DAG describe calculation of a single column with known type, name, and constant value (if applicable).
@@ -54,6 +62,8 @@ public:
         ARRAY_JOIN,
         FUNCTION,
     };
+
+    static const char * typeToString(ActionType type);
 
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
@@ -81,6 +91,8 @@ public:
         /// Some functions like `ignore()` always return constant but can't be replaced by constant it.
         /// We calculate such constants in order to avoid unnecessary materialization, but prohibit it's folding.
         bool allow_constant_folding = true;
+
+        void toTree(JSONBuilder::JSONMap & map) const;
     };
 
     /// NOTE: std::list is an implementation detail.

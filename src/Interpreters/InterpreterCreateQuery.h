@@ -70,7 +70,6 @@ private:
 
     BlockIO createDatabase(ASTCreateQuery & create);
     BlockIO createTable(ASTCreateQuery & create);
-    BlockIO createDictionary(ASTCreateQuery & create);
 
     /// Calculate list of columns, constraints, indices, etc... of table. Rewrite query in canonical way.
     TableProperties setProperties(ASTCreateQuery & create) const;
