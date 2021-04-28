@@ -90,6 +90,7 @@ private:
     JoinPtr join;
     Chunk chunk;
     bool for_totals = false;
+    bool set_totals = false;
 };
 
 }
