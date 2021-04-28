@@ -1465,7 +1465,7 @@ private:
             // if they are not referenced by the main SELECT, so they can still
             // have the aforementioned problems. Disable this check for such
             // queries, for lack of a better solution.
-            if (!have_error && queryHasWithClause(parsed_query.get()))
+            if (!have_error && !queryHasWithClause(parsed_query.get()))
             {
                 ASTPtr parsed_formatted_query;
                 try
