@@ -230,3 +230,4 @@
 01804_dictionary_decimal256_type
 01801_s3_distributed
 01833_test_collation_alvarotuso
+01850_dist_INSERT_preserve_error
