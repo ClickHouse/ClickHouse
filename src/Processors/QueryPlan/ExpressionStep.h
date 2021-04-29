@@ -27,6 +27,8 @@ public:
 
     const ActionsDAGPtr & getExpression() const { return actions_dag; }
 
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+
 private:
     ActionsDAGPtr actions_dag;
 };
