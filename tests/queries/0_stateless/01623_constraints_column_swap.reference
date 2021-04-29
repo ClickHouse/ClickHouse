@@ -18,6 +18,19 @@ SELECT
     b + 3
 FROM constraint_test.test
 WHERE b = 1
+SELECT b + 10
+FROM constraint_test.test
+WHERE b = 0
+SELECT
+    cityHash64(a) + 10,
+    a
+FROM constraint_test.test
+WHERE cityHash64(a) = 0
+SELECT
+    cityHash64(a) + 10,
+    a
+FROM constraint_test.test
+WHERE cityHash64(a) = 0
 SELECT
     a,
     a
@@ -26,5 +39,8 @@ WHERE a = \'c\'
 SELECT
     a,
     a
+FROM constraint_test.test
+WHERE a = \'c\'
+SELECT a
 FROM constraint_test.test
 WHERE a = \'c\'
