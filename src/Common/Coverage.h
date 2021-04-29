@@ -42,7 +42,7 @@ private:
 
     const MultiVersion<SymbolIndex>::Version symbol_index;
     const Dwarf dwarf;
-    const uintptr_t binary_virtual_offset;
+    const uintptr_t binary_virtual_offset; // TODO Always 0, get rid of.
 
     FreeThreadPool pool;
 
@@ -53,14 +53,15 @@ private:
 
     void dumpAndChangeTestName(std::string_view test_name);
 
+    using SymbolMangledName = std::string;
+    struct SymbolData { std::string demangled_name; UInt64 start_line; };
+    using SymbolsCache = std::unordered_map<SymbolMangledName, SymbolData>;
+
     struct AddrInfo
     {
-        const void * virtual_addr;
-        void * physical_addr;
-        std::string symbol; // function
         std::string file;
         UInt64 line;
-        UInt64 symbol_start_line;
+        const SymbolData& symbol_data;
     };
 
     using SourceFileName = std::string;
@@ -83,10 +84,6 @@ private:
     };
 
     using SourceFiles = std::unordered_map<SourceFileName, SourceFileData>;
-
-    using SymbolMangledName = std::string;
-    struct SymbolData { std::string demangled_name; UInt64 start_line; };
-    using SymbolsCache = std::unordered_map<SymbolMangledName, SymbolData>;
 
     AddrInfo symbolizeAndDemangle(SymbolsCache& symbols_cache, const void * virtual_addr) const;
 

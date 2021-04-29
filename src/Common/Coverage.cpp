@@ -109,38 +109,37 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 
 Writer::AddrInfo Writer::symbolizeAndDemangle(SymbolsCache& symbols_cache, const void * virtual_addr) const
 {
-    AddrInfo out =
-    {
-        .virtual_addr = virtual_addr,
-        .physical_addr = reinterpret_cast<void *>(uintptr_t(virtual_addr) - binary_virtual_offset)
-    };
+    const uintptr_t physical_addr = uintptr_t(virtual_addr) - binary_virtual_offset;
 
-    const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(uintptr_t(out.physical_addr));
-    out.file = loc.file.toString();
-    out.line = loc.line;
+    const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(physical_addr);
 
-    const auto * symbol = symbol_index->findSymbol(out.virtual_addr);
+    const auto * symbol = symbol_index->findSymbol(virtual_addr);
     assert(symbol);
 
-    const std::string symbol_name = symbol->name;
-
-    if (auto it = symbols_cache.find(symbol_name); it != symbols_cache.end())
-    {
-        out.symbol = it->second.demangled_name;
-        out.symbol_start_line = it->second.start_line;
-        return out;
-    }
+    if (auto it = symbols_cache.find(symbol->name); it != symbols_cache.end())
+        return
+        {
+            .file = loc.file.toString(),
+            .line = loc.line,
+            .symbol_data = it->second
+        };
 
     int status = 0;
-    out.symbol = demangle(symbol->name, status);
+    const std::string demangled_name = demangle(symbol->name, status);
     assert(!status);
 
-    const void * symbol_start_virtual = symbol->address_begin;
+    const void * const symbol_start_virtual = symbol->address_begin;
     const uintptr_t symbol_start_phys = uintptr_t(symbol_start_virtual) - binary_virtual_offset;
-    out.symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
+    const UInt64 symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
 
-    symbols_cache[symbol_name] = {.demangled_name = out.symbol, .start_line = out.symbol_start_line};
-    return out;
+    auto it = symbols_cache.emplace(symbol->name, SymbolData{demangled_name, symbol_start_line});
+
+    return
+    {
+        .file = loc.file.toString(),
+        .line = loc.line,
+        .symbol_data = it.first->second
+    };
 }
 
 void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view test_name)
@@ -167,7 +166,7 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
         const AddrInfo& addr_info = iter->second;
 
         fmt::print(std::cout, "{}/{} ({}s, {}, line {}, file {})\n", i, hits.size(), time(nullptr) - t,
-            addr_info.symbol,
+            addr_info.symbol_data.demangled_name,
             addr_info.line,
             addr_info.file);
 
@@ -185,8 +184,10 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
         else
             ++it->second;
 
-        if (auto it = data.functions.find(addr_info.symbol); it == data.functions.end())
-            data.functions[addr_info.symbol] = {.start_line = addr_info.symbol_start_line, .call_count = 0};
+        const SymbolData& symbol_data = addr_info.symbol_data;
+
+        if (auto it = data.functions.find(symbol_data.demangled_name); it == data.functions.end())
+            data.functions[symbol_data.demangled_name] = {symbol_data.start_line, .call_count = 0};
         else
             ++it->second.call_count;
     }
