@@ -5,7 +5,7 @@ toc_title: clickhouse-format
 
 # clickhouse-format {#clickhouse-format}
 
-Утилита `clickhouse-format` позволяет форматировать входящие запросы.
+Позволяет форматировать входящие запросы.
 
 Ключи:
 
@@ -20,7 +20,7 @@ toc_title: clickhouse-format
 
 ## Примеры {#examples} 
 
-1. Пример с подсветкой синтаксиса и форматированием в одну строку:
+1. Подсветка синтаксиса и форматирование в одну строку:
 
 ```bash
 $ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
@@ -32,7 +32,7 @@ $ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
 SELECT sum(number) FROM numbers(5)
 ```
 
-2. Пример с несколькими запросами в одной строке: 
+2. Несколько запросов в одной строке: 
 
 ```bash
 $ clickhouse-format -n <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
@@ -54,7 +54,7 @@ UNION ALL
 ;
 ```
 
-3. Пример с обфуксацией:
+3. Обфуксация:
 
 ```bash
 $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
@@ -78,7 +78,7 @@ $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWE
 SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
 ```
 
-4. Пример с обратным слешем:
+4. Добавление обратного слеша:
 
 ```bash
 $ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
