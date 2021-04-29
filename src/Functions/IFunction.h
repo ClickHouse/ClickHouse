@@ -213,7 +213,7 @@ public:
 
     virtual bool isShortCircuit() const { return false; }
 
-    virtual bool isSuitableForShortCircuitArgumentsExecution() const { return true; }
+    virtual bool isSuitableForShortCircuitArgumentsExecution() const = 0;
 
     virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
     {
@@ -279,12 +279,7 @@ public:
 
     virtual bool isShortCircuit() const { return false; }
 
-    virtual bool isSuitableForShortCircuitArgumentsExecution() const { return true; }
-
-    virtual void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const
-    {
-        throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::NOT_IMPLEMENTED);
-    }
+    virtual bool isSuitableForShortCircuitArgumentsExecution() const = 0;
 
     /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
     /// For higher-order functions (functions, that have lambda expression as at least one argument).

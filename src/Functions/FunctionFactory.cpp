@@ -31,6 +31,7 @@ void FunctionFactory::registerFunction(const
     Value creator,
     CaseSensitiveness case_sensitiveness)
 {
+
     if (!functions.emplace(name, creator).second)
         throw Exception("FunctionFactory: the function name '" + name + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);

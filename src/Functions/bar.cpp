@@ -42,6 +42,9 @@ public:
     {
         return true;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+
     size_t getNumberOfArguments() const override
     {
         return 0;

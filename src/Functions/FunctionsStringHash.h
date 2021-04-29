@@ -41,6 +41,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {

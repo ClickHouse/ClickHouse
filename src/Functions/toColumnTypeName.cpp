@@ -30,6 +30,8 @@ public:
 
     void executeShortCircuitArguments(ColumnsWithTypeAndName & /*arguments*/) const override {}
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+
     size_t getNumberOfArguments() const override
     {
         return 1;

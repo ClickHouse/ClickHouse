@@ -30,6 +30,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isShortCircuit() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
 
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
@@ -54,7 +55,6 @@ public:
     }
 
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t /*number_of_arguments*/) const override { return {0}; }
-
 };
 
 }

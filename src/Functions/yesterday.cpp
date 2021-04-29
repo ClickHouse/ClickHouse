@@ -52,6 +52,7 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
 
 private:
     DayNum day_value;
@@ -78,6 +79,8 @@ public:
         auto day_num = DateLUT::instance().toDayNum(time(nullptr)) - 1;
         return std::make_unique<FunctionBaseYesterday>(static_cast<DayNum>(day_num));
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
 };
 
 void registerFunctionYesterday(FunctionFactory & factory)

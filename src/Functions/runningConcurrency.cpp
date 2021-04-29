@@ -119,6 +119,8 @@ namespace DB
             return true;
         }
 
+        bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+
     private:
         DataTypes argument_types;
         DataTypePtr return_type;
@@ -210,6 +212,11 @@ namespace DB
         bool useDefaultImplementationForNulls() const override
         {
             return false;
+        }
+
+        bool isSuitableForShortCircuitArgumentsExecution() const override
+        {
+            return true;
         }
     };
 

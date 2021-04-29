@@ -49,6 +49,8 @@ public:
         return true;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 

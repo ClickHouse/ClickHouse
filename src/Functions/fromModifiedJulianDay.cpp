@@ -127,6 +127,11 @@ namespace DB
             return true;
         }
 
+        bool isSuitableForShortCircuitArgumentsExecution() const override
+        {
+            return true;
+        }
+
         bool hasInformationAboutMonotonicity() const override
         {
             return true;
@@ -215,6 +220,11 @@ namespace DB
         }
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
+        {
+            return true;
+        }
+
+        bool isSuitableForShortCircuitArgumentsExecution() const override
         {
             return true;
         }

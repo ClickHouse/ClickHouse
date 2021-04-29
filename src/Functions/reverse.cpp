@@ -77,6 +77,8 @@ public:
         return true;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0])
@@ -123,6 +125,8 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {

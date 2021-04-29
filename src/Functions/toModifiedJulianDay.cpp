@@ -138,6 +138,8 @@ namespace DB
             return return_type;
         }
 
+        bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+
         ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
         {
             return std::make_unique<ExecutableFunctionToModifiedJulianDay<Name, ToDataType, nullOnErrors>>();
@@ -216,6 +218,11 @@ namespace DB
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
             return true;
+        }
+
+        bool isSuitableForShortCircuitArgumentsExecution() const override
+        {
+            return false;
         }
     };
 

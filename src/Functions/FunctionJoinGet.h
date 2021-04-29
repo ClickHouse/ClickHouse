@@ -60,6 +60,8 @@ public:
 
     String getName() const override { return name; }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
 
@@ -93,6 +95,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
 };
 
 }
