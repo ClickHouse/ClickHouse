@@ -53,46 +53,44 @@ private:
 
     void dumpAndChangeTestName(std::string_view test_name);
 
-    using SymbolMangledName = std::string;
-
-    struct SymbolData
-    {
-        std::string demangled_name;
-        UInt64 start_line;
-        std::string mangled_name; //for debug print only
-    };
-
-    using SymbolsCache = std::unordered_map<SymbolMangledName, SymbolData>;
-
-    struct AddrInfo
-    {
-        std::string file;
-        UInt64 line;
-        const SymbolData& symbol_data;
-    };
-
     using SourceFileName = std::string;
-
-    using FunctionName = std::string;
-    struct FunctionData { size_t start_line; size_t call_count; };
-
-    using BranchLine = size_t;
-    struct BranchData { size_t block_number; size_t branch_number; size_t taken; };
-
     using Line = size_t;
     using LineCalled = size_t;
 
     struct SourceFileData
     {
         std::string full_path;
-        std::unordered_map<FunctionName, FunctionData> functions;
-        //std::unordered_map<BranchLine, BranchData> branches; //won't fill as for now
+        //std::unordered_map<FunctionName, FunctionData> functions;
+        //std::unordered_map<BranchLine, BranchData> branches;
         std::unordered_map<Line, LineCalled> lines; // which triggered the callback
     };
 
     using SourceFiles = std::unordered_map<SourceFileName, SourceFileData>;
 
-    AddrInfo symbolizeAndDemangle(SymbolsCache& symbols_cache, const void * virtual_addr) const;
+    using SymbolMangledName = std::string;
+
+    struct SymbolData
+    {
+        std::string demangled_name;
+        UInt64 start_line;
+    };
+
+    using SymbolsCache = std::unordered_map<SymbolMangledName, SymbolData>;
+
+    struct AddrInfo
+    {
+        SourceFileData& file;
+        const SymbolData& symbol;
+        UInt64 line;
+    };
+
+    //using FunctionName = std::string;
+    //struct FunctionData { size_t start_line; size_t call_count; };
+
+    //using BranchLine = size_t;
+    //struct BranchData { size_t block_number; size_t branch_number; size_t taken; };
+
+    AddrInfo symbolizeAndDemangle(SourceFiles& files, SymbolsCache& symbols_cache, const void * virtual_addr) const;
 
     void prepareDataAndDumpToDisk(const Hits& hits, std::string_view test_name);
 

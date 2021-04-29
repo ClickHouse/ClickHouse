@@ -107,36 +107,39 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
     pool.scheduleOrThrowOnError(std::move(f));
 }
 
-Writer::AddrInfo Writer::symbolizeAndDemangle(SymbolsCache& symbols_cache, const void * virtual_addr) const
+Writer::AddrInfo Writer::symbolizeAndDemangle(
+    SourceFiles& files, SymbolsCache& symbols_cache, const void * virtual_addr) const
 {
     const uintptr_t physical_addr = uintptr_t(virtual_addr) - binary_virtual_offset;
     const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(physical_addr);
 
     const auto * symbol = symbol_index->findSymbol(virtual_addr);
 
-    if (auto it = symbols_cache.find(symbol->name); it != symbols_cache.end())
-        return
-        {
-            .file = loc.file.toString(),
-            .line = loc.line,
-            .symbol_data = it->second
-        };
+    std::string file_name_path = loc.file.toString();
+    std::string file_name = file_name_path.substr(file_name_path.rfind('/') + 1);
 
-    int status = 0;
-    const std::string demangled_name = demangle(symbol->name, status);
+    SourceFiles::iterator file_data_it = files.find(file_name);
 
-    const void * const symbol_start_virtual = symbol->address_begin;
-    const uintptr_t symbol_start_phys = uintptr_t(symbol_start_virtual) - binary_virtual_offset;
-    const UInt64 symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
+    if (file_data_it == files.end())
+        file_data_it = files.emplace(
+            std::move(file_name),
+            SourceFileData{.full_path = std::move(file_name_path)}).first;
 
-    auto it = symbols_cache.emplace(symbol->name, SymbolData{demangled_name, symbol_start_line, symbol->name});
+    SymbolsCache::iterator symbol_it = symbols_cache.find(symbol->name);
 
-    return
+    if (symbol_it == symbols_cache.end())
     {
-        .file = loc.file.toString(),
-        .line = loc.line,
-        .symbol_data = it.first->second
-    };
+        int status = 0;
+        std::string demangled_name = demangle(symbol->name, status);
+
+        const void * const symbol_start_virtual = symbol->address_begin;
+        const uintptr_t symbol_start_phys = uintptr_t(symbol_start_virtual) - binary_virtual_offset;
+        const UInt64 symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
+
+        symbol_it = symbols_cache.emplace(symbol->name, SymbolData{std::move(demangled_name), symbol_start_line}).first;
+    }
+
+    return {file_data_it->second, symbol_it->second, loc.line};
 }
 
 void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view test_name)
@@ -158,45 +161,26 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
         AddrsCache::iterator iter = addrs_cache.find(addr);
 
         if (iter == addrs_cache.end())
-        {
-            const AddrInfo info = symbolizeAndDemangle(symbols_cache, addr);
-
-            // do not track global static initializers, do not pollute the cache with them.
-            //if (const std::string& a = info.symbol_data.demangled_name;
-            //    a.starts_with("_GLOBAL__sub_I_") // iostream initializer
-            //    || a.starts_with("__cxx_global_var_init") // global variable init, not sure if should skip
-            //    )
-            //    continue;
-
-            iter = addrs_cache.emplace(addr, info).first;
-        }
+            iter = addrs_cache.emplace(addr, symbolizeAndDemangle(source_files, symbols_cache, addr)).first;
 
         const AddrInfo& addr_info = iter->second;
 
         fmt::print(std::cout, "{}/{} ({}s, {}, file {})\n", i, hits.size(), time(nullptr) - t,
-            addr_info.symbol_data.mangled_name,
-            addr_info.file);
+            addr_info.symbol.demangled_name,
+            addr_info.file.full_path);
 
-        const std::string file_name = addr_info.file.substr(addr_info.file.rfind('/') + 1);
-
-        SourceFiles::iterator file_data_it = source_files.find(file_name);
-
-        if (file_data_it == source_files.end())
-            file_data_it = source_files.emplace(file_name, SourceFileData{.full_path=addr_info.file}).first;
-
-        SourceFileData& data = file_data_it->second;
+        SourceFileData& data = addr_info.file;
 
         if (auto it = data.lines.find(addr_info.line); it == data.lines.end())
             data.lines[addr_info.line] = 1;
         else
             ++it->second;
 
-        const SymbolData& symbol_data = addr_info.symbol_data;
-
-        if (auto it = data.functions.find(symbol_data.demangled_name); it == data.functions.end())
-            data.functions[symbol_data.demangled_name] = {symbol_data.start_line, .call_count = 0};
-        else
-            ++it->second.call_count;
+        // const SymbolData& symbol_data = addr_info.symbol_data;
+        // if (auto it = data.functions.find(symbol_data.demangled_name); it == data.functions.end())
+        //     data.functions[symbol_data.demangled_name] = {symbol_data.start_line, .call_count = 0};
+        // else
+        //     ++it->second.call_count;
     }
 
     convertToLCOVAndDumpToDisk(hits.size(), source_files, test_name);
@@ -245,22 +229,20 @@ void Writer::convertToLCOVAndDumpToDisk(
     {
         fmt::print(ofs, "SF:{}\n", data.full_path);
 
-        size_t fnh = 0;
+        // size_t fnh = 0;
+        //
+        // for (const auto & [func_name, func_data]: data.functions)
+        // {
+        //     fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n",
+        //             func_data.start_line,
+        //             func_name,
+        //             func_data.call_count);
 
-        for (const auto & [func_name, func_data]: data.functions)
-        {
-            fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n",
-                    func_data.start_line,
-                    func_name,
-                    func_data.call_count);
+        //     if (func_data.call_count > 0)
+        //         ++fnh;
+        // }
 
-            if (func_data.call_count > 0)
-                ++fnh;
-        }
-
-        assert(!data.functions.empty());
-
-        fmt::print(ofs, "FNF:{}\nFNH:{}\n", data.functions.size(), fnh);
+        // fmt::print(ofs, "FNF:{}\nFNH:{}\n", data.functions.size(), fnh);
 
         // TODO Branches
 

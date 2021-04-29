@@ -4,11 +4,14 @@
 # Place here files that are instrumented even when providing noinstrument flags
 #
 # Global variables init for iostream
+fun:__cxx_global_var_init*
+fun:_GLOBAL__sub_I_*
 # std::__1
 fun:_ZNSt3*
 fun:_ZNKSt3*
-fun:_ZNKSt16*
 fun:_ZNRSt3*
+fun:_ZNSt16*
+fun:_ZNKSt16*
 # Poco
 fun:_ZN4Poco*
 fun:_ZNK4Poco*
