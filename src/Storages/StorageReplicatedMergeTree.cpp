@@ -1549,14 +1549,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
         if (!source_part_or_covering)
         {
-            /// We does not have one of source parts locally, try to take some already merged part from someone.
+            /// We do not have one of source parts locally, try to take some already merged part from someone.
             LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry.new_part_name);
             return false;
         }
 
         if (source_part_or_covering->name != source_part_name)
         {
-            /// We does not have source part locally, but we have some covering part. Possible options:
+            /// We do not have source part locally, but we have some covering part. Possible options:
             /// 1. We already have merged part (source_part_or_covering->name == new_part_name)
             /// 2. We have some larger merged part which covers new_part_name (and therefore it covers source_part_name too)
             /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
