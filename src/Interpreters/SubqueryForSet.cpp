@@ -5,6 +5,9 @@
 namespace DB
 {
 
+SubqueryForSet::SubqueryForSet() = default;
 SubqueryForSet::~SubqueryForSet() = default;
+SubqueryForSet::SubqueryForSet(SubqueryForSet &&) = default;
+SubqueryForSet & SubqueryForSet::operator= (SubqueryForSet &&) = default;
 
 }
