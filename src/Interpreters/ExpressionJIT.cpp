@@ -19,42 +19,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
-
-#include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/DataLayout.h>
-#include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Mangler.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IR/Type.h>
-#include <llvm/IR/LegacyPassManager.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/JITSymbol.h>
-#include <llvm/ExecutionEngine/SectionMemoryManager.h>
-#include <llvm/ExecutionEngine/Orc/CompileUtils.h>
-#include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
-#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
-#include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
-#include <llvm/Target/TargetMachine.h>
-#include <llvm/MC/SubtargetFeature.h>
-#include <llvm/Support/DynamicLibrary.h>
-#include <llvm/Support/Host.h>
-#include <llvm/Support/TargetRegistry.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
-#pragma GCC diagnostic pop
-
-/// 'LegacyRTDyldObjectLinkingLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use ORCv2
-/// 'LegacyIRCompileLayer' is deprecated: ORCv1 layers (layers with the 'Legacy' prefix) are deprecated. Please use the ORCv2 IRCompileLayer instead
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-
+#include <Interpreters/JIT/CHJIT.h>
 
 namespace ProfileEvents
 {
@@ -115,156 +84,7 @@ static void applyFunction(IFunctionBase & function, Field & value)
     col->get(0, value);
 }
 
-static llvm::TargetMachine * getNativeMachine()
-{
-    std::string error;
-    auto cpu = llvm::sys::getHostCPUName();
-    auto triple = llvm::sys::getProcessTriple();
-    const auto * target = llvm::TargetRegistry::lookupTarget(triple, error);
-    if (!target)
-        throw Exception("Could not initialize native target: " + error, ErrorCodes::CANNOT_COMPILE_CODE);
-    llvm::SubtargetFeatures features;
-    llvm::StringMap<bool> feature_map;
-    if (llvm::sys::getHostCPUFeatures(feature_map))
-        for (auto & f : feature_map)
-            features.AddFeature(f.first(), f.second);
-    llvm::TargetOptions options;
-    return target->createTargetMachine(
-        triple, cpu, features.getString(), options, llvm::None,
-        llvm::None, llvm::CodeGenOpt::Aggressive, /*jit=*/true
-    );
-}
-
-
-struct SymbolResolver : public llvm::orc::SymbolResolver
-{
-    llvm::LegacyJITSymbolResolver & impl;
-
-    explicit SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
-
-    llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final
-    {
-        return symbols;
-    }
-
-    llvm::orc::SymbolNameSet lookup(std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols) final
-    {
-        llvm::orc::SymbolNameSet missing;
-        for (const auto & symbol : symbols)
-        {
-            bool has_resolved = false;
-            impl.lookup({*symbol}, [&](llvm::Expected<llvm::JITSymbolResolver::LookupResult> resolved)
-            {
-                if (resolved && !resolved->empty())
-                {
-                    query->notifySymbolMetRequiredState(symbol, resolved->begin()->second);
-                    has_resolved = true;
-                }
-            });
-
-            if (!has_resolved)
-                missing.insert(symbol);
-        }
-        return missing;
-    }
-};
-
-
-struct LLVMContext
-{
-    std::shared_ptr<llvm::LLVMContext> context {std::make_shared<llvm::LLVMContext>()};
-    std::unique_ptr<llvm::Module> module {std::make_unique<llvm::Module>("jit", *context)};
-    std::unique_ptr<llvm::TargetMachine> machine {getNativeMachine()};
-    llvm::DataLayout layout {machine->createDataLayout()};
-    llvm::IRBuilder<> builder {*context};
-
-    llvm::orc::ExecutionSession execution_session;
-
-    std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
-    llvm::orc::LegacyRTDyldObjectLinkingLayer object_layer;
-    llvm::orc::LegacyIRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
-
-    std::unordered_map<std::string, void *> symbols;
-
-    LLVMContext()
-        : memory_manager(std::make_shared<llvm::SectionMemoryManager>())
-        , object_layer(execution_session, [this](llvm::orc::VModuleKey)
-        {
-            return llvm::orc::LegacyRTDyldObjectLinkingLayer::Resources{memory_manager, std::make_shared<SymbolResolver>(*memory_manager)};
-        })
-        , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
-    {
-        std::cerr << "LLVMContext::constructor" << std::endl;
-
-        module->setDataLayout(layout);
-        module->setTargetTriple(machine->getTargetTriple().getTriple());
-    }
-
-    /// returns used memory
-    void compileAllFunctionsToNativeCode()
-    {
-        if (module->empty())
-            return;
-        llvm::PassManagerBuilder pass_manager_builder;
-        llvm::legacy::PassManager mpm;
-        llvm::legacy::FunctionPassManager fpm(module.get());
-        pass_manager_builder.OptLevel = 3;
-        pass_manager_builder.SLPVectorize = true;
-        pass_manager_builder.LoopVectorize = true;
-        pass_manager_builder.RerollLoops = true;
-        pass_manager_builder.VerifyInput = true;
-        pass_manager_builder.VerifyOutput = true;
-        machine->adjustPassManager(pass_manager_builder);
-        fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
-        mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
-        pass_manager_builder.populateFunctionPassManager(fpm);
-        pass_manager_builder.populateModulePassManager(mpm);
-        fpm.doInitialization();
-        for (auto & function : *module)
-        {
-            // std::cerr << "Run for function " << std::string(function.getName()) << std::endl;
-            fpm.run(function);
-        }
-        fpm.doFinalization();
-        mpm.run(*module);
-
-        std::vector<std::string> functions;
-        functions.reserve(module->size());
-        for (const auto & function : *module)
-        {
-
-            functions.emplace_back(function.getName());
-        }
-
-        std::cerr << "Dump module after compile " << std::endl;
-
-        std::string value;
-        llvm::raw_string_ostream stream(value);
-        module->print(stream, nullptr);
-
-        std::cerr << value << std::endl;
-
-        llvm::orc::VModuleKey module_key = execution_session.allocateVModule();
-        if (compile_layer.addModule(module_key, std::move(module)))
-            throw Exception("Cannot add module to compile layer", ErrorCodes::CANNOT_COMPILE_CODE);
-
-        for (const auto & name : functions)
-        {
-            std::string mangled_name;
-            llvm::raw_string_ostream mangled_name_stream(mangled_name);
-            llvm::Mangler::getNameWithPrefix(mangled_name_stream, name, layout);
-            mangled_name_stream.flush();
-            auto symbol = compile_layer.findSymbol(mangled_name, false);
-            if (!symbol)
-                continue; /// external function (e.g. an intrinsic that calls into libc)
-            auto address = symbol.getAddress();
-            if (!address)
-                throw Exception("Function " + name + " failed to link", ErrorCodes::CANNOT_COMPILE_CODE);
-            symbols[name] = reinterpret_cast<void *>(*address);
-        }
-    }
-};
-
+static CHJIT jit;
 
 template <typename... Ts>
 static bool castToEitherWithNullable(IColumn * column)
@@ -279,13 +99,12 @@ class LLVMExecutableFunction : public IExecutableFunctionImpl
     void * function;
 
 public:
-    LLVMExecutableFunction(const std::string & name_, const std::unordered_map<std::string, void *> & symbols)
+    explicit LLVMExecutableFunction(const std::string & name_)
         : name(name_)
+        , function(jit.findCompiledFunction(name))
     {
-        auto it = symbols.find(name);
-        if (symbols.end() == it)
-            throw Exception("Cannot find symbol " + name + " in LLVMContext", ErrorCodes::LOGICAL_ERROR);
-        function = it->second;
+        if (!function)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find compiled function {}", name_);
     }
 
     String getName() const override { return name; }
@@ -331,18 +150,18 @@ public:
     }
 };
 
-static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunctionBaseImpl & f)
+static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
 {
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
     const auto & arg_types = f.getArgumentTypes();
-    auto & b = context.builder;
+
+    llvm::IRBuilder<> b(module.getContext());
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
     auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy(), size_type);
     auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
 
-    /// TODO: External linkage
-    auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, f.getName(), context.module.get());
+    auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, f.getName(), module);
     auto * args = func->args().begin();
     llvm::Value * counter_arg = &*args++;
     llvm::Value * columns_arg = &*args++;
@@ -414,14 +233,6 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
     b.CreateCondBr(b.CreateICmpNE(counter_phi, llvm::ConstantInt::get(size_type, 1)), loop, end);
     b.SetInsertPoint(end);
     b.CreateRetVoid();
-
-    std::cerr << "Dump module" << std::endl;
-
-    std::string value;
-    llvm::raw_string_ostream mangled_name_stream(value);
-    context.module->print(mangled_name_stream, nullptr);
-
-    std::cerr << value << std::endl;
 }
 
 static llvm::Constant * getNativeValue(llvm::Type * type, const IColumn & column, size_t i)
@@ -474,20 +285,15 @@ static CompilableExpression subexpression(const IFunctionBase & f, std::vector<C
     };
 }
 
-struct LLVMModuleState
-{
-    std::unordered_map<std::string, void *> symbols;
-    std::shared_ptr<llvm::LLVMContext> major_context;
-    std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
-};
 
 LLVMFunction::LLVMFunction(const CompileDAG & dag)
     : name(dag.dump())
-    , module_state(std::make_unique<LLVMModuleState>())
 {
-    LLVMContext context;
     std::vector<CompilableExpression> expressions;
     expressions.reserve(dag.size());
+
+    auto & context = jit.getContext();
+    llvm::IRBuilder<> builder(context);
 
     for (const auto & node : dag)
     {
@@ -498,7 +304,7 @@ LLVMFunction::LLVMFunction(const CompileDAG & dag)
                 const auto * col = typeid_cast<const ColumnConst *>(node.column.get());
 
                 /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
-                if (!getNativeValue(toNativeType(context.builder, node.result_type), col->getDataColumn(), 0))
+                if (!getNativeValue(toNativeType(builder, node.result_type), col->getDataColumn(), 0))
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                                     "Cannot compile constant of type {} = {}",
                                     node.result_type->getName(),
@@ -530,12 +336,9 @@ LLVMFunction::LLVMFunction(const CompileDAG & dag)
 
     expression = std::move(expressions.back());
 
-    compileFunctionToLLVMByteCode(context, *this);
-    context.compileAllFunctionsToNativeCode();
-
-    module_state->symbols = context.symbols;
-    module_state->major_context = context.context;
-    module_state->memory_manager = context.memory_manager;
+    auto module_for_compilation = jit.createModuleForCompilation();
+    compileFunction(*module_for_compilation, *this);
+    jit.compileModule(std::move(module_for_compilation));
 }
 
 llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const
@@ -543,7 +346,7 @@ llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlacehol
     return expression(builder, values);
 }
 
-ExecutableFunctionImplPtr LLVMFunction::prepare(const ColumnsWithTypeAndName &) const { return std::make_unique<LLVMExecutableFunction>(name, module_state->symbols); }
+ExecutableFunctionImplPtr LLVMFunction::prepare(const ColumnsWithTypeAndName &) const { return std::make_unique<LLVMExecutableFunction>(name); }
 
 bool LLVMFunction::isDeterministic() const
 {
@@ -791,18 +594,6 @@ static FunctionBasePtr compile(
     static std::unordered_map<UInt128, UInt32, UInt128Hash> counter;
     static std::mutex mutex;
 
-    struct LLVMTargetInitializer
-    {
-        LLVMTargetInitializer()
-        {
-            llvm::InitializeNativeTarget();
-            llvm::InitializeNativeTargetAsmPrinter();
-            llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
-        }
-    };
-
-    static LLVMTargetInitializer initializer;
-
     auto hash_key = dag.hash();
     {
         std::lock_guard lock(mutex);
@@ -834,8 +625,6 @@ static FunctionBasePtr compile(
 
 void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 {
-    // std::cerr << "ActionsDAG::compileFunctions before dump " << dumpDAG() << std::endl;
-
     struct Data
     {
         bool is_compilable = false;
