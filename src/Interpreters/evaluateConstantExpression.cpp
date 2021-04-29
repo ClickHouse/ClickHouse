@@ -18,7 +18,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
