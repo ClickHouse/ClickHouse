@@ -100,6 +100,7 @@ private:
         InputProcessorCreator input_processor_creator;
         OutputProcessorCreator output_processor_creator;
         FileSegmentationEngine file_segmentation_engine;
+        bool supports_schema_inference{false};
         bool supports_parallel_formatting{false};
         bool is_column_oriented{false};
     };
@@ -161,6 +162,8 @@ public:
         WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
+    bool checkIfInputFormatSupportsSchemaInference(const String & name);
+
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
@@ -169,6 +172,7 @@ public:
     void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
 
+    void markInputFormatSupportsSchemaInference(const String & name);
     void markOutputFormatSupportsParallelFormatting(const String & name);
     void markFormatAsColumnOriented(const String & name);
 

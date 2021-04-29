@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -211,6 +212,7 @@ StorageFile::StorageFile(CommonArguments args)
     , format_settings(args.format_settings)
     , compression_method(args.compression_method)
     , base_path(args.getContext()->getPath())
+    , skip_prefix_reading(args.skip_prefix_reading)
 {
     StorageInMemoryMetadata storage_metadata;
     if (args.format_name != "Distributed")
@@ -378,7 +380,8 @@ public:
                 if (columns_description.hasDefaults())
                     reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns_description, context);
 
-                reader->readPrefix();
+                if (!storage->skip_prefix_reading)
+                    reader->readPrefix();
             }
 
             if (auto res = reader->read())
@@ -668,6 +671,7 @@ void registerStorageFile(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures storage_features{
         .supports_settings = true,
+        .supports_schema_inference = true,
         .source_access_type = AccessType::FILE
     };
 
@@ -685,7 +689,19 @@ void registerStorageFile(StorageFactory & factory)
                 factory_args.columns,
                 factory_args.constraints,
                 factory_args.comment,
+                skip_prefix_reading = false
             };
+            struct CommonArguments
+    {
+        StorageID table_id;
+        std::string format_name;
+        std::optional<FormatSettings> format_settings;
+        std::string compression_method;
+        ColumnsDescription & columns;
+        const ConstraintsDescription & constraints;
+        const Context & context;
+        bool skip_prefix_reading;
+    };
 
             ASTs & engine_args_ast = factory_args.engine_args;
 
@@ -768,7 +784,49 @@ void registerStorageFile(StorageFactory & factory)
             else
                 storage_args.compression_method = "auto";
 
-            if (0 <= source_fd) /// File descriptor
+            bool use_table_fd = 0 <= source_fd;
+
+            // Guess the table schema if it's required. In the future, we must pass a flag (smth like
+            // 'is_schema_provided') to determine whether the schema inference should be used.
+            if (factory_args.columns.empty())
+            {
+                std::unique_ptr<ReadBuffer> nested_buffer;
+                CompressionMethod method;
+
+                if (use_table_fd)
+                {
+                    nested_buffer = std::make_unique<ReadBufferFromFileDescriptor>(source_fd);
+                    method = chooseCompressionMethod("", storage_args.compression_method);
+                }
+                else
+                    throw Exception("Schema inference from files has not been implemented yet, \
+                                     plase use stdandard file descriptors", 
+                                    ErrorCodes::NOT_IMPLEMENTED);
+                // TODO: think how to use read buffer creation from StorageFile here.
+
+                auto read_buf = wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method);
+                
+                FormatFactory & format_factory = FormatFactory::instance();
+                if (!format_factory.checkIfInputFormatSupportsSchemaInference(storage_args.format_name))
+                    throw Exception("InputFormat " + storage_args.format_name + " doesn't support schema inference", 
+                                    ErrorCodes::LOGICAL_ERROR);
+
+                auto format = format_factory.getInput(
+                    storage_args.format_name, *read_buf, Block{}, storage_args.context, 0, storage_args.format_settings);
+
+                Block sample_block = format->readSchemaFromPrefix();
+                StorageFile::CommonArguments new_storage_args{
+                    .table_id = storage_args.table_id,
+                    .columns = ColumnsDescription(sample_block.getNamesAndTypesList()),
+                    .constraints = storage_args.constraints,
+                    .context = storage_args.context,
+                    .skip_prefix_reading = true
+                };
+                // storage_args = new_storage_args;
+                // TODO: come up with some ideas how to change columns field.
+            }
+
+            if (use_table_fd) /// File descriptor
                 return StorageFile::create(source_fd, storage_args);
             else /// User's file
                 return StorageFile::create(source_path, factory_args.getContext()->getUserFilesPath(), storage_args);

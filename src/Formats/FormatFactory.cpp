@@ -370,6 +370,11 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     return format;
 }
 
+bool FormatFactory::checkIfInputFormatSupportsSchemaInference(const String & name)
+{
+    return dict[name].supports_schema_inference;
+}
+
 
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
@@ -411,6 +416,14 @@ void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegm
     target = std::move(file_segmentation_engine);
 }
 
+
+void FormatFactory::markInputFormatSupportsSchemaInference(const String & name)
+{
+    auto & target = dict[name].supports_schema_inference;
+    if (target)
+        throw Exception("FormatFactory: Input format " + name + " is already marked as supporting schema inference.", ErrorCodes::LOGICAL_ERROR);
+    target = true;
+}
 
 void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & name)
 {

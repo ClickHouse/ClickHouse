@@ -75,7 +75,8 @@ public:
 
     /** Read something before starting all data or after the end of all data.
       * In the `readSuffix` function, you can implement a finalization that can lead to an exception.
-      * readPrefix() must be called before the first call to read().
+      * If schema inference is not requred, readPrefix() must be called before the first call to read(). If schema inference
+      * is required, then readPrefix() must not be called, because prefix is read when on an attempt to guess the table schema.
       * readSuffix() should be called after read() returns an empty block, or after a call to cancel(), but not during read() execution.
       */
 

@@ -2,9 +2,12 @@
 
 #include <Processors/ISource.h>
 
+<<<<<<< HEAD
 #include <memory>
 
 
+=======
+>>>>>>> ee67ded9c2 (Proof of concept)
 namespace DB
 {
 /// Used to pass info from header between different InputFormats in ParallelParsing
@@ -25,6 +28,11 @@ struct ColumnMapping
 };
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class ReadBuffer;
 
@@ -63,6 +71,11 @@ public:
     ColumnMappingPtr getColumnMapping() const { return column_mapping; }
     /// Must be called from ParallelParsingInputFormat before readPrefix
     void setColumnMapping(ColumnMappingPtr column_mapping_) { column_mapping = column_mapping_; }
+
+    virtual Block readSchemaFromPrefix()
+    {
+        throw Exception("readSchemaFromPrefix is not implemented for" + getName() + " InputFormat", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     size_t getCurrentUnitNumber() const { return current_unit_number; }
     void setCurrentUnitNumber(size_t current_unit_number_) { current_unit_number = current_unit_number_; }
