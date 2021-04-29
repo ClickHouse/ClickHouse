@@ -32,28 +32,28 @@ def test_mutate_and_upgrade(start_cluster):
     node1.query("INSERT INTO mt VALUES ('2020-02-13', 1), ('2020-02-13', 2);")
 
     node1.query("ALTER TABLE mt DELETE WHERE id = 2", settings={"mutations_sync": "2"})
-    node2.query("SYSTEM SYNC REPLICA mt", timeout=5)
+    node2.query("SYSTEM SYNC REPLICA mt", timeout=15)
 
     node1.restart_with_latest_version()
     node2.restart_with_latest_version()
 
     node2.query("INSERT INTO mt VALUES ('2020-02-13', 3);")
 
-    node1.query("SYSTEM SYNC REPLICA mt", timeout=5)
+    node1.query("SYSTEM SYNC REPLICA mt", timeout=15)
 
     assert node1.query("SELECT COUNT() FROM mt") == "2\n"
     assert node2.query("SELECT COUNT() FROM mt") == "2\n"
 
     node1.query("INSERT INTO mt VALUES ('2020-02-13', 4);")
 
-    node2.query("SYSTEM SYNC REPLICA mt", timeout=5)
+    node2.query("SYSTEM SYNC REPLICA mt", timeout=15)
 
     assert node1.query("SELECT COUNT() FROM mt") == "3\n"
     assert node2.query("SELECT COUNT() FROM mt") == "3\n"
 
     node2.query("ALTER TABLE mt DELETE WHERE id = 3", settings={"mutations_sync": "2"})
 
-    node1.query("SYSTEM SYNC REPLICA mt", timeout=5)
+    node1.query("SYSTEM SYNC REPLICA mt", timeout=15)
 
     assert node1.query("SELECT COUNT() FROM mt") == "2\n"
     assert node2.query("SELECT COUNT() FROM mt") == "2\n"

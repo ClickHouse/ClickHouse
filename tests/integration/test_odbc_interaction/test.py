@@ -540,7 +540,7 @@ def test_concurrent_queries(started_cluster):
 
 
 def test_odbc_long_column_names(started_cluster):
-    conn = get_postgres_conn();
+    conn = get_postgres_conn(started_cluster);
     cursor = conn.cursor()
 
     column_name = "column" * 8
@@ -572,7 +572,7 @@ def test_odbc_long_column_names(started_cluster):
 
 
 def test_odbc_long_text(started_cluster):
-    conn = get_postgres_conn()
+    conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
     cursor.execute("drop table if exists clickhouse.test_long_text")
     cursor.execute("create table clickhouse.test_long_text(flen int, field1 text)");
