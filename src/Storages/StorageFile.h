@@ -58,6 +58,7 @@ public:
         const ColumnsDescription & columns;
         const ConstraintsDescription & constraints;
         const Context & context;
+        bool skip_prefix_reading;
     };
 
     NamesAndTypesList getVirtuals() const override;
@@ -93,6 +94,7 @@ private:
     std::string base_path;
     std::vector<std::string> paths;
 
+    bool skip_prefix_reading = false;
     bool is_db_table = true;                     /// Table is stored in real database, not user's file
     bool use_table_fd = false;                    /// Use table_fd instead of path
     std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin

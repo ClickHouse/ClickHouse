@@ -31,6 +31,7 @@ public:
     String getName() const override { return "JSONCompactEachRowRowInputFormat"; }
 
 
+    Block readSchemaFromPrefix() override;
     void readPrefix() override;
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }

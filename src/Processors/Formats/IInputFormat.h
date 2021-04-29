@@ -2,9 +2,13 @@
 
 #include <Processors/ISource.h>
 
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class ReadBuffer;
 
@@ -26,7 +30,7 @@ public:
     IInputFormat(Block header, ReadBuffer & in_);
 
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
-     * The recreating of parser for each small stream takes too long, so we introduce a method
+     * The recreating of parser for each small stream takes too long, so we introduce a methodа 
      * resetParser() which allow to reset the state of parser to continue reading of
      * source stream w/o recreating that.
      * That should be called after current buffer was fully read.
@@ -37,6 +41,11 @@ public:
     {
         static const BlockMissingValues none;
         return none;
+    }
+
+    virtual Block readSchemaFromPrefix()
+    {
+        throw Exception("readSchemaFromPrefix is not implemented for" + getName() + " InputFormat", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     size_t getCurrentUnitNumber() const { return current_unit_number; }

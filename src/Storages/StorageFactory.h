@@ -61,6 +61,7 @@ public:
         bool supports_deduplication = false;
         /// See also IStorage::supportsParallelInsert()
         bool supports_parallel_insert = false;
+        bool supports_schema_inference = false;
         AccessType source_access_type = AccessType::NONE;
     };
 
@@ -92,6 +93,7 @@ public:
         .supports_replication = false,
         .supports_deduplication = false,
         .supports_parallel_insert = false,
+        .supports_schema_inference = false,
         .source_access_type = AccessType::NONE,
     });
 

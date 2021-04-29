@@ -23,7 +23,8 @@ StoragePtr TableFunctionFile::getStorage(const String & source,
         compression_method_,
         columns,
         ConstraintsDescription{},
-        global_context};
+        global_context,
+        false};
 
     return StorageFile::create(source, global_context.getUserFilesPath(), args);
 }
