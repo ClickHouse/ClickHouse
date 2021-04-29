@@ -1542,33 +1542,38 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     }
 
     DataPartsVector parts;
-    bool have_all_parts = true;
 
-    for (const String & name : entry.source_parts)
+    for (const String & source_part_name : entry.source_parts)
     {
-        DataPartPtr part = getActiveContainingPart(name);
+        DataPartPtr source_part_or_covering = getActiveContainingPart(source_part_name);
 
-        if (!part)
+        if (!source_part_or_covering)
         {
-            have_all_parts = false;
-            break;
+            /// We does not have one of source parts locally, try to take some already merged part from someone.
+            LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry.new_part_name);
+            return false;
         }
-        if (part->name != name)
+
+        if (source_part_or_covering->name != source_part_name)
         {
-            LOG_WARNING(log, "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.", name, part->name, entry.new_part_name);
-            have_all_parts = false;
-            break;
+            /// We does not have source part locally, but we have some covering part. Possible options:
+            /// 1. We already have merged part (source_part_or_covering->name == new_part_name)
+            /// 2. We have some larger merged part which covers new_part_name (and therefore it covers source_part_name too)
+            /// 3. We have two intersecting parts, both cover source_part_name. It's logical error.
+            /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
+            constexpr const char * message = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
+            LOG_WARNING(log, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
+            if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, format_version)))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, message, source_part_name, source_part_or_covering->name, entry.new_part_name);
+            return false;
         }
-        parts.push_back(part);
+
+        parts.push_back(source_part_or_covering);
     }
 
-    if (!have_all_parts)
-    {
-        /// If you do not have all the necessary parts, try to take some already merged part from someone.
-        LOG_DEBUG(log, "Don't have all parts for merge {}; will try to fetch it instead", entry.new_part_name);
-        return false;
-    }
-    else if (entry.create_time + storage_settings_ptr->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr))
+    /// All source parts are found locally, we can execute merge
+
+    if (entry.create_time + storage_settings_ptr->prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr))
     {
         /// If entry is old enough, and have enough size, and part are exists in any replica,
         ///  then prefer fetching of merged part from replica.
