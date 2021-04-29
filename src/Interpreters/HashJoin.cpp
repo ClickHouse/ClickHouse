@@ -680,7 +680,19 @@ namespace
 class AddedColumns
 {
 public:
-    using TypeAndNames = std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>>;
+
+    struct TypeAndName
+    {
+        DataTypePtr type;
+        String name;
+        String qualified_name;
+
+        TypeAndName(DataTypePtr type_, const String & name_, const String & qualified_name_)
+            : type(type_)
+            , name(name_)
+            , qualified_name(qualified_name_)
+        {}
+    };
 
     AddedColumns(const Block & block_with_columns_to_add,
                  const Block & block,
@@ -705,27 +717,30 @@ public:
 
         for (const auto & src_column : block_with_columns_to_add)
         {
+            /// Column names `src_column.name` and `qualified_name` can be differ for StorageJoin,
+            /// because it uses not qualified right block column names
+            auto qualified_name = join.getTableJoin().renamedRightColumnName(src_column.name);
             /// Don't insert column if it's in left block
-            if (!block.has(src_column.name))
-                addColumn(src_column);
+            if (!block.has(qualified_name))
+                addColumn(src_column, qualified_name);
         }
 
         if (is_asof_join)
         {
             const ColumnWithTypeAndName & right_asof_column = join.rightAsofKeyColumn();
-            addColumn(right_asof_column);
+            addColumn(right_asof_column, right_asof_column.name);
             left_asof_key = key_columns.back();
         }
 
         for (auto & tn : type_name)
-            right_indexes.push_back(saved_block_sample.getPositionByName(tn.second));
+            right_indexes.push_back(saved_block_sample.getPositionByName(tn.name));
     }
 
     size_t size() const { return columns.size(); }
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
-        return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].first, type_name[i].second);
+        return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].type, type_name[i].qualified_name);
     }
 
     template <bool has_defaults>
@@ -748,7 +763,7 @@ public:
         if (lazy_defaults_count)
         {
             for (size_t j = 0, size = right_indexes.size(); j < size; ++j)
-                JoinCommon::addDefaultValues(*columns[j], type_name[j].first, lazy_defaults_count);
+                JoinCommon::addDefaultValues(*columns[j], type_name[j].type, lazy_defaults_count);
             lazy_defaults_count = 0;
         }
     }
@@ -764,7 +779,7 @@ public:
     bool need_filter = false;
 
 private:
-    TypeAndNames type_name;
+    std::vector<TypeAndName> type_name;
     MutableColumns columns;
     std::vector<size_t> right_indexes;
     size_t lazy_defaults_count = 0;
@@ -773,11 +788,11 @@ private:
     ASOF::Inequality asof_inequality;
     const IColumn * left_asof_key = nullptr;
 
-    void addColumn(const ColumnWithTypeAndName & src_column)
+    void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
     {
         columns.push_back(src_column.column->cloneEmpty());
         columns.back()->reserve(src_column.column->size());
-        type_name.emplace_back(src_column.type, src_column.name);
+        type_name.emplace_back(src_column.type, src_column.name, qualified_name);
     }
 };
 
@@ -1311,7 +1326,12 @@ void HashJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
 void HashJoin::joinTotals(Block & block) const
 {
-    JoinCommon::joinTotals(totals, sample_block_with_columns_to_add, *table_join, block);
+    Block sample_right_block = sample_block_with_columns_to_add.cloneEmpty();
+    /// For StorageJoin column names isn't qualified in sample_block_with_columns_to_add
+    for (auto & col : sample_right_block)
+        col.name = getTableJoin().renamedRightColumnName(col.name);
+
+    JoinCommon::joinTotals(totals, sample_right_block, *table_join, block);
 }
 
 
