@@ -1156,7 +1156,7 @@ TaskStatus ClusterCopier::tryCreateDestinationTable(const ConnectionTimeouts & t
         InterpreterCreateQuery::prepareOnClusterQuery(create, getContext(), task_table.cluster_push_name);
         String query = queryToString(create_query_push_ast);
 
-        LOG_INFO(log, "Create destination tables. Query: \n {}", wrapWithColor(query));
+        LOG_INFO(log, "Create destination tables. Query: \n {}", query);
         UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push,  ClusterExecutionMode::ON_EACH_NODE);
         LOG_INFO(
             log,
@@ -1164,10 +1164,6 @@ TaskStatus ClusterCopier::tryCreateDestinationTable(const ConnectionTimeouts & t
             getQuotedTable(task_table.table_push),
             shards,
             task_table.cluster_push->getShardCount());
-        // if (shards != task_table.cluster_push->getShardCount())
-        // {
-        //     return TaskStatus::Error;
-        // }
     }
     catch (...)
     {
@@ -1431,19 +1427,20 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         auto create_query_push_ast = rewriteCreateQueryStorage(create_query_ast, database_and_table_for_current_piece, new_engine_push_ast);
         String query = queryToString(create_query_push_ast);
 
+<<<<<<< HEAD
         LOG_INFO(log, "Create destination tables. Query: \n {}", wrapWithColor(query));
         UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push,  ClusterExecutionMode::ON_EACH_NODE);
         LOG_INFO(
             log,
             "Destination tables {} have been created on {} shards of {}",
+=======
+        LOG_INFO(log, "Create destination tables. Query: \n {}", query);
+        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, ClusterExecutionMode::ON_EACH_NODE);
+        LOG_INFO(log, "Destination tables {} have been created on {} shards of {}",
+>>>>>>> better
             getQuotedTable(task_table.table_push),
             shards,
             task_table.cluster_push->getShardCount());
-
-        // if (shards != task_table.cluster_push->getShardCount())
-        // {
-        //     return TaskStatus::Error;
-        // }
     }
 
 
@@ -1990,39 +1987,53 @@ UInt64 ClusterCopier::executeQueryOnCluster(
 
     for (const auto & replicas : cluster_for_query->getShardsAddresses())
     {
-        const auto & node = replicas[0];
-        try
+        for (const auto & node : replicas)
         {
-            connections.emplace_back(std::make_shared<Connection>(
-                node.host_name, node.port, node.default_database,
-                node.user, node.password, node.cluster, node.cluster_secret,
-                "ClusterCopier", node.compression, node.secure
-            ));
-
-            /// We execute only Alter, Create and Drop queries.
-            const auto header = Block{};
-
-            /// For unknown reason global context is passed to IStorage::read() method
-            /// So, task_identifier is passed as constructor argument. It is more obvious.
-            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    *connections.back(), query, header, getContext(),
-                    /*throttler=*/nullptr, Scalars(), Tables(), QueryProcessingStage::Complete);
-
             try
             {
-                remote_query_executor->sendQuery();
+                connections.emplace_back(std::make_shared<Connection>(
+                    node.host_name, node.port, node.default_database,
+                    node.user, node.password, node.cluster, node.cluster_secret,
+                    "ClusterCopier", node.compression, node.secure
+                ));
+
+                /// We execute only Alter, Create and Drop queries.
+                const auto header = Block{};
+
+                /// For unknown reason global context is passed to IStorage::read() method
+                /// So, task_identifier is passed as constructor argument. It is more obvious.
+                auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+                        *connections.back(), query, header, getContext(),
+                        /*throttler=*/nullptr, Scalars(), Tables(), QueryProcessingStage::Complete);
+
+                try
+                {
+                    remote_query_executor->sendQuery();
+                }
+                catch (...)
+                {
+                    LOG_WARNING(log, "Seemns like node with address {} is unreachable.", node.host_name);
+                    continue;
+                }
+
+                while (true)
+                {
+                    auto block = remote_query_executor->read();
+                    if (!block)
+                        break;
+                }
+
+                remote_query_executor->finish();
+                ++successfully_executed;
+                break;
             }
             catch (...)
             {
-                LOG_WARNING(log, "Seemns like node with address {} is unreachable {}", node.host_name);
+                LOG_WARNING(log, "An error occurred while processing query : \n {}", query);
+                tryLogCurrentException(log);
+                continue;
             }
-
-            while (true)
-            {
-                auto block = remote_query_executor->read();
-                if (!block)
-                    break;
-            }
+<<<<<<< HEAD
 
             remote_query_executor->finish();
             ++successfully_executed;
@@ -2031,6 +2042,8 @@ UInt64 ClusterCopier::executeQueryOnCluster(
         {
             LOG_WARNING(log, "An error occured while processing query : \n {}", wrapWithColor(query));
             tryLogCurrentException(log);
+=======
+>>>>>>> better
         }
     }
 
