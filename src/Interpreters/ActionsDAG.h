@@ -168,6 +168,10 @@ public:
     void removeUnusedActions(const Names & required_names);
     void removeUnusedActions(const NameSet & required_names);
 
+    NameSet
+    foldActionsByProjection(const NameSet & keys, const Block & projection_block_for_keys, const String & predicate_column_name = {});
+    void addAggregatesViaProjection(const Block & aggregates);
+
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.

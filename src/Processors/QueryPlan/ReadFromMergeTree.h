@@ -74,7 +74,6 @@ public:
         RangesInDataParts parts_,
         IndexStatPtr index_stats_,
         PrewhereInfoPtr prewhere_info_,
-        const ProjectionDescription * projection_,
         Names virt_column_names_,
         Settings settings_,
         size_t num_streams_,
@@ -100,7 +99,6 @@ private:
     RangesInDataParts parts;
     IndexStatPtr index_stats;
     PrewhereInfoPtr prewhere_info;
-    const ProjectionDescription * projection;
     Names virt_column_names;
     Settings settings;
 
