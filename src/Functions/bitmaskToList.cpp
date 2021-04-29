@@ -1,7 +1,5 @@
-#pragma once
-
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeString.h>
@@ -19,35 +17,36 @@ namespace ErrorCodes
 }
 
 
-/** formatReadableSize - prints the transferred size in bytes in form `123.45 GiB`.
-  * formatReadableQuantity - prints the quantity in form of 123 million.
+/** Function for an unusual conversion to a string:
+  *
+  * bitmaskToList - takes an integer - a bitmask, returns a string of degrees of 2 separated by a comma.
+  *                 for example, bitmaskToList(50) = '2,16,32'
   */
 
-template <typename Impl>
-class FunctionFormatReadable : public IFunction
+namespace
+{
+
+class FunctionBitmaskToList : public IFunction
 {
 public:
-    static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
+    static constexpr auto name = "bitmaskToList";
+    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionBitmaskToList>(); }
 
     String getName() const override
     {
         return name;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution() const override
-    {
-        return true;
-    }
-
     size_t getNumberOfArguments() const override { return 1; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const IDataType & type = *arguments[0];
+        const DataTypePtr & type = arguments[0];
 
-        if (!isNativeNumber(type))
-            throw Exception("Cannot format " + type.getName() + " because it's not a native numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isInteger(type))
+            throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
@@ -64,9 +63,7 @@ public:
             || (res = executeType<Int8>(arguments))
             || (res = executeType<Int16>(arguments))
             || (res = executeType<Int32>(arguments))
-            || (res = executeType<Int64>(arguments))
-            || (res = executeType<Float32>(arguments))
-            || (res = executeType<Float64>(arguments))))
+            || (res = executeType<Int64>(arguments))))
             throw Exception("Illegal column " + arguments[0].column->getName()
                             + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -76,9 +73,28 @@ public:
 
 private:
     template <typename T>
-    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
+    inline static void writeBitmask(T x, WriteBuffer & out)
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(arguments[0].column.get()))
+        using UnsignedT = make_unsigned_t<T>;
+        UnsignedT u_x = x;
+
+        bool first = true;
+        while (u_x)
+        {
+            UnsignedT y = u_x & (u_x - 1);
+            UnsignedT bit = u_x ^ y;
+            u_x = y;
+            if (!first)
+                writeChar(',', out);
+            first = false;
+            writeIntText(T(bit), out);
+        }
+    }
+
+    template <typename T>
+    ColumnPtr executeType(const ColumnsWithTypeAndName & columns) const
+    {
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(columns[0].column.get()))
         {
             auto col_to = ColumnString::create();
 
@@ -93,7 +109,7 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                Impl::format(static_cast<double>(vec_from[i]), buf_to);
+                writeBitmask<T>(vec_from[i], buf_to);
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
@@ -107,3 +123,11 @@ private:
 };
 
 }
+
+void registerFunctionBitmaskToList(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionBitmaskToList>();
+}
+
+}
+

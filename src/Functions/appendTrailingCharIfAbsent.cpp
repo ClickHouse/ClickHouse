@@ -34,6 +34,8 @@ public:
         return name;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+
 
 private:
     size_t getNumberOfArguments() const override

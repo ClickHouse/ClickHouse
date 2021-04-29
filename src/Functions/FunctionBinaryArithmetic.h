@@ -1547,6 +1547,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isVariadic() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return IsOperation<Op>::can_throw; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {

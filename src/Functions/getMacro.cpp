@@ -44,6 +44,8 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+
     bool isDeterministicInScopeOfQuery() const override
     {
         return false;

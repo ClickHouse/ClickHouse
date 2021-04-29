@@ -41,6 +41,8 @@ public:
         return true;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!WhichDataType(arguments[0].type).isString())

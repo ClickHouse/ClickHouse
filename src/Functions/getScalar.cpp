@@ -42,6 +42,8 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1 || !isString(arguments[0].type) || !arguments[0].column || !isColumnConst(*arguments[0].column))

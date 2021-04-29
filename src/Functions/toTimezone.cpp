@@ -84,6 +84,8 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<ToTimeZoneOverloadResolver>(); }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2)

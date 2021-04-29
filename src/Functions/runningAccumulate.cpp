@@ -59,6 +59,8 @@ public:
         return false;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty() || arguments.size() > 2)

@@ -41,6 +41,11 @@ public:
         return 1;
     }
 
+    bool isSuitableForShortCircuitArgumentsExecution() const override
+    {
+        return true;
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0])
