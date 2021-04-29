@@ -65,8 +65,8 @@ void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     if (subquery_for_set.set)
         map.add("Set", description);
-    else if (subquery_for_set.join)
-        map.add("Join", description);
+    // else if (subquery_for_set.join)
+    //     map.add("Join", description);
 }
 
 
