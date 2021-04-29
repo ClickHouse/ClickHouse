@@ -291,15 +291,7 @@ IProcessor::Status AddingJoinedTransform::prepare()
 
 void AddingJoinedTransform::work()
 {
-    // size_t num_rows = chunk.getNumRows();
-    //std::cerr << "Chunk rows " << chunk.getNumRows() << std::endl;
     auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
-    //std::cerr << "-------- Adding block with " << block.rows() << " rows for totals ? " << for_totals << std::endl;
-
-    // if (!block && num_rows)
-    //     block.insert({ColumnUInt8::create(num_rows), std::make_shared<DataTypeUInt8>(), "_dummy"});
-
-    // std::cerr << block.dumpStructure() << std::endl;
 
     if (for_totals)
         join->setTotals(block);
