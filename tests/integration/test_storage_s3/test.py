@@ -116,12 +116,12 @@ def run_query(instance, query, stdin=None, settings=None):
 @pytest.mark.parametrize("maybe_auth,positive,compression", [
     pytest.param("", True, 'auto', id="positive"),
     pytest.param("'minio','minio123',", True, 'auto', id="auth_positive"),
-    pytest.param("'wrongid','wrongkey',", False, 'auto', id="auto-"),
-    pytest.param("'wrongid','wrongkey',", False, 'gzip', id=""),
-    pytest.param("'wrongid','wrongkey',", False, 'deflate', id=""),
-    pytest.param("'wrongid','wrongkey',", False, 'brotli', id=""),
-    pytest.param("'wrongid','wrongkey',", False, 'xz', id=""),
-    pytest.param("'wrongid','wrongkey',", False, 'zstd, id=""')
+    pytest.param("'wrongid','wrongkey',", False, 'auto', id="auto"),
+    pytest.param("'wrongid','wrongkey',", False, 'gzip', id="gzip"),
+    pytest.param("'wrongid','wrongkey',", False, 'deflate', id="deflate"),
+    pytest.param("'wrongid','wrongkey',", False, 'brotli', id="brotli"),
+    pytest.param("'wrongid','wrongkey',", False, 'xz', id="xz"),
+    pytest.param("'wrongid','wrongkey',", False, 'zstd', id="zstd")
 ])
 def test_put(started_cluster, maybe_auth, positive, compression):
     # type: (ClickHouseCluster) -> None
