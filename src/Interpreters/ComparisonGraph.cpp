@@ -361,12 +361,12 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
     /// Find strongly connected component
     const auto n = asts_graph.vertexes.size();
 
-    for (size_t v = 0; v < n; ++v) {
+    /*for (size_t v = 0; v < n; ++v) {
         //Poco::LogStream{"kek"}.information() << "VERTEX " << v << " " << asts_graph.vertexes[v].asts.back()->dumpTree() << std::endl;
         for (const auto & edge : asts_graph.edges[v]) {
             //Poco::LogStream{"kek"}.information() << "TO " << edge.to << " " << static_cast<int>(edge.type) << std::endl;
         }
-    }
+    }*/
 
     std::vector<size_t> order;
     {
