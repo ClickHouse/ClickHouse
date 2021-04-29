@@ -56,6 +56,8 @@ struct ProjectionDescription
     /// Sample block with projection columns. (NOTE: columns in block are empty, but not nullptr)
     Block sample_block;
 
+    Block sample_block_for_keys;
+
     StorageMetadataPtr metadata;
 
     size_t key_size = 0;

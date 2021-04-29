@@ -142,7 +142,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
     const auto & settings = context->getSettingsRef();
-    if (query_info.projection == nullptr)
+    if (!query_info.projection)
     {
         if (settings.allow_experimental_projection_optimization && settings.force_optimize_projection
             && !metadata_snapshot->projections.empty())
@@ -165,7 +165,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     size_t no_projection_granules = 0;
     size_t with_projection_granules = 0;
 
-    if (query_info.projection->type == ProjectionDescription::Type::Normal)
+    if (query_info.projection->desc->type == ProjectionDescription::Type::Normal)
         plan_no_projections = readFromParts(
             data.getDataPartsVector(),
             column_names_to_return,
@@ -177,7 +177,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             max_block_numbers_to_read,
             &no_projection_granules);
 
-    LOG_DEBUG(log, "Choose projection {}", query_info.projection->name);
+    LOG_DEBUG(log, "Choose projection {}", query_info.projection->desc->name);
 
     Pipes pipes;
     auto parts = data.getDataPartsVector();
@@ -187,7 +187,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     for (auto & part : parts)
     {
         const auto & projections = part->getProjectionParts();
-        auto it = projections.find(query_info.projection->name);
+        auto it = projections.find(query_info.projection->desc->name);
         if (it != projections.end())
         {
             projection_parts.push_back(it->second);
@@ -214,8 +214,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     {
         auto plan = readFromParts(
             std::move(projection_parts),
-            query_info.projection_names, // raw columns without key transformation
-            query_info.projection->metadata,
+            query_info.projection->required_columns, // raw columns without key transformation
+            query_info.projection->desc->metadata,
             query_info,
             context,
             max_block_size,
@@ -230,57 +230,32 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
         if (!projection_pipe.empty())
         {
-            // If `key_actions` is not empty, transform input blocks by adding needed columns
+            // If `before_where` is not empty, transform input blocks by adding needed columns
             // originated from key columns. We already project the block at the end, using
             // projection_block, so we can just add more columns here without worrying
-            if (!query_info.key_actions.func_map.empty())
+            // NOTE: prewhere is executed inside readFromParts
+            if (query_info.projection->before_where)
             {
-                ASTPtr expr = std::make_shared<ASTExpressionList>();
-                NamesAndTypesList columns;
-                for (const auto & [nt, func] : query_info.key_actions.func_map)
-                {
-                    expr->children.push_back(func);
-                    columns.push_back(nt);
-                }
-
-                auto syntax_result = TreeRewriter(context).analyze(expr, columns);
-                auto expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
+                auto expression = std::make_shared<ExpressionActions>(
+                    query_info.projection->before_where, ExpressionActionsSettings::fromContext(context));
                 projection_pipe.addSimpleTransform(
                     [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
             }
 
-            /// In sample block we use just key columns
-            if (given_select.where())
+            if (query_info.projection->before_aggregation)
             {
-                // we can use the previous pipeline's sample block here
-                Block filter_block = projection_pipe.getHeader();
-
-                ASTPtr where = given_select.where()->clone();
-                ProjectionCondition projection_condition(filter_block.getNames(), {});
-                projection_condition.rewrite(where);
-                auto where_column_name = where->getColumnName();
-                auto syntax_result = TreeRewriter(context).analyze(where, filter_block.getNamesAndTypesList());
-                const auto actions = ExpressionAnalyzer(where, syntax_result, context).getActions(false);
-
-                projection_pipe.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType)
-                {
-                    return std::make_shared<FilterTransform>(header, actions, where_column_name, true);
-                });
+                auto expression = std::make_shared<ExpressionActions>(
+                    query_info.projection->before_aggregation, ExpressionActionsSettings::fromContext(context));
+                projection_pipe.addSimpleTransform(
+                    [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
             }
-
-            // Project columns and set bucket number to -1
-            // optionally holds the reference of parent parts
-            projection_pipe.addSimpleTransform([&](const Block & header)
-            {
-                return std::make_shared<ProjectionPartTransform>(header, query_info.projection_block, std::move(parent_parts));
-            });
         }
     }
 
     if (!normal_parts.empty())
     {
         auto storage_from_source_part = StorageFromMergeTreeDataPart::create(std::move(normal_parts));
-        auto ast = query_info.projection->query_ast->clone();
+        auto ast = query_info.projection->desc->query_ast->clone();
         auto & select = ast->as<ASTSelectQuery &>();
         if (given_select.where())
             select.setExpression(ASTSelectQuery::Expression::WHERE, given_select.where()->clone());
@@ -293,21 +268,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         ordinary_pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
 
         with_projection_granules += storage_from_source_part->getNumGranulesFromLastRead();
-
-        if (!ordinary_pipe.empty() && processed_stage < QueryProcessingStage::Enum::WithMergeableState)
-        {
-            // projection and set bucket number to -1
-            ordinary_pipe.addSimpleTransform(
-                [&](const Block & header) { return std::make_shared<ProjectionPartTransform>(header, query_info.projection_block); });
-        }
     }
 
     /// Use normal projection only if we read less granules then without it.
     /// TODO: check if read-in-order optimization possible for normal projection.
-    if (query_info.projection->type == ProjectionDescription::Type::Normal && with_projection_granules > no_projection_granules)
+    if (query_info.projection->desc->type == ProjectionDescription::Type::Normal && with_projection_granules > no_projection_granules)
         return plan_no_projections;
 
-    if (query_info.projection->type == ProjectionDescription::Type::Aggregate)
+    if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
     {
         /// Here we create shared ManyAggregatedData for both projection and ordinary data.
         /// For ordinary data, AggregatedData is filled in a usual way.
@@ -332,12 +300,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             std::cerr << "============ header before merge" << std::endl;
             std::cerr << header_before_merge.dumpStructure() << std::endl;
             ColumnNumbers keys;
-            for (const auto & key : query_info.aggregation_keys)
+            for (const auto & key : query_info.projection->aggregation_keys)
                 keys.push_back(header_before_merge.getPositionByName(key.name));
 
             /// Aggregates are needed to calc proper header for AggregatingTransform result.
             /// However, they are not filled cause header from projection pipe already contain aggregate functions.
-            AggregateDescriptions aggregates = query_info.aggregate_descriptions;
+            AggregateDescriptions aggregates = query_info.projection->aggregate_descriptions;
 
             /// Aggregator::Params params(header_before_merge, keys, query_info.aggregate_descriptions, overflow_row, settings.max_threads);
             Aggregator::Params params(
@@ -390,10 +358,10 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
             std::cerr << header_before_aggregation.dumpStructure() << std::endl;
 
             ColumnNumbers keys;
-            for (const auto & key : query_info.aggregation_keys)
+            for (const auto & key : query_info.projection->aggregation_keys)
                 keys.push_back(header_before_aggregation.getPositionByName(key.name));
 
-            AggregateDescriptions aggregates = query_info.aggregate_descriptions;
+            AggregateDescriptions aggregates = query_info.projection->aggregate_descriptions;
             for (auto & descr : aggregates)
                 if (descr.arguments.empty())
                     for (const auto & name : descr.argument_names)
@@ -458,7 +426,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     bool use_projection_metadata) const
 {
     const StorageMetadataPtr & metadata_snapshot
-        = (query_info.projection && use_projection_metadata) ? query_info.projection->metadata : metadata_snapshot_base;
+        = (query_info.projection && use_projection_metadata) ? query_info.projection->desc->metadata : metadata_snapshot_base;
 
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
     /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
@@ -1269,6 +1237,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         plan->addStep(std::move(adding_column));
     }
 
+    // TODO There seems to be no place initializing remove_columns_actions
     if (query_info.prewhere_info && query_info.prewhere_info->remove_columns_actions)
     {
         auto expression_step = std::make_unique<ExpressionStep>(
@@ -1411,8 +1380,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         column_names,
         std::move(parts),
         std::move(index_stats),
-        query_info.prewhere_info,
-        query_info.projection,
+        query_info.projection ? query_info.projection->prewhere_info : query_info.prewhere_info,
         virt_columns,
         step_settings,
         num_streams,
@@ -1621,8 +1589,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsWithOrder(
             column_names,
             std::move(new_parts),
             std::move(index_stats),
-            query_info.prewhere_info,
-            query_info.projection,
+            query_info.projection ? query_info.projection->prewhere_info : query_info.prewhere_info,
             virt_columns,
             step_settings,
             num_streams,
@@ -1805,8 +1772,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
                 column_names,
                 std::move(new_parts),
                 std::move(index_stats),
-                query_info.prewhere_info,
-                query_info.projection,
+                query_info.projection ? query_info.projection->prewhere_info : query_info.prewhere_info,
                 virt_columns,
                 step_settings,
                 num_streams,
@@ -1897,8 +1863,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             column_names,
             std::move(lonely_parts),
             std::move(index_stats),
-            query_info.prewhere_info,
-            query_info.projection,
+            query_info.projection ? query_info.projection->prewhere_info : query_info.prewhere_info,
             virt_columns,
             step_settings,
             num_streams_for_lonely_parts,

@@ -590,7 +590,8 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info);
 
         /// XXX Used for IN set index analysis. Is this a proper way?
-        metadata_snapshot->selected_projection = query_info.projection;
+        if (query_info.projection)
+            metadata_snapshot->selected_projection = query_info.projection->desc;
     }
 
     /// Do I need to perform the first part of the pipeline?
@@ -969,6 +970,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             // To remove additional columns in dry run
             // For example, sample column which can be removed in this stage
+            // TODO There seems to be no place initializing remove_columns_actions
             if (expressions.prewhere_info->remove_columns_actions)
             {
                 auto remove_columns = std::make_unique<ExpressionStep>(
@@ -1409,19 +1411,23 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
 {
     Pipe pipe(std::make_shared<NullSource>(source_header));
 
-    if (!query_info.key_actions.func_map.empty())
+    if (query_info.projection)
     {
-        ASTPtr expr = std::make_shared<ASTExpressionList>();
-        NamesAndTypesList columns;
-        for (const auto & [nt, func] : query_info.key_actions.func_map)
+        if (query_info.projection->before_where)
         {
-            expr->children.push_back(func);
-            columns.push_back(nt);
+            auto expression = std::make_shared<ExpressionActions>(
+                query_info.projection->before_where, ExpressionActionsSettings::fromContext(context_));
+            pipe.addSimpleTransform(
+                [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
         }
 
-        auto syntax_result = TreeRewriter(context_).analyze(expr, columns);
-        auto expression = ExpressionAnalyzer(expr, syntax_result, context_).getActions(false);
-        pipe.addSimpleTransform([&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
+        if (query_info.projection->before_aggregation)
+        {
+            auto expression = std::make_shared<ExpressionActions>(
+                query_info.projection->before_aggregation, ExpressionActionsSettings::fromContext(context_));
+            pipe.addSimpleTransform(
+                [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
+        }
     }
 
     if (query_info.prewhere_info)
@@ -1864,7 +1870,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
                 backQuoteIfNeed(local_storage_id.getDatabaseName()),
                 local_storage_id.getFullTableName(),
                 required_columns,
-                query_info.projection ? query_info.projection->name : "");
+                query_info.projection ? query_info.projection->desc->name : "");
         }
 
         /// Create step which reads from empty source if storage has no data.
@@ -1988,7 +1994,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
     /// It is already added by storage (because of performance issues).
     /// TODO: We should probably add another one processing stage for storage?
     ///       WithMergeableStateAfterAggregation is not ok because, e.g., it skips sorting after aggregation.
-    if (query_info.projection && query_info.projection->type == ProjectionDescription::Type::Aggregate)
+    if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
         return;
 
     const auto & header_before_merge = query_plan.getCurrentDataStream().header;

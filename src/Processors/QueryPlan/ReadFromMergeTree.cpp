@@ -19,7 +19,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     RangesInDataParts parts_,
     IndexStatPtr index_stats_,
     PrewhereInfoPtr prewhere_info_,
-    const ProjectionDescription * projection_,
     Names virt_column_names_,
     Settings settings_,
     size_t num_streams_,
@@ -36,7 +35,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     , parts(std::move(parts_))
     , index_stats(std::move(index_stats_))
     , prewhere_info(std::move(prewhere_info_))
-    , projection(projection_)
     , virt_column_names(std::move(virt_column_names_))
     , settings(std::move(settings_))
     , num_streams(num_streams_)
@@ -79,7 +77,7 @@ Pipe ReadFromMergeTree::readFromPool()
             i, pool, settings.min_marks_for_concurrent_read, settings.max_block_size,
             settings.preferred_block_size_bytes, settings.preferred_max_column_in_block_size_bytes,
             storage, metadata_snapshot, settings.use_uncompressed_cache,
-            prewhere_info, projection, settings.reader_settings, virt_column_names);
+            prewhere_info, settings.reader_settings, virt_column_names);
 
         if (i == 0)
         {
@@ -99,7 +97,7 @@ ProcessorPtr ReadFromMergeTree::createSource(const RangesInDataPart & part)
     return std::make_shared<TSource>(
             storage, metadata_snapshot, part.data_part, settings.max_block_size, settings.preferred_block_size_bytes,
             settings.preferred_max_column_in_block_size_bytes, required_columns, part.ranges, settings.use_uncompressed_cache,
-            prewhere_info, projection, true, settings.reader_settings, virt_column_names, part.part_index_in_query);
+            prewhere_info, true, settings.reader_settings, virt_column_names, part.part_index_in_query);
 }
 
 Pipe ReadFromMergeTree::readInOrder()

@@ -358,11 +358,6 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
-    static bool getQueryProcessingStageWithAggregateProjection(
-        ContextPtr query_context,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info);
-
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr query_context,
         QueryProcessingStage::Enum to_stage,

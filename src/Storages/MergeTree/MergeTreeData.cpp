@@ -33,6 +33,7 @@
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataUtils.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
@@ -3800,191 +3801,6 @@ bool MergeTreeData::mayBenefitFromIndexForIn(
 }
 
 
-bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
-    ContextPtr query_context,
-    const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info)
-{
-    const auto & settings = query_context->getSettingsRef();
-    if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections)
-        return false;
-
-    const auto & query_ptr = query_info.query;
-
-    InterpreterSelectQuery select(
-        query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
-    const auto & analysis_result = select.getAnalysisResult();
-
-    bool can_use_aggregate_projection = true;
-    /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
-    /// we cannot use aggregate projection.
-    if (analysis_result.join != nullptr || analysis_result.array_join != nullptr)
-        can_use_aggregate_projection = false;
-
-    auto query_block = select.getSampleBlock();
-    const auto & required_query = select.getQuery()->as<const ASTSelectQuery &>();
-    auto required_predicates = [&required_query]() -> ASTPtr
-    {
-        if (required_query.prewhere() && required_query.where())
-            return makeASTFunction("and", required_query.prewhere()->clone(), required_query.where()->clone());
-        else if (required_query.prewhere())
-            return required_query.prewhere()->clone();
-        else if (required_query.where())
-            return required_query.where()->clone();
-        else
-            return nullptr;
-    }();
-
-    /// Check if all needed columns can be provided by some aggregate projection. Here we also try
-    /// to find expression matches. For example, suppose an aggregate projection contains a column
-    /// named sum(x) and the given query also has an expression called sum(x), it's a match. This is
-    /// why we need to ignore all aliases during projection creation and the above query planning.
-    /// It's also worth noting that, sqrt(sum(x)) will also work because we can treat sum(x) as a
-    /// required column.
-    /// TODO we can use ActionsDAG here to make proper check
-
-    /// The ownership of ProjectionDescription is hold in metadata_snapshot which lives along with
-    /// InterpreterSelect, thus we can store the raw pointer here.
-    struct ProjectionCandidate
-    {
-        const ProjectionDescription * desc;
-        ProjectionKeyActions key_actions;
-        Names required_columns;
-        NameSet required_columns_in_predicate;
-    };
-    std::vector<ProjectionCandidate> candidates;
-    ParserFunction parse_function;
-    for (const auto & projection : metadata_snapshot->projections)
-    {
-        if (projection.type == ProjectionDescription::Type::Aggregate && (!analysis_result.need_aggregate || !can_use_aggregate_projection))
-            continue;
-
-        if (projection.type == ProjectionDescription::Type::Normal && !(analysis_result.hasWhere() || analysis_result.hasPrewhere()))
-            continue;
-
-        bool covered = true;
-        ASTs expr_names;
-        Strings maybe_dimension_column_exprs;
-        Block key_block = projection.metadata->primary_key.sample_block;
-
-        /// First check if all columns in current query are provided by current projection.
-        /// Collect missing columns and remove matching columns in key blocks so they aren't used twice.
-        for (const auto & column_with_type_name : query_block)
-        {
-            if (!projection.sample_block.has(column_with_type_name.name))
-                maybe_dimension_column_exprs.push_back(column_with_type_name.name);
-            else
-            {
-                if (key_block.has(column_with_type_name.name))
-                    key_block.erase(column_with_type_name.name);
-            }
-        }
-
-        ProjectionKeyActions key_actions;
-        /// Check if the missing columns can be produced by key columns in projection.
-        for (const auto & expr_name : maybe_dimension_column_exprs)
-        {
-            /// XXX We need AST out from string names. Have to resort to the parser here.
-            Tokens tokens_number(expr_name.data(), expr_name.data() + expr_name.size());
-            IParser::Pos pos(tokens_number, settings.max_parser_depth);
-            Expected expected;
-            ASTPtr ast;
-
-            /// It should be a function call, or else we would match them already.
-            if (!parse_function.parse(pos, ast, expected))
-            {
-                covered = false;
-                break;
-            }
-            // It should be a function call that only requires unused key columns, or else some key
-            // column might be transformed in different ways, which is not injective.
-            if (!key_actions.add(ast, expr_name, key_block))
-            {
-                covered = false;
-                break;
-            }
-        }
-
-        if (covered)
-        {
-            Names required_column_names = query_block.getNames();
-            // Calculate the correct required projection columns
-            for (auto & name : required_column_names)
-            {
-                auto it = key_actions.name_map.find(name);
-                if (it != key_actions.name_map.end())
-                    name = it->second;
-            }
-
-            ProjectionCondition projection_condition(projection.column_names, required_column_names);
-            if (required_predicates && !projection_condition.check(required_predicates))
-                continue;
-            candidates.push_back(
-                {&projection,
-                 std::move(key_actions),
-                 projection_condition.getRequiredColumns(),
-                 projection_condition.getRequiredColumnsInPredicate()});
-        }
-    }
-
-    // Let's select the best aggregate projection to execute the query.
-    if (!candidates.empty())
-    {
-        size_t min_key_size = std::numeric_limits<size_t>::max();
-        const ProjectionCandidate * selected_candidate = nullptr;
-        /// Favor aggregate projections
-        for (const auto & candidate : candidates)
-        {
-            // TODO We choose the projection with least key_size. Perhaps we can do better? (key rollups)
-            if (candidate.desc->type == ProjectionDescription::Type::Aggregate && candidate.desc->key_size < min_key_size)
-            {
-                selected_candidate = &candidate;
-                min_key_size = candidate.desc->key_size;
-            }
-        }
-
-        /// Select the best normal projection if no aggregate projection is available
-        if (!selected_candidate)
-        {
-            size_t max_num_of_matched_key_columns = 0;
-            for (const auto & candidate : candidates)
-            {
-                NameSet column_names(
-                    candidate.desc->metadata->sorting_key.column_names.begin(), candidate.desc->metadata->sorting_key.column_names.end());
-
-                size_t num_of_matched_key_columns = 0;
-                for (const auto & name : candidate.desc->metadata->sorting_key.column_names)
-                {
-                    if (candidate.required_columns_in_predicate.find(name) != candidate.required_columns_in_predicate.end())
-                        ++num_of_matched_key_columns;
-                }
-
-                /// Select the normal projection that has the most matched key columns in predicate
-                /// TODO What's the best strategy here?
-                if (num_of_matched_key_columns > max_num_of_matched_key_columns)
-                {
-                    selected_candidate = &candidate;
-                    max_num_of_matched_key_columns = num_of_matched_key_columns;
-                }
-            }
-        }
-
-        if (!selected_candidate)
-            return false;
-
-        query_info.projection = selected_candidate->desc;
-        query_info.key_actions = std::move(selected_candidate->key_actions);
-        query_info.projection_names = std::move(selected_candidate->required_columns);
-        query_info.projection_block = query_block;
-        query_info.aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
-        query_info.aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
-
-        return true;
-    }
-    return false;
-}
-
-
 QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     ContextPtr query_context,
     QueryProcessingStage::Enum to_stage,
@@ -3995,7 +3811,7 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
     {
         if (getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
         {
-            if (query_info.projection->type == ProjectionDescription::Type::Aggregate)
+            if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
     }
