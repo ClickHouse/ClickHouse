@@ -17,8 +17,6 @@ namespace DB
 
 using CompilableExpression = std::function<llvm::Value * (llvm::IRBuilderBase &, const ValuePlaceholders &)>;
 
-struct LLVMModuleState;
-
 class LLVMFunction : public IFunctionBaseImpl
 {
     std::string name;
@@ -26,8 +24,6 @@ class LLVMFunction : public IFunctionBaseImpl
 
     std::vector<FunctionBasePtr> originals;
     CompilableExpression expression;
-
-    std::unique_ptr<LLVMModuleState> module_state;
 
 public:
 
@@ -87,7 +83,6 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override;
 
-    const LLVMModuleState * getLLVMModuleState() const { return module_state.get(); }
 };
 
 /** This child of LRUCache breaks one of it's invariants: total weight may be changed after insertion.
