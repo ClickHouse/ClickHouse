@@ -39,10 +39,6 @@ if (USE_UNWIND)
     target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
 endif ()
 
-if (WITH_COVERAGE)
-    target_compile_options(cxxabi PRIVATE -O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
-endif()
-
 install(
     TARGETS cxxabi
     EXPORT global

@@ -61,10 +61,6 @@ if (OS_DARWIN AND COMPILER_GCC)
     add_compile_definitions(_LIBCPP_INIT_PRIORITY_MAX)
 endif ()
 
-if (WITH_COVERAGE)
-    target_compile_options(cxx PRIVATE -O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
-endif()
-
 target_compile_options(cxx PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
 
 # Third party library may have substandard code.

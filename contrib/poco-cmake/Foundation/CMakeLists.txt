@@ -206,7 +206,6 @@ if (USE_INTERNAL_POCO_LIBRARY)
                 -Wno-implicit-int-float-conversion
                 -Wno-thread-safety-analysis
                 -Wno-thread-safety-negative
-                ${WITHOUT_COVERAGE}
         )
     endif ()
 
