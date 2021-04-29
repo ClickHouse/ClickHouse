@@ -807,10 +807,6 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     const ASTTablesInSelectQueryElement & join_element, const ColumnsWithTypeAndName & left_sample_columns)
 {
     /// Two JOINs are not supported with the same subquery, but different USINGs.
-    // auto join_hash = join_element.getTreeHash();
-    // String join_subquery_id = toString(join_hash.first) + "_" + toString(join_hash.second);
-
-    // SubqueryForSet & subquery_for_join = subqueries_for_sets[join_subquery_id];
 
     if (joined_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join was already created for query");
@@ -837,15 +833,11 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
             */
         auto interpreter = interpretSubquery(join_element.table_expression, getContext(), original_right_columns, query_options);
 
-
-        /// subquery_for_join.makeSource(interpreter, std::move(required_columns_with_aliases));
         {
-            // joined_block_aliases = std::move(joined_block_aliases_);
             joined_plan = std::make_unique<QueryPlan>();
             interpreter->buildQueryPlan(*joined_plan);
 
             auto sample_block = interpreter->getSampleBlock();
-            //renameColumns(sample_block);
 
             auto rename_dag = std::make_unique<ActionsDAG>(sample_block.getColumnsWithTypeAndName());
             for (const auto & name_with_alias : required_columns_with_aliases)
@@ -855,23 +847,13 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
                     auto pos = sample_block.getPositionByName(name_with_alias.first);
                     const auto & alias = rename_dag->addAlias(*rename_dag->getInputs()[pos], name_with_alias.second);
                     rename_dag->getIndex()[pos] = &alias;
-                    // auto column = block.getByPosition(pos);
-                    // block.erase(pos);
-                    // column.name = name_with_alias.second;
-                    // block.insert(std::move(column));
                 }
             }
 
-            //rename_dag->project(required_columns_with_aliases);
             auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
             rename_step->setStepDescription("Rename joined columns");
             joined_plan->addStep(std::move(rename_step));
         }
-
-
-
-        /// TODO You do not need to set this up when JOIN is only needed on remote servers.
-        //subquery_for_join.addJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
 
         auto joined_actions_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(joined_block_actions));
         joined_actions_step->setStepDescription("Joined actions");
@@ -881,10 +863,6 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, right_sample_columns);
         if (need_convert)
         {
-            // subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(
-            //     syntax->analyzed_join->rightConvertingActions(),
-            //     ExpressionActionsSettings::fromContext(getContext())));
-
             auto converting_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), syntax->analyzed_join->rightConvertingActions());
             converting_step->setStepDescription("Convert joined columns");
             joined_plan->addStep(std::move(converting_step));
@@ -894,24 +872,10 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
 
         /// Do not make subquery for join over dictionary.
         if (syntax->analyzed_join->dictionary_reader)
-        {
-            // JoinPtr join = subquery_for_join.join;
-            // subqueries_for_sets.erase(join_subquery_id);
-            // return join;
-
             joined_plan.reset();
-        }
     }
     else
-    {
         syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, {});
-
-        /// TODO
-        //const ColumnsWithTypeAndName & right_sample_columns = subquery_for_join.sample_block.getColumnsWithTypeAndName();
-        // bool need_convert = syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, {});
-        // if (need_convert)
-        //     subquery_for_join.addJoinActions(std::make_shared<ExpressionActions>(syntax->analyzed_join->rightConvertingActions()));
-    }
 
     return join;
 }
