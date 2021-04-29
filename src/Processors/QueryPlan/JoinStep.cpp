@@ -6,13 +6,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 JoinStep::JoinStep(
     const DataStream & left_stream_,
     const DataStream & right_stream_,
     JoinPtr join_,
     size_t max_block_size_)
-    : IQueryPlanStep()
-    , join(std::move(join_))
+    : join(std::move(join_))
     , max_block_size(max_block_size_)
 {
     input_streams = {left_stream_, right_stream_};

@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 {
     ExtraBlockPtr tmp;
