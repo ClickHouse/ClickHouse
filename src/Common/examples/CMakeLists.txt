@@ -35,9 +35,6 @@ target_include_directories(radix_sort SYSTEM PRIVATE ${PDQSORT_INCLUDE_DIR})
 add_executable (arena_with_free_lists arena_with_free_lists.cpp)
 target_link_libraries (arena_with_free_lists PRIVATE dbms)
 
-add_executable (pod_array pod_array.cpp)
-target_link_libraries (pod_array PRIVATE clickhouse_common_io)
-
 add_executable (lru_hash_map_perf lru_hash_map_perf.cpp)
 target_link_libraries (lru_hash_map_perf PRIVATE clickhouse_common_io)
 

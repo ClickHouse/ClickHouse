@@ -75,6 +75,18 @@ CREATE TABLE table_function (n UInt8, s String) ENGINE = MergeTree() ORDER BY n'
         node2.query('''
 CREATE TABLE table_function (n UInt8, s String) ENGINE = MergeTree() ORDER BY n''')
 
+        node1.query('''
+CREATE TABLE distributed_one_replica (date Date, id UInt32) ENGINE = Distributed('shard_with_local_replica_internal_replication', 'default', 'single_replicated')
+''')
+
+        node2.query('''
+CREATE TABLE distributed_one_replica (date Date, id UInt32) ENGINE = Distributed('shard_with_local_replica_internal_replication', 'default', 'single_replicated')
+''')
+
+        node2.query('''
+CREATE TABLE single_replicated(date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/single_replicated', 'node2', date, id, 8192)
+''')
+
         yield cluster
 
     finally:
@@ -160,6 +172,14 @@ def test_inserts_local(started_cluster):
     instance.query("INSERT INTO distributed_on_local VALUES ('2000-01-01', 1)")
     time.sleep(0.5)
     assert instance.query("SELECT count(*) FROM local").strip() == '1'
+
+
+def test_inserts_single_replica(started_cluster):
+    node1.query(
+        "INSERT INTO distributed_one_replica VALUES ('2000-01-01', 1)",
+        settings={"insert_distributed_sync": "1", "prefer_localhost_replica": "0"},
+    )
+    assert node2.query("SELECT count(*) FROM single_replicated").strip() == '1'
 
 
 def test_prefer_localhost_replica(started_cluster):
