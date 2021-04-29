@@ -272,6 +272,7 @@ std::unique_ptr<QueryPipeline> QueryPipeline::joinPipelines(
     left->checkInitializedAndNotCompleted();
     right->checkInitializedAndNotCompleted();
 
+    /// Extremes before join are useless. They will be calculated after if needed.
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
 
@@ -286,19 +287,29 @@ std::unique_ptr<QueryPipeline> QueryPipeline::joinPipelines(
         default_totals = true;
     }
 
+    ///                                     (left)   ──────> Joining ─> (joined)
+    ///                                     (left)   ─┐┌───>
+    ///                                   (totals)   ─┼┼─┐
+    ///                                               └┼─┼─> Joining ─> (joined)
+    ///                                                │┌┼─>
+    /// (right)  ─>                                  ──┘││
+    /// (right)  ─> Resize ─> AddingJoined ─> Resize ───┘└─> Joining ─> (totals)
+    /// (totals) ───────────>                        ──────>
+
     size_t num_streams = left->getNumStreams();
     right->resize(1);
 
     auto adding_joined = std::make_shared<AddingJoinedTransform>(right->getHeader(), join);
     InputPort * totals_port = nullptr;
     if (right->hasTotals())
-        totals_port = adding_joined->addTotaslPort();
+        totals_port = adding_joined->addTotalsPort();
 
     right->addTransform(std::move(adding_joined), totals_port, nullptr);
 
     size_t num_streams_including_totals = num_streams + (left->hasTotals() ? 1 : 0);
     right->resize(num_streams_including_totals);
 
+    /// This counter is needed for every Joining except totals, to decide which Joining will generate non joined rows.
     auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(num_streams);
 
     auto lit = left->pipe.output_ports.begin();

@@ -94,6 +94,8 @@ public:
             size_t max_threads_limit = 0,
             Processors * collected_processors = nullptr);
 
+    /// Join two pipelines together using JoinPtr.
+    /// If collector is used, it will collect only newly-added processors, but not processors from pipelines.
     static std::unique_ptr<QueryPipeline> joinPipelines(
         std::unique_ptr<QueryPipeline> left,
         std::unique_ptr<QueryPipeline> right,

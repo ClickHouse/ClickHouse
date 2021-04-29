@@ -8,7 +8,7 @@ namespace DB
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
-/// TODO: add separate step for join.
+/// Join two data streams.
 class JoinStep : public IQueryPlanStep
 {
 public:
@@ -32,6 +32,8 @@ private:
     Processors processors;
 };
 
+/// Special step for the case whe Join is already filled.
+/// For StorageJoin and Dictionary.
 class FilledJoinStep : public ITransformingStep
 {
 public:

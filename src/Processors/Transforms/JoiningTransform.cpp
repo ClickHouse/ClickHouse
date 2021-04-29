@@ -219,7 +219,7 @@ AddingJoinedTransform::AddingJoinedTransform(Block input_header, JoinPtr join_)
     , join(std::move(join_))
 {}
 
-InputPort * AddingJoinedTransform::addTotaslPort()
+InputPort * AddingJoinedTransform::addTotalsPort()
 {
     if (inputs.size() > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Totals port was already added to AddingJoinedTransform");
