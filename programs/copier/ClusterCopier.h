@@ -24,9 +24,7 @@ public:
             task_zookeeper_path(task_path_),
             host_id(host_id_),
             working_database_name(proxy_database_name_),
-            log(log_) {
-                std::cout << "Level from constructor" << log->getLevel() << std::endl;
-            }
+            log(log_) {}
 
     void init();
 
@@ -162,7 +160,6 @@ protected:
     String getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings & settings);
 
     ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
-    ASTPtr getCreateTableForPushShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
 
     /// If it is implicitly asked to create split Distributed table for certain piece on current shard, we will do it.
     void createShardInternalTables(const ConnectionTimeouts & timeouts, TaskShard & task_shard, bool create_split = true);
