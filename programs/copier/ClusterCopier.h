@@ -210,7 +210,6 @@ private:
 
     ConfigurationPtr task_cluster_initial_config;
     ConfigurationPtr task_cluster_current_config;
-    Coordination::Stat task_description_current_stat{};
 
     std::unique_ptr<TaskCluster> task_cluster;
 

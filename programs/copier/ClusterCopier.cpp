@@ -1,6 +1,7 @@
 #include "ClusterCopier.h"
 
 #include "Internals.h"
+#include "StatusAccumulator.h"
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -44,10 +45,9 @@ void ClusterCopier::init()
     task_cluster = std::make_unique<TaskCluster>(task_zookeeper_path, working_database_name);
 
     reloadTaskDescription();
-    task_cluster_initial_config = task_cluster_current_config;
 
-    task_cluster->loadTasks(*task_cluster_initial_config);
-    getContext()->setClustersConfig(task_cluster_initial_config, task_cluster->clusters_prefix);
+    task_cluster->loadTasks(*task_cluster_current_config);
+    getContext()->setClustersConfig(task_cluster_current_config, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
     task_cluster->random_engine.seed(task_cluster->random_device());
@@ -64,6 +64,8 @@ void ClusterCopier::init()
 
     zookeeper->createAncestors(getWorkersPathVersion() + "/");
     zookeeper->createAncestors(getWorkersPath() + "/");
+    /// Init status node
+    zookeeper->createIfNotExists(task_zookeeper_path + "/status", "{}");
 }
 
 template <typename T>
@@ -231,23 +233,17 @@ void ClusterCopier::reloadTaskDescription()
     auto zookeeper = getContext()->getZooKeeper();
     task_description_watch_zookeeper = zookeeper;
 
-    String task_config_str;
     Coordination::Stat stat{};
-    Coordination::Error code;
 
-    zookeeper->tryGetWatch(task_description_path, task_config_str, &stat, task_description_watch_callback, &code);
-    if (code != Coordination::Error::ZOK)
-        throw Exception("Can't get description node " + task_description_path, ErrorCodes::BAD_ARGUMENTS);
+    /// It will throw exception if such a node doesn't exist.
+    auto task_config_str = zookeeper->get(task_description_path, &stat);
 
-    LOG_INFO(log, "Loading description, zxid={}", task_description_current_stat.czxid);
-    auto config = getConfigurationFromXMLString(task_config_str);
+    LOG_INFO(log, "Loading task description");
+    task_cluster_current_config = getConfigurationFromXMLString(task_config_str);
 
     /// Setup settings
-    task_cluster->reloadSettings(*config);
+    task_cluster->reloadSettings(*task_cluster_current_config);
     getContext()->setSettings(task_cluster->settings_common);
-
-    task_cluster_current_config = config;
-    task_description_current_stat = stat;
 }
 
 void ClusterCopier::updateConfigIfNeeded()
@@ -689,6 +685,23 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
     {
         String state_finished = TaskStateWithOwner::getData(TaskState::Finished, host_id);
         zookeeper->set(current_partition_attach_is_done, state_finished, 0);
+        /// Also increment a counter of processed partitions
+        while (true)
+        {
+            Coordination::Stat stat;
+            auto status_json = zookeeper->get(task_zookeeper_path + "/status", &stat);
+            auto statuses = StatusAccumulator::fromJSON(status_json);
+
+            /// Increment status for table.
+            auto status_for_table = (*statuses)[task_table.name_in_config];
+            status_for_table.processed_partitions_count += 1;
+            (*statuses)[task_table.name_in_config] = status_for_table;
+
+            auto statuses_to_commit = StatusAccumulator::serializeToJSON(statuses);
+            auto error = zookeeper->trySet(task_zookeeper_path + "/status", statuses_to_commit, stat.version, &stat);
+            if (error == Coordination::Error::ZOK)
+                break;
+        }
     }
 
     return TaskStatus::Finished;
@@ -907,6 +920,31 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
         LOG_WARNING(log, "Create destination Tale Failed ");
         return false;
     }
+
+    /// Set all_partitions_count for table in Zookeeper
+    auto zookeeper = getContext()->getZooKeeper();
+    while (true)
+    {
+        Coordination::Stat stat;
+        auto status_json = zookeeper->get(task_zookeeper_path + "/status", &stat);
+        auto statuses = StatusAccumulator::fromJSON(status_json);
+
+        /// Exit if someone already set the initial value for this table.
+        if (statuses->find(task_table.name_in_config) != statuses->end())
+            break;
+        (*statuses)[task_table.name_in_config] = StatusAccumulator::TableStatus
+        {
+            /*all_partitions_count=*/task_table.ordered_partition_names.size(),
+            /*processed_partition_count=*/0
+        };
+
+        auto statuses_to_commit = StatusAccumulator::serializeToJSON(statuses);
+        auto error = zookeeper->trySet(task_zookeeper_path + "/status", statuses_to_commit, stat.version);
+        if (error == Coordination::Error::ZOK)
+            break;
+    }
+
+
     /// An heuristic: if previous shard is already done, then check next one without sleeps due to max_workers constraint
     bool previous_shard_is_instantly_finished = false;
 
