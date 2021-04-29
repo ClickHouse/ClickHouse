@@ -25,20 +25,6 @@ bool getQueryProcessingStageWithAggregateProjection(
     if (analysis_result.join != nullptr || analysis_result.array_join != nullptr)
         can_use_aggregate_projection = false;
 
-    auto query_block = select.getSampleBlock();
-    const auto & required_query = select.getQuery()->as<const ASTSelectQuery &>();
-    auto required_predicates = [&required_query]() -> ASTPtr
-    {
-        if (required_query.prewhere() && required_query.where())
-            return makeASTFunction("and", required_query.prewhere()->clone(), required_query.where()->clone());
-        else if (required_query.prewhere())
-            return required_query.prewhere()->clone();
-        else if (required_query.where())
-            return required_query.where()->clone();
-        else
-            return nullptr;
-    }();
-
     /// Check if all needed columns can be provided by some aggregate projection. Here we also try
     /// to find expression matches. For example, suppose an aggregate projection contains a column
     /// named sum(x) and the given query also has an expression called sum(x), it's a match. This is
@@ -50,8 +36,13 @@ bool getQueryProcessingStageWithAggregateProjection(
     /// InterpreterSelect, thus we can store the raw pointer here.
     std::vector<ProjectionCandidate> candidates;
     NameSet keys;
+    std::unordered_map<std::string_view, size_t> key_name_pos_map;
+    size_t pos = 0;
     for (const auto & desc : select.getQueryAnalyzer()->aggregationKeys())
+    {
         keys.insert(desc.name);
+        key_name_pos_map.insert({desc.name, pos++});
+    }
 
     // All required columns should be provided by either current projection or previous actions
     // Let's traverse backward to finish the check.
@@ -163,7 +154,8 @@ bool getQueryProcessingStageWithAggregateProjection(
             if (required_columns.empty())
                 continue;
 
-            // Attach aggregates
+            // Reorder aggregation keys and attach aggregates
+            candidate.before_aggregation->reorderAggregationKeysForProjection(key_name_pos_map);
             candidate.before_aggregation->addAggregatesViaProjection(aggregates);
 
             if (rewrite_before_where(candidate, projection, required_columns, projection.sample_block_for_keys, aggregates))
