@@ -1405,11 +1405,9 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         /// 3) Create helping table on the whole destination cluster
         auto & settings_push = task_cluster->settings_push;
 
-        /// Get a connection to any shard to fetch `CREATE` query
         auto connection = task_table.cluster_push->getAnyShardInfo().pool->get(timeouts, &settings_push, true);
-        /// Execute a request and get `CREATE` query as a string.
         String create_query = getRemoteCreateTable(task_shard.task_table.table_push, *connection, settings_push);
-        /// Parse it to ASTPtr
+
         ParserCreateQuery parser_create_query;
         auto create_query_ast = parseQuery(parser_create_query, create_query, settings_push.max_query_size, settings_push.max_parser_depth);
         /// Define helping table database and name for current partition piece
@@ -1417,8 +1415,7 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
                 task_table.table_push.first,
                 task_table.table_push.second + "_piece_" + toString(current_piece_number)};
 
-        /// This is a bit of legacy, because we now could parse and engine AST from the whole create query.
-        /// But this is needed to make helping table non-replicated. We simply don't need this
+
         auto new_engine_push_ast = task_table.engine_push_ast;
         if (task_table.isReplicatedTable())
             new_engine_push_ast = task_table.rewriteReplicatedCreateQueryToPlain();
@@ -1427,17 +1424,11 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         auto create_query_push_ast = rewriteCreateQueryStorage(create_query_ast, database_and_table_for_current_piece, new_engine_push_ast);
         String query = queryToString(create_query_push_ast);
 
-<<<<<<< HEAD
         LOG_INFO(log, "Create destination tables. Query: \n {}", wrapWithColor(query));
         UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push,  ClusterExecutionMode::ON_EACH_NODE);
         LOG_INFO(
             log,
             "Destination tables {} have been created on {} shards of {}",
-=======
-        LOG_INFO(log, "Create destination tables. Query: \n {}", query);
-        UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, task_cluster->settings_push, ClusterExecutionMode::ON_EACH_NODE);
-        LOG_INFO(log, "Destination tables {} have been created on {} shards of {}",
->>>>>>> better
             getQuotedTable(task_table.table_push),
             shards,
             task_table.cluster_push->getShardCount());
@@ -1750,7 +1741,6 @@ String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, C
 }
 
 
-
 ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
 {
     /// Fetch and parse (possibly) new definition
@@ -1765,20 +1755,6 @@ ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & time
     return parseQuery(parser_create_query, create_query_pull_str, settings.max_query_size, settings.max_parser_depth);
 }
 
-
-ASTPtr ClusterCopier::getCreateTableForPushShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
-{
-    /// Fetch and parse (possibly) new definition
-    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_push, true);
-    String create_query_pull_str = getRemoteCreateTable(
-            task_shard.task_table.table_push,
-            *connection_entry,
-            task_cluster->settings_push);
-
-    ParserCreateQuery parser_create_query;
-    const auto & settings = getContext()->getSettingsRef();
-    return parseQuery(parser_create_query, create_query_pull_str, settings.max_query_size, settings.max_parser_depth);
-}
 
 /// If it is implicitly asked to create split Distributed table for certain piece on current shard, we will do it.
 void ClusterCopier::createShardInternalTables(const ConnectionTimeouts & timeouts,
@@ -2033,17 +2009,6 @@ UInt64 ClusterCopier::executeQueryOnCluster(
                 tryLogCurrentException(log);
                 continue;
             }
-<<<<<<< HEAD
-
-            remote_query_executor->finish();
-            ++successfully_executed;
-        }
-        catch (...)
-        {
-            LOG_WARNING(log, "An error occured while processing query : \n {}", wrapWithColor(query));
-            tryLogCurrentException(log);
-=======
->>>>>>> better
         }
     }
 

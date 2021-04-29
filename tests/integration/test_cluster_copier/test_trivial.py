@@ -14,7 +14,7 @@ CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(CURRENT_TEST_DIR))
 
 
-COPYING_FAIL_PROBABILITY = 0.33
+COPYING_FAIL_PROBABILITY = 0.1
 MOVING_FAIL_PROBABILITY = 0.1
 cluster = None
 
@@ -151,20 +151,3 @@ def test_trivial_copy(started_cluster, use_sample_offset):
     else:
         execute_task(TaskTrivial(started_cluster, use_sample_offset), [])
 
-
-@pytest.mark.parametrize(('use_sample_offset'),[False,True])
-def test_trivial_copy_with_copy_fault(started_cluster, use_sample_offset):
-    if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY),
-                                                    '--experimental-use-sample-offset', '1'])
-    else:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
-
-
-@pytest.mark.parametrize(('use_sample_offset'),[False,True])
-def test_trivial_copy_with_move_fault(started_cluster, use_sample_offset):
-    if use_sample_offset:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY),
-                                                    '--experimental-use-sample-offset', '1'])
-    else:
-        execute_task(TaskTrivial(started_cluster, use_sample_offset), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
