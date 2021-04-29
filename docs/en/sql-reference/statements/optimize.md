@@ -108,7 +108,7 @@ OPTIMIZE TABLE dup_example DEDUPLICATE BY * EXCEPT(pk, sk, value, mat, alias); -
 OPTIMIZE TABLE dup_example DEDUPLICATE BY; -- syntax error
 ```
 
-2. Replicated example on a [`ReplicatedMergeTree`](../../engines/table-engines/mergetree-family/replication/#creating-replicated-tables) table engine:
+2. Replicated example on a [`ReplicatedMergeTree`](../../engines/table-engines/mergetree-family/replication.md) table engine:
 
 ```sql
 DROP TABLE IF EXISTS replicated_deduplicate_by_columns_r1;
