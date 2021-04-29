@@ -11,10 +11,17 @@ using JoinPtr = std::shared_ptr<IJoin>;
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
+/// Join rows to chunk form left table.
+/// This transform usually has two input ports and one output.
+/// First input is for data from left table.
+/// Second input has empty header and is connected with AddingJoined.
+/// We can process left table only when Join is filled. Second input is used to signal that AddingJoined is finished.
 class JoiningTransform : public IProcessor
 {
 public:
 
+    /// Count streams and check which is last.
+    /// The last one should process non-joined rows.
     class FinishCounter
     {
     public:
@@ -75,13 +82,16 @@ private:
     Block readExecute(Chunk & chunk);
 };
 
+/// Fills Join with block from right table.
+/// Has single input and single output port.
+/// Output port has empty header. It is closed when al data is inserted in join.
 class AddingJoinedTransform : public IProcessor
 {
 public:
     AddingJoinedTransform(Block input_header, JoinPtr join_);
     String getName() const override { return "AddingJoinedTransform"; }
 
-    InputPort * addTotaslPort();
+    InputPort * addTotalsPort();
 
     Status prepare() override;
     void work() override;
