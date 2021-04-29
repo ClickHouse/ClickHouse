@@ -57,60 +57,74 @@ bool getQueryProcessingStageWithAggregateProjection(
     // Let's traverse backward to finish the check.
     // TODO what if there is a column with name sum(x) and an aggregate sum(x)?
     auto rewrite_before_where =
-        [&](ProjectionCandidate & candidate, const ProjectionDescription & projection, NameSet & required_columns, const Block & aggregates)
+        [&](ProjectionCandidate & candidate, const ProjectionDescription & projection,
+            NameSet & required_columns, const Block & source_block, const Block & aggregates)
+    {
+        if (analysis_result.before_where)
         {
-            if (analysis_result.before_where)
-            {
-                candidate.before_where = analysis_result.before_where->clone();
-                required_columns = candidate.before_where->foldActionsByProjection(
-                    required_columns, projection.sample_block_for_keys, query_ptr->as<const ASTSelectQuery &>().where()->getColumnName());
-                if (required_columns.empty())
-                    return false;
-                candidate.before_where->addAggregatesViaProjection(aggregates);
-            }
+            candidate.before_where = analysis_result.before_where->clone();
+            required_columns = candidate.before_where->foldActionsByProjection(
+                required_columns,
+                projection.sample_block_for_keys,
+                query_ptr->as<const ASTSelectQuery &>().where()->getColumnName());
+            if (required_columns.empty())
+                return false;
+            candidate.before_where->addAggregatesViaProjection(aggregates);
+        }
 
-            if (analysis_result.prewhere_info)
-            {
-                auto & prewhere_info = analysis_result.prewhere_info;
-                candidate.prewhere_info = std::make_shared<PrewhereInfo>();
-                candidate.prewhere_info->prewhere_column_name = prewhere_info->prewhere_column_name;
-                candidate.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
-                candidate.prewhere_info->row_level_column_name = prewhere_info->row_level_column_name;
-                candidate.prewhere_info->need_filter = prewhere_info->need_filter;
+        if (analysis_result.prewhere_info)
+        {
+            auto & prewhere_info = analysis_result.prewhere_info;
+            candidate.prewhere_info = std::make_shared<PrewhereInfo>();
+            candidate.prewhere_info->prewhere_column_name = prewhere_info->prewhere_column_name;
+            candidate.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
+            candidate.prewhere_info->row_level_column_name = prewhere_info->row_level_column_name;
+            candidate.prewhere_info->need_filter = prewhere_info->need_filter;
 
-                auto actions_settings = ExpressionActionsSettings::fromSettings(query_context->getSettingsRef());
-                auto prewhere_actions = prewhere_info->prewhere_actions->clone();
-                NameSet prewhere_required_columns;
-                prewhere_required_columns = prewhere_actions->foldActionsByProjection(
-                    prewhere_required_columns, projection.sample_block_for_keys, prewhere_info->prewhere_column_name);
+            auto actions_settings = ExpressionActionsSettings::fromSettings(query_context->getSettingsRef());
+            auto prewhere_actions = prewhere_info->prewhere_actions->clone();
+            NameSet prewhere_required_columns;
+            prewhere_required_columns = prewhere_actions->foldActionsByProjection(
+                prewhere_required_columns, projection.sample_block_for_keys, prewhere_info->prewhere_column_name);
+            if (prewhere_required_columns.empty())
+                return false;
+            candidate.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_actions, actions_settings);
+
+            if (prewhere_info->row_level_filter_actions)
+            {
+                auto row_level_filter_actions = prewhere_info->row_level_filter_actions->clone();
+                prewhere_required_columns = row_level_filter_actions->foldActionsByProjection(
+                    prewhere_required_columns, projection.sample_block_for_keys, prewhere_info->row_level_column_name);
                 if (prewhere_required_columns.empty())
                     return false;
-                candidate.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_actions, actions_settings);
-
-                if (prewhere_info->row_level_filter_actions)
-                {
-                    auto row_level_filter_actions = prewhere_info->row_level_filter_actions->clone();
-                    prewhere_required_columns = row_level_filter_actions->foldActionsByProjection(
-                        prewhere_required_columns, projection.sample_block_for_keys, prewhere_info->row_level_column_name);
-                    if (prewhere_required_columns.empty())
-                        return false;
-                    candidate.prewhere_info->row_level_filter
-                        = std::make_shared<ExpressionActions>(row_level_filter_actions, actions_settings);
-                }
-
-                if (prewhere_info->alias_actions)
-                {
-                    auto alias_actions = prewhere_info->alias_actions->clone();
-                    prewhere_required_columns
-                        = alias_actions->foldActionsByProjection(prewhere_required_columns, projection.sample_block_for_keys);
-                    if (prewhere_required_columns.empty())
-                        return false;
-                    candidate.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(alias_actions, actions_settings);
-                }
-                required_columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
+                candidate.prewhere_info->row_level_filter
+                    = std::make_shared<ExpressionActions>(row_level_filter_actions, actions_settings);
             }
-            return true;
-        };
+
+            if (prewhere_info->alias_actions)
+            {
+                auto alias_actions = prewhere_info->alias_actions->clone();
+                prewhere_required_columns
+                    = alias_actions->foldActionsByProjection(prewhere_required_columns, projection.sample_block_for_keys);
+                if (prewhere_required_columns.empty())
+                    return false;
+                candidate.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(alias_actions, actions_settings);
+            }
+            required_columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
+        }
+
+        bool match = true;
+        for (const auto & column : required_columns)
+        {
+            /// There are still missing columns, fail to match
+            if (!source_block.has(column))
+            {
+                match = false;
+                break;
+            }
+        }
+        return match;
+    };
 
     for (const auto & projection : metadata_snapshot->projections)
     {
@@ -152,7 +166,7 @@ bool getQueryProcessingStageWithAggregateProjection(
             // Attach aggregates
             candidate.before_aggregation->addAggregatesViaProjection(aggregates);
 
-            if (rewrite_before_where(candidate, projection, required_columns, aggregates))
+            if (rewrite_before_where(candidate, projection, required_columns, projection.sample_block_for_keys, aggregates))
             {
                 candidate.required_columns = {required_columns.begin(), required_columns.end()};
                 for (const auto & aggregate : aggregates)
@@ -174,7 +188,7 @@ bool getQueryProcessingStageWithAggregateProjection(
                 for (const auto & column : analysis_result.prewhere_info->prewhere_actions->getResultColumns())
                     required_columns.insert(column.name);
             }
-            if (rewrite_before_where(candidate, projection, required_columns, {}))
+            if (rewrite_before_where(candidate, projection, required_columns, projection.sample_block, {}))
             {
                 candidate.required_columns = {required_columns.begin(), required_columns.end()};
                 candidates.push_back(std::move(candidate));
