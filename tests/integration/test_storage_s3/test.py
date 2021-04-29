@@ -464,6 +464,21 @@ def test_custom_auth_headers_exclusion(started_cluster):
     assert ei.value.returncode == 243
     assert '403 Forbidden' in ei.value.stderr
 
+
+def test_infinite_redirect(started_cluster):
+    bucket = "redirected"
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    filename = "test.csv"
+    get_query = f"select * from s3('http://resolver:{started_cluster.minio_redirect_port}/{bucket}/{filename}', 'CSV', '{table_format}')"
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    exception_raised = False
+    try:
+        run_query(instance, get_query)
+    except Exception as e:
+        assert str(e).find("Too many redirects while trying to access") != -1
+        exception_raised = True
+    finally:
+        assert exception_raised
 @pytest.mark.parametrize("extension,method", [
     pytest.param("bin", "gzip", id="bin"),
     pytest.param("gz", "auto", id="gz"),

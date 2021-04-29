@@ -15,6 +15,7 @@ import time
 import traceback
 import urllib.parse
 import shlex
+import urllib3
 
 from cassandra.policies import RoundRobinPolicy
 import cassandra.cluster
@@ -224,6 +225,7 @@ class ClickHouseCluster:
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
+        self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
 
         # available when with_hdfs == True
@@ -351,7 +353,7 @@ class ClickHouseCluster:
         try:
             logging.debug("Trying to prune unused images...")
 
-            subprocess_call(['docker', 'images', 'prune', '-f'])
+            subprocess_call(['docker', 'image', 'prune', '-f'])
             logging.debug("Images pruned")
         except:
             pass
@@ -985,12 +987,15 @@ class ClickHouseCluster:
 
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
+        self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
+
 
         os.environ['SSL_CERT_FILE'] = p.join(self.base_dir, self.minio_dir, 'certs', 'public.crt')
         minio_client = Minio(f'{self.minio_ip}:{self.minio_port}',
                              access_key='minio',
                              secret_key='minio123',
-                             secure=secure)
+                             secure=secure,
+                             http_client=urllib3.PoolManager(cert_reqs='CERT_NONE')) # disable SSL check as we test ClickHouse and not Python library
         start = time.time()
         while time.time() - start < timeout:
             try:
