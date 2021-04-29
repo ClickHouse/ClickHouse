@@ -217,7 +217,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             const char * operators[] =
             {
                 "negate", "-",
-                "not", "NOT ",
+                "not", "NOT",
                 nullptr
             };
 
