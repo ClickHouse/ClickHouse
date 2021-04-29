@@ -464,4 +464,11 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
     return dag;
 }
 
+String TableJoin::renamedRightColumnName(const String & name) const
+{
+    if (const auto it = renames.find(name); it != renames.end())
+        return it->second;
+    return name;
+}
+
 }

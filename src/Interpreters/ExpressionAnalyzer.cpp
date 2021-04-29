@@ -809,7 +809,15 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
 
     /// Use StorageJoin if any.
     if (!subquery_for_join.join)
-        subquery_for_join.join = tryGetStorageJoin(syntax->analyzed_join);
+    {
+        if (auto storage_join = tryGetStorageJoin(syntax->analyzed_join))
+        {
+            if (syntax->analyzed_join->hasOn())
+                throw DB::Exception("`JOIN ON` with `Join` table engine not supported, use `USING` syntax",
+                                    ErrorCodes::NOT_IMPLEMENTED);
+            subquery_for_join.join = storage_join;
+        }
+    }
 
     if (!subquery_for_join.join)
     {
