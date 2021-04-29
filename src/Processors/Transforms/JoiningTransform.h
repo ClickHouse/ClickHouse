@@ -89,6 +89,7 @@ public:
 private:
     JoinPtr join;
     Chunk chunk;
+    bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
 };

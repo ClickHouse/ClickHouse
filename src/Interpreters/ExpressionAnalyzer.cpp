@@ -847,7 +847,21 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
             //renameColumns(sample_block);
 
             auto rename_dag = std::make_unique<ActionsDAG>(sample_block.getColumnsWithTypeAndName());
-            rename_dag->project(required_columns_with_aliases);
+            for (const auto & name_with_alias : required_columns_with_aliases)
+            {
+                if (sample_block.has(name_with_alias.first))
+                {
+                    auto pos = sample_block.getPositionByName(name_with_alias.first);
+                    const auto & alias = rename_dag->addAlias(*rename_dag->getInputs()[pos], name_with_alias.second);
+                    rename_dag->getIndex()[pos] = &alias;
+                    // auto column = block.getByPosition(pos);
+                    // block.erase(pos);
+                    // column.name = name_with_alias.second;
+                    // block.insert(std::move(column));
+                }
+            }
+
+            //rename_dag->project(required_columns_with_aliases);
             auto rename_step = std::make_unique<ExpressionStep>(joined_plan->getCurrentDataStream(), std::move(rename_dag));
             rename_step->setStepDescription("Rename joined columns");
             joined_plan->addStep(std::move(rename_step));
