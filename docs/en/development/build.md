@@ -73,9 +73,9 @@ The build requires the following components:
 
 -   Git (is used only to checkout the sources, it’s not needed for the build)
 -   CMake 3.10 or newer
--   Ninja (recommended) or Make
--   C++ compiler: gcc 10 or clang 8 or newer
--   Linker: lld or gold (the classic GNU ld won’t work)
+-   Ninja
+-   C++ compiler: clang-11 or newer
+-   Linker: lld
 -   Python (is only used inside LLVM build and it is optional)
 
 If all the components are installed, you may build in the same way as the steps above.
