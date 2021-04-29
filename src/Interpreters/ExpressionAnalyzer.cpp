@@ -128,6 +128,7 @@ ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settin
     , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
 {}
 
+ExpressionAnalyzer::~ExpressionAnalyzer() = default;
 
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,

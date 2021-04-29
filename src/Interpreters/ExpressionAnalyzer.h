@@ -103,6 +103,8 @@ public:
     :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, 0, false, {})
     {}
 
+    ~ExpressionAnalyzer();
+
     void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
 
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
