@@ -25,7 +25,7 @@ class ColumnFunction final : public COWHelper<IColumn, ColumnFunction>
 private:
     friend class COWHelper<IColumn, ColumnFunction>;
 
-    ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture, bool ignore_arguments_types = false);
+    ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture, bool is_short_circuit_argument_ = false);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
@@ -51,8 +51,8 @@ public:
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
 
-    void appendArguments(const ColumnsWithTypeAndName & columns, bool ignore_arguments_types = false);
-    ColumnWithTypeAndName reduce(bool reduce_arguments = false) const;
+    void appendArguments(const ColumnsWithTypeAndName & columns);
+    ColumnWithTypeAndName reduce() const;
 
     Field operator[](size_t) const override
     {
@@ -154,12 +154,15 @@ public:
         throw Exception("Method gather is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    bool isShortCircuitArgument() const { return is_short_circuit_argument; }
+
 private:
     size_t size_;
     FunctionBasePtr function;
     ColumnsWithTypeAndName captured_columns;
+    bool is_short_circuit_argument;
 
-    void appendArgument(const ColumnWithTypeAndName & column, bool ignore_argument_type = false);
+    void appendArgument(const ColumnWithTypeAndName & column);
 };
 
 }

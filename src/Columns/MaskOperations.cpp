@@ -226,11 +226,11 @@ void disjunctionMasks(PaddedPODArray<UInt8> & mask1, const PaddedPODArray<UInt8>
 void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, bool reverse, const UInt8 * default_value_for_expanding_mask)
 {
     const auto * column_function = checkAndGetColumn<ColumnFunction>(*column.column);
-    if (!column_function)
+    if (!column_function || !column_function->isShortCircuitArgument())
         return;
 
     auto filtered = column_function->filter(mask, -1, reverse);
-    auto result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce(true);
+    auto result = typeid_cast<const ColumnFunction *>(filtered.get())->reduce();
     if (default_value_for_expanding_mask)
     {
         result.column = result.column->convertToFullColumnIfLowCardinality();
@@ -245,10 +245,10 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
 void executeColumnIfNeeded(ColumnWithTypeAndName & column)
 {
     const auto * column_function = checkAndGetColumn<ColumnFunction>(*column.column);
-    if (!column_function)
+    if (!column_function || !column_function->isShortCircuitArgument())
         return;
 
-    column = typeid_cast<const ColumnFunction *>(column_function)->reduce(true);
+    column = typeid_cast<const ColumnFunction *>(column_function)->reduce();
 }
 
 bool checkArgumentsForColumnFunction(const ColumnsWithTypeAndName & arguments)
