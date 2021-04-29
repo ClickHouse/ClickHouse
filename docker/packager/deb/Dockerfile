@@ -43,7 +43,6 @@ RUN apt-get update \
         gdb  \
         git \
         gperf \
-        lld-10 \
         lld-11 \
         llvm-11 \
         llvm-11-dev \
