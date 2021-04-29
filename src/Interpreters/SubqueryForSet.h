@@ -15,7 +15,10 @@ using SetPtr = std::shared_ptr<Set>;
 /// Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
 struct SubqueryForSet
 {
+    SubqueryForSet();
     ~SubqueryForSet();
+    SubqueryForSet(SubqueryForSet &&);
+    SubqueryForSet & operator= (SubqueryForSet &&);
 
     /// The source is obtained using the InterpreterSelectQuery subquery.
     std::unique_ptr<QueryPlan> source;
