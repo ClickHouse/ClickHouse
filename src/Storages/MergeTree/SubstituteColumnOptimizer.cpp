@@ -22,7 +22,7 @@ namespace
 {
 
 const String COMPONENT = "__constraint_component_";
-constexpr UInt64 COLUMN_PENALTY = 0; //1024 * 1024 * 10;
+constexpr UInt64 COLUMN_PENALTY = 10 * 1024 * 1024;
 //constexpr size_t MAX_COMPONENTS_FOR_BRUTEFORCE = 10;
 
 class ComponentMatcher
