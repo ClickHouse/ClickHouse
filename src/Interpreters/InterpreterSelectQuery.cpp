@@ -1118,15 +1118,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             if (expressions.hasJoin())
             {
-                if (expressions.join->isStorageJoin())
+                if (expressions.join->isFilled())
                 {
-                    QueryPlanStepPtr storage_join_step = std::make_unique<StorageJoinStep>(
+                    QueryPlanStepPtr filled_join_step = std::make_unique<FilledJoinStep>(
                         query_plan.getCurrentDataStream(),
                         expressions.join,
                         settings.max_block_size);
 
-                    storage_join_step->setStepDescription("JOIN");
-                    query_plan.addStep(std::move(storage_join_step));
+                    filled_join_step->setStepDescription("JOIN");
+                    query_plan.addStep(std::move(filled_join_step));
                 }
                 else
                 {

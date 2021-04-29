@@ -31,12 +31,12 @@ private:
     Processors processors;
 };
 
-class StorageJoinStep : public ITransformingStep
+class FilledJoinStep : public ITransformingStep
 {
 public:
-    StorageJoinStep(const DataStream & input_stream_, JoinPtr join_, size_t max_block_size_);
+    FilledJoinStep(const DataStream & input_stream_, JoinPtr join_, size_t max_block_size_);
 
-    String getName() const override { return "StorageJoin"; }
+    String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:

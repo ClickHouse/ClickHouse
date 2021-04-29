@@ -51,7 +51,7 @@ static ITransformingStep::Traits getStorageJoinTraits()
     };
 }
 
-StorageJoinStep::StorageJoinStep(const DataStream & input_stream_, JoinPtr join_, size_t max_block_size_)
+FilledJoinStep::FilledJoinStep(const DataStream & input_stream_, JoinPtr join_, size_t max_block_size_)
     : ITransformingStep(
         input_stream_,
         JoiningTransform::transformHeader(input_stream_.header, join_),
@@ -59,11 +59,11 @@ StorageJoinStep::StorageJoinStep(const DataStream & input_stream_, JoinPtr join_
     , join(std::move(join_))
     , max_block_size(max_block_size_)
 {
-    if (!join->isStorageJoin())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoinStep expects StorageJoin");
+    if (!join->isFilled())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FilledJoinStep expects Join to be filled");
 }
 
-void StorageJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void FilledJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     bool default_totals = false;
     if (!pipeline.hasTotals() && join->hasTotals())
@@ -72,10 +72,13 @@ void StorageJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQue
         default_totals = true;
     }
 
+    auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(pipeline.getNumStreams());
+
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
-        return std::make_shared<JoiningTransform>(header, join, max_block_size, on_totals, default_totals);
+        auto counter = on_totals ? nullptr : finish_counter;
+        return std::make_shared<JoiningTransform>(header, join, max_block_size, on_totals, default_totals, counter);
     });
 }
 

@@ -159,7 +159,7 @@ public:
 
     void joinTotals(Block & block) const override;
 
-    bool isStorageJoin() const override { return from_storage_join; }
+    bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
 
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.

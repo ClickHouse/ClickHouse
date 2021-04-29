@@ -2,6 +2,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -27,7 +28,7 @@ JoiningTransform::JoiningTransform(
     , finish_counter(std::move(finish_counter_))
     , max_block_size(max_block_size_)
 {
-    if (!join->isStorageJoin())
+    if (!join->isFilled())
         inputs.emplace_back(Block(), this);
 }
 
@@ -242,7 +243,11 @@ IProcessor::Status AddingJoinedTransform::prepare()
 
     auto & input = inputs.front();
 
-    if (!input.isFinished())
+    if (stop_reading)
+    {
+        input.close();
+    }
+    else if (!input.isFinished())
     {
         input.setNeeded();
 
@@ -281,14 +286,20 @@ IProcessor::Status AddingJoinedTransform::prepare()
 
 void AddingJoinedTransform::work()
 {
+    // size_t num_rows = chunk.getNumRows();
+    //std::cerr << "Chunk rows " << chunk.getNumRows() << std::endl;
     auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
-    // std::cerr << "-------- Adding block with " << block.rows() << " rows for totals ? " << for_totals << std::endl;
+    //std::cerr << "-------- Adding block with " << block.rows() << " rows for totals ? " << for_totals << std::endl;
+
+    // if (!block && num_rows)
+    //     block.insert({ColumnUInt8::create(num_rows), std::make_shared<DataTypeUInt8>(), "_dummy"});
+
     // std::cerr << block.dumpStructure() << std::endl;
 
     if (for_totals)
         join->setTotals(block);
     else
-        join->addJoinedBlock(block);
+        stop_reading = !join->addJoinedBlock(block);
 
     set_totals = for_totals;
 }
