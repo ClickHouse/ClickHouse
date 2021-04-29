@@ -37,6 +37,7 @@
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemISTables.h>
+#include <Storages/System/StorageSystemTablesIS.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
@@ -122,6 +123,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
 #endif
 
     attach<StorageSystemISTables>(system_database, "is_tables");
+    attach<StorageSystemTablesIS>(system_database, "tables_is");
 }
 
 void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
