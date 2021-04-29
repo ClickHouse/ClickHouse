@@ -183,5 +183,3 @@ OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE BY COLUMNS
 ```
 
 Don't forget to `DROP` tables and replicas `SYSTEM DROP REPLICA` afterwards.
-
-
