@@ -2755,6 +2755,50 @@ SELECT * FROM test2;
 
 Значение по умолчанию: `0`.
 
+## prefer_column_name_to_alias {#prefer-column-name-to-alias}
+
+Включает или отключает замену названий столбцов на синонимы в выражениях и секциях запросов, см. [Примечания по использованию синонимов](../../sql-reference/syntax.md#syntax-expression_aliases). Включите эту настройку, чтобы синтаксис синонимов в ClickHouse был более совместим с большинством других СУБД.
+
+Возможные значения:
+
+- 0 — синоним подставляется вместо имени столбца.
+- 1 — синоним не подставляется вместо имени столбца.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Какие изменения привносит включение и выключение настройки: 
+
+Запрос:
+
+```sql
+SET prefer_column_name_to_alias = 0;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Результат:
+
+```text
+Received exception from server (version 21.5.1):
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
+```
+
+Запрос:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Результат:
+
+```text
+┌─number─┬─max(number)─┐
+│    4.5 │           9 │
+└────────┴─────────────┘
+```
+
 ## limit {#limit}
 
 Устанавливает максимальное количество строк, возвращаемых запросом. Ограничивает сверху значение, установленное в запросе в секции [LIMIT](../../sql-reference/statements/select/limit.md#limit-clause).
