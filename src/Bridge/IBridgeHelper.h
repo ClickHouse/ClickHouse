@@ -55,7 +55,7 @@ protected:
 
     virtual Poco::Logger * getLog() const = 0;
 
-    virtual const Poco::Timespan & getHTTPTimeout() const = 0;
+    virtual Poco::Timespan getHTTPTimeout() const = 0;
 
     virtual Poco::URI createBaseURI() const = 0;
 
