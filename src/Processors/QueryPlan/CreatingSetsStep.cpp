@@ -3,6 +3,7 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -59,6 +60,15 @@ void CreatingSetStep::describeActions(FormatSettings & settings) const
 
     settings.out << description << '\n';
 }
+
+void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    if (subquery_for_set.set)
+        map.add("Set", description);
+    else if (subquery_for_set.join)
+        map.add("Join", description);
+}
+
 
 CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
 {

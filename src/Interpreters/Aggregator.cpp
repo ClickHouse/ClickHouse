@@ -17,6 +17,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/JSONBuilder.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <IO/Operators.h>
@@ -175,6 +176,38 @@ void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 
         for (const auto & aggregate : aggregates)
             aggregate.explain(out, indent + 4);
+    }
+}
+
+void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
+{
+    const auto & header = src_header ? src_header
+                                     : intermediate_header;
+
+    auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    for (auto key : keys)
+    {
+        if (key >= header.columns())
+            keys_array->add("");
+        else
+            keys_array->add(header.getByPosition(key).name);
+    }
+
+    map.add("Keys", std::move(keys_array));
+
+    if (!aggregates.empty())
+    {
+        auto aggregates_array = std::make_unique<JSONBuilder::JSONArray>();
+
+        for (const auto & aggregate : aggregates)
+        {
+            auto aggregate_map = std::make_unique<JSONBuilder::JSONMap>();
+            aggregate.explain(*aggregate_map);
+            aggregates_array->add(std::move(aggregate_map));
+        }
+
+        map.add("Aggregates", std::move(aggregates_array));
     }
 }
 
@@ -1769,6 +1802,8 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
     /// For all rows.
     size_t rows = block.rows();
+    std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[rows]);
+
     for (size_t i = 0; i < rows; ++i)
     {
         AggregateDataPtr aggregate_data = nullptr;
@@ -1797,18 +1832,17 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
         /// aggregate_date == nullptr means that the new key did not fit in the hash table because of no_more_keys.
 
-        /// If the key does not fit, and the data does not need to be aggregated into a separate row, then there's nothing to do.
-        if (!aggregate_data && !overflow_row)
-            continue;
-
         AggregateDataPtr value = aggregate_data ? aggregate_data : overflow_row;
+        places[i] = value;
+    }
 
+    for (size_t j = 0; j < params.aggregates_size; ++j)
+    {
         /// Merge state of aggregate functions.
-        for (size_t j = 0; j < params.aggregates_size; ++j)
-            aggregate_functions[j]->merge(
-                value + offsets_of_aggregate_states[j],
-                (*aggregate_columns[j])[i],
-                aggregates_pool);
+        aggregate_functions[j]->mergeBatch(
+            rows, places.get(), offsets_of_aggregate_states[j],
+            aggregate_columns[j]->data(),
+            aggregates_pool);
     }
 
     /// Early release memory.

@@ -72,16 +72,6 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-10",
-            "build-type": "",
-            "sanitizer": "",
-            "package-type": "deb",
-            "bundled": "bundled",
-            "splitted": "unsplitted",
-            "tidy": "disable",
-            "with_coverage": false
-        },
-        {
             "compiler": "clang-11",
             "build-type": "debug",
             "sanitizer": "",

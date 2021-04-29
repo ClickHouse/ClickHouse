@@ -18,7 +18,7 @@ SHOW CREATE DICTIONARY test_01190.dict;
 CREATE TABLE log ENGINE = Log AS SELECT 'test' AS s;
 SHOW CREATE log;
 DETACH TABLE log;
-ATTACH DICTIONARY log; -- { serverError 487 }
+ATTACH DICTIONARY log; -- { serverError 80 }
 ATTACH TABLE log (s String) ENGINE = Log();
 SHOW CREATE log;
 SELECT * FROM log;

@@ -167,6 +167,7 @@ endif ()
 
 # If turned `ON`, assumes the user has either the system GTest library or the bundled one.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
+option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
     # Only for Linux, x86_64.

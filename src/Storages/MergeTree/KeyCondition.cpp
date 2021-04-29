@@ -24,6 +24,8 @@
 
 #include <cassert>
 #include <stack>
+#include <limits>
+
 
 namespace DB
 {
@@ -91,7 +93,7 @@ static String extractFixedPrefixFromLikePattern(const String & like_pattern)
   */
 static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & prefix)
 {
-    /** Increment the last byte of the prefix by one. But if it is 255, then remove it and increase the previous one.
+    /** Increment the last byte of the prefix by one. But if it is max (255), then remove it and increase the previous one.
       * Example (for convenience, suppose that the maximum value of byte is `z`)
       * abcx -> abcy
       * abcz -> abd
@@ -101,7 +103,7 @@ static String firstStringThatIsGreaterThanAllStringsWithPrefix(const String & pr
 
     String res = prefix;
 
-    while (!res.empty() && static_cast<UInt8>(res.back()) == 255)
+    while (!res.empty() && static_cast<UInt8>(res.back()) == std::numeric_limits<UInt8>::max())
         res.pop_back();
 
     if (res.empty())
@@ -1346,7 +1348,7 @@ KeyCondition::Description KeyCondition::getDescription() const
             Or,
         };
 
-        Type type;
+        Type type{};
 
         /// Only for Leaf
         const RPNElement * element = nullptr;
