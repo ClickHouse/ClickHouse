@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/SizeLimits.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Processors/IAccumulatingTransform.h>
