@@ -54,7 +54,14 @@ private:
     void dumpAndChangeTestName(std::string_view test_name);
 
     using SymbolMangledName = std::string;
-    struct SymbolData { std::string demangled_name; UInt64 start_line; };
+
+    struct SymbolData
+    {
+        std::string demangled_name;
+        UInt64 start_line;
+        std::string mangled_name; //for debug print only
+    };
+
     using SymbolsCache = std::unordered_map<SymbolMangledName, SymbolData>;
 
     struct AddrInfo

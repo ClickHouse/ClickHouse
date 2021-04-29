@@ -15,11 +15,9 @@ set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
 if (WITH_COVERAGE)
-    # add_compile_options does not work
-
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -03 -DNDEBUG ${WITHOUT_COVERAGE}")
-    set (CMAKE_CXX_FLAGS
-        "${CMAKE_CXX_FLAGS} -O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE}")
+    add_compile_options(-O3 -DNDEBUG -finline-functions -finline-hint-functions ${WITHOUT_COVERAGE})
+    message(STATUS "Building contrib without coverage and with -O3")
+    message(STATUS "Contrib CXX flags: ${CMAKE_CXX_FLAGS}")
 endif()
 
 if (SANITIZE STREQUAL "undefined")

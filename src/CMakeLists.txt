@@ -281,8 +281,7 @@ endif ()
 
 # coverage for everything in src/
 foreach (module ${all_modules})
-    set_target_properties(${module}
-        PROPERTIES COMPILE_FLAGS "${WITH_COVERAGE_FLAGS}")
+    set_target_properties(${module} PROPERTIES COMPILE_FLAGS "${WITH_COVERAGE_FLAGS}")
 endforeach ()
 
 set_source_files_properties(

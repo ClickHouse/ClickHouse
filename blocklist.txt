@@ -1,0 +1,22 @@
+# There's no way to portably mangle the type name, so it's just for x86_64
+# TODO write a script or so.
+#
+# Place here files that are instrumented even when providing noinstrument flags
+#
+# Global variables init for iostream
+# std::__1
+fun:_ZNSt3*
+fun:_ZNKSt3*
+fun:_ZNKSt16*
+fun:_ZNRSt3*
+# Poco
+fun:_ZN4Poco*
+fun:_ZNK4Poco*
+# boost
+fun:_ZN5boost*
+fun:_ZNK5boost*
+# fmt
+fun:_ZN3fmt*
+# sparsehash-c11
+fun:_ZN6google*
+fun:_ZNK6google*

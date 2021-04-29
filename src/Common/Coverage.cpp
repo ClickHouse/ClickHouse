@@ -110,11 +110,9 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 Writer::AddrInfo Writer::symbolizeAndDemangle(SymbolsCache& symbols_cache, const void * virtual_addr) const
 {
     const uintptr_t physical_addr = uintptr_t(virtual_addr) - binary_virtual_offset;
-
     const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(physical_addr);
 
     const auto * symbol = symbol_index->findSymbol(virtual_addr);
-    assert(symbol);
 
     if (auto it = symbols_cache.find(symbol->name); it != symbols_cache.end())
         return
@@ -126,13 +124,12 @@ Writer::AddrInfo Writer::symbolizeAndDemangle(SymbolsCache& symbols_cache, const
 
     int status = 0;
     const std::string demangled_name = demangle(symbol->name, status);
-    assert(!status);
 
     const void * const symbol_start_virtual = symbol->address_begin;
     const uintptr_t symbol_start_phys = uintptr_t(symbol_start_virtual) - binary_virtual_offset;
     const UInt64 symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
 
-    auto it = symbols_cache.emplace(symbol->name, SymbolData{demangled_name, symbol_start_line});
+    auto it = symbols_cache.emplace(symbol->name, SymbolData{demangled_name, symbol_start_line, symbol->name});
 
     return
     {
@@ -161,13 +158,23 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
         AddrsCache::iterator iter = addrs_cache.find(addr);
 
         if (iter == addrs_cache.end())
-            iter = addrs_cache.emplace(addr, symbolizeAndDemangle(symbols_cache, addr)).first;
+        {
+            const AddrInfo info = symbolizeAndDemangle(symbols_cache, addr);
+
+            // do not track global static initializers, do not pollute the cache with them.
+            //if (const std::string& a = info.symbol_data.demangled_name;
+            //    a.starts_with("_GLOBAL__sub_I_") // iostream initializer
+            //    || a.starts_with("__cxx_global_var_init") // global variable init, not sure if should skip
+            //    )
+            //    continue;
+
+            iter = addrs_cache.emplace(addr, info).first;
+        }
 
         const AddrInfo& addr_info = iter->second;
 
-        fmt::print(std::cout, "{}/{} ({}s, {}, line {}, file {})\n", i, hits.size(), time(nullptr) - t,
-            addr_info.symbol_data.demangled_name,
-            addr_info.line,
+        fmt::print(std::cout, "{}/{} ({}s, {}, file {})\n", i, hits.size(), time(nullptr) - t,
+            addr_info.symbol_data.mangled_name,
             addr_info.file);
 
         const std::string file_name = addr_info.file.substr(addr_info.file.rfind('/') + 1);
