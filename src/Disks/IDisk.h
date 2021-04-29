@@ -14,6 +14,7 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Path.h>
 #include <Poco/Timestamp.h>
+#include "Poco/Util/AbstractConfiguration.h"
 
 
 namespace CurrentMetrics
@@ -230,11 +231,11 @@ public:
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
+    /// Applies new settings for disk in runtime.
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextConstPtr) { }
+
 protected:
     friend class DiskDecorator;
-
-    /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(ContextConstPtr);
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }

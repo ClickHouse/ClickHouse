@@ -65,7 +65,7 @@ public:
     String getUniqueId(const String & path) const override;
     bool checkUniqueId(const String & id) const override;
 
-    void restart(ContextConstPtr context);
+    void restart();
 
 private:
     friend class RestartAwareReadBuffer;

@@ -145,13 +145,13 @@ getClient(const Poco::Util::AbstractConfiguration & config, const String & confi
         config.getBool(config_prefix + ".use_insecure_imds_request", config.getBool("s3.use_insecure_imds_request", false)));
 }
 
-DiskS3Settings getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context)
+std::unique_ptr<DiskS3Settings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextConstPtr context)
 {
-    return DiskS3Settings(
+    return std::make_unique<DiskS3Settings>(
         getClient(config, config_prefix, context),
-        context->getSettingsRef().s3_max_single_read_retries,
-        context->getSettingsRef().s3_min_upload_part_size,
-        context->getSettingsRef().s3_max_single_part_upload_size,
+        config.getUInt64(config_prefix + ".s3_max_single_read_retries", context->getSettingsRef().s3_max_single_read_retries),
+        config.getUInt64(config_prefix + ".s3_min_upload_part_size", context->getSettingsRef().s3_min_upload_part_size),
+        config.getUInt64(config_prefix + ".s3_max_single_part_upload_size", context->getSettingsRef().s3_max_single_part_upload_size),
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getBool(config_prefix + ".send_metadata", false),
         config.getInt(config_prefix + ".thread_pool_size", 16),

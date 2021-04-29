@@ -33,7 +33,7 @@ class SafeThread(threading.Thread):
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/node/configs/users.d/s3.xml')
+CONFIG_PATH = os.path.join(SCRIPT_DIR, './_instances/node/configs/config.d/storage_conf.xml')
 
 
 def replace_config(old, new):
@@ -52,8 +52,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml",
                                                    "configs/config.d/bg_processing_pool_conf.xml",
-                                                   "configs/config.d/log_conf.xml"],
-                                     user_configs=["configs/config.d/s3.xml"], with_minio=True)
+                                                   "configs/config.d/log_conf.xml"], with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -421,7 +420,6 @@ def test_s3_disk_apply_new_settings(cluster):
                    "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>")
 
     node.query("SYSTEM RELOAD CONFIG")
-    node.query("SYSTEM RESTART DISK s3")
 
     s3_requests_before = get_s3_requests()
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-04', 4096, -1)))
