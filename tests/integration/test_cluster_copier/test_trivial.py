@@ -71,6 +71,10 @@ class TaskTrivial:
                      settings={"insert_distributed_sync": 1})
 
     def check(self):
+        zk = cluster.get_kazoo_client('zoo1')
+        status_data, _ = zk.get(self.zk_task_path + "/status")
+        assert status_data == b'{"hits":{"all_partitions_count":5,"processed_partitions_count":5}}'
+
         source = cluster.instances['s0_0_0']
         destination = cluster.instances['s1_0_0']
 

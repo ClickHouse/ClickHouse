@@ -52,6 +52,10 @@ struct TaskTable
 
     bool isReplicatedTable() const { return is_replicated_table; }
 
+    /// These nodes are used for check-status option
+    String getStatusAllPartitionCount() const;
+    String getStatusProcessedPartitionsCount() const;
+
     /// Partitions will be split into number-of-splits pieces.
     /// Each piece will be copied independently. (10 by default)
     size_t number_of_splits;
@@ -243,6 +247,16 @@ inline String TaskTable::getCertainPartitionTaskStatusPath(const String & partit
 inline String TaskTable::getCertainPartitionPieceTaskStatusPath(const String & partition_name, const size_t piece_number) const
 {
     return getPartitionPiecePath(partition_name, piece_number) + "/shards";
+}
+
+inline String TaskTable::getStatusAllPartitionCount() const
+{
+    return task_cluster.task_zookeeper_path + "/status/all_partitions_count";
+}
+
+inline String TaskTable::getStatusProcessedPartitionsCount() const
+{
+    return task_cluster.task_zookeeper_path + "/status/processed_partitions_count";
 }
 
 inline TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfiguration & config,
