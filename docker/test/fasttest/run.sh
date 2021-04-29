@@ -185,6 +185,7 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
+            contrib/llvm
         )
 
         git submodule sync
@@ -201,7 +202,6 @@ function run_cmake
         "-DENABLE_LIBRARIES=0"
         "-DENABLE_TESTS=0"
         "-DENABLE_UTILS=0"
-        "-DENABLE_EMBEDDED_COMPILER=0"
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
