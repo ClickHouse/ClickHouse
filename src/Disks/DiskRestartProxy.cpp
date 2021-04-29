@@ -280,7 +280,7 @@ bool DiskRestartProxy::checkUniqueId(const String & id) const
     return DiskDecorator::checkUniqueId(id);
 }
 
-void DiskRestartProxy::restart(ContextConstPtr context)
+void DiskRestartProxy::restart()
 {
     /// Speed up processing unhealthy requests.
     DiskDecorator::shutdown();
@@ -303,7 +303,6 @@ void DiskRestartProxy::restart(ContextConstPtr context)
 
     LOG_INFO(log, "Restart lock acquired. Restarting disk {}", DiskDecorator::getName());
 
-    DiskDecorator::applyNewSettings(context);
     DiskDecorator::startup();
 
     LOG_INFO(log, "Disk restarted {}", DiskDecorator::getName());

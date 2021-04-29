@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <common/logger_useful.h>
+#include <Common/MultiVersion.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 
@@ -49,7 +50,8 @@ class DiskS3 : public IDisk
 public:
     using ObjectMetadata = std::map<std::string, std::string>;
     using Futures = std::vector<std::future<void>>;
-    using GetDiskSettings = std::function<DiskS3Settings(const Poco::Util::AbstractConfiguration &, const String, ContextConstPtr)>;
+    using SettingsPtr = std::unique_ptr<DiskS3Settings>;
+    using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextConstPtr)>;
 
     friend class DiskS3Reservation;
 
@@ -62,8 +64,8 @@ public:
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
-        DiskS3Settings settings_,
-        GetDiskSettings settings_getter);
+        SettingsPtr settings_,
+        GetDiskSettings settings_getter_);
 
     const String & getName() const override { return name; }
 
@@ -98,7 +100,7 @@ public:
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
     void moveFile(const String & from_path, const String & to_path) override;
-
+    void moveFile(const String & from_path, const String & to_path, bool send_metadata);
     void replaceFile(const String & from_path, const String & to_path) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
@@ -125,6 +127,7 @@ public:
     void removeSharedRecursive(const String & path, bool keep_s3) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
+    void createHardLink(const String & src_path, const String & dst_path, bool send_metadata);
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
@@ -151,8 +154,7 @@ public:
     /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
 
-protected:
-    void applyNewSettings(ContextConstPtr context) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextConstPtr context) override;
 
 private:
     bool tryReserve(UInt64 bytes);
@@ -202,10 +204,10 @@ private:
     const String bucket;
     const String s3_root_path;
     const String metadata_path;
-    DiskS3Settings settings;
+    MultiVersion<DiskS3Settings> current_settings;
 
-    /// Gets current disk settings from context.
-    GetDiskSettings disk_settings_getter;
+    /// Gets disk settings from context.
+    GetDiskSettings settings_getter;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
