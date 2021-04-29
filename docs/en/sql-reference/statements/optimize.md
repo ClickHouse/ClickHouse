@@ -31,15 +31,17 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engin
 If you want to perform deduplication on custom set of columns rather than on all, you can specify list of columns explicitly or use any combination of [`*`](../../sql-reference/statements/select/index.md#asterisk), [`COLUMNS`](../../sql-reference/statements/select/index.md#columns-expression) or [`EXCEPT`](../../sql-reference/statements/select/index.md#except-modifier) expressions. The explictly written or implicitly expanded list of columns must include all columns specified in row ordering expression (both primary and sorting keys) and partitioning expression (partitioning key).
 
 !!! note "Note"
-    Notice that `*` behaves just like in `SELECT`: `MATERIALIZED` and `ALIAS` columns are not used for expansion.
-    Also, it is an error to specify empty list of columns, or write an expression that results in an empty list of columns, or deduplicate by an ALIAS column.
+    Notice that `*` behaves just like in `SELECT`: [`MATERIALIZED`](../../sql-reference/statements/create/table/#materialized) and [`ALIAS`](../../sql-reference/statements/create/table/#alias) columns are not used for expansion.
+    Also, it is an error to specify empty list of columns, or write an expression that results in an empty list of columns, or deduplicate by an `ALIAS` column.
+
+**Syntax**
 
 ``` sql
-OPTIMIZE TABLE table DEDUPLICATE; -- the old one
-OPTIMIZE TABLE table DEDUPLICATE BY *; -- not the same as the old one, excludes MATERIALIZED columns (see the note above)
+OPTIMIZE TABLE table DEDUPLICATE; -- all columns 
+OPTIMIZE TABLE table DEDUPLICATE BY *; -- excludes MATERIALIZED and ALIAS columns
+OPTIMIZE TABLE table DEDUPLICATE BY colX,colY,colZ;
 OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT colX;
 OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT (colX, colY);
-OPTIMIZE TABLE table DEDUPLICATE BY col1,col2,col3;
 OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex');
 OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT colX;
 OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (colX, colY);
@@ -47,47 +49,137 @@ OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (c
 
 **Examples**
 
-Create a table:
+1. Local example on a [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) table engine:
 
 ``` sql
-CREATE TABLE example (
-    primary_key Int32,
-    secondary_key Int32,
+DROP TABLE IF EXISTS dup_example;
+
+CREATE TABLE dup_example (
+    pk Int32, -- primary key
+    sk Int32, -- secondary key
     value UInt32,
-    partition_key UInt32,
-    materialized_value UInt32 MATERIALIZED 12345,
-    aliased_value UInt32 ALIAS 2,
-    PRIMARY KEY primary_key
+    mat UInt32 MATERIALIZED rand(),  -- materialized value
+    alias UInt32 ALIAS 2, -- aliased value
+    PRIMARY KEY pk
 ) ENGINE=MergeTree
-PARTITION BY partition_key
-ORDER BY (primary_key, secondary_key);
+ORDER BY (pk, sk);
 ```
 
-The 'old' deduplicate, all columns are taken into account, i.e. row is removed only if all values in all columns are equal to corresponding values in previous row.
+The `MergeTree` engine does not have parameters.
+
+**Valid cases**
+
+In the case below all columns are taken into account, i.e. row is removed only if all values in all columns are equal to corresponding values in another row.
+Here and below we need to add `FINAL` to force deduplication in case of a small set of data.
 
 ``` sql
-OPTIMIZE TABLE example FINAL DEDUPLICATE;
+OPTIMIZE TABLE dup_example FINAL DEDUPLICATE;
 ```
 
-Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED`: `primary_key`, `secondary_key`, `value`, `partition_key`, and `materialized_value` columns.
+Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED`: in our case deduplicate by `pk`, `sk` and `value` columns.
 
 ``` sql
-OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
+OPTIMIZE TABLE dup_example FINAL DEDUPLICATE BY *;
 ```
 
-Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED` and explicitly not `materialized_value`: `primary_key`, `secondary_key`, `value`, and `partition_key` columns.
+Deduplicate explicitly by `pk`, `sk`, `value` and `mat` columns.
+``` sql
+OPTIMIZE TABLE dup_example FINAL DEDUPLICATE BY pk, sk, value, mat;
+```
+
+Deduplicate by columns matching a regex `'.*k'`: `pk` and `sk` columns.
 
 ``` sql
-OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT materialized_value;
+OPTIMIZE TABLE dup_example FINAL DEDUPLICATE BY COLUMNS('.*k');
 ```
 
-Deduplicate explicitly by `primary_key`, `secondary_key`, and `partition_key` columns.
-``` sql
-OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
-```
+**Error cases**
 
-Deduplicate by any column matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns.
+Note that **primary key** column should not be missed in any `BY` expression. These queries will face errors:
 
 ``` sql
-OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
+OPTIMIZE TABLE dup_example DEDUPLICATE BY * EXCEPT(pk);
+OPTIMIZE TABLE dup_example DEDUPLICATE BY sk, value;
 ```
+
+Empty list cases:
+``` sql
+OPTIMIZE TABLE dup_example DEDUPLICATE BY * EXCEPT(pk, sk, value, mat, alias); -- server error
+OPTIMIZE TABLE dup_example DEDUPLICATE BY; -- syntax error
+```
+
+2. Replicated example on a [`ReplicatedMergeTree`](../../engines/table-engines/mergetree-family/replication/#creating-replicated-tables) table engine:
+
+```sql
+DROP TABLE IF EXISTS replicated_deduplicate_by_columns_r1;
+DROP TABLE IF EXISTS replicated_deduplicate_by_columns_r2;
+
+SET replication_alter_partitions_sync = 2;
+
+CREATE TABLE IF NOT EXISTS replicated_deduplicate_by_columns_r1 (
+    id Int32, 
+    value UInt32, 
+    insert_time_ns DateTime64(9) MATERIALIZED now64(9), 
+    insert_replica_id UInt8 MATERIALIZED randConstant()
+) ENGINE=ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'r1') 
+ORDER BY id;
+
+CREATE TABLE IF NOT EXISTS replicated_deduplicate_by_columns_r2 (
+    id Int32, 
+    value UInt32, 
+    insert_time_ns DateTime64(9) MATERIALIZED now64(9), 
+    insert_replica_id UInt8 MATERIALIZED randConstant()
+) ENGINE=ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'r2') 
+ORDER BY id;
+```
+
+For the `ReplicatedMergeTree` engine we give the path to the table and name of the replica in Zookeeper.
+
+Insert some data into both replicas and wait for them to sync:
+
+```sql
+SYSTEM SYNC REPLICA replicated_deduplicate_by_columns_r2;
+SYSTEM SYNC REPLICA replicated_deduplicate_by_columns_r1;
+```
+
+Check that we have data on replicas:
+
+```sql
+SELECT 'r1', id, value, count(), uniqExact(insert_time_ns), uniqExact(insert_replica_id) 
+FROM replicated_deduplicate_by_columns_r1 
+GROUP BY id, value 
+ORDER BY id, value;
+
+SELECT 'r2', id, value, count(), uniqExact(insert_time_ns), uniqExact(insert_replica_id) 
+FROM replicated_deduplicate_by_columns_r2 
+GROUP BY id, value 
+ORDER BY id, value;
+```
+
+Remove full duplicates from replica `r1` based on all columns:
+
+```sql
+OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE;
+```
+
+Remove duplicates from replica `r1` based on all columns that are not `ALIAS` or `MATERIALIZED`:
+
+```sql
+OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE BY *; -- except insert_time_ns, insert_replica_id
+```
+
+Deduplicate replica `r1` explicitly by `id` and `value` columns:
+
+```sql
+OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE BY id, value;
+```
+
+Deduplicate by columns matching a regex:
+
+```sql
+OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE BY COLUMNS('[id, value]');
+
+OPTIMIZE TABLE replicated_deduplicate_by_columns_r1 FINAL DEDUPLICATE BY COLUMNS('[i]') EXCEPT(insert_time_ns, insert_replica_id);
+```
+
+Don't forget to `DROP` tables and replicas `SYSTEM DROP REPLICA` afterwards.
