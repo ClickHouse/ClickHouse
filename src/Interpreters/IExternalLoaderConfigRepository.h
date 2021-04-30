@@ -42,7 +42,7 @@ public:
     /// Load configuration from some concrete source to AbstractConfiguration
     virtual LoadablesConfigurationPtr load(const std::string & path) = 0;
 
-    virtual ~IExternalLoaderConfigRepository() {}
+    virtual ~IExternalLoaderConfigRepository() = default;
 };
 
 }
