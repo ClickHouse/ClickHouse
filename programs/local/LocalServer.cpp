@@ -391,19 +391,19 @@ void LocalServer::processQueries()
     ///Set progress show
     progress_bar.setNeedRenderProgress(config().getBool("progress", false));
 
-    context->setProgressCallback([&]
-                                 (const Progress &value)
-                                 {
-                                     if (!progress_bar.updateProgress(progress, value))
-                                     {
-                                        // Just a keep-alive update.
-                                         progress_bar.clearProgress();
-                                        return true;
-                                     }
-                                     progress_bar.writeProgress(progress, watch);
-                                     return true;
-                                 }
-                                 );
+    if (progress_bar.getNeedRenderProgress)
+    {
+        context->setProgressCallback([&](const Progress & value) {
+            if (!progress_bar.updateProgress(progress, value))
+            {
+                // Just a keep-alive update.
+                progress_bar.clearProgress();
+                return true;
+            }
+            progress_bar.writeProgress(progress, watch);
+            return true;
+        });
+    }
 
     bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;
@@ -573,7 +573,7 @@ void LocalServer::init(int argc, char ** argv)
         ("ignore-error", "do not stop processing if a query failed")
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("version,V", "print version information and exit")
-        ("progress", "print progress even in non-interactive mode")
+        ("progress", "print progress of queries execution")
         ;
 
     cmd_settings.addProgramOptions(description);
