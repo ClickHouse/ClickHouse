@@ -13,8 +13,8 @@ class ProgressBar
 {
 public:
 
-    bool updateProgress(Progress &progress, const Progress &value);
-    void writeProgress(const Progress &progress, const Stopwatch &watch);
+    bool updateProgress(Progress & progress, const Progress & value);
+    void writeProgress(const Progress & progress, const Stopwatch & watch);
     void clearProgress();
 
     ///Required Getters

@@ -56,12 +56,12 @@ void ProgressBar::setClearProgress(bool clearProgress)
     clear_progress = clearProgress;
 }
 
-bool ProgressBar::updateProgress(Progress &progress, const Progress &value)
+bool ProgressBar::updateProgress(Progress & progress, const Progress & value)
 {
     return progress.incrementPiecewiseAtomically(value);
 }
 
-void ProgressBar::writeProgress(const Progress &progress, const Stopwatch &watch)
+void ProgressBar::writeProgress(const Progress & progress, const Stopwatch & watch)
 {
     if (!need_render_progress)
         return;
