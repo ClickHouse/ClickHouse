@@ -1,5 +1,7 @@
 #include "CHJIT.h"
 
+#if USE_EMBEDDED_COMPILER
+
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
@@ -331,3 +333,5 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
 }
 
 }
+
+#endif
