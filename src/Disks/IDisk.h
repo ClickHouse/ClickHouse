@@ -13,6 +13,7 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
 #include <filesystem>
+#include <Poco/Path.h>
 
 namespace fs = std::filesystem;
 
@@ -289,8 +290,7 @@ inline String fullPath(const DiskPtr & disk, const String & path)
 /// Return parent path for the specified path.
 inline String parentPath(const String & path)
 {
-    auto fs_path = fs::path(path).parent_path() / "";
-    return fs_path.string();
+    return Poco::Path(path).parent().toString();
 }
 
 /// Return file name for the specified path.
