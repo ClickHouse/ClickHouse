@@ -15,6 +15,7 @@
 #include <Poco/Path.h>
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
+#include <filesystem>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -40,6 +41,8 @@
 #include <Storages/PostgreSQL/PostgreSQLConnectionPool.h>
 #endif
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
@@ -62,7 +65,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
         /// Before 20.7 it's possible that .sql metadata file does not exist for some old database.
         /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
         /// So we should remove metadata directory if database creation failed.
-        created = Poco::File(metadata_path).createDirectory();
+        created = fs::create_directory(metadata_path);
 
         DatabasePtr impl = getImpl(create, metadata_path, context);
 
@@ -74,11 +77,8 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     }
     catch (...)
     {
-        Poco::File metadata_dir(metadata_path);
-
-        if (created && metadata_dir.exists())
-            metadata_dir.remove(true);
-
+        if (created && fs::exists(metadata_path))
+            fs::remove_all(metadata_path);
         throw;
     }
 }
