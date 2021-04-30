@@ -1,11 +1,13 @@
-Array product 	720
-28.799999999999997	Float64
+Array product with constant column
+720	Float64
+24	Float64
 3.5	Float64
-20	Float64
-720
+6	Float64
+Array product with non constant column
+24
 0
 6
-720
+24
 0
 6
 Types of aggregation result array product
