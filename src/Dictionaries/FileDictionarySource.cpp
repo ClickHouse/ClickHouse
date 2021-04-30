@@ -12,6 +12,9 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -80,8 +83,11 @@ std::string FileDictionarySource::toString() const
 
 Poco::Timestamp FileDictionarySource::getLastModification() const
 {
-    return Poco::File{filepath}.getLastModified();
+    fs::file_time_type fs_time = fs::last_write_time(filepath);
+    auto micro_sec = std::chrono::duration_cast<std::chrono::microseconds>(fs_time.time_since_epoch());
+    return Poco::Timestamp(micro_sec.count());
 }
+
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {

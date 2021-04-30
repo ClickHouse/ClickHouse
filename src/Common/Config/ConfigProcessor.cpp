@@ -424,20 +424,19 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 
     for (const std::string & merge_dir_name : merge_dirs)
     {
-        Poco::File merge_dir(merge_dir_name);
-        if (!merge_dir.exists() || !merge_dir.isDirectory())
+        fs::path merge_dir(merge_dir_name);
+        if (!fs::exists(merge_dir) || !is_directory(merge_dir))
             continue;
 
-        for (Poco::DirectoryIterator it(merge_dir_name); it != Poco::DirectoryIterator(); ++it)
+        for (fs::directory_iterator it(merge_dir_name); it != fs::directory_iterator(); ++it)
         {
-            Poco::File & file = *it;
-            Poco::Path path(file.path());
-            std::string extension = path.getExtension();
-            std::string base_name = path.getBaseName();
+            fs::path path(it->path());
+            std::string extension = path.extension();
+            std::string base_name = path.stem();
 
             // Skip non-config and temporary files
-            if (file.isFile() && (extension == "xml" || extension == "conf") && !startsWith(base_name, "."))
-                files.push_back(file.path());
+            if (fs::is_regular_file(path) && (extension == ".xml" || extension == ".conf") && !startsWith(base_name, "."))
+                files.push_back(it->path());
         }
     }
 
@@ -512,7 +511,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         else
         {
             std::string default_path = "/etc/metrika.xml";
-            if (Poco::File(default_path).exists())
+            if (fs::exists(default_path))
                 include_from_path = default_path;
         }
         if (!include_from_path.empty())
