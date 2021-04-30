@@ -471,7 +471,9 @@ void DistributedBlockOutputStream::writeSuffix()
         LOG_DEBUG(log, "It took {} sec. to insert {} blocks, {} rows per second. {}", elapsed, inserted_blocks, inserted_rows / elapsed, getCurrentStateDescription());
     };
 
-    if (insert_sync && pool)
+    /// Pool finished means that some exception had been thrown before,
+    /// and scheduling new jobs will return "Cannot schedule a task" error.
+    if (insert_sync && pool && !pool->finished())
     {
         finished_jobs_count = 0;
         try
