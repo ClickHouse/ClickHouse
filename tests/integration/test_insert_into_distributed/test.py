@@ -1,6 +1,7 @@
 import time
 
 import pytest
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
@@ -76,11 +77,19 @@ CREATE TABLE table_function (n UInt8, s String) ENGINE = MergeTree() ORDER BY n'
 CREATE TABLE table_function (n UInt8, s String) ENGINE = MergeTree() ORDER BY n''')
 
         node1.query('''
-CREATE TABLE distributed_one_replica (date Date, id UInt32) ENGINE = Distributed('shard_with_local_replica_internal_replication', 'default', 'single_replicated')
+CREATE TABLE distributed_one_replica_internal_replication (date Date, id UInt32) ENGINE = Distributed('shard_with_local_replica_internal_replication', 'default', 'single_replicated')
 ''')
 
         node2.query('''
-CREATE TABLE distributed_one_replica (date Date, id UInt32) ENGINE = Distributed('shard_with_local_replica_internal_replication', 'default', 'single_replicated')
+CREATE TABLE distributed_one_replica_internal_replication (date Date, id UInt32) ENGINE = Distributed('shard_with_local_replica_internal_replication', 'default', 'single_replicated')
+''')
+
+        node1.query('''
+CREATE TABLE distributed_one_replica_no_internal_replication (date Date, id UInt32) ENGINE = Distributed('shard_with_local_replica', 'default', 'single_replicated')
+''')
+
+        node2.query('''
+CREATE TABLE distributed_one_replica_no_internal_replication (date Date, id UInt32) ENGINE = Distributed('shard_with_local_replica', 'default', 'single_replicated')
 ''')
 
         node2.query('''
@@ -174,11 +183,42 @@ def test_inserts_local(started_cluster):
     assert instance.query("SELECT count(*) FROM local").strip() == '1'
 
 
-def test_inserts_single_replica(started_cluster):
+def test_inserts_single_replica_local_internal_replication(started_cluster):
+    with pytest.raises(QueryRuntimeException, match="Table default.single_replicated doesn't exist"):
+        node1.query(
+            "INSERT INTO distributed_one_replica_internal_replication VALUES ('2000-01-01', 1)",
+            settings={
+                "insert_distributed_sync": "1",
+                "prefer_localhost_replica": "1",
+                # to make the test more deterministic
+                "load_balancing": "first_or_random",
+            },
+        )
+    assert node2.query("SELECT count(*) FROM single_replicated").strip() == '0'
+
+
+def test_inserts_single_replica_internal_replication(started_cluster):
     node1.query(
-        "INSERT INTO distributed_one_replica VALUES ('2000-01-01', 1)",
-        settings={"insert_distributed_sync": "1", "prefer_localhost_replica": "0"},
+        "INSERT INTO distributed_one_replica_internal_replication VALUES ('2000-01-01', 1)",
+        settings={
+            "insert_distributed_sync": "1",
+            "prefer_localhost_replica": "0",
+            # to make the test more deterministic
+            "load_balancing": "first_or_random",
+        },
     )
+    assert node2.query("SELECT count(*) FROM single_replicated").strip() == '1'
+
+
+def test_inserts_single_replica_no_internal_replication(started_cluster):
+    with pytest.raises(QueryRuntimeException, match="Table default.single_replicated doesn't exist"):
+        node1.query(
+            "INSERT INTO distributed_one_replica_no_internal_replication VALUES ('2000-01-01', 1)",
+            settings={
+                "insert_distributed_sync": "1",
+                "prefer_localhost_replica": "0",
+            },
+        )
     assert node2.query("SELECT count(*) FROM single_replicated").strip() == '1'
 
 
