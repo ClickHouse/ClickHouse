@@ -1,16 +1,20 @@
-SELECT 'Array product ', (arrayProduct(array(1,2,3,4,5,6)));
-select arrayProduct(array(1.0,2.0,3.0,4.8)) as k , toTypeName(k);
-select arrayProduct(array(1,3.5)) as k , toTypeName(k);
-SELECT arrayProduct([toDecimal32(2, 8), toDecimal32(10, 8)]) as a , toTypeName(a);
+SELECT 'Array product with constant column';
+
+SELECT arrayProduct([1,2,3,4,5,6]) as a, toTypeName(a);
+SELECT arrayProduct(array(1.0,2.0,3.0,4.0)) as a, toTypeName(a);
+SELECT arrayProduct(array(1,3.5)) as a, toTypeName(a);
+SELECT arrayProduct([toDecimal64(1,8), toDecimal64(2,8), toDecimal64(3,8)]) as a, toTypeName(a);
+
+SELECT 'Array product with non constant column';
 
 DROP TABLE IF EXISTS test_aggregation;
 CREATE TABLE test_aggregation (x Array(Int)) ENGINE=TinyLog;
-INSERT INTO test_aggregation VALUES ([1,2,3,4,5,6]), ([]), ([1,2,3]);
+INSERT INTO test_aggregation VALUES ([1,2,3,4]), ([]), ([1,2,3]);
 SELECT arrayProduct(x) FROM test_aggregation;
 DROP TABLE test_aggregation;
 
 CREATE TABLE test_aggregation (x Array(Decimal64(8))) ENGINE=TinyLog;
-INSERT INTO test_aggregation VALUES ([1,2,3,4,5,6]), ([]), ([1,2,3]);
+INSERT INTO test_aggregation VALUES ([1,2,3,4]), ([]), ([1,2,3]);
 SELECT arrayProduct(x) FROM test_aggregation;
 DROP TABLE test_aggregation;
 
