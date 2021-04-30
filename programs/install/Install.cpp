@@ -844,8 +844,8 @@ namespace
                 fmt::print("The pidof command returned unusual output.\n");
             }
 
-            WriteBufferFromFileDescriptor stderr(STDERR_FILENO);
-            copyData(sh->err, stderr);
+            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
+            copyData(sh->err, std_err);
 
             sh->tryWait();
         }
