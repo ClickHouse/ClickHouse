@@ -27,7 +27,7 @@ if (NOT USE_INTERNAL_LLVM_LIBRARY)
     set (LLVM_PATHS "/usr/local/lib/llvm")
 
     if (NOT LLVM_FOUND)
-        find_package (LLVM 11...<12 CONFIG PATHS ${LLVM_PATHS})
+        find_package (LLVM 11...12 CONFIG PATHS ${LLVM_PATHS})
     endif ()
 
     if (LLVM_FOUND)
