@@ -473,8 +473,6 @@ void RemoteQueryExecutor::sendExternalTables()
             {
                 StoragePtr cur = table.second;
 
-
-
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
                 data->creating_pipe_callback = [cur, context = this->context]()
