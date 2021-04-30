@@ -1,7 +1,4 @@
 <test>
-    <settings>
-        <use_short_circuit_function_evaluation>1</use_short_circuit_function_evaluation>
-    </settings>
     <query>SELECT if(number % 2, isValidUTF8(repeat(toString(number), 10)), isValidUTF8(repeat(toString(number + 10), 10))) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT not isValidUTF8(repeat(toString(number), 10)) and isValidUTF8(repeat(toString(number + 10), 10)) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(repeat(toString(number), 10)) or isValidUTF8(repeat(toString(number + 10), 10)) FROM numbers(1000000) FORMAT Null</query>
