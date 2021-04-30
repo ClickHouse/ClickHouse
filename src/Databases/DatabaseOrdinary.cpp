@@ -17,7 +17,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include <Poco/DirectoryIterator.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -112,8 +111,7 @@ void DatabaseOrdinary::loadStoredObjects(ContextPtr local_context, bool has_forc
                 auto * create_query = ast->as<ASTCreateQuery>();
                 create_query->database = database_name;
 
-                auto detached_permanently_flag = Poco::File(full_path.string() + detached_suffix);
-                if (detached_permanently_flag.exists())
+                if (fs::exists(full_path.string() + detached_suffix))
                 {
                     /// FIXME: even if we don't load the table we can still mark the uuid of it as taken.
                     /// if (create_query->uuid != UUIDHelpers::Nil)
@@ -282,11 +280,11 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
     try
     {
         /// rename atomically replaces the old file with the new one.
-        Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
+        fs::rename(table_metadata_tmp_path, table_metadata_path);
     }
     catch (...)
     {
-        Poco::File(table_metadata_tmp_path).remove();
+        fs::remove(table_metadata_tmp_path);
         throw;
     }
 }

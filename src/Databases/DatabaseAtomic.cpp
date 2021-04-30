@@ -12,6 +12,9 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <filesystem>
 #include <Interpreters/DDLTask.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -42,7 +45,7 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, c
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
-    Poco::File(path_to_table_symlinks).createDirectories();
+    fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }
 
