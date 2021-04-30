@@ -7,6 +7,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 #include <IO/createReadBufferFromFileBase.h>
+#include <Poco/File.h>
 
 #include <fstream>
 #include <unistd.h>
@@ -24,7 +25,6 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
-    extern const int CANNOT_OPEN_FILE;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -292,16 +292,12 @@ void DiskLocal::truncateFile(const String & path, size_t size)
 
 void DiskLocal::createFile(const String & path)
 {
-    FILE * file = fopen((disk_path / path).string().data(), "a+");
-    if (file == nullptr)
-        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create file {}", path);
+    Poco::File(disk_path / path).createFile();
 }
 
 void DiskLocal::setReadOnly(const String & path)
 {
-    fs::permissions(disk_path / path,
-                    fs::perms::owner_read | fs::perms::group_read | fs::perms::others_read,
-                    fs::perm_options::remove); /// bitwise AND
+    Poco::File(disk_path / path).setReadOnly(true);
 }
 
 bool inline isSameDiskType(const IDisk & one, const IDisk & another)
@@ -392,12 +388,12 @@ void registerDiskLocal(DiskFactory & factory)
 
         fs::path disk(path);
         fs::perms p = fs::status(disk).permissions();
-        bool is_readable = (p & fs::perms::owner_read) != fs::perms::none
-                           | (p & fs::perms::group_read) != fs::perms::none
-                           | (p & fs::perms::others_read) != fs::perms::none;
-        bool is_writable = (p & fs::perms::owner_write) != fs::perms::none
-                           | (p & fs::perms::group_write) != fs::perms::none
-                           | (p & fs::perms::others_write) != fs::perms::none;
+        bool is_readable = ((p & fs::perms::owner_read) != fs::perms::none)
+                           | ((p & fs::perms::group_read) != fs::perms::none)
+                           | ((p & fs::perms::others_read) != fs::perms::none);
+        bool is_writable = ((p & fs::perms::owner_write) != fs::perms::none)
+                           | ((p & fs::perms::group_write) != fs::perms::none)
+                           | ((p & fs::perms::others_write) != fs::perms::none);
         if (!is_readable || !is_writable)
             throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
 
