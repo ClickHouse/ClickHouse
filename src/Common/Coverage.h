@@ -32,10 +32,10 @@ public:
     inline void dump() { dumpAndChangeTestName({}); }
 
 private:
-    static constexpr const char * logger_name = "coverage";
+    static constexpr const char * logger_name = "BaseDaemon.coverage";
 
     /// How many tests are converted to LCOV in parallel.
-    static constexpr const size_t test_processing_thread_pool_size = 4;
+    static constexpr const size_t test_processing_thread_pool_size = 6;
 
     /// How many addresses do we dump into local storage before acquiring the edges_mutex and pushing into edges.
     static constexpr const size_t hits_batch_array_size = 10000;

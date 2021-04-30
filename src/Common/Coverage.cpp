@@ -45,7 +45,8 @@ Writer::Writer()
       coverage_dir(std::filesystem::current_path() / "../../coverage"),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
-      pool(Writer::test_processing_thread_pool_size)
+      // 0 -- unlimited queue e.g. functor insertion to thread pool won't lock.
+      pool(Writer::test_processing_thread_pool_size, 1000, 0)
 {
     Context::setSettingHook("coverage_test_name", [this](const Field& value)
     {
