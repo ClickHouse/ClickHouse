@@ -23,8 +23,6 @@
 
 #include <Common/Exception.h>
 
-#include <iostream>
-
 namespace DB
 {
 

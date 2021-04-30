@@ -698,9 +698,6 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
                     if (should_compile)
                     {
-                        for (const auto * child_node : frame.node->children)
-                            std::cerr << child_node->result_name << std::endl;
-
                         NodeRawConstPtrs new_children;
                         auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
 
