@@ -146,8 +146,89 @@ struct ArrayAggregateImpl
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
+        /// Constant case.
         if (!column)
-            return false;
+        {
+            const ColumnConst * column_const = checkAndGetColumnConst<ColVecType>(&*mapped);
+
+            if (!column_const)
+                return false;
+
+            const AggregationType x = column_const->template getValue<Element>(); // NOLINT
+            const auto & data = checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
+
+            typename ColVecResultType::MutablePtr res_column;
+            if constexpr (IsDecimalNumber<Element>)
+                res_column = ColVecResultType::create(offsets.size(), data.getScale());
+            else
+                res_column = ColVecResultType::create(offsets.size());
+
+            auto & res = res_column->getData();
+
+            size_t pos = 0;
+            for (size_t i = 0; i < offsets.size(); ++i)
+            {
+                if constexpr (aggregate_operation == AggregateOperation::sum)
+                {
+                    size_t array_size = offsets[i] - pos;
+                    /// Just multiply the value by array size.
+                    res[i] = x * array_size;
+                }
+                else if constexpr (aggregate_operation == AggregateOperation::min ||
+                                aggregate_operation == AggregateOperation::max)
+                {
+                    res[i] = x;
+                }
+                else if constexpr (aggregate_operation == AggregateOperation::average)
+                {
+                    if constexpr (IsDecimalNumber<Element>)
+                    {
+                        res[i] = DecimalUtils::convertTo<ResultType>(x, data.getScale());
+                    }
+                    else
+                    {
+                        res[i] = x;
+                    }
+                }
+                else if constexpr (aggregate_operation == AggregateOperation::product)
+                {
+                    size_t array_size = offsets[i] - pos;
+                    AggregationType product = x;
+
+                    if constexpr (IsDecimalNumber<Element>)
+                    {
+                        using T = decltype(x.value);
+                        T x_val = x.value;
+
+                        for (size_t array_index = 1; array_index < array_size; ++array_index)
+                        {
+                            T product_val = product.value;
+
+                            if (common::mulOverflow(x_val, product_val, product.value))
+                                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
+                        }
+
+                        auto result_scale = data.getScale() * array_size;
+                        if (unlikely(result_scale > DecimalUtils::max_precision<AggregationType>))
+                            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is out of bounds", result_scale);
+
+                        res[i] = DecimalUtils::convertTo<ResultType>(product, data.getScale() * array_size);
+                    }
+                    else
+                    {
+                        for (size_t array_index = 1; array_index < array_size; ++array_index)
+                            product = product * x;
+
+                        res[i] = product;
+                    }
+                }
+
+                pos = offsets[i];
+            }
+
+            res_ptr = std::move(res_column);
+            return true;
+        }
 
         const auto & data = column->getData();
 
