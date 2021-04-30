@@ -70,6 +70,10 @@ def check_args_and_update_paths(args):
         if not os.path.exists(path):
             raise Exception("Path {} doesn't exist".format(path))
 
+    if args.dockerd_volume:
+        if not os.path.isabs(args.dockerd_volume):
+            args.src_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.dockerd_volume))
+
     if not os.path.exists(os.path.join(args.base_configs_dir, "config.xml")):
         raise Exception("No configs.xml in {}".format(args.base_configs_dir))
 
@@ -174,6 +178,12 @@ if __name__ == "__main__":
         dest="tmpfs",
         help="Use tmpfs for dockerd files")
 
+    parser.add_argument(
+        "--dockerd-volume-dir",
+        action='store',
+        dest="dockerd_volume",
+        help="Bind volume to this dir to use for dockerd files")
+
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
     args = parser.parse_args()
@@ -218,9 +228,11 @@ if __name__ == "__main__":
     dockerd_internal_volume = ""
     if args.tmpfs:
         dockerd_internal_volume = "--tmpfs /var/lib/docker -e DOCKER_RAMDISK=true"
+    elif args.dockerd_volume:
+        dockerd_internal_volume = f"--mount type=bind,source={args.dockerd_volume},target=/var/lib/docker"
     else:
         subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
-        dockerd_internal_volume = "--volume /var/lib/docker--volume={}_volume:/var/lib/docker".format(CONTAINER_NAME)
+        dockerd_internal_volume = "--volume={}_volume:/var/lib/docker".format(CONTAINER_NAME)
 
     # enable tty mode & interactive for docker if we have real tty
     tty = ""

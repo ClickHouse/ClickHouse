@@ -142,6 +142,27 @@ def check_kafka_is_available(kafka_id, kafka_port):
     p.communicate()
     return p.returncode == 0
 
+def check_rabbitmq_is_available(rabbitmq_id):
+    p = subprocess.Popen(('docker',
+                        'exec',
+                        '-i',
+                        rabbitmq_id,
+                        'rabbitmqctl',
+                        'await_startup'),
+                        stdout=subprocess.PIPE)
+    p.communicate()
+    return p.returncode == 0
+
+def enable_consistent_hash_plugin(rabbitmq_id):
+    p = subprocess.Popen(('docker',
+                        'exec',
+                        '-i',
+                        rabbitmq_id,
+                        "rabbitmq-plugins", "enable", "rabbitmq_consistent_hash_exchange"),
+                        stdout=subprocess.PIPE)
+    p.communicate()
+    return p.returncode == 0
+
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
 
@@ -267,8 +288,8 @@ class ClickHouseCluster:
 
         # available when with_rabbitmq == True
         self.rabbitmq_host = "rabbitmq1"
-        self.rabbitmq_port = get_open_port()
-        self.rabbitmq_http_port = get_open_port()
+        self.rabbitmq_ip = None
+        self.rabbitmq_port = 5672
 
         # available when with_redis == True
         self.redis_host = "redis1"
@@ -512,10 +533,7 @@ class ClickHouseCluster:
     def setup_rabbitmq_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_rabbitmq = True
         env_variables['RABBITMQ_HOST'] = self.rabbitmq_host
-        env_variables['RABBITMQ_EXTERNAL_PORT'] = str(self.rabbitmq_port)
-        env_variables['RABBITMQ_INTERNAL_PORT'] = "5672"
-        env_variables['RABBITMQ_EXTERNAL_HTTP_PORT'] = str(self.rabbitmq_http_port)
-        env_variables['RABBITMQ_INTERNAL_HTTP_PORT'] = "15672"
+        env_variables['RABBITMQ_PORT'] = str(self.rabbitmq_port)
 
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_rabbitmq.yml')])
         self.base_rabbitmq_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
@@ -904,6 +922,24 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
+    def wait_rabbitmq_to_start(self, timeout=30):
+        self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
+
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_rabbitmq_is_available(self.rabbitmq_docker_id):
+                    logging.debug("RabbitMQ is available")
+                    if enable_consistent_hash_plugin(self.rabbitmq_docker_id):
+                        logging.debug("RabbitMQ consistent hash plugin is available")
+                        return
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't connect to RabbitMQ " + str(ex))
+                time.sleep(0.5)
+
+        raise Exception("Cannot wait RabbitMQ container")
+
     def wait_zookeeper_to_start(self, timeout=180):
         start = time.time()
         while time.time() - start < timeout:
@@ -1166,6 +1202,7 @@ class ClickHouseCluster:
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
                 self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
+                self.wait_rabbitmq_to_start()
 
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug('Setup HDFS')
