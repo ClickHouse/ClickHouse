@@ -3,6 +3,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Interpreters/Context_fwd.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -27,6 +28,14 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class CompiledExpressionCache;
+
+namespace JSONBuilder
+{
+    class JSONMap;
+
+    class IItem;
+    using ItemPtr = std::unique_ptr<IItem>;
+}
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
@@ -54,6 +63,8 @@ public:
         FUNCTION,
     };
 
+    static const char * typeToString(ActionType type);
+
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
@@ -80,6 +91,8 @@ public:
         /// Some functions like `ignore()` always return constant but can't be replaced by constant it.
         /// We calculate such constants in order to avoid unnecessary materialization, but prohibit it's folding.
         bool allow_constant_folding = true;
+
+        void toTree(JSONBuilder::JSONMap & map) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -220,7 +233,7 @@ public:
     /// Create actions which may calculate part of filter using only available_inputs.
     /// If nothing may be calculated, returns nullptr.
     /// Otherwise, return actions which inputs are from available_inputs.
-    /// Returned actions add single column which may be used for filter.
+    /// Returned actions add single column which may be used for filter. Added column will be the first one.
     /// Also, replace some nodes of current inputs to constant 1 in case they are filtered.
     ///
     /// @param all_inputs should contain inputs from previous step, which will be used for result actions.
@@ -231,9 +244,9 @@ public:
     /// Pushed condition: z > 0
     /// GROUP BY step will transform columns `x, y, z` -> `sum(x), y, z`
     /// If we just add filter step with actions `z -> z > 0` before GROUP BY,
-    /// columns will be transformed like `x, y, z` -> `z, z > 0, x, y` -(remove filter)-> `z, x, y`.
+    /// columns will be transformed like `x, y, z` -> `z > 0, z, x, y` -(remove filter)-> `z, x, y`.
     /// To avoid it, add inputs from `all_inputs` list,
-    /// so actions `x, y, z -> x, y, z, z > 0` -(remove filter)-> `x, y, z` will not change columns order.
+    /// so actions `x, y, z -> z > 0, x, y, z` -(remove filter)-> `x, y, z` will not change columns order.
     ActionsDAGPtr cloneActionsForFilterPushDown(
         const std::string & filter_name,
         bool can_remove_filter,

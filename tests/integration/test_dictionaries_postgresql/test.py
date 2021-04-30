@@ -9,7 +9,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=[
     'configs/config.xml',
     'configs/dictionaries/postgres_dict.xml',
-    'configs/log_conf.xml'], with_postgres=True)
+    'configs/log_conf.xml'], with_postgres=True, with_postgres_cluster=True)
 
 postgres_dict_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
@@ -62,7 +62,7 @@ def started_cluster():
         print("postgres1 connected")
         create_postgres_db(postgres_conn, 'clickhouse')
 
-        postgres_conn = get_postgres_conn(port=5441)
+        postgres_conn = get_postgres_conn(port=5421)
         print("postgres2 connected")
         create_postgres_db(postgres_conn, 'clickhouse')
 
@@ -80,7 +80,7 @@ def test_load_dictionaries(started_cluster):
     create_dict(table_name)
     dict_name = 'dict0'
 
-    node1.query("SYSTEM RELOAD DICTIONARIES")
+    node1.query("SYSTEM RELOAD DICTIONARY {}".format(dict_name))
     assert node1.query("SELECT count() FROM `test`.`dict_table_{}`".format(table_name)).rstrip() == '10000'
     assert node1.query("SELECT dictGetUInt32('{}', 'id', toUInt64(0))".format(dict_name)) == '0\n'
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(9999))".format(dict_name)) == '9999\n'
@@ -131,7 +131,7 @@ def test_invalidate_query(started_cluster):
 def test_dictionary_with_replicas(started_cluster):
     conn1 = get_postgres_conn(port=5432, database=True)
     cursor1 = conn1.cursor()
-    conn2 = get_postgres_conn(port=5441, database=True)
+    conn2 = get_postgres_conn(port=5421, database=True)
     cursor2 = conn2.cursor()
 
     create_postgres_table(cursor1, 'test1')

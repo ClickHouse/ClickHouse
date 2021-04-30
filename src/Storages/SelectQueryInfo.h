@@ -119,9 +119,13 @@ struct SelectQueryInfo
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
 
-    /// For optimize_skip_unused_shards.
-    /// Can be modified in getQueryProcessingStage()
+    /// Cluster for the query.
     ClusterPtr cluster;
+    /// Optimized cluster for the query.
+    /// In case of optimize_skip_unused_shards it may differs from original cluster.
+    ///
+    /// Configured in StorageDistributed::getQueryProcessingStage()
+    ClusterPtr optimized_cluster;
 
     TreeRewriterResultPtr syntax_analyzer_result;
 
@@ -134,6 +138,8 @@ struct SelectQueryInfo
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
+
+    ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 };
 
 }

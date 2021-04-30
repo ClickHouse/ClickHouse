@@ -29,7 +29,7 @@ static constexpr auto threshold = 2;
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
-    const Context & context,
+    ContextPtr context,
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
@@ -39,7 +39,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , queried_columns{queried_columns_}
     , sorting_key_names{NameSet(
           metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
-    , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)}
+    , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
@@ -218,14 +218,20 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         if (!it->viable)
             break;
 
-        /// 10% ratio is just a guess.
-        /// If sizes of compressed columns cannot be calculated, e.g. for compact parts,
-        /// use number of moved columns as a fallback.
-        bool moved_enough =
-            (total_size_of_queried_columns > 0 && total_size_of_moved_conditions > 0
-            && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns)
-                || (total_number_of_moved_columns > 0
-                    && (total_number_of_moved_columns + it->identifiers.size()) * 10 > queried_columns.size());
+        bool moved_enough = false;
+        if (total_size_of_queried_columns > 0)
+        {
+            /// If we know size of queried columns use it as threshold. 10% ratio is just a guess.
+            moved_enough = total_size_of_moved_conditions > 0
+                && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns;
+        }
+        else
+        {
+            /// Otherwise, use number of moved columns as a fallback.
+            /// It can happen, if table has only compact parts. 25% ratio is just a guess.
+            moved_enough = total_number_of_moved_columns > 0
+                && (total_number_of_moved_columns + it->identifiers.size()) * 4 > queried_columns.size();
+        }
 
         if (moved_enough)
             break;
@@ -338,6 +344,10 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
         /// disallow GLOBAL IN, GLOBAL NOT IN
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
+            return true;
+
+        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
+        if ("indexHint" == function_ptr->name)
             return true;
     }
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))

@@ -36,9 +36,9 @@ class FunctionAddressToLine : public IFunction
 {
 public:
     static constexpr auto name = "addressToLine";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(ContextPtr context)
     {
-        context.checkAccess(AccessType::addressToLine);
+        context->checkAccess(AccessType::addressToLine);
         return std::make_shared<FunctionAddressToLine>();
     }
 
