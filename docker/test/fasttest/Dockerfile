@@ -1,7 +1,7 @@
 #  docker build -t yandex/clickhouse-fasttest .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=12
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
