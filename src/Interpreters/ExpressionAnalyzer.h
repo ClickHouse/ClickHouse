@@ -299,7 +299,7 @@ public:
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
-    std::unique_ptr<QueryPlan> getJoinedPlan() { return std::move(joined_plan); }
+    std::unique_ptr<QueryPlan> getJoinedPlan();
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
     const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
