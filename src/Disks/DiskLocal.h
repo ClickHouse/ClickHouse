@@ -8,6 +8,9 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -24,15 +27,15 @@ public:
     friend class DiskLocalReservation;
 
     DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_)
-        : name(name_), disk_path(path_), keep_free_space_bytes(keep_free_space_bytes_)
+        : name(name_), disk_path(path_), disk_path_str(path_), keep_free_space_bytes(keep_free_space_bytes_)
     {
-        if (disk_path.back() != '/')
-            throw Exception("Disk path must ends with '/', but '" + disk_path + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
+        if (disk_path_str.back() != '/')
+            throw Exception("Disk path must ends with '/', but '" + disk_path_str + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
     }
 
     const String & getName() const override { return name; }
 
-    const String & getPath() const override { return disk_path; }
+    const String & getPath() const override { return disk_path_str; }
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -109,7 +112,8 @@ private:
 
 private:
     const String name;
-    const String disk_path;
+    const fs::path disk_path;
+    const String disk_path_str;
     const UInt64 keep_free_space_bytes;
 
     UInt64 reserved_bytes = 0;
