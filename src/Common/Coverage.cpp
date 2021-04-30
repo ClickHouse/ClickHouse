@@ -11,6 +11,7 @@
 #include <fmt/ostream.h>
 
 #include "Common/ProfileEvents.h"
+#include "common/logger_useful.h"
 #include <common/demangle.h>
 
 #include <Interpreters/Context.h>
@@ -40,7 +41,8 @@ static inline auto getInstanceAndInitGlobalCounters()
 }
 
 Writer::Writer()
-    : coverage_dir(std::filesystem::current_path() / "../../coverage"),
+    : log(&Poco::Logger::get(Writer::logger_name)),
+      coverage_dir(std::filesystem::current_path() / "../../coverage"),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
       pool(Writer::test_processing_thread_pool_size)
@@ -68,30 +70,43 @@ void Writer::initialized(uint32_t count)
     std::filesystem::create_directory(coverage_dir);
 
     edges.reserve(count);
+    LOG_INFO(log, "Initialized runtime, {} edges found", count);
 }
 
 void Writer::hit(void * addr)
 {
-    if (hits_batch_index == hits_batch_array_size - 1) //non-atomic, ok as thread_local.
+    if constexpr (test_use_batch)
+    {
+        if (hits_batch_index == hits_batch_array_size - 1) //non-atomic, ok as thread_local.
+        {
+            auto lck = std::lock_guard(edges_mutex);
+
+            if (test)
+            {
+                hits_batch_storage[hits_batch_index] = addr; //can insert last element;
+                edges.insert(edges.end(), hits_batch_storage.begin(), hits_batch_storage.end());
+            }
+
+            hits_batch_index = 0;
+
+            return;
+        }
+
+        hits_batch_storage[hits_batch_index++] = addr;
+    }
+    else
     {
         auto lck = std::lock_guard(edges_mutex);
 
         if (test)
-        {
-            hits_batch_storage[hits_batch_index] = addr; //can insert last element;
-            edges.insert(edges.end(), hits_batch_storage.begin(), hits_batch_storage.end());
-        }
-
-        hits_batch_index = 0;
-
-        return;
+            edges.push_back(addr);
     }
-
-    hits_batch_storage[hits_batch_index++] = addr;
 }
 
 void Writer::dumpAndChangeTestName(std::string_view test_name)
 {
+    LOG_INFO(log, "{} Started converting", test_name);
+
     std::string old_test_name;
     Hits edges_copies;
 
@@ -104,13 +119,14 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
             return;
         }
 
-        if (hits_batch_index > 0) // haven't copied last addresses from local storage to edges
-        {
-            edges.insert(edges.end(),
-                hits_batch_storage.begin(), std::next(hits_batch_storage.begin(), hits_batch_index));
+        if constexpr (test_use_batch)
+            if (hits_batch_index > 0) // haven't copied last addresses from local storage to edges
+            {
+                edges.insert(edges.end(),
+                    hits_batch_storage.begin(), std::next(hits_batch_storage.begin(), hits_batch_index));
 
-            hits_batch_index = 0;
-        }
+                hits_batch_index = 0;
+            }
 
         edges_copies = edges; //TODO Check if it's fast
         old_test_name = *test;
@@ -124,6 +140,8 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         }
     }
 
+    LOG_INFO(log, "{} Copied shared data", test_name);
+
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
     /// The move is evaluated within current function's lifetime during function constructor call.
     auto f = [this, test_name = std::move(old_test_name), edges_copied = std::move(edges_copies)]
@@ -133,6 +151,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 
     // The functor insertion itself is thread-safe.
     pool.scheduleOrThrowOnError(std::move(f));
+    LOG_INFO(log, "{} Scheduled job", test_name);
 }
 
 Writer::AddrInfo Writer::symbolize(
@@ -171,6 +190,8 @@ Writer::AddrInfo Writer::symbolize(
 
 void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view test_name)
 {
+    LOG_INFO(log, "{} Started filling internal structures", test_name);
+
     SourceFiles source_files;
 
     using AddrsCache = std::unordered_map<void*, AddrInfo>;
@@ -195,7 +216,7 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
 
         if (const time_t nt = time(nullptr); nt > e)
         {
-            fmt::print(std::cout, "{}s\t{}/{}\t{}\n", nt - t, i, hits.size(), test_name);
+            LOG_INFO(log, "{} processed {}/{} ({}s elapsed)", test_name, i, hits.size(), nt - t);
             e = nt;
         }
 
@@ -213,7 +234,7 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
         //     ++it->second.call_count;
     }
 
-    std::cout.flush();
+    LOG_INFO(log, "{} Finished filling internal structures", test_name);
     convertToLCOVAndDumpToDisk(hits.size(), source_files, test_name);
 }
 
@@ -258,6 +279,8 @@ void Writer::convertToLCOVAndDumpToDisk(
      *     LH:<number of lines executed (hit)>
      *     end_of_record
      */
+    LOG_INFO(log, "{} Started dumping", test_name);
+
     std::ofstream ofs(coverage_dir / test_name);
 
     fmt::print(ofs, "TN:{}\n", test_name);
@@ -295,5 +318,7 @@ void Writer::convertToLCOVAndDumpToDisk(
 
         fmt::print(ofs, "LF:{}\nLH:{}\nend_of_record\n", data.lines.size(), lh);
     }
+
+    LOG_INFO(log, "{} Finished dumping", test_name);
 }
 }

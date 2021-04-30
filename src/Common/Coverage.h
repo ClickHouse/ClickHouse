@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <Poco/Logger.h>
 
 #include <common/types.h>
 
@@ -31,6 +32,8 @@ public:
     inline void dump() { dumpAndChangeTestName({}); }
 
 private:
+    static constexpr const char * logger_name = "coverage";
+
     /// How many tests are converted to LCOV in parallel.
     static constexpr const size_t test_processing_thread_pool_size = 4;
 
@@ -41,7 +44,11 @@ private:
     /// dumping them to shared cache.
     //static constexpr const size_t hits_batch_processing_size = 1000;
 
+    static constexpr bool test_use_batch = true;
+
     Writer();
+
+    Poco::Logger * const log;
 
     const std::filesystem::path coverage_dir;
 
