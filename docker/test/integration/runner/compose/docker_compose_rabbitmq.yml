@@ -4,9 +4,8 @@ services:
     rabbitmq1:
         image: rabbitmq:3-management
         hostname: rabbitmq1
-        ports:
-            - ${RABBITMQ_EXTERNAL_PORT}:${RABBITMQ_INTERNAL_PORT}
-            - ${RABBITMQ_EXTERNAL_HTTP_PORT}:${RABBITMQ_INTERNAL_HTTP_PORT}
+        expose:
+            - ${RABBITMQ_PORT}
         environment:
             RABBITMQ_DEFAULT_USER: "root"
             RABBITMQ_DEFAULT_PASS: "clickhouse"
