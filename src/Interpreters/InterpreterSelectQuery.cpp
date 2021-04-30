@@ -627,6 +627,28 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         if (!analysis_result.need_aggregate)
         {
             // What's the difference with selected_columns?
+            // Here we calculate the header we want from remote server after it
+            // executes query up to WithMergeableState. When there is an ORDER BY,
+            // it is executed on remote server firstly, then we execute merge
+            // sort on initiator. To execute ORDER BY, we need to calculate the
+            // ORDER BY keys. These keys might be not present among the final
+            // SELECT columns given by the `selected_column`. This is why we have
+            // to use proper keys given by the result columns of the
+            // `before_order_by` expression actions.
+            // Another complication is window functions -- if we have them, they
+            // are calculated on initiator, before ORDER BY columns. In this case,
+            // the shard has to return columns required for window function
+            // calculation and further steps, given by the `before_window`
+            // expression actions.
+            // As of 21.6 this is broken: the actions in `before_window` might
+            // not contain everything required for the ORDER BY step, but this
+            // is a responsibility of ExpressionAnalyzer and is not a problem
+            // with this code. See
+            // https://github.com/ClickHouse/ClickHouse/issues/19857 for details.
+            if (analysis_result.before_window)
+            {
+                return analysis_result.before_window->getResultColumns();
+            }
             return analysis_result.before_order_by->getResultColumns();
         }
 
@@ -654,7 +676,13 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
     if (options.to_stage == QueryProcessingStage::Enum::WithMergeableStateAfterAggregation)
     {
-        // What's the difference with selected_columns?
+        // It's different from selected_columns, see the comment above for
+        // WithMergeableState stage.
+        if (analysis_result.before_window)
+        {
+            return analysis_result.before_window->getResultColumns();
+        }
+
         return analysis_result.before_order_by->getResultColumns();
     }
 
@@ -995,7 +1023,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
               *  but there is an ORDER or LIMIT,
               *  then we will perform the preliminary sorting and LIMIT on the remote server.
               */
-            if (!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving())
+            if (!expressions.second_stage
+                && !expressions.need_aggregate
+                && !expressions.hasHaving()
+                && !expressions.has_window)
             {
                 if (expressions.has_order_by)
                     executeOrder(query_plan, query_info.input_order_info);
@@ -1105,12 +1136,41 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 /// We need to reset input order info, so that executeOrder can't use  it
                 query_info.input_order_info.reset();
             }
+
+            // Now we must execute:
+            // 1) expressions before window functions,
+            // 2) window functions,
+            // 3) expressions after window functions,
+            // 4) preliminary distinct.
+            // This code decides which part we execute on shard (first_stage)
+            // and which part on initiator (second_stage). See also the counterpart
+            // code for "second_stage" that has to execute the rest.
+            if (expressions.need_aggregate)
+            {
+                // We have aggregation, so we can't execute any later-stage
+                // expressions on shards, neither "before window functions" nor
+                // "before ORDER BY".
+            }
             else
             {
-                executeExpression(query_plan, expressions.before_window, "Before window functions");
-                executeWindow(query_plan);
-                executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
-                executeDistinct(query_plan, true, expressions.selected_columns, true);
+                // We don't have aggregation.
+                // Window functions must be executed on initiator (second_stage).
+                // ORDER BY and DISTINCT might depend on them, so if we have
+                // window functions, we can't execute ORDER BY and DISTINCT
+                // now, on shard (first_stage).
+                if (query_analyzer->hasWindow())
+                {
+                    executeExpression(query_plan, expressions.before_window, "Before window functions");
+                }
+                else
+                {
+                    // We don't have window functions, so we can execute the
+                    // expressions before ORDER BY and the preliminary DISTINCT
+                    // now, on shards (first_stage).
+                    assert(!expressions.before_window);
+                    executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
+                    executeDistinct(query_plan, true, expressions.selected_columns, true);
+                }
             }
 
             preliminary_sort();
@@ -1154,16 +1214,39 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 }
                 else if (expressions.hasHaving())
                     executeHaving(query_plan, expressions.before_having);
+            }
+            else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
+                throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::NOT_IMPLEMENTED);
 
+            // Now we must execute:
+            // 1) expressions before window functions,
+            // 2) window functions,
+            // 3) expressions after window functions,
+            // 4) preliminary distinct.
+            // Some of these were already executed at the shards (first_stage),
+            // see the counterpart code and comments there.
+            if (expressions.need_aggregate)
+            {
                 executeExpression(query_plan, expressions.before_window,
                     "Before window functions");
                 executeWindow(query_plan);
                 executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
                 executeDistinct(query_plan, true, expressions.selected_columns, true);
-
             }
-            else if (query.group_by_with_totals || query.group_by_with_rollup || query.group_by_with_cube)
-                throw Exception("WITH TOTALS, ROLLUP or CUBE are not supported without aggregation", ErrorCodes::NOT_IMPLEMENTED);
+            else
+            {
+                if (query_analyzer->hasWindow())
+                {
+                    executeWindow(query_plan);
+                    executeExpression(query_plan, expressions.before_order_by, "Before ORDER BY");
+                    executeDistinct(query_plan, true, expressions.selected_columns, true);
+                }
+                else
+                {
+                    // Neither aggregation nor windows, all expressions before
+                    // ORDER BY executed on shards.
+                }
+            }
 
             if (expressions.has_order_by)
             {
