@@ -1490,9 +1490,9 @@ private:
                     }
                 }
 
-                if (parsed_formatted_query)
+                if (ast_2)
                 {
-                    const auto text_2 = parsed_formatted_query->formatForErrorMessage();
+                    const auto text_2 = ast_2->formatForErrorMessage();
                     const auto * tmp_pos = text_2.c_str();
                     const auto ast_3 = parseQuery(tmp_pos, tmp_pos + text_2.size(),
                         false /* allow_multi_statements */);
