@@ -32,7 +32,7 @@ public:
 
 private:
     /// How many tests are converted to LCOV in parallel.
-    static constexpr const size_t test_processing_thread_pool_size = 6;
+    static constexpr const size_t test_processing_thread_pool_size = 4;
 
     /// How many addresses do we dump into local storage before acquiring the edges_mutex and pushing into edges.
     static constexpr const size_t hits_batch_array_size = 10000;

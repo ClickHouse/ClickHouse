@@ -3,6 +3,7 @@
 #include <cassert>
 
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
 
@@ -105,7 +106,9 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 
         if (hits_batch_index > 0) // haven't copied last addresses from local storage to edges
         {
-            edges.insert(edges.end(), hits_batch_storage.begin(), hits_batch_storage.end());
+            edges.insert(edges.end(),
+                hits_batch_storage.begin(), std::next(hits_batch_storage.begin(), hits_batch_index));
+
             hits_batch_index = 0;
         }
 
@@ -210,6 +213,7 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
         //     ++it->second.call_count;
     }
 
+    std::cout.flush();
     convertToLCOVAndDumpToDisk(hits.size(), source_files, test_name);
 }
 
@@ -254,10 +258,6 @@ void Writer::convertToLCOVAndDumpToDisk(
      *     LH:<number of lines executed (hit)>
      *     end_of_record
      */
-    time_t t = time(nullptr);
-    fmt::print(std::cout, "Dumping test {}\n", test_name);
-    std::cout.flush();
-
     std::ofstream ofs(coverage_dir / test_name);
 
     fmt::print(ofs, "TN:{}\n", test_name);
@@ -295,8 +295,5 @@ void Writer::convertToLCOVAndDumpToDisk(
 
         fmt::print(ofs, "LF:{}\nLH:{}\nend_of_record\n", data.lines.size(), lh);
     }
-
-    fmt::print(std::cout, "Dumped test {}, took {}s\n", test_name, time(nullptr) - t);
-    std::cout.flush();
 }
 }
