@@ -11,9 +11,10 @@
 #include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
-#include <Poco/Path.h>
 #include <Poco/Timestamp.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -288,19 +289,20 @@ inline String fullPath(const DiskPtr & disk, const String & path)
 /// Return parent path for the specified path.
 inline String parentPath(const String & path)
 {
-    return Poco::Path(path).parent().toString();
+    auto fs_path = fs::path(path).parent_path() / "";
+    return fs_path.string();
 }
 
 /// Return file name for the specified path.
 inline String fileName(const String & path)
 {
-    return Poco::Path(path).getFileName();
+    return fs::path(path).filename();
 }
 
 /// Return directory path for the specified path.
 inline String directoryPath(const String & path)
 {
-    return Poco::Path(path).setFileName("").toString();
+    return fs::is_directory(path) ? path : fs::path(path).parent_path().string();
 }
 
 }

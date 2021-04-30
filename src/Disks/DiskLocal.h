@@ -6,11 +6,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <Poco/DirectoryIterator.h>
-#include <Poco/File.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {

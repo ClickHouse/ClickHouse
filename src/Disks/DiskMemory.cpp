@@ -6,9 +6,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {

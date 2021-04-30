@@ -8,10 +8,9 @@
 #include <Common/quoteString.h>
 #include <IO/createReadBufferFromFileBase.h>
 
-#include <filesystem>
+#include <fstream>
 #include <unistd.h>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -25,6 +24,7 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
+    extern const int CANNOT_OPEN_FILE;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -268,12 +268,14 @@ void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
 
 void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    Poco::File(disk_path / path).setLastModified(timestamp);
+    fs::last_write_time(disk_path / path, static_cast<fs::file_time_type>(std::chrono::microseconds(timestamp.epochMicroseconds())));
 }
 
 Poco::Timestamp DiskLocal::getLastModified(const String & path)
 {
-    return Poco::File(disk_path / path).getLastModified();
+    fs::file_time_type fs_time = fs::last_write_time(disk_path / path);
+    auto micro_sec = std::chrono::duration_cast<std::chrono::microseconds>(fs_time.time_since_epoch());
+    return Poco::Timestamp(micro_sec.count());
 }
 
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
@@ -290,12 +292,16 @@ void DiskLocal::truncateFile(const String & path, size_t size)
 
 void DiskLocal::createFile(const String & path)
 {
-    Poco::File(disk_path / path).createFile();
+    FILE * file = fopen((disk_path / path).string().data(), "a+");
+    if (file == nullptr)
+        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create file {}", path);
 }
 
 void DiskLocal::setReadOnly(const String & path)
 {
-    Poco::File(disk_path / path).setReadOnly(true);
+    fs::permissions(disk_path / path,
+                    fs::perms::owner_read | fs::perms::group_read | fs::perms::others_read,
+                    fs::perm_options::remove); /// bitwise AND
 }
 
 bool inline isSameDiskType(const IDisk & one, const IDisk & another)
@@ -306,7 +312,7 @@ bool inline isSameDiskType(const IDisk & one, const IDisk & another)
 void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     if (isSameDiskType(*this, *to_disk))
-        Poco::File(disk_path / from_path).copyTo(to_disk->getPath() + to_path); /// Use more optimal way.
+        fs::copy_file(disk_path / from_path, to_disk->getPath() + to_path);
     else
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
@@ -384,10 +390,16 @@ void registerDiskLocal(DiskFactory & factory)
                 throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         }
 
-        if (Poco::File disk{path}; !disk.canRead() || !disk.canWrite())
-        {
+        fs::path disk(path);
+        fs::perms p = fs::status(disk).permissions();
+        bool is_readable = (p & fs::perms::owner_read) != fs::perms::none
+                           | (p & fs::perms::group_read) != fs::perms::none
+                           | (p & fs::perms::others_read) != fs::perms::none;
+        bool is_writable = (p & fs::perms::owner_write) != fs::perms::none
+                           | (p & fs::perms::group_write) != fs::perms::none
+                           | (p & fs::perms::others_write) != fs::perms::none;
+        if (!is_readable || !is_writable)
             throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
-        }
 
         bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
 
