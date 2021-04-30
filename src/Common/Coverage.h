@@ -26,24 +26,7 @@ public:
     }
 
     void initialized(uint32_t count);
-
-    inline void hit(void * addr)
-    {
-        if (hits_batch_index == hits_batch_array_size - 1) //non-atomic, ok as thread_local.
-        {
-            auto lck = std::lock_guard(edges_mutex);
-
-            hits_batch_storage[hits_batch_index] = addr; //can insert last element;
-
-            edges.insert(edges.end(), hits_batch_storage.begin(), hits_batch_storage.end());
-
-            hits_batch_index = 0;
-
-            return;
-        }
-
-        hits_batch_storage[hits_batch_index++] = addr;
-    }
+    void hit(void * addr);
 
     inline void dump() { dumpAndChangeTestName({}); }
 

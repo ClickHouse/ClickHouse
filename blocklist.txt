@@ -25,6 +25,8 @@ fun:_ZN5boost*
 fun:_ZNK5boost*
 # fmt
 fun:_ZN3fmt*
+fun:__profc__ZN3fmt*
+fun:__profd__ZN3fmt*
 # sparsehash-c11
 fun:_ZN6google*
 fun:_ZNK6google*
