@@ -287,14 +287,15 @@ std::unique_ptr<QueryPipeline> QueryPipeline::joinPipelines(
         default_totals = true;
     }
 
-    ///                                     (left)   ──────> Joining ─> (joined)
-    ///                                     (left)   ─┐┌───>
-    ///                                   (totals)   ─┼┼─┐
-    ///                                               └┼─┼─> Joining ─> (joined)
-    ///                                                │┌┼─>
-    /// (right)  ─>                                  ──┘││
-    /// (right)  ─> Resize ─> AddingJoined ─> Resize ───┘└─> Joining ─> (totals)
-    /// (totals) ───────────>                        ──────>
+    ///                                     (left) ──────┐
+    ///                                                  ╞> Joining ─> (joined)
+    ///                                     (left) ─┐┌───┘
+    ///                                             └┼───┐
+    /// (right) ┐                         (totals) ──┼─┐ ╞> Joining ─> (joined)
+    ///         ╞> Resize ┐                        ╓─┘┌┼─┘
+    /// (right) ┘         │                        ╟──┘└─┐
+    ///                   ╞> FillingJoin ─> Resize ╣     ╞> Joining ─> (totals)
+    /// (totals) ─────────┘                        ╙─────┘
 
     size_t num_streams = left->getNumStreams();
     right->resize(1);

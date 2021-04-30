@@ -14,8 +14,8 @@ using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
 /// First input is for data from left table.
-/// Second input has empty header and is connected with AddingJoined.
-/// We can process left table only when Join is filled. Second input is used to signal that AddingJoined is finished.
+/// Second input has empty header and is connected with FillingRightJoinSide.
+/// We can process left table only when Join is filled. Second input is used to signal that FillingRightJoinSide is finished.
 class JoiningTransform : public IProcessor
 {
 public:
