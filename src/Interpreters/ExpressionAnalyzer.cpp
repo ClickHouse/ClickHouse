@@ -874,6 +874,8 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         if (syntax->analyzed_join->dictionary_reader)
             joined_plan.reset();
     }
+    else
+        syntax->analyzed_join->applyJoinKeyConvert(left_sample_columns, {});
 
     return join;
 }
