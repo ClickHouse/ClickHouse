@@ -65,7 +65,7 @@ RUN groupadd -r clickhouse --gid=101 \
                 clickhouse-server=$version ; \
        fi \
     && wget --progress=bar:force:noscroll "https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-$(dpkg --print-architecture)" -O /bin/gosu \
-    && chmod +x /bin/gosu
+    && chmod +x /bin/gosu \
     && clickhouse-local -q 'SELECT * FROM system.build_options' \
     && rm -rf \
         /var/lib/apt/lists/* \
