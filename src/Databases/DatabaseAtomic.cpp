@@ -1,7 +1,5 @@
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -76,14 +74,14 @@ void DatabaseAtomic::drop(ContextPtr)
     assert(tables.empty());
     try
     {
-        Poco::File(path_to_metadata_symlink).remove();
-        Poco::File(path_to_table_symlinks).remove(true);
+        fs::remove(path_to_metadata_symlink);
+        fs::remove_all(path_to_table_symlinks);
     }
     catch (...)
     {
         LOG_WARNING(log, getCurrentExceptionMessage(true));
     }
-    Poco::File(getMetadataPath()).remove(true);
+    fs::remove_all(getMetadataPath());
 }
 
 void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
@@ -135,8 +133,8 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
         /// (it's more likely to lost connection, than to fail before applying local changes).
         /// TODO better detection and recovery
 
-        Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);    /// Mark table as dropped
-        DatabaseOrdinary::detachTableUnlocked(table_name, lock);       /// Should never throw
+        fs::rename(table_metadata_path, table_metadata_path_drop);  /// Mark table as dropped
+        DatabaseOrdinary::detachTableUnlocked(table_name, lock);  /// Should never throw
         table_name_to_path.erase(table_name);
     }
 
@@ -319,7 +317,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
     catch (...)
     {
-        Poco::File(table_metadata_tmp_path).remove();
+        fs::remove(table_metadata_tmp_path);
         if (locked_uuid)
             DatabaseCatalog::instance().removeUUIDMappingFinally(query.uuid);
         throw;
@@ -423,7 +421,7 @@ void DatabaseAtomic::loadStoredObjects(ContextPtr local_context, bool has_force_
 {
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
     if (has_force_restore_data_flag)
-        Poco::File(path_to_table_symlinks).remove(true);
+        fs::remove_all(path_to_table_symlinks);
 
     DatabaseOrdinary::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
 
@@ -435,7 +433,7 @@ void DatabaseAtomic::loadStoredObjects(ContextPtr local_context, bool has_force_
             table_names = table_name_to_path;
         }
 
-        Poco::File(path_to_table_symlinks).createDirectories();
+        fs::create_directories(path_to_table_symlinks);
         for (const auto & table : table_names)
             tryCreateSymlink(table.first, table.second, true);
     }
@@ -446,9 +444,9 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     try
     {
         String link = path_to_table_symlinks + escapeForFileName(table_name);
-        Poco::File data = Poco::Path(getContext()->getPath()).makeAbsolute().toString() + actual_data_path;
-        if (!if_data_path_exist || data.exists())
-            data.linkTo(link, Poco::File::LINK_SYMBOLIC);
+        fs::path data = fs::absolute(getContext()->getPath()).string() + actual_data_path;
+        if (!if_data_path_exist || fs::exists(data))
+            fs::create_symlink(data, link);
     }
     catch (...)
     {
@@ -461,7 +459,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     try
     {
         String path = path_to_table_symlinks + escapeForFileName(table_name);
-        Poco::File{path}.remove();
+        fs::remove(path);
     }
     catch (...)
     {
@@ -474,17 +472,17 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     /// Symlinks in data/db_name/ directory and metadata/db_name/ are not used by ClickHouse,
     /// it's needed only for convenient introspection.
     assert(path_to_metadata_symlink != metadata_path);
-    Poco::File metadata_symlink(path_to_metadata_symlink);
-    if (metadata_symlink.exists())
+    fs::path metadata_symlink(path_to_metadata_symlink);
+    if (fs::exists(metadata_symlink))
     {
-        if (!metadata_symlink.isLink())
+        if (!fs::is_symlink(metadata_symlink))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Directory {} exists", path_to_metadata_symlink);
     }
     else
     {
         try
         {
-            Poco::File{metadata_path}.linkTo(path_to_metadata_symlink, Poco::File::LINK_SYMBOLIC);
+            fs::create_symlink(metadata_path, path_to_metadata_symlink);
         }
         catch (...)
         {
@@ -498,7 +496,7 @@ void DatabaseAtomic::renameDatabase(const String & new_name)
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     try
     {
-        Poco::File(path_to_metadata_symlink).remove();
+        fs::remove(path_to_metadata_symlink);
     }
     catch (...)
     {
@@ -529,7 +527,7 @@ void DatabaseAtomic::renameDatabase(const String & new_name)
         path_to_table_symlinks = getContext()->getPath() + "data/" + new_name_escaped + "/";
     }
 
-    Poco::File(old_path_to_table_symlinks).renameTo(path_to_table_symlinks);
+    fs::rename(old_path_to_table_symlinks, path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }
 
