@@ -1653,13 +1653,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
 
-            const auto & deps_mv = name_deps[command.column_name];
-            if (!deps_mv.empty())
+            if (!command.clear)
             {
-                throw Exception(
-                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                        + toString(deps_mv),
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                const auto & deps_mv = name_deps[command.column_name];
+                if (!deps_mv.empty())
+                {
+                    throw Exception(
+                        "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                            + toString(deps_mv),
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                }
             }
 
             dropped_columns.emplace(command.column_name);
