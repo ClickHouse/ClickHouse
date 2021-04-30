@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Poco/File.h>
 #include <Poco/Timestamp.h>
-
 #include <string>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 class FileUpdatesTracker
 {
@@ -31,6 +31,8 @@ public:
 private:
     Poco::Timestamp getLastModificationTime() const
     {
-        return Poco::File(path).getLastModified();
+        fs::file_time_type fs_time = fs::last_write_time(path);
+        auto micro_sec = std::chrono::duration_cast<std::chrono::microseconds>(fs_time.time_since_epoch());
+        return Poco::Timestamp(micro_sec.count());
     }
 };

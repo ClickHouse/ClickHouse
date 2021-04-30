@@ -9,7 +9,9 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 #include <Poco/Version.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -48,7 +50,7 @@ bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t da
 
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)
 {
-    Poco::File(path).createDirectories();
+    fs::create_directories(path);
 
     /// NOTE: std::make_shared cannot use protected constructors
     return std::make_unique<TemporaryFile>(path);

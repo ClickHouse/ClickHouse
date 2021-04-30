@@ -20,9 +20,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
-
 #define PREPROCESSED_SUFFIX "-preprocessed"
-
 
 namespace fs = std::filesystem;
 
