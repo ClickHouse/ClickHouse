@@ -189,11 +189,8 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
 
         const AddrInfo& addr_info = iter->second;
 
-        fmt::print(std::cout, "test {}, {}/{}, {}s, line {}, file {}\n",
-            test_name,
-            i, hits.size(), time(nullptr) - t,
-            addr_info.line,
-            addr_info.file.full_path);
+        if (const time_t nt = time(nullptr); nt > t)
+            fmt::print(std::cout, "{}s\ttest {}\t{}/{}\n", nt - t, test_name, i, hits.size());
 
         SourceFileData& data = addr_info.file;
 
