@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int DECIMAL_OVERFLOW;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 enum class AggregateOperation
