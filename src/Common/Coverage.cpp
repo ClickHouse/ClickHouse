@@ -176,6 +176,7 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
     SymbolsCache symbols_cache;
 
     time_t t = time(nullptr);
+    time_t e = t;
 
     //for (void * addr : hits)
     for (size_t i = 0; i < hits.size(); ++i)
@@ -189,8 +190,11 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
 
         const AddrInfo& addr_info = iter->second;
 
-        if (const time_t nt = time(nullptr); nt > t)
-            fmt::print(std::cout, "{}s\ttest {}\t{}/{}\n", nt - t, test_name, i, hits.size());
+        if (const time_t nt = time(nullptr); nt > e)
+        {
+            fmt::print(std::cout, "{}s\t{}/{}\t{}\n", nt - t, i, hits.size(), test_name);
+            e = nt;
+        }
 
         SourceFileData& data = addr_info.file;
 

@@ -321,6 +321,25 @@ def run_tests_array(all_tests_with_params):
     if all_tests:
         print(f"\nRunning {len(all_tests)} {suite} tests ({multiprocessing.current_process().name}).\n")
 
+    def run_query(query_to_run, increment_failures: bool = True):
+        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+
+        failed_to_check = False
+
+        try:
+            clickhouse_proc.communicate((query_to_run), timeout=20)
+        except:
+            failed_to_check = True
+
+        if failed_to_check or clickhouse_proc.returncode != 0:
+            if increment_failures:
+                failures += 1
+
+            print("Server does not respond to health check")
+            return False
+
+        return True
+
     for case in all_tests:
         if SERVER_DIED:
             break
@@ -370,30 +389,12 @@ def run_tests_array(all_tests_with_params):
                     message = open(disabled_file, 'r').read()
                     status += MSG_SKIPPED + " - " + message + "\n"
                 else:
-                    def pre_run_check(query_to_run, increment_failures: bool = True):
-                        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
 
-                        failed_to_check = False
-
-                        try:
-                            clickhouse_proc.communicate((query_to_run), timeout=20)
-                        except:
-                            failed_to_check = True
-
-                        if failed_to_check or clickhouse_proc.returncode != 0:
-                            if increment_failures:
-                                failures += 1
-
-                            print("Server does not respond to health check")
-                            return False
-
-                        return True
-
-                    if args.testname and not pre_run_check("SELECT 'Running test {suite}/{case} from pid={pid}';"
+                    if args.testname and not run_query("SELECT 'Running test {suite}/{case} from pid={pid}';"
                         .format(pid = os.getpid(), case = case, suite = suite)):
                         break
 
-                    if args.coverage and not pre_run_check("SET coverage_test_name='{}';".format(case), False):
+                    if args.coverage and not run_query("SET coverage_test_name='{}';".format(case), False):
                         break
 
                     file_suffix = ('.' + str(os.getpid())) if is_concurrent and args.test_runs > 1 else ''
@@ -514,6 +515,9 @@ def run_tests_array(all_tests_with_params):
 
         if failures_chain >= 20:
             break
+
+    if args.coverage and not run_query("SET coverage_test_name='';", False):
+        return False
 
     failures_total = failures_total + failures
 
