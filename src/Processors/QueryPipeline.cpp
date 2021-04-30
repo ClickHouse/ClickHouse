@@ -299,7 +299,7 @@ std::unique_ptr<QueryPipeline> QueryPipeline::joinPipelines(
     size_t num_streams = left->getNumStreams();
     right->resize(1);
 
-    auto adding_joined = std::make_shared<AddingJoinedTransform>(right->getHeader(), join);
+    auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(right->getHeader(), join);
     InputPort * totals_port = nullptr;
     if (right->hasTotals())
         totals_port = adding_joined->addTotalsPort();

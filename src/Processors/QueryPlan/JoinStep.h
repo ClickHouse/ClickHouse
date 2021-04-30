@@ -32,7 +32,7 @@ private:
     Processors processors;
 };
 
-/// Special step for the case whe Join is already filled.
+/// Special step for the case when Join is already filled.
 /// For StorageJoin and Dictionary.
 class FilledJoinStep : public ITransformingStep
 {

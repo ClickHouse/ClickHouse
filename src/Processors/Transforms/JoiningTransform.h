@@ -85,11 +85,11 @@ private:
 /// Fills Join with block from right table.
 /// Has single input and single output port.
 /// Output port has empty header. It is closed when al data is inserted in join.
-class AddingJoinedTransform : public IProcessor
+class FillingRightJoinSideTransform : public IProcessor
 {
 public:
-    AddingJoinedTransform(Block input_header, JoinPtr join_);
-    String getName() const override { return "AddingJoinedTransform"; }
+    FillingRightJoinSideTransform(Block input_header, JoinPtr join_);
+    String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
 

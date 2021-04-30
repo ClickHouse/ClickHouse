@@ -214,12 +214,12 @@ Block JoiningTransform::readExecute(Chunk & chunk)
     return res;
 }
 
-AddingJoinedTransform::AddingJoinedTransform(Block input_header, JoinPtr join_)
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_)
     : IProcessor({input_header}, {Block()})
     , join(std::move(join_))
 {}
 
-InputPort * AddingJoinedTransform::addTotalsPort()
+InputPort * FillingRightJoinSideTransform::addTotalsPort()
 {
     if (inputs.size() > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Totals port was already added to AddingJoinedTransform");
@@ -227,7 +227,7 @@ InputPort * AddingJoinedTransform::addTotalsPort()
     return &inputs.emplace_back(inputs.front().getHeader(), this);
 }
 
-IProcessor::Status AddingJoinedTransform::prepare()
+IProcessor::Status FillingRightJoinSideTransform::prepare()
 {
     auto & output = outputs.front();
 
@@ -289,7 +289,7 @@ IProcessor::Status AddingJoinedTransform::prepare()
     return Status::Finished;
 }
 
-void AddingJoinedTransform::work()
+void FillingRightJoinSideTransform::work()
 {
     auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
 
