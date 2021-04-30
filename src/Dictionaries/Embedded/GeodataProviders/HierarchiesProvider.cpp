@@ -5,7 +5,9 @@
 #include <Poco/Exception.h>
 #include <Poco/Util/Application.h>
 #include "HierarchyFormatReader.h"
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 bool RegionsHierarchyDataSource::isModified() const
 {
@@ -27,7 +29,7 @@ RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string
 
 void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
 {
-    std::string basename = Poco::Path(path).getBaseName();
+    std::string basename = fs::path(path).stem();
 
     Poco::Path dir_path = Poco::Path(path).absolute().parent();
 

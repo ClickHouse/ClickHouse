@@ -2,7 +2,6 @@
 
 #include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <Poco/File.h>
 #include <common/logger_useful.h>
 #include <ext/bit_cast.h>
 #include <ext/range.h>
@@ -13,7 +12,9 @@
 #include "registerDictionaries.h"
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -49,8 +50,8 @@ LibraryDictionarySource::LibraryDictionarySource(
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "LibraryDictionarySource: Library path {} is not inside {}", path, dictionaries_lib_path);
     }
 
-    if (!Poco::File(path).exists())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", Poco::File(path).path());
+    if (!fs::exists(path))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", path);
 
     description.init(sample_block);
     bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id);
