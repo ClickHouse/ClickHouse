@@ -222,7 +222,7 @@ FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header,
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
 {
     if (inputs.size() > 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Totals port was already added to AddingJoinedTransform");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Totals port was already added to FillingRightJoinSideTransform");
 
     return &inputs.emplace_back(inputs.front().getHeader(), this);
 }
