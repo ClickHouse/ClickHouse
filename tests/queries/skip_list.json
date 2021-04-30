@@ -392,7 +392,10 @@
         "01475_read_subcolumns_storages",
         "01674_clickhouse_client_query_param_cte",
         "01666_merge_tree_max_query_limit",
-        "01802_test_postgresql_protocol_with_row_policy" /// It cannot parse DROP ROW POLICY
+        "01786_explain_merge_tree",
+        "01666_merge_tree_max_query_limit",
+        "01802_test_postgresql_protocol_with_row_policy", /// It cannot parse DROP ROW POLICY
+        "01823_explain_json"
     ],
     "parallel":
     [
@@ -707,6 +710,7 @@
         "01780_clickhouse_dictionary_source_loop",
         "01785_dictionary_element_count",
         "01802_test_postgresql_protocol_with_row_policy", /// Creates database and users
-        "01804_dictionary_decimal256_type"
+        "01804_dictionary_decimal256_type",
+        "01850_dist_INSERT_preserve_error" // uses cluster with different static databases shard_0/shard_1
     ]
 }

@@ -31,6 +31,8 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/processColumnTransformers.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 
 
 namespace DB
@@ -232,6 +234,25 @@ BlockIO InterpreterInsertQuery::execute()
                 out_streams_size = std::min(size_t(settings.max_insert_threads), res.pipeline.getNumStreams());
 
             res.pipeline.resize(out_streams_size);
+
+            /// Allow to insert Nullable into non-Nullable columns, NULL values will be added as defaults values.
+            if (getContext()->getSettingsRef().insert_null_as_default)
+            {
+                const auto & input_columns = res.pipeline.getHeader().getColumnsWithTypeAndName();
+                const auto & query_columns = query_sample_block.getColumnsWithTypeAndName();
+                const auto & output_columns = metadata_snapshot->getColumns();
+
+                if (input_columns.size() == query_columns.size())
+                {
+                    for (size_t col_idx = 0; col_idx < query_columns.size(); ++col_idx)
+                    {
+                        /// Change query sample block columns to Nullable to allow inserting nullable columns, where NULL values will be substituted with
+                        /// default column values (in AddingDefaultBlockOutputStream), so all values will be cast correctly.
+                        if (input_columns[col_idx].type->isNullable() && !query_columns[col_idx].type->isNullable() && output_columns.hasDefault(query_columns[col_idx].name))
+                            query_sample_block.setColumn(col_idx, ColumnWithTypeAndName(makeNullable(query_columns[col_idx].column), makeNullable(query_columns[col_idx].type), query_columns[col_idx].name));
+                    }
+                }
+            }
         }
         else if (query.watch)
         {
@@ -259,10 +280,12 @@ BlockIO InterpreterInsertQuery::execute()
                 out = std::make_shared<CheckConstraintsBlockOutputStream>(
                     query.table_id, out, out->getHeader(), metadata_snapshot->getConstraints(), getContext());
 
+            bool null_as_default = query.select && getContext()->getSettingsRef().insert_null_as_default;
+
             /// Actually we don't know structure of input blocks from query/table,
             /// because some clients break insertion protocol (columns != header)
             out = std::make_shared<AddingDefaultBlockOutputStream>(
-                out, query_sample_block, metadata_snapshot->getColumns(), getContext());
+                out, query_sample_block, metadata_snapshot->getColumns(), getContext(), null_as_default);
 
             /// It's important to squash blocks as early as possible (before other transforms),
             ///  because other transforms may work inefficient if block size is small.

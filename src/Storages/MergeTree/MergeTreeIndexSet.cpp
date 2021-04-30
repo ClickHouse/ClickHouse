@@ -392,7 +392,7 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
 
         func->name = "__bitSwapLastTwo";
     }
-    else if (func->name == "and")
+    else if (func->name == "and" || func->name == "indexHint")
     {
         auto last_arg = args.back();
         args.pop_back();
@@ -448,7 +448,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
 
         const ASTs & args = func->arguments->children;
 
-        if (func->name == "and")
+        if (func->name == "and" || func->name == "indexHint")
             return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
         else if (func->name == "or")
             return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
