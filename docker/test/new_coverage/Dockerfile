@@ -5,6 +5,7 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             clang-tools-11
             cmake
+            c++filt
 
 COPY s3downloader /s3downloader
 COPY run.sh /run.sh

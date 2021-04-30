@@ -29,13 +29,31 @@ public:
 
     inline void hit(void * addr)
     {
-        auto lck = std::lock_guard(edges_mutex);
-        edges.push_back(addr);
+        if (hits_batch_index == hits_batch_array_size - 1) //non-atomic, ok as thread_local.
+        {
+            auto lck = std::lock_guard(edges_mutex);
+
+            hits_batch_storage[hits_batch_index] = addr; //can insert last element;
+
+            edges.insert(edges.end(), hits_batch_storage.begin(), hits_batch_storage.end());
+
+            hits_batch_index = 0;
+
+            return;
+        }
+
+        hits_batch_storage[hits_batch_index++] = addr;
     }
 
     inline void dump() { dumpAndChangeTestName({}); }
 
 private:
+    /// How many tests are converted to LCOV in parallel.
+    static constexpr const size_t test_processing_thread_pool_size = 8;
+
+    /// How many addresses do we dump into local storage before acquiring the edges_mutex and pushing into edges.
+    static constexpr const size_t hits_batch_array_size = 1000;
+
     Writer();
 
     const std::filesystem::path coverage_dir;
@@ -45,6 +63,11 @@ private:
     const uintptr_t binary_virtual_offset; // TODO Always 0, get rid of.
 
     FreeThreadPool pool;
+
+    /// How many addresses are currently in the local storage.
+    static thread_local inline size_t hits_batch_index = 0;
+
+    static thread_local inline std::array<void*, hits_batch_array_size> hits_batch_storage{};
 
     std::optional<std::string> test;
     using Hits = std::vector<void*>;
@@ -68,20 +91,15 @@ private:
     using SourceFiles = std::unordered_map<SourceFileName, SourceFileData>;
 
     using SymbolMangledName = std::string;
-
-    struct SymbolData
-    {
-        std::string demangled_name;
-        UInt64 start_line;
-    };
-
-    using SymbolsCache = std::unordered_map<SymbolMangledName, SymbolData>;
+    using SymbolStartLine = size_t;
+    using SymbolsCache = std::unordered_map<SymbolMangledName, SymbolStartLine>;
 
     struct AddrInfo
     {
         SourceFileData& file;
-        const SymbolData& symbol;
+        //SymbolStartLine symbol_start_line;
         UInt64 line;
+        const SymbolMangledName& symbol_mangled_name; //TODO for debug output only.
     };
 
     //using FunctionName = std::string;

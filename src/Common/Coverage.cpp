@@ -43,7 +43,7 @@ Writer::Writer()
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
       binary_virtual_offset(uintptr_t(symbol_index->getSelf()->address_begin)),
-      pool(4)
+      pool(Writer::test_processing_thread_pool_size)
 {
     Context::setSettingHook("coverage_test_name", [this](const Field& value)
     {
@@ -84,7 +84,13 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
             return;
         }
 
-        edges_copies = edges;
+        if (hits_batch_index > 0) // haven't copied last addresses from local storage to edges
+        {
+            edges.insert(edges.end(), hits_batch_storage.begin(), hits_batch_storage.end());
+            hits_batch_index = 0;
+        }
+
+        edges_copies = edges; //TODO Check if it's fast
         old_test_name = *test;
 
         if (test_name.empty())
@@ -129,17 +135,14 @@ Writer::AddrInfo Writer::symbolizeAndDemangle(
 
     if (symbol_it == symbols_cache.end())
     {
-        int status = 0;
-        std::string demangled_name = demangle(symbol->name, status);
-
         const void * const symbol_start_virtual = symbol->address_begin;
         const uintptr_t symbol_start_phys = uintptr_t(symbol_start_virtual) - binary_virtual_offset;
         const UInt64 symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
 
-        symbol_it = symbols_cache.emplace(symbol->name, SymbolData{std::move(demangled_name), symbol_start_line}).first;
+        symbol_it = symbols_cache.emplace(symbol->name, symbol_start_line).first;
     }
 
-    return {file_data_it->second, symbol_it->second, loc.line};
+    return {file_data_it->second, loc.line, symbol_it->first};
 }
 
 void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view test_name)
@@ -166,7 +169,7 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
         const AddrInfo& addr_info = iter->second;
 
         fmt::print(std::cout, "{}/{} ({}s, {}, file {})\n", i, hits.size(), time(nullptr) - t,
-            addr_info.symbol.demangled_name,
+            addr_info.symbol_mangled_name,
             addr_info.file.full_path);
 
         SourceFileData& data = addr_info.file;
@@ -187,14 +190,20 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
 }
 
 void Writer::convertToLCOVAndDumpToDisk(
-    size_t processed_edges, const Writer::SourceFiles& source_files, std::string_view test_name)
+    size_t /*processed_edges*/, const Writer::SourceFiles& source_files, std::string_view test_name)
 {
     /**
      * [incomplete] LCOV .info format reference, parsed from
      * https://github.com/linux-test-project/lcov/blob/master/bin/geninfo
      *
+     * Tests description .td file:
+     *
      * TN:<test name>
      * TD:<test description>
+     *
+     * Report .info file:
+     *
+     * TN:<test name>
      *
      * for each source file:
      *     SF:<absolute path to the source file>
@@ -221,9 +230,12 @@ void Writer::convertToLCOVAndDumpToDisk(
      *     LH:<number of lines executed (hit)>
      *     end_of_record
      */
+    time_t t = time(nullptr);
+    fmt::print(std::cout, "Dumping test {}\n", test_name);
+
     std::ofstream ofs(coverage_dir / test_name);
 
-    fmt::print(ofs, "TN:{}\nTD:{} edges\n", test_name, processed_edges);
+    fmt::print(ofs, "TN:{}\n", test_name);
 
     for (const auto& [name, data] : source_files)
     {
@@ -258,5 +270,7 @@ void Writer::convertToLCOVAndDumpToDisk(
 
         fmt::print(ofs, "LF:{}\nLH:{}\nend_of_record\n", data.lines.size(), lh);
     }
+
+    fmt::print(std::cout, "Dumped test {}, took {}s\n", test_name, time(nullptr) - t);
 }
 }

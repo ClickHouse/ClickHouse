@@ -1,7 +1,5 @@
 #!/bin/bash
 
-export ASAN_OPTIONS=coverage=1 # TODO re-check if it's needed
-
 kill_clickhouse () {
     echo "clickhouse pids $(pgrep -u clickhouse)" | ts '%Y-%m-%d %H:%M:%S'
     pkill -f "clickhouse-server" 2>/dev/null
@@ -80,7 +78,8 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
+clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list \
+    2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
 
 readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "/test_result.txt")
 
@@ -97,10 +96,20 @@ then
 
     echo "Going to run again: ${FAILED_TESTS[*]}"
 
-    clickhouse-test --order=random --testname --shard --zookeeper --use-skip-list "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_result.txt
+    clickhouse-test --order=random --testname --shard --zookeeper --use-skip-list \
+        "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_result.txt
 else
     echo "No failed tests"
 fi
 
-cat coverage/*.info >> report.info # TODO Maybe should first pre-allocated space for the resulting file
-genhtml report.info --ignore-errors source --output-directory "${OUTPUT_DIR}" --num-spaces 4 --legend
+# TODO use baseline for incremental coverage
+# --baseline, --highlight, --diff
+
+genhtml \
+  --ignore-errors source \
+  --output-directory "${OUTPUT_DIR}" \
+  --num-spaces 4 \
+  --legend \
+  --show-details \ # Per-test coverage info
+  --demangle-cpp \ # Demangling names by c++filt here is cheaper than demangling names in binary
+  coverage/*
