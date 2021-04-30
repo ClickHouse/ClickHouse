@@ -45,11 +45,9 @@ public:
         unsigned num_streams,
         const PartitionIdToMaxBlock * max_block_numbers_to_read = nullptr) const;
 
-    /// Construct a sample block consisting only of possible virtual columns for part pruning.
-    static Block getSampleBlockWithVirtualPartColumns();
-
-    /// Fill in values of possible virtual columns for part pruning.
-    static void fillBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, Block & block);
+    /// Construct a block consisting only of possible virtual columns for part pruning.
+    /// If one_part is true, fill in at most one part.
+    static Block getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part);
 
 private:
     const MergeTreeData & data;

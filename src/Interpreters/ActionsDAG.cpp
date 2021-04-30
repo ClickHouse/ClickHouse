@@ -13,6 +13,7 @@
 #include <IO/Operators.h>
 
 #include <stack>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -25,6 +26,47 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int THERE_IS_NO_COLUMN;
     extern const int ILLEGAL_COLUMN;
+}
+
+const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
+{
+    switch (type)
+    {
+        case ActionType::INPUT:
+            return "Input";
+        case ActionType::COLUMN:
+            return "Column";
+        case ActionType::ALIAS:
+            return "Alias";
+        case ActionType::ARRAY_JOIN:
+            return "ArrayJoin";
+        case ActionType::FUNCTION:
+            return "Function";
+    }
+
+    __builtin_unreachable();
+}
+
+void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
+{
+    map.add("Node Type", ActionsDAG::typeToString(type));
+
+    if (result_type)
+        map.add("Result Type", result_type->getName());
+
+    if (!result_name.empty())
+        map.add("Result Type", ActionsDAG::typeToString(type));
+
+    if (column)
+        map.add("Column", column->getName());
+
+    if (function_base)
+        map.add("Function", function_base->getName());
+    else if (function_builder)
+        map.add("Function", function_builder->getName());
+
+    if (type == ActionType::FUNCTION)
+        map.add("Compiled", is_function_compiled);
 }
 
 
