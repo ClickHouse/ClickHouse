@@ -771,7 +771,7 @@
         "polygon_dicts", // they use an explicitly specified database
         "01658_read_file_to_stringcolumn",
         "01721_engine_file_truncate_on_insert", // It's ok to execute in parallel but not several instances of the same test.
-        "01748_dictionary_table_dot" // creates database
+        "01748_dictionary_table_dot", // creates database
         "01702_system_query_log", // It's ok to execute in parallel with oter tests but not several instances of the same test.
         "01748_dictionary_table_dot", // creates database
         "00950_dict_get",
