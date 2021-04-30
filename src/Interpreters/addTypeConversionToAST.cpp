@@ -9,7 +9,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {

@@ -15,7 +15,6 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Common/checkStackSize.h>
 #include <Storages/ColumnsDescription.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 
 
 namespace DB

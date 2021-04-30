@@ -1360,6 +1360,11 @@ ExpressionActionsPtr ExpressionAnalyzer::getConstActions(const ColumnsWithTypeAn
     return std::make_shared<ExpressionActions>(actions, ExpressionActionsSettings::fromContext(getContext()));
 }
 
+std::unique_ptr<QueryPlan> SelectQueryExpressionAnalyzer::getJoinedPlan()
+{
+    return std::move(joined_plan);
+}
+
 ActionsDAGPtr SelectQueryExpressionAnalyzer::simpleSelectActions()
 {
     ExpressionActionsChain new_chain(getContext());
