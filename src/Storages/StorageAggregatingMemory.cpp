@@ -54,8 +54,14 @@ class AggregatingOutputStream : public IBlockOutputStream
 {
 public:
     AggregatingOutputStream(StorageAggregatingMemory & storage_, const StorageMetadataPtr & metadata_snapshot_, ContextPtr context_)
-        : storage(storage_), metadata_snapshot(metadata_snapshot_), context(context_)
+        : storage(storage_),
+          metadata_snapshot(metadata_snapshot_),
+          context(context_),
+          variants(*(storage.many_data)->variants[0]),
+          key_columns(storage.aggregator_transform->params.keys_size),
+          aggregate_columns(storage.aggregator_transform->params.aggregates_size)
     {
+        expression_actions = std::make_shared<ExpressionActions>(storage.analysis_result.before_aggregation);
     }
 
     // OutputStream structure is same as source (before aggregation).
@@ -66,16 +72,9 @@ public:
         storage.src_metadata_snapshot->check(block, true);
 
         Block block_for_aggregation(block);
-
-        AggregatedDataVariants & variants(*(storage.many_data)->variants[0]);
-        ColumnRawPtrs key_columns(storage.aggregator_transform->params.keys_size);
-        Aggregator::AggregateColumns aggregate_columns(storage.aggregator_transform->params.aggregates_size);
-        bool no_more_keys = false;
-
-        auto expression = storage.analysis_result.before_aggregation;
-        auto expression_actions = std::make_shared<ExpressionActions>(expression);
         expression_actions->execute(block_for_aggregation);
 
+        bool no_more_keys = false;
         storage.aggregator_transform->aggregator.executeOnBlock(
             block_for_aggregation, variants, key_columns, aggregate_columns, no_more_keys);
     }
@@ -129,6 +128,12 @@ private:
     StorageAggregatingMemory & storage;
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
+
+    AggregatedDataVariants & variants;
+    ColumnRawPtrs key_columns;
+    Aggregator::AggregateColumns aggregate_columns;
+
+    ExpressionActionsPtr expression_actions;
 };
 
 
