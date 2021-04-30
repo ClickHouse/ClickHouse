@@ -11,5 +11,5 @@ toc_title: "Обзор"
 -   [clickhouse-benchmark](../../operations/utilities/clickhouse-benchmark.md) — устанавливает соединение с сервером ClickHouse и запускает циклическое выполнение указанных запросов.
 -   [clickhouse-format](../../operations/utilities/clickhouse-format.md) — позволяет форматировать входящие запросы.
 -   [ClickHouse obfuscator](../../operations/utilities/clickhouse-obfuscator.md) — обфусцирует данные.
--   [ClickHouse compressor](https://clickhouse.tech/docs/en/operations/utilities/clickhouse-compressor) — упаковывает и распаковывает данные.
--   [clickhouse-odbc-bridge](https://clickhouse.tech/docs/en/operations/utilities/odbc-bridge) — прокси-сервер для ODBC.
+-   [ClickHouse compressor](../../operations/utilities/clickhouse-compressor.md) — упаковывает и распаковывает данные.
+-   [clickhouse-odbc-bridge](../../operations/utilities/odbc-bridge.md) — прокси-сервер для ODBC.
