@@ -43,7 +43,7 @@ WriteBufferFromOStream::WriteBufferFromOStream(
 WriteBufferFromOStream::~WriteBufferFromOStream()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     next();
 }
 

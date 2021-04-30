@@ -37,13 +37,6 @@ bool ReadBufferFromPocoSocket::nextImpl()
         while (async_callback && !socket.poll(0, Poco::Net::Socket::SELECT_READ))
             async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), socket_description);
 
-        /// receiveBytes in SecureStreamSocket throws TimeoutException after max(receive_timeout, send_timeout),
-        /// but we want to get this exception exactly after receive_timeout. So, set send_timeout = receive_timeout
-        /// before receiveBytes.
-        std::unique_ptr<TimeoutSetter> timeout_setter = nullptr;
-        if (socket.secure())
-            timeout_setter = std::make_unique<TimeoutSetter>(dynamic_cast<Poco::Net::StreamSocket &>(socket), socket.getReceiveTimeout(), socket.getReceiveTimeout());
-
         bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
     }
     catch (const Poco::Net::NetException & e)

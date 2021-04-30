@@ -63,6 +63,9 @@ DROP COLUMN [IF EXISTS] name
 
 Запрос удаляет данные из файловой системы. Так как это представляет собой удаление целых файлов, запрос выполняется почти мгновенно.
 
+!!! warning "Предупреждение"
+    Вы не можете удалить столбец, используемый в [материализованном представлениии](../../../sql-reference/statements/create/view.md#materialized). В противном случае будет ошибка.
+
 Пример:
 
 ``` sql
@@ -117,7 +120,7 @@ MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL] [AFTER name_after | F
 
 -   TTL
 
-        Примеры изменения TTL столбца смотрите в разделе [TTL столбца](ttl.md#mergetree-column-ttl).
+        Примеры изменения TTL столбца смотрите в разделе [TTL столбца](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
 
 Если указано `IF EXISTS`, запрос не возвращает ошибку, если столбца не существует.
 
@@ -155,7 +158,7 @@ ALTER TABLE table_name MODIFY column_name REMOVE property;
 ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 ```
 
-## Смотрите также
+**Смотрите также**
 
 - [REMOVE TTL](ttl.md).
 

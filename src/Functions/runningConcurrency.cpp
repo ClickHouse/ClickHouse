@@ -47,6 +47,8 @@ namespace DB
             typename ColVecConc::Container & vec_concurrency = col_concurrency->getData();
 
             std::multiset<typename ArgDataType::FieldType> ongoing_until;
+            auto begin_serializaion = arguments[0].type->getDefaultSerialization();
+            auto end_serialization = arguments[1].type->getDefaultSerialization();
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const auto begin = vec_begin[i];
@@ -56,8 +58,8 @@ namespace DB
                 {
                     const FormatSettings default_format;
                     WriteBufferFromOwnString buf_begin, buf_end;
-                    arguments[0].type->serializeAsTextQuoted(*(arguments[0].column), i, buf_begin, default_format);
-                    arguments[1].type->serializeAsTextQuoted(*(arguments[1].column), i, buf_end, default_format);
+                    begin_serializaion->serializeTextQuoted(*(arguments[0].column), i, buf_begin, default_format);
+                    end_serialization->serializeTextQuoted(*(arguments[1].column), i, buf_end, default_format);
                     throw Exception(
                         "Incorrect order of events: " + buf_begin.str() + " > " + buf_end.str(),
                         ErrorCodes::INCORRECT_DATA);
@@ -152,7 +154,7 @@ namespace DB
     public:
         static constexpr auto name = Name::name;
 
-        static FunctionOverloadResolverImplPtr create(const Context &)
+        static FunctionOverloadResolverImplPtr create(ContextPtr)
         {
             return std::make_unique<RunningConcurrencyOverloadResolver<Name, ConcurrencyDataType>>();
         }

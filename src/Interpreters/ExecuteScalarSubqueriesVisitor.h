@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Common/typeid_cast.h>
 #include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
 
-class Context;
 class ASTSubquery;
 class ASTFunction;
 struct ASTTableExpression;
@@ -33,9 +33,8 @@ class ExecuteScalarSubqueriesMatcher
 public:
     using Visitor = InDepthNodeVisitor<ExecuteScalarSubqueriesMatcher, true>;
 
-    struct Data
+    struct Data : public WithContext
     {
-        const Context & context;
         size_t subquery_depth;
         Scalars & scalars;
         bool only_analyze;
