@@ -29,6 +29,7 @@ from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 from minio import Minio
+from minio.deleteobjects import DeleteObject
 
 import docker
 
@@ -922,7 +923,7 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait Postgres container")
 
-    def wait_rabbitmq_to_start(self, timeout=30):
+    def wait_rabbitmq_to_start(self, timeout=180):
         self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
 
         start = time.time()
@@ -1043,6 +1044,13 @@ class ClickHouseCluster:
 
                 for bucket in buckets:
                     if minio_client.bucket_exists(bucket):
+                        delete_object_list = map(
+                            lambda x: DeleteObject(x.object_name),
+                            minio_client.list_objects(bucket, recursive=True),
+                        )
+                        errors = minio_client.remove_objects(bucket, delete_object_list)
+                        for error in errors:
+                            logging.error(f"Error occured when deleting object {error}")
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
@@ -1650,7 +1658,7 @@ class ClickHouseInstance:
 
     def contains_in_log(self, substring):
         result = self.exec_in_container(
-            ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
+            ["bash", "-c", '[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep "{}" /var/log/clickhouse-server/clickhouse-server.log || true'.format(substring)])
         return len(result) > 0
 
     def grep_in_log(self, substring):
