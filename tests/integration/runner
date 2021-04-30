@@ -229,7 +229,7 @@ if __name__ == "__main__":
     if args.tmpfs:
         dockerd_internal_volume = "--tmpfs /var/lib/docker -e DOCKER_RAMDISK=true"
     elif args.dockerd_volume:
-        dockerd_internal_volume = f"--mount type=bind,source={args.dockerd_volume},target=/var/lib/docker"
+        dockerd_internal_volume = "--mount type=bind,source={},target=/var/lib/docker".format(args.dockerd_volume)
     else:
         subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
         dockerd_internal_volume = "--volume={}_volume:/var/lib/docker".format(CONTAINER_NAME)
