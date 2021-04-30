@@ -174,7 +174,7 @@ private:
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
-    bool readDataNext(const size_t & poll_interval, const int & receive_timeout);
+    bool readDataNext(size_t poll_interval, time_t receive_timeout);
     void readData(const Settings & connection_settings);
     void receiveClusterNameAndSalt();
     std::tuple<size_t, int> getReadTimeouts(const Settings & connection_settings);
