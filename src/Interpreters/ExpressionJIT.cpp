@@ -112,23 +112,18 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t block_size) const override
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        // std::cerr << "LLVMExecutableFunction::execute" << std::endl;
-
-        // for (const auto & argument : arguments)
-        //     std::cerr << argument.name << " " << argument.type->getName() << std::endl;
-
         auto col_res = result_type->createColumn();
 
-        if (block_size)
+        if (input_rows_count)
         {
             if (!castToEitherWithNullable<
                 ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
                 ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
                 ColumnFloat32, ColumnFloat64>(col_res.get()))
                 throw Exception("Unexpected column in LLVMExecutableFunction: " + col_res->getName(), ErrorCodes::LOGICAL_ERROR);
-            col_res = col_res->cloneResized(block_size);
+            col_res = col_res->cloneResized(input_rows_count);
             std::vector<ColumnData> columns(arguments.size() + 1);
             for (size_t i = 0; i < arguments.size(); ++i)
             {
@@ -138,7 +133,7 @@ public:
                 columns[i] = getColumnData(column);
             }
             columns[arguments.size()] = getColumnData(col_res.get());
-            reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
+            reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(input_rows_count, columns.data());
 
             /// Memory sanitizer don't know about stores from JIT-ed code.
             /// But maybe we can generate this code with MSan instrumentation?
@@ -703,39 +698,40 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
                     if (should_compile)
                     {
-                        // std::cerr << "ActionsDAG::should compileFunction " << frame.node->result_name;
-                        // std::cerr << " children size " << frame.node->children.size() << std::endl;
-
-                        // for (const auto * child_node : frame.node->children)
-                        //     std::cerr << child_node->result_name << std::endl;
+                        for (const auto * child_node : frame.node->children)
+                            std::cerr << child_node->result_name << std::endl;
 
                         NodeRawConstPtrs new_children;
                         auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
 
-                        // std::cerr << "ActionsDAG::new children size " << new_children.size() << std::endl;
-                        // for (const auto * child_node : new_children)
-                        //     std::cerr << child_node->result_name << std::endl;
+                        bool all_constants = true;
 
-                        // std::cerr << "DAG dump " << dag.dump() << std::endl;
-
-                        if (auto fn = compile(dag, min_count_to_compile_expression))
+                        for (const auto & compiled_node : dag)
                         {
-                            /// Replace current node to compilable function.
+                            if (compiled_node.type == LLVMFunction::CompileNode::NodeType::INPUT)
+                            {
+                                all_constants = false;
+                                break;
+                            }
+                        }
 
-                            ColumnsWithTypeAndName arguments;
-                            arguments.reserve(new_children.size());
-                            for (const auto * child : new_children)
-                                arguments.emplace_back(child->column, child->result_type, child->result_name);
+                        if (!all_constants)
+                        {
+                            if (auto fn = compile(dag, min_count_to_compile_expression))
+                            {
+                                ColumnsWithTypeAndName arguments;
+                                arguments.reserve(new_children.size());
+                                for (const auto * child : new_children)
+                                    arguments.emplace_back(child->column, child->result_type, child->result_name);
 
-                            // std::cerr << "Compile node arguments " << arguments.size() << std::endl;
-
-                            auto * frame_node = const_cast<Node *>(frame.node);
-                            frame_node->type = ActionsDAG::ActionType::FUNCTION;
-                            frame_node->function_base = fn;
-                            frame_node->function = fn->prepare(arguments);
-                            frame_node->children.swap(new_children);
-                            frame_node->is_function_compiled = true;
-                            frame_node->column = nullptr; /// Just in case.
+                                auto * frame_node = const_cast<Node *>(frame.node);
+                                frame_node->type = ActionsDAG::ActionType::FUNCTION;
+                                frame_node->function_base = fn;
+                                frame_node->function = fn->prepare(arguments);
+                                frame_node->children.swap(new_children);
+                                frame_node->is_function_compiled = true;
+                                frame_node->column = nullptr;
+                            }
                         }
                     }
                 }

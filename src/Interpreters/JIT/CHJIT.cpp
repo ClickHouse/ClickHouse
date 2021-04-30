@@ -147,6 +147,9 @@ CHJIT::CHJIT()
     , compiler(std::make_unique<JITCompiler>(*machine))
     , symbol_resolver(std::make_unique<JITSymbolResolver>())
 {
+    symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
+    symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
+    symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
 }
 
 CHJIT::~CHJIT() = default;
