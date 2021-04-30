@@ -52,7 +52,10 @@ private:
     static constexpr const size_t test_processing_thread_pool_size = 8;
 
     /// How many addresses do we dump into local storage before acquiring the edges_mutex and pushing into edges.
-    static constexpr const size_t hits_batch_array_size = 1000;
+    static constexpr const size_t hits_batch_array_size = 10000;
+
+    /// How many addresses are processed while filling internal data structures in prepareDataAndDumpToDisk.
+    //static constexpr const size_t hits_batch_processing_size = 1000;
 
     Writer();
 
@@ -60,7 +63,7 @@ private:
 
     const MultiVersion<SymbolIndex>::Version symbol_index;
     const Dwarf dwarf;
-    const uintptr_t binary_virtual_offset; // TODO Always 0, get rid of.
+    static constexpr const uintptr_t binary_virtual_offset {0}; // As our binary gets loaded first
 
     FreeThreadPool pool;
 
@@ -99,7 +102,6 @@ private:
         SourceFileData& file;
         //SymbolStartLine symbol_start_line;
         UInt64 line;
-        const SymbolMangledName& symbol_mangled_name; //TODO for debug output only.
     };
 
     //using FunctionName = std::string;
@@ -108,7 +110,7 @@ private:
     //using BranchLine = size_t;
     //struct BranchData { size_t block_number; size_t branch_number; size_t taken; };
 
-    AddrInfo symbolizeAndDemangle(SourceFiles& files, SymbolsCache& symbols_cache, const void * virtual_addr) const;
+    AddrInfo symbolize(SourceFiles& files, SymbolsCache& symbols_cache, const void * virtual_addr) const;
 
     void prepareDataAndDumpToDisk(const Hits& hits, std::string_view test_name);
 

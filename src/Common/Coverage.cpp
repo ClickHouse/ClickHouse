@@ -42,7 +42,6 @@ Writer::Writer()
     : coverage_dir(std::filesystem::current_path() / "../../coverage"),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
-      binary_virtual_offset(uintptr_t(symbol_index->getSelf()->address_begin)),
       pool(Writer::test_processing_thread_pool_size)
 {
     Context::setSettingHook("coverage_test_name", [this](const Field& value)
@@ -113,13 +112,11 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
     pool.scheduleOrThrowOnError(std::move(f));
 }
 
-Writer::AddrInfo Writer::symbolizeAndDemangle(
+Writer::AddrInfo Writer::symbolize(
     SourceFiles& files, SymbolsCache& symbols_cache, const void * virtual_addr) const
 {
     const uintptr_t physical_addr = uintptr_t(virtual_addr) - binary_virtual_offset;
     const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(physical_addr);
-
-    const auto * symbol = symbol_index->findSymbol(virtual_addr);
 
     std::string file_name_path = loc.file.toString();
     std::string file_name = file_name_path.substr(file_name_path.rfind('/') + 1);
@@ -131,18 +128,20 @@ Writer::AddrInfo Writer::symbolizeAndDemangle(
             std::move(file_name),
             SourceFileData{.full_path = std::move(file_name_path)}).first;
 
-    SymbolsCache::iterator symbol_it = symbols_cache.find(symbol->name);
+    //const auto * symbol = symbol_index->findSymbol(virtual_addr);
+    //
+    //SymbolsCache::iterator symbol_it = symbols_cache.find(symbol->name);
 
-    if (symbol_it == symbols_cache.end())
-    {
-        const void * const symbol_start_virtual = symbol->address_begin;
-        const uintptr_t symbol_start_phys = uintptr_t(symbol_start_virtual) - binary_virtual_offset;
-        const UInt64 symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
+    //if (symbol_it == symbols_cache.end())
+    //{
+    //    const void * const symbol_start_virtual = symbol->address_begin;
+    //    const uintptr_t symbol_start_phys = uintptr_t(symbol_start_virtual) - binary_virtual_offset;
+    //    const UInt64 symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
 
-        symbol_it = symbols_cache.emplace(symbol->name, symbol_start_line).first;
-    }
+    //    symbol_it = symbols_cache.emplace(symbol->name, symbol_start_line).first;
+    //}
 
-    return {file_data_it->second, loc.line, symbol_it->first};
+    return {file_data_it->second, loc.line};
 }
 
 void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view test_name)
@@ -159,17 +158,19 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
     //for (void * addr : hits)
     for (size_t i = 0; i < hits.size(); ++i)
     {
-        void * addr = hits.at(i);
+        void * const addr = hits.at(i);
 
         AddrsCache::iterator iter = addrs_cache.find(addr);
 
         if (iter == addrs_cache.end())
-            iter = addrs_cache.emplace(addr, symbolizeAndDemangle(source_files, symbols_cache, addr)).first;
+            iter = addrs_cache.emplace(addr, symbolize(source_files, symbols_cache, addr)).first;
 
         const AddrInfo& addr_info = iter->second;
 
-        fmt::print(std::cout, "{}/{} ({}s, {}, file {})\n", i, hits.size(), time(nullptr) - t,
-            addr_info.symbol_mangled_name,
+        fmt::print(std::cout, "test {}, {}/{}, {}s, line {}, file {}\n",
+            test_name,
+            i, hits.size(), time(nullptr) - t,
+            addr_info.line,
             addr_info.file.full_path);
 
         SourceFileData& data = addr_info.file;
@@ -232,6 +233,7 @@ void Writer::convertToLCOVAndDumpToDisk(
      */
     time_t t = time(nullptr);
     fmt::print(std::cout, "Dumping test {}\n", test_name);
+    std::cout.flush();
 
     std::ofstream ofs(coverage_dir / test_name);
 
@@ -272,5 +274,6 @@ void Writer::convertToLCOVAndDumpToDisk(
     }
 
     fmt::print(std::cout, "Dumped test {}, took {}s\n", test_name, time(nullptr) - t);
+    std::cout.flush();
 }
 }
