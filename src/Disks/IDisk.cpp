@@ -48,10 +48,9 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
     }
     else
     {
-        Poco::Path path(from_path);
-        const String & dir_name = path.directory(path.depth() - 1);
-        const String dest = to_path + dir_name + "/";
-        to_disk.createDirectories(dest);
+        const String & dir_name = directoryPath(from_path);
+        fs::path dest(fs::path(to_path) / dir_name);
+        fs::create_directories(dest);
 
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
             asyncCopy(from_disk, it->path(), to_disk, dest, exec, results);
