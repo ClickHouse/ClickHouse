@@ -844,8 +844,6 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: количество процессорных ядер без учёта Hyper-Threading.
 
-Если на сервере обычно исполняется менее одного запроса SELECT одновременно, то выставите этот параметр в значение чуть меньше количества реальных процессорных ядер.
-
 Для запросов, которые быстро завершаются из-за LIMIT-а, имеет смысл выставить max_threads поменьше. Например, если нужное количество записей находится в каждом блоке, то при max_threads = 8 будет считано 8 блоков, хотя достаточно было прочитать один.
 
 Чем меньше `max_threads`, тем меньше будет использоваться оперативки.
@@ -2756,5 +2754,98 @@ SELECT * FROM test2;
 -   1 — запрос возвращает статус таблицы в целом.
 
 Значение по умолчанию: `0`.
+
+## prefer_column_name_to_alias {#prefer-column-name-to-alias}
+
+Включает или отключает замену названий столбцов на синонимы в выражениях и секциях запросов, см. [Примечания по использованию синонимов](../../sql-reference/syntax.md#syntax-expression_aliases). Включите эту настройку, чтобы синтаксис синонимов в ClickHouse был более совместим с большинством других СУБД.
+
+Возможные значения:
+
+- 0 — синоним подставляется вместо имени столбца.
+- 1 — синоним не подставляется вместо имени столбца.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Какие изменения привносит включение и выключение настройки: 
+
+Запрос:
+
+```sql
+SET prefer_column_name_to_alias = 0;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Результат:
+
+```text
+Received exception from server (version 21.5.1):
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
+```
+
+Запрос:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Результат:
+
+```text
+┌─number─┬─max(number)─┐
+│    4.5 │           9 │
+└────────┴─────────────┘
+```
+
+## limit {#limit}
+
+Устанавливает максимальное количество строк, возвращаемых запросом. Ограничивает сверху значение, установленное в запросе в секции [LIMIT](../../sql-reference/statements/select/limit.md#limit-clause).
+
+Возможные значения:
+
+-   0 — число строк не ограничено.
+-   Положительное целое число.
+
+Значение по умолчанию: `0`.
+
+## offset {#offset}
+
+Устанавливает количество строк, которые необходимо пропустить перед началом возврата строк из запроса. Суммируется со значением, установленным в запросе в секции [OFFSET](../../sql-reference/statements/select/offset.md#offset-fetch).
+
+Возможные значения:
+
+-   0 — строки не пропускаются.
+-   Положительное целое число.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Исходная таблица:
+
+``` sql
+CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
+INSERT INTO test SELECT number FROM numbers(500);
+```
+
+Запрос:
+
+``` sql
+SET limit = 5;
+SET offset = 7;
+SELECT * FROM test LIMIT 10 OFFSET 100;
+```
+
+Результат:
+
+``` text
+┌───i─┐
+│ 107 │
+│ 108 │
+│ 109 │
+└─────┘
+```
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->

@@ -7,6 +7,8 @@
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Interpreters/JoinSwitcher.h>
 
+#include <Common/JSONBuilder.h>
+
 namespace DB
 {
 
@@ -108,6 +110,12 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
     for (const auto & pos : expression->getResultPositions())
         settings.out << ' ' << pos;
     settings.out << '\n';
+}
+
+void ExpressionStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    auto expression = std::make_shared<ExpressionActions>(actions_dag, ExpressionActionsSettings{});
+    map.add("Expression", expression->toTree());
 }
 
 JoinStep::JoinStep(const DataStream & input_stream_, JoinPtr join_, bool has_non_joined_rows_, size_t max_block_size_)
