@@ -81,6 +81,7 @@ public:
     /// Called when guard variables for all instrumented edges have been initialized.
     inline void initializedGuards(uint32_t count) { edges.reserve(count); }
 
+    /// Before server has initialized, we can't log data to Poco.
     inline void serverHasInitialized()
     {
         base_log = &Poco::Logger::get(std::string{logger_base_name});
@@ -93,7 +94,7 @@ public:
 private:
     Writer();
 
-    static constexpr const std::string_view logger_base_name = "Application.Coverage";
+    static constexpr const std::string_view logger_base_name = "Coverage";
     static constexpr const std::string_view coverage_dir_relative_path = "../../coverage";
 
     /// How many tests are converted to LCOV in parallel.
@@ -107,7 +108,7 @@ private:
 
     static constexpr bool test_use_batch = true;
 
-    const Poco::Logger * base_log;
+    const Poco::Logger * base_log; /// do not use the logger before call of serverHasInitialized.
 
     const std::filesystem::path coverage_dir;
 

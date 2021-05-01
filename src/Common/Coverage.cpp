@@ -68,8 +68,6 @@ Writer::Writer()
 
         const std::string dir_new_path = dir_path + "_" + std::to_string(suffix);
         std::filesystem::rename(coverage_dir, dir_new_path);
-
-        LOG_INFO(base_log, "Found previous run directory, moved it to {}", dir_new_path);
     }
 
     std::filesystem::create_directory(coverage_dir);
