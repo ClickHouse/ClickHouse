@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <filesystem>
 #include <optional>
 #include <shared_mutex>
@@ -56,12 +57,6 @@ struct FunctionInfo
     std::string_view name;
     size_t start_line;
     SourceFilePathIndex index;
-};
-
-struct TestInfo
-{
-    std::string_view name;
-    const Poco::Logger * log;
 };
 
 using TestData = std::vector<SourceFileData>; // vector index = source_file_paths index
@@ -148,8 +143,25 @@ private:
     /// Clears pc_table_addrs, pc_table_function_entries.
     void symbolizeAllInstrumentedAddrs();
 
+    struct IndexAndLine
+    {
+        size_t index;
+        size_t line;
+
+        size_t hits;
+        size_t misses;
+    };
+
+    size_t hits = 0, misses = 0;
+
     /// Possibly fill source_files_cache, source_file_name_to_path_index
-    std::pair<size_t, size_t> getIndexAndLine(void * addr);
+    IndexAndLine getIndexAndLine(void * addr);
+
+    struct TestInfo
+    {
+        std::string_view name;
+        const Poco::Logger * log;
+    };
 
     void prepareDataAndDump(TestInfo test_info, const Addrs& addrs);
     void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);

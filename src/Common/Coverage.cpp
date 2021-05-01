@@ -1,6 +1,7 @@
 #include "Coverage.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 
 #include <fstream>
@@ -95,7 +96,7 @@ void Writer::initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_en
     /// If starting now, we won't be able to log to Poco or std::cout;
 }
 
-std::pair<size_t, size_t> Writer::getIndexAndLine(void * addr)
+Writer::IndexAndLine Writer::getIndexAndLine(void * addr)
 {
     const SourceLocation source = getSourceLocation(addr);
     const std::string name = source.full_path.substr(source.full_path.rfind('/') + 1);
@@ -103,15 +104,19 @@ std::pair<size_t, size_t> Writer::getIndexAndLine(void * addr)
     size_t source_file_index;
 
     if (auto it = source_file_name_to_path_index.find(name); it != source_file_name_to_path_index.end())
+    {
         source_file_index = it->second;
+        ++hits;
+    }
     else
     {
         source_file_index = source_files_cache.size();
         source_file_name_to_path_index.emplace(name, source_file_index);
         source_files_cache.emplace_back(source.full_path);
+        ++misses;
     }
 
-    return {source_file_index, source.line};
+    return {source_file_index, source.line, hits, misses};
 }
 
 void Writer::symbolizeAllInstrumentedAddrs()
@@ -124,7 +129,7 @@ void Writer::symbolizeAllInstrumentedAddrs()
     {
         Addr addr = pc_table_function_entries.at(i);
 
-        const auto [source_file_index, line] = getIndexAndLine(addr);
+        const auto [source_file_index, line, h, m] = getIndexAndLine(addr);
         SourceFileInfo& info = source_files_cache[source_file_index];
 
         info.instrumented_functions.push_back(addr);
@@ -132,7 +137,8 @@ void Writer::symbolizeAllInstrumentedAddrs()
 
         if (time_t current = time(nullptr); current > elapsed)
         {
-            LOG_INFO(base_log, "Function symbolization: processed {}/{}", i, pc_table_function_entries.size());
+            LOG_INFO(base_log, "Processed {}/{} functions ({} hits, {} misses)",
+                    i, pc_table_function_entries.size(), h, m);
             elapsed = current;
         }
 
@@ -142,7 +148,7 @@ void Writer::symbolizeAllInstrumentedAddrs()
     {
         Addr addr = pc_table_addrs.at(i);
 
-        const auto [source_file_index, line] = getIndexAndLine(addr);
+        const auto [source_file_index, line, h, m] = getIndexAndLine(addr);
         SourceFileInfo& info = source_files_cache[source_file_index];
 
         info.instrumented_lines.push_back(line);
@@ -150,7 +156,8 @@ void Writer::symbolizeAllInstrumentedAddrs()
 
         if (time_t current = time(nullptr); current > elapsed)
         {
-            LOG_INFO(base_log, "Addresses symbolization: processed {}/{}", i, pc_table_addrs.size());
+            LOG_INFO(base_log, "Processed {}/{} addrs ({} hits, {} misses)",
+                    i, pc_table_addrs.size(), h, m);
             elapsed = current;
         }
     }
