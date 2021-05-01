@@ -1504,6 +1504,92 @@ public:
     }
 };
 
+class FunctionBitpositionToArray : public IFunction
+{
+public:
+    static constexpr auto name = "bitpositionToArray";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitpositionToArray>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isInteger(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeArray>(arguments[0]);
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    template <typename T>
+    bool tryExecute(const IColumn * column, ColumnPtr & out_column) const
+    {
+        using UnsignedT = make_unsigned_t<T>;
+
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column))
+        {
+            auto col_values = ColumnVector<T>::create();
+            auto col_offsets = ColumnArray::ColumnOffsets::create();
+
+            typename ColumnVector<T>::Container & res_values = col_values->getData();
+            ColumnArray::Offsets & res_offsets = col_offsets->getData();
+
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
+            size_t size = vec_from.size();
+            res_offsets.resize(size);
+            res_values.reserve(size * 2);
+
+            for (size_t row = 0; row < size; ++row)
+            {
+                UnsignedT x = vec_from[row];
+                while (x)
+                {
+                    UnsignedT y = x & (x - 1);
+                    UnsignedT bit = x ^ y;
+                    x = y;
+                    res_values.push_back(std::log2(bit));
+                }
+                res_offsets[row] = res_values.size();
+            }
+
+            out_column = ColumnArray::create(std::move(col_values), std::move(col_offsets));
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    {
+        const IColumn * in_column = arguments[0].column.get();
+        ColumnPtr out_column;
+
+        if (tryExecute<UInt8>(in_column, out_column) ||
+            tryExecute<UInt16>(in_column, out_column) ||
+            tryExecute<UInt32>(in_column, out_column) ||
+            tryExecute<UInt64>(in_column, out_column) ||
+            tryExecute<Int8>(in_column, out_column) ||
+            tryExecute<Int16>(in_column, out_column) ||
+            tryExecute<Int32>(in_column, out_column) ||
+            tryExecute<Int64>(in_column, out_column))
+            return out_column;
+
+        throw Exception("Illegal column " + arguments[0].column->getName()
+                        + " of first argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
 class FunctionToStringCutToZero : public IFunction
 {
 public:
