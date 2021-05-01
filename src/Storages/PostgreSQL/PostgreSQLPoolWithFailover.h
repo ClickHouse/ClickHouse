@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "PostgreSQLConnectionPool.h"

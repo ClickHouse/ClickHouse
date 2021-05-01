@@ -35,22 +35,15 @@ RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/1/dpkg-deb \
 RUN apt-get update \
     && apt-get install \
         alien \
-        clang-10 \
         clang-11 \
-        clang-tidy-10 \
         clang-tidy-11 \
         cmake \
         debhelper \
         devscripts \
-        g++-9 \
-        gcc-9 \
         gdb  \
         git \
         gperf \
-        lld-10 \
         lld-11 \
-        llvm-10 \
-        llvm-10-dev \
         llvm-11 \
         llvm-11-dev \
         moreutils \
@@ -68,7 +61,7 @@ RUN apt-get update \
 RUN echo 'deb http://archive.ubuntu.com/ubuntu/ focal-proposed restricted main multiverse universe' > /etc/apt/sources.list.d/proposed-repositories.list
 
 RUN apt-get update \
-    && apt-get install gcc-10 g++-10 --yes --no-install-recommends
+    && apt-get install gcc-10 g++-10 --yes
 
 RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 

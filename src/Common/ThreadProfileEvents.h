@@ -105,8 +105,12 @@ struct RUsageCounters
     {
         ::rusage rusage {};
 #if !defined(__APPLE__)
+#if defined(OS_SUNOS)
+        ::getrusage(RUSAGE_LWP, &rusage);
+#else
         ::getrusage(RUSAGE_THREAD, &rusage);
-#endif
+#endif // OS_SUNOS
+#endif // __APPLE
         return RUsageCounters(rusage, getClockMonotonic());
     }
 
