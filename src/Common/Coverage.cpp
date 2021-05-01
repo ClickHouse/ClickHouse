@@ -8,6 +8,7 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include <fmt/format.h>
@@ -96,71 +97,86 @@ void Writer::initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_en
     /// If starting now, we won't be able to log to Poco or std::cout;
 }
 
-Writer::IndexAndLine Writer::getIndexAndLine(void * addr)
-{
-    const SourceLocation source = getSourceLocation(addr);
-    const std::string name = source.full_path.substr(source.full_path.rfind('/') + 1);
-
-    size_t source_file_index;
-
-    if (auto it = source_file_name_to_path_index.find(name); it != source_file_name_to_path_index.end())
-    {
-        source_file_index = it->second;
-        ++hits;
-    }
-    else
-    {
-        source_file_index = source_files_cache.size();
-        source_file_name_to_path_index.emplace(name, source_file_index);
-        source_files_cache.emplace_back(source.full_path);
-        ++misses;
-    }
-
-    return {source_file_index, source.line, hits, misses};
-}
-
 void Writer::symbolizeAllInstrumentedAddrs()
 {
     LOG_INFO(base_log, "Started symbolizing addresses");
 
-    time_t elapsed = time(nullptr);
+    constexpr size_t functions_threads = thread_pool_size;
 
-    for (size_t i = 0; i < pc_table_function_entries.size(); ++i)
+    struct FuncAddrTriple
     {
-        Addr addr = pc_table_function_entries.at(i);
+        size_t line;
+        void * addr;
+        std::string_view name;
 
-        const auto [source_file_index, line, h, m] = getIndexAndLine(addr);
-        SourceFileInfo& info = source_files_cache[source_file_index];
+        FuncAddrTriple(size_t line_, void * addr_, std::string_view name_): line(line_), addr(addr_), name(name_) {}
+    };
 
-        info.instrumented_functions.push_back(addr);
-        function_cache.try_emplace(addr, FunctionInfo{symbolize(addr), line, source_file_index});
+    using FuncLocalCache = std::unordered_map<std::string /*source file path*/, std::vector<FuncAddrTriple>>;
+    FuncLocalCache caches[functions_threads];
 
-        if (time_t current = time(nullptr); current > elapsed)
+    const size_t step = pc_table_function_entries.size() / functions_threads;
+    auto begin = pc_table_function_entries.begin();
+    auto real_end = pc_table_function_entries.end();
+
+    for (size_t thread_index = 0; thread_index < functions_threads; ++thread_index)
+        pool.scheduleOrThrowOnError([this, &caches, begin, step, thread_index, real_end]
         {
-            LOG_INFO(base_log, "Processed {}/{} functions ({} hits, {} misses)",
-                    i, pc_table_function_entries.size(), h, m);
-            elapsed = current;
-        }
+            const auto start = std::next(begin, thread_index * step);
+            const auto end = thread_index == functions_threads - 1
+                ? real_end
+                : std::next(start, step);
 
-    }
+            const Poco::Logger * const log = &Poco::Logger::get(
+                fmt::format("{}.func{}", logger_base_name, thread_index));
 
-    for (size_t i = 0; i < pc_table_addrs.size(); ++i)
-    {
-        Addr addr = pc_table_addrs.at(i);
+            const size_t size = end - start;
 
-        const auto [source_file_index, line, h, m] = getIndexAndLine(addr);
-        SourceFileInfo& info = source_files_cache[source_file_index];
+            FuncLocalCache& cache = caches[thread_index];
 
-        info.instrumented_lines.push_back(line);
-        addr_cache.try_emplace(addr, AddrInfo{line, source_file_index});
+            time_t elapsed = time(nullptr);
 
-        if (time_t current = time(nullptr); current > elapsed)
-        {
-            LOG_INFO(base_log, "Processed {}/{} addrs ({} hits, {} misses)",
-                    i, pc_table_addrs.size(), h, m);
-            elapsed = current;
-        }
-    }
+            for (auto it = start; it != end; ++it)
+            {
+                Addr addr = *it;
+
+                const SourceLocation source = getSourceLocation(addr);
+
+                if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
+                    cache_it->second.emplace_back(source.line, addr, symbolize(addr));
+                else
+                    cache[source.full_path] = {{source.line, addr, symbolize(addr)}};
+
+                if (time_t current = time(nullptr); current > elapsed)
+                {
+                    LOG_INFO(log, "Processed {}/{} functions", it - start, size);
+                    elapsed = current;
+                }
+            }
+        });
+
+    pool.wait();
+
+    /// Merge data from multiple threads.
+
+    //time_t elapsed = time(nullptr);
+
+    //for (size_t i = 0; i < pc_table_addrs.size(); ++i)
+    //{
+    //    Addr addr = pc_table_addrs.at(i);
+
+    //    const auto [source_file_index, line] = getIndexAndLine(addr);
+    //    SourceFileInfo& info = source_files_cache[source_file_index];
+
+    //    info.instrumented_lines.push_back(line);
+    //    addr_cache.try_emplace(addr, AddrInfo{line, source_file_index});
+
+    //    if (time_t current = time(nullptr); current > elapsed)
+    //    {
+    //        LOG_INFO(base_log, "Processed {}/{} addrs", i, pc_table_addrs.size());
+    //        elapsed = current;
+    //    }
+    //}
 
     pc_table_function_entries.clear();
     pc_table_function_entries.shrink_to_fit();
@@ -172,32 +188,22 @@ void Writer::symbolizeAllInstrumentedAddrs()
 
 void Writer::hit(void * addr)
 {
-    if constexpr (test_use_batch)
-    {
-        if (hits_batch_index == hits_batch_array_size - 1) //non-atomic, ok as thread_local.
-        {
-            auto lck = std::lock_guard(edges_mutex);
-
-            if (test)
-            {
-                hits_batch_storage[hits_batch_index] = addr; //can insert last element;
-                edges.insert(edges.end(), hits_batch_storage.begin(), hits_batch_storage.end());
-            }
-
-            hits_batch_index = 0;
-
-            return;
-        }
-
-        hits_batch_storage[hits_batch_index++] = addr;
-    }
-    else
+    if (hits_batch_index == hits_batch_array_size - 1) //non-atomic, ok as thread_local.
     {
         auto lck = std::lock_guard(edges_mutex);
 
         if (test)
-            edges.push_back(addr);
+        {
+            hits_batch_storage[hits_batch_index] = addr; //can insert last element;
+            edges.insert(edges.end(), hits_batch_storage.begin(), hits_batch_storage.end());
+        }
+
+        hits_batch_index = 0;
+
+        return;
     }
+
+    hits_batch_storage[hits_batch_index++] = addr;
 }
 
 void Writer::dumpAndChangeTestName(std::string_view test_name)
@@ -219,14 +225,13 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         log = &Poco::Logger::get(std::string{logger_base_name} + "." + *test);
         LOG_INFO(log, "Started copying data", test_name);
 
-        if constexpr (test_use_batch)
-            if (hits_batch_index > 0) // haven't copied last addresses from local storage to edges
-            {
-                edges.insert(edges.end(),
-                    hits_batch_storage.begin(), std::next(hits_batch_storage.begin(), hits_batch_index));
+        if (hits_batch_index > 0) // haven't copied last addresses from local storage to edges
+        {
+            edges.insert(edges.end(),
+                hits_batch_storage.begin(), std::next(hits_batch_storage.begin(), hits_batch_index));
 
-                hits_batch_index = 0;
-            }
+            hits_batch_index = 0;
+        }
 
         edges_copies = edges;
         old_test_name = *test;
@@ -353,7 +358,7 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
 
         for (Addr func_addr : functions_instrumented)
         {
-            const FunctionInfo& func_info = function_cache.find(func_addr)->second;
+            const FunctionInfo& func_info = function_cache.at(func_addr);
 
             size_t call_count = 0;
 

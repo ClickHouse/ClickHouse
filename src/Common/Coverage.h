@@ -31,7 +31,10 @@ struct SourceFileData
 struct SourceFileInfo
 {
     std::string path;
-    std::vector<Addr> instrumented_functions;
+
+    using InstrumentedFunctions = std::vector<Addr>;
+    InstrumentedFunctions instrumented_functions;
+
     std::vector<size_t> instrumented_lines;
 
     explicit SourceFileInfo(const std::string& path_)
@@ -101,8 +104,6 @@ private:
     static thread_local inline size_t hits_batch_index = 0; /// How many addresses are currently in the local storage.
     static thread_local inline std::array<void*, hits_batch_array_size> hits_batch_storage{};
 
-    static constexpr bool test_use_batch = true;
-
     const Poco::Logger * base_log; /// do not use the logger before call of serverHasInitialized.
 
     const std::filesystem::path coverage_dir;
@@ -116,11 +117,16 @@ private:
     std::optional<std::string> test;
     std::mutex edges_mutex; // protects test, edges
 
-    std::unordered_map<std::string, SourceFilePathIndex> source_file_name_to_path_index;
-    std::vector<SourceFileInfo> source_files_cache;
+    using NameToIndexCache = std::unordered_map<std::string, SourceFilePathIndex>;
+    using SourceFileCache = std::vector<SourceFileInfo>;
+
+    NameToIndexCache source_file_name_to_path_index;
+    SourceFileCache source_files_cache;
 
     std::unordered_map<Addr, AddrInfo> addr_cache;
-    std::unordered_map<Addr, FunctionInfo> function_cache;
+
+    using FunctionCache = std::unordered_map<Addr, FunctionInfo>;
+    FunctionCache function_cache;
 
     Addrs pc_table_addrs;
     Addrs pc_table_function_entries;
@@ -142,20 +148,6 @@ private:
     /// Fills addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
     /// Clears pc_table_addrs, pc_table_function_entries.
     void symbolizeAllInstrumentedAddrs();
-
-    struct IndexAndLine
-    {
-        size_t index;
-        size_t line;
-
-        size_t hits;
-        size_t misses;
-    };
-
-    size_t hits = 0, misses = 0;
-
-    /// Possibly fill source_files_cache, source_file_name_to_path_index
-    IndexAndLine getIndexAndLine(void * addr);
 
     struct TestInfo
     {
