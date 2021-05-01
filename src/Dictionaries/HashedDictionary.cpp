@@ -639,6 +639,9 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
     }
 
     bytes_allocated += complex_key_arena.size();
+
+    if (saved_block)
+        bytes_allocated += saved_block->allocatedBytes();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
