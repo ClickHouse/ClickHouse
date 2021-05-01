@@ -19,6 +19,9 @@ class JITModuleMemoryManager;
 class JITSymbolResolver;
 class JITCompiler;
 
+/// TODO: Add profile events
+/// TODO: Add documentation
+/// TODO: Rewrite interface to be more ThreadSafe
 class CHJIT
 {
 public:
@@ -43,14 +46,16 @@ public:
 
     void registerExternalSymbol(const std::string & symbol_name, void * address);
 
-    llvm::LLVMContext & getContext()
-    {
-        return context;
-    }
+    llvm::LLVMContext & getContext() { return context; }
 
-    inline size_t getCompiledCodeSize() const
+    inline size_t getCompiledCodeSize() const { return compiled_code_size; }
+
+    /// TODO: Remove after interface rewrite
+    template <typename Func>
+    auto runJITLocked(Func && func) -> decltype(func())
     {
-        return compiled_code_size;
+        std::lock_guard<std::mutex> lock(jit_lock);
+        return func();
     }
 
 private:
@@ -71,6 +76,7 @@ private:
     std::unordered_map<std::string, std::unique_ptr<JITModuleMemoryManager>> module_identifier_to_memory_manager;
     size_t current_module_key = 0;
     size_t compiled_code_size = 0;
+    std::mutex jit_lock;
 };
 
 }
