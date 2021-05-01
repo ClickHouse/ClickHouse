@@ -101,9 +101,6 @@ void Writer::symbolizeAllInstrumentedAddrs()
 {
     LOG_INFO(base_log, "Started symbolizing addresses");
 
-    constexpr size_t threads = 12;
-    pool.setMaxThreads(2 * threads);
-
     struct FuncAddrTriple
     {
         size_t line;
@@ -113,18 +110,37 @@ void Writer::symbolizeAllInstrumentedAddrs()
         FuncAddrTriple(size_t line_, void * addr_, std::string_view name_): line(line_), addr(addr_), name(name_) {}
     };
 
-    using FuncLocalCache = std::unordered_map<std::string /*source file path*/, std::vector<FuncAddrTriple>>;
-    FuncLocalCache func_caches[threads];
+    struct AddrPair
+    {
+        size_t line;
+        void * addr;
 
-    const size_t func_step = pc_table_function_entries.size() / threads;
+        AddrPair(size_t line_, void * addr_): line(line_), addr(addr_) {}
+    };
+
+    constexpr size_t func_threads = 5;
+    constexpr size_t addr_threads = 12;
+    pool.setMaxThreads(func_threads + addr_threads);
+
+    using FuncLocalCache = std::unordered_map<std::string /*source file path*/, std::vector<FuncAddrTriple>>;
+    FuncLocalCache func_caches[func_threads];
+
+    const size_t func_step = pc_table_function_entries.size() / func_threads;
     auto func_begin = pc_table_function_entries.begin();
     auto func_end = pc_table_function_entries.end();
 
-    for (size_t thread_index = 0; thread_index < threads; ++thread_index)
+    using AddrLocalCache = std::unordered_map<std::string, std::vector<AddrPair>>;
+    AddrLocalCache addr_caches[addr_threads];
+
+    const size_t addr_step = pc_table_addrs.size() / addr_threads;
+    auto addr_begin = pc_table_addrs.begin();
+    auto addr_end = pc_table_addrs.end();
+
+    for (size_t thread_index = 0; thread_index < func_threads; ++thread_index)
         pool.scheduleOrThrowOnError([this, &func_caches, func_begin, func_step, thread_index, func_end]
         {
             const auto start = std::next(func_begin, thread_index * func_step);
-            const auto end = thread_index == threads - 1
+            const auto end = thread_index == func_threads - 1
                 ? func_end
                 : std::next(start, func_step);
 
@@ -156,26 +172,11 @@ void Writer::symbolizeAllInstrumentedAddrs()
             }
         });
 
-    struct AddrPair
-    {
-        size_t line;
-        void * addr;
-
-        AddrPair(size_t line_, void * addr_): line(line_), addr(addr_) {}
-    };
-
-    using AddrLocalCache = std::unordered_map<std::string, std::vector<AddrPair>>;
-    AddrLocalCache addr_caches[threads];
-
-    const size_t addr_step = pc_table_addrs.size() / threads;
-    auto addr_begin = pc_table_addrs.begin();
-    auto addr_end = pc_table_addrs.end();
-
-    for (size_t thread_index = 0; thread_index < threads; ++thread_index)
+    for (size_t thread_index = 0; thread_index < addr_threads; ++thread_index)
         pool.scheduleOrThrowOnError([this, &addr_caches, addr_begin, addr_step, thread_index, addr_end]
         {
             const auto start = std::next(addr_begin, thread_index * addr_step);
-            const auto end = thread_index == threads - 1
+            const auto end = thread_index == addr_threads - 1
                 ? addr_end
                 : std::next(start, addr_step);
 
