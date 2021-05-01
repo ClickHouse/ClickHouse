@@ -24,6 +24,7 @@ public:
     virtual const ColumnPtr & getNestedNotNullableColumn() const = 0;
 
     virtual bool nestedColumnIsNullable() const = 0;
+    virtual void nestedToNullable() = 0;
 
     /// Returns array with StringRefHash calculated for each row of getNestedNotNullableColumn() column.
     /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
