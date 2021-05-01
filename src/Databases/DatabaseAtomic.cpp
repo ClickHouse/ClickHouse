@@ -10,7 +10,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <filesystem>
 #include <Interpreters/DDLTask.h>
-#include <filesystem>
 
 namespace fs = std::filesystem;
 
