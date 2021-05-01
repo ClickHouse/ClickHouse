@@ -47,9 +47,9 @@ Union
 
 ### EXPLAIN AST {#explain-ast}
 
-Dump query AST.
+Dump query AST. Supports all types of queries, not only `SELECT`.
 
-Example:
+Examples:
 
 ```sql
 EXPLAIN AST SELECT 1;
@@ -63,25 +63,20 @@ SelectWithUnionQuery (children 1)
     Literal UInt64_1
 ```
 
-Supports all types of queries, not only `SELECT`.
-
-Example:
-
 ```sql
 EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
 ```
 
 ```sql
-┌─explain──────────────────────────┐
-│ AlterQuery  t1 (children 1)      │
-│  ExpressionList (children 1)     │
-│   AlterCommand 27 (children 1)   │
-│    Function equals (children 1)  │
-│     ExpressionList (children 2)  │
-│      Identifier date             │
-│      Function today (children 1) │
-│       ExpressionList             │
-└──────────────────────────────────┘
+  explain
+  AlterQuery  t1 (children 1)
+   ExpressionList (children 1)
+    AlterCommand 27 (children 1)
+     Function equals (children 1)
+      ExpressionList (children 2)
+       Identifier date
+       Function today (children 1)
+        ExpressionList
 ```
 
 ### EXPLAIN SYNTAX {#explain-syntax}
