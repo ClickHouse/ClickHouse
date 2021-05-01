@@ -14,11 +14,9 @@
 
 #include "Common/ProfileEvents.h"
 #include "common/logger_useful.h"
-#include <common/demangle.h>
 
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
-
 
 namespace detail
 {
@@ -131,7 +129,7 @@ std::pair<size_t, size_t> Writer::getIndexAndLine(void * addr)
     return {source_file_index, source.line};
 }
 
-void Writer::symbolizeAllInstrumentedAddrs(const Writer::Addrs& function_entries, const Writer::Addrs& addrs)
+void Writer::symbolizeAllInstrumentedAddrs(const Addrs& function_entries, const Addrs& addrs)
 {
     time_t elapsed = time(nullptr);
 
@@ -148,7 +146,6 @@ void Writer::symbolizeAllInstrumentedAddrs(const Writer::Addrs& function_entries
         if (time_t current = time(nullptr); current > elapsed)
         {
             LOG_INFO(base_log, "Function symbolization: processed {}/{}", i, function_entries.size());
-            fmt::print(std::cout, "{}/{}", i, function_entries.size());
             elapsed = current;
         }
     }
@@ -258,7 +255,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
     LOG_INFO(log, "Scheduled job");
 }
 
-void Writer::prepareDataAndDump(Writer::TestInfo test_info, const Writer::Addrs& addrs)
+void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
 {
     LOG_INFO(test_info.log, "Started filling internal structures, {} hits", addrs.size());
 
@@ -301,8 +298,7 @@ void Writer::prepareDataAndDump(Writer::TestInfo test_info, const Writer::Addrs&
     convertToLCOVAndDump(test_info, test_data);
 }
 
-
-void Writer::convertToLCOVAndDump(Writer::TestInfo test_info, const Writer::TestData& test_data)
+void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
 {
     /**
      * [incomplete] LCOV .info format reference, parsed from
@@ -370,7 +366,7 @@ void Writer::convertToLCOVAndDump(Writer::TestInfo test_info, const Writer::Test
 
         fmt::print(ofs, "FNF:{}\nFNH:{}\n", functions_instrumented.size(), functions_hit.size());
 
-        for (Line line : lines_instrumented)
+        for (size_t line : lines_instrumented)
         {
             size_t call_count = 0;
 

@@ -17,6 +17,54 @@ namespace detail
 {
 using namespace DB;
 
+using Addr = void *;
+using Addrs = std::vector<Addr>;
+
+struct SourceFileData
+{
+    std::unordered_map<Addr, size_t /* call count */> functions_hit;
+    std::unordered_map<size_t /* line */, size_t /* call_count */> lines_hit;
+};
+
+struct SourceFileInfo
+{
+    std::string path;
+    std::vector<Addr> instrumented_functions;
+    std::vector<size_t> instrumented_lines;
+
+    explicit SourceFileInfo(const std::string& path_)
+        : path(path_), instrumented_functions(), instrumented_lines() {}
+};
+
+struct SourceLocation
+{
+    std::string full_path;
+    size_t line;
+};
+
+using SourceFilePathIndex = size_t;
+
+struct AddrInfo
+{
+    size_t line;
+    SourceFilePathIndex index;
+};
+
+struct FunctionInfo
+{
+    std::string_view name;
+    size_t start_line;
+    SourceFilePathIndex index;
+};
+
+struct TestInfo
+{
+    std::string_view name;
+    const Poco::Logger * log;
+};
+
+using TestData = std::vector<SourceFileData>; // vector index = source_file_paths index
+
 class Writer
 {
 public:
@@ -26,16 +74,19 @@ public:
         return w;
     }
 
-    /// Called when guard variables for all instrumented edges have been initialized.
-    void initializedGuards(uint32_t count);
-
     /// Called when class needs to store all instrumented addresses.
     void initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_end);
+
+    /// Called when guard variables for all instrumented edges have been initialized.
+    /// Called after initializePCTable.
+    void initializedGuards(uint32_t count);
 
     /// Called when a critical edge in binary is hit.
     void hit(void * addr);
 
 private:
+    Writer();
+
     static constexpr const std::string_view logger_base_name = "Application.Coverage";
     static constexpr const std::string_view coverage_dir_relative_path = "../../coverage";
 
@@ -45,9 +96,10 @@ private:
     /// How many addresses do we dump into local storage before acquiring the edges_mutex and pushing into edges.
     static constexpr const size_t hits_batch_array_size = 100000;
 
-    static constexpr bool test_use_batch = true;
+    static thread_local inline size_t hits_batch_index = 0; /// How many addresses are currently in the local storage.
+    static thread_local inline std::array<void*, hits_batch_array_size> hits_batch_storage{};
 
-    Writer();
+    static constexpr bool test_use_batch = true;
 
     const Poco::Logger * const base_log;
 
@@ -55,72 +107,18 @@ private:
 
     const MultiVersion<SymbolIndex>::Version symbol_index;
     const Dwarf dwarf;
-    static constexpr const uintptr_t binary_virtual_offset {0}; // As our binary gets loaded first
 
     FreeThreadPool pool;
-
-    /// How many addresses are currently in the local storage.
-    static thread_local inline size_t hits_batch_index = 0;
-    static thread_local inline std::array<void*, hits_batch_array_size> hits_batch_storage{};
-
-    using Addr = void *;
-    using Addrs = std::vector<Addr>;
 
     Addrs edges;
     std::optional<std::string> test;
     std::mutex edges_mutex; // protects test, edges
-
-    void dumpAndChangeTestName(std::string_view test_name);
-
-    using Line = size_t;
-
-    struct SourceFileData
-    {
-        using FunctionCallCount = size_t;
-        using LineCalled = size_t;
-
-        std::unordered_map<Addr, FunctionCallCount> functions_hit;
-        std::unordered_map<Line, LineCalled> lines_hit;
-    };
-
-    // vector index = source_file_paths index
-    using TestData = std::vector<SourceFileData>;
-
-    using SourceFilePathIndex = size_t;
-
-    struct SourceFileInfo
-    {
-        std::string path;
-        std::vector<Addr> instrumented_functions{};
-        std::vector<Line> instrumented_lines{};
-
-        explicit SourceFileInfo(const std::string& path_): path(path_) {}
-    };
-
-    struct AddrInfo
-    {
-        size_t line;
-        SourceFilePathIndex index;
-    };
-
-    struct FunctionInfo
-    {
-        std::string_view name;
-        size_t start_line;
-        SourceFilePathIndex index;
-    };
 
     std::unordered_map<std::string, SourceFilePathIndex> source_file_name_to_path_index;
     std::vector<SourceFileInfo> source_files_cache;
 
     std::unordered_map<Addr, AddrInfo> addr_cache;
     std::unordered_map<Addr, FunctionInfo> function_cache;
-
-    struct SourceLocation
-    {
-        std::string full_path;
-        size_t line;
-    };
 
     inline SourceLocation getSourceLocation(const void * virtual_addr) const
     {
@@ -134,11 +132,7 @@ private:
         return symbol_index->findSymbol(virtual_addr)->name;
     }
 
-    struct TestInfo
-    {
-        std::string_view name;
-        const Poco::Logger * log;
-    };
+    void dumpAndChangeTestName(std::string_view test_name);
 
     /// Fill addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
     void symbolizeAllInstrumentedAddrs(const Addrs& function_entries, const Addrs& addrs);
