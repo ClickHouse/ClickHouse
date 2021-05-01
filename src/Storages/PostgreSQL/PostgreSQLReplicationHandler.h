@@ -27,9 +27,10 @@ class PostgreSQLReplicationHandler
 {
 public:
     PostgreSQLReplicationHandler(
-            const std::string & database_name_,
+            const String & remote_database_name_,
+            const String & current_database_name_,
             const postgres::ConnectionInfo & connection_info_,
-            const std::string & metadata_path_,
+            const String & metadata_path_,
             ContextPtr context_,
             const size_t max_block_size_,
             bool allow_minimal_ddl_,
@@ -50,7 +51,7 @@ public:
     NameSet fetchRequiredTables(pqxx::connection & connection_);
 
 private:
-    using Storages = std::unordered_map<String, StorageMaterializePostgreSQL *>;
+    using MaterializedStorages = std::unordered_map<String, StorageMaterializePostgreSQL *>;
 
     bool isPublicationExist(pqxx::work & tx);
 
@@ -72,17 +73,19 @@ private:
 
     void consumerFunc();
 
-    NameSet loadFromSnapshot(std::string & snapshot_name, Storages & sync_storages);
+    StoragePtr loadFromSnapshot(std::string & snapshot_name, const String & table_name, StorageMaterializePostgreSQL * materialized_storage);
 
-    std::unordered_map<Int32, String> reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
+    void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
     PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const std::string & table_name);
+
+    void replaceMaterializedTable(const String & table_name);
 
     Poco::Logger * log;
     ContextPtr context;
 
     /// Remote database name.
-    const String database_name;
+    const String remote_database_name, current_database_name;
 
     /// Path for replication metadata.
     const String metadata_path;
@@ -119,10 +122,7 @@ private:
     bool new_publication_created = false;
 
     /// MaterializePostgreSQL tables. Used for managing all operations with its internal nested tables.
-    Storages storages;
-
-    /// List of nested tables, which is passed to replication consumer.
-    std::unordered_map<String, StoragePtr> nested_storages;
+    MaterializedStorages materialized_storages;
 };
 
 }

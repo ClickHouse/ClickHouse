@@ -18,6 +18,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <ext/shared_ptr_helper.h>
+#include <memory>
 
 
 namespace DB
@@ -52,6 +53,8 @@ public:
         unsigned num_streams) override;
 
     void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure);
+
+    StoragePtr createTemporary() const;
 
     StoragePtr getNested() const;
 

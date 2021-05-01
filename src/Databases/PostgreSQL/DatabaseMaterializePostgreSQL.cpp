@@ -56,6 +56,7 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
 {
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
+            database_name,
             connection->getConnectionInfo(),
             metadata_path + METADATA_SUFFIX,
             getContext(),

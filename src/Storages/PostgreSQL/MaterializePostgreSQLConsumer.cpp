@@ -675,13 +675,9 @@ void MaterializePostgreSQLConsumer::updateNested(const String & table_name, Stor
 }
 
 
-void MaterializePostgreSQLConsumer::updateSkipList(const std::unordered_map<Int32, String> & tables_with_lsn)
+void MaterializePostgreSQLConsumer::updateSkipList(Int32 table_id, const String & table_start_lsn)
 {
-    for (const auto & [relation_id, lsn] : tables_with_lsn)
-    {
-        if (!lsn.empty())
-            skip_list[relation_id] = lsn; /// start_lsn
-    }
+    skip_list[table_id] = table_start_lsn;
 }
 
 }

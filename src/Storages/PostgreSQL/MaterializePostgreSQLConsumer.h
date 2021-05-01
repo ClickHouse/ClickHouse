@@ -43,7 +43,7 @@ public:
 
     void updateNested(const String & table_name, StoragePtr nested_storage);
 
-    void updateSkipList(const std::unordered_map<Int32, String> & tables_with_lsn);
+    void updateSkipList(Int32 table_id, const String & table_start_lsn);
 
 private:
     bool readFromReplicationSlot();
