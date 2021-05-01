@@ -101,7 +101,8 @@ void Writer::symbolizeAllInstrumentedAddrs()
 {
     LOG_INFO(base_log, "Started symbolizing addresses");
 
-    constexpr size_t functions_threads = thread_pool_size;
+    constexpr size_t threads = 12;
+    pool.setMaxThreads(2 * threads);
 
     struct FuncAddrTriple
     {
@@ -113,26 +114,26 @@ void Writer::symbolizeAllInstrumentedAddrs()
     };
 
     using FuncLocalCache = std::unordered_map<std::string /*source file path*/, std::vector<FuncAddrTriple>>;
-    FuncLocalCache caches[functions_threads];
+    FuncLocalCache func_caches[threads];
 
-    const size_t step = pc_table_function_entries.size() / functions_threads;
-    auto begin = pc_table_function_entries.begin();
-    auto real_end = pc_table_function_entries.end();
+    const size_t func_step = pc_table_function_entries.size() / threads;
+    auto func_begin = pc_table_function_entries.begin();
+    auto func_end = pc_table_function_entries.end();
 
-    for (size_t thread_index = 0; thread_index < functions_threads; ++thread_index)
-        pool.scheduleOrThrowOnError([this, &caches, begin, step, thread_index, real_end]
+    for (size_t thread_index = 0; thread_index < threads; ++thread_index)
+        pool.scheduleOrThrowOnError([this, &func_caches, func_begin, func_step, thread_index, func_end]
         {
-            const auto start = std::next(begin, thread_index * step);
-            const auto end = thread_index == functions_threads - 1
-                ? real_end
-                : std::next(start, step);
+            const auto start = std::next(func_begin, thread_index * func_step);
+            const auto end = thread_index == threads - 1
+                ? func_end
+                : std::next(start, func_step);
 
             const Poco::Logger * const log = &Poco::Logger::get(
                 fmt::format("{}.func{}", logger_base_name, thread_index));
 
             const size_t size = end - start;
 
-            FuncLocalCache& cache = caches[thread_index];
+            FuncLocalCache& cache = func_caches[thread_index];
 
             time_t elapsed = time(nullptr);
 
@@ -155,28 +156,62 @@ void Writer::symbolizeAllInstrumentedAddrs()
             }
         });
 
+    struct AddrPair
+    {
+        size_t line;
+        void * addr;
+
+        AddrPair(size_t line_, void * addr_): line(line_), addr(addr_) {}
+    };
+
+    using AddrLocalCache = std::unordered_map<std::string, std::vector<AddrPair>>;
+    AddrLocalCache addr_caches[threads];
+
+    const size_t addr_step = pc_table_addrs.size() / threads;
+    auto addr_begin = pc_table_addrs.begin();
+    auto addr_end = pc_table_addrs.end();
+
+    for (size_t thread_index = 0; thread_index < threads; ++thread_index)
+        pool.scheduleOrThrowOnError([this, &addr_caches, addr_begin, addr_step, thread_index, addr_end]
+        {
+            const auto start = std::next(addr_begin, thread_index * addr_step);
+            const auto end = thread_index == threads - 1
+                ? addr_end
+                : std::next(start, addr_step);
+
+            const Poco::Logger * const log = &Poco::Logger::get(
+                fmt::format("{}.addr{}", logger_base_name, thread_index));
+
+            const size_t size = end - start;
+
+            AddrLocalCache& cache = addr_caches[thread_index];
+
+            time_t elapsed = time(nullptr);
+
+            for (auto it = start; it != end; ++it)
+            {
+                Addr addr = *it;
+
+                const SourceLocation source = getSourceLocation(addr);
+
+                if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
+                    cache_it->second.emplace_back(source.line, addr);
+                else
+                    cache[source.full_path] = {{source.line, addr}};
+
+                if (time_t current = time(nullptr); current > elapsed)
+                {
+                    LOG_INFO(log, "Processed {}/{} addresses", it - start, size);
+                    elapsed = current;
+                }
+            }
+        });
+
     pool.wait();
 
     /// Merge data from multiple threads.
 
-    //time_t elapsed = time(nullptr);
-
-    //for (size_t i = 0; i < pc_table_addrs.size(); ++i)
-    //{
-    //    Addr addr = pc_table_addrs.at(i);
-
-    //    const auto [source_file_index, line] = getIndexAndLine(addr);
-    //    SourceFileInfo& info = source_files_cache[source_file_index];
-
-    //    info.instrumented_lines.push_back(line);
-    //    addr_cache.try_emplace(addr, AddrInfo{line, source_file_index});
-
-    //    if (time_t current = time(nullptr); current > elapsed)
-    //    {
-    //        LOG_INFO(base_log, "Processed {}/{} addrs", i, pc_table_addrs.size());
-    //        elapsed = current;
-    //    }
-    //}
+    pool.setMaxThreads(thread_pool_size);
 
     pc_table_function_entries.clear();
     pc_table_function_entries.shrink_to_fit();
