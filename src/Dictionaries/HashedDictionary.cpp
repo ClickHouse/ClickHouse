@@ -361,7 +361,7 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
             for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
             {
                 const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
-                MutableColumnPtr saved_column = previously_loaded_block->getByPosition(attribute_index).column->assumeMutable();
+                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
