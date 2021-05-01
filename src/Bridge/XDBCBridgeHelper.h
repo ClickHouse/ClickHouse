@@ -62,9 +62,9 @@ public:
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
 
     XDBCBridgeHelper(
-            ContextPtr global_context_,
-            const Poco::Timespan & http_timeout_,
-            const std::string & connection_string_)
+        ContextPtr global_context_,
+        Poco::Timespan http_timeout_,
+        const std::string & connection_string_)
     : IXDBCBridgeHelper(global_context_)
     , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
     , connection_string(connection_string_)
@@ -90,7 +90,7 @@ protected:
 
     String configPrefix() const override { return BridgeHelperMixin::configPrefix(); }
 
-    const Poco::Timespan & getHTTPTimeout() const override { return http_timeout; }
+    Poco::Timespan getHTTPTimeout() const override { return http_timeout; }
 
     const Poco::Util::AbstractConfiguration & getConfig() const override { return config; }
 
@@ -118,7 +118,7 @@ private:
 
     Poco::Logger * log;
     std::string connection_string;
-    const Poco::Timespan & http_timeout;
+    Poco::Timespan http_timeout;
     std::string bridge_host;
     size_t bridge_port;
 
