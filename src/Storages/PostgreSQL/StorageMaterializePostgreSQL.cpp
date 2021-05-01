@@ -36,6 +36,7 @@ namespace ErrorCodes
 }
 
 static const auto NESTED_TABLE_SUFFIX = "_nested";
+static const auto TMP_SUFFIX = "_tmp";
 
 
 StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
@@ -65,6 +66,7 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
+            table_id_.database_name,
             connection_info,
             metadata_path,
             getContext(),
@@ -82,6 +84,16 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     , nested_table_id(table_id_)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
 {
+}
+
+
+/// A temporary clone table might be created for current table in order to update its schema and reload
+/// all data in the background while current table will still handle read requests.
+StoragePtr StorageMaterializePostgreSQL::createTemporary() const
+{
+    auto table_id = getStorageID();
+    auto new_context = Context::createCopy(context);
+    return StorageMaterializePostgreSQL::create(StorageID(table_id.database_name, table_id.table_name + TMP_SUFFIX), new_context);
 }
 
 
@@ -116,6 +128,95 @@ void StorageMaterializePostgreSQL::setStorageMetadata()
     auto nested_table = getNested();
     auto storage_metadata = nested_table->getInMemoryMetadataPtr();
     setInMemoryMetadata(*storage_metadata);
+}
+
+
+void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure)
+{
+    const auto ast_create = getCreateNestedTableQuery(std::move(table_structure));
+
+    try
+    {
+        InterpreterCreateQuery interpreter(ast_create, nested_context);
+        interpreter.execute();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+
+std::shared_ptr<Context> StorageMaterializePostgreSQL::makeNestedTableContext(ContextPtr from_context)
+{
+    auto new_context = Context::createCopy(from_context);
+    new_context->makeQueryContext();
+    new_context->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
+
+    return new_context;
+}
+
+
+void StorageMaterializePostgreSQL::startup()
+{
+    if (!is_materialize_postgresql_database)
+    {
+        replication_handler->addStorage(remote_table_name, this);
+        replication_handler->startup();
+    }
+}
+
+
+void StorageMaterializePostgreSQL::shutdown()
+{
+    if (replication_handler)
+        replication_handler->shutdown();
+}
+
+
+void StorageMaterializePostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
+{
+    if (replication_handler)
+        replication_handler->shutdownFinal();
+
+    auto nested_table = getNested();
+    if (nested_table && !is_materialize_postgresql_database)
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, nested_table_id, no_delay);
+}
+
+
+NamesAndTypesList StorageMaterializePostgreSQL::getVirtuals() const
+{
+    return NamesAndTypesList{
+            {"_sign", std::make_shared<DataTypeInt8>()},
+            {"_version", std::make_shared<DataTypeUInt64>()}
+    };
+}
+
+
+Pipe StorageMaterializePostgreSQL::read(
+        const Names & column_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context_,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams)
+{
+    if (!nested_loaded)
+        return Pipe();
+
+    auto nested_table = getNested();
+
+    return readFinalFromNestedStorage(
+            nested_table,
+            column_names,
+            metadata_snapshot,
+            query_info,
+            context_,
+            processed_stage,
+            max_block_size,
+            num_streams);
 }
 
 
@@ -271,95 +372,6 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
     create_table_query->set(create_table_query->storage, storage);
 
     return create_table_query;
-}
-
-
-void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure)
-{
-    const auto ast_create = getCreateNestedTableQuery(std::move(table_structure));
-
-    try
-    {
-        InterpreterCreateQuery interpreter(ast_create, nested_context);
-        interpreter.execute();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-
-std::shared_ptr<Context> StorageMaterializePostgreSQL::makeNestedTableContext(ContextPtr from_context)
-{
-    auto new_context = Context::createCopy(from_context);
-    new_context->makeQueryContext();
-    new_context->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
-
-    return new_context;
-}
-
-
-void StorageMaterializePostgreSQL::startup()
-{
-    if (!is_materialize_postgresql_database)
-    {
-        replication_handler->addStorage(remote_table_name, this);
-        replication_handler->startup();
-    }
-}
-
-
-void StorageMaterializePostgreSQL::shutdown()
-{
-    if (replication_handler)
-        replication_handler->shutdown();
-}
-
-
-void StorageMaterializePostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPtr local_context)
-{
-    if (replication_handler)
-        replication_handler->shutdownFinal();
-
-    auto nested_table = getNested();
-    if (nested_table && !is_materialize_postgresql_database)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, nested_table_id, no_delay);
-}
-
-
-NamesAndTypesList StorageMaterializePostgreSQL::getVirtuals() const
-{
-    return NamesAndTypesList{
-            {"_sign", std::make_shared<DataTypeInt8>()},
-            {"_version", std::make_shared<DataTypeUInt64>()}
-    };
-}
-
-
-Pipe StorageMaterializePostgreSQL::read(
-        const Names & column_names,
-        const StorageMetadataPtr & metadata_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context_,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        unsigned num_streams)
-{
-    if (!nested_loaded)
-        return Pipe();
-
-    auto nested_table = getNested();
-
-    return readFinalFromNestedStorage(
-            nested_table,
-            column_names,
-            metadata_snapshot,
-            query_info,
-            context_,
-            processed_stage,
-            max_block_size,
-            num_streams);
 }
 
 
