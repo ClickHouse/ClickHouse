@@ -1408,11 +1408,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// (they are effectively dangling objects, but they use global thread pool
                 ///  and global thread pool destructor will wait for threads, preventing server shutdown).
 
-                /// Dump coverage here, because std::atexit callback would not be called.
-#if WITH_COVERAGE
-                ::detail::Writer::instance().dump();
-#endif
-
                 LOG_INFO(log, "Will shutdown forcefully.");
                 _exit(Application::EXIT_OK);
             }

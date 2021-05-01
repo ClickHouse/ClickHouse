@@ -1,5 +1,6 @@
 #include "Coverage.h"
 
+#include <algorithm>
 #include <cassert>
 
 #include <fstream>
@@ -15,11 +16,14 @@
 #include <common/demangle.h>
 
 #include <Interpreters/Context.h>
+#include <Poco/Logger.h>
 
 
 namespace detail
 {
-static inline auto getInstanceAndInitGlobalCounters()
+namespace
+{
+inline auto getInstanceAndInitGlobalCounters()
 {
     /**
      * Writer is a singleton, so it initializes statically.
@@ -39,24 +43,22 @@ static inline auto getInstanceAndInitGlobalCounters()
 
     return SymbolIndex::instance();
 }
+}
 
 Writer::Writer()
-    : log(&Poco::Logger::get(Writer::logger_name)),
-      coverage_dir(std::filesystem::current_path() / "../../coverage"),
+    : base_log(&Poco::Logger::get(std::string{logger_base_name})),
+      coverage_dir(std::filesystem::current_path() / Writer::coverage_dir_relative_path),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
       // 0 -- unlimited queue e.g. functor insertion to thread pool won't lock.
-      pool(Writer::test_processing_thread_pool_size, 1000, 0)
+      pool(Writer::thread_pool_size, 1000, 0)
 {
     Context::setSettingHook("coverage_test_name", [this](const Field& value)
     {
         const std::string& name = value.get<String>();
         dumpAndChangeTestName(name);
     });
-}
 
-void Writer::initialized(uint32_t count)
-{
     if (std::filesystem::exists(coverage_dir))
     {
         size_t suffix = 1;
@@ -65,13 +67,42 @@ void Writer::initialized(uint32_t count)
         while (std::filesystem::exists(dir_path + "_" + std::to_string(suffix)))
             ++suffix;
 
-        std::filesystem::rename(coverage_dir, dir_path + "_" + std::to_string(suffix));
+        const std::string dir_new_path = dir_path + "_" + std::to_string(suffix);
+        std::filesystem::rename(coverage_dir, dir_new_path);
+
+        LOG_INFO(base_log, "Found previous run directory, moved it to {}", dir_new_path);
     }
 
     std::filesystem::create_directory(coverage_dir);
+}
 
+void Writer::initializedGuards(uint32_t count)
+{
     edges.reserve(count);
-    LOG_INFO(log, "Initialized runtime, {} edges found", count);
+    LOG_INFO(base_log, "Initialized guards, {} instrumented edges total", count);
+}
+
+
+void Writer::initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_end)
+{
+    for (const auto *it = pcs_beg; it != pcs_end; ++it)
+    {
+        const uintptr_t pair = *it;
+        void * const addr = reinterpret_cast<void *>(intptr_t(pair >> 1));
+        const bool is_function_entry = pair & 1;
+
+        if (is_function_entry)
+            initializeFunctionEntry(addr);
+    }
+
+    LOG_INFO(base_log, "Initialized PC table, {} functions, {} non-function edges",
+        function_cache.size(), edges.size() - function_cache.size());
+}
+
+
+void Writer::initializeFunctionEntry(void * addr)
+{
+
 }
 
 void Writer::hit(void * addr)
@@ -106,10 +137,9 @@ void Writer::hit(void * addr)
 
 void Writer::dumpAndChangeTestName(std::string_view test_name)
 {
-    LOG_INFO(log, "{} Started converting", test_name);
-
     std::string old_test_name;
     Hits edges_copies;
+    const Poco::Logger * log {nullptr};
 
     {
         auto lck = std::lock_guard(edges_mutex);
@@ -119,6 +149,9 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
             test = test_name;
             return;
         }
+
+        log = &Poco::Logger::get(std::string{logger_base_name} + *test);
+        LOG_INFO(log, "Started copying data", test_name);
 
         if constexpr (test_use_batch)
             if (hits_batch_index > 0) // haven't copied last addresses from local storage to edges
@@ -141,18 +174,18 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         }
     }
 
-    LOG_INFO(log, "{} Copied shared data", test_name);
+    LOG_INFO(log, "Copied shared data");
 
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
     /// The move is evaluated within current function's lifetime during function constructor call.
-    auto f = [this, test_name = std::move(old_test_name), edges_copied = std::move(edges_copies)]
+    auto f = [this, log, test_name = std::move(old_test_name), edges_copied = std::move(edges_copies)]
     {
-        prepareDataAndDumpToDisk(edges_copied, test_name);
+        prepareDataAndDump(log, edges_copied, test_name);
     };
 
     // The functor insertion itself is thread-safe.
     pool.scheduleOrThrowOnError(std::move(f));
-    LOG_INFO(log, "{} Scheduled job", test_name);
+    LOG_INFO(log, "Scheduled job");
 }
 
 Writer::AddrInfo Writer::symbolize(
@@ -189,9 +222,9 @@ Writer::AddrInfo Writer::symbolize(
     return {file_data_it->second, loc.line};
 }
 
-void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view test_name)
+void Writer::prepareDataAndDump(const Poco::Logger * log, const Writer::Hits& hits, std::string_view test_name)
 {
-    LOG_INFO(log, "{} Started filling internal structures", test_name);
+    LOG_INFO(log, "Started filling internal structures, {} hits", hits.size());
 
     SourceFiles source_files;
 
@@ -200,13 +233,16 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
 
     SymbolsCache symbols_cache;
 
-    time_t t = time(nullptr);
-    time_t e = t;
+    time_t elapsed = time(nullptr);
 
-    //for (void * addr : hits)
     for (size_t i = 0; i < hits.size(); ++i)
     {
         void * const addr = hits.at(i);
+
+        if (auto it = function_cache.find(addr); it != function_cache.end())
+        {
+
+        }
 
         AddrsCache::iterator iter = addrs_cache.find(addr);
 
@@ -215,16 +251,16 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
 
         const AddrInfo& addr_info = iter->second;
 
-        if (const time_t nt = time(nullptr); nt > e)
+        if (const time_t current = time(nullptr); current > elapsed)
         {
-            LOG_INFO(log, "{} processed {}/{} ({}s elapsed)", test_name, i, hits.size(), nt - t);
-            e = nt;
+            LOG_INFO(log, "Processed {}/{}", i, hits.size());
+            elapsed = current;
         }
 
         SourceFileData& data = addr_info.file;
 
-        if (auto it = data.lines.find(addr_info.line); it == data.lines.end())
-            data.lines[addr_info.line] = 1;
+        if (auto it = data.lines_hit.find(addr_info.line); it == data.lines_hit.end())
+            data.lines_hit[addr_info.line] = 1;
         else
             ++it->second;
 
@@ -235,12 +271,12 @@ void Writer::prepareDataAndDumpToDisk(const Writer::Hits& hits, std::string_view
         //     ++it->second.call_count;
     }
 
-    LOG_INFO(log, "{} Finished filling internal structures", test_name);
-    convertToLCOVAndDumpToDisk(hits.size(), source_files, test_name);
+    LOG_INFO(log, "Finished filling internal structures");
+    convertToLCOVAndDump(log, source_files, test_name);
 }
 
-void Writer::convertToLCOVAndDumpToDisk(
-    size_t /*processed_edges*/, const Writer::SourceFiles& source_files, std::string_view test_name)
+void Writer::convertToLCOVAndDump(
+    const Poco::Logger * log, const Writer::SourceFiles& source_files, std::string_view test_name)
 {
     /**
      * [incomplete] LCOV .info format reference, parsed from
@@ -274,13 +310,14 @@ void Writer::convertToLCOVAndDumpToDisk(
      *         BRH:<number of branches executed (hit)>
      *
      *     for each instrumented line:
+     *         // note -- there's third parameter "line contents", but looks like it's useless
      *         DA:<line number>,<execution count>
      *
      *     LF:<number of lines instrumented (found)>
      *     LH:<number of lines executed (hit)>
      *     end_of_record
      */
-    LOG_INFO(log, "{} Started dumping", test_name);
+    LOG_INFO(log, "Started dumping");
 
     std::ofstream ofs(coverage_dir / test_name);
 
@@ -290,36 +327,23 @@ void Writer::convertToLCOVAndDumpToDisk(
     {
         fmt::print(ofs, "SF:{}\n", data.full_path);
 
-        // size_t fnh = 0;
-        //
-        // for (const auto & [func_name, func_data]: data.functions)
-        // {
-        //     fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n",
-        //             func_data.start_line,
-        //             func_name,
-        //             func_data.call_count);
+        for (const auto & [addr, call_count]: data.functions_hit)
+        {
+            const auto& [func_name, start_line] = function_cache.find(addr)->second;
+            fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n", start_line, func_name, call_count);
+        }
 
-        //     if (func_data.call_count > 0)
-        //         ++fnh;
-        // }
-
-        // fmt::print(ofs, "FNF:{}\nFNH:{}\n", data.functions.size(), fnh);
+        fmt::print(ofs, "FNF:{}\nFNH:{}\n", function_cache.size(), data.functions_hit.size());
 
         // TODO Branches
 
-        size_t lh = 0;
+        for (auto [line, call_count] : data.lines_hit)
+            fmt::print(ofs, "DA:{},{}\n", line, call_count);
 
-        for (auto [line, calls] : data.lines)
-        {
-            fmt::print(ofs, "DA:{},{}\n", line, calls);
-
-            if (calls > 0)
-                ++lh;
-        }
-
-        fmt::print(ofs, "LF:{}\nLH:{}\nend_of_record\n", data.lines.size(), lh);
+        fmt::print(ofs, "LF:{}\nLH:{}\nend_of_record\n", data.lines_hit.size(), data.lines_hit.size());
     }
 
-    LOG_INFO(log, "{} Finished dumping", test_name);
+    LOG_INFO(log, "Finished dumping");
+    Poco::Logger::destroy(log->name());
 }
 }

@@ -64,10 +64,6 @@
 #   include <Common/config_version.h>
 #endif
 
-#if WITH_COVERAGE
-#   include <Common/Coverage.h>
-#endif
-
 #if defined(OS_DARWIN)
 #   pragma GCC diagnostic ignored "-Wunused-macros"
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
@@ -508,10 +504,6 @@ void BaseDaemon::terminate()
 
 void BaseDaemon::kill()
 {
-#if WITH_COVERAGE
-    detail::Writer::instance().dump();
-#endif
-
     pid_file.reset();
     /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
     /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).

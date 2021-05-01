@@ -26,16 +26,21 @@ public:
         return w;
     }
 
-    void initialized(uint32_t count);
+    /// Called when guard variables for all instrumented edges have been initialized.
+    void initializedGuards(uint32_t count);
+
+    /// Called when class needs to store all instrumented addresses.
+    void initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_end);
+
+    /// Called when a critical edge in binary is hit.
     void hit(void * addr);
 
-    inline void dump() { dumpAndChangeTestName({}); }
-
 private:
-    static constexpr const char * logger_name = "BaseDaemon.coverage";
+    static constexpr const std::string_view logger_base_name = "Coverage";
+    static constexpr const std::string_view coverage_dir_relative_path = "../../coverage";
 
     /// How many tests are converted to LCOV in parallel.
-    static constexpr const size_t test_processing_thread_pool_size = 6;
+    static constexpr const size_t thread_pool_size = 6;
 
     /// How many addresses do we dump into local storage before acquiring the edges_mutex and pushing into edges.
     static constexpr const size_t hits_batch_array_size = 10000;
@@ -48,7 +53,7 @@ private:
 
     Writer();
 
-    Poco::Logger * const log;
+    const Poco::Logger * const base_log;
 
     const std::filesystem::path coverage_dir;
 
@@ -60,7 +65,6 @@ private:
 
     /// How many addresses are currently in the local storage.
     static thread_local inline size_t hits_batch_index = 0;
-
     static thread_local inline std::array<void*, hits_batch_array_size> hits_batch_storage{};
 
     std::optional<std::string> test;
@@ -70,6 +74,9 @@ private:
 
     void dumpAndChangeTestName(std::string_view test_name);
 
+    using FunctionAddr = void *;
+    using FunctionCallCount = size_t;
+
     using SourceFileName = std::string;
     using Line = size_t;
     using LineCalled = size_t;
@@ -77,9 +84,9 @@ private:
     struct SourceFileData
     {
         std::string full_path;
-        //std::unordered_map<FunctionName, FunctionData> functions;
-        //std::unordered_map<BranchLine, BranchData> branches;
-        std::unordered_map<Line, LineCalled> lines; // which triggered the callback
+        // TODO Branches
+        std::unordered_map<FunctionAddr, FunctionCallCount> functions_hit;
+        std::unordered_map<Line, LineCalled> lines_hit;
     };
 
     using SourceFiles = std::unordered_map<SourceFileName, SourceFileData>;
@@ -91,21 +98,28 @@ private:
     struct AddrInfo
     {
         SourceFileData& file;
-        //SymbolStartLine symbol_start_line;
-        UInt64 line;
+        size_t line;
     };
 
-    //using FunctionName = std::string;
-    //struct FunctionData { size_t start_line; size_t call_count; };
+    struct FunctionData
+    {
+        std::string_view name;
+        size_t start_line;
+        std::string source_file_name; //TODO Think about avoiding allocations
+    };
+
+    /// CH has a relatively small number of functions, so we can symbolize all of them before starting the tests.
+    /// No mutex needed as by the tests start it will be readonly.
+    std::unordered_map<FunctionAddr, FunctionData> function_cache;
+
+    void initializeFunctionEntry(void * addr);
 
     //using BranchLine = size_t;
     //struct BranchData { size_t block_number; size_t branch_number; size_t taken; };
 
     AddrInfo symbolize(SourceFiles& files, SymbolsCache& symbols_cache, const void * virtual_addr) const;
 
-    void prepareDataAndDumpToDisk(const Hits& hits, std::string_view test_name);
-
-    void convertToLCOVAndDumpToDisk(
-        size_t processed_edges, const SourceFiles& source_files, std::string_view test_name);
+    void prepareDataAndDump(const Poco::Logger * log, const Hits& hits, std::string_view test_name);
+    void convertToLCOVAndDump(const Poco::Logger * log, const SourceFiles& source_files, std::string_view test_name);
 };
 }
