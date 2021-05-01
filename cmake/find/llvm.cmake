@@ -102,7 +102,6 @@ LLVMRuntimeDyld
 LLVMX86CodeGen
 LLVMX86Desc
 LLVMX86Info
-LLVMX86Utils
 LLVMAsmPrinter
 LLVMDebugInfoDWARF
 LLVMGlobalISel
