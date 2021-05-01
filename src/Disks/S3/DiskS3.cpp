@@ -443,20 +443,20 @@ public:
 
     void next() override { ++iter; }
 
-    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
+    bool isValid() const override { return iter != fs::directory_iterator(); }
 
     String path() const override
     {
-        if (iter->isDirectory())
-            return folder_path + iter.name() + '/';
+        if (fs::is_directory(iter->path()))
+            return folder_path + iter->path().filename().string() + '/';
         else
-            return folder_path + iter.name();
+            return folder_path + iter->path().filename().string();
     }
 
-    String name() const override { return iter.name(); }
+    String name() const override { return iter->path().filename(); }
 
 private:
-    Poco::DirectoryIterator iter;
+    fs::directory_iterator iter;
     String folder_path;
 };
 
@@ -590,17 +590,17 @@ ReservationPtr DiskS3::reserve(UInt64 bytes)
 
 bool DiskS3::exists(const String & path) const
 {
-    return Poco::File(metadata_path + path).exists();
+    return fs::exists(fs::path(metadata_path) / path);
 }
 
 bool DiskS3::isFile(const String & path) const
 {
-    return Poco::File(metadata_path + path).isFile();
+    return fs::is_regular_file(fs::path(metadata_path) / path);
 }
 
 bool DiskS3::isDirectory(const String & path) const
 {
-    return Poco::File(metadata_path + path).isDirectory();
+    return fs::is_directory(fs::path(metadata_path) / path);
 }
 
 size_t DiskS3::getFileSize(const String & path) const
@@ -611,12 +611,12 @@ size_t DiskS3::getFileSize(const String & path) const
 
 void DiskS3::createDirectory(const String & path)
 {
-    Poco::File(metadata_path + path).createDirectory();
+    fs::create_directory(fs::path(metadata_path) / path);
 }
 
 void DiskS3::createDirectories(const String & path)
 {
-    Poco::File(metadata_path + path).createDirectories();
+    fs::create_directories(fs::path(metadata_path) / path);
 }
 
 String DiskS3::getUniqueId(const String & path) const
@@ -662,7 +662,7 @@ void DiskS3::moveFile(const String & from_path, const String & to_path, bool sen
         createFileOperationObject("rename", revision, object_metadata);
     }
 
-    Poco::File(metadata_path + from_path).renameTo(metadata_path + to_path);
+    fs::rename(fs::path(metadata_path) / from_path, fs::path(metadata_path) / to_path);
 }
 
 void DiskS3::replaceFile(const String & from_path, const String & to_path)
@@ -727,9 +727,9 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
 {
     LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_path + path));
 
-    Poco::File file(metadata_path + path);
+    fs::path file = fs::path(metadata_path) / path;
 
-    if (!file.isFile())
+    if (!is_regular_file(file))
         throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
 
     try
@@ -739,7 +739,7 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
         /// If there is no references - delete content from S3.
         if (metadata.ref_count == 0)
         {
-            file.remove();
+            fs::remove(file);
 
             for (const auto & [s3_object_path, _] : metadata.s3_objects)
                 keys.addKey(s3_root_path + s3_object_path);
@@ -748,7 +748,7 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
         {
             --metadata.ref_count;
             metadata.save();
-            file.remove();
+            fs::remove(file);
         }
     }
     catch (const Exception & e)
@@ -762,7 +762,7 @@ void DiskS3::removeMeta(const String & path, AwsS3KeyKeeper & keys)
                 backQuote(path),
                 e.nested() ? e.nested()->message() : e.message());
 
-            file.remove();
+            fs::remove(file);
         }
         else
             throw;
@@ -773,8 +773,8 @@ void DiskS3::removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys)
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
-    Poco::File file(metadata_path + path);
-    if (file.isFile())
+    fs::path file = fs::path(metadata_path) / path;
+    if (fs::is_regular_file(file))
     {
         removeMeta(path, keys);
     }
@@ -782,7 +782,7 @@ void DiskS3::removeMetaRecursive(const String & path, AwsS3KeyKeeper & keys)
     {
         for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
             removeMetaRecursive(it->path(), keys);
-        file.remove();
+        fs::remove(file);
     }
 }
 
@@ -810,7 +810,7 @@ void DiskS3::removeAws(const AwsS3KeyKeeper & keys)
 void DiskS3::removeFileIfExists(const String & path)
 {
     AwsS3KeyKeeper keys;
-    if (Poco::File(metadata_path + path).exists())
+    if (fs::exists(fs::path(metadata_path) / path))
     {
         removeMeta(path, keys);
         removeAws(keys);
@@ -819,7 +819,7 @@ void DiskS3::removeFileIfExists(const String & path)
 
 void DiskS3::removeDirectory(const String & path)
 {
-    Poco::File(metadata_path + path).remove();
+    fs::remove(fs::path(metadata_path) / path);
 }
 
 void DiskS3::removeSharedFile(const String & path, bool keep_s3)
@@ -869,12 +869,14 @@ void DiskS3::listFiles(const String & path, std::vector<String> & file_names)
 
 void DiskS3::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    Poco::File(metadata_path + path).setLastModified(timestamp);
+    fs::last_write_time(fs::path(metadata_path) / path, static_cast<fs::file_time_type>(std::chrono::microseconds(timestamp.epochMicroseconds())));
 }
 
 Poco::Timestamp DiskS3::getLastModified(const String & path)
 {
-    return Poco::File(metadata_path + path).getLastModified();
+    fs::file_time_type fs_time = fs::last_write_time(fs::path(metadata_path) / path);
+    auto micro_sec = std::chrono::duration_cast<std::chrono::microseconds>(fs_time.time_since_epoch());
+    return Poco::Timestamp(micro_sec.count());
 }
 
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)
@@ -1306,8 +1308,8 @@ void DiskS3::restore()
         restoreFiles(information);
         restoreFileOperations(information);
 
-        Poco::File restore_file(metadata_path + RESTORE_FILE_NAME);
-        restore_file.remove();
+        fs::path restore_file = fs::path(metadata_path) / RESTORE_FILE_NAME;
+        fs::remove(restore_file);
 
         saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
 
