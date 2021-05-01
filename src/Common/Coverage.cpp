@@ -7,6 +7,7 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>
@@ -82,27 +83,92 @@ void Writer::initializedGuards(uint32_t count)
     LOG_INFO(base_log, "Initialized guards, {} instrumented edges total", count);
 }
 
-
 void Writer::initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_end)
 {
-    for (const auto *it = pcs_beg; it != pcs_end; ++it)
+    Addrs addrs;
+    Addrs function_entries;
+
+    const size_t edges_total = pcs_end - pcs_beg; // can't rely on _edges_ as this function may be called earlier.
+
+    addrs.reserve(edges_total);
+    function_entries.reserve(edges_total);
+
+    for (const auto *it = pcs_beg; it < pcs_end; it += 2)
     {
-        const uintptr_t pair = *it;
-        void * const addr = reinterpret_cast<void *>(intptr_t(pair >> 1));
-        const bool is_function_entry = pair & 1;
+        void * const addr = reinterpret_cast<void *>(*it);
+        const bool is_function_entry = *(it + 1) & 1;
 
         if (is_function_entry)
-            initializeFunctionEntry(addr);
+            function_entries.push_back(addr);
+        else
+            addrs.push_back(addr);
     }
 
-    LOG_INFO(base_log, "Initialized PC table, {} functions, {} non-function edges",
-        function_cache.size(), edges.size() - function_cache.size());
+    LOG_INFO(base_log, "Copied PC table data, {} functions, {} non-function edges",
+        function_entries.size(), edges.size() - function_entries.size());
+
+    symbolizeAllInstrumentedAddrs(function_entries, addrs);
 }
 
-
-void Writer::initializeFunctionEntry(void * addr)
+void Writer::symbolizeAllInstrumentedAddrs(const Writer::Addrs& function_entries, const Writer::Addrs& addrs)
 {
+    auto get_index_and_line = [this](void * addr)
+    {
+        const SourceLocation source = getSourceLocation(addr);
+        const std::string name = source.full_path.substr(source.full_path.rfind('/') + 1);
 
+        size_t source_file_index;
+
+        if (auto it = source_file_name_to_path_index.find(name); it != source_file_name_to_path_index.end())
+            source_file_index = it->second;
+        else
+        {
+            source_file_index = source_files_cache.size();
+            source_file_name_to_path_index.emplace(name, source_file_index);
+            source_files_cache.emplace_back(source.full_path);
+        }
+
+        return std::make_pair(source_file_index, source.line);
+    };
+
+    time_t elapsed = time(nullptr);
+
+    for (size_t i = 0; i < function_entries.size(); ++i)
+    {
+        Addr addr = function_entries.at(i);
+
+        const auto [source_file_index, line] = get_index_and_line(addr);
+        SourceFileInfo& info = source_files_cache[source_file_index];
+
+        info.instrumented_functions.push_back(addr);
+        function_cache.try_emplace(addr, FunctionInfo{symbolize(addr), line, source_file_index});
+
+        if (time_t current = time(nullptr); current > elapsed)
+        {
+            LOG_INFO(base_log, "Function symbolization: processed {}/{}", i, function_entries.size());
+            elapsed = current;
+        }
+    }
+
+    LOG_INFO(base_log, "Symbolized all functions in binary");
+
+    for (size_t i = 0; i < addrs.size(); ++i)
+    {
+        Addr addr = addrs.at(i);
+        const auto [source_file_index, line] = get_index_and_line(addr);
+        SourceFileInfo& info = source_files_cache[source_file_index];
+
+        info.instrumented_lines.push_back(line);
+        addr_cache.try_emplace(addr, AddrInfo{line, source_file_index});
+
+        if (time_t current = time(nullptr); current > elapsed)
+        {
+            LOG_INFO(base_log, "Addresses symbolization: processed {}/{}", i, addrs.size());
+            elapsed = current;
+        }
+    }
+
+    LOG_INFO(base_log, "Symbolized all addresses in binary");
 }
 
 void Writer::hit(void * addr)
@@ -138,7 +204,8 @@ void Writer::hit(void * addr)
 void Writer::dumpAndChangeTestName(std::string_view test_name)
 {
     std::string old_test_name;
-    Hits edges_copies;
+    Addrs edges_copies;
+
     const Poco::Logger * log {nullptr};
 
     {
@@ -150,7 +217,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
             return;
         }
 
-        log = &Poco::Logger::get(std::string{logger_base_name} + *test);
+        log = &Poco::Logger::get(std::string{logger_base_name} + "." + *test);
         LOG_INFO(log, "Started copying data", test_name);
 
         if constexpr (test_use_batch)
@@ -162,7 +229,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
                 hits_batch_index = 0;
             }
 
-        edges_copies = edges; //TODO Check if it's fast
+        edges_copies = edges;
         old_test_name = *test;
 
         if (test_name.empty())
@@ -180,7 +247,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
     /// The move is evaluated within current function's lifetime during function constructor call.
     auto f = [this, log, test_name = std::move(old_test_name), edges_copied = std::move(edges_copies)]
     {
-        prepareDataAndDump(log, edges_copied, test_name);
+        prepareDataAndDump({test_name, log}, edges_copied);
     };
 
     // The functor insertion itself is thread-safe.
@@ -188,95 +255,51 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
     LOG_INFO(log, "Scheduled job");
 }
 
-Writer::AddrInfo Writer::symbolize(
-    SourceFiles& files,
-    SymbolsCache& //symbols_cache
-    , const void * virtual_addr) const
+void Writer::prepareDataAndDump(Writer::TestInfo test_info, const Writer::Addrs& addrs)
 {
-    const uintptr_t physical_addr = uintptr_t(virtual_addr) - binary_virtual_offset;
-    const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(physical_addr);
+    LOG_INFO(test_info.log, "Started filling internal structures, {} hits", addrs.size());
 
-    std::string file_name_path = loc.file.toString();
-    std::string file_name = file_name_path.substr(file_name_path.rfind('/') + 1);
-
-    SourceFiles::iterator file_data_it = files.find(file_name);
-
-    if (file_data_it == files.end())
-        file_data_it = files.emplace(
-            std::move(file_name),
-            SourceFileData{.full_path = std::move(file_name_path)}).first;
-
-    //const auto * symbol = symbol_index->findSymbol(virtual_addr);
-    //
-    //SymbolsCache::iterator symbol_it = symbols_cache.find(symbol->name);
-
-    //if (symbol_it == symbols_cache.end())
-    //{
-    //    const void * const symbol_start_virtual = symbol->address_begin;
-    //    const uintptr_t symbol_start_phys = uintptr_t(symbol_start_virtual) - binary_virtual_offset;
-    //    const UInt64 symbol_start_line = dwarf.findAddressForCoverageRuntime(symbol_start_phys).line;
-
-    //    symbol_it = symbols_cache.emplace(symbol->name, symbol_start_line).first;
-    //}
-
-    return {file_data_it->second, loc.line};
-}
-
-void Writer::prepareDataAndDump(const Poco::Logger * log, const Writer::Hits& hits, std::string_view test_name)
-{
-    LOG_INFO(log, "Started filling internal structures, {} hits", hits.size());
-
-    SourceFiles source_files;
-
-    using AddrsCache = std::unordered_map<void*, AddrInfo>;
-    AddrsCache addrs_cache;
-
-    SymbolsCache symbols_cache;
+    TestData test_data(source_files_cache.size());
 
     time_t elapsed = time(nullptr);
 
-    for (size_t i = 0; i < hits.size(); ++i)
+    for (size_t i = 0; i < addrs.size(); ++i)
     {
-        void * const addr = hits.at(i);
-
-        if (auto it = function_cache.find(addr); it != function_cache.end())
-        {
-
-        }
-
-        AddrsCache::iterator iter = addrs_cache.find(addr);
-
-        if (iter == addrs_cache.end())
-            iter = addrs_cache.emplace(addr, symbolize(source_files, symbols_cache, addr)).first;
-
-        const AddrInfo& addr_info = iter->second;
-
         if (const time_t current = time(nullptr); current > elapsed)
         {
-            LOG_INFO(log, "Processed {}/{}", i, hits.size());
+            LOG_INFO(test_info.log, "Processed {}/{}", i, addrs.size());
             elapsed = current;
         }
 
-        SourceFileData& data = addr_info.file;
+        Addr addr = addrs.at(i);
 
-        if (auto it = data.lines_hit.find(addr_info.line); it == data.lines_hit.end())
-            data.lines_hit[addr_info.line] = 1;
+        if (auto it = function_cache.find(addr); it != function_cache.end())
+        {
+            auto& functions = test_data.at(it->second.index).functions_hit;
+
+            if (auto it2 = functions.find(addr); it2 == functions.end())
+                functions[addr] = 1;
+            else
+                ++it2->second;
+
+            continue;
+        }
+
+        const AddrInfo& addr_cache_entry = addr_cache.at(addr);
+        auto& lines = test_data.at(addr_cache_entry.index).lines_hit;
+
+        if (auto it = lines.find(addr_cache_entry.line); it == lines.end())
+            lines[addr_cache_entry.line] = 1;
         else
             ++it->second;
-
-        // const SymbolData& symbol_data = addr_info.symbol_data;
-        // if (auto it = data.functions.find(symbol_data.demangled_name); it == data.functions.end())
-        //     data.functions[symbol_data.demangled_name] = {symbol_data.start_line, .call_count = 0};
-        // else
-        //     ++it->second.call_count;
     }
 
-    LOG_INFO(log, "Finished filling internal structures");
-    convertToLCOVAndDump(log, source_files, test_name);
+    LOG_INFO(test_info.log, "Finished filling internal structures");
+    convertToLCOVAndDump(test_info, test_data);
 }
 
-void Writer::convertToLCOVAndDump(
-    const Poco::Logger * log, const Writer::SourceFiles& source_files, std::string_view test_name)
+
+void Writer::convertToLCOVAndDump(Writer::TestInfo test_info, const Writer::TestData& test_data)
 {
     /**
      * [incomplete] LCOV .info format reference, parsed from
@@ -311,39 +334,53 @@ void Writer::convertToLCOVAndDump(
      *
      *     for each instrumented line:
      *         // note -- there's third parameter "line contents", but looks like it's useless
-     *         DA:<line number>,<execution count>
+    *         DA:<line number>,<execution count>
      *
      *     LF:<number of lines instrumented (found)>
      *     LH:<number of lines executed (hit)>
      *     end_of_record
      */
-    LOG_INFO(log, "Started dumping");
+    LOG_INFO(test_info.log, "Started dumping");
 
-    std::ofstream ofs(coverage_dir / test_name);
+    std::ofstream ofs(coverage_dir / test_info.name);
 
-    fmt::print(ofs, "TN:{}\n", test_name);
+    fmt::print(ofs, "TN:{}\n", test_info.name);
 
-    for (const auto& [name, data] : source_files)
+    for (size_t i = 0; i < test_data.size(); ++i)
     {
-        fmt::print(ofs, "SF:{}\n", data.full_path);
+        const auto& [functions_hit, lines_hit] = test_data.at(i);
+        const auto& [path, functions_instrumented, lines_instrumented] = source_files_cache.at(i);
 
-        for (const auto & [addr, call_count]: data.functions_hit)
+        fmt::print(ofs, "SF:{}\n", path);
+
+        for (Addr func_addr : functions_instrumented)
         {
-            const auto& [func_name, start_line] = function_cache.find(addr)->second;
-            fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n", start_line, func_name, call_count);
+            const FunctionInfo& func_info = function_cache.find(func_addr)->second;
+
+            size_t call_count = 0;
+
+            if (auto it = functions_hit.find(func_addr); it != functions_hit.end())
+                call_count = it->second;
+
+            fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.start_line, func_info.name, call_count);
         }
 
-        fmt::print(ofs, "FNF:{}\nFNH:{}\n", function_cache.size(), data.functions_hit.size());
+        fmt::print(ofs, "FNF:{}\nFNH:{}\n", functions_instrumented.size(), functions_hit.size());
 
-        // TODO Branches
+        for (Line line : lines_instrumented)
+        {
+            size_t call_count = 0;
 
-        for (auto [line, call_count] : data.lines_hit)
+            if (auto it = lines_hit.find(line); it != lines_hit.end())
+                call_count = it->second;
+
             fmt::print(ofs, "DA:{},{}\n", line, call_count);
+        }
 
-        fmt::print(ofs, "LF:{}\nLH:{}\nend_of_record\n", data.lines_hit.size(), data.lines_hit.size());
+        fmt::print(ofs, "LF:{}\nLH:{}\nend_of_record\n", lines_instrumented.size(), lines_hit.size());
     }
 
-    LOG_INFO(log, "Finished dumping");
-    Poco::Logger::destroy(log->name());
+    LOG_INFO(test_info.log, "Finished dumping");
+    Poco::Logger::destroy(test_info.log->name());
 }
 }
