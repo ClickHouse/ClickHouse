@@ -61,7 +61,7 @@ RUN apt-get update \
 RUN echo 'deb http://archive.ubuntu.com/ubuntu/ focal-proposed restricted main multiverse universe' > /etc/apt/sources.list.d/proposed-repositories.list
 
 RUN apt-get update \
-    && apt-get install gcc-10 g++-10 --yes
+    && apt-get install gcc-10 g++-10 --yes --no-install-recommends
 
 RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
 
