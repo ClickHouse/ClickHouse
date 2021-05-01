@@ -4,6 +4,7 @@ import shutil
 import sys
 import os
 import os.path
+import signal
 import re
 import json
 import copy
@@ -36,6 +37,17 @@ MESSAGES_TO_RETRY = [
     "ConnectionPoolWithFailover: Connection failed at try",
 ]
 
+class Terminated(KeyboardInterrupt):
+    pass
+def signal_handler(sig, frame):
+    raise Terminated(f'Terminated with {sig} signal')
+
+def stop_tests():
+    # send signal to all processes in group to avoid hung check triggering
+    # (to avoid terminating clickhouse-test itself, the signal should be ignored)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    os.killpg(os.getpgid(os.getpid()), signal.SIGTERM)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
 
 def json_minify(string):
     """
@@ -334,10 +346,12 @@ def run_tests_array(all_tests_with_params):
 
     for case in all_tests:
         if SERVER_DIED:
+            stop_tests()
             break
 
         if stop_time and time() > stop_time:
             print("\nStop tests run because global time limit is exceeded.\n")
+            stop_tests()
             break
 
         case_file = os.path.join(suite_dir, case)
@@ -394,6 +408,7 @@ def run_tests_array(all_tests_with_params):
                             failures += 1
                             print("Server does not respond to health check")
                             SERVER_DIED = True
+                            stop_tests()
                             break
 
                     file_suffix = ('.' + str(os.getpid())) if is_concurrent and args.test_runs > 1 else ''
@@ -512,6 +527,7 @@ def run_tests_array(all_tests_with_params):
             sys.stdout.flush()
         except KeyboardInterrupt as e:
             print(colored("Break tests execution", args, "red"))
+            stop_tests()
             raise e
         except:
             exc_type, exc_value, tb = sys.exc_info()
@@ -519,6 +535,7 @@ def run_tests_array(all_tests_with_params):
             print("{0} - Test internal error: {1}\n{2}\n{3}".format(MSG_FAIL, exc_type.__name__, exc_value, "\n".join(traceback.format_tb(tb, 10))))
 
         if failures_chain >= 20:
+            stop_tests()
             break
 
     failures_total = failures_total + failures
@@ -959,6 +976,14 @@ def collect_sequential_list(skip_list_path):
 
 
 if __name__ == '__main__':
+    # Move to a new process group and kill it at exit so that we don't have any
+    # infinite tests processes left
+    # (new process group is required to avoid killing some parent processes)
+    os.setpgid(0, 0)
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGHUP, signal_handler)
+
     parser=ArgumentParser(description='ClickHouse functional tests')
     parser.add_argument('-q', '--queries', help='Path to queries dir')
     parser.add_argument('--tmp', help='Path to tmp dir')
