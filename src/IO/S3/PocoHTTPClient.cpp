@@ -47,9 +47,11 @@ namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
+        const String & force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_)
-    : remote_host_filter(remote_host_filter_)
+    : force_region(force_region_)
+    , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
 {
 }
@@ -63,15 +65,23 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
         if (uri.getScheme() == "http")
             scheme = Aws::Http::Scheme::HTTP;
 
-        String matched_region;
-        if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
+        if (force_region.empty())
         {
-            boost::algorithm::to_lower(matched_region);
-            region = matched_region;
+            String matched_region;
+            if (re2::RE2::PartialMatch(uri.getHost(), region_pattern, &matched_region))
+            {
+                boost::algorithm::to_lower(matched_region);
+                region = matched_region;
+            }
+            else
+            {
+                /// In global mode AWS C++ SDK send `us-east-1` but accept switching to another one if being suggested.
+                region = Aws::Region::AWS_GLOBAL;
+            }
         }
         else
         {
-            region = Aws::Region::AWS_GLOBAL;
+            region = force_region;
         }
     }
 }
