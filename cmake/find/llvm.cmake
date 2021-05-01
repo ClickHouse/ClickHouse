@@ -24,7 +24,7 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/CMakeLists.txt")
 endif ()
 
 if (NOT USE_INTERNAL_LLVM_LIBRARY)
-    set (LLVM_PATHS "/usr/local/lib/llvm")
+    set (LLVM_PATHS "/usr/local/lib/llvm" "/usr/lib/llvm")
 
     foreach(llvm_v 11.1 11)
         if (NOT LLVM_FOUND)
