@@ -26,9 +26,11 @@ endif ()
 if (NOT USE_INTERNAL_LLVM_LIBRARY)
     set (LLVM_PATHS "/usr/local/lib/llvm")
 
-    if (NOT LLVM_FOUND)
-        find_package (LLVM 11.1 11 CONFIG PATHS ${LLVM_PATHS})
-    endif ()
+    foreach(llvm_v 11.1 11)
+        if (NOT LLVM_FOUND)
+            find_package (LLVM ${llvm_v} CONFIG PATHS ${LLVM_PATHS})
+        endif ()
+    endforeach ()
 
     if (LLVM_FOUND)
         # Remove dynamically-linked zlib and libedit from LLVM's dependencies:
