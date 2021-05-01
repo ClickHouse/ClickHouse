@@ -30,14 +30,14 @@ FlatDictionary::FlatDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     Configuration configuration_,
-    BlockPtr previously_loaded_block_)
+    BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
     , configuration(configuration_)
     , loaded_keys(configuration.initial_array_size, false)
-    , previously_loaded_block(std::move(previously_loaded_block_))
+    , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();
     loadData();
@@ -273,7 +273,7 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
 void FlatDictionary::updateData()
 {
-    if (!previously_loaded_block || previously_loaded_block->rows() == 0)
+    if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
@@ -281,13 +281,13 @@ void FlatDictionary::updateData()
         while (const auto block = stream->read())
         {
             /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!previously_loaded_block)
-                previously_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
+            if (!update_field_loaded_block)
+                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
 
             for (size_t column_index = 0; column_index < block.columns(); ++column_index)
             {
                 const IColumn & update_column = *block.getByPosition(column_index).column.get();
-                MutableColumnPtr saved_column = previously_loaded_block->getByPosition(column_index).column->assumeMutable();
+                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(column_index).column->assumeMutable();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
@@ -298,12 +298,12 @@ void FlatDictionary::updateData()
         auto stream = source_ptr->loadUpdatedAll();
         mergeBlockWithStream<DictionaryKeyType::simple>(
             dict_struct.getKeysSize(),
-            *previously_loaded_block,
+            *update_field_loaded_block,
             stream);
     }
 
-    if (previously_loaded_block)
-        blockToAttributes(*previously_loaded_block.get());
+    if (update_field_loaded_block)
+        blockToAttributes(*update_field_loaded_block.get());
 }
 
 void FlatDictionary::loadData()
@@ -347,6 +347,9 @@ void FlatDictionary::calculateBytesAllocated()
 
         callOnDictionaryAttributeType(attribute.type, type_call);
     }
+
+    if (update_field_loaded_block)
+        bytes_allocated += update_field_loaded_block->allocatedBytes();
 }
 
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute, const Field & null_value)
