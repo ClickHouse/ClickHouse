@@ -85,6 +85,8 @@ void Writer::initializedGuards(uint32_t count)
 
 void Writer::initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_end)
 {
+    LOG_INFO(base_log, "Started copying PC table data");
+
     Addrs addrs;
     Addrs function_entries;
 
@@ -110,34 +112,34 @@ void Writer::initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_en
     symbolizeAllInstrumentedAddrs(function_entries, addrs);
 }
 
+std::pair<size_t, size_t> Writer::getIndexAndLine(void * addr)
+{
+    const SourceLocation source = getSourceLocation(addr);
+    const std::string name = source.full_path.substr(source.full_path.rfind('/') + 1);
+
+    size_t source_file_index;
+
+    if (auto it = source_file_name_to_path_index.find(name); it != source_file_name_to_path_index.end())
+        source_file_index = it->second;
+    else
+    {
+        source_file_index = source_files_cache.size();
+        source_file_name_to_path_index.emplace(name, source_file_index);
+        source_files_cache.emplace_back(source.full_path);
+    }
+
+    return {source_file_index, source.line};
+}
+
 void Writer::symbolizeAllInstrumentedAddrs(const Writer::Addrs& function_entries, const Writer::Addrs& addrs)
 {
-    auto get_index_and_line = [this](void * addr)
-    {
-        const SourceLocation source = getSourceLocation(addr);
-        const std::string name = source.full_path.substr(source.full_path.rfind('/') + 1);
-
-        size_t source_file_index;
-
-        if (auto it = source_file_name_to_path_index.find(name); it != source_file_name_to_path_index.end())
-            source_file_index = it->second;
-        else
-        {
-            source_file_index = source_files_cache.size();
-            source_file_name_to_path_index.emplace(name, source_file_index);
-            source_files_cache.emplace_back(source.full_path);
-        }
-
-        return std::make_pair(source_file_index, source.line);
-    };
-
     time_t elapsed = time(nullptr);
 
     for (size_t i = 0; i < function_entries.size(); ++i)
     {
         Addr addr = function_entries.at(i);
 
-        const auto [source_file_index, line] = get_index_and_line(addr);
+        const auto [source_file_index, line] = getIndexAndLine(addr);
         SourceFileInfo& info = source_files_cache[source_file_index];
 
         info.instrumented_functions.push_back(addr);
@@ -146,6 +148,7 @@ void Writer::symbolizeAllInstrumentedAddrs(const Writer::Addrs& function_entries
         if (time_t current = time(nullptr); current > elapsed)
         {
             LOG_INFO(base_log, "Function symbolization: processed {}/{}", i, function_entries.size());
+            fmt::print(std::cout, "{}/{}", i, function_entries.size());
             elapsed = current;
         }
     }
@@ -155,7 +158,7 @@ void Writer::symbolizeAllInstrumentedAddrs(const Writer::Addrs& function_entries
     for (size_t i = 0; i < addrs.size(); ++i)
     {
         Addr addr = addrs.at(i);
-        const auto [source_file_index, line] = get_index_and_line(addr);
+        const auto [source_file_index, line] = getIndexAndLine(addr);
         SourceFileInfo& info = source_files_cache[source_file_index];
 
         info.instrumented_lines.push_back(line);

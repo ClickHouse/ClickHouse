@@ -143,6 +143,9 @@ private:
     /// Fill addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
     void symbolizeAllInstrumentedAddrs(const Addrs& function_entries, const Addrs& addrs);
 
+    /// Possibly fill source_files_cache, source_file_name_to_path_index
+    std::pair<size_t, size_t> getIndexAndLine(void * addr);
+
     void prepareDataAndDump(TestInfo test_info, const Addrs& addrs);
     void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);
 };
