@@ -492,7 +492,7 @@ def run_tests_array(all_tests_with_params):
                                     failures_chain += 1
                                     status += MSG_FAIL
                                     status += print_test_time(total_time)
-                                    status += " - Test runs too long (> 30s). Make it faster."
+                                    status += " - Test runs too long (> 30s). Make it faster.\n"
                                     status += 'Database: ' + testcase_args.testcase_database
                                 else:
                                     passed_total += 1
