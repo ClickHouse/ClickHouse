@@ -333,6 +333,9 @@ void ComplexKeyHashedDictionary::calculateBytesAllocated()
     }
 
     bytes_allocated += keys_pool.size();
+
+    if (saved_block)
+        bytes_allocated += saved_block->allocatedBytes();
 }
 
 template <typename T>

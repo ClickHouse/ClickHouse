@@ -446,6 +446,9 @@ void HashedDictionary::calculateBytesAllocated()
 
         callOnDictionaryAttributeType(attribute.type, type_call);
     }
+
+    if (saved_block)
+        bytes_allocated += saved_block->allocatedBytes();
 }
 
 template <typename T>
@@ -569,9 +572,6 @@ bool HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, co
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
-
-    if (saved_block)
-        bytes_allocated += saved_block->allocatedBytes();
 
     return result;
 }
