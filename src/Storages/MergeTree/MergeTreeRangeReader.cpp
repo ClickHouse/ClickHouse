@@ -937,7 +937,10 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
             auto columns = block.getColumns();
             filterColumns(columns, row_level_filter);
-            block.setColumns(columns);
+            if (columns.empty())
+                block = block.cloneEmpty();
+            else
+                block.setColumns(columns);
         }
 
         prewhere_info->prewhere_actions->execute(block);
