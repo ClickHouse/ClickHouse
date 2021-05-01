@@ -113,7 +113,6 @@ private:
     std::atomic<size_t> producer_id = 1; /// counter for producer buffer, needed for channel id
     std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
     std::atomic<bool> exchange_removed = false, rabbit_is_ready = false;
-    ChannelPtr setup_channel;
     std::vector<String> queues;
 
     std::once_flag flag; /// remove exchange only once
@@ -141,9 +140,9 @@ private:
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
     void initRabbitMQ();
-    void initExchange();
-    void bindExchange();
-    void bindQueue(size_t queue_id);
+    void initExchange(RabbitMQChannel & rabbit_channel);
+    void bindExchange(RabbitMQChannel & rabbit_channel);
+    void bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channel);
 
     bool restoreConnection(bool reconnecting);
     bool streamToViews();
