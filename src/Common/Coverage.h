@@ -81,7 +81,11 @@ public:
     /// Called when guard variables for all instrumented edges have been initialized.
     inline void initializedGuards(uint32_t count) { edges.reserve(count); }
 
-    inline void serverHasInitialized() { symbolizeAllInstrumentedAddrs(); }
+    inline void serverHasInitialized()
+    {
+        base_log = &Poco::Logger::get(std::string{logger_base_name});
+        symbolizeAllInstrumentedAddrs();
+    }
 
     /// Called when a critical edge in binary is hit.
     void hit(void * addr);
@@ -103,7 +107,7 @@ private:
 
     static constexpr bool test_use_batch = true;
 
-    const Poco::Logger * const base_log;
+    const Poco::Logger * base_log;
 
     const std::filesystem::path coverage_dir;
 

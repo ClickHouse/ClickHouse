@@ -17,10 +17,9 @@ namespace
 
 /// Logs a message to a specified logger with that level.
 /// If more than one argument is provided,
-///  the first argument is interpreted as template with {}-substitutions
-///  and the latter arguments treat as values to substitute.
-/// If only one argument is provided, it is threat as message without substitutions.
-
+///  the first argument is interpreted as a fmt format string with {}-substitutions
+///  and the latter arguments are treated as values to be substituted.
+/// If only one argument is provided, it is treated as message without substitutions.
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                              \
 {                                                                                 \
     const bool is_clients_log = (DB::CurrentThread::getGroup() != nullptr) &&     \

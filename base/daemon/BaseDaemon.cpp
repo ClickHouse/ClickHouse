@@ -397,8 +397,8 @@ static void sanitizerDeathCallback()
 
 
 /** To use with std::set_terminate.
-  * Collects slightly more info than __gnu_cxx::__verbose_terminate_handler,
-  *  and send it to pipe. Other thread will read this info from pipe and asynchronously write it to log.
+  * Collects slightly more info than __gnu_cxx::__verbose_terminate_handler
+  * and sends the data to pipe. Other thread will read this info from pipe and asynchronously write it to log.
   * Look at libstdc++-v3/libsupc++/vterminate.cc for example.
   */
 [[noreturn]] static void terminate_handler()
@@ -824,10 +824,11 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    Poco::Logger::root().information("Starting " + std::string{VERSION_FULL}
-        + " with revision " + std::to_string(ClickHouseRevision::getVersionRevision())
-        + ", " + build_id_info
-        + ", PID " + std::to_string(getpid()));
+    Poco::Logger::root().information(fmt::format("Starting {} with revision {}, {}, PID {}",
+        VERSION_FULL,
+        ClickHouseRevision::getVersionRevision(),
+        build_id_info,
+        getpid()));
 }
 
 void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)

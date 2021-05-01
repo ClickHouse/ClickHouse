@@ -45,7 +45,7 @@ inline auto getInstanceAndInitGlobalCounters()
 }
 
 Writer::Writer()
-    : base_log(&Poco::Logger::get(std::string{logger_base_name})),
+    : base_log(nullptr),
       coverage_dir(std::filesystem::current_path() / Writer::coverage_dir_relative_path),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
