@@ -1364,7 +1364,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : *servers)
             server.start();
+
         LOG_INFO(log, "Ready for connections.");
+
+#if WITH_COVERAGE
+        ::detail::Writer::instance().serverHasInitialized();
+#endif
 
         /// Can't use SCOPE_EXIT macro here due to macro-conditional call of dumpCoverageReportIfPossible.
         /// Otherwise a -Wembedded-directive would be raised.

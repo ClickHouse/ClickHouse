@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -78,8 +79,9 @@ public:
     void initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_end);
 
     /// Called when guard variables for all instrumented edges have been initialized.
-    /// Called after initializePCTable.
-    void initializedGuards(uint32_t count);
+    inline void initializedGuards(uint32_t count) { edges.reserve(count); }
+
+    inline void serverHasInitialized() { symbolizeAllInstrumentedAddrs(); }
 
     /// Called when a critical edge in binary is hit.
     void hit(void * addr);
@@ -120,6 +122,9 @@ private:
     std::unordered_map<Addr, AddrInfo> addr_cache;
     std::unordered_map<Addr, FunctionInfo> function_cache;
 
+    Addrs pc_table_addrs;
+    Addrs pc_table_function_entries;
+
     inline SourceLocation getSourceLocation(const void * virtual_addr) const
     {
         /// This binary gets loaded first, so binary_virtual_offset = 0
@@ -134,8 +139,9 @@ private:
 
     void dumpAndChangeTestName(std::string_view test_name);
 
-    /// Fill addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
-    void symbolizeAllInstrumentedAddrs(const Addrs& function_entries, const Addrs& addrs);
+    /// Fills addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
+    /// Clears pc_table_addrs, pc_table_function_entries.
+    void symbolizeAllInstrumentedAddrs();
 
     /// Possibly fill source_files_cache, source_file_name_to_path_index
     std::pair<size_t, size_t> getIndexAndLine(void * addr);

@@ -75,23 +75,12 @@ Writer::Writer()
     std::filesystem::create_directory(coverage_dir);
 }
 
-void Writer::initializedGuards(uint32_t count)
-{
-    edges.reserve(count);
-    LOG_INFO(base_log, "Initialized guards, {} instrumented edges total", count);
-}
-
 void Writer::initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_end)
 {
-    LOG_INFO(base_log, "Started copying PC table data");
-
-    Addrs addrs;
-    Addrs function_entries;
-
     const size_t edges_total = pcs_end - pcs_beg; // can't rely on _edges_ as this function may be called earlier.
 
-    addrs.reserve(edges_total);
-    function_entries.reserve(edges_total);
+    pc_table_addrs.reserve(edges_total);
+    pc_table_function_entries.reserve(edges_total);
 
     for (const auto *it = pcs_beg; it < pcs_end; it += 2)
     {
@@ -99,15 +88,13 @@ void Writer::initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_en
         const bool is_function_entry = *(it + 1) & 1;
 
         if (is_function_entry)
-            function_entries.push_back(addr);
+            pc_table_function_entries.push_back(addr);
         else
-            addrs.push_back(addr);
+            pc_table_addrs.push_back(addr);
     }
 
-    LOG_INFO(base_log, "Copied PC table data, {} functions, {} non-function edges",
-        function_entries.size(), edges.size() - function_entries.size());
-
-    symbolizeAllInstrumentedAddrs(function_entries, addrs);
+    /// We don't symbolize the addresses right away, wait for CH application to load instead.
+    /// If starting now, we won't be able to log to Poco or std::cout;
 }
 
 std::pair<size_t, size_t> Writer::getIndexAndLine(void * addr)
@@ -129,13 +116,15 @@ std::pair<size_t, size_t> Writer::getIndexAndLine(void * addr)
     return {source_file_index, source.line};
 }
 
-void Writer::symbolizeAllInstrumentedAddrs(const Addrs& function_entries, const Addrs& addrs)
+void Writer::symbolizeAllInstrumentedAddrs()
 {
+    LOG_INFO(base_log, "Started symbolizing addresses");
+
     time_t elapsed = time(nullptr);
 
-    for (size_t i = 0; i < function_entries.size(); ++i)
+    for (size_t i = 0; i < pc_table_function_entries.size(); ++i)
     {
-        Addr addr = function_entries.at(i);
+        Addr addr = pc_table_function_entries.at(i);
 
         const auto [source_file_index, line] = getIndexAndLine(addr);
         SourceFileInfo& info = source_files_cache[source_file_index];
@@ -145,16 +134,16 @@ void Writer::symbolizeAllInstrumentedAddrs(const Addrs& function_entries, const 
 
         if (time_t current = time(nullptr); current > elapsed)
         {
-            LOG_INFO(base_log, "Function symbolization: processed {}/{}", i, function_entries.size());
+            LOG_INFO(base_log, "Function symbolization: processed {}/{}", i, pc_table_function_entries.size());
             elapsed = current;
         }
+
     }
 
-    LOG_INFO(base_log, "Symbolized all functions in binary");
-
-    for (size_t i = 0; i < addrs.size(); ++i)
+    for (size_t i = 0; i < pc_table_addrs.size(); ++i)
     {
-        Addr addr = addrs.at(i);
+        Addr addr = pc_table_addrs.at(i);
+
         const auto [source_file_index, line] = getIndexAndLine(addr);
         SourceFileInfo& info = source_files_cache[source_file_index];
 
@@ -163,12 +152,17 @@ void Writer::symbolizeAllInstrumentedAddrs(const Addrs& function_entries, const 
 
         if (time_t current = time(nullptr); current > elapsed)
         {
-            LOG_INFO(base_log, "Addresses symbolization: processed {}/{}", i, addrs.size());
+            LOG_INFO(base_log, "Addresses symbolization: processed {}/{}", i, pc_table_addrs.size());
             elapsed = current;
         }
     }
 
-    LOG_INFO(base_log, "Symbolized all addresses in binary");
+    pc_table_function_entries.clear();
+    pc_table_function_entries.shrink_to_fit();
+    pc_table_addrs.clear();
+    pc_table_addrs.shrink_to_fit();
+
+    LOG_INFO(base_log, "Symbolized all addresses");
 }
 
 void Writer::hit(void * addr)
