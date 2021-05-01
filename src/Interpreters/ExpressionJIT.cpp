@@ -95,13 +95,16 @@ static bool castToEitherWithNullable(IColumn * column)
 class LLVMExecutableFunction : public IExecutableFunctionImpl
 {
     std::string name;
-    void * function;
-
+    void * function = nullptr;
 public:
     explicit LLVMExecutableFunction(const std::string & name_)
         : name(name_)
-        , function(jit.findCompiledFunction(name))
     {
+        function = jit.runJITLocked([&]()
+        {
+            return jit.findCompiledFunction(name_);
+        });
+
         if (!function)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find compiled function {}", name_);
     }
@@ -279,60 +282,62 @@ static CompilableExpression subexpression(const IFunctionBase & f, std::vector<C
     };
 }
 
-
 LLVMFunction::LLVMFunction(const CompileDAG & dag)
     : name(dag.dump())
 {
     std::vector<CompilableExpression> expressions;
     expressions.reserve(dag.size());
 
-    auto & context = jit.getContext();
-    llvm::IRBuilder<> builder(context);
-
-    for (const auto & node : dag)
+    jit.runJITLocked([&]()
     {
-        switch (node.type)
+        auto & context = jit.getContext();
+        llvm::IRBuilder<> builder(context);
+
+        for (const auto & node : dag)
         {
-            case CompileNode::NodeType::CONSTANT:
+            switch (node.type)
             {
-                const auto * col = typeid_cast<const ColumnConst *>(node.column.get());
+                case CompileNode::NodeType::CONSTANT:
+                {
+                    const auto * col = typeid_cast<const ColumnConst *>(node.column.get());
 
-                /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
-                if (!getNativeValue(toNativeType(builder, node.result_type), col->getDataColumn(), 0))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                    "Cannot compile constant of type {} = {}",
-                                    node.result_type->getName(),
-                                    applyVisitor(FieldVisitorToString(), col->getDataColumn()[0]));
+                    /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
+                    if (!getNativeValue(toNativeType(builder, node.result_type), col->getDataColumn(), 0))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                        "Cannot compile constant of type {} = {}",
+                                        node.result_type->getName(),
+                                        applyVisitor(FieldVisitorToString(), col->getDataColumn()[0]));
 
-                expressions.emplace_back(subexpression(col->getDataColumnPtr(), node.result_type));
-                break;
-            }
-            case CompileNode::NodeType::FUNCTION:
-            {
-                std::vector<CompilableExpression> args;
-                args.reserve(node.arguments.size());
+                    expressions.emplace_back(subexpression(col->getDataColumnPtr(), node.result_type));
+                    break;
+                }
+                case CompileNode::NodeType::FUNCTION:
+                {
+                    std::vector<CompilableExpression> args;
+                    args.reserve(node.arguments.size());
 
-                for (auto arg : node.arguments)
-                    args.emplace_back(expressions[arg]);
+                    for (auto arg : node.arguments)
+                        args.emplace_back(expressions[arg]);
 
-                originals.push_back(node.function);
-                expressions.emplace_back(subexpression(*node.function, std::move(args)));
-                break;
-            }
-            case CompileNode::NodeType::INPUT:
-            {
-                expressions.emplace_back(subexpression(arg_types.size()));
-                arg_types.push_back(node.result_type);
-                break;
+                    originals.push_back(node.function);
+                    expressions.emplace_back(subexpression(*node.function, std::move(args)));
+                    break;
+                }
+                case CompileNode::NodeType::INPUT:
+                {
+                    expressions.emplace_back(subexpression(arg_types.size()));
+                    arg_types.push_back(node.result_type);
+                    break;
+                }
             }
         }
-    }
 
-    expression = std::move(expressions.back());
+        expression = std::move(expressions.back());
 
-    auto module_for_compilation = jit.createModuleForCompilation();
-    compileFunction(*module_for_compilation, *this);
-    jit.compileModule(std::move(module_for_compilation));
+        auto module_for_compilation = jit.createModuleForCompilation();
+        compileFunction(*module_for_compilation, *this);
+        jit.compileModule(std::move(module_for_compilation));
+    });
 }
 
 llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const
