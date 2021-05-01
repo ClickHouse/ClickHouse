@@ -259,46 +259,48 @@ size_t StorageRabbitMQ::getMaxBlockSize() const
 
 void StorageRabbitMQ::initRabbitMQ()
 {
-    setup_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
+    RabbitMQChannel rabbit_channel(connection.get());
 
-    initExchange();
-    bindExchange();
+    /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
+
+    initExchange(rabbit_channel);
+    bindExchange(rabbit_channel);
 
     for (const auto i : ext::range(0, num_queues))
-        bindQueue(i + 1);
+        bindQueue(i + 1, rabbit_channel);
 
     LOG_TRACE(log, "RabbitMQ setup completed");
-
     rabbit_is_ready = true;
-    setup_channel->close();
 }
 
 
-void StorageRabbitMQ::initExchange()
+void StorageRabbitMQ::initExchange(RabbitMQChannel & rabbit_channel)
 {
-    /* Binding scheme is the following: client's exchange -> key bindings by routing key list -> bridge exchange (fanout) ->
-     * -> sharding exchange (only if needed) -> queues
-     */
-    setup_channel->declareExchange(exchange_name, exchange_type, AMQP::durable)
+    /// Exchange hierarchy:
+    /// 1. Main exchange (defined with table settings - rabbitmq_exchange_name, rabbitmq_exchange_type).
+    /// 2. Bridge exchange (fanout). Used to easily disconnect main exchange and to simplify queue bindings.
+    /// 3. Sharding (or hash) exchange. Used in case of multiple queues.
+    /// 4. Consumer exchange. Just an alias for bridge_exchange or sharding exchange to know to what exchange
+    ///    queues will be bound.
+
+    /// All exchanges are declared with options:
+    /// 1. `durable` (survive RabbitMQ server restart)
+    /// 2. `autodelete` (auto delete in case of queue bindings are dropped).
+
+    rabbit_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
     .onError([&](const char * message)
     {
-        /* This error can be a result of attempt to declare exchange if it was already declared but
-         * 1) with different exchange type. In this case can
-         * - manually delete previously declared exchange and create a new one.
-         * - throw an error that the exchange with this name but another type is already declared and ask client to delete it himself
-         *   if it is not needed anymore or use another exchange name.
-         * 2) with different exchange settings. This can only happen if client himself declared exchange with the same name and
-         * specified its own settings, which differ from this implementation.
-         */
+        /// This error can be a result of attempt to declare exchange if it was already declared but
+        /// 1) with different exchange type.
+        /// 2) with different exchange settings.
         throw Exception("Unable to declare exchange. Make sure specified exchange is not already declared. Error: "
                 + std::string(message), ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE);
     });
 
-    /// Bridge exchange is needed to easily disconnect consumer queues and also simplifies queue bindings
-    setup_channel->declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable + AMQP::autodelete)
+    rabbit_channel.declareExchange(bridge_exchange, AMQP::fanout, AMQP::durable | AMQP::autodelete)
     .onError([&](const char * message)
     {
-        /// This error is not supposed to happen as this exchange name is always unique to type and its settings
+        /// This error is not supposed to happen as this exchange name is always unique to type and its settings.
         throw Exception(
             ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE, "Unable to declare bridge exchange ({}). Reason: {}", bridge_exchange, std::string(message));
     });
@@ -309,26 +311,26 @@ void StorageRabbitMQ::initExchange()
         return;
     }
 
-    /* Change hash property because by default it will be routing key, which has to be an integer, but with support for any exchange
-     * type - routing keys might be of any type
-     */
     AMQP::Table binding_arguments;
+
+    /// Default routing key property in case of hash exchange is a routing key, which is required to be an integer.
+    /// Support for arbitrary exchange type (i.e. arbitary pattern of routing keys) requires to eliminate this dependency.
+    /// This settings changes hash propery to message_id.
     binding_arguments["hash-property"] = "message_id";
 
-    /// Declare exchange for sharding.
-    setup_channel->declareExchange(sharding_exchange, AMQP::consistent_hash, AMQP::durable + AMQP::autodelete, binding_arguments)
+    /// Declare hash exchange for sharding.
+    rabbit_channel.declareExchange(sharding_exchange, AMQP::consistent_hash, AMQP::durable | AMQP::autodelete, binding_arguments)
     .onError([&](const char * message)
     {
-        /* This error can be a result of same reasons as above for exchange_name, i.e. it will mean that sharding exchange name appeared
-         * to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
-         * is bad.
-         */
+        /// This error can be a result of same reasons as above for exchange_name, i.e. it will mean that sharding exchange name appeared
+        /// to be the same as some other exchange (which purpose is not for sharding). So probably actual error reason: queue_base parameter
+        /// is bad.
         throw Exception(
            ErrorCodes::CANNOT_DECLARE_RABBITMQ_EXCHANGE,
            "Unable to declare sharding exchange ({}). Reason: {}", sharding_exchange, std::string(message));
     });
 
-    setup_channel->bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
+    rabbit_channel.bindExchange(bridge_exchange, sharding_exchange, routing_keys[0])
     .onError([&](const char * message)
     {
         throw Exception(
@@ -343,7 +345,7 @@ void StorageRabbitMQ::initExchange()
 }
 
 
-void StorageRabbitMQ::bindExchange()
+void StorageRabbitMQ::bindExchange(RabbitMQChannel & rabbit_channel)
 {
     std::atomic<bool> binding_created = false;
     size_t bound_keys = 0;
@@ -358,7 +360,7 @@ void StorageRabbitMQ::bindExchange()
             bind_headers[matching[0]] = matching[1];
         }
 
-        setup_channel->bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
+        rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
         .onSuccess([&]() { binding_created = true; })
         .onError([&](const char * message)
         {
@@ -370,7 +372,7 @@ void StorageRabbitMQ::bindExchange()
     }
     else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
     {
-        setup_channel->bindExchange(exchange_name, bridge_exchange, routing_keys[0])
+        rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0])
         .onSuccess([&]() { binding_created = true; })
         .onError([&](const char * message)
         {
@@ -384,7 +386,7 @@ void StorageRabbitMQ::bindExchange()
     {
         for (const auto & routing_key : routing_keys)
         {
-            setup_channel->bindExchange(exchange_name, bridge_exchange, routing_key)
+            rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_key)
             .onSuccess([&]()
             {
                 ++bound_keys;
@@ -408,7 +410,7 @@ void StorageRabbitMQ::bindExchange()
 }
 
 
-void StorageRabbitMQ::bindQueue(size_t queue_id)
+void StorageRabbitMQ::bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channel)
 {
     std::atomic<bool> binding_created = false;
 
@@ -424,7 +426,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id)
         * done between client's exchange and local bridge exchange. Binding key must be a string integer in case of hash exchange, for
         * fanout exchange it can be arbitrary
         */
-        setup_channel->bindQueue(consumer_exchange, queue_name, std::to_string(queue_id))
+        rabbit_channel.bindQueue(consumer_exchange, queue_name, std::to_string(queue_id))
         .onSuccess([&] { binding_created = true; })
         .onError([&](const char * message)
         {
@@ -460,7 +462,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id)
      * specific queue when its name is specified in queue_base setting
      */
     const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
-    setup_channel->declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
+    rabbit_channel.declareQueue(queue_name, AMQP::durable | AMQP::autodelete, queue_settings).onSuccess(success_callback).onError(error_callback);
 
     while (!binding_created)
     {
@@ -537,8 +539,8 @@ void StorageRabbitMQ::unbindExchange()
         event_handler->updateLoopState(Loop::STOP);
         looping_task->deactivate();
 
-        setup_channel = std::make_shared<AMQP::TcpChannel>(connection.get());
-        setup_channel->removeExchange(bridge_exchange)
+        RabbitMQChannel rabbit_channel(connection.get());
+        rabbit_channel.removeExchange(bridge_exchange)
         .onSuccess([&]()
         {
             exchange_removed.store(true);
@@ -552,8 +554,6 @@ void StorageRabbitMQ::unbindExchange()
         {
             event_handler->iterateLoop();
         }
-
-        setup_channel->close();
     });
 }
 

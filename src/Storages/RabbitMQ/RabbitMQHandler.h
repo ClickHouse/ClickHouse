@@ -17,6 +17,15 @@ namespace Loop
     static const UInt8 STOP = 2;
 }
 
+
+class RabbitMQChannel : public AMQP::TcpChannel
+{
+public:
+    RabbitMQChannel(AMQP::TcpConnection * connection) : TcpChannel(connection) {}
+    ~RabbitMQChannel() override { close(); }
+};
+
+
 class RabbitMQHandler : public AMQP::LibUvHandler
 {
 
