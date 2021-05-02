@@ -37,23 +37,18 @@ RUN apt-get update \
         bash \
         build-essential \
         ccache \
-        clang-10 \
         clang-11 \
-        clang-tidy-10 \
         clang-tidy-11 \
         cmake \
         curl \
-        g++-9 \
-        gcc-9 \
+        g++-10 \
+        gcc-10 \
         gdb \
         git \
         gperf \
         libicu-dev \
         libreadline-dev \
-        lld-10 \
         lld-11 \
-        llvm-10 \
-        llvm-10-dev \
         llvm-11 \
         llvm-11-dev \
         moreutils \

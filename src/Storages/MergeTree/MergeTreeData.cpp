@@ -688,9 +688,11 @@ void MergeTreeData::MergingParams::check(const StorageInMemoryMetadata & metadat
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     const SelectQueryInfo & query_info, ContextPtr local_context, const DataPartsVector & parts) const
 {
+    if (parts.empty())
+        return 0u;
     auto metadata_snapshot = getInMemoryMetadataPtr();
     ASTPtr expression_ast;
-    Block virtual_columns_block = MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns();
+    Block virtual_columns_block = MergeTreeDataSelectExecutor::getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
     // Generate valid expressions for filtering
     bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
@@ -702,7 +704,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     std::unordered_set<String> part_values;
     if (valid && expression_ast)
     {
-        MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
+        virtual_columns_block = MergeTreeDataSelectExecutor::getBlockWithVirtualPartColumns(parts, false /* one_part */);
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, local_context, expression_ast);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
@@ -1651,13 +1653,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
             }
 
-            const auto & deps_mv = name_deps[command.column_name];
-            if (!deps_mv.empty())
+            if (!command.clear)
             {
-                throw Exception(
-                    "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
-                        + toString(deps_mv),
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                const auto & deps_mv = name_deps[command.column_name];
+                if (!deps_mv.empty())
+                {
+                    throw Exception(
+                        "Trying to ALTER DROP column " + backQuoteIfNeed(command.column_name) + " which is referenced by materialized view "
+                            + toString(deps_mv),
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN);
+                }
             }
 
             dropped_columns.emplace(command.column_name);

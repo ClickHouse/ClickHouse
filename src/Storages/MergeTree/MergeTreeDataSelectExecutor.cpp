@@ -70,17 +70,13 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
 {
 }
 
-
-Block MergeTreeDataSelectExecutor::getSampleBlockWithVirtualPartColumns()
+Block MergeTreeDataSelectExecutor::getBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, bool one_part)
 {
-    return Block(std::initializer_list<ColumnWithTypeAndName>{
+    Block block(std::initializer_list<ColumnWithTypeAndName>{
         ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
         ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
         ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid")});
-}
 
-void MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(const MergeTreeData::DataPartsVector & parts, Block & block)
-{
     MutableColumns columns = block.mutateColumns();
 
     auto & part_column = columns[0];
@@ -92,9 +88,17 @@ void MergeTreeDataSelectExecutor::fillBlockWithVirtualPartColumns(const MergeTre
         part_column->insert(part->name);
         partition_id_column->insert(part->info.partition_id);
         part_uuid_column->insert(part->uuid);
+        if (one_part)
+        {
+            part_column = ColumnConst::create(std::move(part_column), 1);
+            partition_id_column = ColumnConst::create(std::move(partition_id_column), 1);
+            part_uuid_column = ColumnConst::create(std::move(part_uuid_column), 1);
+            break;
+        }
     }
 
     block.setColumns(std::move(columns));
+    return block;
 }
 
 
@@ -178,6 +182,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     Names real_column_names;
 
     size_t total_parts = parts.size();
+    if (total_parts == 0)
+        return std::make_unique<QueryPlan>();
 
     bool sample_factor_column_queried = false;
     Float64 used_sample_factor = 1;
@@ -219,7 +225,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
 
     std::unordered_set<String> part_values;
     ASTPtr expression_ast;
-    auto virtual_columns_block = getSampleBlockWithVirtualPartColumns();
+    auto virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
     // Generate valid expressions for filtering
     VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, context, virtual_columns_block, expression_ast);
@@ -227,7 +233,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     // If there is still something left, fill the virtual block and do the filtering.
     if (expression_ast)
     {
-        fillBlockWithVirtualPartColumns(parts, virtual_columns_block);
+        virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */);
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context, expression_ast);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
