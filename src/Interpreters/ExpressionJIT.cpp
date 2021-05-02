@@ -63,6 +63,7 @@ static ColumnData getColumnData(const IColumn * column)
 {
     ColumnData result;
     const bool is_const = isColumnConst(*column);
+    /// TODO: There should be no const columns
     if (is_const)
         column = &reinterpret_cast<const ColumnConst *>(column)->getDataColumn();
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
@@ -117,16 +118,18 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto col_res = result_type->createColumn();
+        auto result_column = result_type->createColumn();
 
         if (input_rows_count)
         {
             if (!castToEitherWithNullable<
                 ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
                 ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
-                ColumnFloat32, ColumnFloat64>(col_res.get()))
-                throw Exception("Unexpected column in LLVMExecutableFunction: " + col_res->getName(), ErrorCodes::LOGICAL_ERROR);
-            col_res = col_res->cloneResized(input_rows_count);
+                ColumnFloat32, ColumnFloat64>(result_column.get()))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in LLVMExecutableFunction: {}", result_column->getName());
+
+            result_column = result_column->cloneResized(input_rows_count);
+
             std::vector<ColumnData> columns(arguments.size() + 1);
             for (size_t i = 0; i < arguments.size(); ++i)
             {
@@ -135,16 +138,36 @@ public:
                     throw Exception("Column " + arguments[i].name + " is missing", ErrorCodes::LOGICAL_ERROR);
                 columns[i] = getColumnData(column);
             }
-            columns[arguments.size()] = getColumnData(col_res.get());
+
+            columns[arguments.size()] = getColumnData(result_column.get());
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(input_rows_count, columns.data());
 
+            #if defined(MEMORY_SANITIZER)
             /// Memory sanitizer don't know about stores from JIT-ed code.
             /// But maybe we can generate this code with MSan instrumentation?
-            __msan_unpoison(col_res->getRawData().data, col_res->getRawData().size);
+
+            if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(result_column.get()))
+            {
+                const auto & nested_column = nullable_column->getNestedColumn();
+                const auto & null_map_column = nullable_column->getNullMapColumn();
+
+                auto nested_column_raw_data = nested_column.getRawData();
+                __msan_unpoison(nested_column_raw_data.data, nested_column_raw_data.size);
+
+                auto null_map_column_raw_data = null_map_column.getRawData();
+                __msan_unpoison(null_map_column_raw_data.data, null_map_column_raw_data.size);
+            }
+            else
+            {
+                __msan_unpoison(result_column->getRawData().data, result_column->getRawData().size);
+            }
+
+            #endif
         }
 
-        return col_res;
+        return result_column;
     }
+
 };
 
 static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
