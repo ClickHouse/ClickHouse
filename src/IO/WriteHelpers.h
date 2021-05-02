@@ -22,7 +22,6 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/UInt128.h>
 #include <Common/NaNUtils.h>
 
 #include <IO/CompressionMethod.h>
