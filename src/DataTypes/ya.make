@@ -66,7 +66,7 @@ SRCS(
     getLeastSupertype.cpp
     getMostSubtype.cpp
     registerDataTypeDateTime.cpp
-
+    UserDefinedDataType.cpp
 )
 
 END()

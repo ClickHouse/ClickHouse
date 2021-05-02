@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTCreateDataTypeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -151,6 +152,18 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
     registerDataTypeCustom(name, [creator](const ASTPtr & /*ast*/)
     {
         return creator();
+    }, case_sensitiveness);
+}
+
+void DataTypeFactory::registerUserDefinedDataType(const String & name, UserDefinedTypeCreator creator, const ASTCreateDataTypeQuery & createDataTypeQuery, CaseSensitiveness case_sensitiveness)
+{
+    registerDataType(name, [this, creator, createDataTypeQuery](const ASTPtr &)
+    {
+        auto res = creator();
+        res->setNested(get(createDataTypeQuery.nested));
+        res->setTypeName(createDataTypeQuery.type_name);
+
+        return res;
     }, case_sensitiveness);
 }
 

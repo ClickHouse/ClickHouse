@@ -45,6 +45,7 @@
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -60,6 +61,7 @@
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
+#include <Parsers/ASTCreateDataTypeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -1665,6 +1667,11 @@ private:
                 /// If the connection initiates the reconnection, it uses its variable.
                 connection->setDefaultDatabase(new_database);
             }
+
+            if (const auto * create_data_type_query = parsed_query->as<ASTCreateDataTypeQuery>())
+            {
+                registerUserDefinedDataType(DataTypeFactory::instance(), *create_data_type_query);
+            }
         }
 
         if (is_interactive)
@@ -2252,27 +2259,30 @@ private:
             return;
 
         processed_rows += block.rows();
-
-        /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
         initBlockOutputStream(block);
 
         /// The header block containing zero rows was used to initialize
         /// block_out_stream, do not output it.
         /// Also do not output too much data if we're fuzzing.
-        if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
-            return;
+        if (block.rows() != 0
+            && (query_fuzzer_runs == 0 || processed_rows < 100))
+        {
+            block_out_stream->write(block);
+            written_first_block = true;
+        }
 
+        bool clear_progress = false;
         if (need_render_progress)
-            clearProgress();
+            clear_progress = std_out.offset() > 0;
 
-        block_out_stream->write(block);
-        written_first_block = true;
+        if (clear_progress)
+            clearProgress();
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
 
         /// Restore progress bar after data block.
-        if (need_render_progress)
+        if (clear_progress)
             writeProgress();
     }
 

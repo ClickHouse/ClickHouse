@@ -1,5 +1,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCreateDataTypeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTCreateRoleQuery.h>
@@ -33,6 +34,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
+#include <Interpreters/InterpreterCreateDataTypeQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/InterpreterCreateRoleQuery.h>
@@ -263,6 +265,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, ContextPtr
     else if (query->as<ASTExternalDDLQuery>())
     {
         return std::make_unique<InterpreterExternalDDLQuery>(query, context);
+    }
+    else if (query->as<ASTCreateDataTypeQuery>())
+    {
+        return std::make_unique<InterpreterCreateDataTypeQuery>(query, context);
     }
     else
     {

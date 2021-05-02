@@ -1,9 +1,11 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Parsers/ASTCreateDataTypeQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/UserDefinedDataType.h>
 
 
 #include <functional>
@@ -27,6 +29,7 @@ private:
     using DataTypesDictionary = std::unordered_map<String, Value>;
     using CreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>(const ASTPtr & parameters)>;
     using SimpleCreatorWithCustom = std::function<std::pair<DataTypePtr,DataTypeCustomDescPtr>()>;
+    using UserDefinedTypeCreator = std::function<UserDefinedDataTypePtr()>;
 
 public:
     static DataTypeFactory & instance();
@@ -47,6 +50,9 @@ public:
 
     /// Register a simple customized data type
     void registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+
+    /// Register a user defined data type
+    void registerUserDefinedDataType(const String & name, UserDefinedTypeCreator creator, const ASTCreateDataTypeQuery & createDataTypeQuery, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
 private:
     const Value & findCreatorByName(const String & family_name) const;
@@ -86,5 +92,6 @@ void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
+void registerUserDefinedDataType(DataTypeFactory & factory, const ASTCreateDataTypeQuery & createDataTypeQuery);
 
 }
