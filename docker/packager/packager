@@ -181,9 +181,8 @@ if __name__ == "__main__":
     parser.add_argument("--clickhouse-repo-path", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir))
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-    parser.add_argument("--compiler", choices=("clang-10", "clang-10-darwin", "clang-10-aarch64", "clang-10-freebsd",
-                                               "clang-11", "clang-11-darwin", "clang-11-aarch64", "clang-11-freebsd",
-                                               "gcc-9", "gcc-10"), default="gcc-9")
+    parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-aarch64", "clang-11-freebsd",
+                                               "gcc-10"), default="clang-11")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")

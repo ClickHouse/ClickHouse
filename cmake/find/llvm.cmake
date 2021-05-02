@@ -24,9 +24,9 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/CMakeLists.txt")
 endif ()
 
 if (NOT USE_INTERNAL_LLVM_LIBRARY)
-    set (LLVM_PATHS "/usr/local/lib/llvm")
+    set (LLVM_PATHS "/usr/local/lib/llvm" "/usr/lib/llvm")
 
-    foreach(llvm_v 10 9 8)
+    foreach(llvm_v 11.1 11)
         if (NOT LLVM_FOUND)
             find_package (LLVM ${llvm_v} CONFIG PATHS ${LLVM_PATHS})
         endif ()
@@ -102,7 +102,6 @@ LLVMRuntimeDyld
 LLVMX86CodeGen
 LLVMX86Desc
 LLVMX86Info
-LLVMX86Utils
 LLVMAsmPrinter
 LLVMDebugInfoDWARF
 LLVMGlobalISel
