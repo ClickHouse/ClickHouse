@@ -131,7 +131,7 @@ void Writer::hit(void * addr)
         if (test)
         {
             hits_batch_storage[hits_batch_index] = addr; //can insert last element;
-            edges.insert(edges.end(), hits_batch_storage.begin(), hits_batch_storage.end());
+            mergeFromLocalToGlobalEdges();
         }
 
         hits_batch_index = 0;
@@ -163,9 +163,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 
         if (hits_batch_index > 0) // haven't copied last addresses from local storage to edges
         {
-            edges.insert(edges.end(),
-                hits_batch_storage.begin(), std::next(hits_batch_storage.begin(), hits_batch_index));
-
+            mergeFromLocalToGlobalEdges();
             hits_batch_index = 0;
         }
 
@@ -203,32 +201,34 @@ void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
 
     time_t elapsed = time(nullptr);
     size_t fault_addrs = 0;
+    size_t i = 0;
 
-    for (size_t i = 0; i < addrs.size(); ++i)
+    for (auto [addr, hits] : addrs)
     {
+        ++i;
+
         if (const time_t current = time(nullptr); current > elapsed)
         {
             LOG_DEBUG(test_info.log, "Processed {}/{}", i, addrs.size());
             elapsed = current;
         }
 
-        Addr addr = addrs.at(i);
-
         if (auto it = function_cache.find(addr); it != function_cache.end())
         {
             auto& functions = test_data.at(it->second.index).functions_hit;
 
             if (auto it2 = functions.find(addr); it2 == functions.end())
-                functions[addr] = 1;
+                functions[addr] = hits;
             else
-                ++it2->second;
+                it2->second += hits;
 
             continue;
         }
 
         if (auto it = addr_cache.find(addr); it == addr_cache.end())
         {
-            LOG_ERROR(test_info.log, "Fault addr {}, total {}", addr, ++fault_addrs);
+            ++fault_addrs;
+            LOG_ERROR(test_info.log, "Fault addr {}, total {}", addr, fault_addrs);
             continue;
         }
 
@@ -236,9 +236,9 @@ void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
         auto& lines = test_data.at(addr_cache_entry.index).lines_hit;
 
         if (auto it = lines.find(addr_cache_entry.line); it == lines.end())
-            lines[addr_cache_entry.line] = 1;
+            lines[addr_cache_entry.line] = hits;
         else
-            ++it->second;
+            it->second += hits;
     }
 
     LOG_INFO(test_info.log, "Finished filling internal structures");

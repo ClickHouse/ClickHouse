@@ -32,7 +32,6 @@ struct StringHash
 };
 
 using Addr = void *;
-using Addrs = std::vector<Addr>;
 
 struct SourceFileData
 {
@@ -91,7 +90,7 @@ private:
     static constexpr const size_t hits_batch_array_size = 100000;
 
     static thread_local inline size_t hits_batch_index = 0; /// How many addresses are currently in the local storage.
-    static thread_local inline std::array<void*, hits_batch_array_size> hits_batch_storage{};
+    static thread_local inline std::array<Addr, hits_batch_array_size> hits_batch_storage{};
 
     const Poco::Logger * base_log; /// do not use the logger before call of serverHasInitialized.
 
@@ -102,14 +101,17 @@ private:
 
     FreeThreadPool pool;
 
+    using Addrs = std::unordered_map<Addr, size_t /* hits */>;
     Addrs edges;
+
     std::optional<std::string> test;
     std::mutex edges_mutex; // protects test, edges
 
     /// Two caches filled on binary startup from PC table created by clang.
     /// Cleared after addresses symbolization in symbolizeAllInstrumentedAddrs.
-    Addrs pc_table_addrs;
-    Addrs pc_table_function_entries;
+    using AddrsVec = std::vector<Addr>;
+    AddrsVec pc_table_addrs;
+    AddrsVec pc_table_function_entries;
 
     /// Four caches filled in symbolizeAllInstrumentedAddrs being read-only by the tests start.
     /// Never cleared.
@@ -152,6 +154,18 @@ private:
     static inline std::string_view getNameFromPath(std::string_view path)
     {
         return path.substr(path.rfind('/') + 1);
+    }
+
+    inline void mergeFromLocalToGlobalEdges()
+    {
+        for (Addr addr : hits_batch_storage)
+        {
+            if (auto it = edges.find(addr); it == edges.end())
+                edges[addr] = 1;
+            else
+                ++it->second;
+        }
+
     }
 
     void dumpAndChangeTestName(std::string_view test_name);
@@ -201,7 +215,7 @@ private:
      * take some extra time.
      */
     template <bool is_func_cache, class CacheItem>
-    void scheduleSymbolizationJobs(LocalCachesArray<CacheItem>& caches, const Addrs& addrs)
+    void scheduleSymbolizationJobs(LocalCachesArray<CacheItem>& caches, const AddrsVec& addrs)
     {
         constexpr auto pool_size = thread_pool_symbolizing;
 
@@ -262,7 +276,10 @@ private:
 
     /// Merge symbolized data obtained from multiple threads into global caches.
     template<bool is_func_cache, class CacheItem>
-    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data, Addrs& to_clear) {
+    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data,
+            AddrsVec&
+            //to_clear
+        ) {
         constexpr const std::string_view target_str = is_func_cache
             ? "function"
             : "addrs";
@@ -306,8 +323,8 @@ private:
                 }
             }
 
-        to_clear.clear();
-        to_clear.shrink_to_fit();
+        //to_clear.clear();
+        //to_clear.shrink_to_fit();
 
         LOG_INFO(base_log, "Finished merging {} data to caches", target_str);
     }
