@@ -397,6 +397,9 @@ void FlatDictionary::calculateBytesAllocated()
 
         callOnDictionaryAttributeType(attribute.type, type_call);
     }
+
+    if (saved_block)
+        bytes_allocated += saved_block->allocatedBytes();
 }
 
 
