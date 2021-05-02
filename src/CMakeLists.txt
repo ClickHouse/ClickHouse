@@ -322,10 +322,6 @@ if (USE_RDKAFKA)
     endif()
 endif()
 
-if (USE_AMQPCPP)
-    dbms_target_link_libraries(PUBLIC amqp-cpp)
-endif()
-
 if (USE_CYRUS_SASL)
     dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})
 endif()
@@ -439,6 +435,11 @@ endif()
 if (USE_BROTLI)
     target_link_libraries (clickhouse_common_io PRIVATE ${BROTLI_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
+endif()
+
+if (USE_AMQPCPP)
+    dbms_target_link_libraries(PUBLIC ${AMQPCPP_LIBRARY})
+    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${AMQPCPP_INCLUDE_DIR})
 endif()
 
 if (USE_CASSANDRA)
