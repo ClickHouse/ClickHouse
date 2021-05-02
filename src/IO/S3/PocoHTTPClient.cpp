@@ -293,7 +293,7 @@ void PocoHTTPClient::makeRequestInternal(
             { // API throttling
                 ProfileEvents::increment(select_metric(S3MetricType::Throttling));
             }
-            else
+            else if (status_code >= 300)
             {
                 ProfileEvents::increment(select_metric(S3MetricType::Errors));
             }
