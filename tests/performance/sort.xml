@@ -13,6 +13,9 @@
     <create_query>CREATE TABLE rand_100k_10m_64 (key UInt64) Engine = Memory</create_query>
     <create_query>CREATE TABLE rand_unlimited_10m_64 (key UInt64) Engine = Memory</create_query>
 
+    <create_query>CREATE TABLE rand_1k_10m_64_float (key Float64) Engine = Memory</create_query>
+    <create_query>CREATE TABLE rand_100k_10m_64_float (key Float64) Engine = Memory</create_query>
+    <create_query>CREATE TABLE rand_unlimited_10m_64_float (key Float64) Engine = Memory</create_query>
 
     <fill_query>INSERT INTO rand_unlimited_10m_8 SELECT rand() AS x FROM zeros(10000000)</fill_query>
 
@@ -28,6 +31,9 @@
     <fill_query>INSERT INTO rand_100k_10m_64 SELECT rand()%100000 AS x FROM zeros(10000000)</fill_query>
     <fill_query>INSERT INTO rand_unlimited_10m_64 SELECT rand() AS x FROM zeros(10000000)</fill_query>
 
+    <fill_query>INSERT INTO rand_1k_10m_64_float SELECT rand()%1000 AS x FROM zeros(10000000)</fill_query>
+    <fill_query>INSERT INTO rand_100k_10m_64_float SELECT rand()%100000 AS x FROM zeros(10000000)</fill_query>
+    <fill_query>INSERT INTO rand_unlimited_10m_64_float SELECT rand() AS x FROM zeros(10000000)</fill_query>
 
     <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_8 ORDER BY key)</query>
 
@@ -43,6 +49,27 @@
     <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_64 ORDER BY key)</query>
     <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_64 ORDER BY key)</query>
 
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_1k_10m_64_float)</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_64_float)</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_64_float)</query>
+
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_8 ORDER BY key) DESC</query>
+
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_1k_10m_16 ORDER BY key) DESC</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_16 ORDER BY key) DESC</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_16 ORDER BY key) DESC</query>
+
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_1k_10m_32 ORDER BY key) DESC</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_32 ORDER BY key) DESC</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_32 ORDER BY key DESC)</query>
+
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_1k_10m_64 ORDER BY key DESC)</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_64 ORDER BY key DESC)</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_64 ORDER BY key DESC)</query>
+
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_1k_10m_64_float ORDER BY key DESC)</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_64_float ORDER BY key DESC)</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_64_float ORDER BY key DESC)</query>
 
     <drop_query>DROP TABLE IF EXISTS rand_unlimited_10m_8</drop_query>
 
