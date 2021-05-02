@@ -19,7 +19,6 @@
 #include <unordered_map>
 #include <iostream>
 #include <sstream>
-#include <Common/hex.h>
 
 
 using namespace DB;
