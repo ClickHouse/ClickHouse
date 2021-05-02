@@ -20,6 +20,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UInt128.h>
+#include <Common/NaNUtils.h>
 
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
@@ -444,6 +445,46 @@ inline void writeJSONString(const std::string_view & s, WriteBuffer & buf, const
 inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeJSONString(StringRef{s}, buf, settings);
+}
+
+template <typename T>
+void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
+{
+    bool is_finite = isFinite(x);
+
+    const bool need_quote = (is_integer_v<T> && (sizeof(T) >= 8) && settings.json.quote_64bit_integers)
+        || (settings.json.quote_denormals && !is_finite);
+
+    if (need_quote)
+        writeChar('"', ostr);
+
+    if (is_finite)
+        writeText(x, ostr);
+    else if (!settings.json.quote_denormals)
+        writeCString("null", ostr);
+    else
+    {
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (std::signbit(x))
+            {
+                if (isNaN(x))
+                    writeCString("-nan", ostr);
+                else
+                    writeCString("-inf", ostr);
+            }
+            else
+            {
+                if (isNaN(x))
+                    writeCString("nan", ostr);
+                else
+                    writeCString("inf", ostr);
+            }
+        }
+    }
+
+    if (need_quote)
+        writeChar('"', ostr);
 }
 
 

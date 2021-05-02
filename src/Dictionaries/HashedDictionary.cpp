@@ -42,13 +42,13 @@ HashedDictionary<dictionary_key_type, sparse>::HashedDictionary(
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_,
-    BlockPtr previously_loaded_block_)
+    BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)
-    , previously_loaded_block(std::move(previously_loaded_block_))
+    , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();
     loadData();
@@ -343,7 +343,7 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::updateData()
 {
-    if (!previously_loaded_block || previously_loaded_block->rows() == 0)
+    if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
@@ -351,13 +351,13 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
         while (const auto block = stream->read())
         {
             /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!previously_loaded_block)
-                previously_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
+            if (!update_field_loaded_block)
+                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
 
             for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
             {
                 const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
-                MutableColumnPtr saved_column = previously_loaded_block->getByPosition(attribute_idx).column->assumeMutable();
+                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_idx).column->assumeMutable();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
@@ -368,14 +368,14 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
         auto stream = source_ptr->loadUpdatedAll();
         mergeBlockWithStream<dictionary_key_type>(
             dict_struct.getKeysSize(),
-            *previously_loaded_block,
+            *update_field_loaded_block,
             stream);
     }
 
-    if (previously_loaded_block)
+    if (update_field_loaded_block)
     {
-        resize(previously_loaded_block->rows());
-        blockToAttributes(*previously_loaded_block.get());
+        resize(update_field_loaded_block->rows());
+        blockToAttributes(*update_field_loaded_block.get());
     }
 }
 
@@ -586,6 +586,9 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
     }
 
     bytes_allocated += complex_key_arena.size();
+
+    if (update_field_loaded_block)
+        bytes_allocated += update_field_loaded_block->allocatedBytes();
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
