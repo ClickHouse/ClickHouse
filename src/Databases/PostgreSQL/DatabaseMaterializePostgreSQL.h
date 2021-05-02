@@ -51,8 +51,6 @@ public:
 
     void createTable(ContextPtr context, const String & name, const StoragePtr & table, const ASTPtr & query) override;
 
-    void renameTable(ContextPtr context_, const String & name, IDatabase & to_database, const String & to_name, bool exchange, bool dictionary) override;
-
     void drop(ContextPtr local_context) override;
 
     void shutdown() override;

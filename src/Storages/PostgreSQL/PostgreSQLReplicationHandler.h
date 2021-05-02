@@ -79,8 +79,6 @@ private:
 
     PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const std::string & table_name);
 
-    void replaceMaterializedTable(const String & table_name);
-
     Poco::Logger * log;
     ContextPtr context;
 

@@ -6,16 +6,24 @@
 #include <Storages/PostgreSQL/StorageMaterializePostgreSQL.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Common/setThreadName.h>
 #include <DataStreams/copyData.h>
 #include <Poco/File.h>
 
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
 
 namespace DB
 {
 
 static const auto reschedule_ms = 500;
-static const auto TMP_SUFFIX = "_tmp";
 
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
@@ -174,7 +182,8 @@ void PostgreSQLReplicationHandler::startSynchronization()
 }
 
 
-StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name, const String & table_name, StorageMaterializePostgreSQL * materialized_storage)
+StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot_name, const String & table_name,
+                                                          StorageMaterializePostgreSQL * materialized_storage)
 {
     auto tx = std::make_shared<pqxx::ReplicationTransaction>(connection->getRef());
 
@@ -185,16 +194,13 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot
     /// Already connected to needed database, no need to add it to query.
     query_str = fmt::format("SELECT * FROM {}", table_name);
 
-    /// If table schema has changed, the table stops consuming changed from replication stream.
-    /// If `allow_minimal_ddl` is true, create a new table in the background, load new table schema
-    /// and all data from scratch. Then execute REPLACE query with Nested table.
-    /// This is only allowed for MaterializePostgreSQL database engine.
     materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name));
     auto nested_storage = materialized_storage->getNested();
-    auto insert_context = materialized_storage->getNestedTableContext();
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = nested_storage->getStorageID();
+
+    auto insert_context = materialized_storage->getNestedTableContext();
 
     InterpreterInsertQuery interpreter(insert, insert_context);
     auto block_io = interpreter.execute();
@@ -207,6 +213,10 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot
     copyData(input, *block_io.out);
 
     materialized_storage->setNestedStatus(true);
+
+    nested_storage = materialized_storage->getNested();
+    auto nested_table_id = nested_storage->getStorageID();
+    LOG_TRACE(log, "Loaded table {}.{} (uuid: {})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
     return nested_storage;
 }
@@ -405,6 +415,10 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
 
 void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data)
 {
+    /// If table schema has changed, the table stops consuming changes from replication stream.
+    /// If `allow_automatic_update` is true, create a new table in the background, load new table schema
+    /// and all data from scratch. Then execute REPLACE query.
+    /// This is only allowed for MaterializePostgreSQL database engine.
     try
     {
         auto replication_connection = postgres::createReplicationConnection(connection_info);
@@ -415,15 +429,53 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
         for (const auto & [table_id, table_name] : relation_data)
         {
-            auto materialized_storage = DatabaseCatalog::instance().getTable(StorageID(current_database_name, table_name), context);
+            StoragePtr materialized_storage = DatabaseCatalog::instance().getTable(StorageID(current_database_name, table_name), context);
+            auto table_lock = materialized_storage->lockExclusively(String(), context->getSettingsRef().lock_acquire_timeout);
+
             StoragePtr temp_materialized_storage = materialized_storage->as <StorageMaterializePostgreSQL>()->createTemporary();
+
+            auto from_table_id = materialized_storage->as <StorageMaterializePostgreSQL>()->getNestedStorageID();
+            auto to_table_id = temp_materialized_storage->as <StorageMaterializePostgreSQL>()->getNestedStorageID();
+
+            LOG_TRACE(log, "Starting background update of table {}.{}, uuid {} with table {}.{} uuid {}",
+                      from_table_id.database_name, from_table_id.table_name, toString(from_table_id.uuid),
+                      to_table_id.database_name, to_table_id.table_name, toString(to_table_id.uuid));
 
             /// This snapshot is valid up to the end of the transaction, which exported it.
             StoragePtr nested_storage = loadFromSnapshot(snapshot_name, table_name,
                                                          temp_materialized_storage->as <StorageMaterializePostgreSQL>());
-            consumer->updateNested(table_name, nested_storage);
-            consumer->updateSkipList(table_id, start_lsn);
-            replaceMaterializedTable(table_name);
+            auto nested_context = materialized_storage->as <StorageMaterializePostgreSQL>()->getNestedTableContext();
+
+            to_table_id = nested_storage->getStorageID();
+
+            auto ast_rename = std::make_shared<ASTRenameQuery>();
+            ASTRenameQuery::Element elem
+            {
+                ASTRenameQuery::Table{from_table_id.database_name, from_table_id.table_name},
+                ASTRenameQuery::Table{to_table_id.database_name, to_table_id.table_name}
+            };
+            ast_rename->elements.push_back(std::move(elem));
+            ast_rename->exchange = true;
+
+            try
+            {
+                InterpreterRenameQuery(ast_rename, nested_context).execute();
+
+                nested_storage = materialized_storage->as <StorageMaterializePostgreSQL>()->getNested();
+                materialized_storage->setInMemoryMetadata(nested_storage->getInMemoryMetadata());
+
+                auto nested_table_id = nested_storage->getStorageID();
+                LOG_TRACE(log, "Updated table {}.{} ({})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
+
+                consumer->updateNested(table_name, nested_storage);
+                consumer->updateSkipList(table_id, start_lsn);
+
+                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, nested_context, nested_context, to_table_id, true);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
     }
     catch (...)
@@ -432,25 +484,6 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
     }
 }
 
-
-void PostgreSQLReplicationHandler::replaceMaterializedTable(const String & table_name)
-{
-    auto ast_replace = std::make_shared<ASTCreateQuery>();
-
-    auto outdated_storage = materialized_storages[table_name];
-    auto table_id = outdated_storage->getStorageID();
-
-    ast_replace->replace_table = true;
-
-    ast_replace->table = table_id.table_name;
-    ast_replace->database = table_id.database_name;
-
-    ast_replace->as_table = table_id.table_name + TMP_SUFFIX;
-    ast_replace->as_database = table_id.database_name;
-
-    InterpreterCreateQuery interpreter(ast_replace, context);
-    interpreter.execute();
-}
 
 }
 
