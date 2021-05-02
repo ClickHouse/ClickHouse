@@ -53,7 +53,7 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     , replication_settings(std::move(replication_settings_))
     , is_materialize_postgresql_database(
             DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "MaterializePostgreSQL")
-    , nested_table_id(StorageID(table_id_.database_name, getNestedTableName(), table_id_.uuid))
+    , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
 {
     if (table_id_.uuid == UUIDHelpers::Nil)
@@ -303,7 +303,8 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
     auto table_id = getStorageID();
     create_table_query->table = getNestedTableName();
     create_table_query->database = table_id.database_name;
-    create_table_query->uuid = table_id.uuid;
+    if (is_materialize_postgresql_database)
+        create_table_query->uuid = table_id.uuid;
 
     auto columns_declare_list = std::make_shared<ASTColumns>();
     auto columns_expression_list = std::make_shared<ASTExpressionList>();
