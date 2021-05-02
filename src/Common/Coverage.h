@@ -27,7 +27,6 @@ struct StringHash
     using hash_type = std::hash<std::string_view>;
     using is_transparent = void;
 
-    size_t operator()(const char* str) const        { return hash_type{}(str); }
     size_t operator()(std::string_view str) const   { return hash_type{}(str); }
     size_t operator()(std::string const& str) const { return hash_type{}(str); }
 };
@@ -192,6 +191,15 @@ private:
         std::unordered_map<std::string/*full_path*/, std::vector<CacheItem>>,
         thread_pool_symbolizing>;
 
+    /**
+     * Spawn workers symbolizing addresses obtained from PC table to internal local caches.
+     *
+     * Unlike func_caches, addresses symbolization jobs tend to work nonuniformly.
+     * Usually, all but one jobs finish, and the last eats up about 1 extra minute.
+     * The idea is to spawn 2x jobs with same thread pool size, so the chance most threads will be idle is lower.
+     * The drawback here is that all source files locations must be recalculated in each thread, so it will
+     * take some extra time.
+     */
     template <bool is_func_cache, class CacheItem>
     void scheduleSymbolizationJobs(LocalCachesArray<CacheItem>& caches, const Addrs& addrs)
     {
@@ -245,18 +253,16 @@ private:
 
                     if (time_t current = time(nullptr); current > elapsed)
                     {
-                        LOG_DEBUG(log, "Processed {}/{} {}", it - start, size, target_str);
+                        LOG_DEBUG(log, "{}/{}", it - start, size);
                         elapsed = current;
                     }
                 }
             });
     }
 
+    /// Merge symbolized data obtained from multiple threads into global caches.
     template<bool is_func_cache, class CacheItem>
-    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data,
-            Addrs& //to_clear
-            )
-    {
+    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data, Addrs& to_clear) {
         constexpr const std::string_view target_str = is_func_cache
             ? "function"
             : "addrs";
@@ -300,9 +306,8 @@ private:
                 }
             }
 
-        // TODO Uncommend for debug purposes only.
-        //to_clear.clear();
-        //to_clear.shrink_to_fit();
+        to_clear.clear();
+        to_clear.shrink_to_fit();
 
         LOG_INFO(base_log, "Finished merging {} data to caches", target_str);
     }

@@ -107,6 +107,7 @@ void Writer::symbolizeAllInstrumentedAddrs()
     LOG_INFO(base_log, "Symbolized all functions");
 
     LocalCachesArray<AddrSym> addr_caches{};
+
     scheduleSymbolizationJobs<false>(addr_caches, pc_table_addrs);
 
     /// Merge functions data from multiple threads while other threads process addresses.
@@ -222,17 +223,6 @@ void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
                 ++it2->second;
 
             continue;
-        }
-
-        if (auto it = addr_cache.find(addr); it == addr_cache.end())
-        {
-            bool in_addr_init_cache =
-                std::find(pc_table_addrs.begin(), pc_table_addrs.end(), addr) != pc_table_addrs.end();
-
-            LOG_FATAL(test_info.log, "Fault addr {} not present in caches, {} - in addr initial cache", addr,
-                in_addr_init_cache);
-
-            throw std::exception();
         }
 
         const AddrInfo& addr_cache_entry = addr_cache.at(addr);
