@@ -60,7 +60,7 @@ public:
     }
 
     /// Called when class needs to store all instrumented addresses.
-    void initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_end);
+    void initializePCTable(const uintptr_t *pc_array, const uintptr_t *pcs_end);
 
     /// Called when guard variables for all instrumented edges have been initialized.
     inline void initializedGuards(uint32_t count) { edges.reserve(count); }

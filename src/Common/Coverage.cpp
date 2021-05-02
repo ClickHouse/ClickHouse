@@ -71,17 +71,17 @@ Writer::Writer()
     std::filesystem::create_directory(coverage_dir);
 }
 
-void Writer::initializePCTable(const uintptr_t *pcs_beg, const uintptr_t *pcs_end)
+void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pcs_end)
 {
-    const size_t edges_total = pcs_end - pcs_beg; // can't rely on _edges_ as this function may be called earlier.
+    const size_t edges_total = pcs_end - pc_array; // can't rely on _edges_ as this function may be called earlier.
 
     pc_table_addrs.reserve(edges_total);
     pc_table_function_entries.reserve(edges_total);
 
-    for (const auto *it = pcs_beg; it < pcs_end; it += 2)
+    for (size_t i = 0; i < edges_total; i += 2)
     {
-        void * const addr = reinterpret_cast<void *>(*it);
-        const bool is_function_entry = *(it + 1) & 1;
+        void * const addr = reinterpret_cast<void *>(pc_array[i]);
+        const bool is_function_entry = pc_array[i + 1] & 1;
 
         if (is_function_entry)
             pc_table_function_entries.push_back(addr);
@@ -202,6 +202,7 @@ void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
     TestData test_data(source_files_cache.size());
 
     time_t elapsed = time(nullptr);
+    size_t fault_addrs = 0;
 
     for (size_t i = 0; i < addrs.size(); ++i)
     {
@@ -222,6 +223,12 @@ void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
             else
                 ++it2->second;
 
+            continue;
+        }
+
+        if (auto it = addr_cache.find(addr); it == addr_cache.end())
+        {
+            LOG_ERROR(test_info.log, "Fault addr {}, total {}", addr, ++fault_addrs);
             continue;
         }
 
