@@ -128,23 +128,7 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
         if (func && func->arguments->children.size() == 2)
         {
             const auto expected = getExpectedCompare(atom);
-            const auto result = graph.compare(func->arguments->children[0], func->arguments->children[1]);
-            Poco::Logger::get("GRAPH REASON").information("neg: " + std::to_string(atom.negative));
-            Poco::Logger::get("GRAPH REASON").information(atom.ast->dumpTree());
-            Poco::Logger::get("GRAPH REASON").information(std::to_string(static_cast<int>(expected)) + " " + std::to_string(static_cast<int>(result)));
-
-            if (expected == ComparisonGraph::CompareResult::UNKNOWN || result == ComparisonGraph::CompareResult::UNKNOWN)
-                return false;
-
-            if (expected == result)
-                return true;
-            if (result == ComparisonGraph::CompareResult::EQUAL &&
-                (expected == ComparisonGraph::CompareResult::LESS_OR_EQUAL || expected == ComparisonGraph::CompareResult::GREATER_OR_EQUAL))
-                return true;
-            if (result == ComparisonGraph::CompareResult::LESS && expected == ComparisonGraph::CompareResult::LESS_OR_EQUAL)
-                return true;
-            if (result == ComparisonGraph::CompareResult::GREATER && expected == ComparisonGraph::CompareResult::GREATER_OR_EQUAL)
-                return true;
+            return graph.isAlwaysCompare(expected, func->arguments->children[0], func->arguments->children[1]);
         }
     }
     return false;
@@ -177,25 +161,7 @@ bool checkIfAtomAlwaysFalseGraph(const CNFQuery::AtomicFormula & atom, const Com
     {
         /// TODO: special support for !=
         const auto expected = getExpectedCompare(atom);
-        const auto result = graph.compare(func->arguments->children[0], func->arguments->children[1]);
-        Poco::Logger::get("GRAPH REASON F").information("neg: " + std::to_string(atom.negative));
-        Poco::Logger::get("GRAPH REASON F").information(atom.ast->dumpTree());
-        Poco::Logger::get("GRAPH REASON F").information(std::to_string(static_cast<int>(expected)) + " " + std::to_string(static_cast<int>(result)));
-
-        if (expected == ComparisonGraph::CompareResult::UNKNOWN || result == ComparisonGraph::CompareResult::UNKNOWN)
-            return false;
-
-        if (expected == result)
-            return false;
-        else if (result == ComparisonGraph::CompareResult::EQUAL &&
-            (expected == ComparisonGraph::CompareResult::LESS_OR_EQUAL || expected == ComparisonGraph::CompareResult::GREATER_OR_EQUAL))
-            return false;
-        else if (result == ComparisonGraph::CompareResult::LESS && expected == ComparisonGraph::CompareResult::LESS_OR_EQUAL)
-            return false;
-        else if (result == ComparisonGraph::CompareResult::GREATER && expected == ComparisonGraph::CompareResult::GREATER_OR_EQUAL)
-            return false;
-        else
-            return true;
+        return !graph.isPossibleCompare(expected, func->arguments->children[0], func->arguments->children[1]);
     }
 
     return false;

@@ -62,6 +62,7 @@ public:
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
+using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
 
 
 struct IMergeTreeIndex
@@ -75,6 +76,9 @@ struct IMergeTreeIndex
 
     /// gets filename without extension
     String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
+    size_t getGranularity() const { return index.granularity; }
+
+    virtual bool isMergeable() const { return false; }
 
     /// Checks whether the column is in data skipping index.
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;
