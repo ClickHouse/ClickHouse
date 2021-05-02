@@ -154,39 +154,39 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     else
     {
         /// A case for radix sort
-        if constexpr (is_arithmetic_v<T> && !std::is_same_v<T, UInt128>)
-        {
-            /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
-            if (s >= 256 && s <= std::numeric_limits<UInt32>::max())
-            {
-                PaddedPODArray<ValueWithIndex<T>> pairs(s);
-                for (UInt32 i = 0; i < UInt32(s); ++i)
-                    pairs[i] = {data[i], i};
+        // if constexpr (is_arithmetic_v<T> && !std::is_same_v<T, UInt128>)
+        // {
+        //     /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
+        //     if (s >= 256 && s <= std::numeric_limits<UInt32>::max())
+        //     {
+        //         PaddedPODArray<ValueWithIndex<T>> pairs(s);
+        //         for (UInt32 i = 0; i < UInt32(s); ++i)
+        //             pairs[i] = {data[i], i};
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, reverse, res.data());
+        //         RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s, reverse, res.data());
 
-                /// Radix sort treats all NaNs to be greater than all numbers.
-                /// If the user needs the opposite, we must move them accordingly.
-                if (std::is_floating_point_v<T> && nan_direction_hint < 0)
-                {
-                    size_t nans_to_move = 0;
+        //         /// Radix sort treats all NaNs to be greater than all numbers.
+        //         /// If the user needs the opposite, we must move them accordingly.
+        //         if (std::is_floating_point_v<T> && nan_direction_hint < 0)
+        //         {
+        //             size_t nans_to_move = 0;
 
-                    for (size_t i = 0; i < s; ++i)
-                    {
-                        if (isNaN(data[res[reverse ? i : s - 1 - i]]))
-                            ++nans_to_move;
-                        else
-                            break;
-                    }
+        //             for (size_t i = 0; i < s; ++i)
+        //             {
+        //                 if (isNaN(data[res[reverse ? i : s - 1 - i]]))
+        //                     ++nans_to_move;
+        //                 else
+        //                     break;
+        //             }
 
-                    if (nans_to_move)
-                    {
-                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : s - nans_to_move), std::end(res));
-                    }
-                }
-                return;
-            }
-        }
+        //             if (nans_to_move)
+        //             {
+        //                 std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : s - nans_to_move), std::end(res));
+        //             }
+        //         }
+        //         return;
+        //     }
+        // }
 
         /// Default sorting algorithm.
         for (size_t i = 0; i < s; ++i)
