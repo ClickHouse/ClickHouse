@@ -196,7 +196,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 
 void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
 {
-    LOG_INFO(test_info.log, "Started filling internal structures, {} hits", addrs.size());
+    LOG_INFO(test_info.log, "Started filling internal structures, {} addrs", addrs.size());
 
     TestData test_data(source_files_cache.size());
 
@@ -226,7 +226,12 @@ void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
 
         if (auto it = addr_cache.find(addr); it == addr_cache.end())
         {
-            LOG_FATAL(test_info.log, "Fault addr {} not present in caches", addr);
+            bool in_addr_init_cache =
+                std::find(pc_table_addrs.begin(), pc_table_addrs.end(), addr) != pc_table_addrs.end();
+
+            LOG_FATAL(test_info.log, "Fault addr {} not present in caches, {} - in addr initial cache", addr,
+                in_addr_init_cache);
+
             throw std::exception();
         }
 

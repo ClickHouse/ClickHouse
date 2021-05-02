@@ -253,7 +253,9 @@ private:
     }
 
     template<bool is_func_cache, class CacheItem>
-    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data, Addrs& to_clear)
+    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data,
+            Addrs& //to_clear
+            )
     {
         constexpr const std::string_view target_str = is_func_cache
             ? "function"
@@ -298,8 +300,9 @@ private:
                 }
             }
 
-        to_clear.clear();
-        to_clear.shrink_to_fit();
+        // TODO Uncommend for debug purposes only.
+        //to_clear.clear();
+        //to_clear.shrink_to_fit();
 
         LOG_INFO(base_log, "Finished merging {} data to caches", target_str);
     }
