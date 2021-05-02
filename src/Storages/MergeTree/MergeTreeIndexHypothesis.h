@@ -2,12 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-
-#include <Interpreters/SetVariants.h>
-
 #include <memory>
-#include <set>
-
 
 namespace DB
 {
@@ -30,7 +25,7 @@ struct MergeTreeIndexGranuleHypothesis : public IMergeTreeIndexGranule
 
     ~MergeTreeIndexGranuleHypothesis() override = default;
 
-    String index_name;
+    const String & index_name;
     bool is_empty = true;
     bool met = true;
 };
@@ -50,38 +45,12 @@ struct MergeTreeIndexAggregatorHypothesis : IMergeTreeIndexAggregator
     void update(const Block & block, size_t * pos, size_t limit) override;
 
 private:
-    String index_name;
+    const String & index_name;
     String column_name;
 
     bool met = true;
     bool is_empty = true;
 };
-
-
-class MergeTreeIndexConditionHypothesis : public IMergeTreeIndexCondition
-{
-public:
-    MergeTreeIndexConditionHypothesis(
-        const String & index_name_,
-        const String & column_name_,
-        const SelectQueryInfo & query,
-        ContextPtr context);
-
-    bool alwaysUnknownOrTrue() const override { return false; }
-
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
-
-    ~MergeTreeIndexConditionHypothesis() override = default;
-
-private:
-    std::pair<bool, bool> mayBeTrue(const ASTPtr & ast, const bool value) const;
-
-    String index_name;
-
-    String column_name;
-    ASTPtr expression_ast;
-};
-
 
 class MergeTreeIndexHypothesis : public IMergeTreeIndex
 {
@@ -92,6 +61,8 @@ public:
     {}
 
     ~MergeTreeIndexHypothesis() override = default;
+
+    bool isMergeable() const override { return true; }
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;

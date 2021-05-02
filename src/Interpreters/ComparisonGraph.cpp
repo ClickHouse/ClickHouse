@@ -202,6 +202,54 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
     return CompareResult::UNKNOWN;
 }
 
+bool ComparisonGraph::isPossibleCompare(const CompareResult expected, const ASTPtr & left, const ASTPtr & right) const
+{
+    const auto result = compare(left, right);
+
+    if (expected == CompareResult::UNKNOWN || result == CompareResult::UNKNOWN)
+    {
+        Poco::Logger::get("isPossibleCompare").information("unknonw");
+        return true;
+    }
+    if (expected == result)
+        return true;
+
+    static const std::set<std::pair<CompareResult, CompareResult>> possible_pairs = {
+        {CompareResult::EQUAL, CompareResult::LESS_OR_EQUAL},
+        {CompareResult::EQUAL, CompareResult::GREATER_OR_EQUAL},
+        {CompareResult::LESS_OR_EQUAL, CompareResult::LESS},
+        {CompareResult::LESS_OR_EQUAL, CompareResult::EQUAL},
+        {CompareResult::GREATER_OR_EQUAL, CompareResult::GREATER},
+        {CompareResult::GREATER_OR_EQUAL, CompareResult::EQUAL},
+        {CompareResult::LESS, CompareResult::LESS},
+        {CompareResult::LESS, CompareResult::LESS_OR_EQUAL},
+        {CompareResult::GREATER, CompareResult::GREATER},
+        {CompareResult::GREATER, CompareResult::GREATER_OR_EQUAL},
+    };
+
+    return possible_pairs.contains({expected, result});
+}
+
+bool ComparisonGraph::isAlwaysCompare(const CompareResult expected, const ASTPtr & left, const ASTPtr & right) const
+{
+    const auto result = compare(left, right);
+
+    if (expected == CompareResult::UNKNOWN || result == CompareResult::UNKNOWN)
+        return false;
+    if (expected == result)
+        return true;
+
+    static const std::set<std::pair<CompareResult, CompareResult>> possible_pairs = {
+        {CompareResult::LESS_OR_EQUAL, CompareResult::LESS},
+        {CompareResult::LESS_OR_EQUAL, CompareResult::EQUAL},
+        {CompareResult::GREATER_OR_EQUAL, CompareResult::GREATER},
+        {CompareResult::GREATER_OR_EQUAL, CompareResult::EQUAL},
+    };
+
+    return possible_pairs.contains({expected, result});
+}
+
+
 std::vector<ASTPtr> ComparisonGraph::getEqual(const ASTPtr & ast) const
 {
     const auto res = getComponentId(ast);

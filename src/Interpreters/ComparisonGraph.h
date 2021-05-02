@@ -18,8 +18,6 @@ class ComparisonGraph
 public:
     ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas);
 
-    /// Works for string and num.
-    /// For other -- only eq.
     enum class CompareResult
     {
         LESS,
@@ -31,6 +29,12 @@ public:
     };
 
     CompareResult compare(const ASTPtr & left, const ASTPtr & right) const;
+
+    /// It's possible that left <expected> right
+    bool isPossibleCompare(const CompareResult expected, const ASTPtr & left, const ASTPtr & right) const;
+
+    /// It's always true that left <expected> right
+    bool isAlwaysCompare(const CompareResult expected, const ASTPtr & left, const ASTPtr & right) const;
 
     std::vector<ASTPtr> getEqual(const ASTPtr & ast) const;
     std::optional<ASTPtr> getEqualConst(const ASTPtr & ast) const;

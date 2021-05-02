@@ -70,66 +70,6 @@ void MergeTreeIndexAggregatorHypothesis::update(const Block & block, size_t * po
     *pos += rows_read;
 }
 
-MergeTreeIndexConditionHypothesis::MergeTreeIndexConditionHypothesis(
-    const String & index_name_,
-    const String & column_name_,
-    const SelectQueryInfo & query_,
-    ContextPtr)
-    : index_name(index_name_)
-    , column_name(column_name_)
-{
-    const auto & select = query_.query->as<ASTSelectQuery &>();
-
-    if (select.where() && select.prewhere())
-        expression_ast = makeASTFunction(
-            "and",
-            select.where()->clone(),
-            select.prewhere()->clone());
-    else if (select.where())
-        expression_ast = select.where()->clone();
-    else if (select.prewhere())
-        expression_ast = select.prewhere()->clone();
-}
-
-std::pair<bool, bool> MergeTreeIndexConditionHypothesis::mayBeTrue(const ASTPtr & ast, const bool value) const
-{
-    if (ast->getColumnName() == column_name)
-        return {value, !value};
-
-    auto * func = ast->as<ASTFunction>();
-    if (!func)
-        return {true, true};
-    auto & args = func->arguments->children;
-    if (func->name == "not")
-    {
-        const auto res = mayBeTrue(args[0], value);
-        return {res.second, res.first};
-    }
-    /*else if (func->name == "or")
-    {
-
-    }
-    else if (func->name == "and")
-    {
-
-    }*/
-    else
-    {
-        return {true, true};
-    }
-}
-
-bool MergeTreeIndexConditionHypothesis::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
-{
-    if (idx_granule->empty())
-        return true;
-    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleHypothesis>(idx_granule);
-    if (!granule)
-        throw Exception(
-            "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
-    return mayBeTrue(expression_ast, granule->met).first;
-}
-
 MergeTreeIndexGranulePtr MergeTreeIndexHypothesis::createIndexGranule() const
 {
     return std::make_shared<MergeTreeIndexGranuleHypothesis>(index.name);
@@ -141,9 +81,9 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator() co
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
-    const SelectQueryInfo & query, ContextPtr context) const
+    const SelectQueryInfo &, ContextPtr) const
 {
-    return std::make_shared<MergeTreeIndexConditionHypothesis>(index.name, index.sample_block.getNames().front(), query, context);
+    return nullptr;
 }
 
 bool MergeTreeIndexHypothesis::mayBenefitFromIndexForIn(const ASTPtr &) const
@@ -156,8 +96,10 @@ MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index)
     return std::make_shared<MergeTreeIndexHypothesis>(index);
 }
 
-void hypothesisIndexValidator(const IndexDescription &, bool /*attach*/)
+void hypothesisIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
+    if (index.expression_list_ast->children.size() != 1)
+        throw Exception("Hypothesis index needs exactly one expression", ErrorCodes::LOGICAL_ERROR);
 }
 
 

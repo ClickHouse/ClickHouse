@@ -81,7 +81,7 @@ public:
     }
 
     template <typename F>
-    CNFQuery & iterateGroups(F func)
+    const CNFQuery & iterateGroups(F func) const
     {
         for (const auto & group : statements)
             func(group);
