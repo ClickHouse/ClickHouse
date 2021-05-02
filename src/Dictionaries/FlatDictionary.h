@@ -39,7 +39,7 @@ public:
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         Configuration configuration_,
-        BlockPtr previously_loaded_block_ = nullptr);
+        BlockPtr update_field_loaded_block_ = nullptr);
 
     std::string getTypeName() const override { return "Flat"; }
 
@@ -55,7 +55,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, previously_loaded_block);
+        return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, update_field_loaded_block);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -184,7 +184,7 @@ private:
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
 
-    BlockPtr previously_loaded_block;
+    BlockPtr update_field_loaded_block;
 };
 
 }
