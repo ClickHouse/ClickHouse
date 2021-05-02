@@ -1643,22 +1643,22 @@ typedef setseq_base<pcg128_t, pcg128_t, xsl_rr_rr_mixin>
 
 template <bitcount_t table_pow2, bitcount_t advance_pow2,
           typename BaseRNG, bool kdd = true>
-using ext_std8 = extended<table_pow2, advance_pow2, BaseRNG,
+using ext_std8 = pcg_detail::extended<table_pow2, advance_pow2, BaseRNG,
                           oneseq_rxs_m_xs_8_8, kdd>;
 
 template <bitcount_t table_pow2, bitcount_t advance_pow2,
           typename BaseRNG, bool kdd = true>
-using ext_std16 = extended<table_pow2, advance_pow2, BaseRNG,
+using ext_std16 = pcg_detail::extended<table_pow2, advance_pow2, BaseRNG,
                            oneseq_rxs_m_xs_16_16, kdd>;
 
 template <bitcount_t table_pow2, bitcount_t advance_pow2,
           typename BaseRNG, bool kdd = true>
-using ext_std32 = extended<table_pow2, advance_pow2, BaseRNG,
+using ext_std32 = pcg_detail::extended<table_pow2, advance_pow2, BaseRNG,
                            oneseq_rxs_m_xs_32_32, kdd>;
 
 template <bitcount_t table_pow2, bitcount_t advance_pow2,
           typename BaseRNG, bool kdd = true>
-using ext_std64 = extended<table_pow2, advance_pow2, BaseRNG,
+using ext_std64 = pcg_detail::extended<table_pow2, advance_pow2, BaseRNG,
                            oneseq_rxs_m_xs_64_64, kdd>;
 
 

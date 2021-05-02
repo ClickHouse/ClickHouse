@@ -296,9 +296,18 @@ public:
 
     void writeSuffix() override
     {
-        writer->writeSuffix();
-        writer->flush();
-        write_buf->finalize();
+        try
+        {
+            writer->writeSuffix();
+            writer->flush();
+            write_buf->finalize();
+        }
+        catch (...)
+        {
+            /// Stop ParallelFormattingOutputFormat correctly.
+            writer.reset();
+            throw;
+        }
     }
 
 private:
