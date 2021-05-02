@@ -308,7 +308,7 @@ bool inline isSameDiskType(const IDisk & one, const IDisk & another)
 void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     if (isSameDiskType(*this, *to_disk))
-        fs::copy_file(disk_path / from_path, to_disk->getPath() + to_path);
+        Poco::File(disk_path / from_path).copyTo(to_disk->getPath() + to_path); /// Use more optimal way.
     else
         IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
