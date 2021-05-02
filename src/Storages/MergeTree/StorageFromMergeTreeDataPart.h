@@ -31,19 +31,23 @@ public:
         size_t max_block_size,
         unsigned num_streams) override
     {
+        // NOTE: It's used to read normal parts only
         QueryPlan query_plan = std::move(*MergeTreeDataSelectExecutor(parts.front()->storage)
                                               .readFromParts(
                                                   parts,
                                                   column_names,
+                                                  metadata_snapshot,
                                                   metadata_snapshot,
                                                   query_info,
                                                   context,
                                                   max_block_size,
                                                   num_streams,
                                                   nullptr,
-                                                  &num_granules_from_last_read));
+                                                  query_info.projection ? query_info.projection->merge_tree_data_select_base_cache.get()
+                                                                        : query_info.merge_tree_data_select_cache.get()));
 
-        return query_plan.convertToPipe(QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
+        return query_plan.convertToPipe(
+            QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
     }
 
 
@@ -70,8 +74,6 @@ public:
         return parts.front()->storage.getPartitionIDFromQuery(ast, context);
     }
 
-    size_t getNumGranulesFromLastRead() const { return num_granules_from_last_read; }
-
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(getIDFromPart(part_))
@@ -89,8 +91,6 @@ protected:
 
 private:
     MergeTreeData::DataPartsVector parts;
-
-    size_t num_granules_from_last_read = 0;
 
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {

@@ -116,6 +116,10 @@ struct InputOrderInfo
 
 class IMergeTreeDataPart;
 
+using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
+
+struct MergeTreeDataSelectCache;
+
 // The projection selected to execute current query
 struct ProjectionCandidate
 {
@@ -126,6 +130,12 @@ struct ProjectionCandidate
     Names required_columns;
     NamesAndTypesList aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
+    bool complete = false;
+    ReadInOrderOptimizerPtr order_optimizer;
+    InputOrderInfoPtr input_order_info;
+    ManyExpressionActions group_by_elements_actions;
+    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_base_cache;
+    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_projection_cache;
 };
 
 /** Query along with some additional data,
@@ -159,9 +169,12 @@ struct SelectQueryInfo
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
+    Names required_columns;
+
     /// If not null, it means we choose a projection to execute current query.
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
+    std::shared_ptr<MergeTreeDataSelectCache> merge_tree_data_select_cache;
 };
 
 }
