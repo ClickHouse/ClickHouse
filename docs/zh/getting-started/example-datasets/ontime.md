@@ -149,7 +149,7 @@ CREATE TABLE `ontime`
 加载数据：
 
 ``` bash
-$ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | sed 's/.$//' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
+ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | sed 's/\.00//g' | clickhouse-client --input_format_with_names_use_header=0 --query='INSERT INTO ontime FORMAT CSVWithNames'"
 ```
 
 ## 下载预处理好的分区数据 {#xia-zai-yu-chu-li-hao-de-fen-qu-shu-ju}
