@@ -76,13 +76,13 @@ private:
     llvm::TargetMachine & target_machine;
 };
 
-class JITModuleMemoryManager : public llvm::SectionMemoryManager
+class JITModuleMemoryManager
 {
     class DefaultMMapper final : public llvm::SectionMemoryManager::MemoryMapper
     {
     public:
         llvm::sys::MemoryBlock allocateMappedMemory(
-            SectionMemoryManager::AllocationPurpose Purpose [[maybe_unused]],
+            llvm::SectionMemoryManager::AllocationPurpose Purpose [[maybe_unused]],
             size_t NumBytes,
             const llvm::sys::MemoryBlock * const NearBlock,
             unsigned Flags,
@@ -104,14 +104,15 @@ class JITModuleMemoryManager : public llvm::SectionMemoryManager
     };
 
 public:
-    JITModuleMemoryManager() : llvm::SectionMemoryManager(&mmaper) { }
+    JITModuleMemoryManager() : manager(&mmaper) { }
 
     inline size_t getAllocatedSize() const { return mmaper.allocated_size; }
 
-    ~JITModuleMemoryManager() override = default;
+    inline llvm::SectionMemoryManager & getManager() { return manager; }
 
 private:
     DefaultMMapper mmaper;
+    llvm::SectionMemoryManager manager;
 };
 
 class JITSymbolResolver : public llvm::LegacyJITSymbolResolver
@@ -180,7 +181,7 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
     }
 
     std::unique_ptr<JITModuleMemoryManager> module_memory_manager = std::make_unique<JITModuleMemoryManager>();
-    llvm::RuntimeDyld dynamic_linker = {*module_memory_manager, *symbol_resolver};
+    llvm::RuntimeDyld dynamic_linker = {module_memory_manager->getManager(), *symbol_resolver};
 
     std::unique_ptr<llvm::RuntimeDyld::LoadedObjectInfo> linked_object = dynamic_linker.loadObject(*object.get());
 
@@ -188,7 +189,7 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "RuntimeDyld error {}", std::string(dynamic_linker.getErrorString()));
 
     dynamic_linker.resolveRelocations();
-    module_memory_manager->finalizeMemory();
+    module_memory_manager->getManager().finalizeMemory();
 
     CompiledModuleInfo module_info;
 
