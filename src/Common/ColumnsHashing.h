@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/ColumnsHashingImpl.h>
@@ -15,6 +14,8 @@
 
 #include <Core/Defines.h>
 #include <memory>
+#include <cassert>
+
 
 namespace DB
 {
@@ -594,8 +595,11 @@ struct HashMethodKeysFixed
                 return prepared_keys[row];
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
-            if constexpr (!has_low_cardinality && !has_nullable_keys && sizeof(Key) <= 16)
+            if constexpr (sizeof(Key) <= 16)
+            {
+                assert(!has_low_cardinality && !has_nullable_keys);
                 return packFixedShuffle<Key>(columns_data.get(), keys_size, key_sizes.data(), row, masks.get());
+            }
 #endif
             return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
         }

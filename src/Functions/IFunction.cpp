@@ -137,7 +137,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & a
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
-            if (!result_null_map_column)
+            if (!result_null_map_column) //-V1051
             {
                 result_null_map_column = null_map_column;
             }
