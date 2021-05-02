@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <Poco/Logger.h>
 
+#include "common/logger_useful.h"
 #include <common/types.h>
 
 #include <Common/SymbolIndex.h>
@@ -96,7 +97,10 @@ private:
     static constexpr const std::string_view coverage_dir_relative_path = "../../coverage";
 
     /// How many tests are converted to LCOV in parallel.
-    static constexpr const size_t thread_pool_size = 8;
+    static constexpr const size_t thread_pool_test_processing = 10;
+
+    /// How may threads concurrently symbolize the addresses on binary startup.
+    static constexpr const size_t thread_pool_symbolizing = 16;
 
     /// How many addresses do we dump into local storage before acquiring the edges_mutex and pushing into edges.
     static constexpr const size_t hits_batch_array_size = 100000;
@@ -145,10 +149,6 @@ private:
 
     void dumpAndChangeTestName(std::string_view test_name);
 
-    /// Fills addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
-    /// Clears pc_table_addrs, pc_table_function_entries.
-    void symbolizeAllInstrumentedAddrs();
-
     struct TestInfo
     {
         std::string_view name;
@@ -157,5 +157,90 @@ private:
 
     void prepareDataAndDump(TestInfo test_info, const Addrs& addrs);
     void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);
+
+    /// Fills addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
+    /// Clears pc_table_addrs, pc_table_function_entries.
+    void symbolizeAllInstrumentedAddrs();
+
+    struct FuncAddrTriple
+    {
+        size_t line;
+        void * addr;
+        std::string_view name;
+
+        FuncAddrTriple(size_t line_, void * addr_, std::string_view name_): line(line_), addr(addr_), name(name_) {}
+    };
+
+    struct AddrPair
+    {
+        size_t line;
+        void * addr;
+
+        AddrPair(size_t line_, void * addr_): line(line_), addr(addr_) {}
+    };
+
+    using FuncLocalCache = std::unordered_map<std::string /*source file path*/, std::vector<FuncAddrTriple>>;
+    using AddrLocalCache = std::unordered_map<std::string, std::vector<AddrPair>>;
+
+    template <class Cache> using CachesArr = std::array<Cache, thread_pool_symbolizing>;
+
+    void mergeFunctionDataToCaches(const CachesArr<FuncLocalCache>& data);
+    void mergeAddressDataToCaches(const CachesArr<AddrLocalCache>& data);
+
+    template <class Cache, bool is_func_cache>
+    void scheduleSymbolizationJobs(const CachesArr<Cache>& caches, const Addrs& addrs)
+    {
+        constexpr auto pool_size = thread_pool_symbolizing;
+        const size_t step = addrs.size() / pool_size;
+
+        auto begin = addrs.cbegin();
+        auto r_end = addrs.cend();
+
+        for (size_t thread_index = 0; thread_index < pool_size; ++thread_index)
+            pool.scheduleOrThrowOnError([&] // =, this won't do what expected, so copy everth by ref.
+            {
+                const auto start = begin + thread_index * step;
+                const auto end = thread_index == pool_size - 1
+                    ? r_end
+                    : start + step;
+
+                const Poco::Logger * const log = &Poco::Logger::get(
+                    fmt::format("{}.func{}", logger_base_name, thread_index));
+
+                const size_t size = end - start;
+
+                auto& cache = caches[thread_index];
+
+                time_t elapsed = time(nullptr);
+
+                for (auto it = start; it != end; ++it)
+                {
+                    Addr addr = *it;
+
+                    const SourceLocation source = getSourceLocation(addr);
+
+                    if constexpr (is_func_cache)
+                    {
+                        if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
+                            cache_it->second.emplace_back(source.line, addr, symbolize(addr));
+                        else
+                            cache[source.full_path] = {{source.line, addr, symbolize(addr)}};
+                    }
+                    else
+                    {
+                        if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
+                            cache_it->second.emplace_back(source.line, addr);
+                        else
+                            cache[source.full_path] = {{source.line, addr}};
+                    }
+
+                    if (time_t current = time(nullptr); current > elapsed)
+                    {
+                        LOG_INFO(log, "Processed {}/{} functions", it - start, size);
+                        elapsed = current;
+                    }
+                }
+            });
+    }
 };
 }

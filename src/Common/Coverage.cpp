@@ -15,10 +15,8 @@
 #include <fmt/ostream.h>
 
 #include "Common/ProfileEvents.h"
-#include "common/logger_useful.h"
 
 #include <Interpreters/Context.h>
-#include <Poco/Logger.h>
 
 namespace detail
 {
@@ -52,7 +50,7 @@ Writer::Writer()
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
       // 0 -- unlimited queue e.g. functor insertion to thread pool won't lock.
-      pool(Writer::thread_pool_size, 1000, 0)
+      pool(Writer::thread_pool_test_processing, 1000, 0)
 {
     Context::setSettingHook("coverage_test_name", [this](const Field& value)
     {
@@ -101,118 +99,23 @@ void Writer::symbolizeAllInstrumentedAddrs()
 {
     LOG_INFO(base_log, "Started symbolizing addresses");
 
-    struct FuncAddrTriple
-    {
-        size_t line;
-        void * addr;
-        std::string_view name;
+    pool.setMaxThreads(thread_pool_symbolizing);
 
-        FuncAddrTriple(size_t line_, void * addr_, std::string_view name_): line(line_), addr(addr_), name(name_) {}
-    };
-
-    struct AddrPair
-    {
-        size_t line;
-        void * addr;
-
-        AddrPair(size_t line_, void * addr_): line(line_), addr(addr_) {}
-    };
-
-    constexpr size_t func_threads = 5;
-    constexpr size_t addr_threads = 12;
-    pool.setMaxThreads(func_threads + addr_threads);
-
-    using FuncLocalCache = std::unordered_map<std::string /*source file path*/, std::vector<FuncAddrTriple>>;
-    FuncLocalCache func_caches[func_threads];
-
-    const size_t func_step = pc_table_function_entries.size() / func_threads;
-    auto func_begin = pc_table_function_entries.begin();
-    auto func_end = pc_table_function_entries.end();
-
-    using AddrLocalCache = std::unordered_map<std::string, std::vector<AddrPair>>;
-    AddrLocalCache addr_caches[addr_threads];
-
-    const size_t addr_step = pc_table_addrs.size() / addr_threads;
-    auto addr_begin = pc_table_addrs.begin();
-    auto addr_end = pc_table_addrs.end();
-
-    for (size_t thread_index = 0; thread_index < func_threads; ++thread_index)
-        pool.scheduleOrThrowOnError([this, &func_caches, func_begin, func_step, thread_index, func_end]
-        {
-            const auto start = std::next(func_begin, thread_index * func_step);
-            const auto end = thread_index == func_threads - 1
-                ? func_end
-                : std::next(start, func_step);
-
-            const Poco::Logger * const log = &Poco::Logger::get(
-                fmt::format("{}.func{}", logger_base_name, thread_index));
-
-            const size_t size = end - start;
-
-            FuncLocalCache& cache = func_caches[thread_index];
-
-            time_t elapsed = time(nullptr);
-
-            for (auto it = start; it != end; ++it)
-            {
-                Addr addr = *it;
-
-                const SourceLocation source = getSourceLocation(addr);
-
-                if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
-                    cache_it->second.emplace_back(source.line, addr, symbolize(addr));
-                else
-                    cache[source.full_path] = {{source.line, addr, symbolize(addr)}};
-
-                if (time_t current = time(nullptr); current > elapsed)
-                {
-                    LOG_INFO(log, "Processed {}/{} functions", it - start, size);
-                    elapsed = current;
-                }
-            }
-        });
-
-    for (size_t thread_index = 0; thread_index < addr_threads; ++thread_index)
-        pool.scheduleOrThrowOnError([this, &addr_caches, addr_begin, addr_step, thread_index, addr_end]
-        {
-            const auto start = std::next(addr_begin, thread_index * addr_step);
-            const auto end = thread_index == addr_threads - 1
-                ? addr_end
-                : std::next(start, addr_step);
-
-            const Poco::Logger * const log = &Poco::Logger::get(
-                fmt::format("{}.addr{}", logger_base_name, thread_index));
-
-            const size_t size = end - start;
-
-            AddrLocalCache& cache = addr_caches[thread_index];
-
-            time_t elapsed = time(nullptr);
-
-            for (auto it = start; it != end; ++it)
-            {
-                Addr addr = *it;
-
-                const SourceLocation source = getSourceLocation(addr);
-
-                if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
-                    cache_it->second.emplace_back(source.line, addr);
-                else
-                    cache[source.full_path] = {{source.line, addr}};
-
-                if (time_t current = time(nullptr); current > elapsed)
-                {
-                    LOG_INFO(log, "Processed {}/{} addresses", it - start, size);
-                    elapsed = current;
-                }
-            }
-        });
+    CachesArr<FuncLocalCache> func_caches;
+    scheduleSymbolizationJobs<FuncLocalCache, true>(func_caches, pc_table_function_entries);
 
     pool.wait();
 
-    /// Merge data from multiple threads.
+    CachesArr<AddrLocalCache> addr_caches;
+    scheduleSymbolizationJobs<AddrLocalCache, false>(addr_caches, pc_table_addrs);
 
-    pool.setMaxThreads(thread_pool_size);
+    /// Merge functions data from multiple threads while other threads process addresses.
+    mergeFunctionDataToCaches(func_caches);
+
+    pool.wait();
+    mergeAddressDataToCaches(addr_caches);
+
+    pool.setMaxThreads(thread_pool_test_processing);
 
     pc_table_function_entries.clear();
     pc_table_function_entries.shrink_to_fit();
@@ -220,6 +123,16 @@ void Writer::symbolizeAllInstrumentedAddrs()
     pc_table_addrs.shrink_to_fit();
 
     LOG_INFO(base_log, "Symbolized all addresses");
+}
+
+void Writer::mergeFunctionDataToCaches(const Writer::CachesArr<Writer::FuncLocalCache>& data)
+{
+
+}
+
+void Writer::mergeAddressDataToCaches(const Writer::CachesArr<Writer::AddrLocalCache>& data)
+{
+
 }
 
 void Writer::hit(void * addr)
@@ -373,7 +286,7 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
      *
      *     for each instrumented line:
      *         // note -- there's third parameter "line contents", but looks like it's useless
-    *         DA:<line number>,<execution count>
+     *         DA:<line number>,<execution count>
      *
      *     LF:<number of lines instrumented (found)>
      *     LH:<number of lines executed (hit)>
