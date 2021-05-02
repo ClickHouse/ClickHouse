@@ -42,9 +42,19 @@ struct DecomposedFloat
 
     typename Traits::UInt x_uint;
 
-    bool sign() const
+    bool is_negative() const
     {
         return x_uint >> (Traits::bits - 1);
+    }
+
+    /// Returns 0 for both +0. and -0.
+    int sign() const
+    {
+        return (exponent() == 0 && mantissa() == 0)
+            ? 0
+            : (is_negative()
+                ? -1
+                : 1);
     }
 
     uint16_t exponent() const
@@ -64,7 +74,7 @@ struct DecomposedFloat
 
     int64_t mantissa_with_sign() const
     {
-        return sign() ? -mantissa() : mantissa();
+        return is_negative() ? -mantissa() : mantissa();
     }
 
     /// NOTE Probably floating point instructions can be better.
@@ -80,117 +90,115 @@ struct DecomposedFloat
 
 
     template <typename Int>
-    bool equals(Int rhs)
+    int compare(Int rhs)
     {
+        if (rhs == 0)
+            return sign();
+
         /// Different signs
-        if ((rhs < 0) != sign())
-            return false;
+        if (is_negative() && rhs > 0)
+            return -1;
+        if (!is_negative() && rhs < 0)
+            return 1;
 
-        if (rhs == 0 && x_uint == 0)
-            return true;
-
-        /// Fractional number
+        /// Fractional number with magnitude less than one
         if (normalized_exponent() < 0)
-            return false;
+        {
+            if (!is_negative())
+                return rhs > 0 ? -1 : 1;
+            else
+                return rhs >= 0 ? -1 : 1;
+        }
 
-        /// Too large number
-        if (normalized_exponent() >= static_cast<int16_t>(8 * sizeof(Int) + is_signed_v<Int>))
-            return false;
+        /// Too large number: abs(float) > abs(rhs)
+        if (normalized_exponent() >= static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
+        {
+            /// The case of most negative integer - it can be equal to float
+            if constexpr (is_signed_v<Int>)
+            {
+                if (rhs == std::numeric_limits<Int>::lowest()
+                    && normalized_exponent() == static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>)
+                    && is_negative()
+                    && mantissa() == 0)
+                {
+                    return 0;
+                }
+            }
+
+            return is_negative() ? -1 : 1;
+        }
 
         using UInt = make_unsigned_t<Int>;
         UInt uint_rhs = rhs < 0 ? -rhs : rhs;
 
-        /// Smaller octave
+        /// Smaller octave: abs(rhs) < abs(float)
         if (uint_rhs < (static_cast<UInt>(1) << normalized_exponent()))
-            return false;
+            return is_negative() ? -1 : 1;
 
-        /// Larger octave
-        if (normalized_exponent() + 1 < static_cast<int16_t>(8 * sizeof(Int) + is_signed_v<Int>)
+        /// Larger octave: abs(rhs) > abs(float)
+        if (normalized_exponent() + 1 < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>)
             && uint_rhs >= (static_cast<UInt>(1) << (normalized_exponent() + 1)))
-            return false;
+            return is_negative() ? 1 : -1;
 
         /// The same octave
         /// uint_rhs == 2 ^ normalized_exponent + mantissa * 2 ^ (normalized_exponent - mantissa_bits)
 
-        /// After multiplying by 2^exp, the fractional part becomes zero, means the number is integer
-        if ((mantissa() & ((1ULL << (Traits::mantissa_bits - normalized_exponent())) - 1)) != 0)
-            return false;
+        bool large_and_always_integer = normalized_exponent() >= static_cast<int16_t>(Traits::mantissa_bits);
 
-        /// uint_rhs - 2 ^ normalized_exponent == mantissa * 2 ^ (normalized_exponent - mantissa_bits)
-        return uint_rhs - (static_cast<UInt>(1) << normalized_exponent()) == (mantissa() >> (Traits::mantissa_bits - normalized_exponent()));
+        typename Traits::UInt a = large_and_always_integer
+            ? mantissa() << (normalized_exponent() - Traits::mantissa_bits)
+            : mantissa() >> (Traits::mantissa_bits - normalized_exponent());
+
+        typename Traits::UInt b = uint_rhs - (static_cast<UInt>(1) << normalized_exponent());
+
+        if (a < b)
+            return is_negative() ? 1 : -1;
+        if (a > b)
+            return is_negative() ? -1 : 1;
+
+        /// Float has no fractional part means that the numbers are equal.
+        if (large_and_always_integer || (mantissa() & ((1ULL << (Traits::mantissa_bits - normalized_exponent())) - 1)) == 0)
+            return 0;
+        else
+            /// Float has fractional part means its abs value is larger.
+            return is_negative() ? -1 : 1;
     }
 
+
+    template <typename Int>
+    bool equals(Int rhs)
+    {
+        return compare(rhs) == 0;
+    }
+
+    template <typename Int>
+    bool notEquals(Int rhs)
+    {
+        return compare(rhs) != 0;
+    }
 
     template <typename Int>
     bool less(Int rhs)
     {
-        /// Different signs
-        if (sign() && rhs >= 0)
-            return true;
-        if (!sign() && rhs < 0)
-            return false;
-        if (rhs == 0)
-            return sign();
-
-        /// Fractional number
-        if (normalized_exponent() < 0)
-        {
-            if (!sign())
-                return rhs > 0;
-            else
-                return rhs >= 0;
-        }
-
-        /// Too large number
-        if (normalized_exponent() >= static_cast<int16_t>(8 * sizeof(Int) + is_signed_v<Int>))
-            return sign();
-
-        using UInt = make_unsigned_t<Int>;
-        UInt uint_rhs = rhs < 0 ? -rhs : rhs;
-
-        /// Smaller octave
-        if (uint_rhs < (static_cast<UInt>(1) << normalized_exponent()))
-            return !sign();
-
-        /// Larger octave
-        if (normalized_exponent() + 1 < static_cast<int16_t>(8 * sizeof(Int) + is_signed_v<Int>)
-            && uint_rhs >= (static_cast<UInt>(1) << (normalized_exponent() + 1)))
-            return sign();
-
-        /// The same octave
-        /// uint_rhs == 2 ^ normalized_exponent + mantissa * 2 ^ (normalized_exponent - mantissa_bits)
-
-        typename Traits::UInt a = mantissa() >> (Traits::mantissa_bits - normalized_exponent());
-        typename Traits::UInt b = uint_rhs - (static_cast<UInt>(1) << normalized_exponent());
-
-        if (a < b)
-            return !sign();
-        if (a > b)
-            return sign();
-
-        if ((mantissa() & ((1ULL << (Traits::mantissa_bits - normalized_exponent())) - 1)) == 0)
-            return !sign();
-        else
-            return sign();
-    }
-
-
-    template <typename Int>
-    bool greaterOrEquals(Int rhs)
-    {
-        return !less(rhs);
-    }
-
-    template <typename Int>
-    bool lessOrEquals(Int rhs)
-    {
-        return less(rhs) || equals(rhs);
+        return compare(rhs) < 0;
     }
 
     template <typename Int>
     bool greater(Int rhs)
     {
-        return !lessOrEquals(rhs);
+        return compare(rhs) > 0;
+    }
+
+    template <typename Int>
+    bool lessOrEquals(Int rhs)
+    {
+        return compare(rhs) <= 0;
+    }
+
+    template <typename Int>
+    bool greaterOrEquals(Int rhs)
+    {
+        return compare(rhs) >= 0;
     }
 };
 
