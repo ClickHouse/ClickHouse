@@ -117,6 +117,8 @@ private:
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
+    void addPrewhereAliasActions();
+
     Block getSampleBlockImpl();
 
     void executeImpl(QueryPlan & query_plan, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe);
@@ -182,6 +184,9 @@ private:
     Names required_columns;
     /// Structure of query source (table, subquery, etc).
     Block source_header;
+
+    /// Actions to calculate ALIAS if required.
+    ActionsDAGPtr alias_actions;
 
     /// The subquery interpreter, if the subquery
     std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;

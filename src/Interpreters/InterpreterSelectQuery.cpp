@@ -477,6 +477,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 }
             }
 
+            addPrewhereAliasActions();
+
+            query_info.syntax_analyzer_result = syntax_analyzer_result;
+            query_info.required_columns = required_columns;
+
             source_header = metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID());
         }
 
@@ -589,6 +594,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     {
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info);
 
+        /// TODO how can we make IN index work if we cache parts before selecting a projection?
         /// XXX Used for IN set index analysis. Is this a proper way?
         if (query_info.projection)
             metadata_snapshot->selected_projection = query_info.projection->desc;
@@ -1043,7 +1049,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 && !expressions.has_window)
             {
                 if (expressions.has_order_by)
-                    executeOrder(query_plan, query_info.input_order_info);
+                    executeOrder(
+                        query_plan,
+                        query_info.input_order_info ? query_info.input_order_info
+                                                    : (query_info.projection ? query_info.projection->input_order_info : nullptr));
 
                 if (expressions.has_order_by && query.limitLength())
                     executeDistinct(query_plan, false, expressions.selected_columns, true);
@@ -1169,9 +1178,24 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
             if (expressions.need_aggregate)
             {
-                executeAggregation(query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
-                /// We need to reset input order info, so that executeOrder can't use  it
-                query_info.input_order_info.reset();
+                if (query_info.projection)
+                {
+                    executeAggregation(
+                        query_plan,
+                        expressions.before_aggregation,
+                        aggregate_overflow_row,
+                        aggregate_final,
+                        query_info.projection->input_order_info);
+                    /// We need to reset input order info, so that executeOrder can't use  it
+                    query_info.projection->input_order_info.reset();
+                }
+                else
+                {
+                    executeAggregation(
+                        query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);
+                    /// We need to reset input order info, so that executeOrder can't use  it
+                    query_info.input_order_info.reset();
+                }
             }
 
             // Now we must execute:
@@ -1301,7 +1325,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
                 else if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(query_plan, "for ORDER BY");
                 else    /// Otherwise, just sort.
-                    executeOrder(query_plan, query_info.input_order_info);
+                    executeOrder(
+                        query_plan,
+                        query_info.input_order_info ? query_info.input_order_info
+                                                    : (query_info.projection ? query_info.projection->input_order_info : nullptr));
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -1485,13 +1512,168 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     query_plan.addStep(std::move(read_from_pipe));
 }
 
+void InterpreterSelectQuery::addPrewhereAliasActions()
+{
+    auto & prewhere_info = analysis_result.prewhere_info;
+    auto & columns_to_remove_after_prewhere = analysis_result.columns_to_remove_after_prewhere;
+
+    /// Detect, if ALIAS columns are required for query execution
+    auto alias_columns_required = false;
+    const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
+    for (const auto & column_name : required_columns)
+    {
+        auto column_default = storage_columns.getDefault(column_name);
+        if (column_default && column_default->kind == ColumnDefaultKind::Alias)
+        {
+            alias_columns_required = true;
+            break;
+        }
+    }
+
+    /// There are multiple sources of required columns:
+    ///  - raw required columns,
+    ///  - columns deduced from ALIAS columns,
+    ///  - raw required columns from PREWHERE,
+    ///  - columns deduced from ALIAS columns from PREWHERE.
+    /// PREWHERE is a special case, since we need to resolve it and pass directly to `IStorage::read()`
+    /// before any other executions.
+    if (alias_columns_required)
+    {
+        NameSet required_columns_from_prewhere; /// Set of all (including ALIAS) required columns for PREWHERE
+        NameSet required_aliases_from_prewhere; /// Set of ALIAS required columns for PREWHERE
+
+        if (prewhere_info)
+        {
+            /// Get some columns directly from PREWHERE expression actions
+            auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
+            required_columns_from_prewhere.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
+
+            if (prewhere_info->row_level_filter_actions)
+            {
+                auto row_level_required_columns = prewhere_info->row_level_filter_actions->getRequiredColumns().getNames();
+                required_columns_from_prewhere.insert(row_level_required_columns.begin(), row_level_required_columns.end());
+            }
+        }
+
+        /// Expression, that contains all raw required columns
+        ASTPtr required_columns_all_expr = std::make_shared<ASTExpressionList>();
+
+        /// Expression, that contains raw required columns for PREWHERE
+        ASTPtr required_columns_from_prewhere_expr = std::make_shared<ASTExpressionList>();
+
+        /// Sort out already known required columns between expressions,
+        /// also populate `required_aliases_from_prewhere`.
+        for (const auto & column : required_columns)
+        {
+            ASTPtr column_expr;
+            const auto column_default = storage_columns.getDefault(column);
+            bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
+            if (is_alias)
+            {
+                auto column_decl = storage_columns.get(column);
+                column_expr = column_default->expression->clone();
+                // recursive visit for alias to alias
+                replaceAliasColumnsInQuery(
+                    column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), context);
+
+                column_expr = addTypeConversionToAST(
+                    std::move(column_expr), column_decl.type->getName(), metadata_snapshot->getColumns().getAll(), context);
+                column_expr = setAlias(column_expr, column);
+            }
+            else
+                column_expr = std::make_shared<ASTIdentifier>(column);
+
+            if (required_columns_from_prewhere.count(column))
+            {
+                required_columns_from_prewhere_expr->children.emplace_back(std::move(column_expr));
+
+                if (is_alias)
+                    required_aliases_from_prewhere.insert(column);
+            }
+            else
+                required_columns_all_expr->children.emplace_back(std::move(column_expr));
+        }
+
+        /// Columns, which we will get after prewhere and filter executions.
+        NamesAndTypesList required_columns_after_prewhere;
+        NameSet required_columns_after_prewhere_set;
+
+        /// Collect required columns from prewhere expression actions.
+        if (prewhere_info)
+        {
+            NameSet columns_to_remove(columns_to_remove_after_prewhere.begin(), columns_to_remove_after_prewhere.end());
+            Block prewhere_actions_result = prewhere_info->prewhere_actions->getResultColumns();
+
+            /// Populate required columns with the columns, added by PREWHERE actions and not removed afterwards.
+            /// XXX: looks hacky that we already know which columns after PREWHERE we won't need for sure.
+            for (const auto & column : prewhere_actions_result)
+            {
+                if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
+                    continue;
+
+                if (columns_to_remove.count(column.name))
+                    continue;
+
+                required_columns_all_expr->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                required_columns_after_prewhere.emplace_back(column.name, column.type);
+            }
+
+            required_columns_after_prewhere_set
+                = ext::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
+        }
+
+        auto syntax_result
+            = TreeRewriter(context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, metadata_snapshot);
+        alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, context).getActionsDAG(true);
+
+        /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
+        required_columns = alias_actions->getRequiredColumns().getNames();
+
+        /// Do not remove prewhere filter if it is a column which is used as alias.
+        if (prewhere_info && prewhere_info->remove_prewhere_column)
+            if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), prewhere_info->prewhere_column_name))
+                prewhere_info->remove_prewhere_column = false;
+
+        /// Remove columns which will be added by prewhere.
+        required_columns.erase(
+            std::remove_if(
+                required_columns.begin(),
+                required_columns.end(),
+                [&](const String & name) { return required_columns_after_prewhere_set.count(name) != 0; }),
+            required_columns.end());
+
+        if (prewhere_info)
+        {
+            /// Don't remove columns which are needed to be aliased.
+            for (const auto & name : required_columns)
+                prewhere_info->prewhere_actions->tryRestoreColumn(name);
+
+            auto analyzed_result
+                = TreeRewriter(context).analyze(required_columns_from_prewhere_expr, metadata_snapshot->getColumns().getAllPhysical());
+            prewhere_info->alias_actions
+                = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, context).getActionsDAG(true, false);
+
+            /// Add (physical?) columns required by alias actions.
+            auto required_columns_from_alias = prewhere_info->alias_actions->getRequiredColumns();
+            Block prewhere_actions_result = prewhere_info->prewhere_actions->getResultColumns();
+            for (auto & column : required_columns_from_alias)
+                if (!prewhere_actions_result.has(column.name))
+                    if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
+                        required_columns.push_back(column.name);
+
+            /// Add physical columns required by prewhere actions.
+            for (const auto & column : required_columns_from_prewhere)
+                if (required_aliases_from_prewhere.count(column) == 0)
+                    if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
+                        required_columns.push_back(column);
+        }
+    }
+}
+
 void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
-    auto & expressions = analysis_result;
-    auto & prewhere_info = expressions.prewhere_info;
-    auto & columns_to_remove_after_prewhere = expressions.columns_to_remove_after_prewhere;
 
     /// Optimization for trivial query like SELECT count() FROM table.
     bool optimize_trivial_count =
@@ -1557,160 +1739,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             from_stage = QueryProcessingStage::WithMergeableState;
             analysis_result.first_stage = false;
             return;
-        }
-    }
-
-    /// Actions to calculate ALIAS if required.
-    ActionsDAGPtr alias_actions;
-
-    if (storage)
-    {
-        /// Detect, if ALIAS columns are required for query execution
-        auto alias_columns_required = false;
-        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
-        for (const auto & column_name : required_columns)
-        {
-            auto column_default = storage_columns.getDefault(column_name);
-            if (column_default && column_default->kind == ColumnDefaultKind::Alias)
-            {
-                alias_columns_required = true;
-                break;
-            }
-        }
-
-        /// There are multiple sources of required columns:
-        ///  - raw required columns,
-        ///  - columns deduced from ALIAS columns,
-        ///  - raw required columns from PREWHERE,
-        ///  - columns deduced from ALIAS columns from PREWHERE.
-        /// PREWHERE is a special case, since we need to resolve it and pass directly to `IStorage::read()`
-        /// before any other executions.
-        if (alias_columns_required)
-        {
-            NameSet required_columns_from_prewhere; /// Set of all (including ALIAS) required columns for PREWHERE
-            NameSet required_aliases_from_prewhere; /// Set of ALIAS required columns for PREWHERE
-
-            if (prewhere_info)
-            {
-                /// Get some columns directly from PREWHERE expression actions
-                auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns().getNames();
-                required_columns_from_prewhere.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
-
-                if (prewhere_info->row_level_filter_actions)
-                {
-                    auto row_level_required_columns = prewhere_info->row_level_filter_actions->getRequiredColumns().getNames();
-                    required_columns_from_prewhere.insert(row_level_required_columns.begin(), row_level_required_columns.end());
-                }
-            }
-
-            /// Expression, that contains all raw required columns
-            ASTPtr required_columns_all_expr = std::make_shared<ASTExpressionList>();
-
-            /// Expression, that contains raw required columns for PREWHERE
-            ASTPtr required_columns_from_prewhere_expr = std::make_shared<ASTExpressionList>();
-
-            /// Sort out already known required columns between expressions,
-            /// also populate `required_aliases_from_prewhere`.
-            for (const auto & column : required_columns)
-            {
-                ASTPtr column_expr;
-                const auto column_default = storage_columns.getDefault(column);
-                bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
-                if (is_alias)
-                {
-                    auto column_decl = storage_columns.get(column);
-                    column_expr = column_default->expression->clone();
-                    // recursive visit for alias to alias
-                    replaceAliasColumnsInQuery(column_expr, metadata_snapshot->getColumns(), syntax_analyzer_result->getArrayJoinSourceNameSet(), context);
-
-                    column_expr = addTypeConversionToAST(std::move(column_expr), column_decl.type->getName(), metadata_snapshot->getColumns().getAll(), context);
-                    column_expr = setAlias(column_expr, column);
-                }
-                else
-                    column_expr = std::make_shared<ASTIdentifier>(column);
-
-                if (required_columns_from_prewhere.count(column))
-                {
-                    required_columns_from_prewhere_expr->children.emplace_back(std::move(column_expr));
-
-                    if (is_alias)
-                        required_aliases_from_prewhere.insert(column);
-                }
-                else
-                    required_columns_all_expr->children.emplace_back(std::move(column_expr));
-            }
-
-            /// Columns, which we will get after prewhere and filter executions.
-            NamesAndTypesList required_columns_after_prewhere;
-            NameSet required_columns_after_prewhere_set;
-
-            /// Collect required columns from prewhere expression actions.
-            if (prewhere_info)
-            {
-                NameSet columns_to_remove(columns_to_remove_after_prewhere.begin(), columns_to_remove_after_prewhere.end());
-                Block prewhere_actions_result = prewhere_info->prewhere_actions->getResultColumns();
-
-                /// Populate required columns with the columns, added by PREWHERE actions and not removed afterwards.
-                /// XXX: looks hacky that we already know which columns after PREWHERE we won't need for sure.
-                for (const auto & column : prewhere_actions_result)
-                {
-                    if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
-                        continue;
-
-                    if (columns_to_remove.count(column.name))
-                        continue;
-
-                    required_columns_all_expr->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
-                    required_columns_after_prewhere.emplace_back(column.name, column.type);
-                }
-
-                required_columns_after_prewhere_set
-                    = ext::map<NameSet>(required_columns_after_prewhere, [](const auto & it) { return it.name; });
-            }
-
-            auto syntax_result = TreeRewriter(context).analyze(required_columns_all_expr, required_columns_after_prewhere, storage, metadata_snapshot);
-            alias_actions = ExpressionAnalyzer(required_columns_all_expr, syntax_result, context).getActionsDAG(true);
-
-            /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
-            required_columns = alias_actions->getRequiredColumns().getNames();
-
-            /// Do not remove prewhere filter if it is a column which is used as alias.
-            if (prewhere_info && prewhere_info->remove_prewhere_column)
-                if (required_columns.end()
-                    != std::find(required_columns.begin(), required_columns.end(), prewhere_info->prewhere_column_name))
-                    prewhere_info->remove_prewhere_column = false;
-
-            /// Remove columns which will be added by prewhere.
-            required_columns.erase(std::remove_if(required_columns.begin(), required_columns.end(), [&](const String & name)
-            {
-                return required_columns_after_prewhere_set.count(name) != 0;
-            }), required_columns.end());
-
-            if (prewhere_info)
-            {
-                /// Don't remove columns which are needed to be aliased.
-                for (const auto & name : required_columns)
-                    prewhere_info->prewhere_actions->tryRestoreColumn(name);
-
-                auto analyzed_result
-                    = TreeRewriter(context).analyze(required_columns_from_prewhere_expr, metadata_snapshot->getColumns().getAllPhysical());
-                prewhere_info->alias_actions
-                    = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, context).getActionsDAG(true, false);
-
-                /// Add (physical?) columns required by alias actions.
-                auto required_columns_from_alias = prewhere_info->alias_actions->getRequiredColumns();
-                Block prewhere_actions_result = prewhere_info->prewhere_actions->getResultColumns();
-                for (auto & column : required_columns_from_alias)
-                    if (!prewhere_actions_result.has(column.name))
-                        if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column.name))
-                            required_columns.push_back(column.name);
-
-                /// Add physical columns required by prewhere actions.
-                for (const auto & column : required_columns_from_prewhere)
-                    if (required_aliases_from_prewhere.count(column) == 0)
-                        if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
-                            required_columns.push_back(column);
-            }
         }
     }
 
@@ -1804,9 +1832,10 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        query_info.syntax_analyzer_result = syntax_analyzer_result;
+        // TODO figure out how to make set for projections
         query_info.sets = query_analyzer->getPreparedSets();
         auto actions_settings = ExpressionActionsSettings::fromContext(context);
+        auto & prewhere_info = analysis_result.prewhere_info;
 
         if (prewhere_info)
         {
@@ -1828,20 +1857,46 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
 
         /// Create optimizer with prepared actions.
         /// Maybe we will need to calc input_order_info later, e.g. while reading from StorageMerge.
-        if ((analysis_result.optimize_read_in_order || analysis_result.optimize_aggregation_in_order) && !query_info.projection)
+        if ((analysis_result.optimize_read_in_order || analysis_result.optimize_aggregation_in_order)
+            && (!query_info.projection || query_info.projection->complete))
         {
             if (analysis_result.optimize_read_in_order)
-                query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                    analysis_result.order_by_elements_actions,
-                    getSortDescription(query, context),
-                    query_info.syntax_analyzer_result);
+            {
+                if (query_info.projection)
+                {
+                    query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                        // TODO Do we need a projection variant for this field?
+                        analysis_result.order_by_elements_actions,
+                        getSortDescription(query, context),
+                        query_info.syntax_analyzer_result);
+                }
+                else
+                {
+                    query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                        analysis_result.order_by_elements_actions, getSortDescription(query, context), query_info.syntax_analyzer_result);
+                }
+            }
             else
-                query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
-                    analysis_result.group_by_elements_actions,
-                    getSortDescriptionFromGroupBy(query),
-                    query_info.syntax_analyzer_result);
+            {
+                if (query_info.projection)
+                {
+                    query_info.projection->order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                        query_info.projection->group_by_elements_actions,
+                        getSortDescriptionFromGroupBy(query),
+                        query_info.syntax_analyzer_result);
+                }
+                else
+                {
+                    query_info.order_optimizer = std::make_shared<ReadInOrderOptimizer>(
+                        analysis_result.group_by_elements_actions, getSortDescriptionFromGroupBy(query), query_info.syntax_analyzer_result);
+                }
+            }
 
-            query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context);
+            if (query_info.projection)
+                query_info.projection->input_order_info
+                    = query_info.projection->order_optimizer->getInputOrder(query_info.projection->desc->metadata, context);
+            else
+                query_info.input_order_info = query_info.order_optimizer->getInputOrder(metadata_snapshot, context);
         }
 
         StreamLocalLimits limits;
@@ -2504,8 +2559,11 @@ void InterpreterSelectQuery::executeExtremes(QueryPlan & query_plan)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPlan & query_plan, SubqueriesForSets & subqueries_for_sets)
 {
-    if (query_info.input_order_info)
-        executeMergeSorted(query_plan, query_info.input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
+    const auto & input_order_info = query_info.input_order_info
+        ? query_info.input_order_info
+        : (query_info.projection ? query_info.projection->input_order_info : nullptr);
+    if (input_order_info)
+        executeMergeSorted(query_plan, input_order_info->order_key_prefix_descr, 0, "before creating sets for subqueries and joins");
 
     const Settings & settings = context->getSettingsRef();
 
