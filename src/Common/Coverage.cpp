@@ -1,8 +1,6 @@
 #include "Coverage.h"
 
 #include <algorithm>
-#include <atomic>
-#include <cassert>
 
 #include <fstream>
 #include <iterator>
@@ -101,38 +99,24 @@ void Writer::symbolizeAllInstrumentedAddrs()
 
     pool.setMaxThreads(thread_pool_symbolizing);
 
-    CachesArr<FuncLocalCache> func_caches;
-    scheduleSymbolizationJobs<FuncLocalCache, true>(func_caches, pc_table_function_entries);
+    LocalCachesArray<FuncSym> func_caches{};
+    scheduleSymbolizationJobs<true>(func_caches, pc_table_function_entries);
 
     pool.wait();
 
-    CachesArr<AddrLocalCache> addr_caches;
-    scheduleSymbolizationJobs<AddrLocalCache, false>(addr_caches, pc_table_addrs);
+    LocalCachesArray<AddrSym> addr_caches{};
+    scheduleSymbolizationJobs<false>(addr_caches, pc_table_addrs);
 
     /// Merge functions data from multiple threads while other threads process addresses.
-    mergeFunctionDataToCaches(func_caches);
+    mergeDataToCaches<true>(func_caches, pc_table_function_entries);
 
     pool.wait();
-    mergeAddressDataToCaches(addr_caches);
+
+    mergeDataToCaches<false>(addr_caches, pc_table_addrs);
 
     pool.setMaxThreads(thread_pool_test_processing);
 
-    pc_table_function_entries.clear();
-    pc_table_function_entries.shrink_to_fit();
-    pc_table_addrs.clear();
-    pc_table_addrs.shrink_to_fit();
-
     LOG_INFO(base_log, "Symbolized all addresses");
-}
-
-void Writer::mergeFunctionDataToCaches(const Writer::CachesArr<Writer::FuncLocalCache>& data)
-{
-
-}
-
-void Writer::mergeAddressDataToCaches(const Writer::CachesArr<Writer::AddrLocalCache>& data)
-{
-
 }
 
 void Writer::hit(void * addr)
@@ -314,7 +298,7 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
             if (auto it = functions_hit.find(func_addr); it != functions_hit.end())
                 call_count = it->second;
 
-            fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.start_line, func_info.name, call_count);
+            fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.line, func_info.name, call_count);
         }
 
         fmt::print(ofs, "FNF:{}\nFNH:{}\n", functions_instrumented.size(), functions_hit.size());
