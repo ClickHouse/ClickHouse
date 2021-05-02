@@ -245,7 +245,7 @@ private:
 
                     if (time_t current = time(nullptr); current > elapsed)
                     {
-                        LOG_INFO(log, "Processed {}/{} {}", it - start, size, target_str);
+                        LOG_DEBUG(log, "Processed {}/{} {}", it - start, size, target_str);
                         elapsed = current;
                     }
                 }

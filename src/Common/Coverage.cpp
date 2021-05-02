@@ -206,7 +206,7 @@ void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
     {
         if (const time_t current = time(nullptr); current > elapsed)
         {
-            LOG_INFO(test_info.log, "Processed {}/{}", i, addrs.size());
+            LOG_DEBUG(test_info.log, "Processed {}/{}", i, addrs.size());
             elapsed = current;
         }
 

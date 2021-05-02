@@ -66,7 +66,11 @@ fi
 chmod 777 -R /var/lib/clickhouse
 
 # Wait until server symbolises all addresses (about 17 min)
-tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q'
+echo "Symbolized functions"
+time tail -f /var/log/clickhouse-server/clickhouse/server.log | sed '/Symbolized all functions/ q' > /dev/null
+echo "Symbolized addresses"
+time tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q' > /dev/null
+echo "Starting tests"
 
 clickhouse-client --query "SET coverage_test_name='client_initial_1'"
 clickhouse-client --query "SHOW DATABASES"
