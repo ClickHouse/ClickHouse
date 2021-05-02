@@ -53,7 +53,7 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     , replication_settings(std::move(replication_settings_))
     , is_materialize_postgresql_database(
             DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "MaterializePostgreSQL")
-    , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
+    , nested_table_id(StorageID(table_id_.database_name, getNestedTableName(), table_id_.uuid))
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
 {
     if (table_id_.uuid == UUIDHelpers::Nil)
@@ -87,13 +87,27 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
 }
 
 
+StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
+    StoragePtr nested_storage_, ContextPtr context_)
+    : IStorage(nested_storage_->getStorageID())
+    , WithContext(context_->getGlobalContext())
+    , is_materialize_postgresql_database(true)
+    , nested_table_id(nested_storage_->getStorageID())
+    , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+{
+    setInMemoryMetadata(nested_storage_->getInMemoryMetadata());
+}
+
+
 /// A temporary clone table might be created for current table in order to update its schema and reload
 /// all data in the background while current table will still handle read requests.
 StoragePtr StorageMaterializePostgreSQL::createTemporary() const
 {
     auto table_id = getStorageID();
     auto new_context = Context::createCopy(context);
-    return StorageMaterializePostgreSQL::create(StorageID(table_id.database_name, table_id.table_name + TMP_SUFFIX), new_context);
+    const String temp_storage_name = table_id.table_name + TMP_SUFFIX;
+    auto temp_storage = StorageMaterializePostgreSQL::create(StorageID(table_id.database_name, temp_storage_name, UUIDHelpers::generateV4()), new_context);
+    return std::move(temp_storage);
 }
 
 
@@ -109,7 +123,7 @@ StoragePtr StorageMaterializePostgreSQL::tryGetNested() const
 }
 
 
-std::string StorageMaterializePostgreSQL::getNestedTableName() const
+String StorageMaterializePostgreSQL::getNestedTableName() const
 {
     auto table_id = getStorageID();
 
@@ -289,6 +303,7 @@ ASTPtr StorageMaterializePostgreSQL::getCreateNestedTableQuery(PostgreSQLTableSt
     auto table_id = getStorageID();
     create_table_query->table = getNestedTableName();
     create_table_query->database = table_id.database_name;
+    create_table_query->uuid = table_id.uuid;
 
     auto columns_declare_list = std::make_shared<ASTColumns>();
     auto columns_expression_list = std::make_shared<ASTExpressionList>();

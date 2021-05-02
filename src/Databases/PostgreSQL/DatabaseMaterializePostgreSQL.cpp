@@ -189,11 +189,6 @@ DatabaseTablesIteratorPtr DatabaseMaterializePostgreSQL::getTablesIterator(
 }
 
 
-void DatabaseMaterializePostgreSQL::renameTable(ContextPtr /* context_ */, const String & /* name */, IDatabase & /* to_database */, const String & /* to_name */, bool /* exchange */, bool /* dictionary */)
-{
-    throw Exception("MaterializePostgreSQL database does not support rename table.", ErrorCodes::NOT_IMPLEMENTED);
-}
-
 }
 
 #endif
