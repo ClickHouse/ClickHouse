@@ -63,8 +63,10 @@ if ! /s3downloader --dataset-names $DATASETS; then
     exit 1
 fi
 
-
 chmod 777 -R /var/lib/clickhouse
+
+# Wait until server symbolises all addresses (about 17 min)
+tail -f /var/log/clickhouse-server/clickhouse-server.log | sed '/Symbolized all addresses/ q'
 
 clickhouse-client --query "SET coverage_test_name='client_initial_1'"
 clickhouse-client --query "SHOW DATABASES"
@@ -78,7 +80,7 @@ clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 clickhouse-client --query "SHOW TABLES FROM test"
 
-clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list \
+clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --coverage \
     2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
 
 readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "/test_result.txt")
@@ -96,7 +98,7 @@ then
 
     echo "Going to run again: ${FAILED_TESTS[*]}"
 
-    clickhouse-test --order=random --testname --shard --zookeeper --use-skip-list \
+    clickhouse-test --order=random --testname --shard --zookeeper --use-skip-list --coverage \
         "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_result.txt
 else
     echo "No failed tests"

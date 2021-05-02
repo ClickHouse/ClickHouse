@@ -104,6 +104,8 @@ void Writer::symbolizeAllInstrumentedAddrs()
 
     pool.wait();
 
+    LOG_INFO(base_log, "Symbolized all functions");
+
     LocalCachesArray<AddrSym> addr_caches{};
     scheduleSymbolizationJobs<false>(addr_caches, pc_table_addrs);
 
@@ -220,6 +222,12 @@ void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
                 ++it2->second;
 
             continue;
+        }
+
+        if (auto it = addr_cache.find(addr); it == addr_cache.end())
+        {
+            LOG_FATAL(test_info.log, "Fault addr {} not present in caches", addr);
+            throw std::exception();
         }
 
         const AddrInfo& addr_cache_entry = addr_cache.at(addr);

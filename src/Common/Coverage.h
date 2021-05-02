@@ -197,12 +197,16 @@ private:
     {
         constexpr auto pool_size = thread_pool_symbolizing;
 
+        constexpr const std::string_view target_str = is_func_cache
+            ? "func"
+            : "addr";
+
         const size_t step = addrs.size() / pool_size;
         const auto begin = addrs.cbegin();
         const auto r_end = addrs.cend();
 
         for (size_t thread_index = 0; thread_index < pool_size; ++thread_index)
-            pool.scheduleOrThrowOnError([this, &caches, thread_index, begin, step, r_end]
+            pool.scheduleOrThrowOnError([this, &caches, thread_index, begin, step, r_end, target_str]
             {
                 const auto start = begin + thread_index * step;
                 const auto end = thread_index == pool_size - 1
@@ -210,7 +214,7 @@ private:
                     : start + step;
 
                 const Poco::Logger * const log = &Poco::Logger::get(
-                    fmt::format("{}.func{}", logger_base_name, thread_index));
+                    fmt::format("{}.{}{}", logger_base_name, target_str, thread_index));
 
                 const size_t size = end - start;
 
@@ -241,7 +245,7 @@ private:
 
                     if (time_t current = time(nullptr); current > elapsed)
                     {
-                        LOG_INFO(log, "Processed {}/{} functions", it - start, size);
+                        LOG_INFO(log, "Processed {}/{} {}", it - start, size, target_str);
                         elapsed = current;
                     }
                 }
