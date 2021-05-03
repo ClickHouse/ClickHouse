@@ -46,7 +46,6 @@ public:
 };
 
 
-
 namespace std
 {
     template <typename T, typename Tag>

@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeFixedString.h>
 
 
-
 namespace DB
 {
 
