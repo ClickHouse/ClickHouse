@@ -24,7 +24,6 @@
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Core/PostgreSQL/PostgreSQLConnectionPool.h>
 
-/// TODO: Add test for allow_automatic_update setting in case of single storage.
 
 namespace DB
 {
@@ -75,7 +74,7 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
             metadata_path,
             getContext(),
             replication_settings->materialize_postgresql_max_block_size.value,
-            replication_settings->materialize_postgresql_allow_automatic_update.value, false);
+            /* allow_automatic_update */ false, /* is_materialize_postgresql_database */false);
 }
 
 
@@ -252,6 +251,7 @@ Pipe StorageMaterializePostgreSQL::read(
         size_t max_block_size,
         unsigned num_streams)
 {
+    auto materialized_table_lock = lockForShare(String(), context_->getSettingsRef().lock_acquire_timeout);
     auto nested_table = getNested();
     return readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
             query_info, context_, processed_stage, max_block_size, num_streams);

@@ -467,11 +467,12 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
             try
             {
+                auto materialized_table_lock = materialized_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
                 InterpreterRenameQuery(ast_rename, nested_context).execute();
 
                 {
                     auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, table_id.table_name), nested_context);
-                    auto table_lock = nested_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
+                    auto nested_table_lock = nested_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
                     auto nested_table_id = nested_storage->getStorageID();
 
                     materialized_storage->setNestedStorageID(nested_table_id);
