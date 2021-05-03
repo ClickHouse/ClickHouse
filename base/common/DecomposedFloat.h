@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <cstring>
 #include <common/extended_types.h>
 
@@ -89,6 +90,9 @@ struct DecomposedFloat
     }
 
 
+    /// Compare float with integer of arbitrary width (both signed and unsigned are supported). Assuming two's complement arithmetic.
+    /// Infinities are compared correctly. NaNs are treat similarly to infinities, so they can be less than all numbers.
+    /// (note that we need total order)
     template <typename Int>
     int compare(Int rhs)
     {
@@ -110,7 +114,7 @@ struct DecomposedFloat
                 return rhs >= 0 ? -1 : 1;
         }
 
-        /// Too large number: abs(float) > abs(rhs)
+        /// Too large number: abs(float) > abs(rhs). Also the case with infinities and NaN.
         if (normalized_exponent() >= static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
         {
             /// The case of most negative integer - it can be equal to float
