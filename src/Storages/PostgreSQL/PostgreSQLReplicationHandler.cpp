@@ -66,7 +66,7 @@ void PostgreSQLReplicationHandler::waitConnectionAndStart()
     {
         /// Will throw pqxx::broken_connection if no connection at the moment
         connection->get();
-        startSynchronization();
+        startSynchronization(false);
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
@@ -88,7 +88,7 @@ void PostgreSQLReplicationHandler::shutdown()
 }
 
 
-void PostgreSQLReplicationHandler::startSynchronization()
+void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     {
         postgres::Transaction<pqxx::work> tx(connection->getRef());
@@ -116,6 +116,9 @@ void PostgreSQLReplicationHandler::startSynchronization()
             {
                 e.addMessage("while loading table {}.{}", remote_database_name, table_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                if (throw_on_error)
+                    throw;
             }
         }
     };
@@ -164,6 +167,9 @@ void PostgreSQLReplicationHandler::startSynchronization()
             {
                 e.addMessage("while loading table {}.{}", remote_database_name, table_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                if (throw_on_error)
+                    throw;
             }
         }
     }

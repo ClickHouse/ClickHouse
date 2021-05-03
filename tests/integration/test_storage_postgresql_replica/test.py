@@ -100,13 +100,18 @@ def test_no_connection_at_startup(started_cluster):
     create_postgres_table(cursor, 'postgresql_replica');
     instance.query("INSERT INTO postgres_database.postgresql_replica SELECT number, number from numbers(50)")
 
-    started_cluster.pause_container('postgres1')
     instance.query('''
         CREATE TABLE test.postgresql_replica (key UInt64, value UInt64, _sign Int8 MATERIALIZED 1, _version UInt64 MATERIALIZED 1)
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
             PRIMARY KEY key;
         ''')
+    time.sleep(3)
+
+    instance.query('DETACH TABLE test.postgresql_replica')
+    started_cluster.pause_container('postgres1')
+
+    instance.query('ATTACH TABLE test.postgresql_replica')
     time.sleep(3)
     started_cluster.unpause_container('postgres1')
 
@@ -325,7 +330,7 @@ def test_many_replication_messages(started_cluster):
         ''')
 
     result = instance.query('SELECT count() FROM test.postgresql_replica;')
-    while (int(result) == 100000):
+    while (int(result) != 100000):
         time.sleep(0.2)
         result = instance.query('SELECT count() FROM test.postgresql_replica;')
     print("SYNC OK")

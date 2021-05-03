@@ -42,6 +42,7 @@ static const auto TMP_SUFFIX = "_tmp";
 /// For the case of single storage.
 StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     const StorageID & table_id_,
+    bool is_attach_,
     const String & remote_database_name,
     const String & remote_table_name_,
     const postgres::ConnectionInfo & connection_info,
@@ -50,10 +51,12 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     std::unique_ptr<MaterializePostgreSQLSettings> replication_settings)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , remote_table_name(remote_table_name_)
     , is_materialize_postgresql_database(false)
     , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+    , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
+    , remote_table_name(remote_table_name_)
+    , is_attach(is_attach_)
 {
     if (table_id_.uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializePostgreSQL is allowed only for Atomic database");
@@ -158,7 +161,7 @@ void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructure
         interpreter.execute();
 
         auto table_id = getStorageID();
-        auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, table_id.table_name), nested_context);
+        auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, getNestedTableName()), nested_context);
 
         /// Save storage_id with correct uuid.
         nested_table_id = nested_storage->getStorageID();
@@ -194,7 +197,20 @@ void StorageMaterializePostgreSQL::startup()
     if (!is_materialize_postgresql_database)
     {
         replication_handler->addStorage(remote_table_name, this);
-        replication_handler->startup();
+
+        if (is_attach)
+        {
+            /// In case of attach table use background startup in a separate thread. First wait untill connection is reachable,
+            /// then check for nested table -- it should already be created.
+            replication_handler->startup();
+        }
+        else
+        {
+            /// Start synchronization preliminary setup immediately and throw in case of failure.
+            /// It should be guaranteed that if MaterializePostgreSQL table was created successfully, then
+            /// its nested table was also created.
+            replication_handler->startSynchronization(/* throw_on_error */ true);
+        }
     }
 }
 
@@ -235,14 +251,6 @@ Pipe StorageMaterializePostgreSQL::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    /// For database engine there is an invariant: table exists only if its nested table exists, so
-    /// this check is not needed because read() will never be called until nested is loaded.
-    /// But for single storage, there is no such invarient. Actually, not sure whether it it better
-    /// to silently wait until nested is loaded or to throw on read() requests until nested is loaded.
-    /// TODO: do not use a separate thread in case of single storage, then this problem will be fixed.
-    if (!has_nested.load())
-        return Pipe();
-
     auto nested_table = getNested();
     return readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
             query_info, context_, processed_stage, max_block_size, num_streams);
@@ -453,7 +461,7 @@ void registerStorageMaterializePostgreSQL(StorageFactory & factory)
             engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
 
         return StorageMaterializePostgreSQL::create(
-                args.table_id, remote_database, remote_table, connection_info,
+                args.table_id, args.attach, remote_database, remote_table, connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };
