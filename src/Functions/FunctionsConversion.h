@@ -36,7 +36,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsCommon.h>
-#include <Common/FieldVisitors.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Core/AccurateComparison.h>

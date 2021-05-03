@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <common/strong_typedef.h>
 #include <common/extended_types.h>
 #include <common/defines.h>
 
@@ -69,6 +70,8 @@ using UInt256 = ::UInt256;
 using Int128 = ::Int128;
 using Int256 = ::Int256;
 
+STRONG_TYPEDEF(UInt128, UUID)
+
 
 /** Note that for types not used in DB, IsNumber is false.
   */
@@ -102,26 +105,28 @@ template <> struct TypeName<Int16>   { static constexpr const char * get() { ret
 template <> struct TypeName<Int32>   { static constexpr const char * get() { return "Int32";   } };
 template <> struct TypeName<Int64>   { static constexpr const char * get() { return "Int64";   } };
 template <> struct TypeName<Int128>  { static constexpr const char * get() { return "Int128";  } };
-template <> struct TypeName<Int256> { static constexpr const char * get() { return "Int256";  } };
+template <> struct TypeName<Int256>  { static constexpr const char * get() { return "Int256";  } };
 template <> struct TypeName<Float32> { static constexpr const char * get() { return "Float32"; } };
 template <> struct TypeName<Float64> { static constexpr const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static constexpr const char * get() { return "String";  } };
+template <> struct TypeName<UUID>    { static constexpr const char * get() { return "UUID";    } };
 
 template <typename T> struct TypeId;
-template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = TypeIndex::UInt8;  };
-template <> struct TypeId<UInt16>   { static constexpr const TypeIndex value = TypeIndex::UInt16;  };
-template <> struct TypeId<UInt32>   { static constexpr const TypeIndex value = TypeIndex::UInt32;  };
-template <> struct TypeId<UInt64>   { static constexpr const TypeIndex value = TypeIndex::UInt64;  };
-template <> struct TypeId<UInt128>   { static constexpr const TypeIndex value = TypeIndex::UInt64;  };
+template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = TypeIndex::UInt8; };
+template <> struct TypeId<UInt16>   { static constexpr const TypeIndex value = TypeIndex::UInt16; };
+template <> struct TypeId<UInt32>   { static constexpr const TypeIndex value = TypeIndex::UInt32; };
+template <> struct TypeId<UInt64>   { static constexpr const TypeIndex value = TypeIndex::UInt64; };
+template <> struct TypeId<UInt128>   { static constexpr const TypeIndex value = TypeIndex::UInt64; };
 template <> struct TypeId<UInt256>  { static constexpr const TypeIndex value = TypeIndex::UInt256; };
-template <> struct TypeId<Int8>     { static constexpr const TypeIndex value = TypeIndex::Int8;  };
+template <> struct TypeId<Int8>     { static constexpr const TypeIndex value = TypeIndex::Int8; };
 template <> struct TypeId<Int16>    { static constexpr const TypeIndex value = TypeIndex::Int16; };
 template <> struct TypeId<Int32>    { static constexpr const TypeIndex value = TypeIndex::Int32; };
 template <> struct TypeId<Int64>    { static constexpr const TypeIndex value = TypeIndex::Int64; };
 template <> struct TypeId<Int128>   { static constexpr const TypeIndex value = TypeIndex::Int128; };
 template <> struct TypeId<Int256>   { static constexpr const TypeIndex value = TypeIndex::Int256; };
-template <> struct TypeId<Float32>  { static constexpr const TypeIndex value = TypeIndex::Float32;  };
-template <> struct TypeId<Float64>  { static constexpr const TypeIndex value = TypeIndex::Float64;  };
+template <> struct TypeId<Float32>  { static constexpr const TypeIndex value = TypeIndex::Float32; };
+template <> struct TypeId<Float64>  { static constexpr const TypeIndex value = TypeIndex::Float64; };
+template <> struct TypeId<UUID>     { static constexpr const TypeIndex value = TypeIndex::UUID; };
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;

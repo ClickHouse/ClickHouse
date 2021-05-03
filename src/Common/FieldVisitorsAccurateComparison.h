@@ -47,16 +47,10 @@ public:
 
             if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
             {
-                if constexpr (std::is_same_v<U, UInt128>)
-                    return stringToUUID(l) == r;
-
-                if constexpr (std::is_arithmetic_v<U>)
-                {
-                    ReadBufferFromString in(l);
-                    U parsed;
-                    readText(parsed, in);
-                    return operator()(parsed, r);
-                }
+                ReadBufferFromString in(l);
+                U parsed;
+                readText(parsed, in);
+                return operator()(parsed, r);
             }
 
             if constexpr (std::is_same_v<U, String> && std::is_arithmetic_v<T>)
@@ -101,16 +95,10 @@ public:
 
             if constexpr (std::is_same_v<T, String> && std::is_arithmetic_v<U>)
             {
-                if constexpr (std::is_same_v<U, UInt128>)
-                    return stringToUUID(l) < r;
-
-                if constexpr (std::is_arithmetic_v<U>)
-                {
-                    ReadBufferFromString in(l);
-                    U parsed;
-                    readText(parsed, in);
-                    return operator()(parsed, r);
-                }
+                ReadBufferFromString in(l);
+                U parsed;
+                readText(parsed, in);
+                return operator()(parsed, r);
             }
 
             if constexpr (std::is_same_v<U, String> && std::is_arithmetic_v<T>)

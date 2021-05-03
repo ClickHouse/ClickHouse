@@ -1460,7 +1460,7 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        if (!isInt64FieldType(argument_types[1]->getDefault().getType()))
+        if (!isInt64OrUInt64FieldType(argument_types[1]->getDefault().getType()))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Offset must be an integer, '{}' given",

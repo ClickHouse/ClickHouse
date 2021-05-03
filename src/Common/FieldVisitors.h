@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wredundant-decls"
-// Just dont mess with it. If the redundant redeclaration is removed then ReaderHelpers.h should be included.
+// Just dont mess with it. If the redundant redeclaration is removed then ReadHelpers.h should be included.
 // This leads to Arena.h inclusion which has a problem with ASAN stuff included properly and messing macro definition
 // which intefrers with... You dont want to know, really.
 UInt128 stringToUUID(const String & str);
@@ -75,6 +75,7 @@ public:
     String operator() (const Int64 & x) const;
     String operator() (const Int128 & x) const;
     String operator() (const Int256 & x) const;
+    String operator() (const UUID & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
@@ -98,6 +99,7 @@ public:
     void operator() (const Int64 & x, WriteBuffer & buf) const;
     void operator() (const Int128 & x, WriteBuffer & buf) const;
     void operator() (const Int256 & x, WriteBuffer & buf) const;
+    void operator() (const UUID & x, WriteBuffer & buf) const;
     void operator() (const Float64 & x, WriteBuffer & buf) const;
     void operator() (const String & x, WriteBuffer & buf) const;
     void operator() (const Array & x, WriteBuffer & buf) const;
@@ -122,6 +124,7 @@ public:
     String operator() (const Int64 & x) const;
     String operator() (const Int128 & x) const;
     String operator() (const Int256 & x) const;
+    String operator() (const UUID & x) const;
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
@@ -168,6 +171,7 @@ public:
     T operator() (const UInt64 & x) const { return T(x); }
     T operator() (const Int64 & x) const { return T(x); }
     T operator() (const Int128 & x) const { return T(x); }
+    T operator() (const UUID & x) const { return T(x.toUnderType()); }
 
     T operator() (const Float64 & x) const
     {
@@ -260,6 +264,7 @@ public:
     void operator() (const Int64 & x) const;
     void operator() (const Int128 & x) const;
     void operator() (const Int256 & x) const;
+    void operator() (const UUID & x) const;
     void operator() (const Float64 & x) const;
     void operator() (const String & x) const;
     void operator() (const Array & x) const;
@@ -305,7 +310,7 @@ public:
     bool operator() (Array &) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Tuple &) const { throw Exception("Cannot sum Tuples", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Map &) const { throw Exception("Cannot sum Maps", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (UInt128 &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (UUID &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
 
     bool operator() (Int128 & x) const
