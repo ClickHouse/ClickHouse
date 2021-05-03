@@ -106,7 +106,9 @@ public:
 
     void renameNested();
 
-    StorageID getNestedStorageID() { return nested_table_id; }
+    StorageID getNestedStorageID() const;
+
+    void setNestedStorageID(const StorageID & id) { nested_table_id.emplace(id); }
 
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
@@ -156,7 +158,7 @@ private:
     /// whether to access nested table or a wrapper over nested (materialized table).
     ContextPtr nested_context;
 
-    StorageID nested_table_id;
+    std::optional<StorageID> nested_table_id;
 };
 
 }

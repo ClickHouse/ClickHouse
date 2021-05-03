@@ -54,7 +54,6 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     , is_materialize_postgresql_database(false)
     , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
-    , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
 {
     if (table_id_.uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializePostgreSQL is allowed only for Atomic database");
@@ -85,7 +84,6 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(const StorageID & tab
     , is_materialize_postgresql_database(true)
     , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
-    , nested_table_id(table_id_)
 {
 }
 
@@ -112,19 +110,19 @@ StoragePtr StorageMaterializePostgreSQL::createTemporary() const
     auto table_id = getStorageID();
     auto new_context = Context::createCopy(context);
 
-    return StorageMaterializePostgreSQL::create(StorageID(table_id.database_name, table_id.table_name + TMP_SUFFIX, UUIDHelpers::generateV4()), new_context);
+    return StorageMaterializePostgreSQL::create(StorageID(table_id.database_name, table_id.table_name + TMP_SUFFIX), new_context);
 }
 
 
 StoragePtr StorageMaterializePostgreSQL::getNested() const
 {
-    return DatabaseCatalog::instance().getTable(nested_table_id, nested_context);
+    return DatabaseCatalog::instance().getTable(getNestedStorageID(), nested_context);
 }
 
 
 StoragePtr StorageMaterializePostgreSQL::tryGetNested() const
 {
-    return DatabaseCatalog::instance().tryGetTable(nested_table_id, nested_context);
+    return DatabaseCatalog::instance().tryGetTable(getNestedStorageID(), nested_context);
 }
 
 
@@ -139,6 +137,17 @@ String StorageMaterializePostgreSQL::getNestedTableName() const
 }
 
 
+StorageID StorageMaterializePostgreSQL::getNestedStorageID() const
+{
+    if (nested_table_id.has_value())
+        return nested_table_id.value();
+
+    auto table_id = getStorageID();
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "No storageID found for inner table. ({}.{}, {})", table_id.database_name, table_id.table_name, toString(table_id.uuid));
+}
+
+
 void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure)
 {
     const auto ast_create = getCreateNestedTableQuery(std::move(table_structure));
@@ -147,6 +156,12 @@ void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructure
     {
         InterpreterCreateQuery interpreter(ast_create, nested_context);
         interpreter.execute();
+
+        auto table_id = getStorageID();
+        auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, table_id.table_name), nested_context);
+
+        /// Save storage_id with correct uuid.
+        nested_table_id = nested_storage->getStorageID();
     }
     catch (...)
     {
@@ -198,7 +213,7 @@ void StorageMaterializePostgreSQL::dropInnerTableIfAny(bool no_delay, ContextPtr
 
     auto nested_table = getNested();
     if (nested_table && !is_materialize_postgresql_database)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, nested_table_id, no_delay);
+        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), no_delay);
 }
 
 
@@ -228,7 +243,6 @@ Pipe StorageMaterializePostgreSQL::read(
     if (!has_nested.load())
         return Pipe();
 
-    LOG_TRACE(&Poco::Logger::get("kssenii"), "Read method!");
     auto nested_table = getNested();
     return readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
             query_info, context_, processed_stage, max_block_size, num_streams);
