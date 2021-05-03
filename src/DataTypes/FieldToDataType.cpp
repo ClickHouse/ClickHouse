@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EMPTY_DATA_PASSED;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
