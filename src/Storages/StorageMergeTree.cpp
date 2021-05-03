@@ -158,7 +158,7 @@ void StorageMergeTree::shutdown()
     {
         /// We clear all old parts after stopping all background operations.
         /// It's important, because background operations can produce temporary
-        /// parts which will remove themselves in their descrutors. If so, we
+        /// parts which will remove themselves in their destructors. If so, we
         /// may have race condition between our remove call and background
         /// process.
         clearOldPartsFromFilesystem(true);
@@ -872,7 +872,8 @@ std::shared_ptr<StorageMergeTree::MergeMutateSelectedEntry> StorageMergeTree::se
     {
         LOG_DEBUG(
             log,
-            "Not enough idle threads to apply mutations at the moment. See settings 'number_of_free_entries_in_pool_to_execute_mutation' and 'background_pool_size'");
+            "Not enough idle threads to apply mutations at the moment. See settings 'number_of_free_entries_in_pool_to_execute_mutation' "
+            "and 'background_pool_size'");
         return {};
     }
 
