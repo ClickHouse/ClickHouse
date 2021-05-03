@@ -383,6 +383,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             TreeRewriterResult(source_header.getNamesAndTypesList(), storage, metadata_snapshot),
             options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
+        query_info.syntax_analyzer_result = syntax_analyzer_result;
+
         /// Save scalar sub queries's results in the query context
         if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
@@ -476,11 +478,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                         required_columns.push_back(column.name);
                 }
             }
-
-            addPrewhereAliasActions();
-
-            query_info.syntax_analyzer_result = syntax_analyzer_result;
-            query_info.required_columns = required_columns;
 
             source_header = metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID());
         }
@@ -625,6 +622,13 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
             options.only_analyze,
             filter_info,
             source_header);
+
+    /// Add prewhere actions with alias columns and record needed columns from storage.
+    if (storage)
+    {
+        addPrewhereAliasActions();
+        analysis_result.required_columns = required_columns;
+    }
 
     if (options.to_stage == QueryProcessingStage::Enum::FetchColumns)
     {
@@ -1438,28 +1442,10 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
 {
     Pipe pipe(std::make_shared<NullSource>(source_header));
 
-    if (query_info.projection)
+    PrewhereInfoPtr prewhere_info_ptr = query_info.projection ? query_info.projection->prewhere_info : query_info.prewhere_info;
+    if (prewhere_info_ptr)
     {
-        if (query_info.projection->before_where)
-        {
-            auto expression = std::make_shared<ExpressionActions>(
-                query_info.projection->before_where, ExpressionActionsSettings::fromContext(context_));
-            pipe.addSimpleTransform(
-                [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
-        }
-
-        if (query_info.projection->before_aggregation)
-        {
-            auto expression = std::make_shared<ExpressionActions>(
-                query_info.projection->before_aggregation, ExpressionActionsSettings::fromContext(context_));
-            pipe.addSimpleTransform(
-                [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
-        }
-    }
-
-    if (query_info.prewhere_info)
-    {
-        auto & prewhere_info = *query_info.prewhere_info;
+        auto & prewhere_info = *prewhere_info_ptr;
 
         if (prewhere_info.alias_actions)
         {
@@ -1504,6 +1490,25 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
                     header,
                     prewhere_info.remove_columns_actions);
             });
+        }
+    }
+
+    if (query_info.projection)
+    {
+        if (query_info.projection->before_where)
+        {
+            auto expression = std::make_shared<ExpressionActions>(
+                query_info.projection->before_where, ExpressionActionsSettings::fromContext(context_));
+            pipe.addSimpleTransform(
+                [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
+        }
+
+        if (query_info.projection->before_aggregation)
+        {
+            auto expression = std::make_shared<ExpressionActions>(
+                query_info.projection->before_aggregation, ExpressionActionsSettings::fromContext(context_));
+            pipe.addSimpleTransform(
+                [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
         }
     }
 
@@ -1903,7 +1908,6 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         SizeLimits leaf_limits;
         std::shared_ptr<const EnabledQuota> quota;
 
-
         /// Set the limits and quota for reading data, the speed and time of the query.
         if (!options.ignore_limits)
         {
@@ -1931,8 +1935,11 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         /// Create step which reads from empty source if storage has no data.
         if (!query_plan.isInitialized())
         {
-            auto header = metadata_snapshot->getSampleBlockForColumns(
-                    required_columns, storage->getVirtuals(), storage->getStorageID());
+            auto header = query_info.projection
+                ? query_info.projection->desc->metadata->getSampleBlockForColumns(
+                    query_info.projection->required_columns, storage->getVirtuals(), storage->getStorageID())
+                : metadata_snapshot->getSampleBlockForColumns(required_columns, storage->getVirtuals(), storage->getStorageID());
+
             addEmptySourceToQueryPlan(query_plan, header, query_info, context);
         }
 

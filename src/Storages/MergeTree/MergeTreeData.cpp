@@ -3805,6 +3805,7 @@ static void selectBestProjection(
     const MergeTreeDataSelectExecutor & reader,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
+    const Names & required_columns,
     ProjectionCandidate & candidate,
     ContextPtr query_context,
     const PartitionIdToMaxBlock * max_added_blocks,
@@ -3853,7 +3854,7 @@ static void selectBestProjection(
     {
         reader.readFromParts(
             normal_parts,
-            query_info.required_columns,
+            required_columns,
             metadata_snapshot,
             metadata_snapshot,
             query_info, // TODO syntax_analysis_result set in index
@@ -4082,7 +4083,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         MergeTreeDataSelectExecutor reader(*this);
         reader.readFromParts(
             parts,
-            query_info.required_columns,
+            analysis_result.required_columns,
             metadata_snapshot,
             metadata_snapshot,
             query_info, // TODO syntax_analysis_result set in index
@@ -4092,7 +4093,8 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             max_added_blocks.get(),
             query_info.merge_tree_data_select_cache.get());
 
-        size_t min_sum_marks = query_info.merge_tree_data_select_cache->sum_marks;
+        // Add 1 to base sum_marks so that we prefer projections even when they have equal number of marks to read.
+        size_t min_sum_marks = query_info.merge_tree_data_select_cache->sum_marks + 1;
         ProjectionCandidate * selected_candidate = nullptr;
         /// Favor aggregate projections
         for (auto & candidate : candidates)
@@ -4103,6 +4105,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                     reader,
                     metadata_snapshot,
                     query_info,
+                    analysis_result.required_columns,
                     candidate,
                     query_context,
                     max_added_blocks.get(),
@@ -4124,6 +4127,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
                         reader,
                         metadata_snapshot,
                         query_info,
+                        analysis_result.required_columns,
                         candidate,
                         query_context,
                         max_added_blocks.get(),
@@ -4786,7 +4790,6 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
-        NameAndTypePair("_projections", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())),
     };
 }
 

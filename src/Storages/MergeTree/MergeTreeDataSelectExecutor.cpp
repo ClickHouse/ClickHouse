@@ -441,14 +441,14 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
-    metadata_snapshot->check(real_column_names, data.getVirtuals(), data.getStorageID());
-
     const Settings & settings = context->getSettingsRef();
     NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
 
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
     if (real_column_names.empty())
         real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
+
+    metadata_snapshot->check(real_column_names, data.getVirtuals(), data.getStorageID());
 
     // Filter parts by virtual columns.
     std::unordered_set<String> part_values;

@@ -231,6 +231,9 @@ struct ExpressionAnalysisResult
     /// perform SELECT DISTINCT.
     Names selected_columns;
 
+    /// Columns to read from storage if any.
+    Names required_columns;
+
     /// Columns will be removed after prewhere actions execution.
     NameSet columns_to_remove_after_prewhere;
 
