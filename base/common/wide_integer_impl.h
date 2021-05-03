@@ -5,10 +5,12 @@
 /// (See at http://www.boost.org/LICENSE_1_0.txt)
 
 #include "throwError.h"
+
 #include <cmath>
 #include <cfloat>
 #include <cassert>
 #include <limits>
+#include <common/unaligned.h>
 
 
 namespace wide
@@ -524,6 +526,17 @@ private:
 
             res.items[little(1)] = r12;
             res.items[little(2)] = r12 >> 64;
+            return res;
+        }
+        else if constexpr (Bits == 128 && sizeof(base_type) == 8)
+        {
+            using CompilerUInt128 = unsigned __int128;
+            CompilerUInt128 a = (CompilerUInt128(lhs.items[1]) << 64) + lhs.items[0];
+            CompilerUInt128 b = (CompilerUInt128(rhs.items[1]) << 64) + rhs.items[0];
+            CompilerUInt128 c = a * b;
+            integer<Bits, Signed> res;
+            res.items[0] = c;
+            res.items[1] = c >> 64;
             return res;
         }
         else
