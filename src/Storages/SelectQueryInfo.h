@@ -169,8 +169,6 @@ struct SelectQueryInfo
 
     ClusterPtr getCluster() const { return !optimized_cluster ? cluster : optimized_cluster; }
 
-    Names required_columns;
-
     /// If not null, it means we choose a projection to execute current query.
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
