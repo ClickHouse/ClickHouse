@@ -24,29 +24,43 @@
 namespace DB
 {
 
+/** Case of single MaterializePostgreSQL table engine.
+ *
+ * A user creates a table with engine MaterializePostgreSQL. Order by expression must be specified (needed for
+ * nested ReplacingMergeTree table). This storage owns its own replication handler, which loads table data
+ * from PostgreSQL into nested ReplacingMergeTree table. If table is not created, but attached, replication handler
+ * will not start loading-fron-snapshot procedure, instead it will continue for last commited lsn.
+ *
+ * Main point: Both tables exist on disk; database engine interacts only with the main table and main table takes
+ * total ownershot over nested table. Nested table has name `main_table_uuid` + NESTED_SUFFIX.
+ *
+ * TODO: a check is needed for existance of nested, now this case is checked via replication slot existance.
+**/
+
+
 /** Case of MaterializePostgreSQL database engine.
- * There is a table with engine MaterializePostgreSQL. It has a nested table with engine ReplacingMergeTree.
- * Both tables shared table_id.table_name and table_id.database_name (probably they automatically have the same uuid?).
  *
- * MaterializePostgreSQL table does not actually exists only in memory and acts as a wrapper for nested table.
+ * MaterializePostgreSQL table exists only in memory and acts as a wrapper for nested table, i.e. only provides an
+ * interface to work with nested table. Both tables share the same StorageID.
  *
- * Also it has the same InMemoryMetadata as its nested table, so if metadata of nested table changes - main table also has
+ * Main table is never created or droppped via database method. The only way database engine interacts with
+ * MaterializePostgreSQL table - in tryGetTable() method, a MaterializePostgreSQL table is returned in order to wrap
+ * and redirect read requests. Set of such wrapper-tables is cached inside database engine. All other methods in
+ * regard to materializePostgreSQL table are handled by replication handler.
+ *
+ * All database methods, apart from tryGetTable(), are devoted only to nested table.
+ * TODO: It makes sence to allow rename method for MaterializePostgreSQL table via database method.
+ * TODO: Make sure replication-to-table data channel is done only by relation_id.
+ *
+ * Also main table has the same InMemoryMetadata as its nested table, so if metadata of nested table changes - main table also has
  * to update its metadata, because all read requests are passed to MaterializePostgreSQL table and then it redirects read
  * into nested table.
  *
  * When there is a need to update table structure, there will be created a new MaterializePostgreSQL table with its own nested table,
- * it will have upadated table schema and all data will be loaded from scratch in the background, while previos table with outadted table
- * structure will still serve read requests. When data is loaded, a replace query will be done, to swap tables atomically.
+ * it will have updated table schema and all data will be loaded from scratch in the background, while previous table with outadted table
+ * structure will still serve read requests. When data is loaded, nested tables will be swapped, metadata of metarialzied table will be
+ * updated according to nested table.
  *
- * In order to update MaterializePostgreSQL table:
- * 1. need to update InMemoryMetadata of MaterializePostgreSQL table;
- * 2. need to have a new updated ReplacingMergeTree table on disk.
- *
- * At the point before replace query there are:
- * 1. In-memory MaterializePostgreSQL table `databae_name`.`table_name`  -- outdated
- * 2. On-disk ReplacingMergeTree table with `databae_name`.`table_name`  -- outdated
- * 3. In-memory MaterializePostgreSQL table `databae_name`.`table_name_tmp`  -- updated
- * 4. On-disk ReplacingMergeTree table with `databae_name`.`table_name_tmp`  -- updated
 **/
 
 class StorageMaterializePostgreSQL final : public ext::shared_ptr_helper<StorageMaterializePostgreSQL>, public IStorage, WithContext
@@ -64,6 +78,7 @@ public:
 
     void shutdown() override;
 
+    /// Used only for single MaterializePostgreSQL storage.
     void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;
 
     NamesAndTypesList getVirtuals() const override;
@@ -77,27 +92,25 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure);
+    bool hasNested() { return has_nested.load(); }
 
-    StoragePtr createTemporary() const;
+    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure);
 
     StoragePtr getNested() const;
 
     StoragePtr tryGetNested() const;
 
+    StoragePtr createTemporary() const;
+
     ContextPtr getNestedTableContext() const { return nested_context; }
-
-    void setNestedStatus(bool loaded) { nested_loaded.store(loaded); }
-
-    bool isNestedLoaded() { return nested_loaded.load(); }
-
-    void setStorageMetadata();
 
     void renameNested();
 
     StorageID getNestedStorageID() { return nested_table_id; }
 
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
+
+    StoragePtr prepare();
 
 protected:
     StorageMaterializePostgreSQL(
@@ -107,7 +120,7 @@ protected:
         const postgres::ConnectionInfo & connection_info,
         const StorageInMemoryMetadata & storage_metadata,
         ContextPtr context_,
-        std::unique_ptr<MaterializePostgreSQLSettings> replication_settings_);
+        std::unique_ptr<MaterializePostgreSQLSettings> replication_settings);
 
 private:
     static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
@@ -119,13 +132,31 @@ private:
 
     String getNestedTableName() const;
 
-    std::string remote_table_name;
-    std::unique_ptr<MaterializePostgreSQLSettings> replication_settings;
+    /// Needed only for the case of single MaterializePostgreSQL storage - in order to make
+    /// delayed storage forwarding into replication handler.
+    String remote_table_name;
+
+    /// Not nullptr only for single MaterializePostgreSQL storage, because for MaterializePostgreSQL
+    /// database engine there is one replication handler for all tables.
     std::unique_ptr<PostgreSQLReplicationHandler> replication_handler;
-    std::atomic<bool> nested_loaded = false;
+
+    /// Distinguish between single MaterilizePostgreSQL table engine and MaterializePostgreSQL database engine,
+    /// because table with engine MaterilizePostgreSQL acts differently in each case.
     bool is_materialize_postgresql_database = false;
-    StorageID nested_table_id;
+
+    /// Will be set to `true` only once - when nested table was loaded by replication thread.
+    /// After that, it will never be changed. Needed for MaterializePostgreSQL database engine
+    /// because there is an invariant - table exists only if its nested table exists, but nested
+    /// table is not loaded immediately. It is made atomic, because it is accessed only by database engine,
+    /// and updated by replication handler (only once).
+    std::atomic<bool> has_nested = false;
+
+    /// Nested table context is a copy of global context, but contains query context with defined
+    /// ReplacingMergeTree storage in factoriesLog. This is needed to let database engine know
+    /// whether to access nested table or a wrapper over nested (materialized table).
     ContextPtr nested_context;
+
+    StorageID nested_table_id;
 };
 
 }

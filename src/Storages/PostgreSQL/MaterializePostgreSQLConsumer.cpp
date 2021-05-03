@@ -308,23 +308,20 @@ void MaterializePostgreSQLConsumer::processReplicationMessage(const char * repli
                 bool read_next = true;
                 switch (identifier)
                 {
-                    case 'K':
-                    {
-                        /// Only if changed column(s) are part of replica identity index (for now it can be only
-                        /// be primary key - default values for replica identity index). In this case, first comes a tuple
-                        /// with old replica identity indexes and all other values will come as nulls. Then comes a full new row.
-                        readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
-                        break;
-                    }
+                    /// Only if changed column(s) are part of replica identity index (or primary keys if they are used instead).
+                    /// In this case, first comes a tuple with old replica identity indexes and all other values will come as
+                    /// nulls. Then comes a full new row.
+                    case 'K': [[fallthrough]];
+                    /// Old row. Only if replica identity is set to full. Does notreally make sense to use it as
+                    /// it is much more efficient to use replica identity index, but support all possible cases.
                     case 'O':
                     {
-                        /// Old row. Only if replica identity is set to full. (For the case when a table does not have any
-                        /// primary key, for now not supported, requires to find suitable order by key(s) for nested table.)
                         readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE, true);
                         break;
                     }
                     case 'N':
                     {
+                        /// New row.
                         readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::UPDATE);
                         read_next = false;
                         break;

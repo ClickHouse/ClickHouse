@@ -69,13 +69,25 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
 
     for (const auto & table_name : tables_to_replicate)
     {
-        auto storage = tryGetTable(table_name, getContext());
+        /// Check nested ReplacingMergeTree table.
+        auto storage = DatabaseAtomic::tryGetTable(table_name, getContext());
 
         if (!storage)
+        {
+            /// Nested table does not exist and will be created by replication thread.
             storage = StorageMaterializePostgreSQL::create(StorageID(database_name, table_name), getContext());
+        }
+        else
+        {
+            /// Nested table was already created and syncronized.
+            storage = StorageMaterializePostgreSQL::create(storage, getContext());
+        }
 
-        replication_handler->addStorage(table_name, storage->as<StorageMaterializePostgreSQL>());
+        /// Cache MaterializePostgreSQL wrapper over nested table.
         materialized_tables[table_name] = storage;
+
+        /// Let replication thread now, which tables it needs to keep in sync.
+        replication_handler->addStorage(table_name, storage->as<StorageMaterializePostgreSQL>());
     }
 
     LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
@@ -113,35 +125,36 @@ StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, Conte
 {
     /// When a nested ReplacingMergeTree table is managed from PostgreSQLReplicationHandler, its context is modified
     /// to show the type of managed table.
-    if (local_context->hasQueryContext())
+    if ((local_context->hasQueryContext() && local_context->getQueryContext()->getQueryFactoriesInfo().storages.count("ReplacingMergeTree"))
+        || materialized_tables.empty())
     {
-        auto storage_set = local_context->getQueryContext()->getQueryFactoriesInfo().storages;
-        if (storage_set.find("ReplacingMergeTree") != storage_set.end())
-        {
-            return DatabaseAtomic::tryGetTable(name, local_context);
-        }
+        return DatabaseAtomic::tryGetTable(name, local_context);
     }
 
     /// Note: In select query we call MaterializePostgreSQL table and it calls tryGetTable from its nested.
+    /// So the only point, where synchronization is needed - access to MaterializePostgreSQL table wrapper over nested table.
     std::lock_guard lock(tables_mutex);
     auto table = materialized_tables.find(name);
 
-    /// Nested table is not created immediately. Consider that table exists only if nested table exists.
-    if (table != materialized_tables.end() && table->second->as<StorageMaterializePostgreSQL>()->isNestedLoaded())
+    /// Return wrapper over ReplacingMergeTree table. If table synchronization just started, table will not
+    /// be accessible immediately. Table is considered to exist once its nested table was created.
+    if (table != materialized_tables.end() && table->second->as <StorageMaterializePostgreSQL>()->hasNested())
+    {
         return table->second;
+    }
 
     return StoragePtr{};
 }
 
 
-void DatabaseMaterializePostgreSQL::createTable(ContextPtr local_context, const String & name, const StoragePtr & table, const ASTPtr & query)
+void DatabaseMaterializePostgreSQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
     if (local_context->hasQueryContext())
     {
         auto storage_set = local_context->getQueryContext()->getQueryFactoriesInfo().storages;
         if (storage_set.find("ReplacingMergeTree") != storage_set.end())
         {
-            DatabaseAtomic::createTable(local_context, name, table, query);
+            DatabaseAtomic::createTable(local_context, table_name, table, query);
             return;
         }
     }
@@ -155,6 +168,15 @@ void DatabaseMaterializePostgreSQL::stopReplication()
 {
     if (replication_handler)
         replication_handler->shutdown();
+
+    /// Clear wrappers over nested, all access is not done to nested tables directly.
+    materialized_tables.clear();
+}
+
+
+void DatabaseMaterializePostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
+{
+    DatabaseAtomic::dropTable(StorageMaterializePostgreSQL::makeNestedTableContext(local_context), table_name, no_delay);
 }
 
 
@@ -169,23 +191,14 @@ void DatabaseMaterializePostgreSQL::drop(ContextPtr local_context)
     if (metadata.exists())
         metadata.remove(false);
 
-    DatabaseAtomic::drop(local_context);
+    DatabaseAtomic::drop(StorageMaterializePostgreSQL::makeNestedTableContext(local_context));
 }
 
 
 DatabaseTablesIteratorPtr DatabaseMaterializePostgreSQL::getTablesIterator(
-        ContextPtr /* context */, const DatabaseOnDisk::FilterByNameFunction & /* filter_by_table_name */)
+        ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
 {
-    Tables nested_tables;
-    for (const auto & [table_name, storage] : materialized_tables)
-    {
-        auto nested_storage = storage->as<StorageMaterializePostgreSQL>()->tryGetNested();
-
-        if (nested_storage)
-            nested_tables[table_name] = nested_storage;
-    }
-
-    return std::make_unique<DatabaseTablesSnapshotIterator>(nested_tables, database_name);
+    return DatabaseAtomic::getTablesIterator(StorageMaterializePostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
 }
 
 

@@ -34,7 +34,7 @@ public:
             ContextPtr context_,
             const size_t max_block_size_,
             bool allow_minimal_ddl_,
-            bool is_postgresql_replica_database_engine_,
+            bool is_materialize_postgresql_database_,
             const String tables_list = "");
 
     void startup();
@@ -98,7 +98,7 @@ private:
     bool allow_minimal_ddl = false;
 
     /// To distinguish whether current replication handler belongs to a MaterializePostgreSQL database engine or single storage.
-    bool is_postgresql_replica_database_engine;
+    bool is_materialize_postgresql_database;
 
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;

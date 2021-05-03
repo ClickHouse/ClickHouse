@@ -39,6 +39,7 @@ static const auto NESTED_TABLE_SUFFIX = "_nested";
 static const auto TMP_SUFFIX = "_tmp";
 
 
+/// For the case of single storage.
 StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     const StorageID & table_id_,
     const String & remote_database_name,
@@ -46,23 +47,23 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
     const postgres::ConnectionInfo & connection_info,
     const StorageInMemoryMetadata & storage_metadata,
     ContextPtr context_,
-    std::unique_ptr<MaterializePostgreSQLSettings> replication_settings_)
+    std::unique_ptr<MaterializePostgreSQLSettings> replication_settings)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
-    , replication_settings(std::move(replication_settings_))
-    , is_materialize_postgresql_database(
-            DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "MaterializePostgreSQL")
-    , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
+    , is_materialize_postgresql_database(false)
+    , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+    , nested_table_id(StorageID(table_id_.database_name, getNestedTableName()))
 {
     if (table_id_.uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializePostgreSQL is allowed only for Atomic database");
 
     setInMemoryMetadata(storage_metadata);
 
+    /// Path to store replication metadata (like last written version, etc).
     auto metadata_path = DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getMetadataPath()
-                       +  "/.metadata_" + table_id_.database_name + "_" + table_id_.table_name;
+                       +  "/.metadata_" + table_id_.database_name + "_" + table_id_.table_name + "_" + toString(table_id_.uuid);
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
@@ -75,25 +76,30 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
 }
 
 
-StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
-    const StorageID & table_id_,
-    ContextPtr context_)
+/// For the case of MaterializePosgreSQL database engine.
+/// It is used when nested ReplacingMergeeTree table has not yet be created by replication thread.
+/// In this case this storage can't be used for read queries.
+StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(const StorageID & table_id_, ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , is_materialize_postgresql_database(true)
-    , nested_table_id(table_id_)
+    , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+    , nested_table_id(table_id_)
 {
 }
 
 
-StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
-    StoragePtr nested_storage_, ContextPtr context_)
+/// Costructor for MaterializePostgreSQL table engine - for the case of MaterializePosgreSQL database engine.
+/// It is used when nested ReplacingMergeeTree table has already been created by replication thread.
+/// This storage is ready to handle read queries.
+StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(StoragePtr nested_storage_, ContextPtr context_)
     : IStorage(nested_storage_->getStorageID())
     , WithContext(context_->getGlobalContext())
     , is_materialize_postgresql_database(true)
-    , nested_table_id(nested_storage_->getStorageID())
+    , has_nested(true)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+    , nested_table_id(nested_storage_->getStorageID())
 {
     setInMemoryMetadata(nested_storage_->getInMemoryMetadata());
 }
@@ -105,9 +111,8 @@ StoragePtr StorageMaterializePostgreSQL::createTemporary() const
 {
     auto table_id = getStorageID();
     auto new_context = Context::createCopy(context);
-    const String temp_storage_name = table_id.table_name + TMP_SUFFIX;
-    auto temp_storage = StorageMaterializePostgreSQL::create(StorageID(table_id.database_name, temp_storage_name, UUIDHelpers::generateV4()), new_context);
-    return std::move(temp_storage);
+
+    return StorageMaterializePostgreSQL::create(StorageID(table_id.database_name, table_id.table_name + TMP_SUFFIX, UUIDHelpers::generateV4()), new_context);
 }
 
 
@@ -134,17 +139,6 @@ String StorageMaterializePostgreSQL::getNestedTableName() const
 }
 
 
-void StorageMaterializePostgreSQL::setStorageMetadata()
-{
-    /// If it is a MaterializePostgreSQL database engine, then storage with engine MaterializePostgreSQL
-    /// gets its metadata when it is fetch from postges, but if inner tables exist (i.e. it is a server restart)
-    /// then metadata for storage needs to be set from inner table metadata.
-    auto nested_table = getNested();
-    auto storage_metadata = nested_table->getInMemoryMetadataPtr();
-    setInMemoryMetadata(*storage_metadata);
-}
-
-
 void StorageMaterializePostgreSQL::createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure)
 {
     const auto ast_create = getCreateNestedTableQuery(std::move(table_structure));
@@ -168,6 +162,15 @@ std::shared_ptr<Context> StorageMaterializePostgreSQL::makeNestedTableContext(Co
     new_context->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, "ReplacingMergeTree");
 
     return new_context;
+}
+
+
+StoragePtr StorageMaterializePostgreSQL::prepare()
+{
+    auto nested_table = getNested();
+    setInMemoryMetadata(nested_table->getInMemoryMetadata());
+    has_nested.store(true);
+    return nested_table;
 }
 
 
@@ -217,20 +220,18 @@ Pipe StorageMaterializePostgreSQL::read(
         size_t max_block_size,
         unsigned num_streams)
 {
-    if (!nested_loaded)
+    /// For database engine there is an invariant: table exists only if its nested table exists, so
+    /// this check is not needed because read() will never be called until nested is loaded.
+    /// But for single storage, there is no such invarient. Actually, not sure whether it it better
+    /// to silently wait until nested is loaded or to throw on read() requests until nested is loaded.
+    /// TODO: do not use a separate thread in case of single storage, then this problem will be fixed.
+    if (!has_nested.load())
         return Pipe();
 
+    LOG_TRACE(&Poco::Logger::get("kssenii"), "Read method!");
     auto nested_table = getNested();
-
-    return readFinalFromNestedStorage(
-            nested_table,
-            column_names,
-            metadata_snapshot,
-            query_info,
-            context_,
-            processed_stage,
-            max_block_size,
-            num_streams);
+    return readFinalFromNestedStorage(nested_table, column_names, metadata_snapshot,
+            query_info, context_, processed_stage, max_block_size, num_streams);
 }
 
 
