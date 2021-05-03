@@ -1,4 +1,3 @@
-#include <Common/FieldVisitors.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
@@ -8,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
@@ -67,6 +67,11 @@ DataTypePtr FieldToDataType::operator() (const UInt256 &) const
 DataTypePtr FieldToDataType::operator() (const Int256 &) const
 {
     return std::make_shared<DataTypeInt256>();
+}
+
+DataTypePtr FieldToDataType::operator() (const UUID &) const
+{
+    return std::make_shared<DataTypeUUID>();
 }
 
 DataTypePtr FieldToDataType::operator() (const String &) const

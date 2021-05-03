@@ -17,7 +17,6 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Core/AccurateComparison.h>
-#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <DataTypes/DataTypeUUID.h>

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 

@@ -12,6 +12,7 @@
 #include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>

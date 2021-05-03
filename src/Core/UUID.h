@@ -1,13 +1,10 @@
 #pragma once
 
-#include <common/strong_typedef.h>
-#include <common/extended_types.h>
+#include <Core/Types.h>
 
 
 namespace DB
 {
-
-STRONG_TYPEDEF(UInt128, UUID)
 
 namespace UUIDHelpers
 {

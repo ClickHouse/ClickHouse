@@ -179,6 +179,12 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
             static_cast<UInt64>(key) ^
             static_cast<UInt64>(key >> 64));
     }
+    else if constexpr (std::is_same_v<T, DB::UUID>)
+    {
+        return intHash64(
+            static_cast<UInt64>(key.toUnderType()) ^
+            static_cast<UInt64>(key.toUnderType() >> 64));
+    }
     else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
     {
         return intHash64(
@@ -187,6 +193,7 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
             static_cast<UInt64>(key >> 128) ^
             static_cast<UInt64>(key >> 256));
     }
+    assert(false);
     __builtin_unreachable();
 }
 
@@ -256,6 +263,7 @@ DEFINE_HASH(DB::Int128)
 DEFINE_HASH(DB::Int256)
 DEFINE_HASH(DB::Float32)
 DEFINE_HASH(DB::Float64)
+DEFINE_HASH(DB::UUID)
 
 #undef DEFINE_HASH
 
@@ -265,6 +273,14 @@ struct UInt128Hash
     size_t operator()(UInt128 x) const
     {
         return CityHash_v1_0_2::Hash128to64({x.items[0], x.items[1]});
+    }
+};
+
+struct UUIDHash
+{
+    size_t operator()(DB::UUID x) const
+    {
+        return UInt128Hash()(x.toUnderType());
     }
 };
 
@@ -291,6 +307,11 @@ struct UInt128HashCRC32 : public UInt128Hash {};
 struct UInt128TrivialHash
 {
     size_t operator()(UInt128 x) const { return x.items[0]; }
+};
+
+struct UUIDTrivialHash
+{
+    size_t operator()(DB::UUID x) const { return x.toUnderType().items[0]; }
 };
 
 struct UInt256Hash
@@ -331,6 +352,9 @@ struct DefaultHash<DB::UInt128> : public UInt128Hash {};
 
 template <>
 struct DefaultHash<DB::UInt256> : public UInt256Hash {};
+
+template <>
+struct DefaultHash<DB::UUID> : public UUIDHash {};
 
 
 /// It is reasonable to use for UInt8, UInt16 with sufficient hash table size.
@@ -383,23 +407,18 @@ struct IntHash32
 {
     size_t operator() (const T & key) const
     {
-        if constexpr (std::is_same_v<T, DB::Int128>)
+        if constexpr (is_big_int_v<T> && sizeof(T) == 16)
         {
-            return intHash32<salt>(static_cast<UInt64>(key) ^ static_cast<UInt64>(key >> 64));
-        }
-        else if constexpr (std::is_same_v<T, DB::UInt128>)
-        {
-            return intHash32<salt>(key.low ^ key.high);
+            return intHash32<salt>(key.items[0] ^ key.items[1]);
         }
         else if constexpr (is_big_int_v<T> && sizeof(T) == 32)
         {
-            return intHash32<salt>(static_cast<UInt64>(key) ^
-                static_cast<UInt64>(key >> 64) ^
-                static_cast<UInt64>(key >> 128) ^
-                static_cast<UInt64>(key >> 256));
+            return intHash32<salt>(key.items[0] ^ key.items[1] ^ key.items[2] ^ key.items[3]);
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
+        {
             return intHash32<salt>(key);
+        }
 
         assert(false);
         __builtin_unreachable();

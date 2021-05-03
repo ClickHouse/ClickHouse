@@ -668,7 +668,6 @@ void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
     char s[36];
-
     formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), reinterpret_cast<UInt8 *>(s));
     buf.write(s, sizeof(s));
 }

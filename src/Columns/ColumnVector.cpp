@@ -292,7 +292,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
         if (size > count)
-            memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(ValueType()), (size - count) * sizeof(ValueType));
+            memset(static_cast<void *>(&new_col.data[count]), 0, (size - count) * sizeof(ValueType));
     }
 
     return res;
@@ -301,19 +301,28 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 template <typename T>
 UInt64 ColumnVector<T>::get64(size_t n) const
 {
-    return ext::bit_cast<UInt64>(data[n]);
+    if constexpr (IsNumber<T>)
+        return ext::bit_cast<UInt64>(data[n]);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt64", TypeName<T>::get());
 }
 
 template <typename T>
 inline Float64 ColumnVector<T>::getFloat64(size_t n) const
 {
-    return static_cast<Float64>(data[n]);
+    if constexpr (IsNumber<T>)
+        return static_cast<Float64>(data[n]);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float64", TypeName<T>::get());
 }
 
 template <typename T>
 Float32 ColumnVector<T>::getFloat32(size_t n) const
 {
-    return static_cast<Float32>(data[n]);
+    if constexpr (IsNumber<T>)
+        return static_cast<Float32>(data[n]);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float32", TypeName<T>::get());
 }
 
 template <typename T>
@@ -567,5 +576,6 @@ template class ColumnVector<Int128>;
 template class ColumnVector<Int256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
+template class ColumnVector<UUID>;
 
 }

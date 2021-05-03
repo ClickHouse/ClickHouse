@@ -3,7 +3,6 @@
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitors.h>
 #include <Common/ThreadPool.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>

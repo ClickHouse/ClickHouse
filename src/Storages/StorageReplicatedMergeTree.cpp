@@ -1,6 +1,5 @@
 #include <Core/Defines.h>
 
-#include <Common/FieldVisitors.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadPool.h>
