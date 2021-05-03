@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <functional>
+#include <iterator>
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -225,17 +227,20 @@ private:
             ? "func"
             : "addr";
 
-        const size_t step = edges_to_addrs.size() / pool_size;
+        std::vector<EdgeIndex> data;
+        data.reserve(edges_to_addrs.size());
+
+        for (size_t i = 0; i < edges_to_addrs.size(); ++i)
+            if (edge_is_func_entry.at(i) == is_func_cache)
+                data.push_back(static_cast<EdgeIndex>(i));
+
+        const size_t step = data.size() / pool_size;
 
         for (size_t thread_index = 0; thread_index < pool_size; ++thread_index)
-            pool.scheduleOrThrowOnError([this, &caches, thread_index, step, target_str]
+            pool.scheduleOrThrowOnError([this, &caches, &data, thread_index, step, target_str]
             {
                 const size_t start_index = thread_index * step;
-                const size_t end_index = thread_index == pool_size - 1
-                    ? edges_to_addrs.size() - 1
-                    : start_index + step;
-
-                const size_t size = end_index - start_index;
+                const size_t end_index = std::min(start_index + step, data.size() - 1);
 
                 const Poco::Logger * const log = &Poco::Logger::get(
                     fmt::format("{}.{}{}", logger_base_name, target_str, thread_index));
@@ -244,34 +249,31 @@ private:
 
                 time_t elapsed = time(nullptr);
 
-                for (size_t edge_index = start_index; edge_index < end_index; ++edge_index)
+                for (size_t i = start_index; i < end_index; ++i)
                 {
-                    if (edge_is_func_entry[edge_index] != is_func_cache)
-                        continue;
-
+                    const EdgeIndex edge_index = data[i]; // temp
                     const SourceLocation source = getSourceLocation(edge_index);
-                    const EdgeIndex index_casted = static_cast<EdgeIndex>(edge_index);
 
                     if constexpr (is_func_cache)
                     {
                         const std::string_view name = symbolize(edge_index);
 
                         if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
-                            cache_it->second.emplace_back(source.line, index_casted, name);
+                            cache_it->second.emplace_back(source.line, edge_index, name);
                         else
-                            cache[source.full_path] = {{source.line, index_casted, name}};
+                            cache[source.full_path] = {{source.line, edge_index, name}};
                     }
                     else
                     {
                         if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
-                            cache_it->second.emplace_back(source.line, index_casted);
+                            cache_it->second.emplace_back(source.line, edge_index);
                         else
-                            cache[source.full_path] = {{source.line, index_casted}};
+                            cache[source.full_path] = {{source.line, edge_index}};
                     }
 
                     if (time_t current = time(nullptr); current > elapsed)
                     {
-                        LOG_DEBUG(log, "{}/{}", edge_index - start_index, size);
+                        LOG_DEBUG(log, "{}/{}", i - start_index, end_index - start_index);
                         elapsed = current;
                     }
                 }
