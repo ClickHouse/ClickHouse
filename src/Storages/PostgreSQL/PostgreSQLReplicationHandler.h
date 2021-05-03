@@ -33,10 +33,11 @@ public:
             const String & metadata_path_,
             ContextPtr context_,
             const size_t max_block_size_,
-            bool allow_minimal_ddl_,
+            bool allow_automatic_update_,
             bool is_materialize_postgresql_database_,
             const String tables_list = "");
 
+    /// Activate task to be run from a separate thread: wait untill connection is available and call startReplication().
     void startup();
 
     /// Stop replication without cleanup.
@@ -45,15 +46,19 @@ public:
     /// Clean up replication: remove publication and replication slots.
     void shutdownFinal();
 
+    /// Add storage pointer to let handler know which tables it needs to keep in sync.
     void addStorage(const std::string & table_name, StorageMaterializePostgreSQL * storage);
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
     NameSet fetchRequiredTables(pqxx::connection & connection_);
 
+    /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);
 
 private:
     using MaterializedStorages = std::unordered_map<String, StorageMaterializePostgreSQL *>;
+
+    /// Methods to manage Publication.
 
     bool isPublicationExist(pqxx::work & tx);
 
@@ -63,11 +68,15 @@ private:
 
     void dropPublication(pqxx::nontransaction & ntx);
 
+    /// Methods to manage Replication Slots.
+
     bool isReplicationSlotExist(pqxx::nontransaction & tx, std::string & slot_name);
 
     void createReplicationSlot(pqxx::nontransaction & tx, std::string & start_lsn, std::string & snapshot_name, bool temporary = false);
 
     void dropReplicationSlot(pqxx::nontransaction & tx, bool temporary = false);
+
+    /// Methods to manage replication.
 
     void waitConnectionAndStart();
 
@@ -82,7 +91,6 @@ private:
     Poco::Logger * log;
     ContextPtr context;
 
-    /// Remote database name.
     const String remote_database_name, current_database_name;
 
     /// Path for replication metadata.
@@ -95,7 +103,8 @@ private:
     const size_t max_block_size;
 
     /// Table structure changes are always tracked. By default, table with changed schema will get into a skip list.
-    bool allow_minimal_ddl = false;
+    /// This setting allows to reloas table in the background.
+    bool allow_automatic_update = false;
 
     /// To distinguish whether current replication handler belongs to a MaterializePostgreSQL database engine or single storage.
     bool is_materialize_postgresql_database;

@@ -25,7 +25,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const std::string & metadata_path_,
     ContextPtr context_,
     const size_t max_block_size_,
-    bool allow_minimal_ddl_,
+    bool allow_automatic_update_,
     bool is_materialize_postgresql_database_,
     const String tables_list_)
     : log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
@@ -35,7 +35,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , metadata_path(metadata_path_)
     , connection_info(connection_info_)
     , max_block_size(max_block_size_)
-    , allow_minimal_ddl(allow_minimal_ddl_)
+    , allow_automatic_update(allow_automatic_update_)
     , is_materialize_postgresql_database(is_materialize_postgresql_database_)
     , tables_list(tables_list_)
     , connection(std::make_shared<postgres::Connection>(connection_info_))
@@ -123,19 +123,6 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         }
     };
 
-    /// TODO: think for more cases
-    bool force_reload = false;
-    if (is_materialize_postgresql_database)
-    {
-        force_reload = !Poco::File(metadata_path).exists();
-    }
-    else
-    {
-        assert(materialized_storages.size() == 1);
-        auto materialized_storage = materialized_storages.begin()->second;
-        force_reload = !materialized_storage->tryGetNested();
-    }
-
     /// There is one replication slot for each replication handler. In case of MaterializePostgreSQL database engine,
     /// there is one replication slot per database. Its lifetime must be equal to the lifetime of replication handler.
     /// Recreation of a replication slot imposes reloading of all tables.
@@ -143,11 +130,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     {
         initial_sync();
     }
-    else if (new_publication_created || force_reload)
+    else if (new_publication_created)
     {
-        /// There are the following cases, which mean that something non-intentioanal happened.
-        /// 1. If replication slot exists and metadata file does not exist, it is not ok.
-        /// 2. If replication slot exists before publication is created.
+        /// Replication slot depends on publication, so if replication slot exists and new
+        /// publication was just created - drop that replication slot and start from scratch.
         dropReplicationSlot(tx.getRef());
         initial_sync();
     }
@@ -165,6 +151,21 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             }
             catch (Exception & e)
             {
+                if (e.code() == ErrorCodes::UNKNOWN_TABLE)
+                {
+                    try
+                    {
+                        /// If nested table does not exist, try load it once again.
+                        loadFromSnapshot(snapshot_name, table_name, storage->as <StorageMaterializePostgreSQL>());
+                        nested_storages[table_name] = materialized_storage->prepare();
+                        continue;
+                    }
+                    catch (Exception & e)
+                    {
+                        e.addMessage("Table load failed for the second time");
+                    }
+                }
+
                 e.addMessage("while loading table {}.{}", remote_database_name, table_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
@@ -182,7 +183,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             metadata_path,
             start_lsn,
             max_block_size,
-            allow_minimal_ddl,
+            allow_automatic_update,
             nested_storages);
 
     consumer_task->activateAndSchedule();
@@ -469,16 +470,16 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
                 InterpreterRenameQuery(ast_rename, nested_context).execute();
 
                 {
-                    auto table_lock = materialized_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
                     auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, table_id.table_name), nested_context);
+                    auto table_lock = nested_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
                     auto nested_table_id = nested_storage->getStorageID();
 
                     materialized_storage->setNestedStorageID(nested_table_id);
                     nested_storage = materialized_storage->prepare();
                     LOG_TRACE(log, "Updated table {}.{} ({})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
-                    consumer->updateNested(table_name, nested_storage);
-                    consumer->updateSkipList(relation_id, start_lsn);
+                    /// Pass pointer to new nested table into replication consumer, remove current table from skip list and set start lsn position.
+                    consumer->updateNested(table_name, nested_storage, relation_id, start_lsn);
                 }
 
                 LOG_DEBUG(log, "Dropping table {}.{} ({})", temp_table_id.database_name, temp_table_id.table_name, toString(temp_table_id.uuid));

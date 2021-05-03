@@ -34,18 +34,19 @@ public:
             const std::string & metadata_path,
             const std::string & start_lsn,
             const size_t max_block_size_,
-            bool allow_minimal_ddl_,
+            bool allow_automatic_update_,
             Storages storages_);
 
     void readMetadata();
 
     bool consume(std::vector<std::pair<Int32, String>> & skipped_tables);
 
-    void updateNested(const String & table_name, StoragePtr nested_storage);
-
-    void updateSkipList(Int32 table_id, const String & table_start_lsn);
+    /// Called from reloadFromSnapshot by replication handler. This method is needed to move a table back into synchronization
+    /// process if it was skipped due to schema changes.
+    void updateNested(const String & table_name, StoragePtr nested_storage, Int32 table_id, const String & table_start_lsn);
 
 private:
+    /// Read approximarely up to max_block_size changes from WAL.
     bool readFromReplicationSlot();
 
     void syncTables(std::shared_ptr<pqxx::nontransaction> tx);
@@ -109,7 +110,7 @@ private:
 
     std::string current_lsn, final_lsn;
     const size_t max_block_size;
-    bool allow_minimal_ddl;
+    bool allow_automatic_update;
 
     std::string table_to_insert;
 
