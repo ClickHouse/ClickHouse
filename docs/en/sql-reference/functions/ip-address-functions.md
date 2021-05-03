@@ -422,7 +422,7 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8')
+SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8');
 ```
 
 Result:
@@ -436,7 +436,7 @@ Result:
 Query:
 
 ``` sql
-SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16')
+SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16');
 ```
 
 Result:
