@@ -1323,7 +1323,7 @@ public:
         });
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         assert(2 == types.size() && 2 == values.size());
 
@@ -1340,8 +1340,8 @@ public:
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                     auto type = std::make_shared<ResultDataType>();
-                    auto * lval = nativeCast(b, types[0], values[0](), type);
-                    auto * rval = nativeCast(b, types[1], values[1](), type);
+                    auto * lval = nativeCast(b, types[0], values[0], type);
+                    auto * rval = nativeCast(b, types[1], values[1], type);
                     result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
                     return true;
                 }

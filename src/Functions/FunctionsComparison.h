@@ -1254,13 +1254,13 @@ public:
         return isCompilableType(types[0]) && isCompilableType(types[1]);
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         assert(2 == types.size() && 2 == values.size());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto * x = values[0]();
-        auto * y = values[1]();
+        auto * x = values[0];
+        auto * y = values[1];
         if (!types[0]->equals(*types[1]))
         {
             llvm::Type * common;

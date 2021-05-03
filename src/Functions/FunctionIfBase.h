@@ -40,7 +40,7 @@ public:
         return true;
     }
 
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, Values values) const override
     {
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         auto type = getReturnTypeImpl(types);
@@ -54,7 +54,7 @@ public:
         {
             auto * then = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
             auto * next = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
-            auto * cond = values[i]();
+            auto * cond = values[i];
             if (!null_is_false && types[i]->isNullable())
             {
                 auto * nonnull = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
@@ -68,12 +68,12 @@ public:
                 b.CreateCondBr(nativeBoolCast(b, types[i], cond), then, next);
             }
             b.SetInsertPoint(then);
-            auto * value = nativeCast(b, types[i + 1], values[i + 1](), type);
+            auto * value = nativeCast(b, types[i + 1], values[i + 1], type);
             returns.emplace_back(b.GetInsertBlock(), value);
             b.CreateBr(join);
             b.SetInsertPoint(next);
         }
-        auto * value = nativeCast(b, types.back(), values.back()(), type);
+        auto * value = nativeCast(b, types.back(), values.back(), type);
         returns.emplace_back(b.GetInsertBlock(), value);
         b.CreateBr(join);
         b.SetInsertPoint(join);

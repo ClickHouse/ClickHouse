@@ -15,7 +15,7 @@
 namespace DB
 {
 
-using CompilableExpression = std::function<llvm::Value * (llvm::IRBuilderBase &, const ValuePlaceholders &)>;
+using CompilableExpression = std::function<llvm::Value * (llvm::IRBuilderBase &, const Values &)>;
 
 class LLVMFunction : public IFunctionBaseImpl
 {
@@ -61,7 +61,7 @@ public:
 
     bool isCompilable() const override { return true; }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override;
+    llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override;
 
     String getName() const override { return name; }
 
