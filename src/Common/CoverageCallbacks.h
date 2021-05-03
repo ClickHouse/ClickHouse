@@ -1,11 +1,12 @@
 #pragma once
+#include <numeric>
 #include "Coverage.h"
 
 //NOLINTNEXTLINE(bugprone-reserved-identifier, readability-non-const-parameter)
 extern "C" void __sanitizer_cov_trace_pc_guard_init(uint32_t *start, uint32_t *stop)
 {
     if (start == stop || *start) return;
-    std::fill(start, stop, 1);
+    std::iota(start, stop, 1);
     /// Don't need to notify Writer as we'll get all info from __sanitizer_cov_pcs_init.
 }
 

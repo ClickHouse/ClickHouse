@@ -74,9 +74,12 @@ Writer::Writer()
 void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_array_end)
 {
     const size_t edges_pairs = pc_array_end - pc_array;
+    const size_t edges = edges_pairs / 2;
 
-    edges_to_addrs.resize(edges_pairs / 2);
-    edge_is_func_entry.resize(edges_pairs / 2);
+    edges_hit.reserve(edges);
+
+    edges_to_addrs.resize(edges);
+    edge_is_func_entry.resize(edges);
 
     for (size_t i = 0; i < edges_pairs; i += 2)
     {
@@ -86,26 +89,6 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
 
     /// We don't symbolize the addresses right away, wait for CH application to load instead.
     /// If starting now, we won't be able to log to Poco or std::cout;
-}
-
-void Writer::hit(EdgeIndex edge_index)
-{
-    if (hits_batch_index == hits_batch_array_size - 1) //non-atomic, ok as thread_local.
-    {
-        auto lck = std::lock_guard(edges_mutex);
-
-        if (test)
-        {
-            hits_batch_storage[hits_batch_index] = edge_index; //can insert last element;
-            mergeFromLocalToGlobalEdges();
-        }
-
-        hits_batch_index = 0;
-
-        return;
-    }
-
-    hits_batch_storage[hits_batch_index++] = edge_index;
 }
 
 void Writer::symbolizeAllInstrumentedAddrs()
@@ -123,6 +106,17 @@ void Writer::symbolizeAllInstrumentedAddrs()
             function_indices.push_back(i);
         else
             addr_indices.push_back(i);
+
+    // TODO Debug only.
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto a = getSourceLocation(function_indices.at(i));
+        LOG_INFO(base_log, "Func: {} {}", a.full_path, a.line);
+
+        const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(
+            uintptr_t(edges_to_addrs.at(addr_indices.at(i))) - 5);
+        LOG_INFO(base_log, "Addr: {} {}", loc.file.toString(), loc.line);
+    }
 
     pool.setMaxThreads(thread_pool_symbolizing);
 
@@ -166,15 +160,9 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         }
 
         log = &Poco::Logger::get(std::string{logger_base_name} + "." + *test);
-        LOG_INFO(log, "Started copying data", test_name);
+        LOG_INFO(log, "Started moving data");
 
-        if (hits_batch_index > 0) // haven't copied last addresses from local storage to edges
-        {
-            mergeFromLocalToGlobalEdges();
-            hits_batch_index = 0;
-        }
-
-        edges_hit_copy = edges_hit;
+        edges_hit_copy = std::move(edges_hit);
         old_test_name = *test;
 
         if (test_name.empty())
@@ -182,11 +170,11 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         else
         {
             test = test_name;
-            edges_hit.clear(); // TODO maybe just clear the values
+            edges_hit = {}; // to initialize after move.
         }
     }
 
-    LOG_INFO(log, "Copied shared data");
+    LOG_INFO(log, "Moved shared data, {} addrs", edges_hit_copy.size());
 
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
     /// The move is evaluated within current function's lifetime during function constructor call.
@@ -197,7 +185,6 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 
     // The functor insertion itself is thread-safe.
     pool.scheduleOrThrowOnError(std::move(f));
-    LOG_INFO(log, "Scheduled job");
 }
 
 void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
@@ -228,6 +215,14 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
             else
                 it2->second += hit;
 
+            continue;
+        }
+
+        // lines_hit is broken.
+
+        if (addr_cache.find(edge_index) == addr_cache.end())
+        {
+            LOG_ERROR(test_info.log, "Fault edge index {}", edge_index);
             continue;
         }
 

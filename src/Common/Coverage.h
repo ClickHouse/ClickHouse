@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <functional>
 #include <iterator>
+#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -70,7 +71,15 @@ public:
         symbolizeAllInstrumentedAddrs();
     }
 
-    void hit(EdgeIndex edge_index);
+    inline void hit(EdgeIndex edge_index)
+    {
+        auto lck = std::lock_guard(edges_mutex);
+
+        if (auto it = edges_hit.find(edge_index); it == edges_hit.end())
+            edges_hit[edge_index] = 1;
+        else
+            ++it->second;
+    }
 
 private:
     Writer();
@@ -84,12 +93,6 @@ private:
     /// How may threads concurrently symbolize the addresses on binary startup.
     static constexpr const size_t thread_pool_symbolizing = 16;
 
-    /// How many addresses do we dump into local storage before acquiring the edges_mutex and pushing into edges.
-    static constexpr const size_t hits_batch_array_size = 100000;
-
-    static thread_local inline size_t hits_batch_index = 0; /// How many addresses are currently in the local storage.
-    static thread_local inline std::array<EdgeIndex, hits_batch_array_size> hits_batch_storage{};
-
     const Poco::Logger * base_log; /// do not use the logger before call of serverHasInitialized.
 
     const std::filesystem::path coverage_dir;
@@ -100,6 +103,8 @@ private:
     FreeThreadPool pool;
 
     using EdgesHit = std::unordered_map<EdgeIndex, size_t /* hits */>;
+
+    //static thread_local inline EdgesHit edges_hit_local{};
 
     EdgesHit edges_hit;
     std::optional<std::string> test;
@@ -149,15 +154,6 @@ private:
     inline std::string_view symbolize(EdgeIndex index) const
     {
         return symbol_index->findSymbol(edges_to_addrs.at(index))->name;
-    }
-
-    inline void mergeFromLocalToGlobalEdges()
-    {
-        for (EdgeIndex i : hits_batch_storage)
-            if (auto it = edges_hit.find(i); it == edges_hit.end())
-                edges_hit[i] = 1;
-            else
-                ++it->second;
     }
 
     static inline std::string_view getNameFromPath(std::string_view path)
@@ -247,6 +243,9 @@ private:
                 {
                     const EdgeIndex edge_index = data.at(i);
                     const SourceLocation source = getSourceLocation(edge_index);
+
+                    // BUG line = 0 for every item in addr_cache
+                    // However, line is correct for func_cache, should investigate
 
                     if constexpr (is_func_cache)
                     {
