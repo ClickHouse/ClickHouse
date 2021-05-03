@@ -394,7 +394,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     Names real_column_names;
 
     size_t total_parts = parts.size();
-    if (total_parts == 0)
+    if (!use_cache && total_parts == 0)
         return std::make_unique<QueryPlan>();
 
     bool sample_factor_column_queried = false;
