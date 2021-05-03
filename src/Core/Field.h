@@ -453,8 +453,10 @@ public:
             case Types::Null:    return false;
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
+            case Types::UInt256: return get<UInt256>() < rhs.get<UInt256>();
             case Types::Int64:   return get<Int64>()   < rhs.get<Int64>();
             case Types::Int128:  return get<Int128>()  < rhs.get<Int128>();
+            case Types::Int256: return get<Int256>() < rhs.get<Int256>();
             case Types::Float64: return get<Float64>() < rhs.get<Float64>();
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
@@ -465,8 +467,6 @@ public:
             case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
             case Types::Decimal256: return get<DecimalField<Decimal256>>() < rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
-            case Types::UInt256: return get<UInt256>() < rhs.get<UInt256>();
-            case Types::Int256: return get<Int256>() < rhs.get<Int256>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -489,8 +489,10 @@ public:
             case Types::Null:    return true;
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
+            case Types::UInt256: return get<UInt256>() <= rhs.get<UInt256>();
             case Types::Int64:   return get<Int64>()   <= rhs.get<Int64>();
             case Types::Int128:  return get<Int128>()  <= rhs.get<Int128>();
+            case Types::Int256: return get<Int256>() <= rhs.get<Int256>();
             case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
@@ -501,8 +503,6 @@ public:
             case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
             case Types::Decimal256: return get<DecimalField<Decimal256>>() <= rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
-            case Types::UInt256: return get<UInt256>() <= rhs.get<UInt256>();
-            case Types::Int256: return get<Int256>() <= rhs.get<Int256>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -535,14 +535,14 @@ public:
             case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
             case Types::Map:     return get<Map>()     == rhs.get<Map>();
             case Types::UInt128: return get<UInt128>() == rhs.get<UInt128>();
+            case Types::UInt256: return get<UInt256>() == rhs.get<UInt256>();
             case Types::Int128:  return get<Int128>()  == rhs.get<Int128>();
+            case Types::Int256:  return get<Int256>()  == rhs.get<Int256>();
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  == rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  == rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() == rhs.get<DecimalField<Decimal128>>();
             case Types::Decimal256: return get<DecimalField<Decimal256>>() == rhs.get<DecimalField<Decimal256>>();
             case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
-            case Types::UInt256: return get<UInt256>() == rhs.get<UInt256>();
-            case Types::Int256:  return get<Int256>()  == rhs.get<Int256>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -568,7 +568,10 @@ public:
 #endif
             case Types::UInt64:  return f(field.template get<UInt64>());
             case Types::UInt128: return f(field.template get<UInt128>());
+            case Types::UInt256: return f(field.template get<UInt256>());
             case Types::Int64:   return f(field.template get<Int64>());
+            case Types::Int128: return f(field.template get<Int128>());
+            case Types::Int256: return f(field.template get<Int256>());
             case Types::Float64: return f(field.template get<Float64>());
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
@@ -579,9 +582,6 @@ public:
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
-            case Types::Int128: return f(field.template get<Int128>());
-            case Types::UInt256: return f(field.template get<UInt256>());
-            case Types::Int256: return f(field.template get<Int256>());
 #if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
@@ -599,10 +599,9 @@ public:
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        Null, UInt64, UInt128, Int64, Int128, Float64, String, Array, Tuple, Map,
+        Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
-        AggregateFunctionStateData,
-        UInt256, Int256
+        AggregateFunctionStateData
         > storage;
 
     Types::Which which;
@@ -725,8 +724,10 @@ private:
 template <> struct Field::TypeToEnum<Null>    { static const Types::Which value = Types::Null; };
 template <> struct Field::TypeToEnum<UInt64>  { static const Types::Which value = Types::UInt64; };
 template <> struct Field::TypeToEnum<UInt128> { static const Types::Which value = Types::UInt128; };
+template <> struct Field::TypeToEnum<UInt256> { static const Types::Which value = Types::UInt256; };
 template <> struct Field::TypeToEnum<Int64>   { static const Types::Which value = Types::Int64; };
 template <> struct Field::TypeToEnum<Int128>  { static const Types::Which value = Types::Int128; };
+template <> struct Field::TypeToEnum<Int256> { static const Types::Which value = Types::Int256; };
 template <> struct Field::TypeToEnum<Float64> { static const Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String>  { static const Types::Which value = Types::String; };
 template <> struct Field::TypeToEnum<Array>   { static const Types::Which value = Types::Array; };
@@ -738,14 +739,14 @@ template <> struct Field::TypeToEnum<DecimalField<Decimal128>>{ static const Typ
 template <> struct Field::TypeToEnum<DecimalField<Decimal256>>{ static const Types::Which value = Types::Decimal256; };
 template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static const Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static const Types::Which value = Types::AggregateFunctionState; };
-template <> struct Field::TypeToEnum<UInt256> { static const Types::Which value = Types::UInt256; };
-template <> struct Field::TypeToEnum<Int256> { static const Types::Which value = Types::Int256; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
 template <> struct Field::EnumToType<Field::Types::UInt128> { using Type = UInt128; };
+template <> struct Field::EnumToType<Field::Types::UInt256> { using Type = UInt256; };
 template <> struct Field::EnumToType<Field::Types::Int64>   { using Type = Int64; };
 template <> struct Field::EnumToType<Field::Types::Int128>  { using Type = Int128; };
+template <> struct Field::EnumToType<Field::Types::Int256>  { using Type = Int256; };
 template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float64; };
 template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
 template <> struct Field::EnumToType<Field::Types::Array>   { using Type = Array; };
@@ -756,8 +757,6 @@ template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = Dec
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
-template <> struct Field::EnumToType<Field::Types::UInt256> { using Type = UInt256; };
-template <> struct Field::EnumToType<Field::Types::Int256>  { using Type = Int256; };
 
 inline constexpr bool isInt64FieldType(Field::Types::Which t)
 {
