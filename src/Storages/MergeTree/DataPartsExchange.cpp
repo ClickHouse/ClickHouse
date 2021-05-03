@@ -637,7 +637,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     bool sync,
     DiskPtr disk,
     PooledReadWriteBufferFromHTTP & in,
-    MergeTreeData::DataPart::Checksums & checksums)
+    MergeTreeData::DataPart::Checksums & checksums) const
 {
     size_t files;
     readBinary(files, in);

@@ -3936,7 +3936,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
 
         if (analysis_result.prewhere_info)
         {
-            auto & prewhere_info = analysis_result.prewhere_info;
+            const auto & prewhere_info = analysis_result.prewhere_info;
             candidate.prewhere_info = std::make_shared<PrewhereInfo>();
             candidate.prewhere_info->prewhere_column_name = prewhere_info->prewhere_column_name;
             candidate.prewhere_info->remove_prewhere_column = prewhere_info->remove_prewhere_column;
