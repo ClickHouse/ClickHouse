@@ -50,6 +50,8 @@ public:
     /// Fetch list of tables which are going to be replicated. Used for database engine.
     NameSet fetchRequiredTables(pqxx::connection & connection_);
 
+    void startSynchronization(bool throw_on_error);
+
 private:
     using MaterializedStorages = std::unordered_map<String, StorageMaterializePostgreSQL *>;
 
@@ -68,8 +70,6 @@ private:
     void dropReplicationSlot(pqxx::nontransaction & tx, bool temporary = false);
 
     void waitConnectionAndStart();
-
-    void startSynchronization();
 
     void consumerFunc();
 

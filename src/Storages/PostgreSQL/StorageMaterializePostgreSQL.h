@@ -29,7 +29,7 @@ namespace DB
  * A user creates a table with engine MaterializePostgreSQL. Order by expression must be specified (needed for
  * nested ReplacingMergeTree table). This storage owns its own replication handler, which loads table data
  * from PostgreSQL into nested ReplacingMergeTree table. If table is not created, but attached, replication handler
- * will not start loading-fron-snapshot procedure, instead it will continue for last commited lsn.
+ * will not start loading-from-snapshot procedure, instead it will continue from last commited lsn.
  *
  * Main point: Both tables exist on disk; database engine interacts only with the main table and main table takes
  * total ownershot over nested table. Nested table has name `main_table_uuid` + NESTED_SUFFIX.
@@ -117,6 +117,7 @@ public:
 protected:
     StorageMaterializePostgreSQL(
         const StorageID & table_id_,
+        bool is_attach_,
         const String & remote_database_name,
         const String & remote_table_name,
         const postgres::ConnectionInfo & connection_info,
@@ -133,10 +134,6 @@ private:
     ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure);
 
     String getNestedTableName() const;
-
-    /// Needed only for the case of single MaterializePostgreSQL storage - in order to make
-    /// delayed storage forwarding into replication handler.
-    String remote_table_name;
 
     /// Not nullptr only for single MaterializePostgreSQL storage, because for MaterializePostgreSQL
     /// database engine there is one replication handler for all tables.
@@ -159,6 +156,12 @@ private:
     ContextPtr nested_context;
 
     std::optional<StorageID> nested_table_id;
+
+    /// Needed only for the case of single MaterializePostgreSQL storage - in order to make
+    /// delayed storage forwarding into replication handler.
+    String remote_table_name;
+
+    bool is_attach;
 };
 
 }
