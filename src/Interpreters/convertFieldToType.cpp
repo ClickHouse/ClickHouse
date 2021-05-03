@@ -67,6 +67,14 @@ static Field convertNumericType(const Field & from, const IDataType & type)
         return convertNumericTypeImpl<Int64, To>(from);
     if (from.getType() == Field::Types::Float64)
         return convertNumericTypeImpl<Float64, To>(from);
+    if (from.getType() == Field::Types::UInt128)
+        return convertNumericTypeImpl<UInt128, To>(from);
+    if (from.getType() == Field::Types::Int128)
+        return convertNumericTypeImpl<Int128, To>(from);
+    if (from.getType() == Field::Types::UInt256)
+        return convertNumericTypeImpl<UInt256, To>(from);
+    if (from.getType() == Field::Types::Int256)
+        return convertNumericTypeImpl<Int256, To>(from);
 
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
@@ -78,7 +86,7 @@ static Field convertIntToDecimalType(const Field & from, const DataTypeDecimal<T
 {
     From value = from.get<From>();
     if (!type.canStoreWhole(value))
-        throw Exception("Number is too much to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        throw Exception("Number is too big to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     T scaled_value = type.getScaleMultiplier() * static_cast<T>(value);
     return DecimalField<T>(scaled_value, type.getScale());
@@ -108,6 +116,15 @@ static Field convertDecimalType(const Field & from, const To & type)
         return convertIntToDecimalType<UInt64>(from, type);
     if (from.getType() == Field::Types::Int64)
         return convertIntToDecimalType<Int64>(from, type);
+    if (from.getType() == Field::Types::UInt128)
+        return convertIntToDecimalType<UInt128>(from, type);
+    if (from.getType() == Field::Types::Int128)
+        return convertIntToDecimalType<Int128>(from, type);
+    if (from.getType() == Field::Types::UInt256)
+        return convertIntToDecimalType<UInt256>(from, type);
+    if (from.getType() == Field::Types::Int256)
+        return convertIntToDecimalType<Int256>(from, type);
+
     if (from.getType() == Field::Types::String)
         return convertStringToDecimalType(from, type);
 
