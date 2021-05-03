@@ -41,6 +41,7 @@ public:
 
     std::optional<std::size_t> getComponentId(const ASTPtr & ast) const;
     std::vector<ASTPtr> getComponent(const std::size_t id) const;
+    bool hasPath(const size_t left, const size_t right) const;
 
     /// Find constants lessOrEqual and greaterOrEqual.
     /// For int and double linear programming can be applied here.

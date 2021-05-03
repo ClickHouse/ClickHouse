@@ -22,7 +22,7 @@ public:
     void addIndex(const MergeTreeIndexPtr & index);
     void addConstraints(const ConstraintsDescription & constraints_description);
 
-    bool alwaysUnknownOrTrue() const { return false; } // TODO: replace < -> <=, > -> >= and assume all hypotheses are true + check path exists
+    bool alwaysUnknownOrTrue() const;
     bool mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const;
 
     //TODO: add constraints
