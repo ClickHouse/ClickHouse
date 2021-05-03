@@ -86,13 +86,6 @@ static void applyFunction(IFunctionBase & function, Field & value)
 
 static CHJIT jit;
 
-template <typename... Ts>
-static bool castToEitherWithNullable(IColumn * column)
-{
-    return ((typeid_cast<Ts *>(column)
-            || (typeid_cast<ColumnNullable *>(column) && typeid_cast<Ts *>(&(typeid_cast<ColumnNullable *>(column)->getNestedColumn())))) || ...);
-}
-
 class LLVMExecutableFunction : public IExecutableFunctionImpl
 {
     std::string name;
@@ -115,16 +108,13 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (!canBeNativeType(*result_type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "LLVMExecutableFunction unexpected result type in: {}", result_type->getName());
+
         auto result_column = result_type->createColumn();
 
         if (input_rows_count)
         {
-            if (!castToEitherWithNullable<
-                ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
-                ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
-                ColumnFloat32, ColumnFloat64>(result_column.get()))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in LLVMExecutableFunction: {}", result_column->getName());
-
             result_column = result_column->cloneResized(input_rows_count);
 
             std::vector<ColumnData> columns(arguments.size() + 1);
@@ -211,6 +201,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
             col.null->addIncoming(col.null_init, entry);
         }
     }
+
     ValuePlaceholders arguments(arg_types.size());
     for (size_t i = 0; i < arguments.size(); ++i) // NOLINT
     {
@@ -219,11 +210,14 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
             auto * value = b.CreateLoad(col.data);
             if (!col.null)
                 return value;
+
             auto * is_null = b.CreateICmpNE(b.CreateLoad(col.null), b.getInt8(0));
             auto * nullable = llvm::Constant::getNullValue(toNativeType(b, type));
+
             return b.CreateInsertValue(b.CreateInsertValue(nullable, value, {0}), is_null, {1});
         };
     }
+
     auto * result = f.compile(b, std::move(arguments));
     if (columns.back().null)
     {
@@ -238,12 +232,11 @@ static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
     auto * cur_block = b.GetInsertBlock();
     for (auto & col : columns)
     {
-        /// stride is either 0 or size of native type; output column is never constant; neither is at least one input
-        auto * is_const = &col == &columns.back() || columns.size() <= 2 ? b.getFalse() : b.CreateICmpEQ(col.stride, llvm::ConstantInt::get(size_type, 0));
-        col.data->addIncoming(b.CreateSelect(is_const, col.data, b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1)), cur_block);
+        col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
         if (col.null)
-            col.null->addIncoming(b.CreateSelect(is_const, col.null, b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1)), cur_block);
+            col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
     }
+
     counter_phi->addIncoming(b.CreateSub(counter_phi, llvm::ConstantInt::get(size_type, 1)), cur_block);
 
     auto * end = llvm::BasicBlock::Create(b.getContext(), "end", func);
@@ -280,12 +273,22 @@ using CompilableExpression = std::function<llvm::Value * (llvm::IRBuilderBase &,
 
 static CompilableExpression subexpression(ColumnPtr c, DataTypePtr type)
 {
-    return [=](llvm::IRBuilderBase & b, const ValuePlaceholders &) { return getNativeValue(toNativeType(b, type), *c, 0); };
+    return [=](llvm::IRBuilderBase & b, const ValuePlaceholders &)
+    {
+        auto * native_value = getNativeValue(toNativeType(b, type), *c, 0);
+        llvm::errs() << "Constant subexpression " << *native_value->getType() << "\n";
+        return native_value;
+    };
 }
 
 static CompilableExpression subexpression(size_t i)
 {
-    return [=](llvm::IRBuilderBase &, const ValuePlaceholders & inputs) { return inputs[i](); };
+    return [=](llvm::IRBuilderBase &, const ValuePlaceholders & inputs)
+    {
+        auto * column =  inputs[i]();
+        llvm::errs() << "Column subexpression " << *column->getType() << "\n";
+        return column;
+    };
 }
 
 static CompilableExpression subexpression(const IFunctionBase & f, std::vector<CompilableExpression> args)
@@ -295,9 +298,11 @@ static CompilableExpression subexpression(const IFunctionBase & f, std::vector<C
         ValuePlaceholders input;
         for (const auto & arg : args)
             input.push_back([&]() { return arg(builder, inputs); });
+
         auto * result = f.compile(builder, input);
         if (result->getType() != toNativeType(builder, f.getResultType()))
             throw Exception("Function " + f.getName() + " generated an llvm::Value of invalid type", ErrorCodes::LOGICAL_ERROR);
+
         return result;
     };
 }
@@ -337,7 +342,10 @@ LLVMFunction::LLVMFunction(const CompileDAG & dag)
                     args.reserve(node.arguments.size());
 
                     for (auto arg : node.arguments)
+                    {
+                        // std::cerr << "CompileNode::Function emplace expression " << arg << std::endl;
                         args.emplace_back(expressions[arg]);
+                    }
 
                     originals.push_back(node.function);
                     expressions.emplace_back(subexpression(*node.function, std::move(args)));
@@ -355,6 +363,13 @@ LLVMFunction::LLVMFunction(const CompileDAG & dag)
         expression = std::move(expressions.back());
 
         compileFunction(module, *this);
+
+        // for (auto & func : module)
+        // {
+        //     std::cerr << "Func name " << std::string(func.getName()) << std::endl;
+        // }
+
+        module.print(llvm::errs(), nullptr);
     });
 }
 
