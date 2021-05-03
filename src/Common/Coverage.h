@@ -68,12 +68,13 @@ public:
     inline void serverHasInitialized()
     {
         base_log = &Poco::Logger::get(std::string{logger_base_name});
+        // TODO Try to load and save offsets cache.
         symbolizeAllInstrumentedAddrs();
     }
 
     inline void hit(EdgeIndex edge_index)
     {
-        auto lck = std::lock_guard(edges_mutex);
+        auto lck = std::lock_guard(edges_mutex); // TODO Not lock for every hit
 
         if (auto it = edges_hit.find(edge_index); it == edges_hit.end())
             edges_hit[edge_index] = 1;
@@ -103,8 +104,6 @@ private:
     FreeThreadPool pool;
 
     using EdgesHit = std::unordered_map<EdgeIndex, size_t /* hits */>;
-
-    //static thread_local inline EdgesHit edges_hit_local{};
 
     EdgesHit edges_hit;
     std::optional<std::string> test;
@@ -209,6 +208,7 @@ private:
     /**
      * Spawn workers symbolizing addresses obtained from PC table to internal local caches.
      *
+     * TODO
      * Unlike function caches, addresses symbolization jobs tend to work nonuniformly.
      * Usually, all but one jobs finish, and the last eats up about 1 extra minute.
      * The idea is to spawn 2x jobs with same thread pool size, so the chance most threads will be idle is lower.
@@ -244,8 +244,7 @@ private:
                     const EdgeIndex edge_index = data.at(i);
                     const SourceLocation source = getSourceLocation(edge_index);
 
-                    // BUG line = 0 for every item in addr_cache
-                    // However, line is correct for func_cache, should investigate
+                    // TODO add cache file_name -> file path
 
                     if constexpr (is_func_cache)
                     {

@@ -56,6 +56,7 @@ Writer::Writer()
         dumpAndChangeTestName(name);
     });
 
+    // BUG Creating multiple folders out of CH folder
     if (std::filesystem::exists(coverage_dir))
     {
         size_t suffix = 1;
@@ -83,8 +84,33 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
 
     for (size_t i = 0; i < edges_pairs; i += 2)
     {
-        edges_to_addrs[i / 2] = reinterpret_cast<void *>(pc_array[i]);
-        edge_is_func_entry[i / 2] = pc_array[i + 1] & 1;
+        const bool is_function_entry = pc_array[i + 1] & 1;
+
+        edge_is_func_entry[i / 2] = is_function_entry;
+
+        const uintptr_t addr = is_function_entry
+            ?  pc_array[i]
+            /**
+             * If we use this addr as is, the SymbolIndex won't be able to find the line for our address.
+             * General assembly looks like this:
+             *
+             * 0x12dbca75 <+117>: callq  0x12dd2680                ; DB::AggregateFunctionFactory::registerFunction at AggregateFunctionFactory.cpp:39
+             * 0x12dbca7a <+122>: jmp    0x12dbca7f                ; <+127> at AggregateFunctionCount.cpp << ADDRESS SHOULD POINT HERE
+             * 0x12dbca7f <+127>: movabsq $0x15b4522c, %rax         ; imm = 0x15B4522C << BUT POINTS HERE
+             * 0x12dbca89 <+137>: addq   $0x4, %rax
+             * 0x12dbca8f <+143>: movq   %rax, %rdi
+             * 0x12dbca92 <+146>: callq  0xb067180 ; ::__sanitizer_cov_trace_pc_guard(uint32_t *) at CoverageCallbacks.h:15
+             *
+             * The symbolizer (as well as lldb and gdb) thinks that instruction at 0x12dbca7f (that sets edge_index for the
+             * callback) is located at line 0.
+             * So we need a way to get the previous instruction (llvm's SanCov does it in default callbacks):
+             *  https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L769
+             * LLVM's SanCov uses internal arch information to do that:
+             *  https://github.com/llvm/llvm-project/blob/main/llvm/tools/sancov/sancov.cpp#L690
+             */
+            :  pc_array[i] - 1;
+
+        edges_to_addrs[i / 2] = reinterpret_cast<void*>(addr);
     }
 
     /// We don't symbolize the addresses right away, wait for CH application to load instead.
@@ -98,7 +124,7 @@ void Writer::symbolizeAllInstrumentedAddrs()
     std::vector<EdgeIndex> function_indices;
     std::vector<EdgeIndex> addr_indices;
 
-    function_indices.reserve(edges_to_addrs.size());
+    function_indices.reserve(edges_to_addrs.size()); //TODO reserve exact size
     addr_indices.reserve(edges_to_addrs.size());
 
     for (size_t i = 0; i < edges_to_addrs.size(); ++i)
@@ -106,17 +132,6 @@ void Writer::symbolizeAllInstrumentedAddrs()
             function_indices.push_back(i);
         else
             addr_indices.push_back(i);
-
-    // TODO Debug only.
-    for (size_t i = 0; i < 10; ++i)
-    {
-        auto a = getSourceLocation(function_indices.at(i));
-        LOG_INFO(base_log, "Func: {} {}", a.full_path, a.line);
-
-        const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(
-            uintptr_t(edges_to_addrs.at(addr_indices.at(i))) - 5);
-        LOG_INFO(base_log, "Addr: {} {}", loc.file.toString(), loc.line);
-    }
 
     pool.setMaxThreads(thread_pool_symbolizing);
 
@@ -127,7 +142,7 @@ void Writer::symbolizeAllInstrumentedAddrs()
 
     LOG_INFO(base_log, "Symbolized all functions");
 
-    LocalCachesArray<AddrSym> addr_caches{};
+    LocalCachesArray<AddrSym> addr_caches{}; // TODO try x3 size for stragglers
 
     scheduleSymbolizationJobs<false>(addr_caches, addr_indices);
 
@@ -218,10 +233,9 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
             continue;
         }
 
-        // lines_hit is broken.
-
         if (addr_cache.find(edge_index) == addr_cache.end())
         {
+            // BUG No fault addresses should be present.
             LOG_ERROR(test_info.log, "Fault edge index {}", edge_index);
             continue;
         }
@@ -282,6 +296,8 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
      */
     LOG_INFO(test_info.log, "Started dumping");
 
+    // TODO remove . from test name
+    // TODO compress buffer with gzip and gunzip
     std::ofstream ofs(coverage_dir / test_info.name);
 
     fmt::print(ofs, "TN:{}\n", test_info.name);
