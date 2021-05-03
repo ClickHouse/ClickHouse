@@ -30,6 +30,8 @@ SELECT
 FROM system.tables
 WHERE name IN ('t1', 't2', 't3') order by name;
 
+SHOW CREATE TABLE t1;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
