@@ -53,14 +53,14 @@
     <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_64_float)</query>
     <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_64_float)</query>
 
-    <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_8 ORDER BY key) DESC</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_8 ORDER BY key DESC)</query>
 
-    <query>SELECT sum(key) FROM (SELECT * FROM rand_1k_10m_16 ORDER BY key) DESC</query>
-    <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_16 ORDER BY key) DESC</query>
-    <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_16 ORDER BY key) DESC</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_1k_10m_16 ORDER BY key DESC)</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_16 ORDER BY key DESC)</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_16 ORDER BY key DESC)</query>
 
-    <query>SELECT sum(key) FROM (SELECT * FROM rand_1k_10m_32 ORDER BY key) DESC</query>
-    <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_32 ORDER BY key) DESC</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_1k_10m_32 ORDER BY key DESC)</query>
+    <query>SELECT sum(key) FROM (SELECT * FROM rand_100k_10m_32 ORDER BY key DESC)</query>
     <query>SELECT sum(key) FROM (SELECT * FROM rand_unlimited_10m_32 ORDER BY key DESC)</query>
 
     <query>SELECT sum(key) FROM (SELECT * FROM rand_1k_10m_64 ORDER BY key DESC)</query>
