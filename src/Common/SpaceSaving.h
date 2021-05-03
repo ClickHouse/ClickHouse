@@ -84,7 +84,7 @@ public:
 
     struct Counter
     {
-        Counter() {}
+        Counter() = default; //-V730
 
         Counter(const TKey & k, UInt64 c = 0, UInt64 e = 0, size_t h = 0)
           : key(k), slot(0), hash(h), count(c), error(e) {}

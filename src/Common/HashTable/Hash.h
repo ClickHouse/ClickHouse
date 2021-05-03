@@ -92,39 +92,38 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
 {
     if (size < 8)
     {
-        DB::UInt64 value = 0;
-        auto * value_ptr = reinterpret_cast<unsigned char *>(&value);
+        UInt64 value = 0;
 
         switch (size)
         {
             case 0:
                 break;
             case 1:
-                __builtin_memcpy(value_ptr, pos, 1);
+                __builtin_memcpy(&value, pos, 1);
                 break;
             case 2:
-                __builtin_memcpy(value_ptr, pos, 2);
+                __builtin_memcpy(&value, pos, 2);
                 break;
             case 3:
-                __builtin_memcpy(value_ptr, pos, 3);
+                __builtin_memcpy(&value, pos, 3);
                 break;
             case 4:
-                __builtin_memcpy(value_ptr, pos, 4);
+                __builtin_memcpy(&value, pos, 4);
                 break;
             case 5:
-                __builtin_memcpy(value_ptr, pos, 5);
+                __builtin_memcpy(&value, pos, 5);
                 break;
             case 6:
-                __builtin_memcpy(value_ptr, pos, 6);
+                __builtin_memcpy(&value, pos, 6);
                 break;
             case 7:
-                __builtin_memcpy(value_ptr, pos, 7);
+                __builtin_memcpy(&value, pos, 7);
                 break;
             default:
                 __builtin_unreachable();
         }
 
-        value_ptr[7] = size;
+        reinterpret_cast<unsigned char *>(&value)[7] = size;
         return intHashCRC32(value, updated_value);
     }
 
