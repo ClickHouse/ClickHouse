@@ -518,41 +518,117 @@ bool IFunction::isCompilable(const DataTypes & arguments) const
 
 llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, ValuePlaceholders values) const
 {
-    if (useDefaultImplementationForNulls())
+    auto denulled_arguments = removeNullables(arguments);
+    if (useDefaultImplementationForNulls() && denulled_arguments)
     {
-        if (auto denulled = removeNullables(arguments))
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+
+        std::vector<llvm::Value*> non_lazy_values;
+        std::vector<llvm::Value*> is_null_values;
+
+        non_lazy_values.reserve(arguments.size());
+        is_null_values.reserve(arguments.size());
+
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
-            /// FIXME: when only one column is nullable, this can actually be slower than the non-jitted version
-            ///        because this involves copying the null map while `wrapInNullable` reuses it.
-            auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-            auto * fail = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-            auto * join = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-            auto * zero = llvm::Constant::getNullValue(toNativeType(b, makeNullable(getReturnTypeImpl(*denulled))));
-            for (size_t i = 0; i < arguments.size(); i++)
+            auto * value = values[i]();
+
+            WhichDataType data_type(arguments[i]);
+            if (data_type.isNullable())
             {
-                if (!arguments[i]->isNullable())
-                    continue;
-                /// Would be nice to evaluate all this lazily, but that'd change semantics: if only unevaluated
-                /// arguments happen to contain NULLs, the return value would not be NULL, though it should be.
-                auto * value = values[i]();
-                auto * ok = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
-                b.CreateCondBr(b.CreateExtractValue(value, {1}), fail, ok);
-                b.SetInsertPoint(ok);
-                values[i] = [value = b.CreateExtractValue(value, {0})]() { return value; };
+                non_lazy_values.emplace_back(b.CreateExtractValue(value, {0}));
+                is_null_values.emplace_back(b.CreateExtractValue(value, {1}));
             }
-            auto * result = b.CreateInsertValue(zero, compileImpl(builder, *denulled, std::move(values)), {0});
-            auto * result_columns = b.GetInsertBlock();
-            b.CreateBr(join);
-            b.SetInsertPoint(fail);
-            auto * null = b.CreateInsertValue(zero, b.getTrue(), {1});
-            b.CreateBr(join);
-            b.SetInsertPoint(join);
-            auto * phi = b.CreatePHI(result->getType(), 2);
-            phi->addIncoming(result, result_columns);
-            phi->addIncoming(null, fail);
-            return phi;
+            else
+            {
+                non_lazy_values.emplace_back(value);
+            }
         }
+
+        ValuePlaceholders place_holders;
+        place_holders.reserve(non_lazy_values.size());
+
+        for (size_t i = 0; i < non_lazy_values.size(); ++i)
+            place_holders.emplace_back([lazy_value = non_lazy_values[i]](){ return lazy_value; });
+
+        auto * result = compileImpl(builder, *denulled_arguments, place_holders);
+
+        if (!is_null_values.empty())
+        {
+            auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments)));
+            auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
+
+            auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
+            auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
+
+            for (auto * is_null_value : is_null_values)
+                nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+
+            return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+        }
+
+        return result;
+        // DataTypes non_null_arguments;
+        // non_null_arguments.reserve(arguments.size());
+
+        // for (size_t i = 0; i < arguments.size(); ++i)
+        // {
+        //     WhichDataType data_type(arguments[i]);
+        //     if (data_type.isNullable())
+        //     {
+
+        //     }
+        //     else
+        //     {
+
+        //     }
+
+
+            // non_null_arguments.emplace_back(removeNullable(arguments[i]));
+            // auto * value = values[i]();
+
+        // }
+
+        // if (auto denulled = removeNullables(arguments))
+        // {
+        //     DataTypes denulled_types = *denulled;
+        //     std::cerr << "IFunction::denulled types " << std::endl;
+        //     for (size_t i = 0; i < denulled_types.size(); ++i)
+        //     {
+        //         std::cerr << "Index " << i << " name " << denulled_types[i]->getName() << std::endl;
+        //     }
+        //     /// FIXME: when only one column is nullable, this can actually be slower than the non-jitted version
+        //     ///        because this involves copying the null map while `wrapInNullable` reuses it.
+        //     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        //     auto * fail = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+        //     auto * join = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+        //     auto * zero = llvm::Constant::getNullValue(toNativeType(b, makeNullable(getReturnTypeImpl(*denulled))));
+        //     for (size_t i = 0; i < arguments.size(); i++)
+        //     {
+        //         if (!arguments[i]->isNullable())
+        //             continue;
+        //         /// Would be nice to evaluate all this lazily, but that'd change semantics: if only unevaluated
+        //         /// arguments happen to contain NULLs, the return value would not be NULL, though it should be.
+        //         auto * value = values[i]();
+        //         auto * ok = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+        //         b.CreateCondBr(b.CreateExtractValue(value, {1}), fail, ok);
+        //         b.SetInsertPoint(ok);
+        //         values[i] = [value = b.CreateExtractValue(value, {0})]() { return value; };
+        //     }
+        //     auto * result = b.CreateInsertValue(zero, compileImpl(builder, *denulled, std::move(values)), {0});
+        //     auto * result_columns = b.GetInsertBlock();
+        //     b.CreateBr(join);
+        //     b.SetInsertPoint(fail);
+        //     auto * null = b.CreateInsertValue(zero, b.getTrue(), {1});
+        //     b.CreateBr(join);
+        //     b.SetInsertPoint(join);
+        //     auto * phi = b.CreatePHI(result->getType(), 2);
+        //     phi->addIncoming(result, result_columns);
+        //     phi->addIncoming(null, fail);
+        //     return phi;
+        // }
     }
+
     return compileImpl(builder, arguments, std::move(values));
 }
 

@@ -237,20 +237,6 @@ public:
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
-#if USE_EMBEDDED_COMPILER
-
-    virtual bool isCompilable() const
-    {
-        throw Exception("isCompilable without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, ValuePlaceholders /*values*/) const
-    {
-        throw Exception("compile without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-#endif
-
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const ColumnsWithTypeAndName & /*arguments*/) const { return nullptr; }
