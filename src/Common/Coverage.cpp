@@ -231,12 +231,6 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
             continue;
         }
 
-        if (auto it = addr_cache.find(edge_index); it == addr_cache.end())
-        {
-            LOG_ERROR(test_info.log, "Fault edge index {}", edge_index);
-            continue;
-        }
-
         const AddrInfo& addr_cache_entry = addr_cache.at(edge_index);
         auto& lines = test_data[addr_cache_entry.index].lines_hit;
 

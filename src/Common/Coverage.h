@@ -305,7 +305,7 @@ private:
                 {
                     for (auto [line, edge_index, name] : addrs_data)
                     {
-                        info.instrumented_functions.push_back(line);
+                        info.instrumented_functions.push_back(edge_index);
                         function_cache[edge_index] = {line, source_index, name};
                     }
                 }
