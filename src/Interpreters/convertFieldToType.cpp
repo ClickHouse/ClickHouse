@@ -14,13 +14,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Core/AccurateComparison.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <common/DateLUT.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -141,7 +141,6 @@ static Field convertDecimalType(const Field & from, const To & type)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
-    // This was added to mitigate converting DateTime64-Field (a typedef to a Decimal64) to DataTypeDate64-compatible type.
     if (from_type_hint && from_type_hint->equals(type))
     {
         return src;
@@ -149,6 +148,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
     WhichDataType which_type(type);
     WhichDataType which_from_type;
+
     if (from_type_hint)
     {
         which_from_type = WhichDataType(*from_type_hint);
@@ -195,12 +195,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
-        if (which_type.isUUID() && src.getType() == Field::Types::UInt128)
-        {
-            /// Already in needed type.
-            return src;
-        }
-
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
             /// Already in needed type.
@@ -208,6 +202,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         /// TODO Conversion from integers to DateTime64
+    }
+    else if (which_type.isUUID() && src.getType() == Field::Types::UUID)
+    {
+        /// Already in needed type.
+        return src;
     }
     else if (which_type.isStringOrFixedString())
     {
@@ -380,6 +379,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
 }
 
+
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
     if (from_value.isNull())
@@ -406,18 +406,22 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         return convertFieldToTypeImpl(from_value, to_type, from_type_hint);
 }
 
+
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint)
 {
     bool is_null = from_value.isNull();
     if (is_null && !to_type.isNullable())
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert NULL to {}", to_type.getName());
+
     Field converted = convertFieldToType(from_value, to_type, from_type_hint);
+
     if (!is_null && converted.isNull())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "Cannot convert value '{}'{}: it cannot be represented as {}",
             toString(from_value),
             from_type_hint ? " from " + from_type_hint->getName() : "",
             to_type.getName());
+
     return converted;
 }
 
