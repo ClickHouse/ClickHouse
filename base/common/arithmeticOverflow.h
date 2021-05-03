@@ -163,45 +163,33 @@ namespace common
         return __builtin_smulll_overflow(x, y, &res);
     }
 
+    /// Overflow check is not implemented for big integers.
+
     template <>
     inline bool mulOverflow(Int128 x, Int128 y, Int128 & res)
     {
         res = mulIgnoreOverflow(x, y);
-        if (!x || !y)
-            return false;
-
-        UInt128 a = (x > 0) ? x : -x;
-        UInt128 b = (y > 0) ? y : -y;
-        return mulIgnoreOverflow(a, b) / b != a;
+        return false;
     }
 
     template <>
     inline bool mulOverflow(Int256 x, Int256 y, Int256 & res)
     {
         res = mulIgnoreOverflow(x, y);
-        if (!x || !y)
-            return false;
-
-        Int256 a = (x > 0) ? x : -x;
-        Int256 b = (y > 0) ? y : -y;
-        return mulIgnoreOverflow(a, b) / b != a;
+        return false;
     }
 
     template <>
     inline bool mulOverflow(UInt128 x, UInt128 y, UInt128 & res)
     {
-        res = x * y;
-        if (!x || !y)
-            return false;
-        return (x * y) / y != x;
+        res = mulIgnoreOverflow(x, y);
+        return false;
     }
 
     template <>
     inline bool mulOverflow(UInt256 x, UInt256 y, UInt256 & res)
     {
         res = mulIgnoreOverflow(x, y);
-        if (!x || !y)
-            return false;
-        return res / y != x;
+        return false;
     }
 }

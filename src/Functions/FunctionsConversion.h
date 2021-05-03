@@ -125,7 +125,7 @@ struct ConvertImpl
 
     template <typename Additions = void *>
     static ColumnPtr NO_SANITIZE_UNDEFINED execute(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t /*input_rows_count*/,
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type [[maybe_unused]], size_t input_rows_count,
         Additions additions [[maybe_unused]] = Additions())
     {
         const ColumnWithTypeAndName & named_from = arguments[0];
@@ -173,18 +173,17 @@ struct ConvertImpl
 
             const auto & vec_from = col_from->getData();
             auto & vec_to = col_to->getData();
-            size_t size = vec_from.size();
-            vec_to.resize(size);
+            vec_to.resize(input_rows_count);
 
             ColumnUInt8::MutablePtr col_null_map_to;
             ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
             {
-                col_null_map_to = ColumnUInt8::create(size, false);
+                col_null_map_to = ColumnUInt8::create(input_rows_count, false);
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
@@ -1443,7 +1442,7 @@ private:
     ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         if (arguments.empty())
-            throw Exception{"Function " + getName() + " expects at least 1 arguments",
+            throw Exception{"Function " + getName() + " expects at least 1 argument",
                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
         const IDataType * from_type = arguments[0].type.get();
@@ -1460,7 +1459,7 @@ private:
             {
                 if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64>)
                 {
-                    // account for optional timezone argument
+                    /// Account for optional timezone argument.
                     if (arguments.size() != 2 && arguments.size() != 3)
                         throw Exception{"Function " + getName() + " expects 2 or 3 arguments for DataTypeDateTime64.",
                             ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};

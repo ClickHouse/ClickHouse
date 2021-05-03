@@ -246,9 +246,7 @@ inline std::enable_if_t<IsNumber<typename FromDataType::FieldType> && IsDataType
 convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     typename ToDataType::FieldType result;
-
     convertToDecimalImpl<FromDataType, ToDataType, void>(value, scale, result);
-
     return result;
 }
 
