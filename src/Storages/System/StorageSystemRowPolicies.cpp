@@ -63,7 +63,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
     auto & column_short_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_database = assert_cast<ColumnString &>(*res_columns[column_index++]);
     auto & column_table = assert_cast<ColumnString &>(*res_columns[column_index++]);
-    auto & column_id = assert_cast<ColumnUInt128 &>(*res_columns[column_index++]).getData();
+    auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
 
     ColumnString * column_condition[MAX_CONDITION_TYPE];
