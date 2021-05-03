@@ -429,32 +429,29 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
         std::string snapshot_name, start_lsn;
         createReplicationSlot(tx.getRef(), start_lsn, snapshot_name, true);
 
-        for (const auto & [table_id, table_name] : relation_data)
+        for (const auto & [relation_id, table_name] : relation_data)
         {
             auto materialized_storage = DatabaseCatalog::instance().getTable(
                                                 StorageID(current_database_name, table_name),
                                                 context)->as <StorageMaterializePostgreSQL>();
 
-            auto table_lock = materialized_storage->lockExclusively(String(), context->getSettingsRef().lock_acquire_timeout);
-            auto temp_materialized_storage = materialized_storage->createTemporary()->as <StorageMaterializePostgreSQL>();
-
-            auto from_table_id = materialized_storage->getNestedStorageID();
-            auto to_table_id = temp_materialized_storage->getNestedStorageID();
-
-            LOG_TRACE(log, "Starting background update of table {}.{}, uuid {} with table {}.{} uuid {}",
-                      from_table_id.database_name, from_table_id.table_name, toString(from_table_id.uuid),
-                      to_table_id.database_name, to_table_id.table_name, toString(to_table_id.uuid));
+            auto temp_materialized_storage = materialized_storage->createTemporary();
 
             /// This snapshot is valid up to the end of the transaction, which exported it.
-            StoragePtr nested_storage = loadFromSnapshot(snapshot_name, table_name,
-                                                         temp_materialized_storage->as <StorageMaterializePostgreSQL>());
-            to_table_id = nested_storage->getStorageID();
+            StoragePtr temp_nested_storage = loadFromSnapshot(snapshot_name, table_name, temp_materialized_storage->as <StorageMaterializePostgreSQL>());
+
+            auto table_id = materialized_storage->getNestedStorageID();
+            auto temp_table_id = temp_nested_storage->getStorageID();
+
+            LOG_TRACE(log, "Starting background update of table {}.{} ({}) with table {}.{} ({})",
+                      table_id.database_name, table_id.table_name, toString(table_id.uuid),
+                      temp_table_id.database_name, temp_table_id.table_name, toString(temp_table_id.uuid));
 
             auto ast_rename = std::make_shared<ASTRenameQuery>();
             ASTRenameQuery::Element elem
             {
-                ASTRenameQuery::Table{from_table_id.database_name, from_table_id.table_name},
-                ASTRenameQuery::Table{to_table_id.database_name, to_table_id.table_name}
+                ASTRenameQuery::Table{table_id.database_name, table_id.table_name},
+                ASTRenameQuery::Table{temp_table_id.database_name, temp_table_id.table_name}
             };
             ast_rename->elements.push_back(std::move(elem));
             ast_rename->exchange = true;
@@ -465,14 +462,21 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
             {
                 InterpreterRenameQuery(ast_rename, nested_context).execute();
 
-                nested_storage = materialized_storage->prepare();
-                auto nested_table_id = nested_storage->getStorageID();
-                LOG_TRACE(log, "Updated table {}.{} ({})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
+                {
+                    auto table_lock = materialized_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
+                    auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, table_id.table_name), nested_context);
+                    auto nested_table_id = nested_storage->getStorageID();
 
-                consumer->updateNested(table_name, nested_storage);
-                consumer->updateSkipList(table_id, start_lsn);
+                    materialized_storage->setNestedStorageID(nested_table_id);
+                    nested_storage = materialized_storage->prepare();
+                    LOG_TRACE(log, "Updated table {}.{} ({})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
-                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, nested_context, nested_context, to_table_id, true);
+                    consumer->updateNested(table_name, nested_storage);
+                    consumer->updateSkipList(relation_id, start_lsn);
+                }
+
+                LOG_DEBUG(log, "Dropping table {}.{} ({})", temp_table_id.database_name, temp_table_id.table_name, toString(temp_table_id.uuid));
+                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, nested_context, nested_context, temp_table_id, true);
             }
             catch (...)
             {
