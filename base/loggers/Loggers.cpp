@@ -52,6 +52,11 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     split = new DB::OwnSplitChannel();
 
     auto log_level = config.getString("logger.level", "trace");
+
+    // if some of the loggers (like console or syslog) will have more
+    // verbose log level - we should to use it for all loggers as default
+    auto max_log_level = Poco::Logger::parseLevel(log_level);
+
     const auto log_path = config.getString("logger.log", "");
     if (!log_path.empty())
     {
@@ -79,6 +84,15 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (!errorlog_path.empty())
     {
         createDirectory(errorlog_path);
+
+        // NOTE: we don't use notice & critical in the code, so in practice error log collects fatal & error & warning.
+        // (!) Warnings are important, they require attention and should never be silenced / ignored.
+        auto errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
+        if (errorlog_level > max_log_level)
+        {
+            max_log_level = errorlog_level;
+        }
+
         std::cerr << "Logging errors to " << errorlog_path << std::endl;
 
         error_log_file = new Poco::FileChannel;
@@ -93,7 +107,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
 
         Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
-        errorlog->setLevel(Poco::Message::PRIO_NOTICE);
+        errorlog->setLevel(errorlog_level);
         errorlog->open();
         split->addChannel(errorlog);
     }
@@ -104,6 +118,11 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (config.getBool("logger.use_syslog", false) || config.getBool("dynamic_layer_selection", false))
     {
         //const std::string & cmd_name = commandName();
+        auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level));
+        if (syslog_level > max_log_level)
+        {
+            max_log_level = syslog_level;
+        }
 
         if (config.has("logger.syslog.address"))
         {
@@ -130,6 +149,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, syslog_channel);
+        log->setLevel(syslog_level);
+
         split->addChannel(log);
     }
 
@@ -141,9 +162,17 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     {
         bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
 
+        auto console_loglevel_string = config.getString("logger.console_loglevel", log_level);
+        auto console_loglevel = Poco::Logger::parseLevel(console_loglevel_string);
+        if (console_loglevel > max_log_level)
+        {
+            max_log_level = console_loglevel;
+        }
+
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_NOTHING, color_enabled);
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel);
-        logger.warning("Logging " + log_level + " to console");
+        logger.warning("Logging " + console_loglevel_string + " to console");
+        log->setLevel(console_loglevel);
         split->addChannel(log);
     }
 
@@ -152,17 +181,17 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     logger.setChannel(split);
 
     // Global logging level (it can be overridden for specific loggers).
-    logger.setLevel(log_level);
+    logger.setLevel(max_log_level);
 
     // Set level to all already created loggers
     std::vector<std::string> names;
     //logger_root = Logger::root();
     logger.root().names(names);
     for (const auto & name : names)
-        logger.root().get(name).setLevel(log_level);
+        logger.root().get(name).setLevel(max_log_level);
 
     // Attach to the root logger.
-    logger.root().setLevel(log_level);
+    logger.root().setLevel(max_log_level);
     logger.root().setChannel(logger.getChannel());
 
     // Explicitly specified log levels for specific loggers.
