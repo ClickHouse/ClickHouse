@@ -11,14 +11,6 @@
 #include <DataStreams/copyData.h>
 #include <Poco/File.h>
 
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTRenameQuery.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 
 namespace DB
 {
@@ -34,7 +26,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     ContextPtr context_,
     const size_t max_block_size_,
     bool allow_minimal_ddl_,
-    bool is_postgresql_replica_database_engine_,
+    bool is_materialize_postgresql_database_,
     const String tables_list_)
     : log(&Poco::Logger::get("PostgreSQLReplicationHandler"))
     , context(context_)
@@ -44,7 +36,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , connection_info(connection_info_)
     , max_block_size(max_block_size_)
     , allow_minimal_ddl(allow_minimal_ddl_)
-    , is_postgresql_replica_database_engine(is_postgresql_replica_database_engine_)
+    , is_materialize_postgresql_database(is_materialize_postgresql_database_)
     , tables_list(tables_list_)
     , connection(std::make_shared<postgres::Connection>(connection_info_))
 {
@@ -128,6 +120,19 @@ void PostgreSQLReplicationHandler::startSynchronization()
         }
     };
 
+    /// TODO: think for more cases
+    bool force_reload = false;
+    if (is_materialize_postgresql_database)
+    {
+        force_reload = !Poco::File(metadata_path).exists();
+    }
+    else
+    {
+        assert(materialized_storages.size() == 1);
+        auto materialized_storage = materialized_storages.begin()->second;
+        force_reload = !materialized_storage->tryGetNested();
+    }
+
     /// There is one replication slot for each replication handler. In case of MaterializePostgreSQL database engine,
     /// there is one replication slot per database. Its lifetime must be equal to the lifetime of replication handler.
     /// Recreation of a replication slot imposes reloading of all tables.
@@ -135,7 +140,7 @@ void PostgreSQLReplicationHandler::startSynchronization()
     {
         initial_sync();
     }
-    else if (!Poco::File(metadata_path).exists() || new_publication_created)
+    else if (new_publication_created || force_reload)
     {
         /// There are the following cases, which mean that something non-intentioanal happened.
         /// 1. If replication slot exists and metadata file does not exist, it is not ok.
@@ -145,16 +150,15 @@ void PostgreSQLReplicationHandler::startSynchronization()
     }
     else
     {
-        /// Synchronization and initial load already took place.c
+        /// Synchronization and initial load already took place.
         LOG_TRACE(log, "Loading {} tables...", materialized_storages.size());
         for (const auto & [table_name, storage] : materialized_storages)
         {
             auto materialized_storage = storage->as <StorageMaterializePostgreSQL>();
             try
             {
-                nested_storages[table_name] = materialized_storage->getNested();
-                materialized_storage->setStorageMetadata();
-                materialized_storage->setNestedStatus(true);
+                /// Try load nested table, set materialized table metadata.
+                nested_storages[table_name] = materialized_storage->prepare();
             }
             catch (Exception & e)
             {
@@ -212,9 +216,7 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(std::string & snapshot
     assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica load from snapshot");
     copyData(input, *block_io.out);
 
-    materialized_storage->setNestedStatus(true);
-
-    nested_storage = materialized_storage->getNested();
+    nested_storage = materialized_storage->prepare();
     auto nested_table_id = nested_storage->getStorageID();
     LOG_TRACE(log, "Loaded table {}.{} (uuid: {})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
@@ -405,7 +407,7 @@ NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         pqxx::ReplicationTransaction & tx, const std::string & table_name)
 {
-    if (!is_postgresql_replica_database_engine)
+    if (!is_materialize_postgresql_database)
         return nullptr;
 
     auto use_nulls = context->getSettingsRef().external_databases_use_nulls;
@@ -429,13 +431,15 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
         for (const auto & [table_id, table_name] : relation_data)
         {
-            StoragePtr materialized_storage = DatabaseCatalog::instance().getTable(StorageID(current_database_name, table_name), context);
+            auto materialized_storage = DatabaseCatalog::instance().getTable(
+                                                StorageID(current_database_name, table_name),
+                                                context)->as <StorageMaterializePostgreSQL>();
+
             auto table_lock = materialized_storage->lockExclusively(String(), context->getSettingsRef().lock_acquire_timeout);
+            auto temp_materialized_storage = materialized_storage->createTemporary()->as <StorageMaterializePostgreSQL>();
 
-            StoragePtr temp_materialized_storage = materialized_storage->as <StorageMaterializePostgreSQL>()->createTemporary();
-
-            auto from_table_id = materialized_storage->as <StorageMaterializePostgreSQL>()->getNestedStorageID();
-            auto to_table_id = temp_materialized_storage->as <StorageMaterializePostgreSQL>()->getNestedStorageID();
+            auto from_table_id = materialized_storage->getNestedStorageID();
+            auto to_table_id = temp_materialized_storage->getNestedStorageID();
 
             LOG_TRACE(log, "Starting background update of table {}.{}, uuid {} with table {}.{} uuid {}",
                       from_table_id.database_name, from_table_id.table_name, toString(from_table_id.uuid),
@@ -444,8 +448,6 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
             /// This snapshot is valid up to the end of the transaction, which exported it.
             StoragePtr nested_storage = loadFromSnapshot(snapshot_name, table_name,
                                                          temp_materialized_storage->as <StorageMaterializePostgreSQL>());
-            auto nested_context = materialized_storage->as <StorageMaterializePostgreSQL>()->getNestedTableContext();
-
             to_table_id = nested_storage->getStorageID();
 
             auto ast_rename = std::make_shared<ASTRenameQuery>();
@@ -457,13 +459,13 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
             ast_rename->elements.push_back(std::move(elem));
             ast_rename->exchange = true;
 
+            auto nested_context = materialized_storage->getNestedTableContext();
+
             try
             {
                 InterpreterRenameQuery(ast_rename, nested_context).execute();
 
-                nested_storage = materialized_storage->as <StorageMaterializePostgreSQL>()->getNested();
-                materialized_storage->setInMemoryMetadata(nested_storage->getInMemoryMetadata());
-
+                nested_storage = materialized_storage->prepare();
                 auto nested_table_id = nested_storage->getStorageID();
                 LOG_TRACE(log, "Updated table {}.{} ({})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
