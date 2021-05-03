@@ -51,17 +51,22 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// Use extended interface of Channel for more comprehensive logging.
     split = new DB::OwnSplitChannel();
 
-    auto log_level = config.getString("logger.level", "trace");
+    auto log_level_string = config.getString("logger.level", "trace");
 
-    // if some of the loggers (like console or syslog) will have more
-    // verbose log level - we should to use it for all loggers as default
-    auto max_log_level = Poco::Logger::parseLevel(log_level);
+    /// different channels (log, console, syslog) may have different loglevels configured
+    /// The maximum (the most verbose) of those will be used as default for Poco loggers
+    int max_log_level = 0;
 
     const auto log_path = config.getString("logger.log", "");
     if (!log_path.empty())
     {
         createDirectory(log_path);
-        std::cerr << "Logging " << log_level << " to " << log_path << std::endl;
+        std::cerr << "Logging " << log_level_string << " to " << log_path << std::endl;
+        auto log_level = Poco::Logger::parseLevel(log_level_string);
+        if (log_level > max_log_level)
+        {
+            max_log_level = log_level;
+        }
 
         // Set up two channel chains.
         log_file = new Poco::FileChannel;
@@ -77,6 +82,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
+        log->setLevel(log_level);
         split->addChannel(log);
     }
 
@@ -118,7 +124,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (config.getBool("logger.use_syslog", false) || config.getBool("dynamic_layer_selection", false))
     {
         //const std::string & cmd_name = commandName();
-        auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level));
+        auto syslog_level = Poco::Logger::parseLevel(config.getString("logger.syslog_level", log_level_string));
         if (syslog_level > max_log_level)
         {
             max_log_level = syslog_level;
@@ -162,7 +168,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     {
         bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
 
-        auto console_loglevel_string = config.getString("logger.console_loglevel", log_level);
+        auto console_loglevel_string = config.getString("logger.console_loglevel", log_level_string);
         auto console_loglevel = Poco::Logger::parseLevel(console_loglevel_string);
         if (console_loglevel > max_log_level)
         {
