@@ -101,10 +101,7 @@ public:
     explicit LLVMExecutableFunction(const std::string & name_)
         : name(name_)
     {
-        function = jit.runJITLocked([&]()
-        {
-            return jit.findCompiledFunction(name_);
-        });
+        function = jit.findCompiledFunction(name_);
 
         if (!function)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find compiled function {}", name_);
@@ -311,9 +308,9 @@ LLVMFunction::LLVMFunction(const CompileDAG & dag)
     std::vector<CompilableExpression> expressions;
     expressions.reserve(dag.size());
 
-    jit.runJITLocked([&]()
+    jit.compileModule([&](llvm::Module & module)
     {
-        auto & context = jit.getContext();
+        auto & context = module.getContext();
         llvm::IRBuilder<> builder(context);
 
         for (const auto & node : dag)
@@ -357,9 +354,7 @@ LLVMFunction::LLVMFunction(const CompileDAG & dag)
 
         expression = std::move(expressions.back());
 
-        auto module_for_compilation = jit.createModuleForCompilation();
-        compileFunction(*module_for_compilation, *this);
-        jit.compileModule(std::move(module_for_compilation));
+        compileFunction(module, *this);
     });
 }
 
@@ -647,6 +642,8 @@ static FunctionBasePtr compile(
 
 void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 {
+    /// TODO: Rewrite
+
     struct Data
     {
         bool is_compilable = false;
@@ -726,8 +723,22 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
                     if (should_compile)
                     {
+                        std::cerr << "ActionsDAG::compileFunctions" << std::endl;
+                        std::cerr << dumpDAG() << std::endl;
+
                         NodeRawConstPtrs new_children;
+
+                        std::cerr << "Compiled node " << frame.node->result_name << std::endl;
+                        std::cerr << "Children before " << std::endl;
+                        for (size_t i = 0; i < frame.node->children.size(); ++i)
+                            std::cerr << "I " << i << " name " << frame.node->children[i]->result_name << std::endl;
+
                         auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
+
+                        std::cerr << "Children after " << frame.node->result_name << std::endl;
+                        for (size_t i = 0; i < new_children.size(); ++i)
+                            std::cerr << "I " << i << " name " << new_children[i]->result_name << std::endl;
+                        std::cerr << "Dump dag " << dag.dump() << std::endl;
 
                         bool all_constants = true;
 

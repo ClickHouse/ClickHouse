@@ -47,8 +47,8 @@ public:
         if (materialize_error)
         {
             std::string error_message;
-            handleAllErrors(
-                std::move(materialize_error), [&](const llvm::ErrorInfoBase & error_info) { error_message = error_info.message(); });
+            handleAllErrors(std::move(materialize_error),
+                [&](const llvm::ErrorInfoBase & error_info) { error_message = error_info.message(); });
 
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot materialize module {}", error_message);
         }
@@ -153,6 +153,15 @@ CHJIT::CHJIT()
 
 CHJIT::~CHJIT() = default;
 
+CHJIT::CompiledModuleInfo CHJIT::compileModule(std::function<void (llvm::Module &)> compile_function)
+{
+    std::lock_guard<std::mutex> lock(jit_lock);
+    auto module = createModuleForCompilation();
+    compile_function(*module);
+    auto module_info = compileModule(std::move(module));
+    return module_info;
+}
+
 std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 {
     std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("jit " + std::to_string(current_module_key), context);
@@ -217,13 +226,15 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
 
     module_identifier_to_memory_manager[module_identifier] = std::move(module_memory_manager);
 
-    compiled_code_size += module_info.size;
+    compiled_code_size.fetch_add(module_info.size, std::memory_order_relaxed);
 
     return module_info;
 }
 
 void CHJIT::deleteCompiledModule(const CHJIT::CompiledModuleInfo & module_info)
 {
+    std::lock_guard<std::mutex> lock(jit_lock);
+
     auto module_it = module_identifier_to_memory_manager.find(module_info.module_identifier);
     if (module_it == module_identifier_to_memory_manager.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no compiled module with identifier {}", module_info.module_identifier);
@@ -232,11 +243,13 @@ void CHJIT::deleteCompiledModule(const CHJIT::CompiledModuleInfo & module_info)
         name_to_symbol.erase(function);
 
     module_identifier_to_memory_manager.erase(module_it);
-    compiled_code_size -= module_info.size;
+    compiled_code_size.fetch_sub(module_info.size, std::memory_order_relaxed);
 }
 
 void * CHJIT::findCompiledFunction(const std::string & name) const
 {
+    std::lock_guard<std::mutex> lock(jit_lock);
+
     auto it = name_to_symbol.find(name);
     if (it != name_to_symbol.end())
         return it->second;
@@ -246,6 +259,7 @@ void * CHJIT::findCompiledFunction(const std::string & name) const
 
 void CHJIT::registerExternalSymbol(const std::string & symbol_name, void * address)
 {
+    std::lock_guard<std::mutex> lock(jit_lock);
     symbol_resolver->registerSymbol(symbol_name, address);
 }
 

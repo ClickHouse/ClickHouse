@@ -18,29 +18,26 @@ int main(int argc, char **argv)
 
     jit.registerExternalSymbol("test_function", reinterpret_cast<void *>(&test_function));
 
-    auto module = jit.createModuleForCompilation();
+    auto compiled_module_info = jit.compileModule([](llvm::Module & module)
+    {
+        auto & context = module.getContext();
+        llvm::IRBuilder<> b (context);
 
-    auto & context = module->getContext();
-    llvm::IRBuilder<> b (module->getContext());
+        auto * func_declaration_type = llvm::FunctionType::get(b.getVoidTy(), { }, /*isVarArg=*/false);
+        auto * func_declaration = llvm::Function::Create(func_declaration_type, llvm::Function::ExternalLinkage, "test_function", module);
 
-    auto * func_declaration_type = llvm::FunctionType::get(b.getVoidTy(), { }, /*isVarArg=*/false);
-    auto * func_declaration = llvm::Function::Create(func_declaration_type, llvm::Function::ExternalLinkage, "test_function", module.get());
+        auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { b.getInt64Ty() }, /*isVarArg=*/false);
+        auto * function = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_name", module);
+        auto * entry = llvm::BasicBlock::Create(context, "entry", function);
 
-    auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { b.getInt64Ty() }, /*isVarArg=*/false);
-    auto * function = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_name", module.get());
-    auto * entry = llvm::BasicBlock::Create(context, "entry", function);
+        auto * argument = function->args().begin();
+        b.SetInsertPoint(entry);
 
-    auto * argument = function->args().begin();
-    b.SetInsertPoint(entry);
+        b.CreateCall(func_declaration);
 
-    b.CreateCall(func_declaration);
-
-    auto * value = b.CreateAdd(argument, argument);
-    b.CreateRet(value);
-
-    module->print(llvm::errs(), nullptr);
-
-    auto compiled_module_info = jit.compileModule(std::move(module));
+        auto * value = b.CreateAdd(argument, argument);
+        b.CreateRet(value);
+    });
 
     std::cerr << "Compile module info " << compiled_module_info.module_identifier << " size " << compiled_module_info.size << std::endl;
     for (const auto & compiled_function_name : compiled_module_info.compiled_functions)

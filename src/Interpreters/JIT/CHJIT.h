@@ -7,6 +7,7 @@
 #if USE_EMBEDDED_COMPILER
 
 #include <unordered_map>
+#include <atomic>
 
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -21,7 +22,6 @@ class JITCompiler;
 
 /// TODO: Add profile events
 /// TODO: Add documentation
-/// TODO: Rewrite interface to be more ThreadSafe
 class CHJIT
 {
 public:
@@ -36,9 +36,7 @@ public:
         std::vector<std::string> compiled_functions;
     };
 
-    std::unique_ptr<llvm::Module> createModuleForCompilation();
-
-    CompiledModuleInfo compileModule(std::unique_ptr<llvm::Module> module);
+    CompiledModuleInfo compileModule(std::function<void (llvm::Module &)> compile_function);
 
     void deleteCompiledModule(const CompiledModuleInfo & module_info);
 
@@ -46,19 +44,13 @@ public:
 
     void registerExternalSymbol(const std::string & symbol_name, void * address);
 
-    llvm::LLVMContext & getContext() { return context; }
-
-    inline size_t getCompiledCodeSize() const { return compiled_code_size; }
-
-    /// TODO: Remove after interface rewrite
-    template <typename Func>
-    auto runJITLocked(Func && func) -> decltype(func())
-    {
-        std::lock_guard<std::mutex> lock(jit_lock);
-        return func();
-    }
+    inline size_t getCompiledCodeSize() const { return compiled_code_size.load(std::memory_order_relaxed); }
 
 private:
+
+    std::unique_ptr<llvm::Module> createModuleForCompilation();
+
+    CompiledModuleInfo compileModule(std::unique_ptr<llvm::Module> module);
 
     std::string getMangledName(const std::string & name_to_mangle) const;
 
@@ -75,8 +67,8 @@ private:
     std::unordered_map<std::string, void *> name_to_symbol;
     std::unordered_map<std::string, std::unique_ptr<JITModuleMemoryManager>> module_identifier_to_memory_manager;
     size_t current_module_key = 0;
-    size_t compiled_code_size = 0;
-    std::mutex jit_lock;
+    std::atomic<size_t> compiled_code_size = 0;
+    mutable std::mutex jit_lock;
 };
 
 }
