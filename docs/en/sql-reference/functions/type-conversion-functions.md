@@ -373,7 +373,7 @@ This function accepts a number or date or date with time, and returns a FixedStr
 
 ## reinterpretAsUUID {#reinterpretasuuid}
 
-This function accepts 16 bytes string, and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the functions work as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
+Accepts 16 bytes string and returns UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the functions works as if the string is padded with the necessary number of null bytes to the end. If the string longer than 16 bytes, the extra bytes at the end are ignored. 
 
 **Syntax**
 
@@ -429,7 +429,24 @@ Result:
 
 ## reinterpret(x, T) {#type_conversion_function-reinterpret}
 
-Use the same source in-memory bytes sequence for `x` value and reinterpret it to destination type
+Uses the same source in-memory bytes sequence for `x` value and reinterprets it to destination type.
+
+**Syntax**
+
+``` sql
+reinterpret(x, type)
+```
+
+**Arguments**
+
+-   `x` — Any type. 
+-   `type` — Destination type. [String](../../sql-reference/data-types/string.md). 
+
+**Returned value**
+
+-   Destination type value.
+
+**Examples**
 
 Query:
 ```sql
@@ -448,11 +465,26 @@ Result:
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Converts input value `x` to the `T` data type. Unlike to `reinterpret` function use external representation of `x` value. 
+Converts input value `x` to the `T` data type. Unlike to `reinterpret` function, type conversion is performed in a natural way.
 
 The syntax `CAST(x AS t)` is also supported.
 
 Note, that if value `x` does not fit the bounds of type T, the function overflows. For example, CAST(-1, 'UInt8') returns 255.
+
+**Syntax**
+
+``` sql
+CAST(x, T)
+```
+
+**Arguments**
+
+-   `x` — Any type. 
+-   `T` — Destination type. [String](../../sql-reference/data-types/string.md).  
+
+**Returned value**
+
+-   Destination type value.
 
 **Examples**
 
@@ -460,9 +492,9 @@ Query:
 
 ```sql
 SELECT
-    cast(toInt8(-1), 'UInt8') AS cast_int_to_uint,
-    cast(toInt8(1), 'Float32') AS cast_int_to_float,
-    cast('1', 'UInt32') AS cast_string_to_int
+    CAST(toInt8(-1), 'UInt8') AS cast_int_to_uint,
+    CAST(toInt8(1), 'Float32') AS cast_int_to_float,
+    CAST('1', 'UInt32') AS cast_string_to_int
 ```
 
 Result:
@@ -492,7 +524,7 @@ Result:
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
 ```
 
-Conversion to FixedString(N) only works for arguments of type String or FixedString(N).
+Conversion to FixedString(N) only works for arguments of type [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
 
 Type conversion to [Nullable](../../sql-reference/data-types/nullable.md) and back is supported. 
 
@@ -1038,7 +1070,7 @@ Result:
 
 ## parseDateTime64BestEffort {#parsedatetime64besteffort}
 
-Same as [parseDateTimeBestEffort](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and return `DateTime64(3)` or `DateTime64(6)` data types.
+Same as [parseDateTimeBestEffort](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and returns `DateTime64(3)` or `DateTime64(6)` data types.
 
 **Syntax**
 
