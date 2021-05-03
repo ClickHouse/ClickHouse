@@ -31,18 +31,19 @@ struct StringHash
     size_t operator()(std::string const& str) const { return hash_type{}(str); }
 };
 
+using EdgeIndex = uint32_t;
 using Addr = void *;
 
 struct SourceFileData
 {
-    std::unordered_map<Addr, size_t /* call count */> functions_hit;
+    std::unordered_map<EdgeIndex, size_t /* call count */> functions_hit;
     std::unordered_map<size_t /* line */, size_t /* call_count */> lines_hit;
 };
 
 struct SourceFileInfo
 {
     std::string path;
-    std::vector<Addr> instrumented_functions;
+    std::vector<EdgeIndex> instrumented_functions;
     std::vector<size_t> instrumented_lines;
 
     explicit SourceFileInfo(std::string path_)
@@ -58,11 +59,7 @@ public:
         return w;
     }
 
-    /// Called when class needs to store all instrumented addresses.
-    void initializePCTable(const uintptr_t *pc_array, const uintptr_t *pcs_end);
-
-    /// Called when guard variables for all instrumented edges have been initialized.
-    inline void initializedGuards(uint32_t count) { edges.reserve(count); }
+    void initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_array_end);
 
     /// Before server has initialized, we can't log data to Poco.
     inline void serverHasInitialized()
@@ -71,8 +68,7 @@ public:
         symbolizeAllInstrumentedAddrs();
     }
 
-    /// Called when a critical edge in binary is hit.
-    void hit(void * addr);
+    void hit(EdgeIndex edge_index);
 
 private:
     Writer();
@@ -90,7 +86,7 @@ private:
     static constexpr const size_t hits_batch_array_size = 100000;
 
     static thread_local inline size_t hits_batch_index = 0; /// How many addresses are currently in the local storage.
-    static thread_local inline std::array<Addr, hits_batch_array_size> hits_batch_storage{};
+    static thread_local inline std::array<EdgeIndex, hits_batch_array_size> hits_batch_storage{};
 
     const Poco::Logger * base_log; /// do not use the logger before call of serverHasInitialized.
 
@@ -101,17 +97,17 @@ private:
 
     FreeThreadPool pool;
 
-    using Addrs = std::unordered_map<Addr, size_t /* hits */>;
-    Addrs edges;
+    using EdgesHit = std::unordered_map<EdgeIndex, size_t /* hits */>;
 
+    EdgesHit edges_hit;
     std::optional<std::string> test;
-    std::mutex edges_mutex; // protects test, edges
+    std::mutex edges_mutex; // protects test, edges_hit
 
     /// Two caches filled on binary startup from PC table created by clang.
-    /// Cleared after addresses symbolization in symbolizeAllInstrumentedAddrs.
-    using AddrsVec = std::vector<Addr>;
-    AddrsVec pc_table_addrs;
-    AddrsVec pc_table_function_entries;
+    /// Never cleared.
+    using EdgesToAddrs = std::vector<Addr>;
+    EdgesToAddrs edges_to_addrs;
+    std::vector<bool> edge_is_func_entry;
 
     /// Four caches filled in symbolizeAllInstrumentedAddrs being read-only by the tests start.
     /// Never cleared.
@@ -125,13 +121,15 @@ private:
         SourceFileIndex index;
     };
 
-    struct FunctionInfo : AddrInfo
+    struct FunctionInfo // Although it looks like FunctionInfo : AddrInfo, inheritance bring more cons than pros
     {
+        size_t line;
+        SourceFileIndex index;
         std::string_view name;
     };
 
-    std::unordered_map<Addr, AddrInfo> addr_cache;
-    std::unordered_map<Addr, FunctionInfo> function_cache;
+    std::unordered_map<EdgeIndex, AddrInfo> addr_cache;
+    std::unordered_map<EdgeIndex, FunctionInfo> function_cache;
 
     struct SourceLocation
     {
@@ -139,16 +137,25 @@ private:
         size_t line;
     };
 
-    inline SourceLocation getSourceLocation(const void * virtual_addr) const
+    inline SourceLocation getSourceLocation(EdgeIndex index) const
     {
         /// This binary gets loaded first, so binary_virtual_offset = 0
-        const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(uintptr_t(virtual_addr));
+        const Dwarf::LocationInfo loc = dwarf.findAddressForCoverageRuntime(uintptr_t(edges_to_addrs.at(index)));
         return {loc.file.toString(), loc.line};
     }
 
-    inline std::string_view symbolize(const void * virtual_addr) const
+    inline std::string_view symbolize(EdgeIndex index) const
     {
-        return symbol_index->findSymbol(virtual_addr)->name;
+        return symbol_index->findSymbol(edges_to_addrs.at(index))->name;
+    }
+
+    inline void mergeFromLocalToGlobalEdges()
+    {
+        for (EdgeIndex i : hits_batch_storage)
+            if (auto it = edges_hit.find(i); it == edges_hit.end())
+                edges_hit[i] = 1;
+            else
+                ++it->second;
     }
 
     static inline std::string_view getNameFromPath(std::string_view path)
@@ -156,16 +163,11 @@ private:
         return path.substr(path.rfind('/') + 1);
     }
 
-    inline void mergeFromLocalToGlobalEdges()
+    static inline auto valueOr(auto& container, auto key, decltype(container.at(key)) default_value)
     {
-        for (Addr addr : hits_batch_storage)
-        {
-            if (auto it = edges.find(addr); it == edges.end())
-                edges[addr] = 1;
-            else
-                ++it->second;
-        }
-
+        if (auto it = container.find(key); it != container.end())
+            return it->second;
+        return default_value;
     }
 
     void dumpAndChangeTestName(std::string_view test_name);
@@ -178,44 +180,44 @@ private:
 
     using TestData = std::vector<SourceFileData>; // vector index = source_files_cache index
 
-    void prepareDataAndDump(TestInfo test_info, const Addrs& addrs);
+    void prepareDataAndDump(TestInfo test_info, const EdgesHit& hits);
     void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);
 
     /// Fills addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
-    /// Clears pc_table_addrs, pc_table_function_entries.
     void symbolizeAllInstrumentedAddrs();
 
     /// Symbolized data
     struct AddrSym
     {
         size_t line;
-        void * addr;
-
-        AddrSym(size_t line_, void * addr_): line(line_), addr(addr_) {}
+        EdgeIndex index;
+        AddrSym(size_t line_, EdgeIndex index_): line(line_), index(index_) {}
     };
 
-    struct FuncSym : AddrSym
+    struct FuncSym // Although it looks like FuncSym : AddrSym, inheritance bring more cons than pros
     {
+        size_t line;
+        EdgeIndex index;
         std::string_view name;
-
-        FuncSym(size_t line_, void * addr_, std::string_view name_): AddrSym(line_, addr_), name(name_) {}
+        FuncSym(size_t line_, EdgeIndex index_, std::string_view name_): line(line_), index(index_), name(name_) {}
     };
 
-    template <class CacheItem> using LocalCachesArray = std::array<
+    template <class CacheItem, size_t ArraySize = thread_pool_symbolizing>
+    using LocalCachesArray = std::array<
         std::unordered_map<std::string/*full_path*/, std::vector<CacheItem>>,
-        thread_pool_symbolizing>;
+        ArraySize>;
 
     /**
      * Spawn workers symbolizing addresses obtained from PC table to internal local caches.
      *
-     * Unlike func_caches, addresses symbolization jobs tend to work nonuniformly.
+     * Unlike function caches, addresses symbolization jobs tend to work nonuniformly.
      * Usually, all but one jobs finish, and the last eats up about 1 extra minute.
      * The idea is to spawn 2x jobs with same thread pool size, so the chance most threads will be idle is lower.
      * The drawback here is that all source files locations must be recalculated in each thread, so it will
      * take some extra time.
      */
-    template <bool is_func_cache, class CacheItem>
-    void scheduleSymbolizationJobs(LocalCachesArray<CacheItem>& caches, const AddrsVec& addrs)
+    template <bool is_func_cache, class CacheItem, size_t ArraySize>
+    void scheduleSymbolizationJobs(LocalCachesArray<CacheItem, ArraySize>& caches)
     {
         constexpr auto pool_size = thread_pool_symbolizing;
 
@@ -223,66 +225,65 @@ private:
             ? "func"
             : "addr";
 
-        const size_t step = addrs.size() / pool_size;
-        const auto begin = addrs.cbegin();
-        const auto r_end = addrs.cend();
+        const size_t step = edges_to_addrs.size() / pool_size;
 
         for (size_t thread_index = 0; thread_index < pool_size; ++thread_index)
-            pool.scheduleOrThrowOnError([this, &caches, thread_index, begin, step, r_end, target_str]
+            pool.scheduleOrThrowOnError([this, &caches, thread_index, step, target_str]
             {
-                const auto start = begin + thread_index * step;
-                const auto end = thread_index == pool_size - 1
-                    ? r_end
-                    : start + step;
+                const size_t start_index = thread_index * step;
+                const size_t end_index = thread_index == pool_size - 1
+                    ? edges_to_addrs.size() - 1
+                    : start_index + step;
+
+                const size_t size = end_index - start_index;
 
                 const Poco::Logger * const log = &Poco::Logger::get(
                     fmt::format("{}.{}{}", logger_base_name, target_str, thread_index));
-
-                const size_t size = end - start;
 
                 auto& cache = caches[thread_index];
 
                 time_t elapsed = time(nullptr);
 
-                for (auto it = start; it != end; ++it)
+                for (size_t edge_index = start_index; edge_index < end_index; ++edge_index)
                 {
-                    Addr addr = *it;
+                    if (edge_is_func_entry[edge_index] != is_func_cache)
+                        continue;
 
-                    const SourceLocation source = getSourceLocation(addr);
+                    const SourceLocation source = getSourceLocation(edge_index);
+                    const EdgeIndex index_casted = static_cast<EdgeIndex>(edge_index);
 
                     if constexpr (is_func_cache)
                     {
+                        const std::string_view name = symbolize(edge_index);
+
                         if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
-                            cache_it->second.emplace_back(source.line, addr, symbolize(addr));
+                            cache_it->second.emplace_back(source.line, index_casted, name);
                         else
-                            cache[source.full_path] = {{source.line, addr, symbolize(addr)}};
+                            cache[source.full_path] = {{source.line, index_casted, name}};
                     }
                     else
                     {
                         if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
-                            cache_it->second.emplace_back(source.line, addr);
+                            cache_it->second.emplace_back(source.line, index_casted);
                         else
-                            cache[source.full_path] = {{source.line, addr}};
+                            cache[source.full_path] = {{source.line, index_casted}};
                     }
 
                     if (time_t current = time(nullptr); current > elapsed)
                     {
-                        LOG_DEBUG(log, "{}/{}", it - start, size);
+                        LOG_DEBUG(log, "{}/{}", edge_index - start_index, size);
                         elapsed = current;
                     }
                 }
             });
     }
 
-    /// Merge symbolized data obtained from multiple threads into global caches.
-    template<bool is_func_cache, class CacheItem>
-    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data,
-            AddrsVec&
-            //to_clear
-        ) {
+    /// Merge local caches' symbolized data [obtained from multiple threads] into global caches.
+    template<bool is_func_cache, class CacheItem, size_t ArraySize>
+    void mergeDataToCaches(const LocalCachesArray<CacheItem, ArraySize>& data) {
         constexpr const std::string_view target_str = is_func_cache
-            ? "function"
-            : "addrs";
+            ? "func"
+            : "addr";
 
         LOG_INFO(base_log, "Started merging {} data to caches", target_str);
 
@@ -291,40 +292,36 @@ private:
             {
                 const std::string_view source_name = getNameFromPath(source_path);
 
-                SourceFileIndex index;
+                SourceFileIndex source_index;
 
-                if (auto it = source_name_to_index.find(source_name);
-                    it != source_name_to_index.end())
-                    index = it->second;
+                if (auto it = source_name_to_index.find(source_name); it != source_name_to_index.end())
+                    source_index = it->second;
                 else
                 {
-                    index = source_name_to_index.size();
-                    source_name_to_index.emplace(source_name, index);
+                    source_index = source_name_to_index.size();
+                    source_name_to_index.emplace(source_name, source_index);
                     source_files_cache.emplace_back(source_path);
                 }
 
-                SourceFileInfo& info = source_files_cache[index];
+                SourceFileInfo& info = source_files_cache[source_index];
 
                 if constexpr (is_func_cache)
                 {
-                    for (const auto& e: addrs_data) // can't decompose as both base and child have data.
+                    for (auto [line, edge_index, name] : addrs_data)
                     {
-                        info.instrumented_functions.push_back(e.addr);
-                        function_cache[e.addr] = {{e.line, index}, e.name};
+                        info.instrumented_functions.push_back(line);
+                        function_cache[edge_index] = {line, source_index, name};
                     }
                 }
                 else
                 {
-                    for (auto [line, addr] : addrs_data)
+                    for (auto [line, edge_index] : addrs_data)
                     {
                         info.instrumented_lines.push_back(line);
-                        addr_cache[addr] = {line, index};
+                        addr_cache[edge_index] = {line, source_index};
                     }
                 }
             }
-
-        //to_clear.clear();
-        //to_clear.shrink_to_fit();
 
         LOG_INFO(base_log, "Finished merging {} data to caches", target_str);
     }

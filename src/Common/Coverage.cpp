@@ -71,26 +71,41 @@ Writer::Writer()
     std::filesystem::create_directory(coverage_dir);
 }
 
-void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pcs_end)
+void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_array_end)
 {
-    const size_t edges_total = pcs_end - pc_array; // can't rely on _edges_ as this function may be called earlier.
+    const size_t edges_pairs = pc_array_end - pc_array;
 
-    pc_table_addrs.reserve(edges_total);
-    pc_table_function_entries.reserve(edges_total);
+    edges_to_addrs.resize(edges_pairs / 2);
+    edge_is_func_entry.resize(edges_pairs / 2);
 
-    for (size_t i = 0; i < edges_total; i += 2)
+    for (size_t i = 0; i < edges_pairs; i += 2)
     {
-        void * const addr = reinterpret_cast<void *>(pc_array[i]);
-        const bool is_function_entry = pc_array[i + 1] & 1;
-
-        if (is_function_entry)
-            pc_table_function_entries.push_back(addr);
-        else
-            pc_table_addrs.push_back(addr);
+        edges_to_addrs[i / 2] = reinterpret_cast<void *>(pc_array[i]);
+        edge_is_func_entry[i / 2] = pc_array[i + 1] & 1;
     }
 
     /// We don't symbolize the addresses right away, wait for CH application to load instead.
     /// If starting now, we won't be able to log to Poco or std::cout;
+}
+
+void Writer::hit(EdgeIndex edge_index)
+{
+    if (hits_batch_index == hits_batch_array_size - 1) //non-atomic, ok as thread_local.
+    {
+        auto lck = std::lock_guard(edges_mutex);
+
+        if (test)
+        {
+            hits_batch_storage[hits_batch_index] = edge_index; //can insert last element;
+            mergeFromLocalToGlobalEdges();
+        }
+
+        hits_batch_index = 0;
+
+        return;
+    }
+
+    hits_batch_storage[hits_batch_index++] = edge_index;
 }
 
 void Writer::symbolizeAllInstrumentedAddrs()
@@ -100,7 +115,7 @@ void Writer::symbolizeAllInstrumentedAddrs()
     pool.setMaxThreads(thread_pool_symbolizing);
 
     LocalCachesArray<FuncSym> func_caches{};
-    scheduleSymbolizationJobs<true>(func_caches, pc_table_function_entries);
+    scheduleSymbolizationJobs<true>(func_caches);
 
     pool.wait();
 
@@ -108,44 +123,24 @@ void Writer::symbolizeAllInstrumentedAddrs()
 
     LocalCachesArray<AddrSym> addr_caches{};
 
-    scheduleSymbolizationJobs<false>(addr_caches, pc_table_addrs);
+    scheduleSymbolizationJobs<false>(addr_caches);
 
     /// Merge functions data from multiple threads while other threads process addresses.
-    mergeDataToCaches<true>(func_caches, pc_table_function_entries);
+    mergeDataToCaches<true>(func_caches);
 
     pool.wait();
 
-    mergeDataToCaches<false>(addr_caches, pc_table_addrs);
+    mergeDataToCaches<false>(addr_caches);
 
     pool.setMaxThreads(thread_pool_test_processing);
 
     LOG_INFO(base_log, "Symbolized all addresses");
 }
 
-void Writer::hit(void * addr)
-{
-    if (hits_batch_index == hits_batch_array_size - 1) //non-atomic, ok as thread_local.
-    {
-        auto lck = std::lock_guard(edges_mutex);
-
-        if (test)
-        {
-            hits_batch_storage[hits_batch_index] = addr; //can insert last element;
-            mergeFromLocalToGlobalEdges();
-        }
-
-        hits_batch_index = 0;
-
-        return;
-    }
-
-    hits_batch_storage[hits_batch_index++] = addr;
-}
-
 void Writer::dumpAndChangeTestName(std::string_view test_name)
 {
     std::string old_test_name;
-    Addrs edges_copies;
+    EdgesHit edges_hit_copy;
 
     const Poco::Logger * log {nullptr};
 
@@ -167,7 +162,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
             hits_batch_index = 0;
         }
 
-        edges_copies = edges;
+        edges_hit_copy = edges_hit;
         old_test_name = *test;
 
         if (test_name.empty())
@@ -175,7 +170,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         else
         {
             test = test_name;
-            edges.clear();
+            edges_hit.clear(); // TODO maybe just clear the values
         }
     }
 
@@ -183,7 +178,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
 
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
     /// The move is evaluated within current function's lifetime during function constructor call.
-    auto f = [this, log, test_name = std::move(old_test_name), edges_copied = std::move(edges_copies)]
+    auto f = [this, log, test_name = std::move(old_test_name), edges_copied = std::move(edges_hit_copy)]
     {
         prepareDataAndDump({test_name, log}, edges_copied);
     };
@@ -193,52 +188,44 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
     LOG_INFO(log, "Scheduled job");
 }
 
-void Writer::prepareDataAndDump(TestInfo test_info, const Addrs& addrs)
+void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
 {
-    LOG_INFO(test_info.log, "Started filling internal structures, {} addrs", addrs.size());
+    LOG_INFO(test_info.log, "Started filling internal structures, {} addrs", hits.size());
 
     TestData test_data(source_files_cache.size());
 
     time_t elapsed = time(nullptr);
-    size_t fault_addrs = 0;
     size_t i = 0;
 
-    for (auto [addr, hits] : addrs)
+    for (auto [edge_index, hit] : hits)
     {
         ++i;
 
         if (const time_t current = time(nullptr); current > elapsed)
         {
-            LOG_DEBUG(test_info.log, "Processed {}/{}", i, addrs.size());
+            LOG_DEBUG(test_info.log, "Processed {}/{}", i, hits.size());
             elapsed = current;
         }
 
-        if (auto it = function_cache.find(addr); it != function_cache.end())
+        if (auto it = function_cache.find(edge_index); it != function_cache.end())
         {
             auto& functions = test_data.at(it->second.index).functions_hit;
 
-            if (auto it2 = functions.find(addr); it2 == functions.end())
-                functions[addr] = hits;
+            if (auto it2 = functions.find(edge_index); it2 == functions.end())
+                functions[edge_index] = hit;
             else
-                it2->second += hits;
+                it2->second += hit;
 
             continue;
         }
 
-        if (auto it = addr_cache.find(addr); it == addr_cache.end())
-        {
-            ++fault_addrs;
-            LOG_ERROR(test_info.log, "Fault addr {}, total {}", addr, fault_addrs);
-            continue;
-        }
-
-        const AddrInfo& addr_cache_entry = addr_cache.at(addr);
+        const AddrInfo& addr_cache_entry = addr_cache.at(edge_index);
         auto& lines = test_data.at(addr_cache_entry.index).lines_hit;
 
         if (auto it = lines.find(addr_cache_entry.line); it == lines.end())
-            lines[addr_cache_entry.line] = hits;
+            lines[addr_cache_entry.line] = hit;
         else
-            it->second += hits;
+            it->second += hit;
     }
 
     LOG_INFO(test_info.log, "Finished filling internal structures");
@@ -299,14 +286,10 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
 
         fmt::print(ofs, "SF:{}\n", path);
 
-        for (Addr func_addr : functions_instrumented)
+        for (EdgeIndex index : functions_instrumented)
         {
-            const FunctionInfo& func_info = function_cache.at(func_addr);
-
-            size_t call_count = 0;
-
-            if (auto it = functions_hit.find(func_addr); it != functions_hit.end())
-                call_count = it->second;
+            const FunctionInfo& func_info = function_cache.at(index);
+            const size_t call_count = valueOr(functions_hit, index, 0);
 
             fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.line, func_info.name, call_count);
         }
@@ -315,11 +298,7 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
 
         for (size_t line : lines_instrumented)
         {
-            size_t call_count = 0;
-
-            if (auto it = lines_hit.find(line); it != lines_hit.end())
-                call_count = it->second;
-
+            const size_t call_count = valueOr(lines_hit, line, 0);
             fmt::print(ofs, "DA:{},{}\n", line, call_count);
         }
 

@@ -286,8 +286,9 @@ endforeach ()
 
 set_source_files_properties(
     Common/Coverage.cpp
+    Common/CoverageCallbacks.h
     Common/ThreadPool.cpp # used in Coverage.cpp
-    PROPERTIES COMPILE_FLAGS "-O0 -finline-functions ${WITHOUT_COVERAGE}")
+    PROPERTIES COMPILE_FLAGS "-O3 -finline-functions ${WITHOUT_COVERAGE}")
 
 # Otherwise it will slow down stack traces printing too much.
 set_source_files_properties(
