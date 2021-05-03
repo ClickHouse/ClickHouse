@@ -55,10 +55,11 @@ void MergeTreeIndexMergedCondition::addIndex(const MergeTreeIndexPtr & index)
     std::vector<ASTPtr> compare_hypotheses_data;
     std::vector<CNFQuery::OrGroup> hypotheses_data;
     const auto cnf = TreeCNFConverter::toCNF(hypothesis_index->index.expression_list_ast->children.front()).pullNotOutFunctions();
-    for (const auto & group : cnf.getStatements()) {
-        hypotheses_data.push_back(group);
+    for (const auto & group : cnf.getStatements())
+    {
         if (group.size() == 1)
         {
+            hypotheses_data.push_back(group);
             CNFQuery::AtomicFormula atom = *group.begin();
             pushNotIn(atom);
             if (atom.negative)
@@ -120,6 +121,53 @@ ComparisonGraph::CompareResult getExpectedCompare(const CNFQuery::AtomicFormula 
 
 }
 
+/// Replaces < -> <=, > -> >= and assumes that all hypotheses are true then checks if path exists
+bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrue() const {
+    std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
+    for (size_t i = 0; i < index_to_compare_atomic_hypotheses.size(); ++i)
+    {
+        active_atomic_formulas.insert(
+            std::end(active_atomic_formulas),
+            std::begin(index_to_compare_atomic_hypotheses[i]),
+            std::end(index_to_compare_atomic_hypotheses[i]));
+    }
+
+    /// transform active formulas
+    for (auto & formula : active_atomic_formulas)
+    {
+        formula = formula->clone(); /// do all operations with copy
+        auto * func = formula->as<ASTFunction>();
+        if (func && func->name == "less")
+            func->name = "lessOrEquals";
+        if (func && func->name == "greater")
+            func->name = "greaterOrEquals";
+    }
+
+    const auto weak_graph = std::make_unique<ComparisonGraph>(active_atomic_formulas);
+
+    bool useless = true;
+    expression_cnf->iterateGroups(
+        [&](const CNFQuery::OrGroup & or_group)
+        {
+            for (auto atom : or_group)
+            {
+                pushNotIn(atom);
+                const auto * func = atom.ast->as<ASTFunction>();
+                if (func && func->arguments->children.size() == 2)
+                {
+                    const auto left = weak_graph->getComponentId(func->arguments->children[0]);
+                    const auto right = weak_graph->getComponentId(func->arguments->children[1]);
+                    if (left && right && weak_graph->hasPath(left.value(), right.value()))
+                    {
+                        useless = false;
+                        return;
+                    }
+                }
+            }
+        });
+    return useless;
+}
+
 bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const
 {
     std::vector<bool> values;
@@ -141,20 +189,36 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
 
             for (auto atom : or_group)
             {
-               pushNotIn(atom);
-               Poco::Logger::get("KEK").information(atom.ast->dumpTree());
-               const auto * func = atom.ast->as<ASTFunction>();
-               if (func && func->arguments->children.size() == 2)
-               {
-                   const auto expected = getExpectedCompare(atom);
-                   if (graph.isPossibleCompare(
-                           expected,
-                           func->arguments->children[0],
-                           func->arguments->children[1]))
-                   {
-                       return;
-                   }
-               }
+                pushNotIn(atom);
+                Poco::Logger::get("KEK").information(atom.ast->dumpTree());
+                const auto * func = atom.ast->as<ASTFunction>();
+                if (func && func->arguments->children.size() == 2)
+                {
+                    const auto expected = getExpectedCompare(atom);
+                    if (graph.isPossibleCompare(expected, func->arguments->children[0], func->arguments->children[1]))
+                    {
+                        /// If graph failed use matching.
+                        /// We don't need to check constraints.
+                        return;
+                    }
+                }
+            }
+            for (auto atom : or_group)
+            {
+                pushNotIn(atom);
+                for (size_t i = 0; i < values.size(); ++i)
+                    if (values[i])
+                        for (const auto & hypothesis_or_group : index_to_atomic_hypotheses[i])
+                        {
+                            if (hypothesis_or_group.size() == 1)
+                            {
+                                const auto & hypothesis_atom = *std::begin(hypothesis_or_group);
+                                if (atom.ast->getTreeHash() == hypothesis_atom.ast->getTreeHash())
+                                {
+                                    return;
+                                }
+                            }
+                        }
             }
             always_false = true;
        });

@@ -191,11 +191,11 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
     if (start == finish)
         return CompareResult::EQUAL;
 
-    auto [has_path, is_strict] = findPath(start, finish);
+    const auto [has_path, is_strict] = findPath(start, finish);
     if (has_path)
         return is_strict ? CompareResult::GREATER : CompareResult::GREATER_OR_EQUAL;
 
-    auto [has_path_reverse, is_strict_reverse] = findPath(finish, start);
+    const auto [has_path_reverse, is_strict_reverse] = findPath(finish, start);
     if (has_path_reverse)
         return is_strict_reverse ? CompareResult::LESS : CompareResult::LESS_OR_EQUAL;
 
@@ -277,6 +277,11 @@ std::optional<std::size_t> ComparisonGraph::getComponentId(const ASTPtr & ast) c
     } else {
         return {};
     }
+}
+
+bool ComparisonGraph::hasPath(const size_t left, const size_t right) const
+{
+    return findPath(left, right).first || findPath(right, left).first;
 }
 
 std::vector<ASTPtr> ComparisonGraph::getComponent(const std::size_t id) const
