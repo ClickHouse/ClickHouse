@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int DISTRIBUTED_BROKEN_BATCH_INFO;
+    extern const int DISTRIBUTED_BROKEN_BATCH_FILES;
     extern const int TOO_MANY_PARTS;
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
@@ -212,11 +213,12 @@ namespace
             || code == ErrorCodes::UNKNOWN_CODEC
             || code == ErrorCodes::CANNOT_DECOMPRESS
             || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_INFO
+            || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES
             || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
     }
 
     /// Can the batch be split and send files from batch one-by-one instead?
-    bool isSplittableErrorCode(int code)
+    bool isSplittableErrorCode(int code, bool remote)
     {
         return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
             /// FunctionRange::max_elements and similar
@@ -227,6 +229,7 @@ namespace
             || code == ErrorCodes::TOO_MANY_PARTITIONS
             || code == ErrorCodes::DISTRIBUTED_TOO_MANY_PENDING_BYTES
             || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_INFO
+            || isFileBrokenErrorCode(code, remote)
         ;
     }
 
@@ -706,6 +709,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         auto connection = parent.pool->get(timeouts);
 
         bool batch_broken = false;
+        bool batch_marked_as_broken = false;
         try
         {
             try
@@ -714,7 +718,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             }
             catch (const Exception & e)
             {
-                if (split_batch_on_failure && isSplittableErrorCode(e.code()))
+                if (split_batch_on_failure && isSplittableErrorCode(e.code(), e.isRemoteException()))
                 {
                     tryLogCurrentException(parent.log, "Trying to split batch due to");
                     sendSeparateFiles(*connection, timeouts);
@@ -729,6 +733,8 @@ struct StorageDistributedDirectoryMonitor::Batch
             {
                 tryLogCurrentException(parent.log, "Failed to send batch due to");
                 batch_broken = true;
+                if (!e.isRemoteException() && e.code() == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES)
+                    batch_marked_as_broken = true;
             }
             else
             {
@@ -749,7 +755,7 @@ struct StorageDistributedDirectoryMonitor::Batch
             for (UInt64 file_index : file_indices)
                 parent.markAsSend(file_index_to_path.at(file_index));
         }
-        else
+        else if (!batch_marked_as_broken)
         {
             LOG_ERROR(parent.log, "Marking a batch of {} files as broken.", file_indices.size());
 
@@ -819,27 +825,43 @@ private:
 
     void sendSeparateFiles(Connection & connection, const ConnectionTimeouts & timeouts)
     {
+        size_t broken_files = 0;
+
         for (UInt64 file_idx : file_indices)
         {
             auto file_path = file_index_to_path.find(file_idx);
             if (file_path == file_index_to_path.end())
             {
                 LOG_ERROR(parent.log, "Failed to send one file from batch: file with index {} is absent", file_idx);
+                ++broken_files;
                 continue;
             }
 
-            ReadBufferFromFile in(file_path->second);
-            const auto & distributed_header = readDistributedHeader(in, parent.log);
+            try
+            {
+                ReadBufferFromFile in(file_path->second);
+                const auto & distributed_header = readDistributedHeader(in, parent.log);
 
-            RemoteBlockOutputStream remote(connection, timeouts,
-                distributed_header.insert_query,
-                distributed_header.insert_settings,
-                distributed_header.client_info);
-            remote.writePrefix();
-            bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
-            writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
-            remote.writeSuffix();
+                RemoteBlockOutputStream remote(connection, timeouts,
+                    distributed_header.insert_query,
+                    distributed_header.insert_settings,
+                    distributed_header.client_info);
+                remote.writePrefix();
+                bool compression_expected = connection.getCompression() == Protocol::Compression::Enable;
+                writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
+                remote.writeSuffix();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format("While sending {}", file_path->second));
+                parent.maybeMarkAsBroken(file_path->second, e);
+                ++broken_files;
+            }
         }
+
+        if (broken_files)
+            throw Exception(ErrorCodes::DISTRIBUTED_BROKEN_BATCH_FILES,
+                "Failed to send {} files", broken_files);
     }
 };
 
