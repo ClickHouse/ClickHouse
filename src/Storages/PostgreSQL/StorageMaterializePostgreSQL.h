@@ -92,6 +92,9 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
+    /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_
+    /// only once - when nested table is successfully created and is never changed afterwards.
     bool hasNested() { return has_nested.load(); }
 
     void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure);
@@ -100,11 +103,12 @@ public:
 
     StoragePtr tryGetNested() const;
 
+    /// Create a temporary MaterializePostgreSQL table with current_table_name + TMP_SUFFIX.
+    /// An empty wrapper is returned - it does not have inMemory metadata, just acts as an empty wrapper over
+    /// temporary nested, which will be created shortly after.
     StoragePtr createTemporary() const;
 
     ContextPtr getNestedTableContext() const { return nested_context; }
-
-    void renameNested();
 
     StorageID getNestedStorageID() const;
 
@@ -112,6 +116,8 @@ public:
 
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
+    /// Get nested table (or throw if it does not exist), set in-memory metadata (taken from nested table)
+    /// for current table, set has_nested = true.
     StoragePtr prepare();
 
 protected:
@@ -155,12 +161,19 @@ private:
     /// whether to access nested table or a wrapper over nested (materialized table).
     ContextPtr nested_context;
 
+    /// Save nested storageID to be able to fetch it. It is set once nested is created and will be
+    /// updated only when nested is reloaded or renamed.
     std::optional<StorageID> nested_table_id;
 
     /// Needed only for the case of single MaterializePostgreSQL storage - in order to make
     /// delayed storage forwarding into replication handler.
     String remote_table_name;
 
+    /// Needed only for the case of single MaterializePostgreSQL storage, because in case of create
+    /// query (not attach) initial setup wiil be done immediately and error message is thrown at once.
+    /// It results in the fact: single MaterializePostgreSQL storage is created only if its nested table is created.
+    /// In case of attach - this setup will be done in a separate thread in the background. It will also
+    /// be checked for nested table and attempted to load it if it does not exist for some reason.
     bool is_attach;
 };
 

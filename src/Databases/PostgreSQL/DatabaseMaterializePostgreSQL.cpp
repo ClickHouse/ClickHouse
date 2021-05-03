@@ -32,7 +32,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-static const auto METADATA_SUFFIX = ".postgresql_replica_metadata";
+static const auto METADATA_SUFFIX = ".materialize_postgresql_metadata";
 
 DatabaseMaterializePostgreSQL::DatabaseMaterializePostgreSQL(
         ContextPtr context_,
@@ -60,10 +60,10 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
             connection->getConnectionInfo(),
             metadata_path + METADATA_SUFFIX,
             getContext(),
-            settings->postgresql_replica_max_block_size.value,
-            settings->postgresql_replica_allow_minimal_ddl,
+            settings->materialize_postgresql_max_block_size.value,
+            settings->materialize_postgresql_allow_automatic_update,
             /* is_materialize_postgresql_database = */ true,
-            settings->postgresql_replica_tables_list.value);
+            settings->materialize_postgresql_tables_list.value);
 
     std::unordered_set<std::string> tables_to_replicate = replication_handler->fetchRequiredTables(connection->getRef());
 
@@ -90,7 +90,7 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
         replication_handler->addStorage(table_name, storage->as<StorageMaterializePostgreSQL>());
     }
 
-    LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
+    LOG_TRACE(log, "Loaded {} tables. Starting synchronization, (database: {})", materialized_tables.size(), database_name);
     replication_handler->startup();
 }
 
@@ -123,8 +123,10 @@ void DatabaseMaterializePostgreSQL::loadStoredObjects(ContextPtr local_context, 
 
 StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, ContextPtr local_context) const
 {
-    /// When a nested ReplacingMergeTree table is managed from PostgreSQLReplicationHandler, its context is modified
-    /// to show the type of managed table.
+    /// In otder to define which table access is needed - to MaterializePostgreSQL table (only in case of SELECT queries) or
+    /// to its nested ReplacingMergeTree table (in all other cases), the context of a query os modified.
+    /// Also if materialzied_tables set is empty - it means all access is done to ReplacingMergeTree tables - it is a case after
+    /// replication_handler was shutdown.
     if ((local_context->hasQueryContext() && local_context->getQueryContext()->getQueryFactoriesInfo().storages.count("ReplacingMergeTree"))
         || materialized_tables.empty())
     {
@@ -149,6 +151,7 @@ StoragePtr DatabaseMaterializePostgreSQL::tryGetTable(const String & name, Conte
 
 void DatabaseMaterializePostgreSQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
+    /// Create table query can only be called from replication thread.
     if (local_context->hasQueryContext())
     {
         auto storage_set = local_context->getQueryContext()->getQueryFactoriesInfo().storages;
@@ -176,6 +179,7 @@ void DatabaseMaterializePostgreSQL::stopReplication()
 
 void DatabaseMaterializePostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool no_delay)
 {
+    /// Modify context into nested_context and pass query to Atomic database.
     DatabaseAtomic::dropTable(StorageMaterializePostgreSQL::makeNestedTableContext(local_context), table_name, no_delay);
 }
 
@@ -198,6 +202,7 @@ void DatabaseMaterializePostgreSQL::drop(ContextPtr local_context)
 DatabaseTablesIteratorPtr DatabaseMaterializePostgreSQL::getTablesIterator(
         ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name)
 {
+    /// Modify context into nested_context and pass query to Atomic database.
     return DatabaseAtomic::getTablesIterator(StorageMaterializePostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
 }
 

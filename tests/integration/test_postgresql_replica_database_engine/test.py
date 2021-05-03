@@ -270,7 +270,7 @@ def test_load_and_sync_subset_of_database_tables(started_cluster):
     instance.query('''
             CREATE DATABASE test_database
             ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')
-            SETTINGS postgresql_replica_tables_list = '{}';
+            SETTINGS materialize_postgresql_tables_list = '{}';
     '''.format(publication_tables))
     assert 'test_database' in instance.query('SHOW DATABASES')
 
@@ -385,7 +385,7 @@ def test_table_schema_changes(started_cluster):
     instance.query(
         """CREATE DATABASE test_database
            ENGINE = MaterializePostgreSQL('postgres1:5432', 'postgres_database', 'postgres', 'mysecretpassword')
-           SETTINGS postgresql_replica_allow_minimal_ddl = 1;
+           SETTINGS materialize_postgresql_allow_automatic_update = 1;
     """)
 
     for i in range(NUM_TABLES):

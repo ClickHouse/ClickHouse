@@ -30,7 +30,7 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     const std::string & metadata_path,
     const std::string & start_lsn,
     const size_t max_block_size_,
-    bool allow_minimal_ddl_,
+    bool allow_automatic_update_,
     Storages storages_)
     : log(&Poco::Logger::get("PostgreSQLReaplicaConsumer"))
     , context(context_)
@@ -40,7 +40,7 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
     , connection(std::move(connection_))
     , current_lsn(start_lsn)
     , max_block_size(max_block_size_)
-    , allow_minimal_ddl(allow_minimal_ddl_)
+    , allow_automatic_update(allow_automatic_update_)
     , storages(storages_)
 {
     for (const auto & [table_name, storage] : storages)
@@ -218,10 +218,13 @@ void MaterializePostgreSQLConsumer::readTupleData(
                 break;
             }
             case 'u': /// TOAST value && unchanged at the same time. Actual value is not sent.
+            {
                 /// TOAST values are not supported. (TOAST values are values that are considered in postgres
                 /// to be too large to be stored directly)
+                LOG_WARNING(log, "Got TOAST value, which is not supported, default value will be used instead.");
                 insertDefaultValue(buffer, column_idx);
                 break;
+            }
         }
     };
 
@@ -536,13 +539,20 @@ String MaterializePostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontransa
 bool MaterializePostgreSQLConsumer::isSyncAllowed(Int32 relation_id)
 {
     auto table_with_lsn = skip_list.find(relation_id);
+
+    /// Table is not present in a skip list - allow synchronization.
     if (table_with_lsn == skip_list.end())
         return true;
 
     const auto & table_start_lsn = table_with_lsn->second;
+
+    /// Table is in a skip list and has not yet received a valid lsn == it has not been reloaded.
     if (table_start_lsn.empty())
         return false;
 
+    /// Table has received a valid lsn, but it is not yet at a position, from which synchronization is
+    /// allowed. It is allowed only after lsn position, returned with snapshot, from which
+    /// table was reloaded.
     if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
     {
         LOG_TRACE(log, "Synchronization is resumed for table: {} (start_lsn: {})",
@@ -559,14 +569,21 @@ bool MaterializePostgreSQLConsumer::isSyncAllowed(Int32 relation_id)
 
 void MaterializePostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
 {
+    /// Empty lsn string means - continue wating for valid lsn.
     skip_list.insert({relation_id, ""});
+
+    /// Erase cached schema identifiers. It will be updated again once table is allowed back into replication stream
+    /// and it receives first data after update.
     schema_data.erase(relation_id);
+
+    /// Clear table buffer.
     auto & buffer = buffers.find(relation_name)->second;
     buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
-    if (!allow_minimal_ddl)
-        LOG_WARNING(log, "Table {} is skipped, because table schema has changed", relation_name);
+
+    if (allow_automatic_update)
+        LOG_TRACE(log, "Table {} (relation_id: {}) is skipped temporarily. It will be reloaded in the background", relation_name, relation_id);
     else
-        LOG_TRACE(log, "Table {} is skipped temporarily. ID: {}", relation_name, relation_id);
+        LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name);
 }
 
 
@@ -646,36 +663,47 @@ bool MaterializePostgreSQLConsumer::readFromReplicationSlot()
 
 bool MaterializePostgreSQLConsumer::consume(std::vector<std::pair<Int32, String>> & skipped_tables)
 {
+    /// Check if there are tables, which are skipped from being updated by changes from replication stream,
+    /// because schema changes were detected. Update them, if it is allowed.
+    if (allow_automatic_update && !skip_list.empty())
+    {
+        for (const auto & [relation_id, lsn] : skip_list)
+        {
+            /// Non-empty lsn in this place means that table was already updated, but no changes for that table were
+            /// received in a previous stream. A table is removed from skip list only when there came
+            /// changes for table with lsn higher than lsn of snapshot, from which table was reloaded. Since table
+            /// reaload and reading from replication stream are done in the same thread, no lsn will be skipped
+            /// between these two events.
+            if (lsn.empty())
+                skipped_tables.emplace_back(std::make_pair(relation_id, relation_id_to_name[relation_id]));
+        }
+    }
+
+    /// Read up to max_block_size changed (approximately - in same cases might be more).
     if (!readFromReplicationSlot())
     {
-        if (allow_minimal_ddl && !skip_list.empty())
-        {
-            for (const auto & [relation_id, lsn] : skip_list)
-            {
-                if (lsn.empty())
-                    skipped_tables.emplace_back(std::make_pair(relation_id, relation_id_to_name[relation_id]));
-            }
-        }
-
+        /// No data was read, reschedule.
         return false;
     }
 
+    /// Some data was read, schedule as soon as possible.
     return true;
 }
 
 
-void MaterializePostgreSQLConsumer::updateNested(const String & table_name, StoragePtr nested_storage)
+void MaterializePostgreSQLConsumer::updateNested(const String & table_name, StoragePtr nested_storage, Int32 table_id, const String & table_start_lsn)
 {
+    /// Cache new pointer to replacingMergeTree table.
     storages[table_name] = nested_storage;
+
+    /// Create a new empty buffer (with updated metadata), where data is first loaded before syncing into actual table.
     auto & buffer = buffers.find(table_name)->second;
     buffer.createEmptyBuffer(nested_storage);
-}
 
-
-void MaterializePostgreSQLConsumer::updateSkipList(Int32 table_id, const String & table_start_lsn)
-{
+    /// Set start position to valid lsn. Before it was an empty string. Futher read for table allowed, if it has a valid lsn.
     skip_list[table_id] = table_start_lsn;
 }
+
 
 }
 

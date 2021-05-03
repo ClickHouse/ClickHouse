@@ -326,7 +326,7 @@ def test_many_replication_messages(started_cluster):
             PRIMARY KEY(key))
             ENGINE = MaterializePostgreSQL(
             'postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres', 'mysecretpassword')
-            SETTINGS postgresql_replica_max_block_size = 50000;
+            SETTINGS materialize_postgresql_max_block_size = 50000;
         ''')
 
     result = instance.query('SELECT count() FROM test.postgresql_replica;')

@@ -24,6 +24,7 @@
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Core/PostgreSQL/PostgreSQLConnectionPool.h>
 
+/// TODO: Add test for allow_automatic_update setting in case of single storage.
 
 namespace DB
 {
@@ -73,8 +74,8 @@ StorageMaterializePostgreSQL::StorageMaterializePostgreSQL(
             connection_info,
             metadata_path,
             getContext(),
-            replication_settings->postgresql_replica_max_block_size.value,
-            replication_settings->postgresql_replica_allow_minimal_ddl.value, false);
+            replication_settings->materialize_postgresql_max_block_size.value,
+            replication_settings->materialize_postgresql_allow_automatic_update.value, false);
 }
 
 
