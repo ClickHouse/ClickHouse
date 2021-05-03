@@ -204,10 +204,11 @@ private:
         FuncSym(size_t line_, EdgeIndex index_, std::string_view name_): line(line_), index(index_), name(name_) {}
     };
 
+    template <class CacheItem>
+    using LocalCache = std::unordered_map<std::string, std::vector<CacheItem>>;
+
     template <class CacheItem, size_t ArraySize = thread_pool_symbolizing>
-    using LocalCachesArray = std::array<
-        std::unordered_map<std::string/*full_path*/, std::vector<CacheItem>>,
-        ArraySize>;
+    using LocalCachesArray = std::array<LocalCache<CacheItem>, ArraySize>;
 
     /**
      * Spawn workers symbolizing addresses obtained from PC table to internal local caches.
@@ -219,20 +220,13 @@ private:
      * take some extra time.
      */
     template <bool is_func_cache, class CacheItem, size_t ArraySize>
-    void scheduleSymbolizationJobs(LocalCachesArray<CacheItem, ArraySize>& caches)
+    void scheduleSymbolizationJobs(LocalCachesArray<CacheItem, ArraySize>& caches, const std::vector<EdgeIndex>& data)
     {
         constexpr auto pool_size = thread_pool_symbolizing;
 
         constexpr const std::string_view target_str = is_func_cache
             ? "func"
             : "addr";
-
-        std::vector<EdgeIndex> data;
-        data.reserve(edges_to_addrs.size());
-
-        for (size_t i = 0; i < edges_to_addrs.size(); ++i)
-            if (edge_is_func_entry.at(i) == is_func_cache)
-                data.push_back(static_cast<EdgeIndex>(i));
 
         const size_t step = data.size() / pool_size;
 
@@ -245,13 +239,13 @@ private:
                 const Poco::Logger * const log = &Poco::Logger::get(
                     fmt::format("{}.{}{}", logger_base_name, target_str, thread_index));
 
-                auto& cache = caches[thread_index];
+                LocalCache<CacheItem>& cache = caches[thread_index];
 
                 time_t elapsed = time(nullptr);
 
                 for (size_t i = start_index; i < end_index; ++i)
                 {
-                    const EdgeIndex edge_index = data[i]; // temp
+                    const EdgeIndex edge_index = data.at(i);
                     const SourceLocation source = getSourceLocation(edge_index);
 
                     if constexpr (is_func_cache)

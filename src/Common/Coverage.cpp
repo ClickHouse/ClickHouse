@@ -112,10 +112,22 @@ void Writer::symbolizeAllInstrumentedAddrs()
 {
     LOG_INFO(base_log, "Started symbolizing addresses");
 
+    std::vector<EdgeIndex> function_indices;
+    std::vector<EdgeIndex> addr_indices;
+
+    function_indices.reserve(edges_to_addrs.size());
+    addr_indices.reserve(edges_to_addrs.size());
+
+    for (size_t i = 0; i < edges_to_addrs.size(); ++i)
+        if (edge_is_func_entry.at(i))
+            function_indices.push_back(i);
+        else
+            addr_indices.push_back(i);
+
     pool.setMaxThreads(thread_pool_symbolizing);
 
     LocalCachesArray<FuncSym> func_caches{};
-    scheduleSymbolizationJobs<true>(func_caches);
+    scheduleSymbolizationJobs<true>(func_caches, function_indices);
 
     pool.wait();
 
@@ -123,9 +135,9 @@ void Writer::symbolizeAllInstrumentedAddrs()
 
     LocalCachesArray<AddrSym> addr_caches{};
 
-    scheduleSymbolizationJobs<false>(addr_caches);
+    scheduleSymbolizationJobs<false>(addr_caches, addr_indices);
 
-    /// Merge functions data from multiple threads while other threads process addresses.
+    /// Merge functions data while other threads process addresses.
     mergeDataToCaches<true>(func_caches);
 
     pool.wait();
@@ -209,7 +221,7 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
 
         if (auto it = function_cache.find(edge_index); it != function_cache.end())
         {
-            auto& functions = test_data.at(it->second.index).functions_hit;
+            auto& functions = test_data[it->second.index].functions_hit;
 
             if (auto it2 = functions.find(edge_index); it2 == functions.end())
                 functions[edge_index] = hit;
@@ -219,8 +231,14 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
             continue;
         }
 
+        if (auto it = addr_cache.find(edge_index); it == addr_cache.end())
+        {
+            LOG_ERROR(test_info.log, "Fault edge index {}", edge_index);
+            continue;
+        }
+
         const AddrInfo& addr_cache_entry = addr_cache.at(edge_index);
-        auto& lines = test_data.at(addr_cache_entry.index).lines_hit;
+        auto& lines = test_data[addr_cache_entry.index].lines_hit;
 
         if (auto it = lines.find(addr_cache_entry.line); it == lines.end())
             lines[addr_cache_entry.line] = hit;
