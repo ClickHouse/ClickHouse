@@ -44,13 +44,13 @@ optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1
 8	4294967287
 9	4294967286
 optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0
-		"rows_read": 8192,
+		"rows_read": 100,
 optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1
-		"rows_read": 8192,
+		"rows_read": 100,
 optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0
-		"rows_read": 8192,
+		"rows_read": 100,
 optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1
-		"rows_read": 8192,
+		"rows_read": 100,
 select where y > 4294967286
 optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0
 0	4294967295
@@ -93,10 +93,10 @@ optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1
 7	4294967288
 8	4294967287
 optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 0
-		"rows_read": 1000000,
+		"rows_read": 100,
 optimize_move_to_prewhere = 0, allow_experimental_projection_optimization = 1
-		"rows_read": 8768,
+		"rows_read": 100,
 optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0
-		"rows_read": 1000000,
+		"rows_read": 100,
 optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1
-		"rows_read": 8768,
+		"rows_read": 100,

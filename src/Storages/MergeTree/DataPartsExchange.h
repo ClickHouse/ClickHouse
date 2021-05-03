@@ -89,7 +89,7 @@ private:
             bool sync,
             DiskPtr disk,
             PooledReadWriteBufferFromHTTP & in,
-            MergeTreeData::DataPart::Checksums & checksums);
+            MergeTreeData::DataPart::Checksums & checksums) const;
 
     MergeTreeData::MutableDataPartPtr downloadPartToDisk(
             const String & part_name,

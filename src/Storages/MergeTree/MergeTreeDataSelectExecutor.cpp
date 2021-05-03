@@ -2205,7 +2205,7 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     std::swap(prev_parts, parts);
     for (const auto & part_or_projection : prev_parts)
     {
-        const auto part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
+        const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
         if (!part_values.empty() && part_values.find(part->name) == part_values.end())
             continue;
 
@@ -2267,7 +2267,7 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         std::swap(prev_parts, selected_parts);
         for (const auto & part_or_projection : prev_parts)
         {
-            const auto part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
+            const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
             if (!part_values.empty() && part_values.find(part->name) == part_values.end())
                 continue;
 
