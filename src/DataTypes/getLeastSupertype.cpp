@@ -390,6 +390,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 maximize(max_bits_of_unsigned_integer, 32);
             else if (typeid_cast<const DataTypeUInt64 *>(type.get()))
                 maximize(max_bits_of_unsigned_integer, 64);
+            else if (typeid_cast<const DataTypeUInt128 *>(type.get()))
+                maximize(max_bits_of_unsigned_integer, 128);
             else if (typeid_cast<const DataTypeUInt256 *>(type.get()))
                 maximize(max_bits_of_unsigned_integer, 256);
             else if (typeid_cast<const DataTypeInt8 *>(type.get()) || typeid_cast<const DataTypeEnum8 *>(type.get()))
@@ -482,6 +484,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     return std::make_shared<DataTypeUInt32>();
                 else if (min_bit_width_of_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
+                else if (min_bit_width_of_integer <= 128)
+                    return std::make_shared<DataTypeUInt128>();
                 else if (min_bit_width_of_integer <= 256)
                     return std::make_shared<DataTypeUInt256>();
                 else

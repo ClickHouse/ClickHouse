@@ -62,7 +62,7 @@ extern template class DataTypeNumberBase<UInt8>;
 extern template class DataTypeNumberBase<UInt16>;
 extern template class DataTypeNumberBase<UInt32>;
 extern template class DataTypeNumberBase<UInt64>;
-extern template class DataTypeNumberBase<UInt128>; // base for UUID
+extern template class DataTypeNumberBase<UInt128>;
 extern template class DataTypeNumberBase<UInt256>;
 extern template class DataTypeNumberBase<Int16>;
 extern template class DataTypeNumberBase<Int8>;

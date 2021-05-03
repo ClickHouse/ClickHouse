@@ -68,12 +68,13 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
 {
     using Result =
         std::conditional_t<std::is_same_v<ArrayElement, Int128>, Int128,
-            std::conditional_t<std::is_same_v<ArrayElement, Int256>, Int256,
-                std::conditional_t<std::is_same_v<ArrayElement, UInt256>, UInt256,
-                    std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128,
-                        std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
-                            std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
-                                UInt64>>>>>>;
+        std::conditional_t<std::is_same_v<ArrayElement, UInt128>, UInt128,
+        std::conditional_t<std::is_same_v<ArrayElement, Int256>, Int256,
+        std::conditional_t<std::is_same_v<ArrayElement, UInt256>, UInt256,
+        std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128,
+        std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
+        std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
+            UInt64>>>>>>>;
 };
 
 template <typename ArrayElement, AggregateOperation operation>
@@ -343,6 +344,7 @@ struct ArrayAggregateImpl
             executeType<UInt16>(mapped, offsets, res) ||
             executeType<UInt32>(mapped, offsets, res) ||
             executeType<UInt64>(mapped, offsets, res) ||
+            executeType<UInt128>(mapped, offsets, res) ||
             executeType<UInt256>(mapped, offsets, res) ||
             executeType<Int8>(mapped, offsets, res) ||
             executeType<Int16>(mapped, offsets, res) ||
