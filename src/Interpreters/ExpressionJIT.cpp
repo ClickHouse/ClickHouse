@@ -723,22 +723,8 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
                     if (should_compile)
                     {
-                        std::cerr << "ActionsDAG::compileFunctions" << std::endl;
-                        std::cerr << dumpDAG() << std::endl;
-
                         NodeRawConstPtrs new_children;
-
-                        std::cerr << "Compiled node " << frame.node->result_name << std::endl;
-                        std::cerr << "Children before " << std::endl;
-                        for (size_t i = 0; i < frame.node->children.size(); ++i)
-                            std::cerr << "I " << i << " name " << frame.node->children[i]->result_name << std::endl;
-
                         auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
-
-                        std::cerr << "Children after " << frame.node->result_name << std::endl;
-                        for (size_t i = 0; i < new_children.size(); ++i)
-                            std::cerr << "I " << i << " name " << new_children[i]->result_name << std::endl;
-                        std::cerr << "Dump dag " << dag.dump() << std::endl;
 
                         bool all_constants = true;
 
