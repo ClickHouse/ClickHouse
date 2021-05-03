@@ -139,7 +139,6 @@ SRCS(
     StorageMongoDB.cpp
     StorageMySQL.cpp
     StorageNull.cpp
-    StorageProjection.cpp
     StorageReplicatedMergeTree.cpp
     StorageSet.cpp
     StorageStripeLog.cpp
@@ -184,6 +183,8 @@ SRCS(
     System/StorageSystemPartsColumns.cpp
     System/StorageSystemPrivileges.cpp
     System/StorageSystemProcesses.cpp
+    System/StorageSystemProjectionParts.cpp
+    System/StorageSystemProjectionPartsColumns.cpp
     System/StorageSystemQuotaLimits.cpp
     System/StorageSystemQuotaUsage.cpp
     System/StorageSystemQuotas.cpp
