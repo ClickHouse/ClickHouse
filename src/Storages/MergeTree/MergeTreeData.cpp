@@ -4536,9 +4536,9 @@ static NamesAndTypesList expandObjectColumnsImpl(
     return result_columns;
 }
 
-NamesAndTypesList MergeTreeData::expandObjectColumns(const DataPartsVector & parts, const NamesAndTypesList & columns_list, bool with_subcolumns) const
+NamesAndTypesList MergeTreeData::expandObjectColumns(const DataPartsVector & parts, const NamesAndTypesList & columns_list, bool with_subcolumns)
 {
-    /// Firstly fast check if there are any Object columns.
+    /// Firstly fast check without locking parts, if there are any Object columns.
     NameSet requested_to_expand = getNamesOfObjectColumns(columns_list);
     if (requested_to_expand.empty())
         return columns_list;
@@ -4548,7 +4548,7 @@ NamesAndTypesList MergeTreeData::expandObjectColumns(const DataPartsVector & par
 
 NamesAndTypesList MergeTreeData::expandObjectColumns(const NamesAndTypesList & columns_list, bool with_subcolumns) const
 {
-    /// Firstly fast check if there are any Object columns.
+    /// Firstly fast check without locking parts, if there are any Object columns.
     NameSet requested_to_expand = getNamesOfObjectColumns(columns_list);
     if (requested_to_expand.empty())
         return columns_list;
@@ -4556,7 +4556,13 @@ NamesAndTypesList MergeTreeData::expandObjectColumns(const NamesAndTypesList & c
     return expandObjectColumnsImpl(getDataPartsVector(), columns_list, requested_to_expand, with_subcolumns);
 }
 
+/// TODO: bad code.
 NamesAndTypesList MergeTreeData::getExpandedObjects() const
+{
+    return getExpandedObjects(getDataPartsVector());
+}
+
+NamesAndTypesList MergeTreeData::getExpandedObjects(const DataPartsVector & parts) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto columns = metadata_snapshot->getColumns().getAllPhysical();
@@ -4566,7 +4572,7 @@ NamesAndTypesList MergeTreeData::getExpandedObjects() const
         if (isObject(column.type))
             result_columns.push_back(column);
 
-    return expandObjectColumns(result_columns, false);
+    return expandObjectColumns(parts, result_columns, false);
 }
 
 CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()

@@ -306,14 +306,13 @@ Block StorageInMemoryMetadata::getSampleBlockForColumns(
 
     for (const auto & column : expanded_objects)
     {
-        columns_map.emplace(column.name, column.type);
+        columns_map[column.name] = column.type;
         for (const auto & subcolumn : column.type->getSubcolumnNames())
-            columns_map.emplace(Nested::concatenateName(column.name, subcolumn), column.type->getSubcolumnType(subcolumn));
+        {
+            auto full_name = Nested::concatenateName(column.name, subcolumn);
+            columns_map[full_name] = column.type->getSubcolumnType(subcolumn);
+        }
     }
-
-    std::cerr << "expanded objects: ";
-    for (const auto & col : expanded_objects)
-        std::cerr << col.dump() << "\n";
 
     for (const auto & name : column_names)
     {

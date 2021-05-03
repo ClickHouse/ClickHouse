@@ -768,7 +768,7 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
     };
 
     if (buf.eof() || *buf.position() != '{')
-        return error("JSON should starts from opening curly bracket", ErrorCodes::INCORRECT_DATA);
+        return error("JSON should start from opening curly bracket", ErrorCodes::INCORRECT_DATA);
 
     s.push_back(*buf.position());
     ++buf.position();
@@ -795,8 +795,12 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf)
 
         s.push_back(*buf.position());
         ++buf.position();
+
         if (balance == 0)
             return ReturnType(true);
+
+        if (balance < 0)
+            break;
     }
 
     return error("JSON should have equal number of opening and closing brackets", ErrorCodes::INCORRECT_DATA);

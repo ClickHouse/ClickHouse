@@ -43,7 +43,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllPhysical();
+        auto physical_columns = metadata_snapshot->getColumns().getAllPhysical();
+        physical_columns = storage.expandObjectColumns(physical_columns, false);
         columns_for_reader = physical_columns.addTypes(columns_to_read);
     }
     else
