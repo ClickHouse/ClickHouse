@@ -25,7 +25,7 @@ inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
 {
-    assert(n.high != 0);
+    assert(n.items[1] != 0);
     return {reinterpret_cast<const char *>(&n), 16ul - (__builtin_clzll(n.items[1]) >> 3)};
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
