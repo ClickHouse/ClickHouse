@@ -120,8 +120,8 @@ private:
                 ++current_size;
             }
 
-            result.paths.reserve(result.paths.size() + array.size());
-            result.values.reserve(result.paths.size() + array.size());
+            result.paths.reserve(result.paths.size() + arrays_by_path.size());
+            result.values.reserve(result.paths.size() + arrays_by_path.size());
 
             for (const auto & [path, path_array] : arrays_by_path)
             {

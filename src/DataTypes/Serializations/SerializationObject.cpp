@@ -132,7 +132,6 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     if (auto * stream = settings.getter(settings.path))
         writeVarUInt(column_object.getSubcolumns().size(), *stream);
 
-    settings.path.back() = Substream::ObjectElement;
     for (const auto & [key, subcolumn] : column_object.getSubcolumns())
     {
         settings.path.back() = Substream::ObjectStructure;

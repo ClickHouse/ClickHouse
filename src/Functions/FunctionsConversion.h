@@ -2580,20 +2580,57 @@ private:
             throw Exception{"CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: "
                 + from_type_untyped->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
 
-        if (from_type->getElements().size() != to_type->getElements().size())
-            throw Exception{"CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
-                "Left type: " + from_type->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
-
         const auto & from_element_types = from_type->getElements();
         const auto & to_element_types = to_type->getElements();
-        auto element_wrappers = getElementWrappers(from_element_types, to_element_types);
 
-        return [element_wrappers, from_element_types, to_element_types]
+        std::vector<WrapperType> element_wrappers;
+        std::vector<std::optional<size_t>> to_reverse_index;
+
+        if (from_type->haveExplicitNames() && to_type->haveExplicitNames())
+        {
+            const auto & from_names = from_type->getElementNames();
+            std::unordered_map<String, size_t> from_positions;
+            from_positions.reserve(from_names.size());
+            for (size_t i = 0; i < from_names.size(); ++i)
+                from_positions[from_names[i]] = i;
+
+            const auto & to_names = to_type->getElementNames();
+            element_wrappers.reserve(to_names.size());
+            to_reverse_index.reserve(from_names.size());
+
+            for (size_t i = 0; i < to_names.size(); ++i)
+            {
+                auto it = from_positions.find(to_names[i]);
+                if (it != from_positions.end())
+                {
+                    element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
+                    to_reverse_index.emplace_back(it->second);
+                }
+                else
+                {
+                    element_wrappers.emplace_back();
+                    to_reverse_index.emplace_back();
+                }
+            }
+        }
+        else
+        {
+            if (from_element_types.size() != to_element_types.size())
+                throw Exception{"CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
+                    "Left type: " + from_type->getName() + ", right type: " + to_type->getName(), ErrorCodes::TYPE_MISMATCH};
+
+            element_wrappers = getElementWrappers(from_element_types, to_element_types);
+            to_reverse_index.reserve(to_element_types.size());
+            for (size_t i = 0; i < to_element_types.size(); ++i)
+                to_reverse_index.emplace_back(i);
+        }
+
+        return [element_wrappers, from_element_types, to_element_types, to_reverse_index]
             (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count) -> ColumnPtr
         {
             const auto * col = arguments.front().column.get();
 
-            size_t tuple_size = from_element_types.size();
+            size_t tuple_size = to_element_types.size();
             const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
 
             Columns converted_columns(tuple_size);
@@ -2601,8 +2638,16 @@ private:
             /// invoke conversion for each element
             for (size_t i = 0; i < tuple_size; ++i)
             {
-                ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_element_types[i], "" }};
-                converted_columns[i] = element_wrappers[i](element, to_element_types[i], nullable_source, input_rows_count);
+                if (to_reverse_index[i])
+                {
+                    size_t from_idx = *to_reverse_index[i];
+                    ColumnsWithTypeAndName element = {{column_tuple.getColumns()[from_idx], from_element_types[from_idx], "" }};
+                    converted_columns[i] = element_wrappers[i](element, to_element_types[i], nullable_source, input_rows_count);
+                }
+                else
+                {
+                    converted_columns[i] = to_element_types[i]->createColumn()->cloneResized(input_rows_count);
+                }
             }
 
             return ColumnTuple::create(converted_columns);
