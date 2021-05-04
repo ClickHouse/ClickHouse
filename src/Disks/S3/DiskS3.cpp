@@ -16,7 +16,6 @@
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
-#include <Poco/File.h>
 #include <Common/checkStackSize.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
@@ -1496,8 +1495,8 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
                 continue;
 
             /// Skip not finished parts. They shouldn't be in 'detached' directory, because CH wouldn't be able to finish processing them.
-            Poco::Path directory_path (path);
-            auto directory_name = directory_path.directory(directory_path.depth() - 1);
+            fs::path directory_path(path);
+            auto directory_name = directory_path.parent_path().filename().string();
             auto predicate = [&directory_name](String & prefix) { return directory_name.starts_with(prefix); };
             if (std::any_of(not_finished_prefixes.begin(), not_finished_prefixes.end(), predicate))
                 continue;
@@ -1506,7 +1505,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
 
             LOG_DEBUG(log, "Move directory to 'detached' {} -> {}", path, detached_path);
 
-            Poco::File(metadata_path + path).moveTo(metadata_path + detached_path);
+            fs::rename(fs::path(metadata_path) / path, fs::path(metadata_path) / detached_path);
         }
     }
 
@@ -1538,7 +1537,7 @@ String DiskS3::revisionToString(UInt64 revision)
 
 String DiskS3::pathToDetached(const String & source_path)
 {
-    return Poco::Path(source_path).parent().append(Poco::Path("detached")).toString() + '/';
+    return fs::path(source_path).parent_path() / "detached" / "";
 }
 
 void DiskS3::onFreeze(const String & path)
