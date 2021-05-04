@@ -53,6 +53,10 @@ GTEST_TEST(AccurateComparison, Tests)
 
     ASSERT_TRUE(accurate::equalsOp(static_cast<Float32>(9223372036854775808ULL), static_cast<Float64>(9223372036854775808ULL)));
 
+    /// Integers
+    ASSERT_TRUE(accurate::lessOp(static_cast<UInt8>(255), 300));
+
+
 /*    Float32 f = static_cast<Float32>(9223372000000000000ULL);
     UInt64 u = static_cast<UInt64>(9223372000000000000ULL);
     DecomposedFloat32 components(f);
