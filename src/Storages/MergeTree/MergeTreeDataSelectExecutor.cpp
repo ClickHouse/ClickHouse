@@ -201,7 +201,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
                 auto where_step = std::make_unique<FilterStep>(
                     plan->getCurrentDataStream(),
                     query_info.projection->before_where,
-                    given_select.where()->getColumnName(),
+                    query_info.projection->where_column_name,
                     query_info.projection->remove_where_filter);
 
                 where_step->setStepDescription("WHERE");

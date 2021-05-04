@@ -209,6 +209,7 @@ struct ExpressionAnalysisResult
     bool has_order_by   = false;
     bool has_window = false;
 
+    String where_column_name;
     bool remove_where_filter = false;
     bool optimize_read_in_order = false;
     bool optimize_aggregation_in_order = false;

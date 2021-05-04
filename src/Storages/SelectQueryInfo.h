@@ -126,6 +126,7 @@ struct ProjectionCandidate
     const ProjectionDescription * desc;
     PrewhereInfoPtr prewhere_info;
     ActionsDAGPtr before_where;
+    String where_column_name;
     bool remove_where_filter = false;
     ActionsDAGPtr before_aggregation;
     Names required_columns;
