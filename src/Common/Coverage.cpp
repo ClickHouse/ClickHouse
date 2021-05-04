@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <optional>
@@ -57,18 +58,19 @@ Writer::Writer()
     });
 
     // BUG Creating multiple folders out of CH folder
-    if (std::filesystem::exists(coverage_dir))
-    {
-        size_t suffix = 1;
-        const std::string dir_path = coverage_dir.string();
+    //if (std::filesystem::exists(coverage_dir))
+    //{
+    //    size_t suffix = 1;
+    //    const std::string dir_path = coverage_dir.string();
 
-        while (std::filesystem::exists(dir_path + "_" + std::to_string(suffix)))
-            ++suffix;
+    //    while (std::filesystem::exists(dir_path + "_" + std::to_string(suffix)))
+    //        ++suffix;
 
-        const std::string dir_new_path = dir_path + "_" + std::to_string(suffix);
-        std::filesystem::rename(coverage_dir, dir_new_path);
-    }
+    //    const std::string dir_new_path = dir_path + "_" + std::to_string(suffix);
+    //    std::filesystem::rename(coverage_dir, dir_new_path);
+    //}
 
+    std::filesystem::remove_all(coverage_dir);
     std::filesystem::create_directory(coverage_dir);
 }
 
@@ -142,7 +144,18 @@ void Writer::symbolizeAllInstrumentedAddrs()
 
     LOG_INFO(base_log, "Symbolized all functions");
 
-    LocalCachesArray<AddrSym> addr_caches{}; // TODO try x3 size for stragglers
+    LocalCachesArray<AddrSym> addr_caches{}; // TODO try x2 size for stragglers
+
+    LOG_INFO(base_log, "Populating address caches");
+
+    /// Pre-populate addr_caches with already found source files.
+    for (auto& local_func_cache : func_caches)
+        for (auto& [source_name, data] : local_func_cache)
+            for (auto & local_addr_cache : addr_caches)
+                // Can't std::move(source_name), looks like a false positive use-after-move
+                local_addr_cache[source_name] = {std::move(data.full_path), {}};
+
+    LOG_INFO(base_log, "Finished populating address caches");
 
     scheduleSymbolizationJobs<false>(addr_caches, addr_indices);
 

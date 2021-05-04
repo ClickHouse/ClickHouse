@@ -9,6 +9,7 @@
 #include <optional>
 #include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <unordered_map>
 #include <Poco/Logger.h>
@@ -160,6 +161,11 @@ private:
         return path.substr(path.rfind('/') + 1);
     }
 
+    static inline std::string getNameFromPathStr(const std::string& path)
+    {
+        return path.substr(path.rfind('/') + 1);
+    }
+
     static inline auto valueOr(auto& container, auto key, decltype(container.at(key)) default_value)
     {
         if (auto it = container.find(key); it != container.end())
@@ -200,10 +206,22 @@ private:
     };
 
     template <class CacheItem>
-    using LocalCache = std::unordered_map<std::string, std::vector<CacheItem>>;
+    struct LocalCacheItem
+    {
+       std::string full_path;
+       std::vector<CacheItem> items;
+    };
+
+    template <class CacheItem>
+    using LocalCache = std::unordered_map<std::string/* source name*/, LocalCacheItem<CacheItem>>;
 
     template <class CacheItem, size_t ArraySize = thread_pool_symbolizing>
     using LocalCachesArray = std::array<LocalCache<CacheItem>, ArraySize>;
+
+    template <bool is_func_cache>
+    static constexpr const std::string_view thread_name = is_func_cache
+        ? "func"
+        : "addr";
 
     /**
      * Spawn workers symbolizing addresses obtained from PC table to internal local caches.
@@ -215,52 +233,56 @@ private:
      * The drawback here is that all source files locations must be recalculated in each thread, so it will
      * take some extra time.
      */
-    template <bool is_func_cache, class CacheItem, size_t ArraySize>
-    void scheduleSymbolizationJobs(LocalCachesArray<CacheItem, ArraySize>& caches, const std::vector<EdgeIndex>& data)
+    template <bool is_func_cache, class CacheItem>
+    void scheduleSymbolizationJobs(LocalCachesArray<CacheItem>& local_caches, const std::vector<EdgeIndex>& data)
     {
         constexpr auto pool_size = thread_pool_symbolizing;
-
-        constexpr const std::string_view target_str = is_func_cache
-            ? "func"
-            : "addr";
 
         const size_t step = data.size() / pool_size;
 
         for (size_t thread_index = 0; thread_index < pool_size; ++thread_index)
-            pool.scheduleOrThrowOnError([this, &caches, &data, thread_index, step, target_str]
+            pool.scheduleOrThrowOnError([this, &local_caches, &data, thread_index, step]
             {
                 const size_t start_index = thread_index * step;
                 const size_t end_index = std::min(start_index + step, data.size() - 1);
 
                 const Poco::Logger * const log = &Poco::Logger::get(
-                    fmt::format("{}.{}{}", logger_base_name, target_str, thread_index));
+                    fmt::format("{}.{}{}", logger_base_name, thread_name<is_func_cache>, thread_index));
 
-                LocalCache<CacheItem>& cache = caches[thread_index];
+                LocalCache<CacheItem>& cache = local_caches[thread_index];
 
                 time_t elapsed = time(nullptr);
 
                 for (size_t i = start_index; i < end_index; ++i)
                 {
                     const EdgeIndex edge_index = data.at(i);
-                    const SourceLocation source = getSourceLocation(edge_index);
+                    SourceLocation source = getSourceLocation(edge_index); //non-const so we could move .full_path
 
-                    // TODO add cache file_name -> file path
+                    /**
+                     * TODO
+                     * Getting source name as a string (reverse search + allocation) may be cheaper than
+                     * hashing the full path.
+                     */
+                    std::string source_name = getNameFromPathStr(source.full_path); //non-const so we could move it
+                    auto cache_it = cache.find(source_name);
 
                     if constexpr (is_func_cache)
                     {
                         const std::string_view name = symbolize(edge_index);
 
-                        if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
-                            cache_it->second.emplace_back(source.line, edge_index, name);
+                        if (cache_it != cache.end())
+                            cache_it->second.items.emplace_back(source.line, edge_index, name);
                         else
-                            cache[source.full_path] = {{source.line, edge_index, name}};
+                            cache[std::move(source_name)] =
+                                {std::move(source.full_path), {{source.line, edge_index, name}}};
                     }
                     else
                     {
-                        if (auto cache_it = cache.find(source.full_path); cache_it != cache.end())
-                            cache_it->second.emplace_back(source.line, edge_index);
+                        if (cache_it != cache.end())
+                            cache_it->second.items.emplace_back(source.line, edge_index);
                         else
-                            cache[source.full_path] = {{source.line, edge_index}};
+                            cache[std::move(source_name)] =
+                                {std::move(source.full_path), {{source.line, edge_index}}};
                     }
 
                     if (time_t current = time(nullptr); current > elapsed)
@@ -273,18 +295,14 @@ private:
     }
 
     /// Merge local caches' symbolized data [obtained from multiple threads] into global caches.
-    template<bool is_func_cache, class CacheItem, size_t ArraySize>
-    void mergeDataToCaches(const LocalCachesArray<CacheItem, ArraySize>& data) {
-        constexpr const std::string_view target_str = is_func_cache
-            ? "func"
-            : "addr";
-
-        LOG_INFO(base_log, "Started merging {} data to caches", target_str);
+    template<bool is_func_cache, class CacheItem>
+    void mergeDataToCaches(const LocalCachesArray<CacheItem>& data) {
+        LOG_INFO(base_log, "Started merging {} data to caches", thread_name<is_func_cache>);
 
         for (const auto& cache : data)
-            for (const auto& [source_path, addrs_data] : cache)
+            for (const auto& [source_name, path_and_addrs] : cache)
             {
-                const std::string_view source_name = getNameFromPath(source_path);
+                const auto& [source_path, addrs_data] = path_and_addrs;
 
                 SourceFileIndex source_index;
 
@@ -317,7 +335,7 @@ private:
                 }
             }
 
-        LOG_INFO(base_log, "Finished merging {} data to caches", target_str);
+        LOG_INFO(base_log, "Finished merging {} data to caches", thread_name<is_func_cache>);
     }
 };
 }
