@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
 }
 
 MergeTreeIndexMergedCondition::MergeTreeIndexMergedCondition(
@@ -103,7 +102,8 @@ ComparisonGraph::CompareResult getExpectedCompare(const CNFQuery::AtomicFormula 
 }
 
 /// Replaces < -> <=, > -> >= and assumes that all hypotheses are true then checks if path exists
-bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrue() const {
+bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrue() const
+{
     std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
     for (size_t i = 0; i < index_to_compare_atomic_hypotheses.size(); ++i)
     {

@@ -83,7 +83,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator() co
 MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
     const SelectQueryInfo &, ContextPtr) const
 {
-    return nullptr;
+    throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR);
 }
 
 bool MergeTreeIndexHypothesis::mayBenefitFromIndexForIn(const ASTPtr &) const

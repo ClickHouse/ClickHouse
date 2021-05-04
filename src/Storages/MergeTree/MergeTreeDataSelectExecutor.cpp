@@ -2008,8 +2008,13 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granules_filled || last_index_mark != index_range.begin)
+            {
                 for (size_t i = 0; i < readers.size(); ++i)
+                {
                     granules[i] = readers[i].read();
+                    granules_filled = true;
+                }
+            }
 
             MarkRange data_range(
                 std::max(range.begin, index_mark * index_granularity),

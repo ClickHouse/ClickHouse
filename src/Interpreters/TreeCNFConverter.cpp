@@ -1,7 +1,6 @@
 #include <Interpreters/TreeCNFConverter.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
-
 #include <Poco/Logger.h>
 
 namespace DB
@@ -37,7 +36,8 @@ void traversePushNot(ASTPtr & node, bool add_negation)
 
     if (func && (func->name == "and" || func->name == "or"))
     {
-        if (add_negation) {
+        if (add_negation)
+        {
             /// apply De Morgan's Law
             node = makeASTFunction(
                 (func->name == "and" ? "or" : "and"),
@@ -302,7 +302,7 @@ CNFQuery & CNFQuery::pushNotInFuntions()
 
 std::string CNFQuery::dump() const
 {
-    std::stringstream res;
+    WriteBufferFromOwnString res;
     bool first = true;
     for (const auto & group : statements)
     {

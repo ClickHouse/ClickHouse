@@ -13,10 +13,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace
 {
@@ -224,15 +220,9 @@ void bruteforce(
 
 SubstituteColumnOptimizer::SubstituteColumnOptimizer(
     ASTSelectQuery * select_query_,
-    Aliases & /*aliases_*/,
-    const NameSet & /*source_columns_set_*/,
-    const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns_*/,
     const StorageMetadataPtr & metadata_snapshot_,
     const ConstStoragePtr & storage_)
     : select_query(select_query_)
-    /* , aliases(aliases_)
-    , source_columns_set(source_columns_set_)
-    , tables_with_columns(tables_with_columns_)*/
     , metadata_snapshot(metadata_snapshot_)
     , storage(storage_)
 {
@@ -261,7 +251,8 @@ void SubstituteColumnOptimizer::perform()
             ast->setAlias(ast->getAliasOrColumnName());
     }
 
-    auto run_for_all = [&](const auto func) {
+    auto run_for_all = [&](const auto func)
+    {
         if (select_query->where())
             func(select_query->refWhere(), false);
         if (select_query->prewhere())
@@ -279,7 +270,8 @@ void SubstituteColumnOptimizer::perform()
     ComponentVisitor::Data component_data(
         compare_graph, components, old_name, name_to_component, counter_id);
     std::unordered_set<String> identifiers;
-    auto preprocess = [&](ASTPtr & ast, bool) {
+    auto preprocess = [&](ASTPtr & ast, bool)
+    {
         ComponentVisitor(component_data).visit(ast);
         collectIdentifiers(ast, identifiers);
     };
@@ -320,7 +312,8 @@ void SubstituteColumnOptimizer::perform()
     for (size_t i = 0; i < min_expressions.size(); ++i)
         id_to_expression_map[components_list[i]] = min_expressions[i];
 
-    auto process = [&](ASTPtr & ast, bool is_select) {
+    auto process = [&](ASTPtr & ast, bool is_select)
+    {
         SubstituteColumnVisitor::Data substitute_data{id_to_expression_map, name_to_component, old_name, is_select};
         SubstituteColumnVisitor(substitute_data).visit(ast);
     };

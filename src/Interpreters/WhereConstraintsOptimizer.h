@@ -17,17 +17,14 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class WhereConstraintsOptimizer final
 {
 public:
-    WhereConstraintsOptimizer(ASTSelectQuery * select_query, Aliases & /* aliases */, const NameSet & /* source_columns_set */,
-                              const std::vector<TableWithColumnNamesAndTypes> & /* tables_with_columns */,
-                              const StorageMetadataPtr & metadata_snapshot);
+    WhereConstraintsOptimizer(
+        ASTSelectQuery * select_query,
+        const StorageMetadataPtr & metadata_snapshot);
 
     void perform();
 
 private:
     ASTSelectQuery * select_query;
-    /*Aliases & aliases;
-    const NameSet & source_columns_set;
-    const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns;*/
     const StorageMetadataPtr & metadata_snapshot;
 };
 

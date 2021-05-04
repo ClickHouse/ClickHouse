@@ -53,7 +53,7 @@ public:
     std::optional<std::pair<Field, bool>> getConstUpperBound(const ASTPtr & ast) const;
     std::optional<std::pair<Field, bool>> getConstLowerBound(const ASTPtr & ast) const;
 
-    std::vector<ASTs> getVertexes() const;
+    std::vector<ASTs> getVertices() const;
 
 private:
     /// strongly connected component
@@ -86,14 +86,16 @@ private:
 
     struct Graph
     {
-        struct ASTHash {
-            size_t operator() (const IAST::Hash & hash) const {
+        struct ASTHash
+        {
+            size_t operator() (const IAST::Hash & hash) const
+            {
                 return hash.first;
             }
         };
 
         std::unordered_map<IAST::Hash, size_t, ASTHash> ast_hash_to_component;
-        std::vector<EqualComponent> vertexes;
+        std::vector<EqualComponent> vertices;
         std::vector<std::vector<Edge>> edges;
     };
 
