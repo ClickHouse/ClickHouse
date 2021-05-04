@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -163,10 +162,6 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
     size_t num_array_join = 0;
     size_t num_using = 0;
 
-    // For diagnostic messages.
-    std::vector<IAST *> tables_with_using;
-    tables_with_using.reserve(num_tables);
-
     for (const auto & child : tables->children)
     {
         auto * table_element = child->as<ASTTablesInSelectQueryElement>();
@@ -185,7 +180,6 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
         if (t.hasUsing())
         {
             ++num_using;
-            tables_with_using.push_back(table_element);
             continue;
         }
 
@@ -203,14 +197,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
         }
     }
 
-    if (num_using && (num_tables - num_array_join) > 2)
-    {
-        throw Exception("Multiple CROSS/COMMA JOIN do not support USING (while "
-            "processing '" + IAST::formatForErrorMessage(tables_with_using) + "')",
-            ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    return !(num_array_join || num_using);
+    return !num_array_join && num_tables - num_using > 1;
 }
 
 }
