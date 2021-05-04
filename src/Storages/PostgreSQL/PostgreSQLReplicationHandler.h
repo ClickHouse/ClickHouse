@@ -37,7 +37,7 @@ public:
             bool is_materialize_postgresql_database_,
             const String tables_list = "");
 
-    /// Activate task to be run from a separate thread: wait untill connection is available and call startReplication().
+    /// Activate task to be run from a separate thread: wait until connection is available and call startReplication().
     void startup();
 
     /// Stop replication without cleanup.

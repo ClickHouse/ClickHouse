@@ -79,7 +79,7 @@ void DatabaseMaterializePostgreSQL::startSynchronization()
         }
         else
         {
-            /// Nested table was already created and syncronized.
+            /// Nested table was already created and synchronized.
             storage = StorageMaterializePostgreSQL::create(storage, getContext());
         }
 

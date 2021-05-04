@@ -17,6 +17,10 @@ namespace DB
 
 static const auto reschedule_ms = 500;
 
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_TABLE;
+}
 
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const String & remote_database_name_,
@@ -143,7 +147,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         LOG_TRACE(log, "Loading {} tables...", materialized_storages.size());
         for (const auto & [table_name, storage] : materialized_storages)
         {
-            auto materialized_storage = storage->as <StorageMaterializePostgreSQL>();
+            auto * materialized_storage = storage->as <StorageMaterializePostgreSQL>();
             try
             {
                 /// Try load nested table, set materialized table metadata.
@@ -160,7 +164,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                         nested_storages[table_name] = materialized_storage->prepare();
                         continue;
                     }
-                    catch (Exception & e)
+                    catch (...)
                     {
                         e.addMessage("Table load failed for the second time");
                     }
@@ -438,9 +442,10 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
         for (const auto & [relation_id, table_name] : relation_data)
         {
-            auto materialized_storage = DatabaseCatalog::instance().getTable(
+            auto storage = DatabaseCatalog::instance().getTable(
                                                 StorageID(current_database_name, table_name),
-                                                context)->as <StorageMaterializePostgreSQL>();
+                                                context);
+            auto * materialized_storage = storage->as <StorageMaterializePostgreSQL>();
 
             auto temp_materialized_storage = materialized_storage->createTemporary();
 
@@ -485,6 +490,8 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
                 LOG_DEBUG(log, "Dropping table {}.{} ({})", temp_table_id.database_name, temp_table_id.table_name, toString(temp_table_id.uuid));
                 InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, nested_context, nested_context, temp_table_id, true);
+
+                dropReplicationSlot(tx.getRef(), /* temporary */true);
             }
             catch (...)
             {

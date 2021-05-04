@@ -53,11 +53,16 @@ MaterializePostgreSQLConsumer::MaterializePostgreSQLConsumer(
 void MaterializePostgreSQLConsumer::Buffer::createEmptyBuffer(StoragePtr storage)
 {
     const auto storage_metadata = storage->getInMemoryMetadataPtr();
-    description.init(storage_metadata->getSampleBlock());
+    const Block sample_block = storage_metadata->getSampleBlock();
+    description.init(sample_block);
 
     columns = description.sample_block.cloneEmptyColumns();
     const auto & storage_columns = storage_metadata->getColumns().getAllPhysical();
     auto insert_columns = std::make_shared<ASTExpressionList>();
+
+    auto table_id = storage->getStorageID();
+    LOG_TRACE(&Poco::Logger::get("MaterializePostgreSQLBuffer"), "New buffer for table {}.{} ({}), structure: {}",
+              table_id.database_name, table_id.table_name, toString(table_id.uuid), sample_block.dumpStructure());
 
     assert(description.sample_block.columns() == storage_columns.size());
     size_t idx = 0;
@@ -158,7 +163,7 @@ T MaterializePostgreSQLConsumer::unhexN(const char * message, size_t pos, size_t
 
 Int64 MaterializePostgreSQLConsumer::readInt64(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    assert(size > pos + 16);
+    assert(size >= pos + 16);
     Int64 result = unhexN<Int64>(message, pos, 8);
     pos += 16;
     return result;
@@ -167,7 +172,7 @@ Int64 MaterializePostgreSQLConsumer::readInt64(const char * message, size_t & po
 
 Int32 MaterializePostgreSQLConsumer::readInt32(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    assert(size > pos + 8);
+    assert(size >= pos + 8);
     Int32 result = unhexN<Int32>(message, pos, 4);
     pos += 8;
     return result;
@@ -176,7 +181,7 @@ Int32 MaterializePostgreSQLConsumer::readInt32(const char * message, size_t & po
 
 Int16 MaterializePostgreSQLConsumer::readInt16(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    assert(size > pos + 4);
+    assert(size >= pos + 4);
     Int16 result = unhexN<Int16>(message, pos, 2);
     pos += 4;
     return result;
@@ -185,7 +190,7 @@ Int16 MaterializePostgreSQLConsumer::readInt16(const char * message, size_t & po
 
 Int8 MaterializePostgreSQLConsumer::readInt8(const char * message, size_t & pos, [[maybe_unused]] size_t size)
 {
-    assert(size > pos + 2);
+    assert(size >= pos + 2);
     Int8 result = unhex2(message + pos);
     pos += 2;
     return result;
@@ -569,7 +574,7 @@ bool MaterializePostgreSQLConsumer::isSyncAllowed(Int32 relation_id)
 
 void MaterializePostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
 {
-    /// Empty lsn string means - continue wating for valid lsn.
+    /// Empty lsn string means - continue waiting for valid lsn.
     skip_list.insert({relation_id, ""});
 
     /// Erase cached schema identifiers. It will be updated again once table is allowed back into replication stream
@@ -680,14 +685,9 @@ bool MaterializePostgreSQLConsumer::consume(std::vector<std::pair<Int32, String>
     }
 
     /// Read up to max_block_size changed (approximately - in same cases might be more).
-    if (!readFromReplicationSlot())
-    {
-        /// No data was read, reschedule.
-        return false;
-    }
-
-    /// Some data was read, schedule as soon as possible.
-    return true;
+    /// false: no data was read, reschedule.
+    /// true: some data was read, schedule as soon as possible.
+    return readFromReplicationSlot();
 }
 
 
@@ -700,7 +700,7 @@ void MaterializePostgreSQLConsumer::updateNested(const String & table_name, Stor
     auto & buffer = buffers.find(table_name)->second;
     buffer.createEmptyBuffer(nested_storage);
 
-    /// Set start position to valid lsn. Before it was an empty string. Futher read for table allowed, if it has a valid lsn.
+    /// Set start position to valid lsn. Before it was an empty string. Further read for table allowed, if it has a valid lsn.
     skip_list[table_id] = table_start_lsn;
 }
 
