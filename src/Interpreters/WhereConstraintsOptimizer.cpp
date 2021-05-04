@@ -87,37 +87,6 @@ bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const std:
 
 ComparisonGraph::CompareResult getExpectedCompare(const CNFQuery::AtomicFormula & atom)
 {
-    /*static const std::map<std::string, std::string> inverse_relations = {
-        {"equals", "notEquals"},
-        {"less", "greaterOrEquals"},
-        {"lessOrEquals", "greater"},
-        {"notEquals", "equals"},
-        {"greaterOrEquals", "less"},
-        {"greater", "lessOrEquals"},
-    };
-
-    static const std::map<std::string, ComparisonGraph::CompareResult> relation_to_compare = {
-        {"equals", ComparisonGraph::CompareResult::EQUAL},
-        {"less", ComparisonGraph::CompareResult::LESS},
-        {"lessOrEquals", ComparisonGraph::CompareResult::LESS_OR_EQUAL},
-        {"notEquals", ComparisonGraph::CompareResult::UNKNOWN},
-        {"greaterOrEquals", ComparisonGraph::CompareResult::GREATER_OR_EQUAL},
-        {"greater", ComparisonGraph::CompareResult::GREATER},
-    };
-
-
-    const auto * func = atom.ast->as<ASTFunction>();
-    if (func && inverse_relations.count(func->name))
-    {
-        std::string function_name = func->name;
-        if (atom.negative)
-        {
-            function_name = inverse_relations.at(func->name);
-        }
-        return relation_to_compare.at(function_name);
-    }
-    return ComparisonGraph::CompareResult::UNKNOWN;*/
-
     const auto * func = atom.ast->as<ASTFunction>();
     if (func)
     {
