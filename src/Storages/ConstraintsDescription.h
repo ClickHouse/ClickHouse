@@ -20,7 +20,8 @@ public:
 
     static ConstraintsDescription parse(const String & str);
 
-    enum class ConstraintType {
+    enum class ConstraintType
+    {
         CHECK = 1,
         ASSUME = 2,
         ALWAYS_TRUE = CHECK | ASSUME,

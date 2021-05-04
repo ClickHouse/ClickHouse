@@ -18,19 +18,14 @@ class SubstituteColumnOptimizer
 {
 public:
     SubstituteColumnOptimizer(
-                            ASTSelectQuery * select_query,
-                            Aliases & /* aliases */, const NameSet & /* source_columns_set */,
-                            const std::vector<TableWithColumnNamesAndTypes> & /* tables_with_columns */,
-                            const StorageMetadataPtr & /* metadata_snapshot */,
-                            const ConstStoragePtr & storage);
+        ASTSelectQuery * select_query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ConstStoragePtr & storage);
 
     void perform();
 
 private:
     ASTSelectQuery * select_query;
-    /*Aliases & aliases;
-    const NameSet & source_columns_set;
-    const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns;*/
     const StorageMetadataPtr & metadata_snapshot;
     ConstStoragePtr storage;
 };

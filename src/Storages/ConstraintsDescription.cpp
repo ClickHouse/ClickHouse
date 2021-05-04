@@ -53,13 +53,15 @@ ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
             case ASTConstraintDeclaration::Type::ASSUME:
                 return static_cast<UInt32>(ConstraintType::ASSUME);
         }
+        throw Exception("Unknown constraint type.", ErrorCodes::LOGICAL_ERROR);
     };
 
     ASTs res;
     res.reserve(constraints.size());
     for (const auto & constraint : constraints)
     {
-        if ((ast_to_decr_constraint_type(constraint->as<ASTConstraintDeclaration>()->type) & static_cast<UInt32>(selection)) != 0) {
+        if ((ast_to_decr_constraint_type(constraint->as<ASTConstraintDeclaration>()->type) & static_cast<UInt32>(selection)) != 0)
+        {
             res.push_back(constraint);
         }
     }
@@ -88,7 +90,8 @@ std::vector<CNFQuery::AtomicFormula> ConstraintsDescription::getAtomicConstraint
         Poco::Logger::get("atomic_formula: initial:").information(constraint->as<ASTConstraintDeclaration>()->expr->ptr()->dumpTree());
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
             .pullNotOutFunctions();
-        for (const auto & group : cnf.getStatements()) {
+        for (const auto & group : cnf.getStatements())
+        {
             if (group.size() == 1)
                 constraint_data.push_back(*group.begin());
         }

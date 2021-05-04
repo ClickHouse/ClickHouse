@@ -4,7 +4,6 @@
 #include <Interpreters/ComparisonGraph.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Interpreters/AddIndexConstraintsOptimizer.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -13,21 +12,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 WhereConstraintsOptimizer::WhereConstraintsOptimizer(
     ASTSelectQuery * select_query_,
-    Aliases & /*aliases_*/,
-    const NameSet & /*source_columns_set_*/,
-    const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns_*/,
     const StorageMetadataPtr & metadata_snapshot_)
     : select_query(select_query_)
-    /* , aliases(aliases_)
-    , source_columns_set(source_columns_set_)
-    , tables_with_columns(tables_with_columns_)*/
     , metadata_snapshot(metadata_snapshot_)
 {
 }
@@ -181,13 +169,18 @@ void WhereConstraintsOptimizer::perform()
         auto cnf = TreeCNFConverter::toCNF(select_query->where());
         Poco::Logger::get("BEFORE OPT").information(cnf.dump());
         cnf.pullNotOutFunctions()
-            .filterAlwaysTrueGroups([&constraint_data, &compare_graph](const auto & group) { /// remove always true groups from CNF
+            .filterAlwaysTrueGroups([&constraint_data, &compare_graph](const auto & group)
+            {
+                /// remove always true groups from CNF
                 return !checkIfGroupAlwaysTrueFullMatch(group, constraint_data) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
             })
-            .filterAlwaysFalseAtoms([&constraint_data, &compare_graph](const auto & atom) { /// remove always false atoms from CNF
+            .filterAlwaysFalseAtoms([&constraint_data, &compare_graph](const auto & atom)
+            {
+                /// remove always false atoms from CNF
                 return !checkIfAtomAlwaysFalseFullMatch(atom, constraint_data) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
             })
-            .transformAtoms([&compare_graph](const auto & atom) {
+            .transformAtoms([&compare_graph](const auto & atom)
+            {
                 return replaceTermsToConstants(atom, compare_graph);
             })
             .pushNotInFuntions();

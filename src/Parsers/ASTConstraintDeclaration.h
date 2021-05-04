@@ -10,7 +10,8 @@ namespace DB
 class ASTConstraintDeclaration : public IAST
 {
 public:
-    enum class Type {
+    enum class Type
+    {
         CHECK,
         ASSUME,
     };

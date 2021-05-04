@@ -36,25 +36,29 @@ ASTPtr ComparisonGraph::normalizeAtom(const ASTPtr & atom) const
 
 ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
 {
-    static const std::map<std::string, Edge::Type> relation_to_enum = {
+    static const std::unordered_map<std::string, Edge::Type> relation_to_enum =
+    {
         {"equals", Edge::Type::EQUAL},
         {"less", Edge::Type::LESS},
         {"lessOrEquals", Edge::Type::LESS_OR_EQUAL},
     };
 
     Graph g;
-    for (const auto & atom_raw : atomic_formulas) {
+    for (const auto & atom_raw : atomic_formulas)
+    {
         const auto atom = normalizeAtom(atom_raw);
 
         const auto bad_term = std::numeric_limits<std::size_t>::max();
-        auto get_index = [](const ASTPtr & ast, Graph & asts_graph) -> std::size_t {
+        auto get_index = [](const ASTPtr & ast, Graph & asts_graph) -> std::size_t
+        {
             const auto it = asts_graph.ast_hash_to_component.find(ast->getTreeHash());
             if (it != std::end(asts_graph.ast_hash_to_component))
             {
                 if (!std::any_of(
-                        std::cbegin(asts_graph.vertexes[it->second].asts),
-                        std::cend(asts_graph.vertexes[it->second].asts),
-                        [ast](const ASTPtr & constraint_ast) {
+                        std::cbegin(asts_graph.vertices[it->second].asts),
+                        std::cend(asts_graph.vertices[it->second].asts),
+                        [ast](const ASTPtr & constraint_ast)
+                        {
                             return constraint_ast->getTreeHash() == ast->getTreeHash()
                                 && constraint_ast->getColumnName() == ast->getColumnName();
                         }))
@@ -66,10 +70,10 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
             }
             else
             {
-                asts_graph.ast_hash_to_component[ast->getTreeHash()] = asts_graph.vertexes.size();
-                asts_graph.vertexes.push_back(EqualComponent{{ast}});
+                asts_graph.ast_hash_to_component[ast->getTreeHash()] = asts_graph.vertices.size();
+                asts_graph.vertices.push_back(EqualComponent{{ast}});
                 asts_graph.edges.emplace_back();
-                return asts_graph.vertexes.size() - 1;
+                return asts_graph.vertices.size() - 1;
             }
         };
 
@@ -263,15 +267,18 @@ std::optional<std::size_t> ComparisonGraph::getComponentId(const ASTPtr & ast) c
         return {};
     const size_t index = hash_it->second;
     if (std::any_of(
-        std::cbegin(graph.vertexes[index].asts),
-        std::cend(graph.vertexes[index].asts),
+        std::cbegin(graph.vertices[index].asts),
+        std::cend(graph.vertices[index].asts),
         [ast](const ASTPtr & constraint_ast)
         {
             return constraint_ast->getTreeHash() == ast->getTreeHash() &&
                    constraint_ast->getColumnName() == ast->getColumnName();
-        })) {
+        }))
+    {
         return index;
-    } else {
+    }
+    else
+    {
         return {};
     }
 }
@@ -283,18 +290,21 @@ bool ComparisonGraph::hasPath(const size_t left, const size_t right) const
 
 std::vector<ASTPtr> ComparisonGraph::getComponent(const std::size_t id) const
 {
-    return graph.vertexes[id].asts;
+    return graph.vertices[id].asts;
 }
 
-bool ComparisonGraph::EqualComponent::hasConstant() const {
+bool ComparisonGraph::EqualComponent::hasConstant() const
+{
     return constant_index != -1;
 }
 
-ASTPtr ComparisonGraph::EqualComponent::getConstant() const {
+ASTPtr ComparisonGraph::EqualComponent::getConstant() const
+{
     return asts[constant_index];
 }
 
-void ComparisonGraph::EqualComponent::buildConstants() {
+void ComparisonGraph::EqualComponent::buildConstants()
+{
     constant_index = -1;
     for (size_t i = 0; i < asts.size(); ++i)
     {
@@ -308,7 +318,8 @@ void ComparisonGraph::EqualComponent::buildConstants() {
 
 ComparisonGraph::CompareResult ComparisonGraph::getCompareResult(const std::string & name)
 {
-    static const std::unordered_map<std::string, CompareResult> relation_to_compare = {
+    static const std::unordered_map<std::string, CompareResult> relation_to_compare =
+    {
         {"equals", CompareResult::EQUAL},
         {"notEquals", CompareResult::NOT_EQUAL},
         {"less", CompareResult::LESS},
@@ -323,7 +334,8 @@ ComparisonGraph::CompareResult ComparisonGraph::getCompareResult(const std::stri
 
 ComparisonGraph::CompareResult ComparisonGraph::inverseCompareResult(const CompareResult result)
 {
-    static const std::unordered_map<CompareResult, CompareResult> inverse_relations = {
+    static const std::unordered_map<CompareResult, CompareResult> inverse_relations =
+    {
         {CompareResult::NOT_EQUAL, CompareResult::EQUAL},
         {CompareResult::EQUAL, CompareResult::NOT_EQUAL},
         {CompareResult::GREATER_OR_EQUAL, CompareResult::LESS},
@@ -341,8 +353,8 @@ std::optional<ASTPtr> ComparisonGraph::getEqualConst(const ASTPtr & ast) const
     if (hash_it == std::end(graph.ast_hash_to_component))
         return std::nullopt;
     const size_t index = hash_it->second;
-    return graph.vertexes[index].hasConstant()
-        ? std::optional<ASTPtr>{graph.vertexes[index].getConstant()}
+    return graph.vertices[index].hasConstant()
+        ? std::optional<ASTPtr>{graph.vertices[index].getConstant()}
         : std::nullopt;
 }
 
@@ -360,7 +372,7 @@ std::optional<std::pair<Field, bool>> ComparisonGraph::getConstUpperBound(const 
     const ssize_t from = ast_const_upper_bound[to];
     if (from == -1)
         return  std::nullopt;
-    return std::make_pair(graph.vertexes[from].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::LESS);
+    return std::make_pair(graph.vertices[from].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::LESS);
 }
 
 std::optional<std::pair<Field, bool>> ComparisonGraph::getConstLowerBound(const ASTPtr & ast) const
@@ -377,7 +389,7 @@ std::optional<std::pair<Field, bool>> ComparisonGraph::getConstLowerBound(const 
     const ssize_t to = ast_const_lower_bound[from];
     if (to == -1)
         return  std::nullopt;
-    return std::make_pair(graph.vertexes[to].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::LESS);
+    return std::make_pair(graph.vertices[to].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::LESS);
 }
 
 void ComparisonGraph::dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order) const
@@ -397,9 +409,9 @@ ComparisonGraph::Graph ComparisonGraph::reverseGraph(const Graph & asts_graph) c
 {
     Graph g;
     g.ast_hash_to_component = asts_graph.ast_hash_to_component;
-    g.vertexes = asts_graph.vertexes;
-    g.edges.resize(g.vertexes.size());
-    for (size_t v = 0; v < asts_graph.vertexes.size(); ++v)
+    g.vertices = asts_graph.vertices;
+    g.edges.resize(g.vertices.size());
+    for (size_t v = 0; v < asts_graph.vertices.size(); ++v)
     {
         for (const auto & edge : asts_graph.edges[v])
         {
@@ -409,10 +421,10 @@ ComparisonGraph::Graph ComparisonGraph::reverseGraph(const Graph & asts_graph) c
     return asts_graph;
 }
 
-std::vector<ASTs> ComparisonGraph::getVertexes() const
+std::vector<ASTs> ComparisonGraph::getVertices() const
 {
     std::vector<ASTs> result;
-    for (const auto & vertex : graph.vertexes)
+    for (const auto & vertex : graph.vertices)
     {
         result.emplace_back();
         for (const auto & ast : vertex.asts)
@@ -438,7 +450,7 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
 {
     Poco::Logger::get("Graph").information("building");
     /// Find strongly connected component
-    const auto n = asts_graph.vertexes.size();
+    const auto n = asts_graph.vertices.size();
 
     std::vector<size_t> order;
     {
@@ -466,19 +478,19 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
     }
 
     Graph result;
-    result.vertexes.resize(component);
+    result.vertices.resize(component);
     result.edges.resize(component);
     for (const auto & [hash, index] : asts_graph.ast_hash_to_component)
     {
         result.ast_hash_to_component[hash] = components[index];
-        result.vertexes[components[index]].asts.insert(
-            std::end(result.vertexes[components[index]].asts),
-            std::begin(asts_graph.vertexes[index].asts),
-            std::end(asts_graph.vertexes[index].asts)); // asts_graph has only one ast per vertex
+        result.vertices[components[index]].asts.insert(
+            std::end(result.vertices[components[index]].asts),
+            std::begin(asts_graph.vertices[index].asts),
+            std::end(asts_graph.vertices[index].asts)); // asts_graph has only one ast per vertex
     }
 
     /// Calculate constants
-    for (auto & vertex : result.vertexes)
+    for (auto & vertex : result.vertices)
     {
         vertex.buildConstants();
     }
@@ -494,16 +506,16 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
         // TODO: make edges unique (left most strict)
     }
 
-    for (size_t v = 0; v < result.vertexes.size(); ++v)
+    for (size_t v = 0; v < result.vertices.size(); ++v)
     {
-        for (size_t u = 0; u < result.vertexes.size(); ++u)
+        for (size_t u = 0; u < result.vertices.size(); ++u)
         {
             if (v == u)
                 continue;
-            if (result.vertexes[v].hasConstant() && result.vertexes[u].hasConstant())
+            if (result.vertices[v].hasConstant() && result.vertices[u].hasConstant())
             {
-                const auto * left = result.vertexes[v].getConstant()->as<ASTLiteral>();
-                const auto * right = result.vertexes[u].getConstant()->as<ASTLiteral>();
+                const auto * left = result.vertices[v].getConstant()->as<ASTLiteral>();
+                const auto * right = result.vertices[u].getConstant()->as<ASTLiteral>();
 
                 /// Only less. Equal constant fields = equal literals so it was already considered above.
                 if (left->value > right->value)
@@ -521,7 +533,7 @@ std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::Buil
 {
     // min path : < = -1, =< = 0
     const auto inf = std::numeric_limits<int8_t>::max();
-    const size_t n = graph.vertexes.size();
+    const size_t n = graph.vertices.size();
     std::vector<std::vector<int8_t>> results(n, std::vector<int8_t>(n, inf));
     for (size_t v = 0; v < n; ++v)
     {
@@ -547,24 +559,27 @@ std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::Buil
 
 std::pair<std::vector<ssize_t>, std::vector<ssize_t>> ComparisonGraph::buildConstBounds() const
 {
-    const size_t n = graph.vertexes.size();
+    const size_t n = graph.vertices.size();
     std::vector<ssize_t> lower(n, -1);
     std::vector<ssize_t> upper(n, -1);
 
-    auto get_value = [this](const size_t vertex) -> Field {
-        return graph.vertexes[vertex].getConstant()->as<ASTLiteral>()->value;
+    auto get_value = [this](const size_t vertex) -> Field
+    {
+        return graph.vertices[vertex].getConstant()->as<ASTLiteral>()->value;
     };
 
     for (const auto & [edge, path] : dists)
     {
         const auto [from, to] = edge;
-        if (graph.vertexes[to].hasConstant()) {
+        if (graph.vertices[to].hasConstant())
+        {
             if (lower[from] == -1
                 || get_value(lower[from]) > get_value(to)
                 || (get_value(lower[from]) >= get_value(to) && dists.at({from, to}) == Path::LESS))
                 lower[from] = to;
         }
-        if (graph.vertexes[from].hasConstant()) {
+        if (graph.vertices[from].hasConstant())
+        {
             if (upper[to] == -1
                 || get_value(upper[to]) < get_value(from)
                 || (get_value(upper[to]) <= get_value(from) && dists.at({from, to}) == Path::LESS))

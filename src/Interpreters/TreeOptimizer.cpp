@@ -511,23 +511,23 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
 }
 
 /// Use constraints to get rid of useless parts of query
-void optimizeWithConstraints(ASTSelectQuery * select_query, Aliases & aliases, const NameSet & source_columns_set,
-                            const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
+void optimizeWithConstraints(ASTSelectQuery * select_query, Aliases & /*aliases*/, const NameSet & /*source_columns_set*/,
+                            const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
                             const StorageMetadataPtr & metadata_snapshot)
 {
-    WhereConstraintsOptimizer(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot).perform();
+    WhereConstraintsOptimizer(select_query, metadata_snapshot).perform();
     if (select_query->where())
         Poco::Logger::get("CNF").information(select_query->where()->dumpTree());
     else
         Poco::Logger::get("CNF").information("NO WHERE");
 }
 
-void optimizeSubstituteColumn(ASTSelectQuery * select_query, Aliases & aliases, const NameSet & source_columns_set,
-                              const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
+void optimizeSubstituteColumn(ASTSelectQuery * select_query, Aliases & /*aliases*/, const NameSet & /*source_columns_set*/,
+                              const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
                               const StorageMetadataPtr & metadata_snapshot,
                               const ConstStoragePtr & storage)
 {
-    SubstituteColumnOptimizer(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, storage).perform();
+    SubstituteColumnOptimizer(select_query, metadata_snapshot, storage).perform();
 }
 
 /// transform where to CNF for more convenient optimization

@@ -12,10 +12,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 AddIndexConstraintsOptimizer::AddIndexConstraintsOptimizer(
     const StorageMetadataPtr & metadata_snapshot_)
@@ -124,8 +120,10 @@ namespace
         {
             Poco::Logger::get("INDEX_HINT_CREATE").information("CHECK");
             const auto * func = atom.ast->as<ASTFunction>();
-            if (func && func->arguments->children.size() == 2 && getRelationMap().contains(func->name)) {
-                auto check_and_insert = [&](const size_t index, const ComparisonGraph::CompareResult need_result) -> bool {
+            if (func && func->arguments->children.size() == 2 && getRelationMap().contains(func->name))
+            {
+                auto check_and_insert = [&](const size_t index, const ComparisonGraph::CompareResult need_result) -> bool
+                {
                     if (!onlyConstants(func->arguments->children[1 - index]))
                         return false;
 
@@ -167,13 +165,14 @@ void AddIndexConstraintsOptimizer::perform(CNFQuery & cnf_query)
     const std::unordered_set<std::string_view> primary_key_set(std::begin(primary_key), std::end(primary_key));
 
     ASTs primary_key_only_asts;
-    for (const auto & vertex : graph.getVertexes())
+    for (const auto & vertex : graph.getVertices())
         for (const auto & ast : vertex)
             if (hasIndexColumns(ast, primary_key_set) && onlyIndexColumns(ast, primary_key_set))
                 primary_key_only_asts.push_back(ast);
 
     CNFQuery::AndGroup and_group;
-    cnf_query.iterateGroups([&and_group, &graph, &primary_key_only_asts](const auto & or_group) {
+    cnf_query.iterateGroups([&and_group, &graph, &primary_key_only_asts](const auto & or_group)
+    {
         auto add_group = createIndexHintGroup(or_group, graph, primary_key_only_asts);
         if (!add_group.empty())
             and_group.emplace(std::move(add_group));
