@@ -87,7 +87,7 @@ bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const std:
 
 ComparisonGraph::CompareResult getExpectedCompare(const CNFQuery::AtomicFormula & atom)
 {
-    static const std::map<std::string, std::string> inverse_relations = {
+    /*static const std::map<std::string, std::string> inverse_relations = {
         {"equals", "notEquals"},
         {"less", "greaterOrEquals"},
         {"lessOrEquals", "greater"},
@@ -115,6 +115,16 @@ ComparisonGraph::CompareResult getExpectedCompare(const CNFQuery::AtomicFormula 
             function_name = inverse_relations.at(func->name);
         }
         return relation_to_compare.at(function_name);
+    }
+    return ComparisonGraph::CompareResult::UNKNOWN;*/
+
+    const auto * func = atom.ast->as<ASTFunction>();
+    if (func)
+    {
+        auto expected = ComparisonGraph::getCompareResult(func->name);
+        if (atom.negative)
+            expected = ComparisonGraph::inverseCompareResult(expected);
+        return expected;
     }
     return ComparisonGraph::CompareResult::UNKNOWN;
 }

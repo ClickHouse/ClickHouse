@@ -76,26 +76,24 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
         const auto * func = atom->as<ASTFunction>();
         if (func)
         {
-            if (const auto it = relation_to_enum.find(func->name); it != std::end(relation_to_enum) && func->arguments->children.size() == 2)
-            {
-                const size_t index_left = get_index(func->arguments->children[0], g);
-                const size_t index_right = get_index(func->arguments->children[1], g);
+            const size_t index_left = get_index(func->arguments->children[0], g);
+            const size_t index_right = get_index(func->arguments->children[1], g);
 
-                if (index_left != bad_term && index_right != bad_term)
+            if (index_left != bad_term && index_right != bad_term)
+            {
+                if (const auto it = relation_to_enum.find(func->name);
+                    it != std::end(relation_to_enum) && func->arguments->children.size() == 2)
                 {
-                    //Poco::Logger::get("Edges").information("GOOD: " + atom->dumpTree());
-                    Poco::Logger::get("Edges").information("left=" + std::to_string(index_left) + " right=" + std::to_string(index_right));
-                    Poco::Logger::get("Edges").information("sz=" + std::to_string(g.edges.size()));
                     g.edges[index_right].push_back(Edge{it->second, index_left});
                     if (func->name == "equals")
                     {
-                        //Poco::Logger::get("Edges").information("right=" + std::to_string(index_left) + " left=" + std::to_string(index_right));
                         g.edges[index_left].push_back(Edge{it->second, index_right});
                     }
                 }
-                else
+                else if (func->name == "notEquals")
                 {
-                    //Poco::Logger::get("Edges").information("BAD: " + atom->dumpTree());
+                    not_equal.emplace(index_left, index_right);
+                    not_equal.emplace(index_right, index_left);
                 }
             }
         }
@@ -117,10 +115,10 @@ std::pair<bool, bool> ComparisonGraph::findPath(const size_t start, const size_t
         return {false, false};
     else
     {
-        Poco::Logger::get("dists found").information(std::to_string(start) + " " + std::to_string(finish) + " : " + std::to_string(static_cast<int>(it->second)));
+        //Poco::Logger::get("dists found").information(std::to_string(start) + " " + std::to_string(finish) + " : " + std::to_string(static_cast<int>(it->second)));
         //Poco::Logger::get("dists found").information(graph.vertexes[start].asts.back()->dumpTree());
         //Poco::Logger::get("dists found").information(graph.vertexes[finish].asts.back()->dumpTree());
-        return {true, it->second == Path::LESS};
+        return {true, it->second == Path::LESS || not_equal.contains({start, finish})};
     }
 }
 
@@ -129,11 +127,6 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
     size_t start = 0;
     size_t finish = 0;
     {
-        for (const auto & [k, k2] : dists)
-        {
-            Poco::Logger::get("dists").information(std::to_string(k.first) + "-" + std::to_string(k.second) + " : " + std::to_string(static_cast<int>(k2)));
-        }
-
         /// TODO: check full ast
         const auto it_left = graph.ast_hash_to_component.find(left->getTreeHash());
         const auto it_right = graph.ast_hash_to_component.find(right->getTreeHash());
@@ -142,16 +135,15 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
             Poco::Logger::get("Graph").information("not found");
             Poco::Logger::get("Graph").information(std::to_string(left->getTreeHash().second));
             Poco::Logger::get("Graph").information(std::to_string(right->getTreeHash().second));
-            for (const auto & [hash, id] : graph.ast_hash_to_component)
+            /*for (const auto & [hash, id] : graph.ast_hash_to_component)
             {
                 Poco::Logger::get("Graph MAP").information(std::to_string(hash.second) + " "  + std::to_string(id));
-            }
+            }*/
             {
                 const auto left_bound = getConstLowerBound(left);
                 const auto right_bound = getConstUpperBound(right);
                 if (left_bound && right_bound)
                 {
-                    //Poco::Logger::get("&&&&&&&").information(left_bound->first.dump() + " " + std::to_string(left_bound->second) + " | " + right_bound->first.dump() + " " + std::to_string(right_bound->second));
                     if (left_bound->first < right_bound->first)
                         return CompareResult::UNKNOWN;
                     else if (left_bound->first > right_bound->first)
@@ -165,7 +157,6 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
             {
                 const auto left_bound = getConstUpperBound(left);
                 const auto right_bound = getConstLowerBound(right);
-                //Poco::Logger::get("!!!!!!").information(left_bound->first.dump() + " " + std::to_string(left_bound->second) + " | " + right_bound->first.dump() + " " + std::to_string(right_bound->second));
                 if (left_bound && right_bound)
                 {
                     if (left_bound->first > right_bound->first)
@@ -199,6 +190,9 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
     if (has_path_reverse)
         return is_strict_reverse ? CompareResult::LESS : CompareResult::LESS_OR_EQUAL;
 
+    if (not_equal.contains({start, finish}))
+        return CompareResult::NOT_EQUAL;
+
     return CompareResult::UNKNOWN;
 }
 
@@ -219,12 +213,20 @@ bool ComparisonGraph::isPossibleCompare(const CompareResult expected, const ASTP
         {CompareResult::EQUAL, CompareResult::GREATER_OR_EQUAL},
         {CompareResult::LESS_OR_EQUAL, CompareResult::LESS},
         {CompareResult::LESS_OR_EQUAL, CompareResult::EQUAL},
+        {CompareResult::LESS_OR_EQUAL, CompareResult::NOT_EQUAL},
         {CompareResult::GREATER_OR_EQUAL, CompareResult::GREATER},
         {CompareResult::GREATER_OR_EQUAL, CompareResult::EQUAL},
+        {CompareResult::GREATER_OR_EQUAL, CompareResult::NOT_EQUAL},
         {CompareResult::LESS, CompareResult::LESS},
         {CompareResult::LESS, CompareResult::LESS_OR_EQUAL},
+        {CompareResult::LESS, CompareResult::NOT_EQUAL},
         {CompareResult::GREATER, CompareResult::GREATER},
         {CompareResult::GREATER, CompareResult::GREATER_OR_EQUAL},
+        {CompareResult::GREATER, CompareResult::NOT_EQUAL},
+        {CompareResult::NOT_EQUAL, CompareResult::LESS},
+        {CompareResult::NOT_EQUAL, CompareResult::GREATER},
+        {CompareResult::NOT_EQUAL, CompareResult::LESS_OR_EQUAL},
+        {CompareResult::NOT_EQUAL, CompareResult::GREATER_OR_EQUAL},
     };
 
     return possible_pairs.contains({expected, result});
@@ -244,6 +246,8 @@ bool ComparisonGraph::isAlwaysCompare(const CompareResult expected, const ASTPtr
         {CompareResult::LESS_OR_EQUAL, CompareResult::EQUAL},
         {CompareResult::GREATER_OR_EQUAL, CompareResult::GREATER},
         {CompareResult::GREATER_OR_EQUAL, CompareResult::EQUAL},
+        {CompareResult::NOT_EQUAL, CompareResult::GREATER},
+        {CompareResult::NOT_EQUAL, CompareResult::LESS},
     };
 
     return possible_pairs.contains({expected, result});
@@ -307,6 +311,35 @@ void ComparisonGraph::EqualComponent::buildConstants() {
             return;
         }
     }
+}
+
+ComparisonGraph::CompareResult ComparisonGraph::getCompareResult(const std::string & name)
+{
+    static const std::unordered_map<std::string, CompareResult> relation_to_compare = {
+        {"equals", CompareResult::EQUAL},
+        {"notEquals", CompareResult::NOT_EQUAL},
+        {"less", CompareResult::LESS},
+        {"lessOrEquals", CompareResult::LESS_OR_EQUAL},
+        {"greaterOrEquals", CompareResult::GREATER_OR_EQUAL},
+        {"greater", CompareResult::GREATER},
+    };
+
+    const auto it = relation_to_compare.find(name);
+    return it == std::end(relation_to_compare) ? CompareResult::UNKNOWN : it->second;
+}
+
+ComparisonGraph::CompareResult ComparisonGraph::inverseCompareResult(const CompareResult result)
+{
+    static const std::unordered_map<CompareResult, CompareResult> inverse_relations = {
+        {CompareResult::NOT_EQUAL, CompareResult::EQUAL},
+        {CompareResult::EQUAL, CompareResult::NOT_EQUAL},
+        {CompareResult::GREATER_OR_EQUAL, CompareResult::LESS},
+        {CompareResult::GREATER, CompareResult::LESS_OR_EQUAL},
+        {CompareResult::LESS, CompareResult::GREATER_OR_EQUAL},
+        {CompareResult::LESS_OR_EQUAL, CompareResult::GREATER},
+        {CompareResult::UNKNOWN, CompareResult::UNKNOWN},
+    };
+    return inverse_relations.at(result);
 }
 
 std::optional<ASTPtr> ComparisonGraph::getEqualConst(const ASTPtr & ast) const
@@ -414,13 +447,6 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
     /// Find strongly connected component
     const auto n = asts_graph.vertexes.size();
 
-    /*for (size_t v = 0; v < n; ++v) {
-        //Poco::LogStream{"kek"}.information() << "VERTEX " << v << " " << asts_graph.vertexes[v].asts.back()->dumpTree() << std::endl;
-        for (const auto & edge : asts_graph.edges[v]) {
-            //Poco::LogStream{"kek"}.information() << "TO " << edge.to << " " << static_cast<int>(edge.type) << std::endl;
-        }
-    }*/
-
     std::vector<size_t> order;
     {
         std::vector<bool> visited(n, false);
@@ -430,8 +456,6 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
                 dfsOrder(asts_graph, v, visited, order);
         }
     }
-
-    Poco::Logger::get("Graph").information("dfs1");
 
     const auto not_visited = std::numeric_limits<size_t>::max();
     std::vector<size_t> components(n, not_visited);
@@ -447,8 +471,6 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
             }
         }
     }
-
-    Poco::Logger::get("Graph").information("dfs2");
 
     Graph result;
     result.vertexes.resize(component);
@@ -489,7 +511,6 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
             {
                 const auto * left = result.vertexes[v].getConstant()->as<ASTLiteral>();
                 const auto * right = result.vertexes[u].getConstant()->as<ASTLiteral>();
-                //Poco::Logger::get("Graph").information(left->value.dump() + " " + right->value.dump());
 
                 /// Only less. Equal constant fields = equal literals so it was already considered above.
                 if (left->value > right->value)
@@ -500,17 +521,7 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
         }
     }
 
-    Poco::Logger::get("Graph").information("finish");
-
-
-   /* for (size_t v = 0; v < result.vertexes.size(); ++v) {
-        Poco::LogStream{"kekkek"}.information() << "VERTEX " << v << " " << result.vertexes[v].asts.back()->dumpTree() << std::endl;
-        for (const auto & edge : result.edges[v]) {
-            Poco::LogStream{"kekkek"}.information() << "TO " << edge.to << " " << static_cast<int>(edge.type) << std::endl;
-        }
-    }*/
-
-    for (size_t v = 0; v < result.vertexes.size(); ++v)
+    /*for (size_t v = 0; v < result.vertexes.size(); ++v)
     {
         std::stringstream s;
         for (const auto & atom : result.vertexes[v].asts)
@@ -524,7 +535,7 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
         }
 
         Poco::Logger::get("Graph").information(s.str());
-    }
+    }*/
 
     return result;
 }
@@ -541,9 +552,6 @@ std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::Buil
         for (const auto & edge : g.edges[v])
             results[v][edge.to] = std::min(results[v][edge.to], static_cast<int8_t>(edge.type == Edge::LESS ? -1 : 0));
     }
-    for (size_t v = 0; v < n; ++v)
-        for (size_t u = 0; u < n; ++u)
-            Poco::LogStream{Poco::Logger::get("Graph ---=------------")}.information() << v << " " << u << " " << static_cast<int>(results[v][u]) << std::endl;
 
     for (size_t k = 0; k < n; ++k)
         for (size_t v = 0; v < n; ++v)
@@ -554,11 +562,9 @@ std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::Buil
     std::map<std::pair<size_t, size_t>, Path> path;
     for (size_t v = 0; v < n; ++v)
         for (size_t u = 0; u < n; ++u)
-        {
-            Poco::LogStream{Poco::Logger::get("Graph results-------------")}.information() << v << " " << u << " " << static_cast<int>(results[v][u]) << std::endl;
             if (results[v][u] != inf)
                 path[std::make_pair(v, u)] = (results[v][u] == -1 ? Path::LESS : Path::LESS_OR_EQUAL);
-        }
+
     return path;
 }
 

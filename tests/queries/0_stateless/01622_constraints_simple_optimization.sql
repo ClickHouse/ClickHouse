@@ -58,6 +58,7 @@ SELECT count() FROM constraint_test.transitivity2 WHERE a >= d; ---> assumption 
 SELECT count() FROM constraint_test.transitivity2 WHERE d < a; ---> assumption -> 1
 SELECT count() FROM constraint_test.transitivity2 WHERE a < d; ---> assumption -> 0
 SELECT count() FROM constraint_test.transitivity2 WHERE a = d; ---> assumption -> 0
+SELECT count() FROM constraint_test.transitivity2 WHERE a != d; ---> assumption -> 1
 
 DROP TABLE constraint_test.transitivity2;
 
