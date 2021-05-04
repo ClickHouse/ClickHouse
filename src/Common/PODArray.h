@@ -530,6 +530,31 @@ public:
         this->c_end += bytes_to_copy;
     }
 
+    template <typename ... TAllocatorParams>
+    void insertFromItself(iterator from_begin, iterator from_end, TAllocatorParams && ... allocator_params)
+    {
+        static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
+
+        /// Convert iterators to indexes because reserve can invalidate iterators
+        size_t start_index = from_begin - begin();
+        size_t end_index = from_end - begin();
+        size_t copy_size = end_index - start_index;
+
+        assert(start_index <= end_index);
+
+        size_t required_capacity = this->size() + copy_size;
+        if (required_capacity > this->capacity())
+            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+
+        size_t bytes_to_copy = this->byte_size(copy_size);
+        if (bytes_to_copy)
+        {
+            auto begin = this->c_start + this->byte_size(start_index);
+            memcpy(this->c_end, reinterpret_cast<const void *>(&*begin), bytes_to_copy);
+            this->c_end += bytes_to_copy;
+        }
+    }
+
     template <typename It1, typename It2>
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
@@ -692,6 +717,30 @@ public:
         assign(from.begin(), from.end());
     }
 
+    void erase(const_iterator first, const_iterator last)
+    {
+        iterator first_no_const = const_cast<iterator>(first);
+        iterator last_no_const = const_cast<iterator>(last);
+
+        size_t items_to_move = end() - last;
+
+        while (items_to_move != 0)
+        {
+            *first_no_const = *last_no_const;
+
+            ++first_no_const;
+            ++last_no_const;
+
+            --items_to_move;
+        }
+
+        this->c_end = reinterpret_cast<char *>(first_no_const);
+    }
+
+    void erase(const_iterator pos)
+    {
+        this->erase(pos, pos + 1);
+    }
 
     bool operator== (const PODArray & rhs) const
     {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
 #include <common/types.h>
 #include <Common/CurrentMetrics.h>
@@ -13,6 +14,7 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Path.h>
 #include <Poco/Timestamp.h>
+#include "Poco/Util/AbstractConfiguration.h"
 
 
 namespace CurrentMetrics
@@ -31,6 +33,7 @@ using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
+class MMappedFileCache;
 
 /**
  * Mode of opening a file for write.
@@ -153,7 +156,8 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         size_t estimated_size = 0,
         size_t aio_threshold = 0,
-        size_t mmap_threshold = 0) const = 0;
+        size_t mmap_threshold = 0,
+        MMappedFileCache * mmap_cache = nullptr) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
@@ -209,23 +213,32 @@ public:
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() { }
 
+    /// Performs action on disk startup.
+    virtual void startup() { }
+
     /// Return some uniq string for file, overrode for S3
     /// Required for distinguish different copies of the same part on S3
     virtual String getUniqueId(const String & path) const { return path; }
 
     /// Check file exists and ClickHouse has an access to it
     /// Overrode in DiskS3
-    /// Required for S3 to ensure that replica has access to data wroten by other node
+    /// Required for S3 to ensure that replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
-
-    /// Returns executor to perform asynchronous operations.
-    virtual Executor & getExecutor() { return *executor; }
 
     /// Invoked on partitions freeze query.
     virtual void onFreeze(const String &) { }
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
+
+    /// Applies new settings for disk in runtime.
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextConstPtr) { }
+
+protected:
+    friend class DiskDecorator;
+
+    /// Returns executor to perform asynchronous operations.
+    virtual Executor & getExecutor() { return *executor; }
 
 private:
     std::unique_ptr<Executor> executor;

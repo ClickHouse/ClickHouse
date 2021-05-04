@@ -99,7 +99,7 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 }
 
 
-BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
+BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
     UInt64 id = ++increment;
     return std::make_shared<SetOrJoinBlockOutputStream>(*this, metadata_snapshot, path, path + "tmp/", toString(id) + ".bin", persistent);
@@ -156,7 +156,7 @@ size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 std::optional<UInt64> StorageSet::totalRows(const Settings &) const { return set->getTotalRowCount(); }
 std::optional<UInt64> StorageSet::totalBytes(const Settings &) const { return set->getTotalByteCount(); }
 
-void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &)
+void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
     disk->removeRecursive(path);
     disk->createDirectories(path);
@@ -246,7 +246,7 @@ void registerStorageSet(StorageFactory & factory)
         if (has_settings)
             set_settings.loadFromQuery(*args.storage_def);
 
-        DiskPtr disk = args.context.getDisk(set_settings.disk);
+        DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
         return StorageSet::create(disk, args.relative_data_path, args.table_id, args.columns, args.constraints, set_settings.persistent);
     }, StorageFactory::StorageFeatures{ .supports_settings = true, });
 }

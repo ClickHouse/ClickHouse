@@ -1,9 +1,10 @@
 #pragma once
 
-#include "PostgreSQLConnection.h"
 #include <Core/Types.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
+#include "PostgreSQLConnectionPool.h"
+#include <mutex>
+
 
 namespace DB
 {
@@ -21,16 +22,16 @@ public:
 
     PostgreSQLReplicaConnection(const PostgreSQLReplicaConnection & other);
 
-    PostgreSQLConnection::ConnectionPtr get();
+    PostgreSQLConnectionHolderPtr get();
 
 
 private:
     /// Highest priority is 0, the bigger the number in map, the less the priority
-    using ReplicasByPriority = std::map<size_t, PostgreSQLConnectionPtr>;
+    using ReplicasByPriority = std::map<size_t, PostgreSQLConnectionPoolPtr>;
 
-    Poco::Logger * log;
     ReplicasByPriority replicas;
     size_t num_retries;
+    std::mutex mutex;
 };
 
 using PostgreSQLReplicaConnectionPtr = std::shared_ptr<PostgreSQLReplicaConnection>;

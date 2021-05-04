@@ -49,7 +49,7 @@ ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
 ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
 {
     /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
 
     finish();
 
@@ -107,7 +107,7 @@ void ZlibDeflatingWriteBuffer::finish()
     try
     {
         finishImpl();
-        out->next();
+        out->finalize();
         finished = true;
     }
     catch (...)

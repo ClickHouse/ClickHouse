@@ -182,7 +182,7 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     if (!parts_to_move.empty())
     {
-        LOG_TRACE(log, "Selected {} parts to move according to storage policy rules and {} parts according to TTL rules, {} total", parts_to_move_by_policy_rules, parts_to_move_by_ttl_rules, ReadableSize(parts_to_move_total_size_bytes));
+        LOG_DEBUG(log, "Selected {} parts to move according to storage policy rules and {} parts according to TTL rules, {} total", parts_to_move_by_policy_rules, parts_to_move_by_ttl_rules, ReadableSize(parts_to_move_total_size_bytes));
         return true;
     }
     else
@@ -206,18 +206,18 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         /// Try to fetch part from S3 without copy and fallback to default copy
         /// if it's not possible
         moving_part.part->assertOnDisk();
-        String path_to_clone = data->getRelativeDataPath() + directory_to_move + '/';
+        String path_to_clone = data->getRelativeDataPath() + directory_to_move + "/";
         String relative_path = part->relative_path;
         if (disk->exists(path_to_clone + relative_path))
         {
             LOG_WARNING(log, "Path " + fullPath(disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
-            disk->removeRecursive(path_to_clone + relative_path + '/');
+            disk->removeRecursive(path_to_clone + relative_path + "/");
         }
         disk->createDirectories(path_to_clone);
         bool is_fetched = data->tryToFetchIfShared(*part, disk, path_to_clone + "/" + part->name);
         if (!is_fetched)
-            part->volume->getDisk()->copy(data->getRelativeDataPath() + relative_path, disk, path_to_clone);
-        part->volume->getDisk()->removeFileIfExists(path_to_clone + '/' + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+            part->volume->getDisk()->copy(data->getRelativeDataPath() + relative_path + "/", disk, path_to_clone);
+        part->volume->getDisk()->removeFileIfExists(path_to_clone + "/" + IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
     }
     else
     {

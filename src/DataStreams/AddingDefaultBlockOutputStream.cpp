@@ -10,11 +10,12 @@ AddingDefaultBlockOutputStream::AddingDefaultBlockOutputStream(
     const BlockOutputStreamPtr & output_,
     const Block & header_,
     const ColumnsDescription & columns_,
-    const Context & context_)
+    ContextPtr context_,
+    bool null_as_default_)
     : output(output_), header(header_)
 {
-    auto dag = addMissingDefaults(header_, output->getHeader().getNamesAndTypesList(), columns_, context_);
-    adding_defaults_actions = std::make_shared<ExpressionActions>(std::move(dag));
+    auto dag = addMissingDefaults(header_, output->getHeader().getNamesAndTypesList(), columns_, context_, null_as_default_);
+    adding_defaults_actions = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context_));
 }
 
 void AddingDefaultBlockOutputStream::write(const Block & block)

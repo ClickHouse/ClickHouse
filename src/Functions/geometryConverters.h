@@ -13,7 +13,7 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeCustomGeo.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
@@ -76,7 +76,7 @@ struct ColumnToPointsConverter
             if (isNaN(first) || isNaN(second))
                 throw Exception("Point's component must not be NaN", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            if (isinf(first) || isinf(second))
+            if (std::isinf(first) || std::isinf(second))
                 throw Exception("Point's component must not be infinite", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             answer[i] = Point(first, second);
@@ -328,14 +328,16 @@ struct ConverterType
 template <typename Point, typename F>
 static void callOnGeometryDataType(DataTypePtr type, F && f)
 {
+    const auto & factory = DataTypeFactory::instance();
+
     /// There is no Point type, because for most of geometry functions it is useless.
-    if (DataTypeCustomPointSerialization::nestedDataType()->equals(*type))
+    if (factory.get("Point")->equals(*type))
         return f(ConverterType<ColumnToPointsConverter<Point>>());
-    else if (DataTypeCustomRingSerialization::nestedDataType()->equals(*type))
+    else if (factory.get("Ring")->equals(*type))
         return f(ConverterType<ColumnToRingsConverter<Point>>());
-    else if (DataTypeCustomPolygonSerialization::nestedDataType()->equals(*type))
+    else if (factory.get("Polygon")->equals(*type))
         return f(ConverterType<ColumnToPolygonsConverter<Point>>());
-    else if (DataTypeCustomMultiPolygonSerialization::nestedDataType()->equals(*type))
+    else if (factory.get("MultiPolygon")->equals(*type))
         return f(ConverterType<ColumnToMultiPolygonsConverter<Point>>());
     throw Exception(fmt::format("Unknown geometry type {}", type->getName()), ErrorCodes::BAD_ARGUMENTS);
 }
