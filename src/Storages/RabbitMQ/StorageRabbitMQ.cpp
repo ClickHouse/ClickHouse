@@ -88,6 +88,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , queue_settings_list(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_settings_list.value)))
         , deadletter_exchange(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_deadletter_exchange.value))
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
+        , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , address(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port.value))
@@ -262,6 +263,13 @@ size_t StorageRabbitMQ::getMaxBlockSize() const
 
 void StorageRabbitMQ::initRabbitMQ()
 {
+    if (use_user_setup)
+    {
+        queues.emplace_back(queue_base);
+        rabbit_is_ready = true;
+        return;
+    }
+
     RabbitMQChannel rabbit_channel(connection.get());
 
     /// Main exchange -> Bridge exchange -> ( Sharding exchange ) -> Queues -> Consumers
@@ -1064,7 +1072,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_max_block_size)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(15, rabbitmq_flush_interval_ms)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(16, rabbitmq_vhost)
-        CHECK_RABBITMQ_STORAGE_ARGUMENT(16, rabbitmq_queue_settings_list)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(17, rabbitmq_queue_settings_list)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(18, rabbitmq_queue_consume)
 
         #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
 

@@ -93,7 +93,14 @@ private:
     String queue_base;
     Names queue_settings_list;
     const String deadletter_exchange;
+
+    /// For insert query. Mark messages as durable.
     const bool persistent;
+
+    /// A table setting. It is possible not to perform any RabbitMQ setup, which is supposed to be consumer-side setup:
+    /// declaring exchanges, queues, bindings. Instead everything needed from RabbitMQ table is to connect to a specific queue.
+    /// This solution disables all optimizations and is not really optimal, but allows user to fully control all RabbitMQ setup.
+    bool use_user_setup;
 
     bool hash_exchange;
     Poco::Logger * log;
@@ -116,6 +123,7 @@ private:
     /// maximum number of messages in RabbitMQ queue (x-max-length). Also used
     /// to setup size of inner buffer for received messages
     uint32_t queue_size;
+
     String sharding_exchange, bridge_exchange, consumer_exchange;
     size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
     std::atomic<size_t> producer_id = 1; /// counter for producer buffer, needed for channel id
