@@ -40,6 +40,9 @@
 #include "ASTColumnsMatcher.h"
 
 #include <Interpreters/StorageID.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
@@ -794,7 +797,118 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
+{
+    /// Convert to canonical representation in functional form: CAST(expr, 'type')
+    auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_ast));
+
+    auto expr_list_args = std::make_shared<ASTExpressionList>();
+    expr_list_args->children.push_back(expr_ast);
+    expr_list_args->children.push_back(std::move(type_literal));
+
+    auto func_node = std::make_shared<ASTFunction>();
+    func_node->name = "CAST";
+    func_node->arguments = std::move(expr_list_args);
+    func_node->children.push_back(func_node->arguments);
+
+    return func_node;
+}
+
+bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// Numbers, strings, tuples and arrays of them.
+    /// Types, that doesn't have representation in Field, e.g.: Date, DateTime,
+    /// can't be read from text as literals.
+    auto is_good_token = [](const auto & token)
+    {
+        return token == TokenType::Number
+            || token == TokenType::StringLiteral
+            || token == TokenType::Comma
+            || token == TokenType::OpeningSquareBracket
+            || token == TokenType::ClosingSquareBracket
+            || token == TokenType::OpeningRoundBracket
+            || token == TokenType::ClosingRoundBracket;
+    };
+
+    auto is_number_or_string = [](const auto & type) { return isNumber(type) || isStringOrFixedString(type); };
+
+    auto is_good_type = [&is_number_or_string](const auto & type)
+    {
+        if (is_number_or_string(type))
+            return true;
+
+        if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+            return is_number_or_string(type_array->getNestedType());
+
+        if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            const auto & elems = type_tuple->getElements();
+            return std::all_of(elems.begin(), elems.end(), [&](const auto & elem) { return is_number_or_string(elem); });
+        }
+
+        return false;
+    };
+
+    const char * data_begin = pos->begin;
+    bool is_number_literal = pos->type == TokenType::Number;
+    bool is_string_literal = pos->type == TokenType::StringLiteral;
+
+    size_t skipped_tokens = 0;
+    while (pos.isValid() && is_good_token(pos->type))
+    {
+        ++pos;
+        ++skipped_tokens;
+    }
+
+    if (!pos.isValid())
+        return false;
+    if ((is_string_literal || is_number_literal) && skipped_tokens != 1)
+        return false;
+
+    ASTPtr type_ast;
+    ParserToken parser_colon(TokenType::Colon);
+    const char * data_end = pos->begin;
+
+    if (parser_colon.ignore(pos, expected)
+        && parser_colon.ignore(pos, expected)
+        && ParserDataType().parse(pos, type_ast, expected))
+    {
+        auto type = DataTypeFactory::instance().get(type_ast);
+        if (!is_good_type(type))
+            return false;
+
+        /// Allow to parse numbers only from number literals,
+        /// because SerializationNumber uses unsafe version of int deserialization
+        /// and it won't throw an exception in case of error.
+        if (isNumber(type) && !is_number_literal)
+            return false;
+
+        ReadBufferFromMemory buf(data_begin, data_end - data_begin);
+        auto column = type->createColumn();
+
+        try
+        {
+            if (is_string_literal)
+                type->getDefaultSerialization()->deserializeTextQuoted(*column, buf, {});
+            else
+                type->getDefaultSerialization()->deserializeTextEscaped(*column, buf, {});
+        }
+        catch (const Exception &)
+        {
+            expected.add(pos, "literal with operator ::");
+            return false;
+        }
+
+        auto literal = std::make_shared<ASTLiteral>((*column)[0]);
+        literal->data_type_hint = type;
+        node = std::move(literal);
+        return true;
+    }
+
+    return false;
+}
+
+bool ParserCastAsExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Either CAST(expr AS type) or CAST(expr, 'type')
     /// The latter will be parsed normally as a function later.
@@ -809,20 +923,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         && ParserDataType().parse(pos, type_node, expected)
         && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
     {
-        /// Convert to canonical representation in functional form: CAST(expr, 'type')
-
-        auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_node));
-
-        auto expr_list_args = std::make_shared<ASTExpressionList>();
-        expr_list_args->children.push_back(expr_node);
-        expr_list_args->children.push_back(std::move(type_literal));
-
-        auto func_node = std::make_shared<ASTFunction>();
-        func_node->name = "CAST";
-        func_node->arguments = std::move(expr_list_args);
-        func_node->children.push_back(func_node->arguments);
-
-        node = std::move(func_node);
+        node = createFunctionCast(expr_node, type_node);
         return true;
     }
 
@@ -1951,12 +2052,13 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserSubquery().parse(pos, node, expected)
+        || ParserCastOperator().parse(pos, node, expected)
         || ParserTupleOfLiterals().parse(pos, node, expected)
         || ParserParenthesisExpression().parse(pos, node, expected)
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)
         || ParserLiteral().parse(pos, node, expected)
-        || ParserCastExpression().parse(pos, node, expected)
+        || ParserCastAsExpression().parse(pos, node, expected)
         || ParserExtractExpression().parse(pos, node, expected)
         || ParserDateAddExpression().parse(pos, node, expected)
         || ParserDateDiffExpression().parse(pos, node, expected)

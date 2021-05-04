@@ -3,7 +3,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -558,11 +557,34 @@ bool ParserUnaryMinusExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 }
 
 
+bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr expr_ast;
+    if (!elem_parser.parse(pos, expr_ast, expected))
+        return false;
+
+    ASTPtr type_ast;
+    ParserToken parser_colon(TokenType::Colon);
+    if (parser_colon.ignore(pos, expected)
+        && parser_colon.ignore(pos, expected)
+        && ParserDataType().parse(pos, type_ast, expected))
+    {
+        node = createFunctionCast(expr_ast, type_ast);
+    }
+    else
+    {
+        node = expr_ast;
+    }
+
+    return true;
+}
+
+
 bool ParserArrayElementExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &expected)
 {
     return ParserLeftAssociativeBinaryOperatorList{
         operators,
-        std::make_unique<ParserExpressionElement>(),
+        std::make_unique<ParserCastExpression>(),
         std::make_unique<ParserExpressionWithOptionalAlias>(false)
     }.parse(pos, node, expected);
 }
