@@ -1994,6 +1994,44 @@ def test_rabbitmq_vhost(rabbitmq_cluster):
             break
 
 
+@pytest.mark.timeout(120)
+def test_rabbitmq_drop_table_properly(rabbitmq_cluster):
+    instance.query('CREATE DATABASE test_database')
+    instance.query('''
+        CREATE TABLE test_database.rabbitmq_drop (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'drop',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = 'rabbit_queue'
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost', 5672, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    channel.basic_publish(exchange='drop', routing_key='', body=json.dumps({'key': 1, 'value': 2}))
+    while True:
+        result = instance.query('SELECT * FROM test_database.rabbitmq_drop ORDER BY key', ignore_error=True)
+        if result == "1\t2\n":
+            break
+
+    exists = channel.queue_declare(queue='rabbit_queue', passive=True)
+    assert(exists)
+
+    instance.query("DROP TABLE test_database.rabbitmq_drop")
+    time.sleep(30)
+    instance.query("DROP DATABASE test_database")
+
+    try:
+        exists = channel.queue_declare(callback, queue='rabbit_queue', passive=True)
+    except Exception as e:
+        exists = False
+
+    assert(not exists)
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

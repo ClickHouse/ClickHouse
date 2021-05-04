@@ -462,7 +462,9 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channe
      * specific queue when its name is specified in queue_base setting
      */
     const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
-    rabbit_channel.declareQueue(queue_name, AMQP::durable | AMQP::autodelete, queue_settings).onSuccess(success_callback).onError(error_callback);
+
+    /// AMQP::autodelete setting is not allowd, because in case of server restart there will be no consumers and deleting queues should not take place.
+    rabbit_channel.declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
 
     while (!binding_created)
     {
@@ -644,12 +646,27 @@ void StorageRabbitMQ::shutdown()
     stream_cancelled = true;
     wait_confirm = false;
 
-    deactivateTask(streaming_task, true, false);
-    deactivateTask(looping_task, true, true);
+    /// In case it has not yet been able to setup connection;
     deactivateTask(connection_task, true, false);
 
+    /// The order of deactivating tasks is important: wait for streamingToViews() func to finish and
+    /// then wait for background event loop to finish.
+    deactivateTask(streaming_task, true, false);
+    deactivateTask(looping_task, true, true);
+
+    if (drop_table)
+    {
+        for (auto & buffer : buffers)
+            buffer->closeChannel();
+        cleanupRabbitMQ();
+    }
+
+    /// It is important to close connection here - before removing consumer buffers, because
+    /// it will finish and clean callbacks, which might use those buffers data.
     connection->close();
 
+    /// Connection is not closed immediately - it requires the loop to shutdown it properly and to
+    /// finish all callbacks.
     size_t cnt_retries = 0;
     while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
         event_handler->iterateLoop();
@@ -660,6 +677,33 @@ void StorageRabbitMQ::shutdown()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
         popReadBuffer();
+}
+
+
+/// The only thing publishers are supposed to be aware of is _exchanges_ and queues are a responsibility of a consumer.
+/// Therefore, if a table is droppped, a clean up is needed.
+void StorageRabbitMQ::cleanupRabbitMQ() const
+{
+    RabbitMQChannel rabbit_channel(connection.get());
+    for (const auto & queue : queues)
+    {
+        /// AMQP::ifunused is needed, because it is possible to share queues between multiple tables and dropping
+        /// on of them should not affect others.
+        /// AMQP::ifempty is not used on purpose.
+
+        rabbit_channel.removeQueue(queue, AMQP::ifunused)
+        .onSuccess([&](uint32_t num_messages)
+        {
+            LOG_TRACE(log, "Successfully deleted queue {}, messages contained {}", queue, num_messages);
+            event_handler->stopLoop();
+        })
+        .onError([&](const char * message)
+        {
+            LOG_ERROR(log, "Failed to delete queue {}. Error message: {}", queue, message);
+            event_handler->stopLoop();
+        });
+    }
+    event_handler->startBlockingLoop();
 }
 
 
