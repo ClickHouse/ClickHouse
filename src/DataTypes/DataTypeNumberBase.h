@@ -19,15 +19,13 @@ class DataTypeNumberBase : public IDataType
 
 public:
     static constexpr bool is_parametric = false;
+    static constexpr auto family_name = TypeName<T>;
 
     using FieldType = T;
-    static constexpr auto type_id = TypeId<T>::value;
-    static constexpr auto family_name = TypeName<T>::get();
-
     using ColumnType = ColumnVector<T>;
 
-    const char * getFamilyName() const override { return family_name; }
-    TypeIndex getTypeId() const override { return type_id; }
+    const char * getFamilyName() const override { return TypeName<T>; }
+    TypeIndex getTypeId() const override { return TypeId<T>; }
 
     Field getDefault() const override;
 

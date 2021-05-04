@@ -551,7 +551,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "{}: type mismatch: column has wrong type expected {}",
             dictionary->getDictionaryID().getNameForLogs(),
-            TypeName<T>::get());
+            TypeName<T>);
     }
 
     if (is_const_column)

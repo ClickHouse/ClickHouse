@@ -228,8 +228,8 @@ public:
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override { return TypeName<T>::get(); }
-    TypeIndex getDataType() const override { return TypeId<T>::value; }
+    const char * getFamilyName() const override { return TypeName<T>; }
+    TypeIndex getDataType() const override { return TypeId<T>; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -255,7 +255,7 @@ public:
         if constexpr (IsNumber<T>)
             return UInt64(data[n]);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>::get());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
     }
 
     /// Out of range conversion is permitted.
@@ -264,7 +264,7 @@ public:
         if constexpr (IsNumber<T>)
             return Int64(data[n]);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>::get());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
     }
 
     bool getBool(size_t n) const override
@@ -272,7 +272,7 @@ public:
         if constexpr (IsNumber<T>)
             return bool(data[n]);
         else
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>::get());
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
     }
 
     void insert(const Field & x) override

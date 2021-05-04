@@ -305,7 +305,7 @@ UInt64 ColumnVector<T>::get64(size_t n) const
     if constexpr (IsNumber<T>)
         return ext::bit_cast<UInt64>(data[n]);
     else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt64", TypeName<T>::get());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt64", TypeName<T>);
 }
 
 template <typename T>
@@ -314,7 +314,7 @@ inline Float64 ColumnVector<T>::getFloat64(size_t n) const
     if constexpr (IsNumber<T>)
         return static_cast<Float64>(data[n]);
     else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float64", TypeName<T>::get());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float64", TypeName<T>);
 }
 
 template <typename T>
@@ -323,7 +323,7 @@ Float32 ColumnVector<T>::getFloat32(size_t n) const
     if constexpr (IsNumber<T>)
         return static_cast<Float32>(data[n]);
     else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float32", TypeName<T>::get());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float32", TypeName<T>);
 }
 
 template <typename T>

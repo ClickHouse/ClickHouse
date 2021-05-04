@@ -834,11 +834,11 @@ T safeGet(Field & field)
     return field.template safeGet<T>();
 }
 
+template <> inline constexpr const char * TypeName<Array> = "Array";
+template <> inline constexpr const char * TypeName<Tuple> = "Tuple";
+template <> inline constexpr const char * TypeName<Map> = "Map";
+template <> inline constexpr const char * TypeName<AggregateFunctionStateData> = "AggregateFunctionState";
 
-template <> struct TypeName<Array> { static std::string get() { return "Array"; } };
-template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; } };
-template <> struct TypeName<Map>   { static std::string get() { return "Map"; } };
-template <> struct TypeName<AggregateFunctionStateData> { static std::string get() { return "AggregateFunctionState"; } };
 
 template <typename T>
 decltype(auto) castToNearestFieldType(T && x)
