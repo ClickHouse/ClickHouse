@@ -149,7 +149,7 @@ Sets the maximum URI length of an HTTP request.
 
 Possible values:
 
--   Positive integer number.
+-   Positive integer.
 
 Default value: 1048576.
 
