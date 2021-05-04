@@ -35,8 +35,16 @@ public:
     void onError(AMQP::TcpConnection * connection, const char * message) override;
     void onReady(AMQP::TcpConnection * connection) override;
 
+    /// Loop for background thread worker.
     void startLoop();
+
+    /// Loop to wait for small tasks in a non-blocking mode.
     void iterateLoop();
+
+    /// Loop to wait for small tasks in a blocking mode.
+    int startBlockingLoop();
+
+    void stopLoop();
 
     bool connectionRunning() { return connection_running.load(); }
     bool loopRunning() { return loop_running.load(); }

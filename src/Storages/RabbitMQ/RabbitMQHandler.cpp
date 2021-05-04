@@ -53,4 +53,16 @@ void RabbitMQHandler::iterateLoop()
         uv_run(loop, UV_RUN_NOWAIT);
 }
 
+int RabbitMQHandler::startBlockingLoop()
+{
+   /// Return non-zero value, if uv_stop was called while there are still active events.
+   int ret = uv_run(loop, UV_RUN_DEFAULT);
+   return ret;
+}
+
+void RabbitMQHandler::stopLoop()
+{
+    uv_stop(loop);
+}
+
 }
