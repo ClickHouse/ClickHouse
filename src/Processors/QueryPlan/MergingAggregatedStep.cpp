@@ -40,7 +40,7 @@ MergingAggregatedStep::MergingAggregatedStep(
         output_stream->distinct_columns.insert(params->params.intermediate_header.getByPosition(key).name);
 }
 
-void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
+void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     if (!memory_efficient_aggregation)
     {
@@ -66,6 +66,11 @@ void MergingAggregatedStep::transformPipeline(QueryPipeline & pipeline)
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
     return params->params.explain(settings.out, settings.offset);
+}
+
+void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    params->params.explain(map);
 }
 
 }

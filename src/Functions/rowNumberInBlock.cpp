@@ -13,7 +13,7 @@ class FunctionRowNumberInBlock : public IFunction
 {
 public:
     static constexpr auto name = "rowNumberInBlock";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionRowNumberInBlock>();
     }

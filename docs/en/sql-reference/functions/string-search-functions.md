@@ -12,7 +12,9 @@ The search is case-sensitive by default in all these functions. There are separa
 
 ## position(haystack, needle), locate(haystack, needle) {#position}
 
-Returns the position (in bytes) of the found substring in the string, starting from 1.
+Searches for the substring `needle` in the string `haystack`.
+
+Returns the position (in bytes) of the found substring in the string, starting from 1. 
 
 For a case-insensitive search, use the function [positionCaseInsensitive](#positioncaseinsensitive).
 
@@ -20,15 +22,22 @@ For a case-insensitive search, use the function [positionCaseInsensitive](#posit
 
 ``` sql
 position(haystack, needle[, start_pos])
-```
+``` 
+
+``` sql
+position(needle IN haystack)
+``` 
 
 Alias: `locate(haystack, needle[, start_pos])`.
+
+!!! note "Note"
+    Syntax of `position(needle IN haystack)` provides SQL-compatibility, the function works the same way as to `position(haystack, needle)`.
 
 **Arguments**
 
 -   `haystack` — String, in which substring will to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — Optional parameter, position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Position of the first character in the string to start search. [UInt](../../sql-reference/data-types/int-uint.md). Optional.
 
 **Returned values**
 
@@ -81,6 +90,36 @@ Result:
 ┌─position('Привет, мир!', '!')─┐
 │                            21 │
 └───────────────────────────────┘
+```
+
+**Examples for POSITION(needle IN haystack) syntax**
+
+Query:
+
+```sql
+SELECT 3 = position('c' IN 'abc');
+```
+
+Result:
+
+```text
+┌─equals(3, position('abc', 'c'))─┐
+│                               1 │
+└─────────────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT 6 = position('/' IN s) FROM (SELECT 'Hello/World' AS s);
+```
+
+Result:
+
+```text
+┌─equals(6, position(s, '/'))─┐
+│                           1 │
+└─────────────────────────────┘
 ```
 
 ## positionCaseInsensitive {#positioncaseinsensitive}
@@ -772,4 +811,3 @@ Result:
 │                             2 │
 └───────────────────────────────┘
 ```
-

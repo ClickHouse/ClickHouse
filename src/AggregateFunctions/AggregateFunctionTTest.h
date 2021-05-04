@@ -109,6 +109,8 @@ public:
         );
     }
 
+    bool allocatesMemoryInArena() const override { return false; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Float64 value = columns[0]->getFloat64(row_num);

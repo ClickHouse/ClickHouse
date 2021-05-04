@@ -45,7 +45,7 @@ private:
         prefix_written = true;
     }
 
-    void writeRow(const Block & header, const Columns & columns, size_t row_idx, std::string & buffer);
+    void writeRow(const Serializations & serializations, const Columns & columns, size_t row_idx, std::string & buffer);
     void write(Chunk chunk, PortKind port_kind);
     void writePrefix();
 };

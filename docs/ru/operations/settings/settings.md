@@ -759,6 +759,38 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 log_query_threads=1
 ```
 
+## log_comment {#settings-log-comment}
+
+Задаёт значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
+
+Может быть использована для улучшения читабельности логов сервера. Кроме того, помогает быстро выделить связанные с тестом запросы из `system.query_log` после запуска [clickhouse-test](../../development/tests.md).
+
+Возможные значения:
+
+-   Любая строка не длиннее [max_query_size](#settings-max_query_size). При превышении длины сервер сгенерирует исключение.
+
+Значение по умолчанию: пустая строка.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SET log_comment = 'log_comment test', log_queries = 1;
+SELECT 1;
+SYSTEM FLUSH LOGS;
+SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 2;
+```
+
+Результат:
+
+``` text
+┌─type────────┬─query─────┐
+│ QueryStart  │ SELECT 1; │
+│ QueryFinish │ SELECT 1; │
+└─────────────┴───────────┘
+```
+
 ## max_insert_block_size {#settings-max_insert_block_size}
 
 Формировать блоки указанного размера, при вставке в таблицу.
@@ -811,8 +843,6 @@ log_query_threads=1
 Например, при чтении из таблицы, если есть возможность вычислять выражения с функциями, фильтровать с помощью WHERE и предварительно агрегировать для GROUP BY параллельно, используя хотя бы количество потоков max_threads, то используются max_threads.
 
 Значение по умолчанию: количество процессорных ядер без учёта Hyper-Threading.
-
-Если на сервере обычно исполняется менее одного запроса SELECT одновременно, то выставите этот параметр в значение чуть меньше количества реальных процессорных ядер.
 
 Для запросов, которые быстро завершаются из-за LIMIT-а, имеет смысл выставить max_threads поменьше. Например, если нужное количество записей находится в каждом блоке, то при max_threads = 8 будет считано 8 блоков, хотя достаточно было прочитать один.
 
@@ -1759,6 +1789,67 @@ ClickHouse генерирует исключение
 
 -   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
 -   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
+
+## insert_distributed_one_random_shard {#insert_distributed_one_random_shard}
+
+Включает или отключает режим вставки данных в [Distributed](../../engines/table-engines/special/distributed.md#distributed)) таблицу в случайный шард при отсутствии ключ шардирования.
+
+По умолчанию при вставке данных в `Distributed` таблицу с несколькими шардами и при отсутствии ключа шардирования сервер ClickHouse будет отклонять любой запрос на вставку данных. Когда `insert_distributed_one_random_shard = 1`, вставки принимаются, а данные записываются в случайный шард.
+
+Возможные значения:
+
+-   0 — если у таблицы несколько шардов, но ключ шардирования отсутствует, вставка данных отклоняется.
+-   1 — если ключ шардирования отсутствует, то вставка данных осуществляется в случайный шард среди всех доступных шардов.
+
+Значение по умолчанию: `0`.
+
+## insert_shard_id {#insert_shard_id}
+
+Если не `0`, указывает, в какой шард [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы данные будут вставлены синхронно.
+
+Если значение настройки `insert_shard_id` указано неверно, сервер выдаст ошибку.
+
+Узнать количество шардов `shard_num` на кластере `requested_cluster` можно из конфигурации сервера, либо используя запрос:
+
+``` sql
+SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
+```
+
+Возможные значения:
+
+-   0 — выключено.
+-   Любое число от `1` до `shards_num` соответствующей [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+CREATE TABLE x AS system.numbers ENGINE = MergeTree ORDER BY number;
+CREATE TABLE x_dist AS x ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), x);
+INSERT INTO x_dist SELECT * FROM numbers(5) SETTINGS insert_shard_id = 1;
+SELECT * FROM x_dist ORDER BY number ASC;
+```
+
+Результат:
+
+``` text
+┌─number─┐
+│      0 │
+│      0 │
+│      1 │
+│      1 │
+│      2 │
+│      2 │
+│      3 │
+│      3 │
+│      4 │
+│      4 │
+└────────┘
+```
+
 ## validate_polygons {#validate_polygons}
 
 Включает или отключает генерирование исключения в функции [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon), если многоугольник самопересекающийся или самокасающийся.
@@ -2567,14 +2658,194 @@ SELECT * FROM test2;
 
 Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized) и БД [MaterializeMySQL](../../engines/database-engines/materialize-mysql.md).
 
+## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
+
+Включает или отключает возможность выполнять запрос `SELECT` к таблице на движке [File](../../engines/table-engines/special/file.md), не содержащей файл.
+
+Возможные значения:
+- 0 — запрос `SELECT` генерирует исключение.
+- 1 — запрос `SELECT` возвращает пустой результат.
+
+Значение по умолчанию: `0`.
+
+## engine_file_truncate_on_insert {#engine-file-truncate-on-insert}
+
+Включает или выключает удаление данных из таблицы до вставки в таблицу на движке [File](../../engines/table-engines/special/file.md).
+
+Возможные значения:
+- 0 — запрос `INSERT` добавляет данные в конец файла после существующих.
+- 1 — `INSERT` удаляет имеющиеся в файле данные и замещает их новыми.
+
+Значение по умолчанию: `0`. 
+
 ## allow_experimental_geo_types {#allow-experimental-geo-types}
 
 Разрешает использование экспериментальных типов данных для работы с [географическими структурами](../../sql-reference/data-types/geo.md).
 
 Возможные значения:
-
--   0 — Использование типов данных для работы с географическими структурами не поддерживается.
--   1 — Использование типов данных для работы с географическими структурами поддерживается.
+-   0 — использование типов данных для работы с географическими структурами не поддерживается.
+-   1 — использование типов данных для работы с географическими структурами поддерживается.
 
 Значение по умолчанию: `0`.
 
+## database_atomic_wait_for_drop_and_detach_synchronously {#database_atomic_wait_for_drop_and_detach_synchronously}
+
+Добавляет модификатор `SYNC` ко всем запросам `DROP` и `DETACH`. 
+
+Возможные значения:
+
+-   0 — Запросы будут выполняться с задержкой.
+-   1 — Запросы будут выполняться без задержки.
+
+Значение по умолчанию: `0`.
+
+## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil}
+
+Устанавливает отображение запроса `SHOW TABLE`.
+
+Возможные значения:
+
+-   0 — Запрос будет отображаться без UUID таблицы.
+-   1 — Запрос будет отображаться с UUID таблицы.
+
+Значение по умолчанию: `0`.
+
+## allow_experimental_live_view {#allow-experimental-live-view}
+
+Включает экспериментальную возможность использования [LIVE-представлений](../../sql-reference/statements/create/view.md#live-view).
+
+Возможные значения:
+- 0 — живые представления не поддерживаются.
+- 1 — живые представления поддерживаются.
+
+Значение по умолчанию: `0`.
+
+## live_view_heartbeat_interval {#live-view-heartbeat-interval}
+
+Задает интервал в секундах для периодической проверки существования [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view).
+
+Значение по умолчанию: `15`.
+
+## max_live_view_insert_blocks_before_refresh {#max-live-view-insert-blocks-before-refresh}
+
+Задает наибольшее число вставок, после которых запрос на формирование [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) исполняется снова.
+
+Значение по умолчанию: `64`.
+
+## temporary_live_view_timeout {#temporary-live-view-timeout}
+
+Задает время в секундах, после которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) удаляется.
+
+Значение по умолчанию: `5`.
+
+## periodic_live_view_refresh {#periodic-live-view-refresh}
+
+Задает время в секундах, по истечении которого [LIVE VIEW](../../sql-reference/statements/create/view.md#live-view) с установленным автообновлением обновляется.
+
+Значение по умолчанию: `60`.
+
+## check_query_single_value_result {#check_query_single_value_result}
+
+Определяет уровень детализации результата для запросов [CHECK TABLE](../../sql-reference/statements/check-table.md#checking-mergetree-tables) для таблиц семейства `MergeTree`.
+
+Возможные значения:
+
+-   0 — запрос возвращает статус каждого куска данных таблицы.
+-   1 — запрос возвращает статус таблицы в целом.
+
+Значение по умолчанию: `0`.
+
+## prefer_column_name_to_alias {#prefer-column-name-to-alias}
+
+Включает или отключает замену названий столбцов на синонимы в выражениях и секциях запросов, см. [Примечания по использованию синонимов](../../sql-reference/syntax.md#syntax-expression_aliases). Включите эту настройку, чтобы синтаксис синонимов в ClickHouse был более совместим с большинством других СУБД.
+
+Возможные значения:
+
+- 0 — синоним подставляется вместо имени столбца.
+- 1 — синоним не подставляется вместо имени столбца.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Какие изменения привносит включение и выключение настройки: 
+
+Запрос:
+
+```sql
+SET prefer_column_name_to_alias = 0;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Результат:
+
+```text
+Received exception from server (version 21.5.1):
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
+```
+
+Запрос:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT avg(number) AS number, max(number) FROM numbers(10);
+```
+
+Результат:
+
+```text
+┌─number─┬─max(number)─┐
+│    4.5 │           9 │
+└────────┴─────────────┘
+```
+
+## limit {#limit}
+
+Устанавливает максимальное количество строк, возвращаемых запросом. Ограничивает сверху значение, установленное в запросе в секции [LIMIT](../../sql-reference/statements/select/limit.md#limit-clause).
+
+Возможные значения:
+
+-   0 — число строк не ограничено.
+-   Положительное целое число.
+
+Значение по умолчанию: `0`.
+
+## offset {#offset}
+
+Устанавливает количество строк, которые необходимо пропустить перед началом возврата строк из запроса. Суммируется со значением, установленным в запросе в секции [OFFSET](../../sql-reference/statements/select/offset.md#offset-fetch).
+
+Возможные значения:
+
+-   0 — строки не пропускаются.
+-   Положительное целое число.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Исходная таблица:
+
+``` sql
+CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
+INSERT INTO test SELECT number FROM numbers(500);
+```
+
+Запрос:
+
+``` sql
+SET limit = 5;
+SET offset = 7;
+SELECT * FROM test LIMIT 10 OFFSET 100;
+```
+
+Результат:
+
+``` text
+┌───i─┐
+│ 107 │
+│ 108 │
+│ 109 │
+└─────┘
+```
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/settings/settings/) <!--hide-->
