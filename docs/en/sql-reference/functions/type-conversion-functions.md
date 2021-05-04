@@ -469,7 +469,7 @@ Converts input value `x` to the `T` data type. Unlike to `reinterpret` function,
 
 The syntax `CAST(x AS t)` is also supported.
 
-Note, that if value `x` does not fit the bounds of type T, the function overflows. For example, CAST(-1, 'UInt8') returns 255.
+Note, that if value `x` does not fit the bounds of type `T`, the function overflows. For example, `CAST(-1, 'UInt8')` returns `255`.
 
 **Syntax**
 
@@ -494,7 +494,7 @@ Query:
 SELECT
     CAST(toInt8(-1), 'UInt8') AS cast_int_to_uint,
     CAST(toInt8(1), 'Float32') AS cast_int_to_float,
-    CAST('1', 'UInt32') AS cast_string_to_int
+    CAST('1', 'UInt32') AS cast_string_to_int;
 ```
 
 Result:
@@ -1070,7 +1070,7 @@ Result:
 
 ## parseDateTime64BestEffort {#parsedatetime64besteffort}
 
-Same as [parseDateTimeBestEffort](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and returns `DateTime64(3)` or `DateTime64(6)` data types.
+Same as [parseDateTimeBestEffort](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and returns [DateTime](../../sql-reference/functions/type-conversion-functions.md#data_type-datetime) data type.
 
 **Syntax**
 
@@ -1081,8 +1081,12 @@ parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 **Parameters**
 
 -   `time_string` — String containing a date or date with time to convert. [String](../../sql-reference/data-types/string.md).
--   `precision` — `3` for milliseconds, `6` for microseconds. Default `3`. Optional [UInt8](../../sql-reference/data-types/int-uint.md).
+-   `precision` — `3` for milliseconds, `6` for microseconds. Default `3`. Optional. [UInt8](../../sql-reference/data-types/int-uint.md).
 -   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). The function parses `time_string` according to the timezone. Optional. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   `time_string` converted to the [DateTime](../../sql-reference/data-types/datetime.md) data type.
 
 **Examples**
 
@@ -1096,7 +1100,7 @@ UNION ALL
 SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
 UNION ALL
 SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Europe/Moscow') AS a, toTypeName(a) AS t
-FORMAT PrettyCompactMonoBlcok
+FORMAT PrettyCompactMonoBlcok;
 ```
 
 Result:
@@ -1168,7 +1172,7 @@ Input value is scaled up or down appropriately depending on it precision. Please
 
 **Syntax**
 
-``` sql
+```sql
 toUnixTimestamp64Milli(value)
 ```
 
@@ -1184,7 +1188,7 @@ toUnixTimestamp64Milli(value)
 
 Query:
 
-``` sql
+```sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
 SELECT toUnixTimestamp64Milli(dt64);
 ```

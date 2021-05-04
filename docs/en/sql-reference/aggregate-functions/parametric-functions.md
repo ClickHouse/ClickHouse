@@ -312,7 +312,7 @@ FROM
     GROUP BY user_id
 )
 GROUP BY level
-ORDER BY level ASC
+ORDER BY level ASC;
 ```
 
 Result:
