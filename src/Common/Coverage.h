@@ -95,6 +95,9 @@ private:
     /// How may threads concurrently symbolize the addresses on binary startup.
     static constexpr const size_t thread_pool_symbolizing = 16;
 
+    size_t functions_count;
+    size_t addrs_count;
+
     const Poco::Logger * base_log; /// do not use the logger before call of serverHasInitialized.
 
     const std::filesystem::path coverage_dir;

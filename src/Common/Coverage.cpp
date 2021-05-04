@@ -44,7 +44,9 @@ inline auto getInstanceAndInitGlobalCounters()
 }
 
 Writer::Writer()
-    : base_log(nullptr),
+    : functions_count(0),
+      addrs_count(0),
+      base_log(nullptr),
       coverage_dir(std::filesystem::current_path() / Writer::coverage_dir_relative_path),
       symbol_index(getInstanceAndInitGlobalCounters()),
       dwarf(symbol_index->getSelf()->elf),
@@ -90,6 +92,9 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
 
         edge_is_func_entry[i / 2] = is_function_entry;
 
+        functions_count += is_function_entry;
+        addrs_count += !is_function_entry;
+
         const uintptr_t addr = is_function_entry
             ?  pc_array[i]
             /**
@@ -123,17 +128,17 @@ void Writer::symbolizeAllInstrumentedAddrs()
 {
     LOG_INFO(base_log, "Started symbolizing addresses");
 
-    std::vector<EdgeIndex> function_indices;
-    std::vector<EdgeIndex> addr_indices;
+    std::vector<EdgeIndex> function_indices(functions_count);
+    std::vector<EdgeIndex> addr_indices(addrs_count);
 
-    function_indices.reserve(edges_to_addrs.size()); //TODO reserve exact size
-    addr_indices.reserve(edges_to_addrs.size());
+    size_t j = 0;
+    size_t k = 0;
 
     for (size_t i = 0; i < edges_to_addrs.size(); ++i)
         if (edge_is_func_entry.at(i))
-            function_indices.push_back(i);
+            function_indices[j++] = i;
         else
-            addr_indices.push_back(i);
+            addr_indices[k++] = i;
 
     pool.setMaxThreads(thread_pool_symbolizing);
 
