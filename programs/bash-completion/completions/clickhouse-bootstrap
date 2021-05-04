@@ -15,6 +15,13 @@ shopt -s extglob
 
 export _CLICKHOUSE_COMPLETION_LOADED=1
 
+CLICKHOUSE_QueryProcessingStage=(
+    complete
+    fetch_columns
+    with_mergeable_state
+    with_mergeable_state_after_aggregation
+)
+
 function _clickhouse_bin_exist()
 { [ -x "$1" ] || command -v "$1" >& /dev/null; }
 
@@ -36,6 +43,10 @@ function _complete_for_clickhouse_generic_bin_impl()
 
     case "$prev" in
         -C|--config-file|--config)
+            return 1
+            ;;
+        --stage)
+            COMPREPLY=( $(compgen -W "${CLICKHOUSE_QueryProcessingStage[*]}" -- "$cur") )
             return 1
             ;;
         # Argh...  This looks like a bash bug...
