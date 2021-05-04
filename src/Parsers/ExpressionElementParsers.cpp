@@ -866,11 +866,9 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         return false;
 
     ASTPtr type_ast;
-    ParserToken parser_colon(TokenType::Colon);
     const char * data_end = pos->begin;
 
-    if (parser_colon.ignore(pos, expected)
-        && parser_colon.ignore(pos, expected)
+    if (ParserDoubleColon().ignore(pos, expected)
         && ParserDataType().parse(pos, type_ast, expected))
     {
         auto type = DataTypeFactory::instance().get(type_ast);

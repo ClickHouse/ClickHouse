@@ -65,4 +65,17 @@ bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
     return true;
 }
 
+bool ParserDoubleColon::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
+{
+    /// Do not move position if only one colon mathced.
+    Pos begin = pos;
+    if (parser_colon.ignore(begin, expected) && parser_colon.ignore(begin, expected))
+    {
+        pos = begin;
+        return true;
+    }
+
+    return false;
+}
+
 }
