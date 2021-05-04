@@ -1,15 +1,15 @@
-SELECT i
+SELECT i AS i
 FROM index_append_test.test
 PREWHERE a = 0
 WHERE (a = 0) AND indexHint((i + 40) > 0)
-SELECT i
+SELECT i AS i
 FROM index_append_test.test
 PREWHERE a < 0
-SELECT i
+SELECT i AS i
 FROM index_append_test.test
 PREWHERE a >= 0
 WHERE (a >= 0) AND indexHint((i + 40) > 0)
-SELECT i
+SELECT i AS i
 FROM index_append_test.test
 PREWHERE (2 * b) < 100
 WHERE ((2 * b) < 100) AND indexHint(i < 100)
