@@ -39,9 +39,11 @@ public:
     void startLoop();
 
     /// Loop to wait for small tasks in a non-blocking mode.
+    /// Adds synchronization with main background loop.
     void iterateLoop();
 
     /// Loop to wait for small tasks in a blocking mode.
+    /// No synchronization is done with the main loop thread.
     int startBlockingLoop();
 
     void stopLoop();

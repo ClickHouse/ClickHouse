@@ -2045,6 +2045,8 @@ def test_rabbitmq_queue_settings(rabbitmq_cluster):
         time.sleep(0.5)
         result = instance.query('SELECT count() FROM test.view', ignore_error=True)
 
+    instance.query('DROP TABLE test.rabbitmq_settings')
+
     # queue size is 10, but 50 messages were sent, they will be dropped (setting x-overflow = reject-publish) and only 10 will remain.
     assert(int(result) == 10)
 
@@ -2056,7 +2058,6 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
     channel.queue_declare(queue='rabbit_queue', durable=True)
-    #channel.basic_publish(exchange='', routing_key='rabbit_queue', body=json.dumps({'key': 1, 'value': 2}))
 
     i = [0]
     messages_num = 1000
@@ -2103,6 +2104,8 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
 
     for thread in threads:
         thread.join()
+
+    instance.query('DROP TABLE test.rabbitmq_queue')
 
 
 if __name__ == '__main__':
