@@ -98,7 +98,7 @@ void pushOr(ASTPtr & query)
         {
             auto & child = or_func->arguments->children[i];
             auto * and_func = child->as<ASTFunction>();
-            if (and_func->name == "and")
+            if (and_func && and_func->name == "and")
             {
                 and_node_id = i;
             }
