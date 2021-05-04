@@ -69,7 +69,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
         log_file->open();
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
         split->addChannel(log);
@@ -90,7 +90,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
 
         Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
         errorlog->setLevel(Poco::Message::PRIO_NOTICE);
