@@ -1504,6 +1504,7 @@ BlockInputStreamPtr HashJoin::createStreamWithNonJoinedRows(const Block & result
 void HashJoin::reuseJoinedData(const HashJoin & join)
 {
     data = join.data;
+    from_storage_join = true;
     joinDispatch(kind, strictness, data->maps, [this](auto kind_, auto strictness_, auto & map)
     {
         used_flags.reinit<kind_, strictness_>(map.getBufferSizeInCells(data->type) + 1);
