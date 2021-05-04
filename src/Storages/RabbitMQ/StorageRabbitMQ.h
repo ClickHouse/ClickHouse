@@ -91,6 +91,7 @@ private:
     size_t num_consumers;
     size_t num_queues;
     String queue_base;
+    Names queue_settings_list;
     const String deadletter_exchange;
     const bool persistent;
 
@@ -139,7 +140,7 @@ private:
     void loopingFunc();
     void connectionFunc();
 
-    static Names parseRoutingKeys(String routing_key_list);
+    static Names parseSettings(String routing_key_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
