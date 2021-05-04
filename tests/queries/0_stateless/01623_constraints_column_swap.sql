@@ -27,6 +27,7 @@ INSERT INTO column_swap_test.test SELECT number AS i, toString(number) AS a, for
 
 EXPLAIN SYNTAX SELECT substring(reverse(b), 1, 1), a FROM column_swap_test.test WHERE a = 'c';
 EXPLAIN SYNTAX SELECT substring(reverse(b), 1, 1), a FROM column_swap_test.test WHERE substring(reverse(b), 1, 1) = 'c';
+EXPLAIN SYNTAX SELECT substring(reverse(b), 1, 1) AS t1, a AS t2 FROM column_swap_test.test WHERE substring(reverse(b), 1, 1) = 'c';
 EXPLAIN SYNTAX SELECT substring(reverse(b), 1, 1) FROM column_swap_test.test WHERE substring(reverse(b), 1, 1) = 'c';
 
 DROP TABLE column_swap_test.test;
