@@ -14,27 +14,20 @@
 namespace DB
 {
 
-/// TODO Make it simple.
-
-template <typename Type> struct TypeToColumnType { using ColumnType = ColumnVector<Type>; };
-template <> struct TypeToColumnType<String> { using ColumnType = ColumnString; };
-
-template <typename DataType> struct DataTypeToName : TypeName<typename DataType::FieldType> { };
-template <> struct DataTypeToName<DataTypeDate> { static std::string get() { return "Date"; } };
-template <> struct DataTypeToName<DataTypeDateTime> { static std::string get() { return "DateTime"; } };
-
+namespace
+{
 
 template <typename DataType>
-struct FunctionEmptyArray : public IFunction
+class FunctionEmptyArray : public IFunction
 {
-    static constexpr auto base_name = "emptyArray";
-    static const String name;
+public:
+    static String getNameImpl() { return "emptyArray" + DataType().getName(); }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionEmptyArray>(); }
 
 private:
     String getName() const override
     {
-        return name;
+        return getNameImpl();
     }
 
     size_t getNumberOfArguments() const override { return 0; }
@@ -46,17 +39,12 @@ private:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
-
         return ColumnArray::create(
-            UnderlyingColumnType::create(),
+            DataType().createColumn(),
             ColumnArray::ColumnOffsets::create(input_rows_count, 0));
     }
 };
 
-
-template <typename DataType>
-const String FunctionEmptyArray<DataType>::name = FunctionEmptyArray::base_name + String(DataTypeToName<DataType>::get());
 
 using FunctionEmptyArrayUInt8 = FunctionEmptyArray<DataTypeUInt8>;
 using FunctionEmptyArrayUInt16 = FunctionEmptyArray<DataTypeUInt16>;
@@ -72,22 +60,29 @@ using FunctionEmptyArrayDate = FunctionEmptyArray<DataTypeDate>;
 using FunctionEmptyArrayDateTime = FunctionEmptyArray<DataTypeDateTime>;
 using FunctionEmptyArrayString = FunctionEmptyArray<DataTypeString>;
 
+template <typename F>
+void registerFunction(FunctionFactory & factory)
+{
+    factory.registerFunction<F>(F::getNameImpl());
+}
+
+}
 
 void registerFunctionsEmptyArray(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionEmptyArrayUInt8>();
-    factory.registerFunction<FunctionEmptyArrayUInt16>();
-    factory.registerFunction<FunctionEmptyArrayUInt32>();
-    factory.registerFunction<FunctionEmptyArrayUInt64>();
-    factory.registerFunction<FunctionEmptyArrayInt8>();
-    factory.registerFunction<FunctionEmptyArrayInt16>();
-    factory.registerFunction<FunctionEmptyArrayInt32>();
-    factory.registerFunction<FunctionEmptyArrayInt64>();
-    factory.registerFunction<FunctionEmptyArrayFloat32>();
-    factory.registerFunction<FunctionEmptyArrayFloat64>();
-    factory.registerFunction<FunctionEmptyArrayDate>();
-    factory.registerFunction<FunctionEmptyArrayDateTime>();
-    factory.registerFunction<FunctionEmptyArrayString>();
+    registerFunction<FunctionEmptyArrayUInt8>(factory);
+    registerFunction<FunctionEmptyArrayUInt16>(factory);
+    registerFunction<FunctionEmptyArrayUInt32>(factory);
+    registerFunction<FunctionEmptyArrayUInt64>(factory);
+    registerFunction<FunctionEmptyArrayInt8>(factory);
+    registerFunction<FunctionEmptyArrayInt16>(factory);
+    registerFunction<FunctionEmptyArrayInt32>(factory);
+    registerFunction<FunctionEmptyArrayInt64>(factory);
+    registerFunction<FunctionEmptyArrayFloat32>(factory);
+    registerFunction<FunctionEmptyArrayFloat64>(factory);
+    registerFunction<FunctionEmptyArrayDate>(factory);
+    registerFunction<FunctionEmptyArrayDateTime>(factory);
+    registerFunction<FunctionEmptyArrayString>(factory);
 }
 
 }
