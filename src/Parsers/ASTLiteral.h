@@ -4,6 +4,7 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/FieldVisitors.h>
+#include <DataTypes/IDataType.h>
 
 #include <optional>
 
@@ -32,6 +33,9 @@ public:
      * now, this field is effectively just some private EA data.
      */
     String unique_column_name;
+
+    /// Hint for data type of literal, that can be set by operator "::".
+    DataTypePtr data_type_hint;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value)); }

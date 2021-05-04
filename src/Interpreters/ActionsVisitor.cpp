@@ -1061,7 +1061,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
-    DataTypePtr type = applyVisitor(FieldToDataType(), literal.value);
+    DataTypePtr type = literal.data_type_hint
+        ? literal.data_type_hint
+        : applyVisitor(FieldToDataType(), literal.value);
+
     const auto value = convertFieldToType(literal.value, *type);
 
     // FIXME why do we have a second pass with a clean sample block over the same

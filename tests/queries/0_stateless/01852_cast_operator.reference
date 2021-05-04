@@ -1,0 +1,55 @@
+0.10000000000000000000000000000000000000	Decimal(38, 38)
+SELECT
+    \'0.10000000000000000000000000000000000000\'::Decimal(38, 38) AS c,
+    toTypeName(c)
+[1,2,3]	Array(UInt32)
+SELECT
+    [1, 2, 3]::Array(UInt32) AS c,
+    toTypeName(c)
+abc	FixedString(3)
+SELECT
+    \'abc\'::FixedString(3) AS c,
+    toTypeName(c)
+123	String
+SELECT
+    \'123\'::String AS c,
+    toTypeName(c)
+1	Int8
+SELECT
+    1::Int8 AS c,
+    toTypeName(c)
+[1,2,3]	Array(UInt32)
+SELECT
+    CAST([1, 1 + 1, 1 + 2], \'Array(UInt32)\') AS c,
+    toTypeName(c)
+2010-10-10	Date
+SELECT
+    CAST(\'2010-10-10\', \'Date\') AS c,
+    toTypeName(c)
+2010-10-10 00:00:00	DateTime
+SELECT
+    CAST(\'2010-10-10\', \'DateTime\') AS c,
+    toTypeName(c)
+['2010-10-10','2010-10-10']	Array(Date)
+SELECT CAST([\'2010-10-10\', \'2010-10-10\'], \'Array(Date)\')
+3	UInt32
+SELECT
+    CAST(1 + 2, \'UInt32\') AS c,
+    toTypeName(c)
+0.5	Float64
+SELECT
+    CAST(\'0.1000\'::Decimal(4, 4) * 5, \'Float64\') AS c,
+    toTypeName(c)
+0	UInt8
+SELECT
+    CAST(number, \'UInt8\') AS c,
+    toTypeName(c)
+FROM numbers(1)
+1970-01-11	Date
+SELECT
+    CAST((((0 + 1) + 2) + 3) + 4, \'Date\') AS c,
+    toTypeName(c)
+0.6000	Decimal(4, 4)
+SELECT
+    CAST((\'0.1000\'::Decimal(4, 4) + \'0.2000\'::Decimal(4, 4)) + \'0.3000\'::Decimal(4, 4), \'Decimal(4, 4)\') AS c,
+    toTypeName(c)
