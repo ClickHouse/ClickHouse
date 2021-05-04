@@ -10,6 +10,8 @@
 #    include <DataTypes/IDataType.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeFixedString.h>
+#    include <Columns/ColumnConst.h>
+#    include <Columns/ColumnNullable.h>
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -141,6 +143,74 @@ static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr 
 
     return nativeCast(b, from, value, n_to);
 }
+
+static inline llvm::Constant * getColumnNativeConstant(llvm::Type * native_type, WhichDataType column_data_type, const IColumn & column)
+{
+    llvm::Constant * result = nullptr;
+
+    if (column_data_type.isFloat32())
+    {
+        result = llvm::ConstantFP::get(native_type, column.getFloat32(0));
+    }
+    else if (column_data_type.isFloat64())
+    {
+        result = llvm::ConstantFP::get(native_type, column.getFloat64(0));
+    }
+    else if (column_data_type.isNativeInt())
+    {
+        result = llvm::ConstantInt::get(native_type, column.getInt(0));
+    }
+    else if (column_data_type.isNativeUInt())
+    {
+        result = llvm::ConstantInt::get(native_type, column.getUInt(0));
+    }
+
+    return result;
+}
+
+static inline llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index)
+{
+    WhichDataType column_data_type(column_type);
+    auto * type = toNativeType(builder, column_type);
+
+    if (!type || column.size() <= index)
+        return nullptr;
+
+    if (const auto * constant = typeid_cast<const ColumnConst *>(&column))
+    {
+        return getColumnNativeValue(builder, column_type, constant->getDataColumn(), 0);
+    }
+    else if (column_data_type.isNullable())
+    {
+        const auto & nullable_data_type = assert_cast<const DataTypeNullable &>(*column_type);
+        const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
+
+        auto * value = getColumnNativeValue(builder, nullable_data_type.getNestedType(), nullable_column.getNestedColumn(), index);
+        auto * is_null = llvm::ConstantInt::get(type->getContainedType(1), nullable_column.isNullAt(index));
+
+        return value ? llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null) : nullptr;
+    }
+    else if (column_data_type.isFloat32())
+    {
+        return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float32> &>(column).getElement(index));
+    }
+    else if (column_data_type.isFloat64())
+    {
+        return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float64> &>(column).getElement(index));
+    }
+    else if (column_data_type.isNativeUInt())
+    {
+        return llvm::ConstantInt::get(type, column.getUInt(index));
+    }
+    else if (column_data_type.isNativeInt())
+    {
+        return llvm::ConstantInt::get(type, column.getInt(index));
+    }
+
+    return nullptr;
+}
+
+
 
 }
 

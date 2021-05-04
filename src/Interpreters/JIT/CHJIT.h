@@ -20,7 +20,6 @@ class JITModuleMemoryManager;
 class JITSymbolResolver;
 class JITCompiler;
 
-/// TODO: Add profile events
 /// TODO: Add documentation
 class CHJIT
 {
@@ -32,7 +31,7 @@ public:
     struct CompiledModuleInfo
     {
         size_t size;
-        std::string module_identifier;
+        uint64_t module_identifier;
         std::vector<std::string> compiled_functions;
     };
 
@@ -65,10 +64,11 @@ private:
     std::unique_ptr<JITSymbolResolver> symbol_resolver;
 
     std::unordered_map<std::string, void *> name_to_symbol;
-    std::unordered_map<std::string, std::unique_ptr<JITModuleMemoryManager>> module_identifier_to_memory_manager;
-    size_t current_module_key = 0;
+    std::unordered_map<uint64_t, std::unique_ptr<JITModuleMemoryManager>> module_identifier_to_memory_manager;
+    uint64_t current_module_key = 0;
     std::atomic<size_t> compiled_code_size = 0;
     mutable std::mutex jit_lock;
+
 };
 
 }
