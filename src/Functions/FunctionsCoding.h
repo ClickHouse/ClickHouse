@@ -1550,12 +1550,15 @@ public:
             for (size_t row = 0; row < size; ++row)
             {
                 UnsignedT x = vec_from[row];
+                int position = 0;
                 while (x)
                 {
-                    UnsignedT y = x & (x - 1);
-                    UnsignedT bit = x ^ y;
-                    x = y;
-                    res_values.push_back(std::log2(bit));
+                    if(x & 1)
+                    {
+                        res_values.push_back(position);
+                    }
+                    x >>= 1 ;
+                    position++;
                 }
                 res_offsets[row] = res_values.size();
             }
