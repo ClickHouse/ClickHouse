@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -59,7 +60,6 @@ Writer::Writer()
         dumpAndChangeTestName(name);
     });
 
-    // BUG Creating multiple folders out of CH folder
     //if (std::filesystem::exists(coverage_dir))
     //{
     //    size_t suffix = 1;
@@ -72,6 +72,7 @@ Writer::Writer()
     //    std::filesystem::rename(coverage_dir, dir_new_path);
     //}
 
+    // BUG Creating folder out of CH folder
     std::filesystem::remove_all(coverage_dir);
     std::filesystem::create_directory(coverage_dir);
 }
@@ -81,7 +82,8 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
     const size_t edges_pairs = pc_array_end - pc_array;
     const size_t edges = edges_pairs / 2;
 
-    edges_hit.reserve(edges);
+    for (size_t i = 0; i < edges; ++i) //can't even reserve place
+        edges_hit.push_back(0);
 
     edges_to_addrs.resize(edges);
     edge_is_func_entry.resize(edges);
@@ -124,21 +126,30 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
     /// If starting now, we won't be able to log to Poco or std::cout;
 }
 
-void Writer::symbolizeAllInstrumentedAddrs()
+void Writer::loadCacheOrSymbolizeInstrumentedData()
 {
-    LOG_INFO(base_log, "Started symbolizing addresses");
-
     std::vector<EdgeIndex> function_indices(functions_count);
     std::vector<EdgeIndex> addr_indices(addrs_count);
 
-    size_t j = 0;
-    size_t k = 0;
-
-    for (size_t i = 0; i < edges_to_addrs.size(); ++i)
+    for (size_t i = 0, j = 0, k = 0; i < edges_to_addrs.size(); ++i)
         if (edge_is_func_entry.at(i))
             function_indices[j++] = i;
         else
             addr_indices[k++] = i;
+
+    LOG_INFO(base_log, "Split addresses into function entries ({}) and normal ones ({}), {} total",
+        functions_count, addrs_count, edges_to_addrs.size());
+
+    // LOG_INFO(base_log, "Trying to load cache");
+
+    // if (std::filesystem::exists(coverage_cache_file_path))
+    // {
+
+    // }
+    // else
+    //     LOG_INFO(base_log, "Cache not found");
+
+    LOG_INFO(base_log, "Started symbolizing addresses");
 
     pool.setMaxThreads(thread_pool_symbolizing);
 
@@ -179,12 +190,13 @@ void Writer::symbolizeAllInstrumentedAddrs()
 void Writer::dumpAndChangeTestName(std::string_view test_name)
 {
     std::string old_test_name;
-    EdgesHit edges_hit_copy;
+    EdgesHashmap edges_hashmap;
 
     const Poco::Logger * log {nullptr};
 
     {
         auto lck = std::lock_guard(edges_mutex);
+        dumping.store(true);
 
         if (!test)
         {
@@ -193,25 +205,48 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         }
 
         log = &Poco::Logger::get(std::string{logger_base_name} + "." + *test);
-        LOG_INFO(log, "Started moving data");
 
-        edges_hit_copy = std::move(edges_hit);
+        LOG_INFO(log, "Started copying data");
+
+        // Can't do it in multiple threads as atomics aren't copy constructible
+        for (size_t i = 0; i < edges_hit.size(); ++i)
+        {
+            const size_t hit = edges_hit.at(i).load(std::memory_order_relaxed);
+
+            if (!hit)
+                continue;
+
+            if (auto it = edges_hashmap.find(i); it != edges_hashmap.end())
+                it->second += hit;
+            else
+                edges_hashmap[i] = hit;
+        }
+
+        LOG_INFO(log, "Copied data into hashtable, {} unique addrs", edges_hashmap.size());
+
         old_test_name = *test;
+
+        /// genhtml doesn't allow '.' in test names
+        std::replace(old_test_name.begin(), old_test_name.end(), '.', '_');
 
         if (test_name.empty())
             test = std::nullopt;
         else
         {
             test = test_name;
-            edges_hit = {}; // to initialize after move.
+
+            for (auto& e : edges_hit)
+                e = 0;
         }
+
+        dumping.store(false);
     }
 
-    LOG_INFO(log, "Moved shared data, {} addrs", edges_hit_copy.size());
+    LOG_INFO(log, "Copied shared data");
 
     /// Can't copy by ref as current function's lifetime may end before evaluating the functor.
     /// The move is evaluated within current function's lifetime during function constructor call.
-    auto f = [this, log, test_name = std::move(old_test_name), edges_copied = std::move(edges_hit_copy)]
+    auto f = [this, log, test_name = std::move(old_test_name), edges_copied = std::move(edges_hashmap)]
     {
         prepareDataAndDump({test_name, log}, edges_copied);
     };
@@ -220,9 +255,9 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
     pool.scheduleOrThrowOnError(std::move(f));
 }
 
-void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHit& hits)
+void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits)
 {
-    LOG_INFO(test_info.log, "Started filling internal structures, {} addrs", hits.size());
+    LOG_INFO(test_info.log, "Started filling internal structures");
 
     TestData test_data(source_files_cache.size());
 
@@ -314,7 +349,6 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
      */
     LOG_INFO(test_info.log, "Started dumping");
 
-    // TODO remove . from test name
     // TODO compress buffer with gzip and gunzip
     std::ofstream ofs(coverage_dir / test_info.name);
 

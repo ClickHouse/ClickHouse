@@ -35,6 +35,25 @@ struct StringHash
     size_t operator()(std::string const& str) const { return hash_type{}(str); }
 };
 
+static inline std::string_view getNameFromPath(std::string_view path)
+{
+    return path.substr(path.rfind('/') + 1);
+}
+
+// These two functions should have distinct names not to allow implicit conversions.
+static inline std::string getNameFromPathStr(const std::string& path)
+{
+    return path.substr(path.rfind('/') + 1);
+}
+
+static inline auto valueOr(auto& container, auto key, decltype(container.at(key)) default_value)
+{
+    if (auto it = container.find(key); it != container.end())
+        return it->second;
+    return default_value;
+}
+
+
 using EdgeIndex = uint32_t;
 using Addr = void *;
 
@@ -65,35 +84,36 @@ public:
 
     void initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_array_end);
 
-    /// Before server has initialized, we can't log data to Poco.
     inline void serverHasInitialized()
     {
+        /// Before server has initialized, we can't log data to Poco.
         base_log = &Poco::Logger::get(std::string{logger_base_name});
-        // TODO Try to load and save offsets cache.
-        symbolizeAllInstrumentedAddrs();
+        loadCacheOrSymbolizeInstrumentedData();
     }
 
     inline void hit(EdgeIndex edge_index)
     {
-        auto lck = std::lock_guard(edges_mutex); // TODO Not lock for every hit
-
-        if (auto it = edges_hit.find(edge_index); it == edges_hit.end())
-            edges_hit[edge_index] = 1;
+        if (dumping.load())
+        {
+            auto lck = std::lock_guard(edges_mutex);
+            edges_hit.at(edge_index).fetch_add(1);
+        }
         else
-            ++it->second;
+            edges_hit.at(edge_index).fetch_add(1);
     }
 
 private:
     Writer();
 
-    static constexpr const std::string_view logger_base_name = "Coverage";
-    static constexpr const std::string_view coverage_dir_relative_path = "../../coverage";
+    static constexpr std::string_view logger_base_name = "Coverage";
+    static constexpr std::string_view coverage_dir_relative_path = "../../coverage";
+    //static constexpr std::string_view coverage_cache_file_path = "../../symbolized.cache";
 
     /// How many tests are converted to LCOV in parallel.
-    static constexpr const size_t thread_pool_test_processing = 10;
+    static constexpr size_t thread_pool_test_processing = 10;
 
-    /// How may threads concurrently symbolize the addresses on binary startup.
-    static constexpr const size_t thread_pool_symbolizing = 16;
+    /// How may threads concurrently symbolize the addresses on binary startup if cache was not present.
+    static constexpr size_t thread_pool_symbolizing = 16;
 
     size_t functions_count;
     size_t addrs_count;
@@ -107,14 +127,15 @@ private:
 
     FreeThreadPool pool;
 
-    using EdgesHit = std::unordered_map<EdgeIndex, size_t /* hits */>;
+    using EdgesHit = std::vector<std::atomic_size_t>;
+    using EdgesHashmap = std::unordered_map<EdgeIndex, size_t>;
 
     EdgesHit edges_hit;
     std::optional<std::string> test;
+    std::atomic_bool dumping = false;
     std::mutex edges_mutex; // protects test, edges_hit
 
     /// Two caches filled on binary startup from PC table created by clang.
-    /// Never cleared.
     using EdgesToAddrs = std::vector<Addr>;
     EdgesToAddrs edges_to_addrs;
     std::vector<bool> edge_is_func_entry;
@@ -159,23 +180,6 @@ private:
         return symbol_index->findSymbol(edges_to_addrs.at(index))->name;
     }
 
-    static inline std::string_view getNameFromPath(std::string_view path)
-    {
-        return path.substr(path.rfind('/') + 1);
-    }
-
-    static inline std::string getNameFromPathStr(const std::string& path)
-    {
-        return path.substr(path.rfind('/') + 1);
-    }
-
-    static inline auto valueOr(auto& container, auto key, decltype(container.at(key)) default_value)
-    {
-        if (auto it = container.find(key); it != container.end())
-            return it->second;
-        return default_value;
-    }
-
     void dumpAndChangeTestName(std::string_view test_name);
 
     struct TestInfo
@@ -186,11 +190,11 @@ private:
 
     using TestData = std::vector<SourceFileData>; // vector index = source_files_cache index
 
-    void prepareDataAndDump(TestInfo test_info, const EdgesHit& hits);
+    void prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits);
     void convertToLCOVAndDump(TestInfo test_info, const TestData& test_data);
 
     /// Fills addr_cache, function_cache, source_files_cache, source_file_name_to_path_index
-    void symbolizeAllInstrumentedAddrs();
+    void loadCacheOrSymbolizeInstrumentedData();
 
     /// Symbolized data
     struct AddrSym
