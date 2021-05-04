@@ -5,7 +5,6 @@
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/MergeTree/ProjectionKeyActions.h>
 #include <Interpreters/AggregateDescription.h>
 
 #include <memory>

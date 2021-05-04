@@ -48,7 +48,6 @@
 #include <Processors/Transforms/ProjectionPartTransform.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/StorageFromBasePartsOfProjection.h>
-#include <Storages/MergeTree/ProjectionCondition.h>
 #include <IO/WriteBufferFromOStream.h>
 
 namespace ProfileEvents
@@ -443,15 +442,6 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         }
     }
 
-    const Settings & settings = context->getSettingsRef();
-    NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
-
-    /// If there are only virtual columns in the query, you must request at least one non-virtual one.
-    if (real_column_names.empty())
-        real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
-
-    metadata_snapshot->check(real_column_names, data.getVirtuals(), data.getStorageID());
-
     // Filter parts by virtual columns.
     std::unordered_set<String> part_values;
     if (!use_cache)
@@ -473,6 +463,15 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
         }
     }
     // At this point, empty `part_values` means all parts.
+
+    const Settings & settings = context->getSettingsRef();
+    NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
+
+    /// If there are only virtual columns in the query, you must request at least one non-virtual one.
+    if (real_column_names.empty())
+        real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
+
+    metadata_snapshot->check(real_column_names, data.getVirtuals(), data.getStorageID());
 
     // Build and check if primary key is used when necessary
     std::optional<KeyCondition> key_condition;

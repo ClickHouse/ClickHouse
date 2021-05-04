@@ -93,8 +93,6 @@ SRCS(
     MergeTree/MergedBlockOutputStream.cpp
     MergeTree/MergedColumnOnlyOutputStream.cpp
     MergeTree/PartitionPruner.cpp
-    MergeTree/ProjectionCondition.cpp
-    MergeTree/ProjectionKeyActions.cpp
     MergeTree/ReplicatedFetchList.cpp
     MergeTree/ReplicatedMergeTreeAddress.cpp
     MergeTree/ReplicatedMergeTreeAltersSequence.cpp
