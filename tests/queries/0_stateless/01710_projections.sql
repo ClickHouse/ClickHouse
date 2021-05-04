@@ -16,9 +16,16 @@ select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) / count(), avg((k
 
 drop row policy if exists filter on projection_test;
 create row policy filter on projection_test using (domain = 'non_existing_domain') to all;
--- prewhere with alias with row policy
+-- prewhere with alias with row policy (non existing)
 select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) / count(), avg((kbytes * 8) / duration) from projection_test prewhere domain_alias = 1 where domain = '1' group by dt_m order by dt_m;
 drop row policy filter on projection_test;
+
+-- TODO There is a bug in row policy filter (not related to projections, crash in master)
+-- drop row policy if exists filter on projection_test;
+-- create row policy filter on projection_test using (domain != '1') to all;
+-- prewhere with alias with row policy (existing)
+-- select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) / count(), avg((kbytes * 8) / duration) from projection_test prewhere domain_alias = 1 where domain = '1' group by dt_m order by dt_m;
+-- drop row policy filter on projection_test;
 
 select toStartOfMinute(datetime) dt_m, count(), sum(block_count) / sum(duration), avg(block_count / duration) from projection_test group by dt_m order by dt_m;
 

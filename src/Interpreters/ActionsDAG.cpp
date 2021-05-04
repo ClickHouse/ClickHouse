@@ -443,7 +443,7 @@ NameSet ActionsDAG::foldActionsByProjection(
     const NameSet & required_columns, const Block & projection_block_for_keys, const String & predicate_column_name)
 {
     std::unordered_set<const Node *> visited_nodes;
-    std::unordered_set<std::string_view> visited_nodes_names;
+    std::unordered_set<std::string_view> visited_index_names;
     std::stack<Node *> stack;
     std::vector<const ColumnWithTypeAndName *> missing_input_from_projection_keys;
 
@@ -452,20 +452,21 @@ NameSet ActionsDAG::foldActionsByProjection(
         if (required_columns.find(node->result_name) != required_columns.end() || node->result_name == predicate_column_name)
         {
             visited_nodes.insert(node);
-            visited_nodes_names.insert(node->result_name);
+            visited_index_names.insert(node->result_name);
             stack.push(const_cast<Node *>(node));
         }
     }
 
     for (const auto & column : required_columns)
     {
-        if (visited_nodes_names.find(column) == visited_nodes_names.end())
+        if (visited_index_names.find(column) == visited_index_names.end())
         {
             if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(column))
             {
                 const auto * node = &addInput(*column_with_type_name);
                 index.push_back(node);
                 visited_nodes.insert(node);
+                visited_index_names.insert(column);
             }
             else
             {
@@ -505,7 +506,7 @@ NameSet ActionsDAG::foldActionsByProjection(
 
     nodes.remove_if([&](const Node & node) { return visited_nodes.count(&node) == 0; });
     std::erase_if(inputs, [&](const Node * node) { return visited_nodes.count(node) == 0; });
-    std::erase_if(index, [&](const Node * node) { return visited_nodes.count(node) == 0; });
+    std::erase_if(index, [&](const Node * node) { return visited_index_names.count(node->result_name) == 0; });
 
     NameSet next_required_columns;
     for (const auto & input : inputs)
