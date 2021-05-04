@@ -107,10 +107,10 @@ bool equalsOp(A a, B b)
         /// different signedness
 
         if constexpr (is_signed_v<A> && !is_signed_v<B>)
-            return a >= 0 && static_cast<B>(a) == b;
+            return a >= 0 && static_cast<make_unsigned_t<A>>(a) == b;
 
         if constexpr (!is_signed_v<A> && is_signed_v<B>)
-            return b >= 0 && a == static_cast<A>(b);
+            return b >= 0 && a == static_cast<make_unsigned_t<B>>(b);
     }
 
     /// int vs float
