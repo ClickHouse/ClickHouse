@@ -76,22 +76,22 @@ StorageRabbitMQ::StorageRabbitMQ(
         : IStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
-        , exchange_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_name.value))
-        , format_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_format.value))
-        , exchange_type(defineExchangeType(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_type.value)))
-        , routing_keys(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_routing_key_list.value)))
+        , exchange_name(rabbitmq_settings->rabbitmq_exchange_name.value)
+        , format_name(rabbitmq_settings->rabbitmq_format.value)
+        , exchange_type(defineExchangeType(rabbitmq_settings->rabbitmq_exchange_type.value))
+        , routing_keys(parseSettings(rabbitmq_settings->rabbitmq_routing_key_list.value))
         , row_delimiter(rabbitmq_settings->rabbitmq_row_delimiter.value)
-        , schema_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_schema.value))
+        , schema_name(rabbitmq_settings->rabbitmq_schema.value)
         , num_consumers(rabbitmq_settings->rabbitmq_num_consumers.value)
         , num_queues(rabbitmq_settings->rabbitmq_num_queues.value)
-        , queue_base(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_base.value))
-        , queue_settings_list(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_settings_list.value)))
-        , deadletter_exchange(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_deadletter_exchange.value))
+        , queue_base(rabbitmq_settings->rabbitmq_queue_base.value)
+        , queue_settings_list(parseSettings(rabbitmq_settings->rabbitmq_queue_settings_list.value))
+        , deadletter_exchange(rabbitmq_settings->rabbitmq_deadletter_exchange.value)
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
         , log(&Poco::Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
-        , address(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_host_port.value))
+        , address(rabbitmq_settings->rabbitmq_host_port.value)
         , parsed_address(parseAddress(address, 5672))
         , login_password(std::make_pair(
                     getContext()->getConfigRef().getString("rabbitmq.username"),
@@ -358,7 +358,6 @@ void StorageRabbitMQ::initExchange(RabbitMQChannel & rabbit_channel)
 
 void StorageRabbitMQ::bindExchange(RabbitMQChannel & rabbit_channel)
 {
-    std::atomic<bool> binding_created = false;
     size_t bound_keys = 0;
 
     if (exchange_type == AMQP::ExchangeType::headers)
@@ -372,7 +371,7 @@ void StorageRabbitMQ::bindExchange(RabbitMQChannel & rabbit_channel)
         }
 
         rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0], bind_headers)
-        .onSuccess([&]() { binding_created = true; })
+        .onSuccess([&]() { event_handler->stopLoop(); })
         .onError([&](const char * message)
         {
             throw Exception(
@@ -384,7 +383,7 @@ void StorageRabbitMQ::bindExchange(RabbitMQChannel & rabbit_channel)
     else if (exchange_type == AMQP::ExchangeType::fanout || exchange_type == AMQP::ExchangeType::consistent_hash)
     {
         rabbit_channel.bindExchange(exchange_name, bridge_exchange, routing_keys[0])
-        .onSuccess([&]() { binding_created = true; })
+        .onSuccess([&]() { event_handler->stopLoop(); })
         .onError([&](const char * message)
         {
             throw Exception(
@@ -402,7 +401,7 @@ void StorageRabbitMQ::bindExchange(RabbitMQChannel & rabbit_channel)
             {
                 ++bound_keys;
                 if (bound_keys == routing_keys.size())
-                    binding_created = true;
+                    event_handler->stopLoop();
             })
             .onError([&](const char * message)
             {
@@ -414,17 +413,12 @@ void StorageRabbitMQ::bindExchange(RabbitMQChannel & rabbit_channel)
         }
     }
 
-    while (!binding_created)
-    {
-        event_handler->iterateLoop();
-    }
+    event_handler->startBlockingLoop();
 }
 
 
 void StorageRabbitMQ::bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channel)
 {
-    std::atomic<bool> binding_created = false;
-
     auto success_callback = [&](const std::string &  queue_name, int msgcount, int /* consumercount */)
     {
         queues.emplace_back(queue_name);
@@ -438,7 +432,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channe
         * fanout exchange it can be arbitrary
         */
         rabbit_channel.bindQueue(consumer_exchange, queue_name, std::to_string(queue_id))
-        .onSuccess([&] { binding_created = true; })
+        .onSuccess([&] { event_handler->stopLoop(); })
         .onError([&](const char * message)
         {
             throw Exception(
@@ -507,11 +501,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channe
     /// AMQP::autodelete setting is not allowd, because in case of server restart there will be no consumers
     /// and deleting queues should not take place.
     rabbit_channel.declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
-
-    while (!binding_created)
-    {
-        event_handler->iterateLoop();
-    }
+    event_handler->startBlockingLoop();
 }
 
 
@@ -726,6 +716,9 @@ void StorageRabbitMQ::shutdown()
 /// Therefore, if a table is droppped, a clean up is needed.
 void StorageRabbitMQ::cleanupRabbitMQ() const
 {
+    if (use_user_setup)
+        return;
+
     RabbitMQChannel rabbit_channel(connection.get());
     for (const auto & queue : queues)
     {
@@ -746,6 +739,9 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
         });
     }
     event_handler->startBlockingLoop();
+
+    /// Also there is no need to cleanup exchanges as they were created with AMQP::autodelete option. Once queues
+    /// are removed, exchanges will also be cleaned.
 }
 
 
