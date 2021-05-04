@@ -115,9 +115,6 @@ std::pair<bool, bool> ComparisonGraph::findPath(const size_t start, const size_t
         return {false, false};
     else
     {
-        //Poco::Logger::get("dists found").information(std::to_string(start) + " " + std::to_string(finish) + " : " + std::to_string(static_cast<int>(it->second)));
-        //Poco::Logger::get("dists found").information(graph.vertexes[start].asts.back()->dumpTree());
-        //Poco::Logger::get("dists found").information(graph.vertexes[finish].asts.back()->dumpTree());
         return {true, it->second == Path::LESS || not_equal.contains({start, finish})};
     }
 }
@@ -135,10 +132,6 @@ ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, con
             Poco::Logger::get("Graph").information("not found");
             Poco::Logger::get("Graph").information(std::to_string(left->getTreeHash().second));
             Poco::Logger::get("Graph").information(std::to_string(right->getTreeHash().second));
-            /*for (const auto & [hash, id] : graph.ast_hash_to_component)
-            {
-                Poco::Logger::get("Graph MAP").information(std::to_string(hash.second) + " "  + std::to_string(id));
-            }*/
             {
                 const auto left_bound = getConstLowerBound(left);
                 const auto right_bound = getConstUpperBound(right);
@@ -520,22 +513,6 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
             }
         }
     }
-
-    /*for (size_t v = 0; v < result.vertexes.size(); ++v)
-    {
-        std::stringstream s;
-        for (const auto & atom : result.vertexes[v].asts)
-        {
-            s << atom->getTreeHash().second << " ";
-        }
-        s << "|";
-        for (const auto & atom : result.ast_hash_to_component)
-        {
-            s << atom.first.second << " -" << atom.second << " ";
-        }
-
-        Poco::Logger::get("Graph").information(s.str());
-    }*/
 
     return result;
 }
