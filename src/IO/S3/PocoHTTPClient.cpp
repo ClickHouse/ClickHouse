@@ -176,7 +176,12 @@ void PocoHTTPClient::makeRequestInternal(
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
-            poco_request.setURI(target_uri.getPathAndQuery());
+            /// N.B. Aws::Http::URI will encode uri in appropriate way for AWS S3 server.
+            /// Poco::URI does that in incompatible way which can lead to double decoding.
+            /// For example, `+` symbol will not be converted to `%2B` by Poco and would
+            /// be received as space symbol.
+            Aws::Http::URI aws_target_uri(uri);
+            poco_request.setURI(aws_target_uri.GetPath() + aws_target_uri.GetQueryString());
 
             switch (request.GetMethod())
             {
