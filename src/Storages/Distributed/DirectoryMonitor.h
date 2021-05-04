@@ -115,6 +115,7 @@ private:
     BackgroundSchedulePoolTaskHolder task_handle;
 
     CurrentMetrics::Increment metric_pending_files;
+    CurrentMetrics::Increment metric_broken_files;
 
     friend class DirectoryMonitorBlockInputStream;
 };
