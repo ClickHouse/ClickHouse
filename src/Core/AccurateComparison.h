@@ -93,9 +93,8 @@ bool equalsOp(A a, B b)
         return a == b;
 
     /// anything vs NaN
-    if constexpr (std::is_floating_point_v<A> || std::is_floating_point_v<B>)
-        if (isNaN(a) || isNaN(b))
-            return false;
+    if (isNaN(a) || isNaN(b))
+        return false;
 
     /// int vs int
     if constexpr (is_integer_v<A> && is_integer_v<B>)
