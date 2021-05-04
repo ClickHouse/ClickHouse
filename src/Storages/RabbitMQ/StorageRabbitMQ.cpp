@@ -79,12 +79,13 @@ StorageRabbitMQ::StorageRabbitMQ(
         , exchange_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_name.value))
         , format_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_format.value))
         , exchange_type(defineExchangeType(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_type.value)))
-        , routing_keys(parseRoutingKeys(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_routing_key_list.value)))
+        , routing_keys(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_routing_key_list.value)))
         , row_delimiter(rabbitmq_settings->rabbitmq_row_delimiter.value)
         , schema_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_schema.value))
         , num_consumers(rabbitmq_settings->rabbitmq_num_consumers.value)
         , num_queues(rabbitmq_settings->rabbitmq_num_queues.value)
         , queue_base(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_base.value))
+        , queue_settings_list(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_settings_list.value)))
         , deadletter_exchange(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_deadletter_exchange.value))
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
@@ -147,10 +148,12 @@ StorageRabbitMQ::StorageRabbitMQ(
 }
 
 
-Names StorageRabbitMQ::parseRoutingKeys(String routing_key_list)
+Names StorageRabbitMQ::parseSettings(String settings_list)
 {
     Names result;
-    boost::split(result, routing_key_list, [](char c){ return c == ','; });
+    if (settings_list.empty())
+        return result;
+    boost::split(result, settings_list, [](char c){ return c == ','; });
     for (String & key : result)
         boost::trim(key);
 
@@ -250,11 +253,11 @@ void StorageRabbitMQ::deactivateTask(BackgroundSchedulePool::TaskHolder & task, 
 
 
 size_t StorageRabbitMQ::getMaxBlockSize() const
- {
+{
      return rabbitmq_settings->rabbitmq_max_block_size.changed
          ? rabbitmq_settings->rabbitmq_max_block_size.value
          : (getContext()->getSettingsRef().max_insert_block_size.value / num_consumers);
- }
+}
 
 
 void StorageRabbitMQ::initRabbitMQ()
@@ -451,19 +454,50 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, RabbitMQChannel & rabbit_channe
 
     AMQP::Table queue_settings;
 
-    queue_settings["x-max-length"] = queue_size;
+    /// Check user-defined settings.
+    if (!queue_settings_list.empty())
+    {
+        for (const auto & setting : queue_settings_list)
+        {
+            Strings setting_values;
+            splitInto<'='>(setting_values, setting);
+            assert(setting_values.size() == 2);
+            String key = setting_values[0], value = setting_values[1];
 
-    if (!deadletter_exchange.empty())
+            std::unordered_set<String> integer_settings = {"x-max-length", "x-max-length-bytes", "x-message-ttl", "x-expires", "x-priority", "x-max-priority"};
+            std::unordered_set<String> string_settings = {"x-overflow", "x-dead-letter-exchange", "x-queue-type"};
+
+            if (integer_settings.find(key) != integer_settings.end())
+                queue_settings[key] = parse<size_t>(value);
+            else if (string_settings.find(key) != string_settings.end())
+                queue_settings[key] = value;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported queue setting: {}", value);
+        }
+    }
+
+    /// Impose default settings if there are no user-defined settings.
+    if (!queue_settings.contains("x-max-length"))
+    {
+        queue_settings["x-max-length"] = queue_size;
+    }
+    if (!queue_settings.contains("x-dead-letter-exchange") && !deadletter_exchange.empty())
+    {
         queue_settings["x-dead-letter-exchange"] = deadletter_exchange;
-    else
+    }
+    else if (!queue_settings.contains("x-overflow"))
+    {
+        /// Define x-overflow only if there is not x-dead-letter-exchange, because it will overwrite the expected behaviour.
         queue_settings["x-overflow"] = "reject-publish";
+    }
 
-    /* The first option not just simplifies queue_name, but also implements the possibility to be able to resume reading from one
-     * specific queue when its name is specified in queue_base setting
-     */
+    /// If queue_base - a single name, then it can be used as one specific queue, from which to read.
+    /// Otherwise it is used as a generator (unique for current table) of queue names, because it allows to
+    /// maximize performance - via setting `rabbitmq_num_queues`.
     const String queue_name = !hash_exchange ? queue_base : std::to_string(queue_id) + "_" + queue_base;
 
-    /// AMQP::autodelete setting is not allowd, because in case of server restart there will be no consumers and deleting queues should not take place.
+    /// AMQP::autodelete setting is not allowd, because in case of server restart there will be no consumers
+    /// and deleting queues should not take place.
     rabbit_channel.declareQueue(queue_name, AMQP::durable, queue_settings).onSuccess(success_callback).onError(error_callback);
 
     while (!binding_created)
@@ -1017,7 +1051,6 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(1, rabbitmq_host_port)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(2, rabbitmq_exchange_name)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(3, rabbitmq_format)
-
         CHECK_RABBITMQ_STORAGE_ARGUMENT(4, rabbitmq_exchange_type)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(5, rabbitmq_routing_key_list)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(6, rabbitmq_row_delimiter)
@@ -1027,12 +1060,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(10, rabbitmq_queue_base)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(11, rabbitmq_deadletter_exchange)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(12, rabbitmq_persistent)
-
         CHECK_RABBITMQ_STORAGE_ARGUMENT(13, rabbitmq_skip_broken_messages)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_max_block_size)
         CHECK_RABBITMQ_STORAGE_ARGUMENT(15, rabbitmq_flush_interval_ms)
-
         CHECK_RABBITMQ_STORAGE_ARGUMENT(16, rabbitmq_vhost)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(16, rabbitmq_queue_settings_list)
 
         #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
 
