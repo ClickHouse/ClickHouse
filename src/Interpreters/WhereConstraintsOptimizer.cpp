@@ -14,9 +14,11 @@ namespace DB
 
 WhereConstraintsOptimizer::WhereConstraintsOptimizer(
     ASTSelectQuery * select_query_,
-    const StorageMetadataPtr & metadata_snapshot_)
+    const StorageMetadataPtr & metadata_snapshot_,
+    const bool optimize_append_index_)
     : select_query(select_query_)
     , metadata_snapshot(metadata_snapshot_)
+    , optimize_append_index(optimize_append_index_)
 {
 }
 
@@ -184,7 +186,9 @@ void WhereConstraintsOptimizer::perform()
                 return replaceTermsToConstants(atom, compare_graph);
             })
             .pushNotInFuntions();
-        AddIndexConstraintsOptimizer(metadata_snapshot).perform(cnf);
+
+        if (optimize_append_index)
+            AddIndexConstraintsOptimizer(metadata_snapshot).perform(cnf);
 
         Poco::Logger::get("AFTER OPT").information(cnf.dump());
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, TreeCNFConverter::fromCNF(cnf));

@@ -511,18 +511,23 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
 }
 
 /// Use constraints to get rid of useless parts of query
-void optimizeWithConstraints(ASTSelectQuery * select_query, Aliases & /*aliases*/, const NameSet & /*source_columns_set*/,
-                            const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
-                            const StorageMetadataPtr & metadata_snapshot)
+void optimizeWithConstraints(ASTSelectQuery * select_query,
+                             Aliases & /*aliases*/,
+                             const NameSet & /*source_columns_set*/,
+                             const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
+                             const StorageMetadataPtr & metadata_snapshot,
+                             const bool optimize_append_index)
 {
-    WhereConstraintsOptimizer(select_query, metadata_snapshot).perform();
+    WhereConstraintsOptimizer(select_query, metadata_snapshot, optimize_append_index).perform();
     if (select_query->where())
         Poco::Logger::get("CNF").information(select_query->where()->dumpTree());
     else
         Poco::Logger::get("CNF").information("NO WHERE");
 }
 
-void optimizeSubstituteColumn(ASTSelectQuery * select_query, Aliases & /*aliases*/, const NameSet & /*source_columns_set*/,
+void optimizeSubstituteColumn(ASTSelectQuery * select_query,
+                              Aliases & /*aliases*/,
+                              const NameSet & /*source_columns_set*/,
                               const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
                               const StorageMetadataPtr & metadata_snapshot,
                               const ConstStoragePtr & storage)
@@ -647,8 +652,9 @@ void TreeOptimizer::apply(ASTPtr & query, Aliases & aliases, const NameSet & sou
 
     if (settings.convert_query_to_cnf && settings.optimize_using_constraints)
     {
-        optimizeWithConstraints(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot);
-        optimizeSubstituteColumn(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, storage);
+        optimizeWithConstraints(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, settings.optimize_append_index);
+        if (settings.optimize_substitute_columns)
+            optimizeSubstituteColumn(select_query, aliases, source_columns_set, tables_with_columns, metadata_snapshot, storage);
     }
     if (select_query->where())
     {
