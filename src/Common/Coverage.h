@@ -96,10 +96,10 @@ public:
         if (dumping.load())
         {
             auto lck = std::lock_guard(edges_mutex);
-            edges_hit.at(edge_index).fetch_add(1);
+            edges_hit.at(edge_index)->fetch_add(1);
         }
         else
-            edges_hit.at(edge_index).fetch_add(1);
+            edges_hit.at(edge_index)->fetch_add(1);
     }
 
 private:
@@ -127,7 +127,7 @@ private:
 
     FreeThreadPool pool;
 
-    using EdgesHit = std::vector<std::atomic_size_t>;
+    using EdgesHit = std::vector<std::unique_ptr<std::atomic_size_t>>;
     using EdgesHashmap = std::unordered_map<EdgeIndex, size_t>;
 
     EdgesHit edges_hit;

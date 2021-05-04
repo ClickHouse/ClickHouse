@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -82,8 +83,9 @@ void Writer::initializePCTable(const uintptr_t *pc_array, const uintptr_t *pc_ar
     const size_t edges_pairs = pc_array_end - pc_array;
     const size_t edges = edges_pairs / 2;
 
-    for (size_t i = 0; i < edges; ++i) //can't even reserve place
-        edges_hit.push_back(0);
+    edges_hit.resize(edges);
+    for (auto & e : edges_hit)
+        e = std::make_unique<std::atomic_size_t>(0);
 
     edges_to_addrs.resize(edges);
     edge_is_func_entry.resize(edges);
@@ -211,7 +213,8 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         // Can't do it in multiple threads as atomics aren't copy constructible
         for (size_t i = 0; i < edges_hit.size(); ++i)
         {
-            const size_t hit = edges_hit.at(i).load(std::memory_order_relaxed);
+            auto& ptr = edges_hit.at(i);
+            const size_t hit = ptr->load();
 
             if (!hit)
                 continue;
@@ -220,6 +223,8 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
                 it->second += hit;
             else
                 edges_hashmap[i] = hit;
+
+            ptr->store(0);
         }
 
         LOG_INFO(log, "Copied data into hashtable, {} unique addrs", edges_hashmap.size());
@@ -234,9 +239,6 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         else
         {
             test = test_name;
-
-            for (auto& e : edges_hit)
-                e = 0;
         }
 
         dumping.store(false);
