@@ -36,6 +36,7 @@ namespace CurrentMetrics
 {
     extern const Metric DistributedSend;
     extern const Metric DistributedFilesToInsert;
+    extern const Metric BrokenDistributedFilesToInsert;
 }
 
 namespace DB
@@ -304,6 +305,7 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , log(&Poco::Logger::get(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
+    , metric_broken_files(CurrentMetrics::BrokenDistributedFilesToInsert, 0)
 {
     task_handle = bg_pool.createTask(getLoggerName() + "/Bg", [this]{ run(); });
     task_handle->activateAndSchedule();
@@ -979,6 +981,8 @@ void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_p
 
         ++status.broken_files_count;
         status.broken_bytes_count += file_size;
+
+        metric_broken_files.add();
     }
 
     file.renameTo(broken_file_path);
