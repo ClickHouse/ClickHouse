@@ -237,7 +237,7 @@ namespace
             }
             catch (...)
             {
-                cannotConvertValue(str, "String", TypeName<DestType>::get());
+                cannotConvertValue(str, "String", TypeName<DestType>);
             }
         }
 
@@ -254,7 +254,7 @@ namespace
             }
             catch (boost::numeric::bad_numeric_cast &)
             {
-                cannotConvertValue(toString(value), TypeName<SrcType>::get(), TypeName<DestType>::get());
+                cannotConvertValue(toString(value), TypeName<SrcType>, TypeName<DestType>);
             }
             return result;
         }
@@ -429,7 +429,7 @@ namespace
                         else if (value == 1)
                             writeUInt(1);
                         else
-                            cannotConvertValue(toString(value), TypeName<NumberType>::get(), field_descriptor.type_name());
+                            cannotConvertValue(toString(value), TypeName<NumberType>, field_descriptor.type_name());
                     };
 
                     read_function = [this]() -> NumberType
@@ -438,7 +438,7 @@ namespace
                         if (u64 < 2)
                             return static_cast<NumberType>(u64);
                         else
-                            cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<NumberType>::get());
+                            cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<NumberType>);
                     };
 
                     default_function = [this]() -> NumberType { return static_cast<NumberType>(field_descriptor.default_value_bool()); };
@@ -492,7 +492,7 @@ namespace
         {
             throw Exception(
                 "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                    + " for serialization of the data type " + quoteString(TypeName<NumberType>::get()),
+                    + " for serialization of the data type " + quoteString(TypeName<NumberType>),
                 ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
         }
 
@@ -507,7 +507,7 @@ namespace
         {
             const auto * enum_value_descriptor = field_descriptor.enum_type()->FindValueByNumber(value);
             if (!enum_value_descriptor)
-                cannotConvertValue(toString(value), TypeName<NumberType>::get(), field_descriptor.type_name());
+                cannotConvertValue(toString(value), TypeName<NumberType>, field_descriptor.type_name());
         }
 
     protected:
@@ -1240,7 +1240,7 @@ namespace
                             {
                                 WriteBufferFromOwnString buf;
                                 writeText(decimal, scale, buf);
-                                cannotConvertValue(buf.str(), TypeName<DecimalType>::get(), field_descriptor.type_name());
+                                cannotConvertValue(buf.str(), TypeName<DecimalType>, field_descriptor.type_name());
                             }
                         };
 
@@ -1250,7 +1250,7 @@ namespace
                             if (u64 < 2)
                                 return numberToDecimal(static_cast<UInt64>(u64 != 0));
                             else
-                                cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<DecimalType>::get());
+                                cannotConvertValue(toString(u64), field_descriptor.type_name(), TypeName<DecimalType>);
                         };
 
                         default_function = [this]() -> DecimalType
@@ -1289,7 +1289,7 @@ namespace
         {
             throw Exception(
                 "The field " + quoteString(field_descriptor.full_name()) + " has an incompatible type " + field_descriptor.type_name()
-                    + " for serialization of the data type " + quoteString(TypeName<DecimalType>::get()),
+                    + " for serialization of the data type " + quoteString(TypeName<DecimalType>),
                 ErrorCodes::DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD);
         }
 
