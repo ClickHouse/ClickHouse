@@ -159,6 +159,8 @@ public:
 
     void joinTotals(Block & block) const override;
 
+    bool isFilled() const override { return from_storage_join || data->type == Type::DICT; }
+
     /** For RIGHT and FULL JOINs.
       * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
       * Use only after all calls to joinBlock was done.
@@ -343,6 +345,9 @@ private:
     std::shared_ptr<TableJoin> table_join;
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
+
+    /// This join was created from StorageJoin and it is already filled.
+    bool from_storage_join = false;
 
     /// Names of key columns in right-side table (in the order they appear in ON/USING clause). @note It could contain duplicates.
     const Names & key_names_right;
