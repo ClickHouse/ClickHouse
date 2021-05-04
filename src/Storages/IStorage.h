@@ -157,6 +157,16 @@ public:
     /// used without any locks.
     StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
 
+    NamesAndTypesList getColumns(const StorageMetadataPtr & metadata_snapshot, const GetColumnsOptions & options) const;
+
+    /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
+    /// message.
+    Block getSampleBlockForColumns(const StorageMetadataPtr & metadata_snapshot, const Names & column_names) const;
+
+    /// Verify that all the requested names are in the table and are set correctly:
+    /// list of names is not empty and the names do not repeat.
+    void check(const StorageMetadataPtr & metadata_snapshot, const Names & column_names) const;
+
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.
@@ -525,7 +535,6 @@ public:
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
     virtual NamesAndTypesList expandObjectColumns(const NamesAndTypesList & columns_list, bool /*with_subcolumns*/) const { return columns_list; }
-    virtual NamesAndTypesList getExpandedObjects() const { return {}; }
 
 private:
     /// Lock required for alter queries (lockForAlter). Always taken for write

@@ -633,19 +633,12 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
 {
     if (storage)
     {
-        const ColumnsDescription & columns = metadata_snapshot->getColumns();
-
-        NamesAndTypesList columns_from_storage;
+        auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
+        options.withExtendedObjects();
         if (storage->supportsSubcolumns())
-            columns_from_storage = add_special ? columns.getAllWithSubcolumns() : columns.getAllPhysicalWithSubcolumns();
-        else
-            columns_from_storage = add_special ? columns.getAll() : columns.getAllPhysical();
+            options.withSubcolumns();
 
-        columns_from_storage = storage->expandObjectColumns(columns_from_storage, storage->supportsSubcolumns());
-
-        std::cerr << "columns_from_storage: ";
-        for (const auto & col : columns_from_storage)
-            std::cerr << col.dump() << "\n";
+        auto columns_from_storage = storage->getColumns(metadata_snapshot, options);
 
         if (source_columns.empty())
             source_columns.swap(columns_from_storage);

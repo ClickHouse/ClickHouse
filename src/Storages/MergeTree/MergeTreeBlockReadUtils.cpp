@@ -316,11 +316,11 @@ MergeTreeReadTaskColumns getReadTaskColumns(
 
     if (check_columns)
     {
-        auto physical_columns = metadata_snapshot->getColumns().getAllWithSubcolumns();
-        physical_columns = storage.expandObjectColumns(physical_columns, true);
+        auto all_columns = storage.getColumns(metadata_snapshot,
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects());
 
-        result.pre_columns = physical_columns.addTypes(pre_column_names);
-        result.columns = physical_columns.addTypes(column_names);
+        result.pre_columns = all_columns.addTypes(pre_column_names);
+        result.columns = all_columns.addTypes(column_names);
     }
     else
     {

@@ -17,7 +17,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     bool read_with_direct_io_,
     bool take_column_types_from_storage,
     bool quiet)
-    : SourceWithProgress(metadata_snapshot_->getSampleBlockForColumns(columns_to_read_, storage_.getVirtuals(), storage_.getStorageID(), storage_.getExpandedObjects()))
+    : SourceWithProgress(storage_.getSampleBlockForColumns(metadata_snapshot_, columns_to_read_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , data_part(std::move(data_part_))
@@ -43,8 +43,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        auto physical_columns = metadata_snapshot->getColumns().getAllPhysical();
-        physical_columns = storage.expandObjectColumns(physical_columns, false);
+        auto physical_columns = storage.getColumns(metadata_snapshot,
+            GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
         columns_for_reader = physical_columns.addTypes(columns_to_read);
     }
     else

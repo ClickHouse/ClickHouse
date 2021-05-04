@@ -236,7 +236,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::readFromParts(
     }
     // At this point, empty `part_values` means all parts.
 
-    metadata_snapshot->check(real_column_names, data.getVirtuals(), data.getStorageID(), data.getExpandedObjects());
+    data.check(metadata_snapshot, real_column_names);
 
     const Settings & settings = context->getSettingsRef();
     const auto & primary_key = metadata_snapshot->getPrimaryKey();

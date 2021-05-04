@@ -287,47 +287,6 @@ Block StorageInMemoryMetadata::getSampleBlock() const
     return res;
 }
 
-Block StorageInMemoryMetadata::getSampleBlockForColumns(
-    const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id, const NamesAndTypesList & expanded_objects) const
-{
-    Block res;
-
-    auto all_columns = getColumns().getAllWithSubcolumns();
-    std::unordered_map<String, DataTypePtr> columns_map;
-    columns_map.reserve(all_columns.size());
-
-    for (const auto & elem : all_columns)
-        columns_map.emplace(elem.name, elem.type);
-
-    /// Virtual columns must be appended after ordinary, because user can
-    /// override them.
-    for (const auto & column : virtuals)
-        columns_map.emplace(column.name, column.type);
-
-    for (const auto & column : expanded_objects)
-    {
-        columns_map[column.name] = column.type;
-        for (const auto & subcolumn : column.type->getSubcolumnNames())
-        {
-            auto full_name = Nested::concatenateName(column.name, subcolumn);
-            columns_map[full_name] = column.type->getSubcolumnType(subcolumn);
-        }
-    }
-
-    for (const auto & name : column_names)
-    {
-        auto it = columns_map.find(name);
-        if (it != columns_map.end())
-            res.insert({it->second->createColumn(), it->second, it->first});
-        else
-            throw Exception(
-                "Column " + backQuote(name) + " not found in table " + (storage_id.empty() ? "" : storage_id.getNameForLogs()),
-                ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-    }
-
-    return res;
-}
-
 const KeyDescription & StorageInMemoryMetadata::getPartitionKey() const
 {
     return partition_key;
@@ -457,18 +416,6 @@ namespace
     using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
 #endif
 
-    String listOfColumns(const NamesAndTypesList & available_columns)
-    {
-        WriteBufferFromOwnString ss;
-        for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
-        {
-            if (it != available_columns.begin())
-                ss << ", ";
-            ss << it->name;
-        }
-        return ss.str();
-    }
-
     NamesAndTypesMap getColumnsMap(const NamesAndTypesList & columns)
     {
         NamesAndTypesMap res;
@@ -488,38 +435,16 @@ namespace
     }
 }
 
-void StorageInMemoryMetadata::check(
-    const Names & column_names, const NamesAndTypesList & virtuals, const StorageID & storage_id, const NamesAndTypesList & expanded_objects) const
+String listOfColumns(const NamesAndTypesList & available_columns)
 {
-    NamesAndTypesList available_columns = getColumns().getAllPhysicalWithSubcolumns();
-    available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
-
-    for (const auto & column : expanded_objects)
+    WriteBufferFromOwnString ss;
+    for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
     {
-        available_columns.push_back(column);
-        for (const auto & subcolumn : column.type->getSubcolumnNames())
-            available_columns.emplace_back(column.name, subcolumn, column.type, column.type->getSubcolumnType(subcolumn));
+        if (it != available_columns.begin())
+            ss << ", ";
+        ss << it->name;
     }
-
-    const String list_of_columns = listOfColumns(available_columns);
-
-    if (column_names.empty())
-        throw Exception("Empty list of columns queried. There are columns: " + list_of_columns, ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
-
-    const auto columns_map = getColumnsMap(available_columns);
-
-    auto unique_names = initUniqueStrings();
-    for (const auto & name : column_names)
-    {
-        if (columns_map.end() == columns_map.find(name))
-            throw Exception(
-                "There is no column with name " + backQuote(name) + " in table " + storage_id.getNameForLogs() + ". There are columns: " + list_of_columns,
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-
-        if (unique_names.end() != unique_names.find(name))
-            throw Exception("Column " + name + " queried more than once", ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE);
-        unique_names.insert(name);
-    }
+    return ss.str();
 }
 
 void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) const

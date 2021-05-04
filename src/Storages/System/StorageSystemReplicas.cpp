@@ -65,7 +65,7 @@ Pipe StorageSystemReplicas::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
+    check(metadata_snapshot, column_names);
 
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);

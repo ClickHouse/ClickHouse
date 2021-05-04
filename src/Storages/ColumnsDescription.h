@@ -25,6 +25,42 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct GetColumnsOptions
+{
+    enum Kind : UInt8
+    {
+        All = 0,
+        AllPhysical = 1,
+        Ordinary = 2,
+        Materialized = 3,
+        Aliases = 4,
+    };
+
+    GetColumnsOptions(Kind kind_) : kind(kind_) {}
+
+    GetColumnsOptions & withSubcolumns(bool value = true)
+    {
+        with_subcolumns = value;
+        return *this;
+    }
+
+    GetColumnsOptions & withVirtuals(bool value = true)
+    {
+        with_virtuals = value;
+        return *this;
+    }
+
+    GetColumnsOptions & withExtendedObjects(bool value = true)
+    {
+        with_extended_objects = value;
+        return *this;
+    }
+
+    Kind kind;
+    bool with_subcolumns = false;
+    bool with_virtuals = false;
+    bool with_extended_objects = false;
+};
 
 /// Description of a single table column (in CREATE TABLE for example).
 struct ColumnDescription
@@ -75,6 +111,7 @@ public:
     auto begin() const { return columns.begin(); }
     auto end() const { return columns.end(); }
 
+    NamesAndTypesList get(const GetColumnsOptions & options) const;
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
     NamesAndTypesList getAliases() const;

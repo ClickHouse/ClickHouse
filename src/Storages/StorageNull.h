@@ -31,7 +31,7 @@ public:
         unsigned) override
     {
         return Pipe(
-            std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
+            std::make_shared<NullSource>(getSampleBlockForColumns(metadata_snapshot, column_names)));
     }
 
     bool supportsParallelInsert() const override { return true; }

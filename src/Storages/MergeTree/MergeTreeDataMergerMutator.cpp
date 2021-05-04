@@ -942,6 +942,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     Block block;
     while (!is_cancelled() && (block = merged_stream->read()))
     {
+        std::cerr << "read block: " << block.dumpStructure() << "\n";
         rows_written += block.rows();
 
         to.write(block);

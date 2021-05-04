@@ -81,7 +81,7 @@ Pipe StorageMongoDB::read(
 {
     connectIfNotConnected();
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID(), getExpandedObjects() );
+    check(metadata_snapshot, column_names);
 
     Block sample_block;
     for (const String & column_name : column_names)

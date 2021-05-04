@@ -340,6 +340,47 @@ NamesAndTypesList ColumnsDescription::getAll() const
     return ret;
 }
 
+static NamesAndTypesList getWithSubcolumns(NamesAndTypesList && source_list)
+{
+    NamesAndTypesList ret;
+    for (const auto & col : source_list)
+    {
+        ret.emplace_back(col.name, col.type);
+        for (const auto & subcolumn : col.type->getSubcolumnNames())
+            ret.emplace_back(col.name, subcolumn, col.type, col.type->getSubcolumnType(subcolumn));
+    }
+
+    return ret;
+}
+
+NamesAndTypesList ColumnsDescription::get(const GetColumnsOptions & options) const
+{
+    NamesAndTypesList res;
+    switch (options.kind)
+    {
+        case GetColumnsOptions::All:
+            res = getAll();
+            break;
+        case GetColumnsOptions::AllPhysical:
+            res = getAllPhysical();
+            break;
+        case GetColumnsOptions::Ordinary:
+            res = getOrdinary();
+            break;
+        case GetColumnsOptions::Materialized:
+            res = getMaterialized();
+            break;
+        case GetColumnsOptions::Aliases:
+            res = getAliases();
+            break;
+    }
+
+    if (options.with_subcolumns)
+        res = getWithSubcolumns(std::move(res));
+
+    return res;
+}
+
 bool ColumnsDescription::has(const String & column_name) const
 {
     return columns.get<1>().find(column_name) != columns.get<1>().end();
@@ -424,19 +465,6 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
 bool ColumnsDescription::hasPhysicalOrSubcolumn(const String & column_name) const
 {
     return hasPhysical(column_name) || subcolumns.find(column_name) != subcolumns.end();
-}
-
-static NamesAndTypesList getWithSubcolumns(NamesAndTypesList && source_list)
-{
-    NamesAndTypesList ret;
-    for (const auto & col : source_list)
-    {
-        ret.emplace_back(col.name, col.type);
-        for (const auto & subcolumn : col.type->getSubcolumnNames())
-            ret.emplace_back(col.name, subcolumn, col.type, col.type->getSubcolumnType(subcolumn));
-    }
-
-    return ret;
 }
 
 NamesAndTypesList ColumnsDescription::getAllWithSubcolumns() const
