@@ -3923,11 +3923,14 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     {
         if (analysis_result.before_where)
         {
+            candidate.remove_where_filter = analysis_result.remove_where_filter;
             candidate.before_where = analysis_result.before_where->clone();
+            std::cerr << fmt::format("before_where_actions = \n{}", candidate.before_where->dumpDAG()) << std::endl;
             required_columns = candidate.before_where->foldActionsByProjection(
                 required_columns,
                 projection.sample_block_for_keys,
                 query_ptr->as<const ASTSelectQuery &>().where()->getColumnName());
+            std::cerr << fmt::format("before_where_actions = \n{}", candidate.before_where->dumpDAG()) << std::endl;
 
             if (required_columns.empty())
                 return false;
@@ -3944,9 +3947,13 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             candidate.prewhere_info->need_filter = prewhere_info->need_filter;
 
             auto prewhere_actions = prewhere_info->prewhere_actions->clone();
-            NameSet prewhere_required_columns;
+            // If there is a before_where action, prewhere_action only requires columns to evaluate the prewhere expression.
+            // Else it should provide all columns to later actions.
+            NameSet prewhere_required_columns = analysis_result.before_where ? NameSet{} : required_columns;
+            std::cerr << fmt::format("prewhere_actions = \n{}", prewhere_actions->dumpDAG()) << std::endl;
             prewhere_required_columns = prewhere_actions->foldActionsByProjection(
                 prewhere_required_columns, projection.sample_block_for_keys, prewhere_info->prewhere_column_name);
+            std::cerr << fmt::format("prewhere_actions = \n{}", prewhere_actions->dumpDAG()) << std::endl;
             if (prewhere_required_columns.empty())
                 return false;
             candidate.prewhere_info->prewhere_actions = std::make_shared<ExpressionActions>(prewhere_actions, actions_settings);
@@ -3966,8 +3973,10 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             if (prewhere_info->alias_actions)
             {
                 auto alias_actions = prewhere_info->alias_actions->clone();
+                std::cerr << fmt::format("alias_actions = \n{}", alias_actions->dumpDAG()) << std::endl;
                 prewhere_required_columns
                     = alias_actions->foldActionsByProjection(prewhere_required_columns, projection.sample_block_for_keys);
+                std::cerr << fmt::format("alias_actions = \n{}", alias_actions->dumpDAG()) << std::endl;
                 if (prewhere_required_columns.empty())
                     return false;
                 candidate.prewhere_info->alias_actions = std::make_shared<ExpressionActions>(alias_actions, actions_settings);
@@ -4020,8 +4029,12 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             // needs to provide aggregation keys, and certain children DAG might be substituted by
             // some keys in projection.
             candidate.before_aggregation = analysis_result.before_aggregation->clone();
+            std::cerr << fmt::format("keys = {}", fmt::join(keys, ", ")) << std::endl;
+            std::cerr << fmt::format("before_aggregation = \n{}", candidate.before_aggregation->dumpDAG()) << std::endl;
             auto required_columns = candidate.before_aggregation->foldActionsByProjection(keys, projection.sample_block_for_keys);
+            std::cerr << fmt::format("before_aggregation = \n{}", candidate.before_aggregation->dumpDAG()) << std::endl;
 
+            std::cerr << fmt::format("keys = {}", fmt::join(required_columns, ", ")) << std::endl;
             if (required_columns.empty())
                 continue;
 

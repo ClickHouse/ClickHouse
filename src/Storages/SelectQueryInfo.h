@@ -126,10 +126,13 @@ struct ProjectionCandidate
     const ProjectionDescription * desc;
     PrewhereInfoPtr prewhere_info;
     ActionsDAGPtr before_where;
+    bool remove_where_filter = false;
     ActionsDAGPtr before_aggregation;
     Names required_columns;
     NamesAndTypesList aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
+    bool aggregate_overflow_row = false;
+    bool aggregate_final = false;
     bool complete = false;
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;

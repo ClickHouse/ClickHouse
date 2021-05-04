@@ -911,6 +911,26 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
     bool to_aggregation_stage = false;
     bool from_aggregation_stage = false;
 
+    /// Do I need to aggregate in a separate row rows that have not passed max_rows_to_group_by.
+    bool aggregate_overflow_row =
+        expressions.need_aggregate &&
+        query.group_by_with_totals &&
+        settings.max_rows_to_group_by &&
+        settings.group_by_overflow_mode == OverflowMode::ANY &&
+        settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
+
+    /// Do I need to immediately finalize the aggregate functions after the aggregation?
+    bool aggregate_final =
+        expressions.need_aggregate &&
+        options.to_stage > QueryProcessingStage::WithMergeableState &&
+        !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
+
+    if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
+    {
+        query_info.projection->aggregate_overflow_row = aggregate_overflow_row;
+        query_info.projection->aggregate_final = aggregate_final;
+    }
+
     if (expressions.filter_info)
     {
         if (!expressions.prewhere_info)
@@ -1026,20 +1046,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
 
     if (options.to_stage > QueryProcessingStage::FetchColumns)
     {
-        /// Do I need to aggregate in a separate row rows that have not passed max_rows_to_group_by.
-        bool aggregate_overflow_row =
-            expressions.need_aggregate &&
-            query.group_by_with_totals &&
-            settings.max_rows_to_group_by &&
-            settings.group_by_overflow_mode == OverflowMode::ANY &&
-            settings.totals_mode != TotalsMode::AFTER_HAVING_EXCLUSIVE;
-
-        /// Do I need to immediately finalize the aggregate functions after the aggregation?
-        bool aggregate_final =
-            expressions.need_aggregate &&
-            options.to_stage > QueryProcessingStage::WithMergeableState &&
-            !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
-
         auto preliminary_sort = [&]()
         {
             /** For distributed query processing,
@@ -1437,6 +1443,50 @@ static StreamLocalLimits getLimitsForStorage(const Settings & settings, const Se
     return limits;
 }
 
+static void executeMergeAggregatedImpl(
+    QueryPlan & query_plan,
+    bool overflow_row,
+    bool final,
+    bool is_remote_storage,
+    const Settings & settings,
+    const NamesAndTypesList & aggregation_keys,
+    const AggregateDescriptions & aggregates)
+{
+    const auto & header_before_merge = query_plan.getCurrentDataStream().header;
+
+    ColumnNumbers keys;
+    for (const auto & key : aggregation_keys)
+        keys.push_back(header_before_merge.getPositionByName(key.name));
+
+    /** There are two modes of distributed aggregation.
+      *
+      * 1. In different threads read from the remote servers blocks.
+      * Save all the blocks in the RAM. Merge blocks.
+      * If the aggregation is two-level - parallelize to the number of buckets.
+      *
+      * 2. In one thread, read blocks from different servers in order.
+      * RAM stores only one block from each server.
+      * If the aggregation is a two-level aggregation, we consistently merge the blocks of each next level.
+      *
+      * The second option consumes less memory (up to 256 times less)
+      *  in the case of two-level aggregation, which is used for large results after GROUP BY,
+      *  but it can work more slowly.
+      */
+
+    Aggregator::Params params(header_before_merge, keys, aggregates, overflow_row, settings.max_threads);
+
+    auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
+
+    auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
+            query_plan.getCurrentDataStream(),
+            std::move(transform_params),
+            settings.distributed_aggregation_memory_efficient && is_remote_storage,
+            settings.max_threads,
+            settings.aggregation_memory_efficient_merge_threads);
+
+    query_plan.addStep(std::move(merging_aggregated));
+}
+
 void InterpreterSelectQuery::addEmptySourceToQueryPlan(
     QueryPlan & query_plan, const Block & source_header, const SelectQueryInfo & query_info, ContextPtr context_)
 {
@@ -1503,18 +1553,33 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
                 [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
         }
 
-        if (query_info.projection->before_aggregation)
+        if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
         {
-            auto expression = std::make_shared<ExpressionActions>(
-                query_info.projection->before_aggregation, ExpressionActionsSettings::fromContext(context_));
-            pipe.addSimpleTransform(
-                [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
+            if (query_info.projection->before_aggregation)
+            {
+                auto expression = std::make_shared<ExpressionActions>(
+                        query_info.projection->before_aggregation, ExpressionActionsSettings::fromContext(context_));
+                pipe.addSimpleTransform(
+                        [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
+            }
         }
     }
 
     auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
     read_from_pipe->setStepDescription("Read from NullSource");
     query_plan.addStep(std::move(read_from_pipe));
+
+    if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
+    {
+        executeMergeAggregatedImpl(
+            query_plan,
+            query_info.projection->aggregate_overflow_row,
+            query_info.projection->aggregate_final,
+            false,
+            context_->getSettingsRef(),
+            query_info.projection->aggregation_keys,
+            query_info.projection->aggregate_descriptions);
+    }
 }
 
 void InterpreterSelectQuery::addPrewhereAliasActions()
@@ -2049,7 +2114,6 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
     query_plan.addStep(std::move(aggregating_step));
 }
 
-
 void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final)
 {
     /// If aggregate projection was chosen for table, avoid adding MergeAggregated.
@@ -2059,41 +2123,14 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPlan & query_plan, bool
     if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
         return;
 
-    const auto & header_before_merge = query_plan.getCurrentDataStream().header;
-
-    ColumnNumbers keys;
-    for (const auto & key : query_analyzer->aggregationKeys())
-        keys.push_back(header_before_merge.getPositionByName(key.name));
-
-    /** There are two modes of distributed aggregation.
-      *
-      * 1. In different threads read from the remote servers blocks.
-      * Save all the blocks in the RAM. Merge blocks.
-      * If the aggregation is two-level - parallelize to the number of buckets.
-      *
-      * 2. In one thread, read blocks from different servers in order.
-      * RAM stores only one block from each server.
-      * If the aggregation is a two-level aggregation, we consistently merge the blocks of each next level.
-      *
-      * The second option consumes less memory (up to 256 times less)
-      *  in the case of two-level aggregation, which is used for large results after GROUP BY,
-      *  but it can work more slowly.
-      */
-
-    const Settings & settings = context->getSettingsRef();
-
-    Aggregator::Params params(header_before_merge, keys, query_analyzer->aggregates(), overflow_row, settings.max_threads);
-
-    auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
-
-    auto merging_aggregated = std::make_unique<MergingAggregatedStep>(
-            query_plan.getCurrentDataStream(),
-            std::move(transform_params),
-            settings.distributed_aggregation_memory_efficient && storage && storage->isRemote(),
-            settings.max_threads,
-            settings.aggregation_memory_efficient_merge_threads);
-
-    query_plan.addStep(std::move(merging_aggregated));
+    executeMergeAggregatedImpl(
+        query_plan,
+        overflow_row,
+        final,
+        storage && storage->isRemote(),
+        context->getSettingsRef(),
+        query_analyzer->aggregationKeys(),
+        query_analyzer->aggregates());
 }
 
 
