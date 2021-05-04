@@ -1068,7 +1068,7 @@ constexpr integer<Bits, Signed> & integer<Bits, Signed>::operator>>=(int n) noex
 {
     if (static_cast<size_t>(n) >= Bits)
     {
-        if (is_negative(*this))
+        if (_impl::is_negative(*this))
             *this = -1;
         else
             *this = 0;
