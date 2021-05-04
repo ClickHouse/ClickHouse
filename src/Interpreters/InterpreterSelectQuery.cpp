@@ -397,7 +397,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        // TODO Check if we can have prewhere work for projections, also need to allow it in TreeRewriter
         if (try_move_to_prewhere && storage && query.where() && !query.prewhere())
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
@@ -420,6 +419,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     syntax_analyzer_result->requiredSourceColumns(),
                     log};
             }
+        }
+
+        if (query.prewhere() && query.where())
+        {
+            /// Filter block in WHERE instead to get better performance
+            query.setExpression(
+                ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
         }
 
         query_analyzer = std::make_unique<SelectQueryExpressionAnalyzer>(
@@ -503,12 +509,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setExpression(ASTSelectQuery::Expression::WHERE, {});
         else
             query.setExpression(ASTSelectQuery::Expression::WHERE, std::make_shared<ASTLiteral>(0u));
-        need_analyze_again = true;
-    }
-    if (query.prewhere() && query.where())
-    {
-        /// Filter block in WHERE instead to get better performance
-        query.setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", query.prewhere()->clone(), query.where()->clone()));
         need_analyze_again = true;
     }
 
@@ -929,33 +929,6 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
     {
         query_info.projection->aggregate_overflow_row = aggregate_overflow_row;
         query_info.projection->aggregate_final = aggregate_final;
-    }
-
-    if (expressions.filter_info)
-    {
-        if (!expressions.prewhere_info)
-        {
-            const bool does_storage_support_prewhere = !input && !input_pipe && storage && storage->supportsPrewhere();
-            if (does_storage_support_prewhere && settings.optimize_move_to_prewhere)
-            {
-                /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
-                expressions.prewhere_info = std::make_shared<PrewhereDAGInfo>(
-                    std::move(expressions.filter_info->actions),
-                    std::move(expressions.filter_info->column_name));
-                expressions.prewhere_info->prewhere_actions->projectInput(false);
-                expressions.prewhere_info->remove_prewhere_column = expressions.filter_info->do_remove_column;
-                expressions.prewhere_info->need_filter = true;
-                expressions.filter_info = nullptr;
-            }
-        }
-        else
-        {
-            /// Add row level security actions to prewhere.
-            expressions.prewhere_info->row_level_filter_actions = std::move(expressions.filter_info->actions);
-            expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);
-            expressions.prewhere_info->row_level_filter_actions->projectInput(false);
-            expressions.filter_info = nullptr;
-        }
     }
 
     if (options.only_analyze)
@@ -1543,47 +1516,77 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(
         }
     }
 
+    auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+    read_from_pipe->setStepDescription("Read from NullSource");
+    query_plan.addStep(std::move(read_from_pipe));
+
     if (query_info.projection)
     {
         if (query_info.projection->before_where)
         {
-            auto expression = std::make_shared<ExpressionActions>(
-                query_info.projection->before_where, ExpressionActionsSettings::fromContext(context_));
-            pipe.addSimpleTransform(
-                [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
+            auto where_step = std::make_unique<FilterStep>(
+                query_plan.getCurrentDataStream(),
+                query_info.projection->before_where,
+                query_info.projection->where_column_name,
+                query_info.projection->remove_where_filter);
+
+            where_step->setStepDescription("WHERE");
+            query_plan.addStep(std::move(where_step));
         }
 
         if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
         {
             if (query_info.projection->before_aggregation)
             {
-                auto expression = std::make_shared<ExpressionActions>(
-                        query_info.projection->before_aggregation, ExpressionActionsSettings::fromContext(context_));
-                pipe.addSimpleTransform(
-                        [&expression](const Block & header) { return std::make_shared<ExpressionTransform>(header, expression); });
+                auto expression_before_aggregation
+                    = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), query_info.projection->before_aggregation);
+                expression_before_aggregation->setStepDescription("Before GROUP BY");
+                query_plan.addStep(std::move(expression_before_aggregation));
             }
+
+            executeMergeAggregatedImpl(
+                query_plan,
+                query_info.projection->aggregate_overflow_row,
+                query_info.projection->aggregate_final,
+                false,
+                context_->getSettingsRef(),
+                query_info.projection->aggregation_keys,
+                query_info.projection->aggregate_descriptions);
         }
-    }
-
-    auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-    read_from_pipe->setStepDescription("Read from NullSource");
-    query_plan.addStep(std::move(read_from_pipe));
-
-    if (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
-    {
-        executeMergeAggregatedImpl(
-            query_plan,
-            query_info.projection->aggregate_overflow_row,
-            query_info.projection->aggregate_final,
-            false,
-            context_->getSettingsRef(),
-            query_info.projection->aggregation_keys,
-            query_info.projection->aggregate_descriptions);
     }
 }
 
 void InterpreterSelectQuery::addPrewhereAliasActions()
 {
+    const Settings & settings = context->getSettingsRef();
+    auto & expressions = analysis_result;
+    if (expressions.filter_info)
+    {
+        if (!expressions.prewhere_info)
+        {
+            const bool does_storage_support_prewhere = !input && !input_pipe && storage && storage->supportsPrewhere();
+            if (does_storage_support_prewhere && settings.optimize_move_to_prewhere)
+            {
+                /// Execute row level filter in prewhere as a part of "move to prewhere" optimization.
+                expressions.prewhere_info = std::make_shared<PrewhereDAGInfo>(
+                    std::move(expressions.filter_info->actions),
+                    std::move(expressions.filter_info->column_name));
+                expressions.prewhere_info->prewhere_actions->projectInput(false);
+                expressions.prewhere_info->remove_prewhere_column = expressions.filter_info->do_remove_column;
+                expressions.prewhere_info->need_filter = true;
+                expressions.filter_info = nullptr;
+            }
+        }
+        else
+        {
+            /// Add row level security actions to prewhere.
+            expressions.prewhere_info->row_level_filter_actions = std::move(expressions.filter_info->actions);
+            expressions.prewhere_info->row_level_column_name = std::move(expressions.filter_info->column_name);
+            expressions.prewhere_info->row_level_filter_actions->projectInput(false);
+            expressions.filter_info = nullptr;
+        }
+    }
+
     auto & prewhere_info = analysis_result.prewhere_info;
     auto & columns_to_remove_after_prewhere = analysis_result.columns_to_remove_after_prewhere;
 

@@ -440,7 +440,7 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
 }
 
 NameSet ActionsDAG::foldActionsByProjection(
-    const NameSet & required_columns, const Block & projection_block_for_keys, const String & predicate_column_name)
+    const NameSet & required_columns, const Block & projection_block_for_keys, const String & predicate_column_name, bool add_missing_keys)
 {
     std::unordered_set<const Node *> visited_nodes;
     std::unordered_set<std::string_view> visited_index_names;
@@ -457,21 +457,24 @@ NameSet ActionsDAG::foldActionsByProjection(
         }
     }
 
-    for (const auto & column : required_columns)
+    if (add_missing_keys)
     {
-        if (visited_index_names.find(column) == visited_index_names.end())
+        for (const auto & column : required_columns)
         {
-            if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(column))
+            if (visited_index_names.find(column) == visited_index_names.end())
             {
-                const auto * node = &addInput(*column_with_type_name);
-                index.push_back(node);
-                visited_nodes.insert(node);
-                visited_index_names.insert(column);
-            }
-            else
-            {
-                // Missing column
-                return {};
+                if (const ColumnWithTypeAndName * column_with_type_name = projection_block_for_keys.findByName(column))
+                {
+                    const auto * node = &addInput(*column_with_type_name);
+                    visited_nodes.insert(node);
+                    index.push_back(node);
+                    visited_index_names.insert(column);
+                }
+                else
+                {
+                    // Missing column
+                    return {};
+                }
             }
         }
     }
