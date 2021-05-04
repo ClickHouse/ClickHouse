@@ -30,6 +30,25 @@ function _clickhouse_get_options()
     "$@" --help 2>&1 | awk -F '[ ,=<>]' '{ for (i=1; i <= NF; ++i) { if (substr($i, 0, 1) == "-" && length($i) > 1) print $i; } }' | sort -u
 }
 
+function _complete_for_clickhouse_generic_bin_impl()
+{
+    local prev=$1 && shift
+
+    case "$prev" in
+        -C|--config-file|--config)
+            return 1
+            ;;
+        # Argh...  This looks like a bash bug...
+        # Redirections are passed to the completion function
+        # although it is managed by the shell directly...
+        '<'|'>'|'>>'|[12]'>'|[12]'>>')
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
 function _complete_for_clickhouse_generic_bin()
 {
     local cur prev
@@ -39,19 +58,9 @@ function _complete_for_clickhouse_generic_bin()
     COMPREPLY=()
     _get_comp_words_by_ref cur prev
 
-    case "$prev" in
-        -C|--config-file|--config)
-            return
-            ;;
-        # Argh...  This looks like a bash bug...
-        # Redirections are passed to the completion function
-        # although it is managed by the shell directly...
-        '<'|'>'|'>>'|[12]'>'|[12]'>>')
-            return
-            ;;
-    esac
-
-    COMPREPLY=( $(compgen -W "$(_clickhouse_get_options "$cmd")" -- "$cur") )
+    if _complete_for_clickhouse_generic_bin_impl "$prev"; then
+        COMPREPLY=( $(compgen -W "$(_clickhouse_get_options "$cmd")" -- "$cur") )
+    fi
 
     return 0
 }
