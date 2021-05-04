@@ -87,29 +87,13 @@ clickhouse-client --query "SHOW TABLES FROM test"
 clickhouse-test --testname --shard --zookeeper --print-time --use-skip-list --coverage \
     2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
 
-readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "/test_result.txt")
-
-kill_clickhouse
-
-sleep 3
-
-if [[ -n "${FAILED_TESTS[*]}" ]]
-then
-    # Clean the data so that there is no interference from the previous test run.
-    rm -rf /var/lib/clickhouse/{{meta,}data,user_files} ||:
-
-    start_clickhouse
-
-    echo "Going to run again: ${FAILED_TESTS[*]}"
-
-    clickhouse-test --order=random --testname --shard --zookeeper --use-skip-list --coverage \
-        "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_result.txt
-else
-    echo "No failed tests"
-fi
+# no support for failed tests
 
 # TODO use baseline for incremental coverage
 # --baseline, --highlight, --diff
+
+# tmp to get reports
+cp coverage/* ${OUTPUT_DIR}
 
 genhtml \
   --ignore-errors source \

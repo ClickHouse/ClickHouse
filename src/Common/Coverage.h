@@ -266,9 +266,8 @@ private:
                     SourceLocation source = getSourceLocation(edge_index); //non-const so we could move .full_path
 
                     /**
-                     * TODO
-                     * Getting source name as a string (reverse search + allocation) may be cheaper than
-                     * hashing the full path.
+                     * Getting source name as a string (reverse search + allocation) is a bit cheaper than hashing
+                     * the full path.
                      */
                     std::string source_name = getNameFromPathStr(source.full_path); //non-const so we could move it
                     auto cache_it = cache.find(source_name);

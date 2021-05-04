@@ -1,7 +1,6 @@
 #include "Coverage.h"
 
 #include <algorithm>
-
 #include <atomic>
 #include <filesystem>
 #include <fstream>
@@ -12,8 +11,10 @@
 #include <unordered_map>
 #include <utility>
 
+#include <fmt/core.h>
 #include <fmt/format.h>
-#include <fmt/ostream.h>
+
+#include <zlib.h>
 
 #include "Common/ProfileEvents.h"
 
@@ -237,9 +238,7 @@ void Writer::dumpAndChangeTestName(std::string_view test_name)
         if (test_name.empty())
             test = std::nullopt;
         else
-        {
             test = test_name;
-        }
 
         dumping.store(false);
     }
@@ -308,18 +307,59 @@ void Writer::prepareDataAndDump(TestInfo test_info, const EdgesHashmap& hits)
     convertToLCOVAndDump(test_info, test_data);
 }
 
+namespace
+{
+constexpr size_t BUFLEN = 16384;
+
+extern "C" void gzip(FILE * out_file, void * buf, size_t len)
+{
+    z_stream strm;
+    unsigned char out[BUFLEN];
+
+    strm.zalloc = [](auto, auto n, auto m) { return calloc(n, m); };
+    strm.zfree = [](auto, auto p) { free(p); };
+    strm.opaque = Z_NULL;
+
+    // idk why c++ warnings appear in c code
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wold-style-cast"
+    deflateInit2(&strm, -1, 8, 15 + 16, 8, 0);
+#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
+
+    strm.next_in = static_cast<unsigned char *>(buf);
+    strm.avail_in = len;
+
+    do {
+        strm.next_out = out;
+        strm.avail_out = BUFLEN;
+
+        deflate(&strm, Z_NO_FLUSH);
+        fwrite(out, 1, BUFLEN - strm.avail_out, out_file);
+    } while (strm.avail_out == 0);
+
+    strm.next_in = Z_NULL;
+    strm.avail_in = 0;
+
+    do {
+        strm.next_out = out;
+        strm.avail_out = BUFLEN;
+
+        deflate(&strm, Z_FINISH);
+        fwrite(out, 1, BUFLEN - strm.avail_out, out_file);
+    } while (strm.avail_out == 0);
+
+    deflateEnd(&strm);
+}
+}
+
 void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
 {
     /**
      * [incomplete] LCOV .info format reference, parsed from
      * https://github.com/linux-test-project/lcov/blob/master/bin/geninfo
-     *
-     * Tests description .td file:
-     *
-     * TN:<test name>
-     * TD:<test description>
-     *
-     * Report .info file:
      *
      * TN:<test name>
      *
@@ -334,13 +374,6 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
      *         FNF:<number of functions instrumented (found)>
      *         FNH:<number of functions executed (hit)>
      *
-     *     for each instrumented branch:
-     *         BRDA:<line number>,<block number>,<branch number>,<taken -- number > 0 or "-" if was not taken>
-     *
-     *     if >0 branches instrumented:
-     *         BRF:<number of branches instrumented (found)>
-     *         BRH:<number of branches executed (hit)>
-     *
      *     for each instrumented line:
      *         // note -- there's third parameter "line contents", but looks like it's useless
      *         DA:<line number>,<execution count>
@@ -351,38 +384,48 @@ void Writer::convertToLCOVAndDump(TestInfo test_info, const TestData& test_data)
      */
     LOG_INFO(test_info.log, "Started dumping");
 
-    // TODO compress buffer with gzip and gunzip
-    std::ofstream ofs(coverage_dir / test_info.name);
+    const std::string test_path = (coverage_dir / (std::string{test_info.name} + ".gz")).string();
+    constexpr size_t formatted_buffer_size = 10 * (1 >> 21); //20 MB
 
-    fmt::print(ofs, "TN:{}\n", test_info.name);
+    fmt::memory_buffer mb;
+    mb.reserve(formatted_buffer_size);
+
+    fmt::format_to(mb, "TN:{}\n", test_info.name);
 
     for (size_t i = 0; i < test_data.size(); ++i)
     {
         const auto& [functions_hit, lines_hit] = test_data.at(i);
         const auto& [path, functions_instrumented, lines_instrumented] = source_files_cache.at(i);
 
-        fmt::print(ofs, "SF:{}\n", path);
+        fmt::format_to(mb, "SF:{}\n", path);
 
         for (EdgeIndex index : functions_instrumented)
         {
             const FunctionInfo& func_info = function_cache.at(index);
             const size_t call_count = valueOr(functions_hit, index, 0);
 
-            fmt::print(ofs, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.line, func_info.name, call_count);
+            fmt::format_to(mb, "FN:{0},{1}\nFNDA:{2},{1}\n", func_info.line, func_info.name, call_count);
         }
 
-        fmt::print(ofs, "FNF:{}\nFNH:{}\n", functions_instrumented.size(), functions_hit.size());
+        fmt::format_to(mb, "FNF:{}\nFNH:{}\n", functions_instrumented.size(), functions_hit.size());
 
         for (size_t line : lines_instrumented)
         {
             const size_t call_count = valueOr(lines_hit, line, 0);
-            fmt::print(ofs, "DA:{},{}\n", line, call_count);
+            fmt::format_to(mb, "DA:{},{}\n", line, call_count);
         }
 
-        fmt::print(ofs, "LF:{}\nLH:{}\nend_of_record\n", lines_instrumented.size(), lines_hit.size());
+        fmt::format_to(mb, "LF:{}\nLH:{}\nend_of_record\n", lines_instrumented.size(), lines_hit.size());
     }
 
-    LOG_INFO(test_info.log, "Finished dumping");
+    LOG_INFO(test_info.log, "Finished writing to format buffer");
+
+    FILE * const out_file = fopen(test_path.data(), "w");
+    gzip(out_file, mb.begin(), mb.size());
+    fclose(out_file);
+
+    LOG_INFO(test_info.log, "Finished compressing");
+
     Poco::Logger::destroy(test_info.log->name());
 }
 }

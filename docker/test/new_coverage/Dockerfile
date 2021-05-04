@@ -3,8 +3,8 @@ FROM yandex/clickhouse-stateless-test
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
-            clang-tools-11
-            cmake
+            clang-tools-11 \
+            cmake \
             c++filt
 
 COPY s3downloader /s3downloader
