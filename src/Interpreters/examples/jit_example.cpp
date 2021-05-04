@@ -26,7 +26,10 @@ int main(int argc, char **argv)
         auto * func_declaration_type = llvm::FunctionType::get(b.getVoidTy(), { }, /*isVarArg=*/false);
         auto * func_declaration = llvm::Function::Create(func_declaration_type, llvm::Function::ExternalLinkage, "test_function", module);
 
-        auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { b.getInt64Ty() }, /*isVarArg=*/false);
+        auto * value_type = b.getInt64Ty();
+        auto * pointer_type = value_type->getPointerTo();
+
+        auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { pointer_type }, /*isVarArg=*/false);
         auto * function = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, "test_name", module);
         auto * entry = llvm::BasicBlock::Create(context, "entry", function);
 
@@ -35,18 +38,19 @@ int main(int argc, char **argv)
 
         b.CreateCall(func_declaration);
 
-        auto * value = b.CreateAdd(argument, argument);
+        auto * load_argument = b.CreateLoad(argument);
+        auto * value = b.CreateAdd(load_argument, load_argument);
         b.CreateRet(value);
     });
 
-    std::cerr << "Compile module info " << compiled_module_info.module_identifier << " size " << compiled_module_info.size << std::endl;
     for (const auto & compiled_function_name : compiled_module_info.compiled_functions)
     {
         std::cerr << compiled_function_name << std::endl;
     }
 
-    auto * test_name_function = reinterpret_cast<int64_t (*)(int64_t)>(jit.findCompiledFunction("test_name"));
-    auto result = test_name_function(5);
+    int64_t value = 5;
+    auto * test_name_function = reinterpret_cast<int64_t (*)(int64_t *)>(jit.findCompiledFunction("test_name"));
+    auto result = test_name_function(&value);
     std::cerr << "Result " << result << std::endl;
 
     return 0;

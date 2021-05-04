@@ -10,27 +10,15 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/IRBuilder.h>
 
 #include <Interpreters/JIT/CHJIT.h>
-
-namespace ProfileEvents
-{
-    extern const Event CompileFunction;
-    extern const Event CompileExpressionsMicroseconds;
-    extern const Event CompileExpressionsBytes;
-}
+#include <Interpreters/JIT/CompileDAG.h>
+#include <Interpreters/JIT/compileFunction.h>
+#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
@@ -40,51 +28,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
+static CHJIT & getJITInstance()
 {
-    struct ColumnData
-    {
-        const char * data = nullptr;
-        const char * null = nullptr;
-    };
-
-    struct ColumnDataPlaceholder
-    {
-        llvm::Value * data_init; /// first row
-        llvm::Value * null_init;
-        llvm::PHINode * data; /// current row
-        llvm::PHINode * null;
-    };
+    static CHJIT jit;
+    return jit;
 }
-
-static ColumnData getColumnData(const IColumn * column)
-{
-    ColumnData result;
-    const bool is_const = isColumnConst(*column);
-
-    if (is_const)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input columns should not be constant");
-
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
-    {
-        result.null = nullable->getNullMapColumn().getRawData().data;
-        column = &nullable->getNestedColumn();
-    }
-
-    result.data = column->getRawData().data;
-
-    return result;
-}
-
-static void applyFunction(IFunctionBase & function, Field & value)
-{
-    const auto & type = function.getArgumentTypes().at(0);
-    ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
-    auto col = function.execute(args, function.getResultType(), 1);
-    col->get(0, value);
-}
-
-static CHJIT jit;
 
 class LLVMExecutableFunction : public IExecutableFunctionImpl
 {
@@ -94,10 +42,10 @@ public:
     explicit LLVMExecutableFunction(const std::string & name_)
         : name(name_)
     {
-        function = jit.findCompiledFunction(name_);
+        function = getJITInstance().findCompiledFunction(name);
 
         if (!function)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find compiled function {}", name_);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find compiled function {}", name);
     }
 
     String getName() const override { return name; }
@@ -122,13 +70,14 @@ public:
             {
                 const auto * column = arguments[i].column.get();
                 if (!column)
-                    throw Exception("Column " + arguments[i].name + " is missing", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is missing", arguments[i].name);
 
                 columns[i] = getColumnData(column);
             }
 
             columns[arguments.size()] = getColumnData(result_column.get());
-            reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(input_rows_count, columns.data());
+            auto * function_typed = reinterpret_cast<void (*) (size_t, ColumnData *)>(function);
+            function_typed(input_rows_count, columns.data());
 
             #if defined(MEMORY_SANITIZER)
             /// Memory sanitizer don't know about stores from JIT-ed code.
@@ -158,298 +107,183 @@ public:
 
 };
 
-static void compileFunction(llvm::Module & module, const IFunctionBaseImpl & f)
+class LLVMFunction : public IFunctionBaseImpl
 {
-    ProfileEvents::increment(ProfileEvents::CompileFunction);
+public:
 
-    const auto & arg_types = f.getArgumentTypes();
-
-    llvm::IRBuilder<> b(module.getContext());
-    auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
-    auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy(), size_type);
-    auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
-
-    auto * func = llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, f.getName(), module);
-    auto * args = func->args().begin();
-    llvm::Value * counter_arg = &*args++;
-    llvm::Value * columns_arg = &*args++;
-
-    auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", func);
-    b.SetInsertPoint(entry);
-    std::vector<ColumnDataPlaceholder> columns(arg_types.size() + 1);
-    for (size_t i = 0; i <= arg_types.size(); ++i)
+    explicit LLVMFunction(const CompileDAG & dag_)
+        : name(dag_.dump())
+        , dag(dag_)
     {
-        const auto & type = i == arg_types.size() ? f.getResultType() : arg_types[i];
-        auto * data = b.CreateLoad(b.CreateConstInBoundsGEP1_32(data_type, columns_arg, i));
-        columns[i].data_init = b.CreatePointerCast(b.CreateExtractValue(data, {0}), toNativeType(b, removeNullable(type))->getPointerTo());
-        columns[i].null_init = type->isNullable() ? b.CreateExtractValue(data, {1}) : nullptr;
-    }
-
-    /// assume nonzero initial value in `counter_arg`
-    auto * loop = llvm::BasicBlock::Create(b.getContext(), "loop", func);
-    b.CreateBr(loop);
-    b.SetInsertPoint(loop);
-    auto * counter_phi = b.CreatePHI(counter_arg->getType(), 2);
-    counter_phi->addIncoming(counter_arg, entry);
-    for (auto & col : columns)
-    {
-        col.data = b.CreatePHI(col.data_init->getType(), 2);
-        col.data->addIncoming(col.data_init, entry);
-        if (col.null_init)
+        for (size_t i = 0; i < dag.getNodesCount(); ++i)
         {
-            col.null = b.CreatePHI(col.null_init->getType(), 2);
-            col.null->addIncoming(col.null_init, entry);
-        }
-    }
+            const auto & node = dag[i];
 
-    Values arguments;
-    arguments.reserve(arg_types.size());
-
-    for (size_t i = 0; i < arg_types.size(); ++i) // NOLINT
-    {
-        auto & column = columns[i];
-        auto type = arg_types[i];
-
-        auto * value = b.CreateLoad(column.data);
-        if (!column.null)
-        {
-            arguments.emplace_back(value);
-            continue;
+            if (node.type == CompileDAG::CompileType::FUNCTION)
+                nested_functions.emplace_back(node.function);
+            else if (node.type == CompileDAG::CompileType::INPUT)
+                argument_types.emplace_back(node.result_type);
         }
 
-        auto * is_null = b.CreateICmpNE(b.CreateLoad(column.null), b.getInt8(0));
-        auto * nullable_unitilized = llvm::Constant::getNullValue(toNativeType(b, type));
-        auto * nullable_value = b.CreateInsertValue(b.CreateInsertValue(nullable_unitilized, value, {0}), is_null, {1});
-        arguments.emplace_back(nullable_value);
+        module_info = compileFunction(getJITInstance(), *this);
     }
 
-    auto * result = f.compile(b, std::move(arguments));
-    if (columns.back().null)
+    ~LLVMFunction() override
     {
-        b.CreateStore(b.CreateExtractValue(result, {0}), columns.back().data);
-        b.CreateStore(b.CreateSelect(b.CreateExtractValue(result, {1}), b.getInt8(1), b.getInt8(0)), columns.back().null);
+        getJITInstance().deleteCompiledModule(module_info);
+    }
+
+    size_t getCompiledSize() const { return module_info.size; }
+
+    bool isCompilable() const override { return true; }
+
+    llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override
+    {
+        return dag.compile(builder, values);
+    }
+
+    String getName() const override { return name; }
+
+    const DataTypes & getArgumentTypes() const override { return argument_types; }
+
+    const DataTypePtr & getResultType() const override { return dag.back().result_type; }
+
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
+    {
+        return std::make_unique<LLVMExecutableFunction>(name);
+    }
+
+    bool isDeterministic() const override
+    {
+        for (const auto & f : nested_functions)
+            if (!f->isDeterministic())
+                return false;
+
+        return true;
+    }
+
+    bool isDeterministicInScopeOfQuery() const override
+    {
+        for (const auto & f : nested_functions)
+            if (!f->isDeterministicInScopeOfQuery())
+                return false;
+
+        return true;
+    }
+
+    bool isSuitableForConstantFolding() const override
+    {
+        for (const auto & f : nested_functions)
+            if (!f->isSuitableForConstantFolding())
+                return false;
+
+        return true;
+    }
+
+    bool isInjective(const ColumnsWithTypeAndName & sample_block) const override
+    {
+        for (const auto & f : nested_functions)
+            if (!f->isInjective(sample_block))
+                return false;
+
+        return true;
+    }
+
+    bool hasInformationAboutMonotonicity() const override
+    {
+        for (const auto & f : nested_functions)
+            if (!f->hasInformationAboutMonotonicity())
+                return false;
+
+        return true;
+    }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    {
+        const IDataType * type_ptr = &type;
+        Field left_mut = left;
+        Field right_mut = right;
+        Monotonicity result(true, true, true);
+        /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
+        for (size_t i = 0; i < nested_functions.size(); ++i)
+        {
+            Monotonicity m = nested_functions[i]->getMonotonicityForRange(*type_ptr, left_mut, right_mut);
+            if (!m.is_monotonic)
+                return m;
+            result.is_positive ^= !m.is_positive;
+            result.is_always_monotonic &= m.is_always_monotonic;
+            if (i + 1 < nested_functions.size())
+            {
+                if (left_mut != Field())
+                    applyFunction(*nested_functions[i], left_mut);
+                if (right_mut != Field())
+                    applyFunction(*nested_functions[i], right_mut);
+                if (!m.is_positive)
+                    std::swap(left_mut, right_mut);
+                type_ptr = nested_functions[i]->getResultType().get();
+            }
+        }
+        return result;
+    }
+
+    static void applyFunction(IFunctionBase & function, Field & value)
+    {
+        const auto & type = function.getArgumentTypes().at(0);
+        ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
+        auto col = function.execute(args, function.getResultType(), 1);
+        col->get(0, value);
+    }
+
+private:
+    std::string name;
+    CompileDAG dag;
+    DataTypes argument_types;
+    std::vector<FunctionBasePtr> nested_functions;
+    CHJIT::CompiledModuleInfo module_info;
+};
+
+static FunctionBasePtr compile(
+    const CompileDAG & dag,
+    size_t min_count_to_compile_expression)
+{
+    static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
+    static std::mutex mutex;
+
+    auto hash_key = dag.hash();
+    {
+        std::lock_guard lock(mutex);
+        if (counter[hash_key]++ < min_count_to_compile_expression)
+            return nullptr;
+    }
+
+    FunctionBasePtr fn;
+
+    if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+    {
+        auto [compiled_function, was_inserted] = compilation_cache->getOrSet(hash_key, [&dag] ()
+        {
+            auto llvm_function = std::make_unique<LLVMFunction>(dag);
+            size_t compiled_size = llvm_function->getCompiledSize();
+
+            FunctionBasePtr llvm_function_wrapper = std::make_shared<FunctionBaseAdaptor>(std::move(llvm_function));
+            CompiledFunction compiled_function
+            {
+                .function = llvm_function_wrapper,
+                .compiled_size = compiled_size
+            };
+
+            return std::make_shared<CompiledFunction>(compiled_function);
+        });
+
+        fn = compiled_function->function;
     }
     else
     {
-        b.CreateStore(result, columns.back().data);
+        fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(dag));
     }
 
-    auto * cur_block = b.GetInsertBlock();
-    for (auto & col : columns)
-    {
-        col.data->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.data, 1), cur_block);
-        if (col.null)
-            col.null->addIncoming(b.CreateConstInBoundsGEP1_32(nullptr, col.null, 1), cur_block);
-    }
-
-    counter_phi->addIncoming(b.CreateSub(counter_phi, llvm::ConstantInt::get(size_type, 1)), cur_block);
-
-    auto * end = llvm::BasicBlock::Create(b.getContext(), "end", func);
-    b.CreateCondBr(b.CreateICmpNE(counter_phi, llvm::ConstantInt::get(size_type, 1)), loop, end);
-    b.SetInsertPoint(end);
-    b.CreateRetVoid();
+    return fn;
 }
-
-static llvm::Constant * getNativeValue(llvm::Type * type, const IColumn & column, size_t i)
-{
-    /// TODO: Change name this is just for constants
-    if (!type || column.size() <= i)
-        return nullptr;
-    if (const auto * constant = typeid_cast<const ColumnConst *>(&column))
-        return getNativeValue(type, constant->getDataColumn(), 0);
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-    {
-        auto * value = getNativeValue(type->getContainedType(0), nullable->getNestedColumn(), i);
-        auto * is_null = llvm::ConstantInt::get(type->getContainedType(1), nullable->isNullAt(i));
-        return value ? llvm::ConstantStruct::get(static_cast<llvm::StructType *>(type), value, is_null) : nullptr;
-    }
-    if (type->isFloatTy())
-        return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float32> &>(column).getElement(i));
-    if (type->isDoubleTy())
-        return llvm::ConstantFP::get(type, assert_cast<const ColumnVector<Float64> &>(column).getElement(i));
-    if (type->isIntegerTy())
-        return llvm::ConstantInt::get(type, column.getUInt(i));
-    /// TODO: if (type->isVectorTy())
-    return nullptr;
-}
-
-/// Same as IFunctionBase::compile, but also for constants and input columns.
-
-static CompilableExpression subexpression(ColumnPtr c, DataTypePtr type)
-{
-    return [=](llvm::IRBuilderBase & b, const Values &)
-    {
-        auto * native_value = getNativeValue(toNativeType(b, type), *c, 0);
-        return native_value;
-    };
-}
-
-static CompilableExpression subexpression(size_t i)
-{
-    return [=](llvm::IRBuilderBase &, const Values & inputs)
-    {
-        auto * column = inputs[i];
-        return column;
-    };
-}
-
-static CompilableExpression subexpression(const IFunctionBase & f, std::vector<CompilableExpression> args)
-{
-    return [&, args = std::move(args)](llvm::IRBuilderBase & builder, const Values & inputs)
-    {
-        Values input;
-        for (const auto & arg : args)
-            input.push_back(arg(builder, inputs));
-
-        auto * result = f.compile(builder, input);
-        if (result->getType() != toNativeType(builder, f.getResultType()))
-            throw Exception("Function " + f.getName() + " generated an llvm::Value of invalid type", ErrorCodes::LOGICAL_ERROR);
-
-        return result;
-    };
-}
-
-LLVMFunction::LLVMFunction(const CompileDAG & dag)
-    : name(dag.dump())
-{
-    std::vector<CompilableExpression> expressions;
-    expressions.reserve(dag.size());
-
-    jit.compileModule([&](llvm::Module & module)
-    {
-        auto & context = module.getContext();
-        llvm::IRBuilder<> builder(context);
-
-        for (const auto & node : dag)
-        {
-            switch (node.type)
-            {
-                case CompileNode::NodeType::CONSTANT:
-                {
-                    const auto * col = typeid_cast<const ColumnConst *>(node.column.get());
-
-                    /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
-                    if (!getNativeValue(toNativeType(builder, node.result_type), col->getDataColumn(), 0))
-                        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                        "Cannot compile constant of type {} = {}",
-                                        node.result_type->getName(),
-                                        applyVisitor(FieldVisitorToString(), col->getDataColumn()[0]));
-
-                    expressions.emplace_back(subexpression(col->getDataColumnPtr(), node.result_type));
-                    break;
-                }
-                case CompileNode::NodeType::FUNCTION:
-                {
-                    std::vector<CompilableExpression> args;
-                    args.reserve(node.arguments.size());
-
-                    for (auto arg : node.arguments)
-                    {
-                        // std::cerr << "CompileNode::Function emplace expression " << arg << std::endl;
-                        args.emplace_back(expressions[arg]);
-                    }
-
-                    originals.push_back(node.function);
-                    expressions.emplace_back(subexpression(*node.function, std::move(args)));
-                    break;
-                }
-                case CompileNode::NodeType::INPUT:
-                {
-                    expressions.emplace_back(subexpression(arg_types.size()));
-                    arg_types.push_back(node.result_type);
-                    break;
-                }
-            }
-        }
-
-        expression = std::move(expressions.back());
-
-        compileFunction(module, *this);
-
-        // for (auto & func : module)
-        // {
-        //     std::cerr << "Func name " << std::string(func.getName()) << std::endl;
-        // }
-
-        // module.print(llvm::errs(), nullptr);
-    });
-}
-
-llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, Values values) const
-{
-    return expression(builder, values);
-}
-
-ExecutableFunctionImplPtr LLVMFunction::prepare(const ColumnsWithTypeAndName &) const { return std::make_unique<LLVMExecutableFunction>(name); }
-
-bool LLVMFunction::isDeterministic() const
-{
-    for (const auto & f : originals)
-        if (!f->isDeterministic())
-            return false;
-    return true;
-}
-
-bool LLVMFunction::isDeterministicInScopeOfQuery() const
-{
-    for (const auto & f : originals)
-        if (!f->isDeterministicInScopeOfQuery())
-            return false;
-    return true;
-}
-
-bool LLVMFunction::isSuitableForConstantFolding() const
-{
-    for (const auto & f : originals)
-        if (!f->isSuitableForConstantFolding())
-            return false;
-    return true;
-}
-
-bool LLVMFunction::isInjective(const ColumnsWithTypeAndName & sample_block) const
-{
-    for (const auto & f : originals)
-        if (!f->isInjective(sample_block))
-            return false;
-    return true;
-}
-
-bool LLVMFunction::hasInformationAboutMonotonicity() const
-{
-    for (const auto & f : originals)
-        if (!f->hasInformationAboutMonotonicity())
-            return false;
-    return true;
-}
-
-LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
-{
-    const IDataType * type_ptr = &type;
-    Field left_mut = left;
-    Field right_mut = right;
-    Monotonicity result(true, true, true);
-    /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
-    for (size_t i = 0; i < originals.size(); ++i)
-    {
-        Monotonicity m = originals[i]->getMonotonicityForRange(*type_ptr, left_mut, right_mut);
-        if (!m.is_monotonic)
-            return m;
-        result.is_positive ^= !m.is_positive;
-        result.is_always_monotonic &= m.is_always_monotonic;
-        if (i + 1 < originals.size())
-        {
-            if (left_mut != Field())
-                applyFunction(*originals[i], left_mut);
-            if (right_mut != Field())
-                applyFunction(*originals[i], right_mut);
-            if (!m.is_positive)
-                std::swap(left_mut, right_mut);
-            type_ptr = originals[i]->getResultType().get();
-        }
-    }
-    return result;
-}
-
 
 static bool isCompilable(const IFunctionBase & function)
 {
@@ -475,12 +309,12 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
     return node.type == ActionsDAG::ActionType::FUNCTION && isCompilable(*node.function_base);
 }
 
-static LLVMFunction::CompileDAG getCompilableDAG(
+static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
     ActionsDAG::NodeRawConstPtrs & children,
     const std::unordered_set<const ActionsDAG::Node *> & used_in_result)
 {
-    LLVMFunction::CompileDAG dag;
+    CompileDAG dag;
 
     std::unordered_map<const ActionsDAG::Node *, size_t> positions;
     struct Frame
@@ -514,25 +348,30 @@ static LLVMFunction::CompileDAG getCompilableDAG(
 
         if (!is_compilable_function || frame.next_child_to_visit == frame.node->children.size())
         {
-            LLVMFunction::CompileNode node;
+            CompileDAG::Node node;
             node.function = frame.node->function_base;
             node.result_type = frame.node->result_type;
-            node.type = is_const ? LLVMFunction::CompileNode::NodeType::CONSTANT
-                                 : (is_compilable_function ? LLVMFunction::CompileNode::NodeType::FUNCTION
-                                                           : LLVMFunction::CompileNode::NodeType::INPUT);
 
-            if (node.type == LLVMFunction::CompileNode::NodeType::FUNCTION)
+            if (is_compilable_function)
+            {
+                node.type = CompileDAG::CompileType::FUNCTION;
                 for (const auto * child : frame.node->children)
                     node.arguments.push_back(positions[child]);
-
-            if (node.type == LLVMFunction::CompileNode::NodeType::CONSTANT)
+            }
+            else if (is_const)
+            {
+                node.type = CompileDAG::CompileType::CONSTANT;
                 node.column = frame.node->column;
-
-            if (node.type == LLVMFunction::CompileNode::NodeType::INPUT)
+            }
+            else
+            {
+                node.type = CompileDAG::CompileType::INPUT;
                 children.emplace_back(frame.node);
 
-            positions[frame.node] = dag.size();
-            dag.push_back(std::move(node));
+            }
+
+            positions[frame.node] = dag.getNodesCount();
+            dag.addNode(std::move(node));
             stack.pop();
         }
     }
@@ -540,127 +379,8 @@ static LLVMFunction::CompileDAG getCompilableDAG(
     return dag;
 }
 
-std::string LLVMFunction::CompileDAG::dump() const
-{
-    WriteBufferFromOwnString out;
-    bool first = true;
-    for (const auto & node : *this)
-    {
-        if (!first)
-            out << " ; ";
-        first = false;
-
-        switch (node.type)
-        {
-            case CompileNode::NodeType::CONSTANT:
-            {
-                const auto * column = typeid_cast<const ColumnConst *>(node.column.get());
-                const auto & data = column->getDataColumn();
-                out << node.result_type->getName() << " = " << applyVisitor(FieldVisitorToString(), data[0]);
-                break;
-            }
-            case CompileNode::NodeType::FUNCTION:
-            {
-                out << node.result_type->getName() << " = ";
-                out << node.function->getName() << "(";
-
-                for (size_t i = 0; i < node.arguments.size(); ++i)
-                {
-                    if (i)
-                        out << ", ";
-
-                    out << node.arguments[i];
-                }
-
-                out << ")";
-                break;
-            }
-            case CompileNode::NodeType::INPUT:
-            {
-                out << node.result_type->getName();
-                break;
-            }
-        }
-    }
-
-    return out.str();
-}
-
-UInt128 LLVMFunction::CompileDAG::hash() const
-{
-    SipHash hash;
-    for (const auto & node : *this)
-    {
-        hash.update(node.type);
-        hash.update(node.result_type->getName());
-
-        switch (node.type)
-        {
-            case CompileNode::NodeType::CONSTANT:
-            {
-                typeid_cast<const ColumnConst *>(node.column.get())->getDataColumn().updateHashWithValue(0, hash);
-                break;
-            }
-            case CompileNode::NodeType::FUNCTION:
-            {
-                hash.update(node.function->getName());
-                for (size_t arg : node.arguments)
-                    hash.update(arg);
-
-                break;
-            }
-            case CompileNode::NodeType::INPUT:
-            {
-                break;
-            }
-        }
-    }
-
-    UInt128 result;
-    hash.get128(result.low, result.high);
-    return result;
-}
-
-static FunctionBasePtr compile(
-    const LLVMFunction::CompileDAG & dag,
-    size_t min_count_to_compile_expression)
-{
-    static std::unordered_map<UInt128, UInt32, UInt128Hash> counter;
-    static std::mutex mutex;
-
-    auto hash_key = dag.hash();
-    {
-        std::lock_guard lock(mutex);
-        if (counter[hash_key]++ < min_count_to_compile_expression)
-            return nullptr;
-    }
-
-    FunctionBasePtr fn;
-    if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-    {
-        std::tie(fn, std::ignore) = compilation_cache->getOrSet(hash_key, [&dag] ()
-        {
-            Stopwatch watch;
-            FunctionBasePtr result_fn;
-            result_fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(dag));
-            ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
-            return result_fn;
-        });
-    }
-    else
-    {
-        Stopwatch watch;
-        fn = std::make_shared<FunctionBaseAdaptor>(std::make_unique<LLVMFunction>(dag));
-        ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
-    }
-
-    return fn;
-}
-
 void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 {
-    /// TODO: Rewrite
-
     struct Data
     {
         bool is_compilable = false;
@@ -743,18 +463,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
                         NodeRawConstPtrs new_children;
                         auto dag = getCompilableDAG(frame.node, new_children, used_in_result);
 
-                        bool all_constants = true;
-
-                        for (const auto & compiled_node : dag)
-                        {
-                            if (compiled_node.type == LLVMFunction::CompileNode::NodeType::INPUT)
-                            {
-                                all_constants = false;
-                                break;
-                            }
-                        }
-
-                        if (!all_constants)
+                        if (dag.getInputNodesCount() > 0)
                         {
                             if (auto fn = compile(dag, min_count_to_compile_expression))
                             {

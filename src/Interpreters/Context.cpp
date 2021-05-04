@@ -450,6 +450,12 @@ struct ContextSharedPart
             /// TODO: Get rid of this.
 
             delete_system_logs = std::move(system_logs);
+
+            #if USE_EMBEDDED_COMPILER
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->reset();
+            #endif
+
             embedded_dictionaries.reset();
             external_dictionaries_loader.reset();
             models_repository_guard.reset();

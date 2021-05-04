@@ -13,6 +13,7 @@
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/ExecutionEngine/JITEventListener.h>
 #include <llvm/MC/SubtargetFeature.h>
 #include <llvm/Support/DynamicLibrary.h>
 #include <llvm/Support/Host.h>
@@ -140,6 +141,30 @@ private:
     std::unordered_map<std::string, void *> symbol_name_to_symbol_address;
 };
 
+// class JITEventListener
+// {
+// public:
+//     JITEventListener()
+//         : gdb_listener(llvm::JITEventListener::createGDBRegistrationListener())
+//     {}
+
+//     void notifyObjectLoaded(
+//         llvm::JITEventListener::ObjectKey object_key,
+//         const llvm::object::ObjectFile & object_file,
+//         const llvm::RuntimeDyld::LoadedObjectInfo & loaded_object_Info)
+//     {
+//         gdb_listener->notifyObjectLoaded(object_key, object_file, loaded_object_Info);
+//     }
+
+//     void notifyFreeingObject(llvm::JITEventListener::ObjectKey object_key)
+//     {
+//         gdb_listener->notifyFreeingObject(object_key);
+//     }
+
+// private:
+//     llvm::JITEventListener * gdb_listener = nullptr;
+// };
+
 CHJIT::CHJIT()
     : machine(getTargetMachine())
     , layout(machine->createDataLayout())
@@ -156,19 +181,20 @@ CHJIT::~CHJIT() = default;
 CHJIT::CompiledModuleInfo CHJIT::compileModule(std::function<void (llvm::Module &)> compile_function)
 {
     std::lock_guard<std::mutex> lock(jit_lock);
+
     auto module = createModuleForCompilation();
     compile_function(*module);
     auto module_info = compileModule(std::move(module));
+
+    ++current_module_key;
     return module_info;
 }
 
 std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 {
-    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("jit " + std::to_string(current_module_key), context);
+    std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("jit" + std::to_string(current_module_key), context);
     module->setDataLayout(layout);
     module->setTargetTriple(machine->getTargetTriple().getTriple());
-
-    ++current_module_key;
 
     return module;
 }
@@ -194,9 +220,6 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
 
     std::unique_ptr<llvm::RuntimeDyld::LoadedObjectInfo> linked_object = dynamic_linker.loadObject(*object.get());
 
-    if (dynamic_linker.hasError())
-        throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "RuntimeDyld error {}", std::string(dynamic_linker.getErrorString()));
-
     dynamic_linker.resolveRelocations();
     module_memory_manager->getManager().finalizeMemory();
 
@@ -217,14 +240,15 @@ CHJIT::CompiledModuleInfo CHJIT::compileModule(std::unique_ptr<llvm::Module> mod
 
         auto * jit_symbol_address = reinterpret_cast<void *>(jit_symbol.getAddress());
         name_to_symbol[function_name] = jit_symbol_address;
+        module_info.compiled_functions.emplace_back(std::move(function_name));
     }
 
     auto module_identifier = module->getModuleIdentifier();
 
     module_info.size = module_memory_manager->getAllocatedSize();
-    module_info.module_identifier = module_identifier;
+    module_info.module_identifier = current_module_key;
 
-    module_identifier_to_memory_manager[module_identifier] = std::move(module_memory_manager);
+    module_identifier_to_memory_manager[current_module_key] = std::move(module_memory_manager);
 
     compiled_code_size.fetch_add(module_info.size, std::memory_order_relaxed);
 
