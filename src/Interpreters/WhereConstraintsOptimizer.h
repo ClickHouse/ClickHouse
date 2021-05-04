@@ -19,13 +19,15 @@ class WhereConstraintsOptimizer final
 public:
     WhereConstraintsOptimizer(
         ASTSelectQuery * select_query,
-        const StorageMetadataPtr & metadata_snapshot);
+        const StorageMetadataPtr & metadata_snapshot,
+        const bool optimize_append_index_);
 
     void perform();
 
 private:
     ASTSelectQuery * select_query;
     const StorageMetadataPtr & metadata_snapshot;
+    bool optimize_append_index;
 };
 
 }

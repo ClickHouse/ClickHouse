@@ -6,6 +6,8 @@ DROP TABLE IF EXISTS constraint_test.transitivity2;
 SET convert_query_to_cnf = 1;
 SET optimize_using_constraints = 1;
 SET optimize_move_to_prewhere = 1;
+SET optimize_substitute_columns = 1;
+SET optimize_append_index = 1;
 
 CREATE DATABASE constraint_test;
 CREATE TABLE constraint_test.assumption (URL String, a Int32, CONSTRAINT c1 ASSUME domainWithoutWWW(URL) = 'yandex.ru', CONSTRAINT c2 ASSUME URL > 'zzz' AND startsWith(URL, 'test') = True) ENGINE = TinyLog;

@@ -1,6 +1,8 @@
 SET convert_query_to_cnf = 1;
 SET optimize_using_constraints = 1;
 SET optimize_move_to_prewhere = 1;
+SET optimize_substitute_columns = 1;
+SET optimize_append_index = 1;
 
 DROP DATABASE IF EXISTS column_swap_test;
 DROP TABLE IF EXISTS column_swap_test.test;
