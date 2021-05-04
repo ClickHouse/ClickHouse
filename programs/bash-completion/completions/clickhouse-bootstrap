@@ -49,6 +49,10 @@ function _complete_for_clickhouse_generic_bin_impl()
             COMPREPLY=( $(compgen -W "${CLICKHOUSE_QueryProcessingStage[*]}" -- "$cur") )
             return 1
             ;;
+        --host)
+            COMPREPLY=( $(compgen -A hostname -- "$cur") )
+            return 1
+            ;;
         # Argh...  This looks like a bash bug...
         # Redirections are passed to the completion function
         # although it is managed by the shell directly...
