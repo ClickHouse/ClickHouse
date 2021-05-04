@@ -1069,7 +1069,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02.2021') AS parseDateTimeBestEffortUSOr
 
 ## parseDateTime64BestEffort {#parsedatetime64besteffort}
 
-Работает аналогично функции [parseDateTimeBestEffort](#parsedatetimebesteffort), но также принимает миллисекунды и микросекунды и возвращает типы данных `DateTime64(3)` или `DateTime64(6)` в зависимости от заданной точности.
+Работает аналогично функции [parseDateTimeBestEffort](#parsedatetimebesteffort), но также принимает миллисекунды и микросекунды. Возвращает тип данных [DateTime](../../sql-reference/functions/type-conversion-functions.md#data_type-datetime).
 
 **Синтаксис**
 
@@ -1083,6 +1083,10 @@ parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 -   `precision` — `3` для миллисекунд, `6` для микросекунд. По умолчанию `3`. Необязательный. [UInt8](../../sql-reference/data-types/int-uint.md).
 -   `time_zone` — [Timezone](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Разбирает значение `time_string` в зависимости от часового пояса. Необязательный. [String](../../sql-reference/data-types/string.md).
 
+**Возвращаемое значение**
+
+-   `time_string`, преобразованная в тип данных [DateTime](../../sql-reference/data-types/datetime.md).
+
 **Примеры**
 
 Запрос:
@@ -1095,7 +1099,7 @@ UNION ALL
 SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',6) AS a, toTypeName(a) AS t
 UNION ALL
 SELECT parseDateTime64BestEffort('2021-01-01 01:01:00.12346',3,'Europe/Moscow') AS a, toTypeName(a) AS t
-FORMAT PrettyCompactMonoBlcok
+FORMAT PrettyCompactMonoBlcok;
 ```
 
 Результат:
@@ -1166,7 +1170,7 @@ SELECT toLowCardinality('1');
 
 **Синтаксис**
 
-``` sql
+```sql
 toUnixTimestamp64Milli(value)
 ```
 
@@ -1182,7 +1186,7 @@ toUnixTimestamp64Milli(value)
 
 Запрос:
 
-``` sql
+```sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
 SELECT toUnixTimestamp64Milli(dt64);
 ```
